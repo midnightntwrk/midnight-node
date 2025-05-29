@@ -1,0 +1,70 @@
+name: +test
+
+on:
+  pull_request:
+    branches: [ '**' ]
+  push:
+    branches: [ 'main' ]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+jobs:
+  run:
+    name: Run tests
+    # 16 core machines seem to have gone walkabout.
+    runs-on: ubuntu-latest-8-core-x64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Setup api.github.com credentials
+        uses: extractions/netrc@f6f1722d05ce2890aa86fd9654565b1214ac53a4  # v2
+        with:
+          machine: api.github.com
+          username: ${{ secrets.GH_USERNAME }}
+          password: ${{ secrets.GH_PASSWORD }}
+
+      - name: Setup github.com credentials
+        uses: extractions/netrc@f6f1722d05ce2890aa86fd9654565b1214ac53a4  # v2
+        with:
+          machine: github.com
+          username: ${{ secrets.GH_USERNAME }}
+          password: ${{ secrets.GH_PASSWORD }}
+
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+
+      - name: Checkout node repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+
+      - name: set ssh-agent to binary host
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387  # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MIDNIGHTBOT_SSH_PRIVATE_KEY }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ntwrk-bot
+          password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
+
+      - name: Run build
+        run: |
+          cp ~/.netrc ./netrc
+          export NETRC="$(pwd)/netrc"
+          . ./.envrc && earthly --ci +test
+
+      - name: Upload test report artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        if: success() || failure()
+        with:
+          name: Test Report
+          path: test-artifacts-amd64/html
+
+      # - name: Upload lcov test report artifact
+      #   uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+      #   if: success() || failure()
+      #   with:
+      #     name: Lcov Coverage Report
+      #     path: test-artifacts/tests.lcov

@@ -1,0 +1,136 @@
+name: Create Release (Re-tag image and create Github release)
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'The git ref to release (branch, tag, or commit SHA)'
+        required: true
+        default: 'main'
+      suffix:
+        description: 'Optional suffix (e.g. "-rc.1" or "-beta.1") to append to the image tag'
+        required: false
+        default: ''
+      release-type:
+        description: 'Github release type?'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+          - "Don't create a release."
+          - draft
+          - prerelease
+          - latest
+      force:
+        type: boolean
+        description: 'Force release if it already exists?'
+        required: true
+        default: false
+
+jobs:
+  run:
+    name: Release image
+    runs-on: ubuntu-latest
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ntwrk-bot
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - name: Checkout Season action repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          repository: midnight-ntwrk/season-action
+          ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
+          path: season-action
+          token: ${{ secrets.MIDNIGHTCI_REPO }}
+
+      - name: Checkout repo
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          ref: ${{ inputs.ref }}
+          path: ./.tmp-package
+
+      - name: Setup Season
+        uses: ./season-action
+        with:
+          ghcr_registry: ghcr.io/midnight-ntwrk
+          ghcr_username: ntwrk-bot
+          ghcr_password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          suffix: ${{ github.event.inputs.suffix }}
+          tag_name: node
+          image_name: midnight-node
+          cargo_toml_path: node/Cargo.toml
+          changes_archive_dir: .changes_archive
+          repo_root: ./.tmp-package
+
+      - name: Retag and push node image
+        working-directory: ./.tmp-package
+        shell: bash
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: season-retag
+
+      - name: Retag and push generator image
+        working-directory: ./.tmp-package
+        shell: bash
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          export SEASON_IMAGE_NAME=midnight-generator
+          export SEASON_IMAGE_TAG_COMMIT=$SEASON_SHORT_COMMIT
+          season-retag
+
+# TODO: Fix upgrader image release
+#      - name: Retag and push hard-fork-test-upgrader image
+#        working-directory: ./.tmp-package
+#        shell: bash
+#        env:
+#          FORCE: ${{ github.event.inputs.force }}
+#        run: |
+#          export SEASON_IMAGE_NAME=midnight-hardfork-test-upgrader
+#          export SEASON_IMAGE_TAG_COMMIT=$SEASON_SHORT_COMMIT
+#          season-retag
+
+      - name: Build Release Notes
+        working-directory: ./.tmp-package
+        shell: bash
+        run: |
+          export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_RELEASE"
+          export SEASON_VAR_GENERATOR_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-generator:$SEASON_IMAGE_TAG_RELEASE"
+          export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
+          season-build-release-notes
+
+      - name: Create tag
+        working-directory: ./.tmp-package
+        shell: bash
+        id: tag-commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: season-create-tag
+
+      - name: Create release
+        shell: bash
+        working-directory: ./.tmp-package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TYPE: ${{ github.event.inputs.release-type }}
+        run: |
+          season-create-release
+
+      - name: Make PR against main
+        working-directory: ./.tmp-package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: season-create-pr
+

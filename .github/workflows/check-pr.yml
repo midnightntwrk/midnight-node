@@ -1,0 +1,22 @@
+name: Check PR Description for Link
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  check-description:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check PR description for a link
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+      with:
+        script: |
+          const prBody = context.payload.pull_request.body;
+          const urlRegex = /(https?:\/\/[^\s]+|#[0-9]+)/g;
+
+          if (!prBody || !urlRegex.test(prBody)) {
+            core.setFailed("Pull request description must contain a 'why' link (to a jira or the PR that caused this PR).");
+          } else {
+            console.log("PR description contains a link.");
+          }

@@ -1,0 +1,16 @@
+[package]
+name = "midnight-primitives-native-token-management"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight native token observation primitives"
+
+[dependencies]
+sp-api.workspace = true
+sp-native-token-management.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "sp-api/std",
+    "sp-native-token-management/std"
+]

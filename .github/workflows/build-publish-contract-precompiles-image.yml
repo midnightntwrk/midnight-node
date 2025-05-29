@@ -1,0 +1,81 @@
+name: +contract-precompiles (Build ledger test static data contracts)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Once a week
+    - cron: "0 0 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Precompile contracts (${{ matrix.platform }})
+    strategy:
+      matrix:
+        # Define matrix with platform and corresponding GitHub-hosted runner
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest-16-core-x64 # Default x86_64 GitHub-hosted runner
+
+    runs-on: ${{ matrix.runner }}
+
+    env:
+      FORCE_COLOR: 1
+
+    steps:
+      # Set up credentials for api.github.com (used by cargo/git)
+      - name: Setup api.github.com credentials
+        uses: extractions/netrc@f6f1722d05ce2890aa86fd9654565b1214ac53a4 # v2
+        with:
+          machine: api.github.com
+          username: ${{ secrets.GH_USERNAME }}
+          password: ${{ secrets.GH_PASSWORD }}
+
+      # Set up credentials for github.com (used for repo access)
+      - name: Setup github.com credentials
+        uses: extractions/netrc@f6f1722d05ce2890aa86fd9654565b1214ac53a4 # v2
+        with:
+          machine: github.com
+          username: ${{ secrets.GH_USERNAME }}
+          password: ${{ secrets.GH_PASSWORD }}
+
+      # Install Earthly
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+
+      # Checkout the node repo
+      - name: Checkout node repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+
+      # Add SSH key to access binary dependencies
+      - name: Set SSH agent to binary host
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MIDNIGHTBOT_SSH_PRIVATE_KEY }}
+
+      # Log in to GitHub Container Registry
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ntwrk-bot
+          password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
+
+      # Run Earthly build with platform-specific flags
+      - name: Run Earthly build for ${{ matrix.platform }}
+        run: |
+          # Force cargo to use CLI git instead of libgit2 (more robust in CI)
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          cp ~/.netrc ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          # Run Earthly platform-specific image builds
+          . ./.envrc && earthly --ci --platform=linux/amd64 --push +contract-precompile-image

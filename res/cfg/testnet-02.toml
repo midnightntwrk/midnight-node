@@ -1,0 +1,5 @@
+addresses_json = "res/testnet-02/addresses.json"
+chain = "res/testnet-02/chain-spec-raw.json"
+base_path = "node/chain"
+
+genesis_utxo = "46876a2250ec0e523eccc30b0fc6d6fa55c61dd200b83140acaab291edeb0b11#0"
