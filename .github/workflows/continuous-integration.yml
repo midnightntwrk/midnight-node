@@ -37,10 +37,6 @@ jobs:
       - name: Get current commit SHA
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-      - name: set ssh-agent to binary host
-        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387  # v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.MIDNIGHTBOT_SSH_PRIVATE_KEY }}
 
       - name: Login to GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567  # v3.3.0

@@ -60,9 +60,6 @@ jobs:
           # added skip host key checking to avoid the manual prompt
           command: |
             mkdir ~/.ssh/ && echo -e "Host github.com\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-            ssh-agent -a "$SSH_AUTH_SOCK" > /dev/null
-            ssh-add - <<< "${{ secrets.MIDNIGHTBOT_SSH_PRIVATE_KEY }}"
 
             git config --global user.email "devhub-deploy@users.noreply.github.com"
             git config --global user.name "Devhub Deployer"
