@@ -1,0 +1,17 @@
+# NEW Partner-chains dev chain-spec parameters AFTER v1.4.0
+genesis_utxo = "c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
+
+# Mock the main chain when in dev mode
+use_main_chain_follower_mock = true
+main_chain_follower_mock_registrations_file = "res/mock-bridge-data/default-registrations.json"
+addresses_json = "res/dev/addresses.json"
+
+args = [
+    "--dev",
+    "--node-key", "0000000000000000000000000000000000000000000000000000000000000001",
+    "--rpc-external",
+    "--rpc-cors=all",
+    "--prometheus-external",
+    "--state-pruning", "archive",
+    "--blocks-pruning", "archive"
+]

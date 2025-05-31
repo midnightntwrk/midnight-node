@@ -1,0 +1,6 @@
+# This is a copy of `qanet` with the exception of the `genesis_utxo` which should differ
+addresses_json = "res/qanet/addresses.json"
+chain = "res/qanet/chain-spec-raw.json"
+base_path = "node/chain"
+
+genesis_utxo = "0777c75909b28d343322a3aa6482c6c048d6bb1cc23a264797042db17a42e0a2#0"

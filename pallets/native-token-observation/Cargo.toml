@@ -1,0 +1,32 @@
+[package]
+name = "pallet-native-token-observation"
+version = "1.4.0"
+edition = "2024"
+description = "Pallet responsible for handling changes to the illiquid supply of the native token on main chain."
+license = "Apache-2.0"
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+log.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+sidechain-domain.workspace = true
+midnight-primitives.workspace = true
+midnight-primitives-mainchain-follower.workspace = true
+
+[dev-dependencies]
+sp-io.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "log/std",
+    "scale-info/std",
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "midnight-primitives/std"
+]
+mock = []

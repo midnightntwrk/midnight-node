@@ -1,0 +1,53 @@
+name: Nightly Build Check
+
+on:
+  push:
+    branches: ["SRE-670/nightly-build-check"]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  build_node:
+    name: Build Node against latest
+    runs-on: ubuntu-latest-8-core-x64
+    env:
+      FORCE_COLOR: 1
+    outputs:
+      node_result: ${{ steps.run_earthly.outputs.node_result }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938
+
+      - uses: earthly/actions-setup@v1
+        with:
+          version: v0.8.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Set up SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MIDNIGHTBOT_SSH_PRIVATE_KEY }}
+
+      - name: Cat the Cargo.toml
+        run: cat ./Cargo.toml
+
+      - name: Run check
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --platform=linux/amd64 +node-image

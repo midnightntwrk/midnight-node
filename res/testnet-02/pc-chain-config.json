@@ -1,0 +1,90 @@
+{
+  "chain_parameters": {
+    "genesis_utxo": "46876a2250ec0e523eccc30b0fc6d6fa55c61dd200b83140acaab291edeb0b11#0"
+  },
+  "initial_permissioned_candidates": [
+    {
+      "sidechain_pub_key": "0x03e552997989315bba2e43f827deb2c33d6aad8604ac7c6c19e0aefb7d9209fdfe",
+      "aura_pub_key": "0xa26b632cfd1302f5565380fd774534563d8cfd1c07b5d8c2d843062231e3e55a",
+      "grandpa_pub_key": "0x532ea2b7b59feb933900fff4375a794520a939e811f2c6eee5d55d0b27a33222"
+    },
+    {
+      "sidechain_pub_key": "0x02fa800af0438c81cb3f5839dbc494a7cfc8fe5bb8f4e2bc8bfa5197c018ed9b1b",
+      "aura_pub_key": "0x7cb831d9807c6040842d97eaa6fbd19dcf323e143d2d73964ec9319622164009",
+      "grandpa_pub_key": "0x5223407a2442f3cc1f1ea6643b6e95785ad243e4530631874c1676e2efd698b5"
+    },
+    {
+      "sidechain_pub_key": "0x039a13d61bf5489cfc06385799a7c1a7439db2df52b5327e0fc824e2cf4fad46f9",
+      "aura_pub_key": "0xa87a0186f8219027263713d85d3f90aba4f19dfc0aa2f5f04812e39d73376260",
+      "grandpa_pub_key": "0xd3bb8a5a8a68c87fd28605ebb18f8669af8e145b646c91a0633368c0adaf62bc"
+    },
+    {
+      "sidechain_pub_key": "0x02984d7f7b8d2e87e7677a16e9dfbe22d3eb8aaae779aee63595d92b8d59e9bc85",
+      "aura_pub_key": "0x7470a459550f7fbffc0e1208242dc4987f1309acda410631b036ee9aa9d3167f",
+      "grandpa_pub_key": "0xddd045b0b1cc55c794c985f26faf17b549abdf7741e73f247ada5757a1e80cf7"
+    },
+    {
+      "sidechain_pub_key": "0x024a9a0bf1891899cfe52d79c6747dfd3d889f36b9ecb72bc59891c63d9595366b",
+      "aura_pub_key": "0xf86dc65328209de522fba056ed5351f5a80f2b26aef4b5db06fbd161b8c6f66c",
+      "grandpa_pub_key": "0x4951bd888beabd69e37119bf2e1a7476372cfd3d800e16025ee899e8eaa144d0"
+    },
+    {
+      "sidechain_pub_key": "0x0363c535b9bd0147e7f27f80eaa316489d8351d0fe3516f3f12fab84131c9348ad",
+      "aura_pub_key": "0x7ac79f9fa1aaea57bb2984f4b5c37c8fba7f46a8bbfcabc12ec02a821ce88554",
+      "grandpa_pub_key": "0x1bf29e9b4d59220489f1dc02e9c0db4d7881c8bcd4375d4f364226d6a5969fe9"
+    },
+    {
+      "sidechain_pub_key": "0x033aca8ea193db92e5a36211dad657950d16f08675aa37f4ec617e2e472214e39d",
+      "aura_pub_key": "0x4400f582064e77fc98a324662e0278306ab269f7f1e1638f43e22d6164b5cc4a",
+      "grandpa_pub_key": "0x864128a0050bc7e2ac082a419e4cb2329b8235894bb5dbfc298f37b2f3f51a48"
+    },
+    {
+      "sidechain_pub_key": "0x021ab62d1f50b8c85f3b1e0960ec6c0a4ff941dc6bd14038153c4c7ea09fe0b131",
+      "aura_pub_key": "0x1a275e91c23cdbed5b711f194b39e57320f794d92d42ca52743c36edd9b90247",
+      "grandpa_pub_key": "0xd3e9efefa9cb73194ca7ffc6d1848506a2cdf01b7cd001596a4831b94a5d3290"
+    },
+    {
+      "sidechain_pub_key": "0x02682e2bf6153e686e051f02c5d653e24e56a5e9a5c3d28f78ecd9264cc3f35c00",
+      "aura_pub_key": "0xaa08dc1036dab64115612b7ada1fa0ca9d98cd0bd86744659ec99e95976b5b2e",
+      "grandpa_pub_key": "0x701aacad9ed534365b349ea9feae13d3ee24b6d344992b15ea75255c1fb91bde"
+    },
+    {
+      "sidechain_pub_key": "0x026c8f7b4379aa3737b7bedba87c593561c794dc5b81984ac9e95c837f3b46f0b8",
+      "aura_pub_key": "0xd6871144cf37573b4ae99d7dfda549750be5463b26cc80ca44195b25a27e1750",
+      "grandpa_pub_key": "0x77ecab5385322b96385895da48ae27a7c8933552381206325e6cb8fbcdc8760c"
+    },
+    {
+      "sidechain_pub_key": "0x03e3153ce92bff084d3fbe876e5d5909bd2036a3ad06ca5a8ade23af5f63373464",
+      "aura_pub_key": "0xc4d8f3109b6fcf20f63cbe6e28817cab06802a2cd1c6aca52531b41be7b7ff0f",
+      "grandpa_pub_key": "0xb843cf064afc532a9bc9889f80735124b59e0fe5f900c97c2bde99051fb56b76"
+    },
+    {
+      "sidechain_pub_key": "0x03845d8be4649301dd02a2f5388ca7e76b8224eb806e146a321f37b27b711a5b36",
+      "aura_pub_key": "0x786cb34b6f40b9f2405b12dc078338aa663313257f8d021b22ba9908df91ae71",
+      "grandpa_pub_key": "0x90e2e83c2d556ba65fe75a876e953559ee9d218accf683739badce624ba2553f"
+    }
+  ],
+  "bootnodes": [
+    "/dns/localhost/tcp/3033/p2p/12D3KooWE3FTWLBeWzRecRuXBkH886FQiuGzCdzpjJsKZnA54kVG"
+  ],
+  "cardano": {
+    "security_parameter": 432,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wrdcz9xr2qmywev3rhegnyt0jvud45l2xk2lpkt29wwch2g9vngtm",
+    "d_parameter_policy_id": "83424b65e444e98e9659f68484ed4c5a97f7cbe1936a8b301fc1b6dd",
+    "permissioned_candidates_policy_id": "2f459d50b96ac59957d20b36ae967cda64a2174e37c5cdac93af597c",
+    "native_token": {
+      "illiquid_supply_address": "addr_test1wq8pepl8k3u0qu073v09fxhlueh8u3c7g42s7r5nfsm5lqqpgghck",
+      "asset": {
+        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+        "asset_name": "0x"
+      }
+    }
+  }
+}

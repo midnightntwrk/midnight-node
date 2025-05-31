@@ -1,0 +1,10 @@
+{
+    "chainId": 0,
+    "genesisCommitteeUtxo": {
+        "txHash": "0xc684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a",
+        "index": 6
+    },
+    "thresholdNumerator": 2,
+    "thresholdDenominator": 3,
+    "governanceAuthority": "0x76da17b2e3371ab7ca88ce0500441149f03cc5091009f99c99c080d9"
+}

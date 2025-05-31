@@ -1,0 +1,30 @@
+name: +node-e2e-test-remote (node-dev-01)
+
+on:
+  workflow_dispatch:
+    inputs:
+      QA_BRANCH:
+        type: string
+        description: QA branch to use
+        required: false
+        default: 'qa-node-dev-01'
+      RESET: 
+        type: choice
+        description: Reset the cache
+        required: true
+        default: 'false'
+        options:
+          - true
+          - false
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    name: Healthcheck tests
+    uses: ./.github/workflows/e2e-tests-remote.yml
+    with:
+      TEST_ENV_INPUT: node-dev-01
+      RESET: ${{ inputs.RESET || 'false' }}
+      QA_BRANCH: ${{ inputs.QA_BRANCH || 'qa-node-dev-01' }}
+    secrets: inherit

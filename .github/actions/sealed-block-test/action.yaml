@@ -1,0 +1,69 @@
+name: 'Block Proposal Log Check'
+description: 'Wait for epoch and check for block proposal log in specified environment'
+
+inputs:
+  epoch:
+    description: 'Expected epoch'
+    required: true
+  deployment:
+    description: 'Deployment type (docker or kubernetes)'
+    required: true
+  cardano-node:
+    description: 'Cardano node name'
+    required: true
+  node:
+    description: 'Node name or pod name'
+    required: true
+  environment:
+    description: 'Environment (required for kubernetes)'
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Wait for epoch and block proposal log
+      shell: bash
+      run: |
+        echo "🔁 Deployment type: ${{ inputs.deployment }}"
+        echo "🎯 Target epoch: ${{ inputs.epoch }}"
+        echo "📦 Node: ${{ inputs.node }}"
+
+        if [ "${{ inputs.deployment }}" == "docker" ]; then
+          echo "🗓 Waiting for epoch in Docker..."
+
+          epoch=$(docker exec ${{ inputs.cardano-node }} cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
+          while [ $epoch -lt ${{ inputs.epoch }} ]; do
+            echo "Epoch: $epoch"
+            sleep 10
+            epoch=$(docker exec ${{ inputs.cardano-node }} cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
+          done
+          echo "Epoch: $epoch"
+
+
+          echo "✅ Reached epoch: $epoch"
+
+          echo "🔍 Watching for pre-sealed block log..."
+
+          MAX_ATTEMPTS=10  
+          FOUND_LOG=0
+
+          for ((i=1; i<=MAX_ATTEMPTS; i++)); do
+            if docker logs ${{ inputs.node }} 2>&1 | grep -q "Pre-sealed block for proposal at"; then
+              echo "✅ Found pre-sealed block log (attempt $i)"
+              FOUND_LOG=1
+              break
+            else
+              echo "⏳ Waiting for pre-sealed block log... (attempt $i)"
+              sleep 5
+            fi
+          done
+
+          if [ "$FOUND_LOG" -ne 1 ]; then
+            echo "❌ Pre-sealed block log not found after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+        else
+          echo "❌ Invalid deployment type: ${{ inputs.deployment }}"
+          exit 1
+        fi

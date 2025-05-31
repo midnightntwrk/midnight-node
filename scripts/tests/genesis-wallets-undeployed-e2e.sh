@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+NODE_IMAGE="$1"
+GENERATOR_IMAGE="$2"
+NETWORK="${3:-midnight-net-genesis}"
+NODE_CONTAINER="${4:-midnight-node-genesis}"
+
+echo "🎯 Running Genesis Wallets E2E test"
+echo "🧱 NODE_IMAGE: $NODE_IMAGE"
+echo "🧱 GENERATOR_IMAGE: $GENERATOR_IMAGE"
+
+# Ensure Docker network exists
+docker network create $NETWORK || true
+
+# Start node in background
+echo "🚀 Starting node container..."
+docker run -d --rm \
+  --name $NODE_CONTAINER \
+  --network $NETWORK \
+  -p 9944:9944 \
+  -e CFG_PRESET=dev \
+  -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
+  "$NODE_IMAGE"
+
+echo "⏳ Waiting for node to boot..."
+sleep 30
+
+# Run wallets check script
+echo "📦 Running genesis wallets tests..."
+GENERATOR_IMAGE="$GENERATOR_IMAGE" NETWORK="$NETWORK" NODE_CONTAINER="$NODE_CONTAINER" bash ./scripts/genesis_wallets_test.sh || TEST_FAILED=true
+
+# Teardown node
+echo "🛑 Cleaning up..."
+docker kill $NODE_CONTAINER || true
+
+# Exit with test result
+if [ "${TEST_FAILED:-false}" = true ]; then
+  echo "❌ Genesis Wallet Tests failed."
+  exit 1
+else
+  echo "✅ Genesis Wallet Tests complete."
+fi

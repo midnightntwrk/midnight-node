@@ -6,7 +6,7 @@ We welcome your contributions to the Midnight network! By contributing, you'll p
 
 * **Review Existing Contributions and Issues:** Before submitting, please check if a similar issue or feature request already exists by searching our issue tracker.
 * **Understand the Project:** Familiarize yourself with Midnight's architecture, technology, and coding standards. You can find relevant information in our litepaper. 
-* **Set up Your Development Environment:** Ensure you have the necessary tools and dependencies installed. See our developer [documentation](https://docs.midnight.network/) for detailed instructions. 
+* **Set up Your Development Environment:** Ensure you have rustup installed. If you have nix you can run `nix develop` to get into a dev shell.
 
 ## Submitting Issues
 
@@ -22,9 +22,10 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 
 ## Code Contribution Process
 
-* **Pull Requests:** Code contributions are submitted via Pull Requests.
+* **Please do not `--force` pushes** - doing so means that any reviewers will have to re-review all the changes in the PR from the first commit again.
+* **All modifications** must be made in a **pull-request** to solicit feedback from other contributors.
 * **Fork the Repository:** Create your own fork of the Midnight repository.
-* **Create a Branch:** Make your changes in a separate branch.
+* **Create a Branch:** Make your changes in a separate branch, prefixed with a short name moniker (e.g. `jill-my-feature`).
 * **Follow Coding Standards:** Adhere to the coding style guides specified in our documentation.
 * **Write Tests:** Include unit tests and integration tests to cover your changes.
 * **Commit Messages:** Write clear and concise commit messages.
@@ -39,7 +40,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 * **License:** All contributions must be compatible with the project's license. Where possible all files should have this license header:
 
 ```
-// This file is part of <REPLACE WITH REPOSITORY NAME>.
+// This file is part of midnight-node.
 // Copyright (C) 2025 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");

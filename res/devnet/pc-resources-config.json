@@ -1,0 +1,11 @@
+{
+  "substrate_node_base_path": "./data",
+  "ogmios": {
+    "protocol": "https",
+    "hostname": "ogmios.preview.midnight.network",
+    "port": 443
+  },
+  "cardano_payment_verification_key_file": "payment.vkey",
+  "cardano_payment_signing_key_file": "payment.skey",
+  "db_sync_postgres_connection_string": "psql://cardano:avOzraOFfDfXu04mmg4obrDg@psql-dbsync-cardano-08-primary:5432/cexplorer"
+}
