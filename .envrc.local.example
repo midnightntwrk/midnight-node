@@ -2,7 +2,10 @@ export POSTGRES_HOST="0.0.0.0"
 export POSTGRES_PORT="5432"
 export POSTGRES_DB="cexplorer"
 export POSTGRES_USER="postgres"
-export POSTGRES_PASSWORD="password123"
+if [ ! -f postgres.password ]; then
+    uuidgen | tr -d '-' | head -c 16 > postgres.password
+fi
+export POSTGRES_PASSWORD="$(cat ./postgres.password)"
 
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 
