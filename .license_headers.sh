@@ -8,7 +8,7 @@ find . -type f -name "*.rs" \( -path "*/src/*" -o -path "*/tests/*" \) | while I
     fi
 done
 
-find . -type f -name "*.js" \( -path "*/src/*" -o -path "*/tests/*" \) | while IFS= read -r file; do
+find . -type f \( -name "*.js" -o -name "*.ts" \) \( -path "*/src/*" -o -path "*/tests/*" \) | while IFS= read -r file; do
     if ! grep -q "SPDX-License-Identifier" "$file"; then
         tmpfile=$(mktemp)
         sed 's/^/\/\/ /' .midnight.txt >> "$tmpfile"
@@ -27,5 +27,6 @@ find . -type f -name "*.sh" | while IFS= read -r file; do
         echo "" >> $tmpfile
         cat $file >> $tmpfile
         mv $tmpfile $file
+        chmod +x $file
     fi
 done
