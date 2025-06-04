@@ -16,7 +16,8 @@ import { Grid, Form, Dropdown, Input, Label } from 'semantic-ui-react'
 
 import { useSubstrateState } from './substrate-lib'
 import { TxButton, TxGroupButton } from './substrate-lib/components'
-import ReactJson from "react-json-view";
+import { JsonView, defaultStyles } from "react-json-view-lite";
+import "react-json-view-lite/dist/index.css";
 // import {stringify} from "@polkadot/util";
 
 const argIsOptional = arg => arg.type.toString().startsWith('Option<')
@@ -277,7 +278,7 @@ function Main(props) {
         </Form.Field>
         <div style={{ overflowWrap: 'break-word' }}>{status}</div>
         {statusJson ? (
-          <ReactJson src={statusJson} />
+          <JsonView data={statusJson} style={defaultStyles} />
         ) : null}
 
       </Form>

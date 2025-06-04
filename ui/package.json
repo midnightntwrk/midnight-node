@@ -22,37 +22,44 @@
     "eslint:write": "eslint --fix --ext .jsx,.js src/",
     "prettier:check": "prettier -c src/*",
     "prettier:write": "prettier -w src/*",
-    "deploy": "gh-pages -d build -m '[ci skip] Updates'"
+    "deploy": "gh-pages -d build -m '[ci skip] Updates'",
+    "postinstall": "echo removing references to optional GPLv3 packages && rm -rf ./node_modules/@substrate/connect && rm -rf ./node_modules/@substrate/connect-extension-protocol && rm -rf ./node_modules/@substrate/connect-known-chains && rm -rf ./node_modules/@substrate/light-client-extension-helpers && rm -rf ./node_modules/node-forge"
   },
   "dependencies": {
-    "@polkadot/api": "^10.7.2",
-    "@polkadot/extension-dapp": "^0.46.3",
-    "@polkadot/keyring": "^12.2.1",
-    "@polkadot/networks": "^8.4.1",
-    "@polkadot/types": "^10.7.2",
-    "@polkadot/ui-keyring": "^3.4.1",
-    "@polkadot/ui-settings": "^3.4.1",
-    "@polkadot/util": "^12.2.1",
-    "@polkadot/util-crypto": "^12.2.1",
-    "node-polyfill-webpack-plugin": "^2.0.1",
+    "@polkadot/api": "^16.1.1",
+    "@polkadot/extension-dapp": "^0.59.1",
+    "@polkadot/keyring": "^13.5.1",
+    "@polkadot/networks": "^13.5.1",
+    "@polkadot/types": "^16.1.1",
+    "@polkadot/ui-keyring": "^3.14.1",
+    "@polkadot/ui-settings": "^3.14.1",
+    "@polkadot/util": "^13.5.1",
+    "@polkadot/util-crypto": "^13.5.1",
+    "node-polyfill-webpack-plugin": "^4.1.0",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-copy-to-clipboard": "^5.1.0",
     "react-dom": "^18.2.0",
-    "react-json-view": "^1.21.3",
+    "react-json-view-lite": "^2.4.1",
     "react-scripts": "^5.0.1",
     "semantic-ui-css": "^2.5.0",
-    "semantic-ui-react": "^2.1.4",
+    "semantic-ui-react": "^2.1.5",
     "stream-browserify": "^3.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@types/supports-color": "^10.0.0",
     "eslint": "^8.10.0",
     "eslint-config-prettier": "^8.4.0",
     "eslint-config-react-app": "^7.0.0",
     "gh-pages": "^3.2.3",
     "prettier": "2.5.1",
     "react-app-rewired": "^2.2.1",
-    "semistandard": "^16.0.1"
+    "semistandard": "^16.0.1",
+    "typescript": "^4.0.0",
+    "webpack": "^5.99.9"
   },
   "resolutions": {
     "eslint-plugin-jsx-a11y": "6.5.1"
@@ -82,5 +89,5 @@
       "last 1 safari version"
     ]
   },
-  "packageManager": "yarn@3.1.1"
+  "packageManager": "yarn@4.9.1"
 }

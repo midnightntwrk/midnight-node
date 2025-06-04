@@ -3,6 +3,12 @@ name: CI + E2E
 on:
   pull_request:
     branches: [ '**' ]
+
+permissions:
+  id-token: write
+  contents: write
+  packages: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
@@ -209,37 +215,36 @@ jobs:
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
 
-  ## TODO UNSHIELDED: uncomment when fixed
-  # local-environment-tests:
-  #   if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
-  #   needs:
-  #     # - hardfork-e2e
-  #     # - ledger-rollback-e2e
-  #     # - node-e2e
-  #     - tx-generator-e2e
-  #     - startup-dev-e2e
-  #     # - genesis-undeployed-e2e
+  local-environment-tests:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
+    needs:
+      # - hardfork-e2e
+      # - ledger-rollback-e2e
+      # - node-e2e
+      - tx-generator-e2e
+      - startup-dev-e2e
+      # - genesis-undeployed-e2e
 
-  #   runs-on: ubuntu-latest-16-core-x64
-  #   steps:
+    runs-on: ubuntu-latest-16-core-x64
+    steps:
 
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  #     - name: Get Version and git commit 
-  #       id: meta
-  #       run: |
-  #         echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-  #         version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-  #         echo "Get Version and git commit"
-  #         echo "version=$version" >> $GITHUB_OUTPUT
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "Get Version and git commit"
+          echo "version=$version" >> $GITHUB_OUTPUT
 
-  #     - name: Deploy and test against local environment
-  #       uses: ./.github/actions/local-environment-tests
-  #       with:
-  #         tag: CI
-  #         image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-  #         # image: ghcr.io/midnight-ntwrk/midnight-node:0.12.0-rc.3
-  #         sha: ${{ steps.meta.outputs.short_hash }}
-  #         tests: premerge
-  #         ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # - name: Deploy and test against local environment
+      #   uses: ./.github/actions/local-environment-tests
+      #   with:
+      #     tag: CI
+      #     image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+      #     # image: ghcr.io/midnight-ntwrk/midnight-node:0.12.0-rc.3
+      #     sha: ${{ steps.meta.outputs.short_hash }}
+      #     tests: premerge
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}

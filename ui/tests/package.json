@@ -5,7 +5,8 @@
   "scripts": {
     "test:node": "cross-env playwright test --project local",
     "test:node-remote": "cross-env playwright test --project remote",
-    "test:fork": "cross-env playwright test --project fork"
+    "test:fork": "cross-env playwright test --project fork",
+    "postinstall": "echo removing references to optional GPLv3 packages && rm -rf ./node_modules/@substrate/connect && rm -rf ./node_modules/@substrate/connect-extension-protocol"
   },
   "dependencies": {
     "@polkadot/api": "^10.7.2",

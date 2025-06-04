@@ -20,6 +20,8 @@
 .vscode/
 .sync_cache*
 artifacts/
+artifacts-arm64/
+artifacts-amd64/
 test-artifacts/
 
 ui/tests/.yarn
@@ -65,3 +67,10 @@ contractlog.json
 
 # Node project files to ignore
 node_modules/
+
+# local environment generated files
+local-environment/.env
+local-environment/.env.bak
+local-environment/docker-compose.yml
+local-environment/docker-compose.yml.bak
+local-environment/runtime-values/*
