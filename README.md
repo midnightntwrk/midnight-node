@@ -1,11 +1,23 @@
 [![Nightly Build Status](https://github.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check.yml/badge.svg?branch=main&event=schedule)](https://github.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check.yml?query=branch%3Amain)
 
-# Midnight Substrate Node
+# Midnight Node
 
-This is an implementation of the Midnight node. This node houses the Midnight Ledger, allowing participants of Midnight
-to come to consensus on the private state.
+This is an implementation of the Midnight blockchain. This node houses the Midnight Ledger, allowing participants of Midnight
+to come to consensus on the public and their private state.
 
-- [Change log](changelog.md)
+## Quick Start
+
+If you just want to run midnight-node, the easiest option
+is to `git clone https://github.com/midnightntwrk/midnight-node-docker` and run the docker compose script.
+
+## **Note on Open Sourcing Progress**
+
+While this repository is open source, it depends on some repositories
+that we are still in the process of being release. As such:
+
+- It's not possible to compile midnight-node independently.
+- If you raise a PR, the CI will be able to compile it.
+- We're actively working to open-source dependencies in the coming months.
 
 ## Documentation
 
@@ -14,15 +26,15 @@ to come to consensus on the private state.
 
 - [Configuration](docs/config.md)
 - [Testing Upgrades](docs/testing-upgrades.md)
-- [Substrate Chain Specifications](docs/chain_specs.md)
+- [Chain Specifications](docs/chain_specs.md)
 - [Rust Installation](docs/rust-setup.md)
 - [Block Weights](docs/weights.md)
-- [AWS ECR workflows for Midnight Node Docker image](docs/aws-image.md)
 
 ## Prerequisites
 
+- rustup installed
 - For any docker steps: [Docker](https://docs.docker.com/get-docker/)
-  and [Docker Compose](https://docs.docker.com/compose/install/).
+  and [Docker Compose](https://docs.docker.com/compose/install/) (or podman).
 - [Earthly](https://earthly.dev/get-earthly) - containerized build system
 - [Direnv](https://direnv.net/docs/installation.html) - manages environment variables
 - Netrc file with git credentials. See this [reference setup](https://gist.github.com/technoweenie/1072829)
@@ -31,10 +43,10 @@ to come to consensus on the private state.
 
 [Guide lines on contributing](./CONTRIBUTING.md).
 
-## Developing
+## Development Workflow
 
 Ensure you're using direnv, or source `.envrc` manually.
-(For RustRover use https://plugins.jetbrains.com/plugin/15285-direnv-integration )
+(For RustRover you can use https://plugins.jetbrains.com/plugin/15285-direnv-integration )
 
 Common development commands are kept in the Earthfile prefixed with 'local-'. To see them all, run:
 
@@ -42,7 +54,7 @@ Common development commands are kept in the Earthfile prefixed with 'local-'. To
 $ earthly doc
 ```
 
-## How tos
+## How-To Guides
 
 ### Rebuilding preprod/prod genesis
 
@@ -85,16 +97,16 @@ If you want to regenerate the genesis seeds, run:
 $ earthly +generate-testnet-02-genesis-seeds
 ```
 
-### How to use transaction generator
+### How to use transaction generator in the midnight toolkit
 
-See this [document](util/generator2/README.md)
+See this [document](util/toolkit/README.md)
 
 ### Build Docker images
 
 These are built in CI. See the workflow files for the latest `earthly` commands:
 
-- [node](.github/workflows/build-publish-image.yml)
-- [generator](.github/workflows/build-publish-image-generator.yml)
+- [node](.github/workflows/continuous-integration.yml)
+- [generator](.github/workflows/continuous-integration.yml)
 
 ### Start bootstrapped local network
 
@@ -113,13 +125,7 @@ CFG_PRESET=dev SEED=//Ferdie ./target/release/midnight-node --base-path /tmp/nod
 
 ```shell
 earthly +build
-cp ./artifacts/amd64/midnight-node-runtime/midnight_node_runtime.compact.wasm .
-```
-
-### How do run dev node in Docker
-
-```shell
-docker-compose up
+cp ./artifacts-amd64/midnight-node-runtime/target/wasm32-unknown-unknown/release/midnight_node_runtime.wasm  .
 ```
 
 ### How to generate node public keys
@@ -138,5 +144,5 @@ See the `--help` flag for more information on other arguments, including key sch
       Rust `enum`s for easy pasting into chain spec files, in the order: `(aura, grandpa, cross_chain)`
 
 ```shell
-./scripts/keys.sh {number of authority keys to generate}
+python ./scripts/generate-keys.py --help
 ```

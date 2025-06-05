@@ -1,24 +1,14 @@
 # Substrate Front End Template
 
-This template allows you to create a front-end application that connects to a
-[Substrate](https://github.com/paritytech/substrate) node back-end with minimal
-configuration. To learn about Substrate itself, visit the
-[Substrate Documentation](https://docs.substrate.io).
+This is a barebones UI that can be used to interact with the midnight blockchain.
+It is based off the now archived [Substrate front end template](https://github.com/jimmychu0807/substrate-front-end-template).
 
-The template is built with [Create React App](https://github.com/facebook/create-react-app)
-and [Polkadot js API](https://polkadot.js.org/docs/api/). Familiarity with these tools
-will be helpful, but the template strives to be self-explanatory.
-
-## Using The Template
 
 ### Installation
 
-The codebase is installed using [git](https://git-scm.com/) and [yarn](https://yarnpkg.com/). This tutorial assumes you have installed yarn globally prior to installing it within the subdirectories. For the most recent version and how to install yarn, please refer to [Yarn](https://yarnpkg.com/) documentation and installation guides.
+The codebase is installed using [yarn](https://yarnpkg.com/). It's assumed you have installed yarn globally prior to installing it within the subdirectories. For the most recent version and how to install yarn, please refer to [Yarn](https://yarnpkg.com/) documentation and installation guides.
 
 ```bash
-# Clone the repository
-git clone https://github.com/substrate-developer-hub/substrate-front-end-template.git
-cd substrate-front-end-template
 yarn install
 ```
 
@@ -37,18 +27,6 @@ yarn build
 ```
 
 and open `build/index.html` in your favorite browser.
-
-### Try the Hosted Version
-
-Connecting to Polkadot:<br/>
-https://substrate-developer-hub.github.io/substrate-front-end-template?rpc=wss://rpc.polkadot.io
-
-Connecting to your local Substrate node (Chrome and Firefox only):<br/>
-https://substrate-developer-hub.github.io/substrate-front-end-template?rpc=ws://localhost:9944
-
-Connecting to the development Substrate node `wss://dev-node.substrate.dev`:<br/>
-https://substrate-developer-hub.github.io/substrate-front-end-template
-
 
 ## Configuration
 
@@ -116,7 +94,7 @@ If you are only interested in reading the `state`, there is a shorthand `useSubs
 ### TxButton Component
 
 The [TxButton](./src/substrate-lib/components/TxButton.js) handles basic [query](https://polkadot.js.org/docs/api/start/api.query) and [transaction](https://polkadot.js.org/docs/api/start/api.tx) requests to the connected node.
-You can reuse this component for a wide variety of queries and transactions. See [src/Transfer.js](./src/Transfer.js) for a transaction example and [src/Balances.js](./src/ChainState.js) for a query example.
+You can reuse this component for a wide variety of queries and transactions. See [src/Transfer.js](./src/Transfer.js) for a transaction example.
 
 ### Account Selector
 

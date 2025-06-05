@@ -2,8 +2,6 @@
 
 This stack is designed to run a 5 x node local environment for a Midnight chain. The environment is designed to be a self-contained, local development environment for testing and development of the Midnight Node and the Cardano main chain.
 
-![alt text](pc-local-env.png)
-
 The local environment includes:
 
 - 5 x Midnight Nodes

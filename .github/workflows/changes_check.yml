@@ -46,3 +46,13 @@ jobs:
           FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
           echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
           if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" $FILENAME; fi
+
+      - name: Download Lychee binary
+        run: |
+          curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-lib-v0.18.1/lychee-x86_64-unknown-linux-gnu.tar.gz -o lychee.tar.gz
+          tar -xzf lychee.tar.gz
+          chmod +x lychee
+          mv lychee /usr/local/bin
+
+      - name: Run lychee link checker
+        run: lychee . --exclude-path ./ui/public/index.html --exclude-path ./changes/index.md --exclude '^https://github\.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check'

@@ -15,9 +15,9 @@
 
 #!/bin/bash
 
-NODE_POD_NAME=${POD_NAME:-cardano-node-01-0}
-DBSYNC_POD_NAME=${POD_NAME:-cardano-node-01-postgresql-0}
-NAMESPACE=${NAMESPACE:-testnet}
+NODE_POD_NAME=${POD_NAME:-db-sync-cardano-node-01-0}
+DBSYNC_POD_NAME=${POD_NAME:-db-sync-cardano-01-0 }
+NAMESPACE=${NAMESPACE:-qanet-spo-01}
 NODE_HOST=${NODE_HOST:-localhost}
 # Set AS_INIT to exit after running
 AS_INIT=${AS_INIT:-}

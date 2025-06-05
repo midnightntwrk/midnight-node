@@ -47,8 +47,8 @@ configuration can be overridden. This includes:
 - Helm chart templates
 
     We have templates for our helm charts in a separate repository. The values
-    exposed in these templates [do not always match the names of the environment 
-    variables they're setting.](https://github.com/midnight-ntwrk/midnight-charts/blob/9e1b189a1f60b791a90d9f79050c98598d8de51a/charts/product/midnight-node/templates/statefulset.yaml#L77)
+    exposed in these templates do not always match the names of the environment 
+    variables they're setting.
 
 The result of this is uncertainty on how and where values are set, and a need
 to be incredibly vigilant when updating a configuration value. You need to

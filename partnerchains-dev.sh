@@ -44,9 +44,9 @@ else
     earthly +partnerchains-dev
 fi
 
-NODE_POD_NAME=${POD_NAME:-cardano-node-01-0}
-DBSYNC_POD_NAME=${POD_NAME:-cardano-node-01-postgresql-0}
-NAMESPACE=${NAMESPACE:-testnet}
+NODE_POD_NAME=${POD_NAME:-db-sync-cardano-node-01-0}
+DBSYNC_POD_NAME=${POD_NAME:-db-sync-cardano-01-0}
+NAMESPACE=${NAMESPACE:-qanet-spo-01}
 
 # Check kubectl is installed
 if ! command -v kubectl &> /dev/null
@@ -55,9 +55,9 @@ then
     exit
 fi
 
-context_name=$(kubectl config get-contexts -o name | grep k0-eks-platform-pp-eu-01)
+context_name=$(kubectl config get-contexts -o name | grep k0-eks-tooling-stg-eu-01)
 if [[ -z "$context_name" ]]; then
-    echo "Error: could not find context matching name \"k0-eks-platform-pp-eu-01\""
+    echo "Error: could not find context matching name \"k0-eks-tooling-stg-eu-01\""
     echo "Check using \"kubectl config get-contexts\""
     exit 1
 fi
