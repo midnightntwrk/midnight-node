@@ -31,7 +31,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Merge Conflict Finder
-        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c  # v4.0
+        uses: olivernybroe/action-conflict-finder@1a949ebd954a9eaee58802229ea5f9c69fb93a50  # v4.1
 
       - name: Run build
         run: |
