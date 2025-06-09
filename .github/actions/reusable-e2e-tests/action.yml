@@ -1,0 +1,49 @@
+name: "Reusable E2E Test"
+description: "Runs a specific E2E test using JUST and GHCR images"
+inputs:
+  just-command:
+    description: "The JUST command to run"
+    required: true
+  node-image:
+    description: "The full node image name (with tag)"
+    required: true
+  upgrader-image:
+    description: "Optional: the upgrader image (if needed)"
+    required: false
+  generator-image:
+    description: "Optional: the generator image (if needed)"
+    required: false
+  ghcr-password:
+    description: "Password for Docker login to GHCR"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Install JUST
+      run: curl -sL https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+      shell: bash
+
+    - name: Docker Login
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: MidnightCI
+        password: ${{ inputs.ghcr-password }}
+
+    - name: Run JUST command
+      run: |
+        echo "🧪 Running E2E command: ${{ inputs.just-command }}"
+        echo "NODE_IMAGE=${{ inputs.node-image }}"
+        [[ -n "${{ inputs.upgrader-image }}" ]] && echo "UPGRADER_IMAGE=${{ inputs.upgrader-image }}"
+        [[ -n "${{ inputs.generator-image }}" ]] && echo "GENERATOR_IMAGE=${{ inputs.generator-image }}"
+
+        if [[ "${{ inputs.just-command }}" == "node-e2e" || "${{ inputs.just-command }}" == "startup-dev-e2e" ]]; then
+          just ${{ inputs.just-command }} "${{ inputs.node-image }}"
+        elif [[ "${{ inputs.just-command }}" == "tx-generator-e2e" || "${{ inputs.just-command }}" == "genesis-wallets-undeployed-e2e" ]]; then
+          just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.generator-image }}"
+        else
+          just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+        fi
+      shell: bash

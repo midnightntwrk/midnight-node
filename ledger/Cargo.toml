@@ -1,0 +1,103 @@
+[package]
+name = "midnight-node-ledger"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mn-ledger = { workspace = true, features = ["proving"], optional = true }
+base-crypto = { workspace = true, optional = true }
+coin-structure = { workspace = true, optional = true }
+onchain-runtime = { workspace = true, optional = true }
+midnight-serialize = { workspace = true, optional = true }
+ledger-storage = { workspace = true, optional = true }
+transient-crypto = { workspace = true, optional = true }
+zswap = { workspace = true, optional = true }
+
+mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
+base-crypto-hf = { workspace = true, optional = true }
+coin-structure-hf = { workspace = true, optional = true }
+onchain-runtime-hf = { workspace = true, optional = true }
+midnight-serialize-hf = { workspace = true, optional = true }
+ledger-storage-hf = { workspace = true, optional = true }
+transient-crypto-hf = { workspace = true, optional = true }
+zswap-hf = { workspace = true, optional = true }
+
+sp-runtime-interface.workspace = true
+sp-runtime.workspace = true
+sp-std.workspace = true
+sp-externalities.workspace = true
+parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
+scale-info.workspace = true
+scale-info-derive.workspace = true
+frame-support = { workspace = true, default-features = false }
+midnight-primitives-ledger = { workspace = true, optional = true }
+derive-where = { version = "1.2.7", optional = true }
+
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+lazy_static = { workspace = true, optional = true }
+moka = { version = "0.11.3", optional = true }
+num_enum = { version = "0.7.2", default-features = false }
+thiserror = { version = "1.0.56", optional = true }
+lru = { version = "0.12.3", optional = true }
+cfg-if = { version = "1.0.0" }
+toml = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+rusqlite = { version = "0.30.0", features = ["bundled"], optional = true }
+rand = { workspace = true, optional = true }
+
+[dev-dependencies]
+midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
+env_logger.workspace = true
+
+[features]
+default = [
+    "std",
+    "tx-validation-cache"
+]
+std = [
+    "sp-runtime-interface/std",
+    "sp-runtime/std",
+    "sp-std/std",
+    "sp-externalities/std",
+    "midnight-primitives-ledger/std",
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "frame-support/std",
+    "serde/std",
+    "frame-support/std",
+    "serde_json",
+    "hex",
+    "log",
+    "lazy_static",
+    "moka",
+    "mn-ledger",
+    "base-crypto",
+    "coin-structure",
+    "onchain-runtime",
+    "midnight-serialize",
+    "ledger-storage",
+    "transient-crypto",
+    "zswap",
+    "mn-ledger-hf",
+    "base-crypto-hf",
+    "coin-structure-hf",
+    "onchain-runtime-hf",
+    "midnight-serialize-hf",
+    "ledger-storage-hf",
+    "transient-crypto-hf",
+    "zswap-hf",
+    "sha2",
+    "thiserror",
+    "lru",
+    "toml",
+    "tokio",
+    "derive-where",
+    "rusqlite",
+    "rand"
+]
+tx-validation-cache = []
+runtime-benchmarks = []

@@ -1,0 +1,71 @@
+[package]
+name = "midnight-primitives-mainchain-follower"
+version = "0.1.0"
+edition = "2024"
+description = "Extensions to Partnerchains mainchain follower"
+
+[dependencies]
+hex-literal = { workspace = true, default-features = false }
+hex = { workspace = true, default-features = false }
+scale-info = { workspace = true, features = ["derive"] }
+sp-std.workspace = true
+parity-scale-codec.workspace = true
+midnight-primitives-upgrade.workspace = true
+midnight-primitives-native-token-management.workspace = true
+midnight-node-ledger.workspace = true
+async-trait = { workspace = true, optional = true }
+sidechain-domain.workspace = true
+sidechain-mc-hash = { workspace = true, optional = true }
+sp-native-token-management = { workspace = true, optional = true }
+sp-api.workspace = true
+sp-blockchain = { workspace = true, optional = true }
+sp-runtime.workspace = true
+sp-inherents.workspace = true
+thiserror = { workspace = true, optional = true }
+cardano-serialization-lib = { workspace = true, optional = true }
+log.workspace = true
+sqlx = { version = "0.7.4",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
+num-traits = { workspace = true , optional = true }
+num-bigint = { workspace = true , optional = true }
+futures = { workspace = true , optional = true }
+derive-new.workspace = true
+db-sync-follower = { default-features = false, workspace = true, optional = true  }
+chrono = "0.4.31"
+figment = { workspace = true , optional = true }
+serde = { workspace = true , optional = true }
+itertools.workspace = true
+secrecy = { workspace = true, features = ["serde"], optional = true }
+
+[dev-dependencies]
+tokio-test.workspace = true
+tokio = { workspace = true, features = ["full"]}
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-std/std",
+    "midnight-primitives-upgrade/std",
+    "midnight-node-ledger/std",
+    "sp-native-token-management/std",
+    "sp-runtime/std",
+    "sidechain-domain/std",
+    "async-trait",
+    "sp-inherents/std",
+    "sidechain-mc-hash",
+    "sp-api/std",
+    "sp-blockchain",
+    "thiserror",
+    "cardano-serialization-lib",
+    "sqlx",
+    "log/std",
+    "num-traits",
+    "num-bigint",
+    "figment",
+    "serde",
+    "db-sync-follower",
+    "futures",
+    "secrecy",
+    "hex/std"
+]

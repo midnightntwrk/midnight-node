@@ -1,0 +1,18 @@
+
+  {
+    "commandUsed": "./midnight-node smart-contracts get-scripts --genesis-utxo b464af601a745d2267ad98d8679929f3bbc01b982b97b4a23e029a58d91caf59#1 --ogmios-url https://ogmios.preview.midnight.network:443",
+    "addresses": {
+      "CommitteeCandidateValidator": "addr_test1wqf950zzrracjwy6wjzchc44wkksm8z0wex0hvlzfywz0gs0wj7g5",
+      "DParameterValidator": "addr_test1wrhalrghwm6fr8h32vxvduu89jtn7vy4ae7x4qqvytcujfgxjl0rn",
+      "IlliquidCirculationSupplyValidator": "addr_test1wz6y98kgnh9ae52x7n5y9hkrnr3xdzaclfm8fk5x4c8c46g9s3uj6",
+      "PermissionedCandidatesValidator": "addr_test1wpggsfn5dchwxwykrpm0qf5vxrdwhlafs6r5fqkez2qfwhcwu8t83",
+      "ReserveValidator": "addr_test1wzny8flys8v4n2z9jwyvkrvfzu89ycsez3d82dh6z0u9m7stmrmxw",
+      "VersionOracleValidator": "addr_test1wz47yfxp5l9ae7kfuwkypue9a5ne83sp4cmfta7p69vj53sajrdj8"
+    },
+    "policyIds": {
+      "DParameter": "0xe7998dc15e9c8fcf60b3fec24db6003aec77de08505593d8200fa997",
+      "PermissionedCandidates": "0x151142b7d9d6b8831292f99097d1fb3ac01fafaf7959131060772a4d",
+      "ReserveAuth": "0x87e735a4b3adb6f8f942dc7d66b1fee1e18fd7e369d3077b59ff1af8",
+      "VersionOracle": "0x25c0c5dcba99ed6fe3ce105b4e6ca6ec903b5c8363c38a89f9a41580"
+    }
+  }

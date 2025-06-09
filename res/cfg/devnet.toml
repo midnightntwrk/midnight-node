@@ -1,0 +1,6 @@
+addresses_json = "res/devnet/addresses.json"
+chain = "res/devnet/chain-spec-raw.json"
+base_path = "node/chain"
+
+# NEW Partner-chains dev chain-spec parameters AFTER v1.4.0
+genesis_utxo = "b464af601a745d2267ad98d8679929f3bbc01b982b97b4a23e029a58d91caf59#1"

@@ -1,0 +1,48 @@
+{
+    "commandUsed": "nix run 'github:input-output-hk/partner-chains-smart-contracts/38f4c17e0f4052d885c9d438f7fb8ad0b2e7b25e?.#sidechain-main-cli' -- addresses --genesis-committee-hash-utxo 'c69406ebe660371bdf8fcddd57330557cf761df1a6bc2aa9e5a95578a61f7b50#0' --sidechain-id 0 --threshold-numerator 2 --threshold-denominator 3 --governance-authority 658704794f35a9d0b7f1143eb2fda0d61ca586ca881c57264a0498b0 --payment-signing-key-file /home/yevhen-starynets/repos/iohk/sidechains-tests/secrets/midnight/topaz/keys/midnight-dev.skey --atms-kind plain-ecdsa-secp256k1 --version 1 --network testnet",
+      "endpoint": "GetAddrs",
+      "addresses": {
+        "CommitteeCandidateValidator": "addr_test1wqgdltkw2egyzv7q65j285dmvqcs3223qw9fp4q3y79jnvsefxzwg",
+        "DsConfValidator": "addr_test1wrcl30rt6mn878krvyx0ltpe5zgfph9nuuglvn5vujynlqq90skzv",
+        "DsInsertValidator": "addr_test1wq8ftprhxme2fhz9qw2aktrfevarm7snkpvxagn7300xawgl49rr9",
+        "VersionOracleValidator": "addr_test1wzel09yrde58n0hdpc7s98rc2eq56wkc6a7xnwvaljcd0us6smd7y",
+        "PermissionedCandidatesValidator": "addr_test1wpj9e3suscmhydw2m6s8kspsrphfgtq9xa38xxjuqvxkc8qelvfwj",
+        "DParameterValidator": "addr_test1wq0qf5dw7xhn8ud72m6cuurlwxq6qxwn7s629kusfdql8jqr0phgy",
+        "CommitteeHashValidator": "addr_test1wpterk4fgfpldyhacghx6ajmly9dygm0uqkheeh4dvlmdtc4gwxvt",
+        "CheckpointValidator": "addr_test1wrjwgat8qcamh6hgvnpyn67hdtfhvqn50q3kl754y7mjclsjpjdmk",
+        "MerkleRootTokenValidator": "addr_test1wz9gexzy4x6x4jk74y2j76mmk2qaxxj2u0rtyn2wtq74wzcsxec67",
+        "ReserveValidator": "addr_test1wrgjns9z0cyp7kyeysdnd264p5s3hm8mjulme6j6kd02upqg8duh6",
+        "IlliquidCirculationSupplyValidator": "addr_test1wz7grd4yau0mwjw5a7ayul5sqhwxwmntvh3yzukvk273zrqld8yzy"
+      },
+      "validatorHashes": {
+        "CommitteeCandidateValidator": "10dfaece56504133c0d524a3d1bb603108a951038a90d411278b29b2",
+        "DsConfValidator": "f1f8bc6bd6e67f1ec3610cffac39a09090dcb3e711f64e8ce4893f80",
+        "DsInsertValidator": "0e95847736f2a4dc450395db2c69cb3a3dfa13b0586ea27e8bde6eb9",
+        "VersionOracleValidator": "b3f794836e6879beed0e3d029c7856414d3ad8d77c69b99dfcb0d7f2",
+        "PermissionedCandidatesValidator": "645cc61c86377235cadea07b4030186e942c053762731a5c030d6c1c",
+        "DParameterValidator": "1e04d1aef1af33f1be56f58e707f7181a019d3f434a2db904b41f3c8",
+        "CommitteeHashValidator": "5791daa94243f692fdc22e6d765bf90ad2236fe02d7ce6f56b3fb6af",
+        "CheckpointValidator": "e4e47567063bbbeae864c249ebd76ad376027478236ffa9527b72c7e",
+        "MerkleRootTokenValidator": "8a8c9844a9b46acadea9152f6b7bb281d31a4ae3c6b24d4e583d570b",
+        "ReserveValidator": "d129c0a27e081f5899241b36ab550d211becfb973fbcea5ab35eae04",
+        "IlliquidCirculationSupplyValidator": "bc81b6a4ef1fb749d4efba4e7e9005dc676e6b65e24172ccb2bd110c"
+      },
+      "mintingPolicies": {
+        "DsConfPolicy": "e5cc21f58fcad42ca4597fcdb3b77035252c920700a11d952f999126",
+        "CheckpointPolicy": "36b7ceeccf73bad1ac7d249f02ea7869e7af6f85f7f79639008bad1c",
+        "FUELProxyPolicy": "e3cd19a1306b339841f8661a41eb50f020c31a80c296c7e602a4fa80",
+        "VersionOraclePolicy": "6062af4f55235d2f4e880d7fd5c08f2fade442da4dab85f24511a769",
+        "PermissionedCandidatesPolicy": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5",
+        "DParameterPolicy": "f61808fc43f0c4bad6b7aff7e92d09e9ced29ff8c41b449e9e103235",
+        "InitTokenPolicy": "b2f1a48f20f139ecd802e28bb276c05d0644af123941352e2108cf6f",
+        "CommitteeCertificateVerificationPolicy": "68dd9f5963ae7a63eec8baea2c38e39e1d10300e5ca947b17dde8c75",
+        "CommitteeOraclePolicy": "a1e25e819ee882a988ef2f1a32efd3e759c66188fc49813ec9727de3",
+        "FUELMintingPolicy": "965b98d6994708ec4b00d581f3f96b9e6af98105d7d6a9793c34054a",
+        "FUELBurningPolicy": "2259e47368458b85a0f46523f98c10558de6821e26a4f8a8e2ce18ef",
+        "DsKeyPolicy": "04841e2a124a685879e4e7afa0f52a85f84a60ff009a90eb707ef917",
+        "MerkleRootTokenPolicy": "e0b692111924c4c9f4f44573b174ac756afb7bf1ff270cf82bdebc7b",
+        "ReserveAuthPolicy": "c7f4aebf7409c8c8c55ada4fcfdf337fdb450bcd08db28a6cfb2836e",
+        "GovernancePolicy": "fab2a08a222c85a77d58a28b8c688dddbbb0eff18a8afe3a90ada79d",
+        "CommitteePlainEcdsaSecp256k1ATMSPolicy": "68dd9f5963ae7a63eec8baea2c38e39e1d10300e5ca947b17dde8c75"
+      }
+}

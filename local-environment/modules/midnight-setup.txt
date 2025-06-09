@@ -1,0 +1,22 @@
+
+  midnight-setup:
+    container_name: midnight-setup
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    user: "0:0"
+    volumes:
+      - shared-volume:/shared
+      - cardano-node-1-data:/data
+      - ./configurations/genesis/shelley/genesis-utxo.skey:/shared/shelley/genesis-utxo.skey
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/cardano/keys/owner-utxo.skey:/keys/owner-utxo.skey
+      - ./configurations/cardano/keys/owner-utxo.vkey:/keys/owner-utxo.vkey
+      - ./configurations/cardano/keys/owner-stake.skey:/keys/owner-stake.skey
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ./configurations/midnight-setup/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/:/midnight-nodes/
+    environment:
+      - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]

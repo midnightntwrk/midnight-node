@@ -1,0 +1,35 @@
+name: Check PR
+
+on:
+  pull_request:
+    branches: ['**']
+
+jobs:
+  run:
+    name: Check PR job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+
+      - name: Check if node image tag was incremented
+        run: |
+          export NODE_CRATE_VERSION=$(cat ./node/Cargo.toml | grep version | head -1 | awk -F'"' '{print $2}')
+          echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> $GITHUB_ENV
+          export GHCR_TOKEN=$(echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | base64)
+          export TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
+
+          # Check list of tags to see if any existing tags have the node crate version
+          if $(echo $TAGS_RESPONSE | jq --arg node_crate_version "$NODE_CRATE_VERSION"  '.tags | contains([$node_crate_version])'); then
+              echo "VERSION_EXISTS=true"
+          else
+              echo "VERSION_EXISTS=false"
+          fi
+
+      - name: Comment On PR with Node Version Bump Reminder
+        if: env.VERSION_EXISTS == 'true'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        id: bump-node-version
+        with:
+          message: |
+            :warning: Node version ${{ env.NODE_CRATE_VERSION }} already exists. Node Version may need to be bumped if you wish to release node functionality.

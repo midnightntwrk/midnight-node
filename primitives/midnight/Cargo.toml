@@ -1,0 +1,45 @@
+[package]
+name = "midnight-primitives"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight primitives"
+
+[dependencies]
+hex-literal = { workspace = true, default-features = false }
+scale-info = { workspace = true, features = ["derive"] }
+sp-std.workspace = true
+parity-scale-codec.workspace = true
+midnight-primitives-upgrade.workspace = true
+midnight-node-ledger.workspace = true
+async-trait = { workspace = true, optional = true }
+sidechain-domain.workspace = true
+sidechain-mc-hash = { workspace = true, optional = true }
+sp-native-token-management = { workspace = true, optional = true }
+sp-api.workspace = true
+sp-blockchain = { workspace = true, optional = true }
+sp-runtime.workspace = true
+sp-inherents.workspace = true
+thiserror = { workspace = true, optional = true }
+cardano-serialization-lib = { workspace = true, optional = true }
+log.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-std/std",
+    "midnight-primitives-upgrade/std",
+    "midnight-node-ledger/std",
+    "sp-native-token-management/std",
+    "sp-runtime/std",
+    "sidechain-domain/std",
+    "async-trait",
+    "sp-inherents/std",
+    "sidechain-mc-hash",
+    "sp-api/std",
+    "sp-blockchain",
+    "thiserror",
+    "cardano-serialization-lib",
+    "log/std",
+]

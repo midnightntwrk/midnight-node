@@ -1,0 +1,46 @@
+[package]
+name = "mn-node-toolkit"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "mn-node-toolkit"
+path = "src/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+hardfork-test = []
+hardfork-test-rollback = []
+erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+
+[dependencies]
+midnight-node-ledger-helpers.workspace = true
+pallet-midnight-rpc = { workspace = true, default-features = true }
+midnight-node-res.workspace = true
+subxt.workspace = true
+subxt-signer.workspace = true
+tokio.workspace = true
+hex = "0.4.3"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+thiserror.workspace = true
+borsh = { version = "1.5.0", features = ["derive"] }
+clap = { workspace = true, features = ["env", "derive"] }
+futures.workspace = true
+indicatif = "0.17.8"
+console = "0.15.8"
+bincode = "1.3.3"
+backoff = { version = "0.4.0", features = ["tokio"] }
+bech32 = "0.11.0"
+log = { workspace = true, features = ["kv"] }
+structured-logger = "1.0.3"
+async-trait = "0.1.87"
+hex-literal.workspace = true
+reqwest = "0.11.27"
+itertools.workspace = true
+
+[lints]
+workspace = true

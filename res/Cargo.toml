@@ -1,0 +1,43 @@
+[package]
+name = "midnight-node-res"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["std"]
+chain-spec = ["std", "sp-core/std", "sc-service"]
+test = []
+std = []
+runtime-benchmarks = []
+
+[dependencies]
+hex.workspace = true
+midnight-serialize.workspace = true
+hex-literal.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sp-core = { workspace = true, optional = true }
+sc-service = { workspace = true, optional = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+subxt.workspace = true
+
+[dev-dependencies]
+mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
+ledger-storage.workspace = true
+base-crypto.workspace = true
+midnight-serialize.workspace = true
+transient-crypto.workspace = true
+serde_json.workspace = true
+pretty_assertions.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[build-dependencies]
+walkdir = "2"
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+[package]
+name = "documented"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+documented_proc_macro = { path = "./documented_proc_macro" }
+documented_types = { path = "./documented_types" }

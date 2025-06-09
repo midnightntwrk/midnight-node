@@ -1,0 +1,17 @@
+{
+  "commandUsed": "../../target/release/midnight-node smart-contracts get-scripts --genesis-utxo 46876a2250ec0e523eccc30b0fc6d6fa55c61dd200b83140acaab291edeb0b11#0 > addresses.json",
+  "addresses": {
+    "CommitteeCandidateValidator": "addr_test1wrdcz9xr2qmywev3rhegnyt0jvud45l2xk2lpkt29wwch2g9vngtm",
+    "DParameterValidator": "addr_test1wpgydkg7w3wsk77m849rlwfejayv30q4ehf4lagxju5f8dgsnxj7z",
+    "IlliquidCirculationSupplyValidator": "addr_test1wq8pepl8k3u0qu073v09fxhlueh8u3c7g42s7r5nfsm5lqqpgghck",
+    "PermissionedCandidatesValidator": "addr_test1wrlwmhqjs85hrdtl8y5039h7dcp9cxufdweuf4gjv62rflghkqywm",
+    "ReserveValidator": "addr_test1wz2rdsmq88n6669ncd2mfvmrs54d6fstudys2505my5ufacfnlwae",
+    "VersionOracleValidator": "addr_test1wqxryv5p78hqyjxjfvuwtkp8vggxshq7yj3w94r90ka9d7q6wxc2m"
+  },
+  "policyIds": {
+    "DParameter": "0x83424b65e444e98e9659f68484ed4c5a97f7cbe1936a8b301fc1b6dd",
+    "PermissionedCandidates": "0x2f459d50b96ac59957d20b36ae967cda64a2174e37c5cdac93af597c",
+    "ReserveAuth": "0xb166e2aef6efd4a9878df0106c48cf202e934ccc32956c56f47abaea",
+    "VersionOracle": "0x85c14f5cf95ee996c8888e029356a76d72db1459300525c9282567d3"
+  }
+}

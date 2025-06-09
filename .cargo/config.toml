@@ -1,0 +1,8 @@
+[net]
+git-fetch-with-cli = true
+
+[registries.crates-io]
+protocol = "sparse"
+  
+[profile.release]
+debug = true

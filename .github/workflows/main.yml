@@ -1,0 +1,215 @@
+name: Main - Generator and Node build/publish
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "The branch to build and deploy"
+        required: true
+        default: "main"
+
+jobs:
+  publish-amd64:
+    name: AMD Build and Publish
+    runs-on: ubuntu-latest-16-core-x64
+    outputs:
+      IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
+      GENERATOR_IMAGE_TAG: ${{ steps.export.outputs.GENERATOR_IMAGE_TAG }}
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+
+      - name: Checkout node repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Checkout Season action repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          repository: midnight-ntwrk/season-action
+          ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
+          path: season-action
+          token: ${{ secrets.MIDNIGHTCI_REPO }}
+
+      - name: Setup Season
+        uses: ./season-action
+        with:
+          ghcr_registry: ghcr.io/midnight-ntwrk
+          ghcr_username: MidnightCI
+          ghcr_password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          suffix: ${{ github.event.inputs.suffix }}
+          tag_name: node
+          image_name: midnight-node
+          cargo_toml_path: node/Cargo.toml
+          changes_archive_dir: .changes_archive
+
+      - name: Run build
+        id: export
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --push +node-image
+          . ./.envrc && earthly -P --ci --push +generator-image
+          . ./.envrc && earthly +rebuild-genesis
+
+          # Pass IMAGE_TAG to next step (must match definition in Earthfile):
+          export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          export GENERATOR_IMAGE_TAG="$(git rev-parse --short=8 HEAD)"
+          printf "GENERATOR_IMAGE_TAG=%s\n" "${GENERATOR_IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create or Update Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+        run: |
+          # Build release notes
+          export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_COMMIT"
+          export SEASON_VAR_GENERATOR_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-generator:$SEASON_SHORT_COMMIT"
+          export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
+          season-build-release-notes
+
+          if [ "$BRANCH" != "main" ]; then
+            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation..."
+            exit 0
+          fi
+
+          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
+          IMAGE_TAG_RELEASE="$VERSION"
+          RELEASE_TITLE="[Unreleased]"
+
+          if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
+            echo "Release has already been published, skipping draft..."
+            exit 0
+          fi
+
+          if gh release view "$RELEASE_TITLE"; then
+            echo "Release already exists, modifying..."
+            EDIT_OR_CREATE="edit"
+          else
+            echo "Creating release..."
+            EDIT_OR_CREATE="create"
+          fi
+
+          gh release $EDIT_OR_CREATE "$RELEASE_TITLE" \
+            --title "$RELEASE_TITLE" \
+            --draft \
+            --notes-file RELEASE_NOTES.md
+
+      - name: Archive release notes
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: success() || failure()
+        with:
+          name: Wasm Runtime and binaries
+          path: artifacts-amd64/
+
+  publish-arm64:
+    name: ARM Build and Publish
+    runs-on: ubuntu-latest-8-core-arm64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+
+      - name: Checkout node repository
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Run build
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --push +node-image
+          . ./.envrc && earthly -P --ci --push +generator-image
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: success() || failure()
+        with:
+          name: Wasm Runtime and binaries
+          path: artifacts-arm64/
+
+  publish-multi-arch:
+    name: Publish multi-arch image
+    runs-on: ubuntu-latest
+    needs: [publish-amd64, publish-arm64]
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Create and push Docker manifest
+        run: |
+          echo "Tag from amd64: '${{ needs.publish-amd64.outputs.IMAGE_TAG }}'"
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+          export GENERATOR_IMAGE_TAG="${{ needs.publish-amd64.outputs.GENERATOR_IMAGE_TAG }}"
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-generator:latest \
+            ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG}-arm64
+
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-generator:${GENERATOR_IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-generator:latest
