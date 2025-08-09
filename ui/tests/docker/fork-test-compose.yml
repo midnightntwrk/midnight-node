@@ -1,0 +1,203 @@
+version: '3.4'
+
+volumes:
+  boot-node-data:
+  node-data-0:
+  node-data-1:
+  node-data-2:
+  node-data-3:
+  node-data-4:
+  node-data-5:
+  node-data-6:
+  boot-node-secrets:
+  node-0-secrets:
+  node-1-secrets:
+  node-2-secrets:
+  node-3-secrets:
+  node-4-secrets:
+  node-5-secrets:
+  node-6-secrets:
+
+x-common-variables: &common-variables
+  ADDRESSES: "/res/qanet/addresses.json"
+  USE_MAIN_CHAIN_FOLLOWER_MOCK: true
+  MOCK_REGISTRATIONS_FILE: "/res/mock-bridge-data/default-registrations.json"
+  NODE_KEY_FILE: "/secrets/node_key.secret"
+  BASE_PATH: "/data"
+  CHAIN: "res/qanet/chain-spec-raw.json"
+
+x-validator-variables: &validator-variables
+  AURA_SEED_FILE: "/secrets/aura_seed.secret"
+  GRANDPA_SEED_FILE: "/secrets/grandpa_seed.secret"
+  CROSS_CHAIN_SEED_FILE: "/secrets/cross_chain_seed.secret"
+
+services:
+  boot-node:
+    image: "${NODE_IMAGE}"
+    volumes:
+      - boot-node-data:/data
+      - boot-node-secrets:/secrets
+    ports:
+      - "${NODE_PORT_WS:-9944}:${NODE_PORT_WS_DOCKER:-9944}"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9944/health" ]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      <<: *common-variables
+      ARGS: >
+        --port 30334 
+        --unsafe-rpc-external 
+
+  node0:
+    image: "${NODE_IMAGE}"
+    ports:
+      - "$((NODE_PORT_WS + 1)):${NODE_PORT_WS_DOCKER:-9944}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-0:/data
+      - node-0-secrets:/secrets
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30335
+
+  node1:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-1:/data
+      - node-1-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 2)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30336
+
+  node2:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-2:/data
+      - node-2-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 3)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30337
+
+  node3:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-3:/data
+      - node-3-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 4)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30338
+
+  node4:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-4:/data
+      - node-4-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 5)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30339
+
+  node5:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-5:/data
+      - node-5-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 6)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30340
+
+  node6:
+    image: "${NODE_IMAGE}"
+    depends_on:
+      - generate-secrets
+    volumes:
+      - node-data-6:/data
+      - node-6-secrets:/secrets
+    ports:
+      - "$((NODE_PORT_WS + 7)):${NODE_PORT_WS_DOCKER:-9944}"
+    environment:
+      <<: [*common-variables, *validator-variables]
+      ARGS: >
+        --validator 
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30341
+
+  # NOTE: Don't do this in production! Secret files should be mounted instead.
+  # https://docs.docker.com/engine/swarm/secrets/#use-secrets-in-compose
+  generate-secrets:
+    image: "debian:bookworm-slim"
+    volumes:
+      - boot-node-secrets:/secrets/boot-node
+      - node-0-secrets:/secrets/node-0
+      - node-1-secrets:/secrets/node-1
+      - node-2-secrets:/secrets/node-2
+      - node-3-secrets:/secrets/node-3
+      - node-4-secrets:/secrets/node-4
+      - node-5-secrets:/secrets/node-5
+      - node-6-secrets:/secrets/node-6
+    command:
+      - bash
+      - -c
+      - |
+        function set_seeds() {
+          echo "$1" | tee /secrets/$2/aura_seed.secret /secrets/$2/grandpa_seed.secret /secrets/$2/cross_chain_seed.secret > /dev/null
+        }
+        function set_key() {
+          echo "$1" | tee /secrets/$2/node_key.secret > /dev/null
+        }
+        set_seeds "//Alice" "node-0"
+        set_seeds "//Bob" "node-1"
+        set_seeds "//Charlie" "node-2"
+        set_seeds "//Dave" "node-3"
+        set_seeds "//Eve" "node-4"
+        set_seeds "//Ferdie" "node-5"
+        set_seeds "//One" "node-6"
+        set_key "1000000000000000000000000000000000000000000000000000000000000001" "boot-node"
+        set_key "0000000000000000000000000000000000000000000000000000000000000001" "node-0"
+        set_key "0000000000000000000000000000000000000000000000000000000000000002" "node-1"
+        set_key "0000000000000000000000000000000000000000000000000000000000000003" "node-2"
+        set_key "0000000000000000000000000000000000000000000000000000000000000004" "node-3"
+        set_key "0000000000000000000000000000000000000000000000000000000000000005" "node-4"
+        set_key "0000000000000000000000000000000000000000000000000000000000000006" "node-5"
+        set_key "0000000000000000000000000000000000000000000000000000000000000007" "node-6"

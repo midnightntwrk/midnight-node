@@ -1,72 +1,148 @@
-# Midnight Template Repository
+[![Nightly Build Status](https://github.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check.yml/badge.svg?branch=main&event=schedule)](https://github.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check.yml?query=branch%3Amain)
 
-This GitHub repository should be used as a template when creating a new Midnight GitHub repository.
-The template is configured with default repository settings and a set of default files that are expected to exist in all Midnight GitHub repositories.
+# Midnight Node
 
-### LICENSE
+This is an implementation of the Midnight blockchain. This node houses the Midnight Ledger, allowing participants of Midnight
+to come to consensus on the public and their private state.
 
-Apache 2.0.
+## Quick Start
 
-### README.md
+If you just want to run midnight-node, the easiest option
+is to `git clone https://github.com/midnightntwrk/midnight-node-docker` and run the docker compose script.
 
-Provides a brief description for users and developers who want to understand the purpose, setup, and usage of the repository.
+## **Note on Open Sourcing Progress**
 
-### SECURITY.md
+While this repository is open source, it depends on some repositories
+that we are still in the process of being release. As such:
 
-Provides a brief description of the Midnight Foundation's security policy and how to properly disclose security issues.
+- It's not possible to compile midnight-node independently.
+- If you raise a PR, the CI will be able to compile it.
+- We're actively working to open-source dependencies in the coming months.
 
-### CONTRIBUTING.md
+## Documentation
 
-Provides guidelines for how people can contribute to the Midnight project.
+[Proposals](docs/proposals)
+[Decisions](docs/decisions)
 
-### CODEOWNERS
+- [Configuration](docs/config.md)
+- [Testing Upgrades](docs/testing-upgrades.md)
+- [Chain Specifications](docs/chain_specs.md)
+- [Rust Installation](docs/rust-setup.md)
+- [Block Weights](docs/weights.md)
 
-Defines repository ownership rules.
+## Prerequisites
 
-### ISSUE_TEMPLATE
+- rustup installed
+- For any docker steps: [Docker](https://docs.docker.com/get-docker/)
+  and [Docker Compose](https://docs.docker.com/compose/install/) (or podman).
+- [Earthly](https://earthly.dev/get-earthly) - containerized build system
+- [Direnv](https://direnv.net/docs/installation.html) - manages environment variables
+- Netrc file with git credentials. See this [reference setup](https://gist.github.com/technoweenie/1072829)
 
-Provides templates for reporting various types of issues, such as: bug report, documentation improvement and feature request.
+## Contributing
 
-### PULL_REQUEST_TEMPLATE
+[Guide lines on contributing](./CONTRIBUTING.md).
 
-Provides a template for a pull request.
+## Development Workflow
 
-### CLA Assistant
+Ensure you're using direnv, or source `.envrc` manually.
+(For RustRover you can use https://plugins.jetbrains.com/plugin/15285-direnv-integration )
 
-The Midnight Foundation appreciates contributions, and like many other open source projects asks contributors to sign a contributor
-License Agreement before accepting contributions. We use CLA assistant (https://github.com/cla-assistant/cla-assistant) to streamline the CLA
-signing process, enabling contributors to sign our CLAs directly within a GitHub pull request.
+Common development commands are kept in the Earthfile prefixed with 'local-'. To see them all, run:
 
-### Dependabot
+```shell
+$ earthly doc
+```
 
-The Midnight Foundation uses GitHub Dependabot feature to keep our projects dependencies up-to-date and address potential security vulnerabilities. 
+## How-To Guides
 
-### Checkmarx
+### Rebuilding preprod/prod genesis
 
-The Midnight Foundation uses Checkmarx for application security (AppSec) to identify and fix security vulnerabilities.
-All repositories are scanned with Checkmarx's suite of tools including: Static Application Security Testing (SAST), Infrastructure as Code (IaC), Software Composition Analysis (SCA), API Security, Container Security and Supply Chain Scans (SCS).
+For `preprod` and `prod` chains, node keys and wallet seeds used in genesis are
+stored as secrets.
 
-### Unito
+It's possible to rebuild the chainspecs for `preprod` and `prod` chains without
+access to the secrets, since the public keys for the initial authority nodes
+are stored in `/res/$NETWORK_NAME/initial-authorities.json`. To rebuild chainspecs without rebuilding the genesis, run:
 
-Facilitates two-way data synchronization, automated workflows and streamline processes between: Jira, GitHub issues and Github project Kanban board. 
+```shell
+$ earthly +rebuild-chainspecs
+```
 
-# TODO - New Repo Owner
+If you need to re-generate the mock file for a `preprod` or `prod` chain, you'll need access to the secrets. These can
+be copied from `AWS` into the `/secrets` directory. For example, for testnet these files would be:
 
-### Software Package Data Exchange (SPDX)
-Include the following Software Package Data Exchange (SPDX) short-form identifier in a comment at the top headers of each source code file.
+```shell
+secrets/testnet-seeds-aws.json
+secrets/testnet-keys-aws.json
+```
 
+The mock file can be regenerated by running:
 
- <I>// This file is part of <B>REPLACE WITH REPO-NAME</B>.<BR>
- // Copyright (C) 2025 Midnight Foundation<BR>
- // SPDX-License-Identifier: Apache-2.0<BR>
- // Licensed under the Apache License, Version 2.0 (the "License");<BR>
- // You may not use this file except in compliance with the License.<BR>
- // You may obtain a copy of the License at<BR>
- //<BR>
- //	http://www.apache.org/licenses/LICENSE-2.0<BR>
- //<BR>
- // Unless required by applicable law or agreed to in writing, software<BR>
- // distributed under the License is distributed on an "AS IS" BASIS,<BR>
- // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.<BR>
- // See the License for the specific language governing permissions and<BR>
- // limitations under the License.</I>
+```shell
+$ earthly +generate-keys
+# Output: /res/testnet/initial-authorities.json and /res/mock-bridge-data/testnet-mock.json
+```
+
+To rebuild the genesis for a preprod environment, copy the keys from `AWS` into the `/secrets` directory and run:
+
+```shell
+# secrets copied from /secrets/testnet-genesis-seeds.json
+$ earthly +rebuild-genesis
+```
+
+If you want to regenerate the genesis seeds, run:
+
+```shell
+$ earthly +generate-testnet-02-genesis-seeds
+```
+
+### How to use transaction generator in the midnight toolkit
+
+See this [document](util/toolkit/README.md)
+
+### Build Docker images
+
+These are built in CI. See the workflow files for the latest `earthly` commands:
+
+- [node](.github/workflows/main.yml)
+- [toolkit](.github/workflows/main.yml)
+
+### Start bootstrapped local network
+
+Start a local network with 5/7 authority node using the existing chain specification `local`
+
+```shell
+CFG_PRESET=dev SEED=//Alice ./target/release/midnight-node --base-path /tmp/node-1 --node-key="0000000000000000000000000000000000000000000000000000000000000001" --validator --port 30333
+CFG_PRESET=dev SEED=//Bob ./target/release/midnight-node --base-path /tmp/node-2 --node-key="0000000000000000000000000000000000000000000000000000000000000002" --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"  --validator --port 30334
+CFG_PRESET=dev SEED=//Charlie ./target/release/midnight-node --base-path /tmp/node-3 --node-key="0000000000000000000000000000000000000000000000000000000000000003" --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" --validator --port 30335
+CFG_PRESET=dev SEED=//Dave ./target/release/midnight-node --base-path /tmp/node-4 --node-key="0000000000000000000000000000000000000000000000000000000000000004" --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" --validator --port 30336
+CFG_PRESET=dev SEED=//Eve ./target/release/midnight-node --base-path /tmp/node-5 --node-key="0000000000000000000000000000000000000000000000000000000000000005" --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" --validator --port 30337
+CFG_PRESET=dev SEED=//Ferdie ./target/release/midnight-node --base-path /tmp/node-6 --node-key="0000000000000000000000000000000000000000000000000000000000000006" --bootnodes "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" --validator --port 30338
+```
+
+### How to build runtime in Docker
+
+```shell
+earthly +build
+cp ./artifacts-amd64/midnight-node-runtime/target/wasm32-unknown-unknown/release/midnight_node_runtime.wasm  .
+```
+
+### How to generate node public keys
+
+- For generating single keys:
+    - Build node and then run:
+
+```shell
+./target/release/midnight-node key generate
+```
+
+See the `--help` flag for more information on other arguments, including key schemes.
+
+- For generating multiple keys for bootstrapping:
+    - Run the following script to generate $n$ number of key triples and seed phrases. The triples are formatted as
+      Rust `enum`s for easy pasting into chain spec files, in the order: `(aura, grandpa, cross_chain)`
+
+```shell
+python ./scripts/generate-keys.py --help
+```

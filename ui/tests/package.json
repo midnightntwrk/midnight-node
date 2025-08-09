@@ -1,0 +1,30 @@
+{
+  "name": "node-e2e-tests",
+  "type": "module",
+  "packageManager": "yarn@3.6.3",
+  "scripts": {
+    "test:node": "cross-env playwright test --project local",
+    "test:node-remote": "cross-env playwright test --project remote",
+    "test:fork": "cross-env playwright test --project fork",
+    "postinstall": "echo removing references to optional GPLv3 packages && rm -rf ./node_modules/@substrate/connect && rm -rf ./node_modules/@substrate/connect-extension-protocol"
+  },
+  "dependencies": {
+    "@polkadot/api": "^10.7.2",
+    "@polkadot/types": "^10.7.2",
+    "@polkadot/ui-keyring": "^3.4.1",
+    "@polkadot/ui-settings": "^3.4.1",
+    "@polkadot/util": "^12.2.1",
+    "@polkadot/util-crypto": "^12.2.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "allure-playwright": "^3.0.8",
+    "cross-env": "^7.0.3",
+    "expect-playwright": "^0.8.0",
+    "testcontainers": "^10.3.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  }
+}

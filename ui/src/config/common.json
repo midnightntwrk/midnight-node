@@ -1,0 +1,129 @@
+{
+  "APP_NAME": "substrate-front-end-template",
+  "CUSTOM_RPC_METHODS": {
+    "midnight": {
+      "jsonContractState": {
+        "description": "Gets contract state by contract address in JSON format",
+        "params": [
+          {
+            "name": "contract_address",
+            "type": "Text"
+          },
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "contractState": {
+        "description": "Gets contract state by contract address in binary format",
+        "params": [
+          {
+            "name": "contract_address",
+            "type": "Text"
+          },
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "jsonBlock": {
+        "description": "Gets formatted block",
+        "params": [
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "decodeEvents": {
+        "description": "Decodes events from SCALE to json",
+        "params": [
+          {
+            "name": "events_hex",
+            "type": "Text"
+          }
+        ],
+        "type": "Text"
+      },
+      "zswapChainState": {
+        "description": "Gets zswap chain state by contract address in binary format",
+        "params": [
+          {
+            "name": "contract_address",
+            "type": "Text"
+          },
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "zswapStateRoot": {
+        "description": "Gets zswap chain state root by block hash in binary format",
+        "params": [
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "apiVersions": {
+        "description": "Returns list of supported API versions",
+        "params": [],
+        "type": "Text"
+      },
+      "ledgerVersion": {
+        "description": "Returns the version of Midnight ledger",
+        "params": [],
+        "type": "Text"
+      }
+    },
+    "sidechain": {
+      "getParams": {
+        "description": "Gets sidechain parameters",
+        "params": [
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "getStatus": {
+        "description": "Gets status for a sidechain",
+        "params": [
+          {
+            "name": "at",
+            "type": "Hash",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      },
+      "getAriadneParameters": {
+        "description": "Gets Ariadne parameters for a sidechain",
+        "params": [
+          {
+            "name": "at",
+            "type": "u64",
+            "isOptional": true
+          }
+        ],
+        "type": "Text"
+      }
+    }
+  }
+}
