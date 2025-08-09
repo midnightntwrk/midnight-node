@@ -1,0 +1,519 @@
+services:
+  cardano-node-1:
+    container_name: cardano-node-1
+    image: ${CARDANO_IMAGE}
+    platform: linux/amd64
+    healthcheck:
+      test: "test -e /data/node.socket"
+      interval: 20s
+      retries: 15
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - cardano-node-1-data:/data
+      - shared-volume:/shared
+      - ./configurations/busybox:/busybox
+      - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
+      - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
+      - ./configurations/cardano/keys/cold.vkey:/keys/cold.vkey
+      - ./configurations/cardano/keys/kes.skey:/keys/kes.skey
+      - ./configurations/cardano/keys/vrf.skey:/keys/vrf.skey
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/cardano/keys/owner-utxo.skey:/keys/owner-utxo.skey
+      - ./configurations/cardano/keys/owner-utxo.vkey:/keys/owner-utxo.vkey
+      - ./configurations/cardano/keys/op.cert:/keys/node.cert
+      - ./configurations/cardano/reward_token_policy.script:/shared/reward_token_policy.script
+      - ./configurations/cardano/v-function.script:/shared/v-function.script
+      - ./configurations/cardano/config-pool1.json:/shared/node-1-config.json.base
+      - ./configurations/db-sync/config.json:/shared/db-sync-config.json.base
+      - ./configurations/genesis/byron/genesis.json:/shared/byron/genesis.json.base
+      - ./configurations/genesis/shelley/genesis.json:/shared/shelley/genesis.json.base
+      - ./configurations/genesis/shelley/genesis.alonzo.json:/shared/shelley/genesis.alonzo.json.base
+      - ./configurations/genesis/shelley/genesis-utxo.addr:/shared/shelley/genesis-utxo.addr
+      - ./configurations/genesis/shelley/genesis-utxo.skey:/shared/shelley/genesis-utxo.skey
+      - ./configurations/genesis/shelley/genesis-utxo.vkey:/shared/shelley/genesis-utxo.vkey
+      - ./configurations/genesis/conway/genesis.conway.json:/shared/conway/genesis.conway.json.base
+      - ./runtime-values:/runtime-values
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "32000:32000"
+  
+  # See: https://store.yaci.xyz/usage/getting-started-out-of-box
+  yaci-store:
+    container_name: yaci-store
+    image: ${YACI_STORE_IMAGE}
+    healthcheck:
+      test: "curl http://localhost:8080/swagger-ui/index.html"
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    volumes:
+      - shared-volume:/shared
+      - ./configurations/yaci-store/config/:/app/config/
+    ports:
+      - 8080:8080
+
+  # See: https://github.com/bloxbean/yaci-devkit/tree/main/applications/viewer
+  yaci-viewer:
+    container_name: yaci-viewer
+    image: ${YACI_VIEWER_IMAGE}
+    depends_on:
+      yaci-store:
+        condition: service_healthy
+    volumes:
+      - shared-volume:/shared
+    environment:
+      - PUBLIC_INDEXER_BASE_URL=http://yaci-store:8080/api/v1
+      - PUBLIC_INDEXER_WS_URL=ws://localhost:8080/ws/liveblocks
+    ports:
+      - 5173:5173
+
+  kupo:
+    container_name: kupo
+    image: ${KUPO_IMAGE}
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    command:
+      - "--host=0.0.0.0"
+      - "--port=${KUPO_PORT}"
+      - "--node-config=/shared/node-1-config.json"
+      - "--node-socket=/node-ipc/node.socket"
+      - "--workdir=/data"
+      - "--match=*"
+      - "--since=origin"
+    volumes:
+      - shared-volume:/shared
+      - kupo-data:/data
+      - cardano-node-1-data:/node-ipc
+      - ./configurations/busybox:/busybox
+    ports:
+      - "${KUPO_PORT}:${KUPO_PORT}"
+
+  ogmios:
+    container_name: ogmios
+    image: ${OGMIOS_IMAGE} 
+    platform: linux/amd64
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    command:
+      - "--host=0.0.0.0"
+      - "--node-config=/shared/node-1-config.json"
+      - "--node-socket=/node-ipc/node.socket"
+    environment:
+      - DATA_DIR=/data
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+      - ogmios-data:/data
+      - cardano-node-1-data:/node-ipc
+      - ./configurations/busybox:/busybox
+    ports:
+      - "${OGMIOS_PORT}:${OGMIOS_PORT}"
+    healthcheck:
+      test: "busybox wget -O - http://localhost:${OGMIOS_PORT}/health"
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_OGMIOS:-}
+          memory: ${MEM_OGMIOS:-}
+
+  db-sync:
+    container_name: db-sync
+    image: ${DBSYNC_IMAGE}
+    platform: linux/amd64
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+      - db-sync-state-dir:/var/lib
+      - cardano-node-1-data:/node-ipc
+      - ./configurations/busybox:/busybox
+      - ./configurations/db-sync/entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    command: >
+      --config /shared/db-sync-config.json
+      --socket-path /node-ipc/node.socket
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=cexplorer
+      - POSTGRES_PASSWORD=${LOCALENV_POSTGRES_PASSWORD}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_DBSYNC:-}
+          memory: ${MEM_DBSYNC:-}
+
+  postgres:
+    container_name: postgres
+    image: ${POSTGRES_IMAGE}
+    platform: ${ARCHITECTURE}
+    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${LOCALENV_POSTGRES_PASSWORD}
+      - PGDATA=/pgdata
+      - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
+      - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_POSTGRES:-}
+          memory: ${MEM_POSTGRES:-}
+
+  chain-indexer:
+    profiles: ["withindexer"]
+    container_name: chain-indexer
+    depends_on:
+      postgres-indexer:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: ${INDEXER_CHAIN_IMAGE}
+    restart: "no"
+    environment:
+      RUST_LOG: "chain_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__NODE__URL: "ws://midnight-node-1:9933"
+      APP__INFRA__STORAGE__HOST: "postgres-indexer"
+      APP__INFRA__STORAGE__PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+      APP__APPLICATION__NETWORK_ID: "DevNet"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
+      start_interval: "5s"
+      start_period: "10s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  wallet-indexer:
+    profiles: ["withindexer"]
+    container_name: wallet-indexer
+    depends_on:
+      postgres-indexer:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: ${INDEXER_WALLET_IMAGE}
+    restart: "no"
+    environment:
+      RUST_LOG: "wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET: "${APP__INFRA__SECRET}"
+      APP__INFRA__STORAGE__HOST: "postgres-indexer"
+      APP__INFRA__STORAGE__PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/wallet-indexer/running"]
+      start_interval: "5s"
+      start_period: "10s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  indexer-api:
+    profiles: ["withindexer"]
+    container_name: indexer-api
+    depends_on:
+      postgres-indexer:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: ${INDEXER_API_IMAGE}
+    restart: "no"
+    ports:
+      - "8088:8088"
+    environment:
+      RUST_LOG: "indexer_api=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET: "${APP__INFRA__SECRET}"
+      APP__INFRA__STORAGE__HOST: "postgres-indexer"
+      APP__INFRA__STORAGE__PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/indexer-api/running"]
+      start_interval: "5s"
+      start_period: "10s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  postgres-indexer:
+    profiles: ["withindexer"]
+    container_name: postgres-indexer
+    image: "postgres:17.1-alpine"
+    restart: "always"
+    volumes:
+      - "./target/data/postgres:/var/lib/postgresql/data"
+    environment:
+      POSTGRES_USER: "indexer"
+      POSTGRES_DB: "indexer"
+      POSTGRES_PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indexer"]
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+    security_opt:
+      - no-new-privileges:true
+
+  nats:
+    profiles: ["withindexer"]
+    container_name: nats
+    image: "nats:2.11.7@sha256:b2678b0413d9acd8d386dd836c4850560e3b32bdb2770eb90c4a85b57362e3c9"
+    restart: "always"
+    command: ["--user", "indexer", "--pass", "${APP__INFRA__PUB_SUB__PASSWORD}", "-js"]
+    ports:
+      - "4222:4222"
+    volumes:
+      - "./target/data/nats:/tmp/nats"
+    security_opt:
+      - no-new-privileges:true
+
+  midnight-node-1:
+    container_name: midnight-node-1
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+      - midnight-node-1-data:/data
+      - ./configurations/midnight-nodes/midnight-node-1/entrypoint.sh:/entrypoint.sh
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000001"
+      CARDANO_SECURITY_PARAMETER: "5"
+      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
+      MC__FIRST_EPOCH_NUMBER: "0"
+      MC__FIRST_SLOT_NUMBER: "0"
+      MC__EPOCH_DURATION_MILLIS: "120000"
+      BLOCK_STABILITY_MARGIN: "0"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "30333:30333"
+      - "9933:9933"
+      - "9615:9615"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  midnight-node-2:
+    container_name: midnight-node-2
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-2-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
+      CARDANO_SECURITY_PARAMETER: "5"
+      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
+      MC__FIRST_EPOCH_NUMBER: "0"
+      MC__FIRST_SLOT_NUMBER: "0"
+      MC__EPOCH_DURATION_MILLIS: "120000"
+      BLOCK_STABILITY_MARGIN: "0"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "30334:30334"
+      - "9934:9934"
+      - "9616:9616"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  midnight-node-3:
+    container_name: midnight-node-3
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-3-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000003"
+      CARDANO_SECURITY_PARAMETER: "5"
+      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
+      MC__FIRST_EPOCH_NUMBER: "0"
+      MC__FIRST_SLOT_NUMBER: "0"
+      MC__EPOCH_DURATION_MILLIS: "120000"
+      BLOCK_STABILITY_MARGIN: "0"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "30335:30335"
+      - "9935:9935"
+      - "9617:9617"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  midnight-node-4:
+    container_name: midnight-node-4
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-4-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-4/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-4/keystore:/keystore
+      - ./configurations/midnight-nodes/midnight-node-4/network:/network
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000004"
+      CARDANO_SECURITY_PARAMETER: "5"
+      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
+      MC__FIRST_EPOCH_NUMBER: "0"
+      MC__FIRST_SLOT_NUMBER: "0"
+      MC__EPOCH_DURATION_MILLIS: "120000"
+      BLOCK_STABILITY_MARGIN: "0"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "30336:30336"
+      - "9936:9936"
+      - "9618:9618"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  midnight-node-5:
+    container_name: midnight-node-5
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-5-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-5/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-5/keystore:/keystore
+      - ./configurations/midnight-nodes/midnight-node-5/network:/network
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000005"
+      CARDANO_SECURITY_PARAMETER: "5"
+      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
+      MC__FIRST_EPOCH_NUMBER: "0"
+      MC__FIRST_SLOT_NUMBER: "0"
+      MC__EPOCH_DURATION_MILLIS: "120000"
+      BLOCK_STABILITY_MARGIN: "0"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "30337:30337"
+      - "9937:9937"
+      - "9619:9619"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  midnight-setup:
+    container_name: midnight-setup
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      ogmios:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    volumes:
+      - shared-volume:/shared
+      - cardano-node-1-data:/data
+      - ./configurations/genesis/shelley/genesis-utxo.skey:/shared/shelley/genesis-utxo.skey
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/cardano/keys/owner-utxo.skey:/keys/owner-utxo.skey
+      - ./configurations/cardano/keys/owner-utxo.vkey:/keys/owner-utxo.vkey
+      - ./configurations/cardano/keys/owner-stake.skey:/keys/owner-stake.skey
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ./configurations/midnight-setup/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/:/midnight-nodes/
+    environment:
+      - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+volumes:
+  cardano-node-1-data: {}
+  shared-volume: {}
+  db-sync-state-dir: {}
+  midnight-node-1-data: {}
+  midnight-node-2-data: {}
+  midnight-node-3-data: {}
+  midnight-node-4-data: {}
+  midnight-node-5-data: {}
+  ogmios-data: {}
+  kupo-data: {}
+  ipc: {}

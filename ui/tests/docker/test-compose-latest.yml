@@ -1,0 +1,15 @@
+services:
+  node:
+    image: "ghcr.io/midnight-ntwrk/midnight-node:latest"
+    ports:
+      - "${NODE_PORT_WS:-9944}:${NODE_PORT_WS_DOCKER:-9944}"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:${NODE_PORT_WS:-9944}/health" ]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      CFG_PRESET: "dev"
+      ARGS: "--unsafe-rpc-external --dev --node-key 0000000000000000000000000000000000000000000000000000000000000001"
+      SIDECHAIN_BLOCK_BENEFICIARY: "04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"

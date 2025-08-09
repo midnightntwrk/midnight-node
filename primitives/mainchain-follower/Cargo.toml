@@ -1,0 +1,59 @@
+[package]
+name = "midnight-primitives-mainchain-follower"
+version = "0.1.0"
+edition = "2024"
+description = "Extensions to Partnerchains mainchain follower"
+
+[dependencies]
+hex = { workspace = true, default-features = false }
+sp-std.workspace = true
+parity-scale-codec.workspace = true
+midnight-primitives-native-token-observation.workspace = true
+async-trait = { workspace = true, optional = true }
+sidechain-domain.workspace = true
+sp-api.workspace = true
+sp-blockchain = { workspace = true, optional = true }
+sp-runtime.workspace = true
+sp-inherents.workspace = true
+thiserror = { workspace = true, optional = true }
+cardano-serialization-lib = { workspace = true, optional = true }
+sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
+derive-new.workspace = true
+partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
+figment = { workspace = true , optional = true }
+serde = { workspace = true , optional = true }
+secrecy = { workspace = true, features = ["serde"], optional = true }
+scale-info.workspace = true
+log.workspace = true
+rand = { version = "0.9.1", default-features = false }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"]}
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "sp-std/std",
+    "sp-runtime/std",
+    "sidechain-domain/std",
+    "async-trait",
+    "sp-inherents/std",
+    "scale-info/std",
+    "sp-api/std",
+    "sp-blockchain",
+    "thiserror",
+    "cardano-serialization-lib",
+    "sqlx",
+    "log/std",
+    "figment",
+    "serde",
+    "partner-chains-db-sync-data-sources",
+    "secrecy",
+    "hex/std",
+    "rand/std",
+    "rand/thread_rng",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "log"]

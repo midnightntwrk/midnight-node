@@ -1,0 +1,16 @@
+export {store, check}
+
+include "std";
+
+ledger tree: HistoricMerkleTree<10, Uint<32>>;
+
+witness find(content: Uint<32>): MerkleTreePath<10, Uint<32>>;
+
+circuit store(something: Uint<32>): [] {
+  tree.insert(something);
+}
+
+circuit check(something: Uint<32>): [] {
+  assert tree.check_root(merkle_tree_path_root<10, Uint<32>>(find(something)))
+    "Must find the thing in the Merkle tree!";
+}

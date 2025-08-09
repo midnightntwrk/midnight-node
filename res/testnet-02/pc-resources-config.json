@@ -1,0 +1,11 @@
+{
+  "substrate_node_base_path": "/Users/yevhen/Repo/midnightntwrk/midnight-node/res/testnet-02",
+  "ogmios": {
+    "protocol": "https",
+    "hostname": "ogmios.qanet.dev.midnight.network",
+    "port": 443
+  },
+  "cardano_payment_verification_key_file": "/Users/yevhen/Repo/midnightntwrk/midnight-node/res/testnet-02/governance.vkey",
+  "cardano_payment_signing_key_file": "/Users/yevhen/Repo/midnightntwrk/midnight-node/res/testnet-02/governance.skey",
+  "db_sync_postgres_connection_string": "postgresql://postgres:0D04FAD4A05741AA@127.0.0.1:5432/cexplorer"
+}

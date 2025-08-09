@@ -1,0 +1,483 @@
+version: '3.8'
+
+x-common-variables: &common-variables
+  CFG_PRESET: "testnet-02"
+  SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
+
+x-node-common: &node-common
+  image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
+  volumes:
+    - ./res:/res # Mount the res directory for chain-spec etc.
+    - ./data/boot-node:/data
+
+services:
+  boot-node:
+    <<: *node-common
+    hostname: boot-node
+    container_name: boot-node
+    volumes:
+      - ./data/boot-node:/data
+    ports:
+      - "9933:9933" # RPC port
+      - "9944:9944" # WebSocket port
+      - "30333:30333" # P2P port
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Assuming RPC port serves health
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    environment:
+      <<: *common-variables
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_01_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000001
+        --port 30333
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --no-telemetry
+        --name MidnightBootNode_Local
+        --public-addr /dns4/boot-node/tcp/30333/ws
+
+
+  node1:
+    <<: *node-common
+    hostname: node1
+    container_name: node1
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9950:9944" 
+      - "30334:30334"
+    volumes:
+      - ./data/node-1:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_01_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000002
+        --validator
+        --port 30334 
+        --rpc-port 9944
+        --base-path=/data
+        
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --public-addr /dns4/node1/tcp/30334
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Check internal RPC port
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node2:
+    <<: *node-common
+    hostname: node2
+    container_name: node2
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9951:9944"
+      - "30335:30335"
+    volumes:
+      - ./data/node-2:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_02_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000003
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30335
+        --rpc-port 9944
+        --base-path=/data
+        
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --public-addr /dns4/node2/tcp/30335
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node3:
+    <<: *node-common
+    hostname: node3
+    container_name: node3
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9952:9944"
+      - "30336:30336"
+    volumes:
+      - ./data/node-3:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_03_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000004
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30336
+        --rpc-port 9944
+        --base-path=/data
+        
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --public-addr /dns4/node3/tcp/30336
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node4:
+    <<: *node-common
+    hostname: node4
+    container_name: node4
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9953:9944"
+      - "30337:30337"
+    volumes:
+      - ./data/node-4:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_04_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000005
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30337
+        --rpc-port 9944
+        --public-addr /dns4/node4/tcp/30337
+        --base-path=/data
+        
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node5:
+    <<: *node-common
+    hostname: node5
+    container_name: node5
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9954:9944"
+      - "30338:30338"
+    volumes:
+      - ./data/node-5:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_05_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000006
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30338
+        --rpc-port 9944
+        --base-path=/data
+        
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --public-addr /dns4/node5/tcp/30338
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node6:
+    <<: *node-common
+    hostname: node6
+    container_name: node6
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9955:9944"
+      - "30339:30333"
+    volumes:
+      - ./data/node-6:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_06_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000007
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --rpc-port 9944
+        --public-addr /dns4/node6/tcp/30339
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node7:
+    <<: *node-common
+    hostname: node7
+    container_name: node7
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9956:9944"
+      - "30340:30333"
+    volumes:
+      - ./data/node-7:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_07_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000008
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30340 
+        --rpc-port 9944
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --public-addr /dns4/node7/tcp/30340
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node8:
+    <<: *node-common
+    hostname: node8
+    container_name: node8
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9957:9944"
+      - "30341:30333"
+    volumes:
+      - ./data/node-8:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_08_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000009
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30341
+        --rpc-port 9944
+        --public-addr /dns4/node8/tcp/30341
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node9:
+    <<: *node-common
+    hostname: node9
+    container_name: node9
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9958:9944"
+      - "30342:30333"
+    volumes:
+      - ./data/node-9:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_09_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000010
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30342
+        --rpc-port 9944
+        --public-addr /dns4/node9/tcp/30342
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node10:
+    <<: *node-common
+    hostname: node10
+    container_name: node10
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9959:9944"
+      - "30343:30333"
+    volumes:
+      - ./data/node-10:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_10_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000011
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --port 30343
+        --rpc-port 9944
+        --public-addr /dns4/node10/tcp/30343
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node11:
+    <<: *node-common
+    hostname: node11
+    container_name: node11
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9960:9944"
+      - "30344:30333"
+    volumes:
+      - ./data/node-11:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_11_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000012
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30344
+        --rpc-port 9944
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node12:
+    <<: *node-common
+    hostname: node12
+    container_name: node12
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9961:9944"
+      - "30345:30333"
+    volumes:
+      - ./data/node-12:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_12_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000013
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30345
+        --rpc-port 9944
+        --base-path=/data
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  boot-node-data:
+  node-data-1:
+  node-data-2:
+  node-data-3:
+  node-data-4:
+  node-data-5:
+  node-data-6:
+  node-data-7:
+  node-data-8:
+  node-data-9:
+  node-data-10:
+  node-data-11:

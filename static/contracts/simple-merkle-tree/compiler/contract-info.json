@@ -1,0 +1,40 @@
+{
+  "circuits": [
+    {
+      "name": "store",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "something",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    },
+    {
+      "name": "check",
+      "pure": false,
+      "arguments": [
+        {
+          "name": "something",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
+    }
+  ]
+}

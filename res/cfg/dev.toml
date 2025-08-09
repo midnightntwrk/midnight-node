@@ -1,0 +1,21 @@
+# Mock the main chain when in dev mode
+use_main_chain_follower_mock = true
+mock_registrations_file = "res/mock-bridge-data/default-registrations.json"
+
+chainspec_name = "undeployed"
+chainspec_id = "undeployed"
+chainspec_network_id = "undeployed"
+chainspec_genesis_state = "res/genesis/genesis_state_undeployed.mn"
+chainspec_genesis_tx = "res/genesis/genesis_tx_undeployed.mn"
+chainspec_chain_type = "local"
+chainspec_pc_chain_config = "res/dev/pc-chain-config.json"
+
+args = [
+    "--dev",
+    "--node-key", "0000000000000000000000000000000000000000000000000000000000000001",
+    "--rpc-external",
+    "--rpc-cors=all",
+    "--prometheus-external",
+    "--state-pruning", "archive",
+    "--blocks-pruning", "archive"
+]

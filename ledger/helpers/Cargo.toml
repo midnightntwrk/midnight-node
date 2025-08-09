@@ -1,0 +1,32 @@
+[package]
+name = "midnight-node-ledger-helpers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hex.workspace = true
+mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
+base-crypto.workspace = true
+coin-structure.workspace = true
+onchain-runtime.workspace = true
+midnight-serialize.workspace = true
+ledger-storage.workspace = true
+transient-crypto.workspace = true
+zswap.workspace = true
+rand = { workspace = true, features = ["small_rng"] }
+rand_chacha.workspace = true
+lazy_static.workspace = true
+itertools = { workspace = true, features = ["use_alloc"] }
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+bip32.workspace = true
+derive-where.workspace = true
+serde = { workspace = true, features = ["derive"] }
+bech32 = "0.11.0"
+
+[features]
+default = ["std"]
+std = []
+erase-proof = []
+test-utils = []

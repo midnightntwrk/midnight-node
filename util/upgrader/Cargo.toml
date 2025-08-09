@@ -1,0 +1,20 @@
+[package]
+name = "upgrader"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = { version = "4", default-features = false, features = ["macros"] }
+clap = { workspace = true, features = ["derive", "env"] }
+subxt.workspace = true
+subxt-signer.workspace = true
+bip39 = { version = "2.0.0", default-features = false }
+log.workspace = true
+env_logger = "0.11.5"
+tokio.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
