@@ -1,0 +1,21 @@
+#!/bin/bash
+
+filtered_args=()
+skip_next=false
+
+for arg in "$@"; do
+    if [ "$skip_next" = true ]; then
+        skip_next=false
+        continue
+    fi
+
+    # This is required because this argument was removed in the new version of the CLI
+    # but partner-chains-cli cannot run without it
+    if [ "$arg" = "--atms-kind" ]; then
+        skip_next=true
+    else
+        filtered_args+=("$arg")
+    fi
+done
+
+pc-contracts-cli-release/pc-contracts-cli "${filtered_args[@]}"

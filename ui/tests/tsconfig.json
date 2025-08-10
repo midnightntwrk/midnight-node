@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "ESNext"
+    ],
+    "outDir": "./build",
+    "target": "ESNext",
+    "skipLibCheck": true,
+    "allowJs": false,
+    "alwaysStrict": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "incremental": true,
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "noFallthroughCasesInSwitch": true,
+    "strictPropertyInitialization": false,
+    "types": [
+      "expect-playwright"
+    ],
+    "baseUrl": ".",
+    "rootDirs": [
+      "./utils",
+      "./",
+      "./resources"
+    ],
+    "paths": {
+      "utils/*": ["utils/*.ts", "utils/*"],
+    },
+  },
+  "include": [
+    "**/*.ts",
+    "*.ts", "playwright.config.ts",
+  ],
+  "exclude": [
+    "node_modules",
+  ]
+}
