@@ -1,0 +1,16 @@
+{   "commandUsed": "./target/release/midnight-node smart-contracts get-scripts --genesis-utxo c79a414c8d8cf691caa654861cfb0555c6a7f2016d0b2ae79cc4fc4377372e74#1 > res/qanet/addresses.json",
+    "addresses": {
+      "CommitteeCandidateValidator": "addr_test1wrhpp7gmzt5plx3dx7sz25gl0pjx322z4p3pjtkmfpnpfpcqgckjk",
+      "DParameterValidator": "addr_test1wz98rpevc5yd3zey38w7q04w7uchnaqlfnws9nqrwa02vugs76t67",
+      "IlliquidCirculationSupplyValidator": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
+      "PermissionedCandidatesValidator": "addr_test1wq4y9wu5j5gk5940tlq895vl9x9avzl03v4pn5hmza4nnys25h6qy",
+      "ReserveValidator": "addr_test1wz3s6uzu6d75tq5r3z7x97t0h0rhffxceyw8y4wxjs35tpc03gp3l",
+      "VersionOracleValidator": "addr_test1wzkct8p9dw5mk4rql4x0j3zuca5yhc7r0jaxed2djz0h3acd3ldjd"
+    },
+    "policyIds": {
+      "DParameter": "0x0499e919fc1040af975ea1dc7b8a414c99f0e1d070e547dc81999010",
+      "PermissionedCandidates": "0xca3c98056e6bce7df274f0a9161ad53208bdb1cef072f0743307ad2f",
+      "ReserveAuth": "0x5f47002668c223b575e1c25bfdff5f5540ac30d4eafaaba21ca6e6ba",
+      "VersionOracle": "0xb45d825880c98cdbfd3e33a03aa45b65c748044bc27f8cfdd67decd1"
+    }
+  }

@@ -1,0 +1,11 @@
+{
+  "substrate_node_base_path": "./res/qanet",
+  "ogmios": {
+    "protocol": "https",
+    "hostname": "ogmios.qanet.dev.midnight.network",
+    "port": 443
+  },
+  "cardano_payment_verification_key_file": "./res/qanet/governance.vkey",
+  "cardano_payment_signing_key_file": "./res/qanet/governance.skey",
+  "db_sync_postgres_connection_string": "postgresql://postgres-user:postgres-password@localhost:5432/cexplorer"
+}

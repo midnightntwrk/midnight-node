@@ -1,0 +1,41 @@
+{
+  "name": "midnight-up",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "run:node-dev-01": "ts-node src/index.ts run node-dev-01",
+    "run:qanet": "ts-node src/index.ts run qanet",
+    "run:devnet": "ts-node src/index.ts run devnet",
+    "run:testnet-02": "ts-node src/index.ts run testnet-02",
+    "run:local-env": "ts-node src/index.ts run local-env",
+    "stop:node-dev-01": "ts-node src/index.ts stop node-dev-01",
+    "stop:qanet": "ts-node src/index.ts stop qanet",
+    "stop:devnet": "ts-node src/index.ts stop devnet",
+    "stop:testnet-02": "ts-node src/index.ts stop testnet-02",
+    "stop:local-env": "ts-node src/index.ts stop local-env",
+    "help": "ts-node src/index.ts -h"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@polkadot/api": "^16.2.2",
+    "@polkadot/keyring": "^13.5.2",
+    "@polkadot/types": "^16.3.1",
+    "@polkadot/util": "^13.5.2",
+    "@polkadot/util-crypto": "^13.5.2",
+    "@types/wait-on": "^5.3.4",
+    "commander": "^14.0.0",
+    "dotenv": "^16.5.0",
+    "glob": "^11.0.3",
+    "wait-on": "^8.0.3",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
+}

@@ -1,0 +1,18 @@
+[package]
+name = "midnight-primitives-native-token-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight native token observation primitives"
+
+[dependencies]
+sp-api.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "sp-api/std",
+    "parity-scale-codec/std",
+    "scale-info/std"
+]

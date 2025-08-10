@@ -1,0 +1,92 @@
+{
+  "name": "substrate-front-end-template",
+  "version": "monthly-2022-01",
+  "private": true,
+  "author": "Parity Technologies <admin@parity.io>",
+  "license": "Unlicense",
+  "homepage": "https://substrate-developer-hub.github.io/substrate-front-end-template",
+  "bugs": {
+    "url": "https://github.com/substrate-developer-hub/substrate-front-end-template/issues"
+  },
+  "keywords": [
+    "substrate",
+    "substrate-ui",
+    "polkadot-js"
+  ],
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "CI=true react-scripts test",
+    "eject": "react-scripts eject",
+    "eslint:check": "eslint --ext .jsx,.js src/",
+    "eslint:write": "eslint --fix --ext .jsx,.js src/",
+    "prettier:check": "prettier -c src/*",
+    "prettier:write": "prettier -w src/*",
+    "deploy": "gh-pages -d build -m '[ci skip] Updates'",
+    "postinstall": "echo removing references to optional GPLv3 packages && rm -rf ./node_modules/@substrate/connect && rm -rf ./node_modules/@substrate/connect-extension-protocol && rm -rf ./node_modules/@substrate/connect-known-chains && rm -rf ./node_modules/@substrate/light-client-extension-helpers && rm -rf ./node_modules/node-forge"
+  },
+  "dependencies": {
+    "@polkadot/api": "^16.1.1",
+    "@polkadot/extension-dapp": "^0.59.1",
+    "@polkadot/keyring": "^13.5.1",
+    "@polkadot/networks": "^13.5.1",
+    "@polkadot/types": "^16.1.1",
+    "@polkadot/ui-keyring": "^3.14.1",
+    "@polkadot/ui-settings": "^3.14.1",
+    "@polkadot/util": "^13.5.1",
+    "@polkadot/util-crypto": "^13.5.1",
+    "node-polyfill-webpack-plugin": "^4.1.0",
+    "prop-types": "^15.8.1",
+    "react": "^18.2.0",
+    "react-copy-to-clipboard": "^5.1.0",
+    "react-dom": "^18.2.0",
+    "react-json-view-lite": "^2.4.1",
+    "react-scripts": "^5.0.1",
+    "semantic-ui-css": "^2.5.0",
+    "semantic-ui-react": "^2.1.5",
+    "stream-browserify": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/react": "19.1.9",
+    "@types/react-dom": "19.1.7",
+    "@types/supports-color": "^10.0.0",
+    "eslint": "^8.10.0",
+    "eslint-config-prettier": "^8.10.1",
+    "eslint-config-react-app": "^7.0.0",
+    "gh-pages": "6.3.0",
+    "prettier": "2.8.8",
+    "semistandard": "^16.0.1",
+    "typescript": "^4.0.0",
+    "webpack": "^5.100.2"
+  },
+  "resolutions": {
+    "eslint-plugin-jsx-a11y": "6.10.2"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "eslint:recommended",
+      "prettier"
+    ]
+  },
+  "engines": {
+    "node": ">=16",
+    "npm": ">=8"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not ie <= 99",
+      "not android <= 4.4.4",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "packageManager": "yarn@4.9.2"
+}

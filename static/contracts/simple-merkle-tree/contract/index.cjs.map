@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.cjs",
+  "sourceRoot": "../../",
+  "sources": ["../midnight-node/ledger/test-data/simple-merkle-tree.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MAQA,AAAA,KAEC;;;;cAFa,WAAmB;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;mEAAnB,WAAmB;;;OAEhC;MAED,AAAA,KAGC;;;;cAHa,WAAmB;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;mEAAnB,WAAmB;;;OAGhC;;;;;;GACA;EAhBD;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;IAIA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;uDAA8C;;;;;;;GAY7C;ECUD,AAAA,kBAAkD,4BAAjB,OAAQ;mEAAR,OAAQ;;GAAS;EAElD,AAAA,mBAAuD,4BAArB,OAAQ;qEAAR,OAAQ;;GAAa;EAEvD,AAAA,wBAA0D,4BAAtB,GAAY;yDAAZ,GAAY;;GAAU;EA2B1D,AAAA,yBAMC,4BAN2C,MAA0B;;;;;;;;;;;;;0FAGoD,MAAI;+BACvG,MAAI;GAE1B;EAQD,AAAA,+BAOC;;kCANC,kBAAuB;kCACvB,OAA0B;;UAE1B,MAAsE,GAAzD,OAAK,YAAa,kBAAgB,GAAG,OAAK;UACvD,OAAuE,GAAzD,OAAK;oBAAa,OAAK;oBAAiB,kBAAgB;+DAC7B,MAAI,EAAE,OAAK;GACrD;EDxED,AAAA,QAA8D,4BAAjD,SAAiB;;0DAA9B,IAA8D;+DAAjD,SAAiB;;;;;;;;;;;;;GAAgC;EAE9D,AAAA,SAEC,4BAFa,WAAmB;IAC/B;;;;;;;;;;;;;;;;;;;;;;;;2GAAY,WAAS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;sDAAjB;;GACL;EAED,AAAA,SAGC,4BAHa,WAAmB;QACxB,KAAI;;;;;kFAAqD,WAAS;qDAAlE;;;;;;;;;;;;;;;;;0JAAA,KAAI;;;;wGAAA;;;GAEZ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;"
+}

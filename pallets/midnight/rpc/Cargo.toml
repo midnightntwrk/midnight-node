@@ -1,0 +1,22 @@
+[package]
+name = "pallet-midnight-rpc"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jsonrpsee  = { workspace = true, features = [ "client", "server", "macros" ] }
+serde     .workspace = true
+hex.workspace = true
+
+sc-client-api.workspace = true
+sp-api.workspace = true
+sp-runtime.workspace = true
+sp-blockchain.workspace = true
+pallet-midnight.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

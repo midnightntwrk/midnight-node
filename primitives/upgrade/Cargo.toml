@@ -1,0 +1,30 @@
+[package]
+name = "midnight-primitives-upgrade"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight inherent for runtime upgrades"
+
+[dependencies]
+async-trait = { workspace = true, optional = true }
+hex.workspace = true
+scale-info = { workspace = true, features = ["derive"] }
+sp-partner-chains-consensus-aura = { workspace = true, optional = true }
+sp-inherents.workspace = true
+sp-core.workspace = true
+sp-runtime.workspace = true
+parity-scale-codec.workspace = true
+sc-executor = { workspace = true, optional = true }
+sc-executor-common = { workspace = true, optional = true }
+
+[features]
+default = ["std"]
+std = [
+    "async-trait",
+    "parity-scale-codec/std",
+    "sp-partner-chains-consensus-aura/std",
+    "sp-inherents/std",
+    "sp-core/std",
+    "sp-runtime/std",
+    "sc-executor",
+    "sc-executor-common"
+]

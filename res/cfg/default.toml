@@ -1,0 +1,44 @@
+# Values in this file are defaults for testnet
+# TODO: Add values for:
+# - chain_id
+# - threshold_numerator
+# - threshold_denominator
+# - genesis_committee_utxo
+# - governance_authority
+
+wipe_chain_state = false
+use_main_chain_follower_mock = false
+show_config = false
+show_secrets = false
+validator = false
+
+# DO NOT SET THE BASE_PATH HERE
+# This is done in the Earthfile and is set to /node/chain
+# base_path = "/node/chain"
+
+# MidnightEnv Defaults
+cardano_security_parameter = 432
+cardano_active_slots_coeff = 0.05
+block_stability_margin = 10
+
+mc__first_epoch_timestamp_millis = 1666656000000
+mc__first_epoch_number = 0
+mc__epoch_duration_millis = 86400000
+mc__first_slot_number = 0
+mc__slot_duration_millis = 1000
+
+# Storage Monitor Defaults
+threshold = 512
+polling_period = 5
+
+# Storage cache size = measured in number of storage nodes
+# Setting of 0 means storage cache size is unlimited.
+# Will cause OOM errors if too much data is loaded.
+storage_cache_size = 0
+
+trie_cache_size = 0
+
+argv = []
+args = []
+append_args = []
+bootnodes = []
