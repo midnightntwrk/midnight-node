@@ -87,35 +87,35 @@ pub mod pallet {
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct MappingEntry {
-		cardano_address: BoundedCardanoAddress,
-		dust_address: DustAddress,
-		utxo_id: [u8; 32],
-		utxo_index: u16,
+		pub cardano_address: BoundedCardanoAddress,
+		pub dust_address: DustAddress,
+		pub utxo_id: [u8; 32],
+		pub utxo_index: u16,
 	}
 
 	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
 	pub struct Mapping {
-		cardano_address: BoundedCardanoAddress,
-		dust_address: String,
-		utxo_id: String,
+		pub cardano_address: BoundedCardanoAddress,
+		pub dust_address: String,
+		pub utxo_id: String,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
 	pub struct Registration {
-		cardano_address: BoundedCardanoAddress,
-		dust_address: DustAddress,
+		pub cardano_address: BoundedCardanoAddress,
+		pub dust_address: DustAddress,
 	}
 
 	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
 	pub struct Deregistration {
-		cardano_address: BoundedCardanoAddress,
-		dust_address: DustAddress,
+		pub cardano_address: BoundedCardanoAddress,
+		pub dust_address: DustAddress,
 	}
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct SystemTransactionApplied {
-		header: CmstHeader,
-		system_transaction_hash: LedgerHash,
+		pub header: CmstHeader,
+		pub system_transaction_hash: LedgerHash,
 	}
 
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
@@ -127,8 +127,6 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> + timestamp::Config<Moment = u64> {
-		#[pallet::constant]
-		type MaxRegistrationsPerCardanoAddress: Get<u32>;
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
 	}
 
@@ -166,9 +164,8 @@ pub mod pallet {
 	pub type MainChainRedemptionValidatorAddress<T: Config> =
 		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
 
-	// TODO: Move registrations offchain
 	#[pallet::storage]
-	pub type Registrations<T: Config> =
+	pub type Mappings<T: Config> =
 		StorageMap<_, Blake2_128Concat, BoundedCardanoAddress, Vec<MappingEntry>, ValueQuery>;
 
 	// TODO: Read from ledger state directly ?
@@ -292,30 +289,18 @@ pub mod pallet {
 				.expect("Token transfer data not encoded correctly")
 		}
 
-		pub fn get_registrations_for(
-			wallet: BoundedCardanoAddress,
-		) -> BoundedVec<DustAddress, T::MaxRegistrationsPerCardanoAddress> {
-			let regs: Vec<_> =
-				Registrations::<T>::get(wallet).into_iter().map(|r| r.dust_address).collect();
-			regs.try_into().unwrap()
-		}
-
 		pub fn get_registration(wallet: &BoundedCardanoAddress) -> Option<DustAddress> {
-			let registrations = Registrations::<T>::get(wallet);
-			if registrations.len() == 1 {
-				Some(registrations[0].dust_address.clone())
-			} else {
-				None
-			}
+			let mappings = Mappings::<T>::get(wallet);
+			if mappings.len() == 1 { Some(mappings[0].dust_address.clone()) } else { None }
 		}
 
 		// Check if any form of a registration could be considered valid as of now
 		pub fn is_registered(utxo_holder: &BoundedCardanoAddress) -> bool {
-			let registrations = Registrations::<T>::get(utxo_holder);
+			let mappings = Mappings::<T>::get(utxo_holder);
 			// For a registration to be valid, there can only be one stored
-			if registrations.len() == 1 {
+			if mappings.len() == 1 {
 				// We store all incoming DUST mappings from Cardano to maintain consistency, so need to manually check the length of all stored
-				registrations[0].dust_address.len() == 32
+				mappings[0].dust_address.len() == 32
 			} else {
 				false
 			}
@@ -347,13 +332,13 @@ pub mod pallet {
 				utxo_index: header.utxo_index.0,
 			};
 
-			let mut registrations = Registrations::<T>::get(&cardano_address);
+			let mut mappings = Mappings::<T>::get(&cardano_address);
 
-			registrations.push(new_reg.clone());
+			mappings.push(new_reg.clone());
 
-			Registrations::<T>::insert(cardano_address.clone(), registrations.clone());
+			Mappings::<T>::insert(cardano_address.clone(), mappings.clone());
 
-			let stored_registration = Registrations::<T>::get(&cardano_address);
+			let stored_registration = Mappings::<T>::get(&cardano_address);
 
 			if stored_registration.len() == 1 && stored_registration[0].dust_address.len() == 32 {
 				Self::deposit_event(Event::<T>::Registration(Registration {
@@ -367,7 +352,7 @@ pub mod pallet {
 				dust_address: hex::encode(dust_address),
 				utxo_id: hex::encode(header.utxo_tx_hash.0),
 			}));
-			Some((cardano_address, registrations))
+			Some((cardano_address, mappings))
 		}
 
 		fn handle_registration_removal(header: &ObservedUtxoHeader, data: DeregistrationData) {
@@ -389,10 +374,10 @@ pub mod pallet {
 			};
 
 			let was_valid = Self::is_registered(&cardano_address);
-			let mut registrations = Registrations::<T>::get(&cardano_address);
+			let mut mappings = Mappings::<T>::get(&cardano_address);
 
-			if let Some(index) = registrations.iter().position(|x| x == &reg_entry) {
-				registrations.remove(index);
+			if let Some(index) = mappings.iter().position(|x| x == &reg_entry) {
+				mappings.remove(index);
 			} else {
 				log::error!(
 					"A registration was requested for removal, but does not exist: {:?} ",
@@ -400,10 +385,10 @@ pub mod pallet {
 				);
 			}
 
-			if registrations.is_empty() {
-				Registrations::<T>::remove(&cardano_address);
+			if mappings.is_empty() {
+				Mappings::<T>::remove(&cardano_address);
 			} else {
-				Registrations::<T>::insert(&cardano_address, registrations.clone());
+				Mappings::<T>::insert(&cardano_address, mappings.clone());
 			}
 
 			let is_valid = Self::is_registered(&cardano_address);
@@ -416,7 +401,7 @@ pub mod pallet {
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
-			if was_valid && registrations.is_empty() {
+			if was_valid && mappings.is_empty() {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
 					cardano_address: cardano_address.clone(),
 					dust_address: dust_address.clone(),
