@@ -825,12 +825,7 @@ impl pallet_native_token_management::Config for Runtime {
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 }
 
-parameter_types! {
-	pub const MaxRegistrationsPerCardanoAddress: u8 = 100;
-}
-
 impl pallet_native_token_observation::Config for Runtime {
-	type MaxRegistrationsPerCardanoAddress = MaxRegistrationsPerCardanoAddress;
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
