@@ -1,11 +1,19 @@
+use frame_support::inherent::ProvideInherent;
 use midnight_node_res::native_token_observation_consts::{
 	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
 	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
 };
-use midnight_primitives_mainchain_follower::MidnightNativeTokenObservationDataSource;
+use midnight_primitives_mainchain_follower::{
+	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	data_source::ObservedUtxos,
+};
 use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+use pallet_native_token_observation::{MappingEntry, Mappings, mock};
+use serde::{Deserialize, Serialize};
 use sidechain_domain::McBlockHash;
-use std::sync::Arc;
+use sp_inherents::InherentData;
+use sp_runtime::traits::Dispatchable;
+use std::{collections::HashMap, sync::Arc};
 
 use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -22,6 +30,39 @@ pub enum CngdGenesisError {
 
 	#[error("I/O error: {0}")]
 	IoError(#[from] std::io::Error),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CNightGeneratesDustConfig {
+	cardano_addresses: TokenObservationConfig,
+	initial_utxos: ObservedUtxos,
+	initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
+}
+
+fn create_inherent(
+	utxos: Vec<ObservedUtxo>,
+	next_cardano_position: CardanoPosition,
+) -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(
+			midnight_primitives_mainchain_follower::idp::INHERENT_IDENTIFIER,
+			&MidnightObservationTokenMovement { utxos, next_cardano_position },
+		)
+		.expect("inherent data insertion should not fail");
+	inherent_data
+}
+
+pub fn get_mappings(utxos: &ObservedUtxos) -> HashMap<Vec<u8>, Vec<MappingEntry>> {
+	mock::new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent(utxos.utxos.clone(), utxos.end);
+		let call = mock::NativeTokenObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = mock::RuntimeCall::NativeTokenObservation(call);
+		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
+
+		Mappings::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect()
+	})
 }
 
 pub async fn get_cngd_genesis(
@@ -67,9 +108,23 @@ pub async fn get_cngd_genesis(
 		}
 	}
 
-	let json = serde_json::to_string_pretty(&all_utxos)?;
-	let mut file = File::create("observed_utxos.json").await?;
+	let initial_utxos = ObservedUtxos {
+		start: CardanoPosition::default(),
+		end: current_position,
+		utxos: all_utxos,
+	};
+
+	let initial_mappings = get_mappings(&initial_utxos);
+
+	let config = CNightGeneratesDustConfig {
+		cardano_addresses: token_observation_config,
+		initial_utxos,
+		initial_mappings,
+	};
+
+	let json = serde_json::to_string_pretty(&config)?;
+	let mut file = File::create("cngd-config.json").await?;
 	file.write_all(json.as_bytes()).await?;
-	println!("Wrote cNIGHT Generates Dust genesis to observed_utxos.json");
+	println!("Wrote cNIGHT Generates Dust genesis to cngd-config.json");
 	Ok(())
 }

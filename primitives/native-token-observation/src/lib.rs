@@ -38,7 +38,7 @@ use scale_info::TypeInfo;
 	Debug,
 	Default,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
 	pub block_hash: [u8; 32],
@@ -48,6 +48,7 @@ pub struct CardanoPosition {
 	pub tx_index_in_block: u32,
 }
 
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct TokenObservationConfig {
 	pub mapping_validator_address: String,
 	pub redemption_validator_address: String,

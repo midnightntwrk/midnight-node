@@ -54,8 +54,8 @@ pub enum UtxoActionType {
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod mock;
+#[cfg(any(test, feature = "mock"))]
+pub mod mock;
 
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
@@ -86,6 +86,7 @@ pub mod pallet {
 	pub type BoundedUtxoHash = BoundedVec<u8, ConstU32<32>>;
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	pub struct MappingEntry {
 		pub cardano_address: BoundedCardanoAddress,
 		pub dust_address: DustAddress,
