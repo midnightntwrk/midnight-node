@@ -75,22 +75,27 @@ mod tests {
 	use super::*;
 	use midnight_node_ledger_helpers::WalletAddress;
 	use midnight_node_toolkit::tx_generator::builder::{
-		BatchesArgs, ClaimRewardsArgs, SingleTxArgs,
+		BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
+		SingleTxArgs,
 	};
 	use test_case::test_case;
+
+	fn resource_file(path: &str) -> String {
+		format!("../../res/{path}")
+	}
 
 	// TODO: we need to consider using `proptest` here.
 	// That would allow us to more robustly test random transactions within our valid bounds
 
 	// TODO: write a better macro for this
 	macro_rules! test_fixture {
-		($builder:expr, $src_file:literal) => {
+		($builder:expr, $src_files:expr) => {
 			GenerateTxsArgs {
 				builder: $builder,
 				source: Source {
 					src_url: None,
 					fetch_concurrency: 20,
-					src_files: Some(vec![concat!("../../res/", $src_file).to_string()]),
+					src_files: Some($src_files.map(resource_file).to_vec()),
 				},
 				destination: Destination {
 					dest_url: None,
@@ -117,11 +122,11 @@ mod tests {
 			.unwrap(),
 		],
 		rng_seed: None,
-	}), "genesis/genesis_block_undeployed.mn") =>
+	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"single-tx"
 	)]
-	#[test_case(test_fixture!(Builder::Send, "genesis/genesis_block_undeployed.mn") =>
+	#[test_case(test_fixture!(Builder::Send, ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"send-tx"
 	)]
@@ -129,7 +134,7 @@ mod tests {
 		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		rng_seed:None,
 		amount: 500_000
-	}), "genesis/genesis_block_undeployed.mn") =>
+	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"
 	)]
@@ -142,33 +147,31 @@ mod tests {
 		coin_amount: 100,
 		initial_unshielded_intent_value: 500_000_000_000_000,
 		enable_shielded: false,
-	}), "genesis/genesis_block_undeployed.mn") =>
+	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"batches-tx"
 	)]
-	// FIXME: the `ContractCalls` rely on `test_resolver` which panics when env var `MIDNIGHT_LEDGER_TEST_STATIC_DIR` is not set
-	// #[test_case(test_fixture!(Builder::ContractCalls(
-	//     ContractCall::Deploy(ContractDeployArgs {
-	// 				funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-	// 				rng_seed: None,
-	// 				fee: 1_300_000
-	// 				})
-	// ), "genesis/genesis_block_undeployed.mn") =>
-	//    matches Ok(..);
-	// 	"contract-call-deploy-tx"
-	// )]
-	// #[test_case(test_fixture!(Builder::ContractCalls(
-	//     ContractCall::Call(ContractCallArgs {
-	// 				funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-	// 				call_key:"store".to_string(),
-	// 				contract_address: concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/contract/contract_address_devnet").to_string(),
-	// 				rng_seed: None,
-	// 				fee: 1_300_000
-	// 				})
-	// ), "contract/contract_tx_1_deploy_undeployed.mn") =>
-	//    matches Ok(..);
-	// 	"contract-call-call-tx"
-	// )]
+	#[test_case(test_fixture!(Builder::ContractCalls(
+	    ContractCall::Deploy(ContractDeployArgs {
+					funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+					rng_seed: None,
+					})
+	), ["genesis/genesis_block_undeployed.mn"]) =>
+	   matches Ok(..);
+		"contract-call-deploy-tx"
+	)]
+	#[test_case(test_fixture!(Builder::ContractCalls(
+	    ContractCall::Call(ContractCallArgs {
+					funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+					call_key:"store".to_string(),
+					contract_address: resource_file("test-contract/contract_address_undeployed.mn"),
+					rng_seed: None,
+					fee: 1_300_000,
+					})
+	), ["genesis/genesis_block_undeployed.mn", "test-contract/contract_tx_1_deploy_undeployed.mn"]) =>
+	   matches Ok(..);
+		"contract-call-call-tx"
+	)]
 	#[tokio::test]
 	async fn test_generation(
 		args: GenerateTxsArgs,
