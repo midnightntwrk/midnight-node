@@ -23,12 +23,13 @@ use mn_ledger::{
 	structure::{BindingKind, PedersenDowngradeable, ProofKind, SignatureKind},
 	verify::WellFormedStrictness,
 };
+use rand::Rng as _;
 
 use crate::{
 	BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, HashMapStorage, Intent, LedgerContext,
-	Nonce, Offer, OfferInfo, Pedersen, PedersenRandomness, ProofMarker, ProofPreimage,
+	Offer, OfferInfo, Pedersen, PedersenRandomness, ProofMarker, ProofPreimage,
 	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
-	Signature, StdRng, Transaction, UnshieldedTokenType, WalletSeed, serialize,
+	Signature, StdRng, Transaction, WalletSeed, serialize,
 };
 use std::{
 	collections::HashMap,
@@ -397,16 +398,14 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 }
 
 #[derive(Default)]
-pub struct MintCoinInfo {
-	pub origin: WalletSeed,
-	pub token_type: UnshieldedTokenType,
+pub struct RewardsInfo {
+	pub owner: WalletSeed,
 	pub value: u128,
-	pub nonce: Nonce,
 }
 
 pub struct ClaimMintInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
-	pub coin: MintCoinInfo,
+	pub coin: RewardsInfo,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 }
@@ -420,52 +419,42 @@ impl<D: DB + Clone> FromContext<D> for ClaimMintInfo<D> {
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
 
-		Self { context, coin: MintCoinInfo::default(), rng, prover }
+		Self { context, coin: RewardsInfo::default(), rng, prover }
 	}
 }
 
 impl<D: DB + Clone> ClaimMintInfo<D> {
-	pub fn set_coin(&mut self, mint_coin: MintCoinInfo) {
-		self.coin = mint_coin
+	pub fn set_rewards(&mut self, rewards: RewardsInfo) {
+		self.coin = rewards;
 	}
 
 	pub fn build(&mut self) -> Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let nonce = self.rng.r#gen();
 		self.context.with_ledger_state(|ledger_state| {
-			let mut build_tx = |fees: u128| {
-				let amount = self.coin.value - fees;
+			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
+				let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
+					network_id: ledger_state.network_id.clone(),
+					value: self.coin.value,
+					owner: wallet.unshielded.signing_key().verifying_key(),
+					nonce,
+					signature: (),
+					kind: ClaimKind::Reward,
+				};
 
-				let claim_rewards =
-					self.context.with_wallet_from_seed(self.coin.origin, |wallet| {
-						let unsigend_claim_mint: ClaimRewardsTransaction<(), D> =
-							ClaimRewardsTransaction {
-								network_id: ledger_state.network_id.clone(),
-								value: amount,
-								owner: wallet.unshielded.signing_key().verifying_key(),
-								nonce: self.coin.nonce,
-								signature: (),
-								kind: ClaimKind::Reward,
-							};
+				let data_to_sign = unsigned_claim_mint.data_to_sign();
+				let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
 
-						let data_to_sign = unsigend_claim_mint.data_to_sign();
-						let signature =
-							wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
+				ClaimRewardsTransaction {
+					network_id: ledger_state.network_id.clone(),
+					value: self.coin.value,
+					owner: wallet.unshielded.signing_key().verifying_key(),
+					nonce,
+					signature,
+					kind: ClaimKind::Reward,
+				}
+			});
 
-						ClaimRewardsTransaction {
-							network_id: ledger_state.network_id.clone(),
-							value: amount,
-							owner: wallet.unshielded.signing_key().verifying_key(),
-							nonce: self.coin.nonce,
-							signature,
-							kind: ClaimKind::Reward,
-						}
-					});
-
-				Transaction::ClaimRewards(claim_rewards)
-			};
-
-			let tx = build_tx(0);
-			let fees = tx.fees(&ledger_state.parameters).expect("could not calculate fees");
-			build_tx(fees)
+			Transaction::ClaimRewards(claim_rewards)
 		})
 	}
 

@@ -68,15 +68,15 @@ async fn send_txs(
 		.map_err(|e| GenerateTxsError::SendTransactions(e))
 }
 
-// These tests are running against test data which has not been updated to ledger v6 compatible format.
-/*
 #[cfg(test)]
 mod tests {
 	use std::str::FromStr;
 
 	use super::*;
 	use midnight_node_ledger_helpers::WalletAddress;
-	use midnight_node_toolkit::tx_generator::builder::{BatchesArgs, ClaimMintArgs, SingleTxArgs};
+	use midnight_node_toolkit::tx_generator::builder::{
+		BatchesArgs, ClaimRewardsArgs, SingleTxArgs,
+	};
 	use test_case::test_case;
 
 	// TODO: we need to consider using `proptest` here.
@@ -90,9 +90,7 @@ mod tests {
 				source: Source {
 					src_url: None,
 					fetch_concurrency: 20,
-					src_files: Some(vec![
-						concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/", $src_file).to_string(),
-					]),
+					src_files: Some(vec![concat!("../../res/", $src_file).to_string()]),
 				},
 				destination: Destination {
 					dest_url: None,
@@ -108,9 +106,9 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
-		shielded_amount: Some(100),
+		shielded_amount: Some(0),
 		unshielded_amount: Some(100),
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000000"
+		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
 			.to_string(),
 		destination_address: vec![
 			WalletAddress::from_str(
@@ -119,48 +117,49 @@ mod tests {
 			.unwrap(),
 		],
 		rng_seed: None,
-	}), "genesis/genesis_tx_undeployed.mn") =>
+	}), "genesis/genesis_block_undeployed.mn") =>
 	   matches Ok(..);
 		"single-tx"
 	)]
-	#[test_case(test_fixture!(Builder::Send, "genesis/genesis_tx_undeployed.mn") =>
+	#[test_case(test_fixture!(Builder::Send, "genesis/genesis_block_undeployed.mn") =>
 	   matches Ok(..);
 		"send-tx"
 	)]
-	#[test_case(test_fixture!(Builder::ClaimMint(ClaimMintArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
+		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		rng_seed:None,
 		amount: 500_000
-	}), "genesis/genesis_tx_undeployed.mn") =>
+	}), "genesis/genesis_block_undeployed.mn") =>
 	   matches Ok(..);
-		"claim-mint-tx"
+		"claim-rewards-tx"
 	)]
 	#[test_case(test_fixture!(Builder::Batches(BatchesArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		num_txs_per_batch: 1,
 		num_batches: 1,
 		concurrency: None,
 		rng_seed: None,
 		coin_amount: 100,
-		initial_unshielded_intent_value: 5_000_000_000_000_000,
-	}), "genesis/genesis_tx_undeployed.mn") =>
+		initial_unshielded_intent_value: 500_000_000_000_000,
+		enable_shielded: false,
+	}), "genesis/genesis_block_undeployed.mn") =>
 	   matches Ok(..);
 		"batches-tx"
 	)]
 	// FIXME: the `ContractCalls` rely on `test_resolver` which panics when env var `MIDNIGHT_LEDGER_TEST_STATIC_DIR` is not set
 	// #[test_case(test_fixture!(Builder::ContractCalls(
 	//     ContractCall::Deploy(ContractDeployArgs {
-	// 				funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+	// 				funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 	// 				rng_seed: None,
 	// 				fee: 1_300_000
 	// 				})
-	// ), "genesis/genesis_tx_undeployed.mn") =>
+	// ), "genesis/genesis_block_undeployed.mn") =>
 	//    matches Ok(..);
 	// 	"contract-call-deploy-tx"
 	// )]
 	// #[test_case(test_fixture!(Builder::ContractCalls(
 	//     ContractCall::Call(ContractCallArgs {
-	// 				funding_seed:"0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+	// 				funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 	// 				call_key:"store".to_string(),
 	// 				contract_address: concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/contract/contract_address_devnet").to_string(),
 	// 				rng_seed: None,
@@ -187,4 +186,3 @@ mod tests {
 		super::generate_txs(&generator, received_txs).await
 	}
 }
- */
