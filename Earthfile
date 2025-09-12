@@ -234,9 +234,35 @@ rebuild-genesis-state:
             && cp out/zswap_*.mn /res/test-zswap \
         ; fi
 
+    RUN mkdir -p /res/test-tx-deserialize
+    RUN mkdir -p out /res/test-tx-deserialize \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit show-address \
+                --network $NETWORK \
+                --seed "0000000000000000000000000000000000000000000000000000000000000002" \
+                --unshielded \
+                > out/dest_addr.mn \
+            && /midnight-node-toolkit generate-txs \
+                --src-files out/genesis_block_${SUFFIX}.mn \
+                --dest-file out/serialized_tx_with_context.mn \
+                --to-bytes \
+                single-tx \
+                --unshielded-amount 500 \
+                --rng-seed "$RNG_SEED" \
+                --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+                --destination-address $(cat out/dest_addr.mn) \
+            && /midnight-node-toolkit get-tx-from-context \
+                --network $NETWORK \
+                --src-file out/serialized_tx_with_context.mn \
+                --dest-file out/serialized_tx_no_context.mn \
+                --from-bytes \
+            && cp out/serialized_* /res/test-tx-deserialize \
+        ; fi
+
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
     SAVE ARTIFACT --if-exists /res/test-zswap/* AS LOCAL res/test-zswap/
+    SAVE ARTIFACT --if-exists /res/test-tx-deserialize/* AS LOCAL res/test-tx-deserialize/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
 
