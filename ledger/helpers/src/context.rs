@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use lazy_static::lazy_static;
-use mn_ledger::{events::Event, structure::StandardTransaction};
+use mn_ledger::{events::Event, structure::StandardTransaction, verify::WellFormedStrictness};
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
 	collections::HashMap,
@@ -125,15 +125,20 @@ impl<D: DB + Clone> LedgerContext<D> {
 	{
 		let tx_context = self.tx_context(block_context.clone());
 
+		let strictness: WellFormedStrictness =
+			if block_context.parent_block_hash == Default::default() {
+				let mut lax: WellFormedStrictness = Default::default();
+				lax.enforce_balancing = false;
+				lax
+			} else {
+				Default::default()
+			};
+
 		// Update Ledger State
 		let (new_ledger_state, events, cost) = match &tx {
 			SerdeTransaction::Midnight(tx) => {
 				let valid_tx: VerifiedTransaction<_> = tx
-					.well_formed(
-						&tx_context.ref_state,
-						mn_ledger::verify::WellFormedStrictness::default(),
-						tx_context.block_context.tblock,
-					)
+					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
 					.expect("applying invalid transaction");
 				let cost = valid_tx
 					.cost(&tx_context.ref_state.parameters)

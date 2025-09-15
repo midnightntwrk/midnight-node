@@ -54,7 +54,7 @@ pub enum GenesisGeneratorError<D: DB> {
 #[derive(clap::Args)]
 pub struct FundingArgs {
 	/// Mint amount per output
-	#[arg(long, default_value_t = 0)]
+	#[arg(long, default_value_t = MINT_AMOUNT)]
 	shielded_mint_amount: u128,
 	/// Number of funding outputs
 	#[arg(long, default_value = "5")]
@@ -495,11 +495,18 @@ impl GenesisGenerator {
 			block_context: block_context.clone(),
 			whitelist: None,
 		};
-		let valid_tx = tx.well_formed(
-			&tx_context.ref_state,
-			WellFormedStrictness::default(),
-			tx_context.block_context.tblock,
-		)?;
+
+		let strictness: WellFormedStrictness =
+			if block_context.parent_block_hash == Default::default() {
+				let mut lax: WellFormedStrictness = Default::default();
+				lax.enforce_balancing = false;
+				lax
+			} else {
+				Default::default()
+			};
+
+		let valid_tx =
+			tx.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)?;
 		self.fullness = self.fullness + tx.cost(&self.state.parameters)?;
 		let (state, result) = self.state.apply(&valid_tx, &tx_context);
 		match result {
