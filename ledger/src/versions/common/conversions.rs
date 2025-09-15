@@ -88,6 +88,7 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::InvalidCommitteeSignature { .. } => Me::InvalidCommitteeSignature,
 			Mt::ThresholdMissed { .. } => Me::ThresholdMissed,
 			Mt::TooManyZswapEntries => Me::TooManyZswapEntries,
+			Mt::BalanceCheckOverspend { .. } => Me::BalanceCheckOverspend,
 			_ => Me::UnknownError,
 		}
 	}

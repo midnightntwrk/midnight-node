@@ -342,7 +342,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "fails now that shielded tokens are in genesis - re-enable later"]
 	fn should_apply_transaction() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
@@ -355,7 +354,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "fails now that shielded tokens are in genesis - re-enable later"]
 	fn should_get_contract_state() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
