@@ -1,0 +1,20 @@
+import CompactStandardLibrary;
+
+export ledger round: Counter;
+
+witness private_increment(): [];
+
+export circuit increment(): [] {
+  round.increment(1);
+  private_increment();
+}
+
+export circuit decrement(amount: Uint<16>): [] {
+  round.decrement(disclose(amount));
+  private_increment();
+}
+
+export circuit reset(): [] {
+  round.resetToDefault();
+  private_increment();
+}

@@ -1,0 +1,10 @@
+edition = "2021"
+
+max_width       = 100
+reorder_imports = true
+reorder_modules = true
+
+unstable_features   = true
+comment_width       = 100
+imports_granularity = "Crate"
+wrap_comments       = true

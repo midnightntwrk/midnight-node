@@ -1,0 +1,263 @@
+scalar ApplyStage
+
+"""
+A block with its relevant data.
+"""
+type Block {
+  """
+  The block hash.
+  """
+  hash: HexEncoded!
+  """
+  The block height.
+  """
+  height: Int!
+  """
+  The protocol version.
+  """
+  protocolVersion: Int!
+  """
+  The UNIX timestamp.
+  """
+  timestamp: Int!
+  """
+  The block author.
+  """
+  author: HexEncoded
+  """
+  The parent of this block.
+  """
+  parent: Block
+  """
+  The transactions within this block.
+  """
+  transactions: [Transaction!]!
+}
+
+"""
+Either a hash or a height to query a block.
+"""
+input BlockOffset @oneOf {
+  hash: HexEncoded
+  height: Int
+}
+
+"""
+A contract action.
+"""
+interface ContractAction {
+  address: HexEncoded!
+  state: HexEncoded!
+  chainState: HexEncoded!
+  transaction: Transaction!
+}
+
+"""
+Either a block offset or a transaction offset to query a contract action.
+"""
+input ContractActionOffset @oneOf {
+  blockOffset: BlockOffset
+  transactionOffset: TransactionOffset
+}
+
+"""
+A contract call.
+"""
+type ContractCall implements ContractAction {
+  address: HexEncoded!
+  state: HexEncoded!
+  chainState: HexEncoded!
+  entryPoint: HexEncoded!
+  transaction: Transaction!
+  deploy: ContractDeploy!
+}
+
+"""
+A contract deployment.
+"""
+type ContractDeploy implements ContractAction {
+  address: HexEncoded!
+  state: HexEncoded!
+  chainState: HexEncoded!
+  transaction: Transaction!
+}
+
+"""
+A contract update.
+"""
+type ContractUpdate implements ContractAction {
+  address: HexEncoded!
+  state: HexEncoded!
+  chainState: HexEncoded!
+  transaction: Transaction!
+}
+
+scalar HexEncoded
+
+type MerkleTreeCollapsedUpdate {
+  """
+  The protocol version.
+  """
+  protocolVersion: Int!
+  """
+  The start index into the zswap state.
+  """
+  start: Int!
+  """
+  The end index into the zswap state.
+  """
+  end: Int!
+  """
+  The hex-encoded merkle-tree collapsed update.
+  """
+  update: HexEncoded!
+}
+
+type Mutation {
+  """
+  Connect the wallet with the given viewing key and return a session ID.
+  """
+  connect(viewingKey: ViewingKey!): HexEncoded!
+  """
+  Disconnect the wallet with the given session ID.
+  """
+  disconnect(sessionId: HexEncoded!): Unit!
+}
+
+type ProgressUpdate {
+  """
+  The highest end index into the zswap state of all currently known transactions.
+  """
+  highestIndex: Int!
+  """
+  The highest end index into the zswap state of all currently known relevant transactions,
+  i.e. such that belong to any wallet. Less or equal `highest_index`.
+  """
+  highestRelevantIndex: Int!
+  """
+  The highest end index into the zswap state of all currently known relevant transactions for
+  a particular wallet. Less or equal `highest_relevant_index`.
+  """
+  highestRelevantWalletIndex: Int!
+}
+
+type Query {
+  """
+  Find a block for the given optional offset; if not present, the latest block is returned.
+  """
+  block(offset: BlockOffset): Block
+  """
+  Find transactions for the given offset.
+  """
+  transactions(offset: TransactionOffset!): [Transaction!]!
+  """
+  Find a contract action for the given address and optional offset.
+  """
+  contractAction(address: HexEncoded!, offset: ContractActionOffset): ContractAction
+}
+
+type RelevantTransaction {
+  """
+  Relevant transaction for the wallet.
+  """
+  transaction: Transaction!
+  """
+  The start index.
+  """
+  start: Int!
+  """
+  The end index.
+  """
+  end: Int!
+}
+
+type Subscription {
+  """
+  Subscribe to blocks.
+  """
+  blocks(offset: BlockOffset): Block!
+  """
+  Subscribe to contract actions.
+  """
+  contractActions(address: HexEncoded!, offset: BlockOffset): ContractAction!
+  """
+  Subscribe to wallet events.
+  """
+  wallet(sessionId: HexEncoded!, index: Int, sendProgressUpdates: Boolean): WalletSyncEvent!
+}
+
+"""
+A transaction with its relevant data.
+"""
+type Transaction {
+  """
+  The transaction hash.
+  """
+  hash: HexEncoded!
+  """
+  The protocol version.
+  """
+  protocolVersion: Int!
+  """
+  The transaction apply stage.
+  """
+  applyStage: ApplyStage!
+  """
+  The transaction identifiers.
+  """
+  identifiers: [HexEncoded!]!
+  """
+  The raw transaction content.
+  """
+  raw: HexEncoded!
+  """
+  The merkle-tree root.
+  """
+  merkleTreeRoot: HexEncoded!
+  """
+  The block for this transaction.
+  """
+  block: Block!
+  """
+  The contract actions.
+  """
+  contractActions: [ContractAction!]!
+}
+
+"""
+Either a hash or an identifier to query transactions.
+"""
+input TransactionOffset @oneOf {
+  hash: HexEncoded
+  identifier: HexEncoded
+}
+
+scalar Unit
+
+scalar ViewingKey
+
+type ViewingUpdate {
+  """
+  Next start index into the zswap state to be queried. Usually the end index of the included
+  relevant transaction plus one unless that is a failure in which case just its end
+  index.
+  """
+  index: Int!
+  """
+  Relevant transaction for the wallet and maybe a collapsed Merkle-Tree update.
+  """
+  update: [ZswapChainStateUpdate!]!
+}
+
+union WalletSyncEvent = ViewingUpdate | ProgressUpdate
+
+union ZswapChainStateUpdate = MerkleTreeCollapsedUpdate | RelevantTransaction
+
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+directive @oneOf on INPUT_OBJECT
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}

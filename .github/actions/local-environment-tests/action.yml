@@ -1,0 +1,155 @@
+name: "Deploy and Test Against Local Environment"
+description: "Deploys a local environment and runs end-to-end tests."
+inputs:
+  sha:
+    description: "SHA to checkout"
+    required: true
+  image:
+    description: "Node Image"
+    required: true
+  tag:
+    description: "PC Artifact Tag"
+    required: true
+  tests:
+    description: "Test set to run (premerge or postmerge)"
+    required: true
+  ghcr-password:
+    description: "Password for Docker login to GHCR"
+    required: true
+  indexer-tag:
+    description: "Indexer tag to use for the indexer image"
+    required: true
+  indexer-api-image:
+    description: "Indexer API image reference"
+    required: true
+  chain-indexer-image:
+    description: "Chain indexer image reference"
+    required: true
+  wallet-indexer-image:
+    description: "Wallet indexer image reference"
+    required: true
+
+outputs: {}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install jq
+      uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+    - name: Checkout code
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      with:
+        clean: false
+
+    - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      with:
+        version: v0.8.0
+
+    - name: Docker Login
+      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+      with:
+        registry: ghcr.io
+        username: MidnightCI
+        password: ${{ inputs.ghcr-password }}
+
+    - name: Deploy local environment
+      run: |
+        echo "🔍 Debug: Checking input values..."
+        echo "NODE_IMAGE: ${{ inputs.image }}"
+        echo "INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}"
+        echo "CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}"
+        echo "WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}"
+        
+        echo "🚀 Running Earthly command..."
+        earthly +start-local-env-with-indexer-ci \
+          --NODE_IMAGE=${{ inputs.image }} \
+          --INDEXER_API_IMAGE=${{ inputs.indexer-api-image }} \
+          --CHAIN_INDEXER_IMAGE=${{ inputs.chain-indexer-image }} \
+          --WALLET_INDEXER_IMAGE=${{ inputs.wallet-indexer-image }}
+      shell: bash
+
+    - name: Run Indexer E2E Tests
+      uses: ./.github/actions/reusable-e2e-tests
+      with:
+        just-command: indexer-api-e2e
+        ghcr-password: ${{ inputs.ghcr-password }}
+
+    - name: e2e tests
+      id: e2e-tests
+      run: earthly +local-env-e2e
+      shell: bash
+
+    - name: node-e2e-tests
+      id: node-e2e-tests
+      run: earthly +node-e2e-test
+      shell: bash
+
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      with:
+        name: node-e2e-test-results
+        path: test-artifacts/e2e/node/
+        retention-days: 7
+      
+    - name: Setup Node
+      if: always()
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  #v4.4.0
+      with:
+        node-version: 'latest'
+
+    - name: Post Test Results to PR and Display Summary
+      if: always() && github.event_name == 'pull_request'
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Determine test status
+          const nodeE2eStatus = '${{ steps.node-e2e-tests.outcome }}';
+          const e2eStatus = '${{ steps.e2e-tests.outcome }}';
+          
+          // Update GitHub step summary
+          let summary = '## Node E2E Test Results\n';
+          if (fs.existsSync('test-artifacts')) {
+            summary += '✅ Test artifacts saved successfully\n';
+            summary += '📁 Artifacts location: test-artifacts/\n';
+            if (fs.existsSync('test-artifacts/e2e')) {
+              summary += '📊 Test reports available in test-artifacts/e2e/\n';
+              if (fs.existsSync('test-artifacts/e2e/node/test-output.log')) {
+                summary += '📋 Test Output Log:\n';
+                summary += '```\n';
+                try {
+                  const logContent = fs.readFileSync('test-artifacts/e2e/node/test-output.log', 'utf8');
+                  summary += logContent;
+                } catch (error) {
+                  summary += 'Error reading log file';
+                }
+                summary += '\n```\n';
+              }
+            }
+          } else {
+            summary += '❌ No test artifacts found\n';
+          }
+          
+          // Write to GitHub step summary
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+
+    - name: Collect Docker logs
+      if: ${{ failure() }}
+      run: |
+        mkdir -p local-environment-logs-initial
+        docker ps -a --format '{{.Names}}' | while read line; do
+          echo "======= Collecting logs for container $line ======="
+          docker logs "$line" 2>&1 | tee "local-environment-logs-initial/$line.log" || true
+        done
+      shell: bash
+
+    - name: Upload Docker logs artifact
+      if: ${{ always() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      with:
+        name: local-environment-logs-initial
+        path: local-environment-logs-initial/

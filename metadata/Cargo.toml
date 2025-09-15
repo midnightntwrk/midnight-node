@@ -1,0 +1,10 @@
+[package]
+name = "midnight-node-metadata"
+version = "0.16.2"
+edition = "2024"
+
+[dependencies]
+subxt.workspace = true
+
+[lints]
+workspace = true

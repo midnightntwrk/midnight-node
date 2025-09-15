@@ -1,0 +1,71 @@
+[package]
+name          = "indexer-common"
+version       = "0.1.0"
+description   = "Common Indexer functionality"
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+async-nats                   = { workspace = true, optional = true }
+bech32                       = { workspace = true }
+chacha20poly1305             = { workspace = true, features = [ "std" ] }
+const-hex                    = { workspace = true, features = [ "serde" ] }
+derive_more                  = { workspace = true, features = [ "as_ref", "deref", "display", "from", "into" ] }
+fastrace                     = { workspace = true }
+fastrace-opentelemetry       = { workspace = true }
+figment                      = { workspace = true, features = [ "env", "yaml" ] }
+futures                      = { workspace = true }
+humantime-serde              = { workspace = true }
+log                          = { workspace = true, features = [ "kv_std" ] }
+logforth                     = { workspace = true, features = [ "append-fastrace", "diagnostic-fastrace", "layout-json" ] }
+metrics-exporter-prometheus  = { workspace = true, features = [ "http-listener" ] }
+midnight-base-crypto_v6      = { workspace = true }
+midnight-coin-structure_v6   = { workspace = true }
+midnight-ledger_v6           = { workspace = true }
+midnight-onchain-runtime_v6  = { workspace = true }
+midnight-serialize_v6        = { workspace = true }
+midnight-storage_v6          = { workspace = true }
+midnight-transient-crypto_v6 = { workspace = true }
+midnight-zswap_v6            = { workspace = true }
+opentelemetry                = { workspace = true }
+opentelemetry_sdk            = { workspace = true }
+opentelemetry-otlp           = { workspace = true, features = [ "grpc-tonic" ] }
+parity-scale-codec           = { workspace = true }
+parking_lot                  = { workspace = true }
+secrecy                      = { workspace = true, features = [ "serde" ] }
+serde                        = { workspace = true, features = [ "derive" ] }
+serde_json                   = { workspace = true }
+serde_with                   = { workspace = true, optional = true }
+sha2                         = { workspace = true }
+sqlx                         = { workspace = true, features = [ "runtime-tokio", "uuid" ] }
+thiserror                    = { workspace = true }
+tokio                        = { workspace = true, features = [ "time" ] }
+tokio-stream                 = { workspace = true, features = [ "sync" ] }
+tokio-util                   = { workspace = true, features = [ "io" ] }
+trait-variant                = { workspace = true }
+
+[dev-dependencies]
+anyhow                 = { workspace = true }
+assert_matches         = { workspace = true }
+bip32                  = { workspace = true }
+reqwest                = { workspace = true }
+testcontainers         = { workspace = true }
+testcontainers-modules = { workspace = true, features = [ "postgres" ] }
+thiserror              = { workspace = true }
+tokio                  = { workspace = true, features = [ "macros", "rt-multi-thread" ] }
+
+[features]
+cloud      = [ "async-nats", "serde_with", "sqlx/postgres" ]
+standalone = [ "sqlx/sqlite" ]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(coverage_nightly)' ] }

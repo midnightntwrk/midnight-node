@@ -1,0 +1,4 @@
+.papi
+# Ignore artifacts:
+build
+coverage

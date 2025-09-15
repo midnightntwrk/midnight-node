@@ -1,0 +1,5 @@
+target
+.git
+**/node_modules
+**/dist
+!/tests/.papi/descriptors/dist

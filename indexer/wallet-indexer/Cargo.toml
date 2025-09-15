@@ -1,0 +1,38 @@
+[package]
+name          = "wallet-indexer"
+description   = "Wallet Indexer"
+version       = { workspace = true }
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+anyhow           = { workspace = true }
+chacha20poly1305 = { workspace = true }
+derive_more      = { workspace = true, features = [ "debug" ] }
+fastrace         = { workspace = true }
+futures          = { workspace = true }
+humantime-serde  = { workspace = true }
+indexer-common   = { path = "../indexer-common" }
+indoc            = { workspace = true }
+log              = { workspace = true, features = [ "kv" ] }
+itertools        = { workspace = true }
+secrecy          = { workspace = true }
+serde            = { workspace = true, features = [ "derive" ] }
+sqlx             = { workspace = true, features = [ "runtime-tokio", "time", "uuid" ] }
+tokio            = { workspace = true, features = [ "macros", "rt-multi-thread", "time", "signal" ] }
+tokio-stream     = { workspace = true }
+trait-variant    = { workspace = true }
+uuid             = { workspace = true, features = [ "v7" ] }
+
+[features]
+cloud      = [ "indexer-common/cloud" ]
+standalone = [ "indexer-common/standalone" ]

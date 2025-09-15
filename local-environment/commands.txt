@@ -1,0 +1,29 @@
+# register a chain
+
+./midnight-node smart-contracts governance init
+
+./midnight-node smart-contracts get-scripts > addresses.json
+
+./midnight-node smart-contracts upsert-d-parameter
+./midnight-node smart-contracts upsert-permissioned-candidates
+
+## register a permissioned validator
+./midnight-node registration-signatures    
+./midnight-node smart-contracts register 
+
+./midnight-node build-spec --disable-default-bootnode > chain-spec.json
+
+THEN
+
+./midnight-node wizards create-chain-spec
+spawn ./midnight-node wizards setup-main-chain-state
+
+## SPOs:
+
+./midnight-node wizards start-node
+./midnight-node wizards generate-keys
+
+extras for non-permissioned:
+```bash
+./midnight-node wizards register1 > midnight-node wizards register2 > midnight-node wizards register3
+```

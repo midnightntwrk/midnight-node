@@ -1,0 +1,8 @@
+*.check
+.DS_Store
+.envrc.local
+.idea
+.sync_cache
+.vscode
+.zed
+target

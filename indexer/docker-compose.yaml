@@ -1,0 +1,168 @@
+# This file is part of https://github.com/midnightntwrk/midnight-indexer
+# Copyright (C) 2025 Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# NOTE: This Docker Compose file is for local development and testing
+#       and NOT meant for production use!
+
+services:
+  chain-indexer:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_TAG:-latest}"
+    restart: "no"
+    environment:
+      RUST_LOG: "chain_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__NODE__URL: "ws://node:9944"
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD: $APP__INFRA__STORAGE__PASSWORD
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: $APP__INFRA__PUB_SUB__PASSWORD
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: $APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD
+      APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+    healthcheck:
+      test: [ "CMD-SHELL", "cat /var/run/chain-indexer/running" ]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  wallet-indexer:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_TAG:-latest}"
+    restart: "no"
+    environment:
+      RUST_LOG: "wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET: $APP__INFRA__SECRET
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD: $APP__INFRA__STORAGE__PASSWORD
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: $APP__INFRA__PUB_SUB__PASSWORD
+    healthcheck:
+      test: [ "CMD-SHELL", "cat /var/run/wallet-indexer/running" ]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  indexer-api:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_TAG:-latest}"
+    restart: "no"
+    ports:
+      - "8088:8088"
+    environment:
+      RUST_LOG: "indexer_api=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET: $APP__INFRA__SECRET
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD: $APP__INFRA__STORAGE__PASSWORD
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD: $APP__INFRA__PUB_SUB__PASSWORD
+      APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: $APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD
+      APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+    healthcheck:
+      test: [ "CMD-SHELL", "cat /var/run/indexer-api/running" ]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  indexer-standalone:
+    depends_on:
+      - node
+    profiles:
+      - standalone
+    image: "ghcr.io/midnight-ntwrk/indexer-standalone:${INDEXER_TAG:-latest}"
+    restart: "no"
+    ports:
+      - "8088:8088"
+    environment:
+      RUST_LOG: "indexer_standalone=debug,chain_indexer=debug,indexer_api=debug,wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET: $APP__INFRA__SECRET
+      APP__INFRA__NODE__URL: "ws://node:9944"
+    healthcheck:
+      test: [ "CMD-SHELL", "cat /var/run/indexer-standalone/running" ]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  postgres:
+    profiles:
+      - cloud
+    image: "postgres:17.1-alpine"
+    restart: "always"
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./target/data/postgres:/var/lib/postgresql/data"
+    environment:
+      POSTGRES_USER: "indexer"
+      POSTGRES_DB: "indexer"
+      POSTGRES_PASSWORD: $APP__INFRA__STORAGE__PASSWORD
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U indexer" ]
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+    security_opt:
+      - no-new-privileges:true
+
+  nats:
+    profiles:
+      - cloud
+    image: "nats:2.11.1"
+    restart: "always"
+    command: [ "--user", "indexer", "--pass", $APP__INFRA__PUB_SUB__PASSWORD, "-js" ]
+    ports:
+      - "4222:4222"
+    volumes:
+      - "./target/data/nats:/tmp/nats"
+    security_opt:
+      - no-new-privileges:true
+
+  node:
+    profiles: [ cloud, standalone ]
+    image: "ghcr.io/midnight-ntwrk/midnight-node:${NODE_TAG:-latest}"
+    restart: "always"
+    ports:
+      - "9944:9944"
+    volumes:
+      - "./target/data/node:/node"
+    environment:
+      SHOW_CONFIG: "false"
+      CFG_PRESET: "dev"
+    security_opt:
+      - no-new-privileges:true

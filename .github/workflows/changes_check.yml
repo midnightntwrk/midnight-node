@@ -1,0 +1,70 @@
+name: "Changes Check"
+on:
+  pull_request:
+    # The specific activity types are listed here to include "labeled" and "unlabeled"
+    # (which are not included by default for the "pull_request" trigger).
+    # This is needed to allow skipping enforcement of the changelog in PRs with specific labels,
+    # as defined in the (optional) "skipLabels" property.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+jobs:
+  # Enforces the update of a changelog file on every pull request 
+  check-changes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io/midnight-ntwrk
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+
+      - name: Check changes can be rendered
+        run: docker run -v "$PWD/changes:/changes" ghcr.io/midnight-ntwrk/season:0.3.1 build /changes
+
+      - name: Check changes files for link to PR
+        if: ${{ (!contains(github.event.pull_request.labels.*.name, 'skip-changes-check-all') && !contains(github.event.pull_request.labels.*.name, 'renovate') && !contains(github.event.pull_request.labels.*.name, 'dependencies')) }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
+          if [ -z "$FILENAME" ]; then
+            echo "No changes found for PR $PR_NUMBER"
+            exit 1
+          else
+            echo "Changes file for PR $PR_NUMBER found: $FILENAME"
+          fi
+
+      - name: Check changes files for JIRA links
+        if: ${{ (!(contains(github.event.pull_request.labels.*.name, 'skip-changes-check-all') || contains(github.event.pull_request.labels.*.name, 'skip-changes-check-jira'))) && !contains(github.event.pull_request.labels.*.name, 'renovate') && !contains(github.event.pull_request.labels.*.name, 'dependencies') }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
+          echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
+          if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" $FILENAME; fi
+
+      - name: Restore lychee cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809  #v4.2.1
+        with:
+          path: .lycheecache
+          key: cache-lychee-${{ github.sha }}
+          restore-keys: cache-lychee-
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@885c65f3dc543b57c898c8099f4e08c8afd178a2  #v2.6.1
+        with:
+          args: >
+            --base .
+            --cache
+            --max-cache-age 1d
+            --exclude-path ./ui/public/index.html
+            --exclude-path ./changes/index.md
+            --exclude '^https://github\.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check'
+            --exclude '^https://x\.com/MidnightNtwrk'
+            .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

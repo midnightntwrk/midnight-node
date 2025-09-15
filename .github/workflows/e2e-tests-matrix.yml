@@ -1,0 +1,48 @@
+name: +node-e2e-test-remote (matrix wrapper)
+
+on:
+  workflow_dispatch:
+    inputs:
+      QA_BRANCH:
+        type: string
+        description: QA branch to use
+        required: false
+      RESET: 
+        type: choice
+        description: Reset the cache
+        required: true
+        default: 'false'
+        options: [true, false]
+      TEST_ENV_INPUT:
+        type: choice
+        description: Env
+        options: [qanet, node-dev-01, testnet-02, local]
+        default: qanet
+
+  schedule:
+    - cron: '0 2 * * *'   # node-dev-01
+    - cron: '0 3 * * *'   # qanet
+    - cron: '30 3 * * *'  # testnet-02
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Run e2e (${{ matrix.env }})
+    uses: ./.github/workflows/e2e-tests-remote.yml
+    strategy:
+      matrix:
+        include:
+          - env: node-dev-01
+            default_branch: qa-node-dev-01
+          - env: qanet
+            default_branch: qa-qanet
+          - env: testnet-02
+            default_branch: qa-testnet
+    with:
+      TEST_ENV_INPUT: ${{ github.event.inputs.TEST_ENV_INPUT || matrix.env }}
+      QA_BRANCH: ${{ github.event.inputs.QA_BRANCH || matrix.default_branch }}
+      RESET: ${{ github.event.inputs.RESET || 'false' }}
+    secrets: inherit

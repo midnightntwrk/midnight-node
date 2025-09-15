@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT \n    block_no as \"block_number!: _\", \n    hash as \"hash: _\",\n    epoch_no as \"epoch_number!: _\",\n    slot_no as \"slot_number!: _\", \n    time,\n    tx_count\nFROM block\nWHERE hash = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "epoch_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "slot_number!: _",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "time",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "tx_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "be87cf7a2493a312efb3577378402e3fc5338ceab18d695d27eb40352834233a"
+}

@@ -1,0 +1,154 @@
+[package]
+name = "midnight-node"
+version = "0.16.2"
+description = "Midnight blockchain node"
+authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
+homepage = "https://substrate.io/"
+edition = "2024"
+license = "Unlicense"
+publish = false
+repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
+build = "build.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[[bin]]
+name = "midnight-node"
+
+[dependencies]
+clap.workspace = true
+hex.workspace = true
+
+# preserve_order is required for cfg
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+sc-cli.workspace = true
+sc-chain-spec.workspace = true
+sp-core.workspace = true
+sp-keyring.workspace = true
+sc-keystore.workspace = true
+sc-executor.workspace = true
+sp-externalities.workspace = true
+sc-service.workspace = true
+sc-telemetry.workspace = true
+sc-transaction-pool.workspace = true
+sc-transaction-pool-api.workspace = true
+sc-consensus.workspace = true
+sc-consensus-aura.workspace = true
+sc-consensus-beefy.workspace = true
+sc-consensus-beefy-rpc.workspace = true
+sc-consensus-grandpa.workspace = true
+sc-consensus-grandpa-rpc.workspace = true
+sp-consensus-grandpa.workspace = true
+sc-consensus-slots.workspace = true
+sc-offchain.workspace = true
+sc-client-api.workspace = true
+sc-network.workspace = true
+sp-consensus-aura.workspace = true
+sp-consensus-beefy.workspace = true
+sp-runtime.workspace = true
+sp-timestamp.workspace = true
+
+mmr-rpc.workspace = true
+mmr-gadget.workspace = true
+sp-mmr-primitives.workspace = true
+
+# These dependencies are used for the node's RPCs
+jsonrpsee = { workspace = true, features = ["server"] }
+sp-api.workspace = true
+sc-rpc.workspace = true
+sc-rpc-api.workspace = true
+sp-blockchain.workspace = true
+sp-block-builder.workspace = true
+sc-basic-authorship.workspace = true
+substrate-frame-rpc-system.workspace = true
+
+# These dependencies are used for runtime benchmarking
+frame-benchmarking = {workspace = true, optional = true}
+frame-benchmarking-cli = {workspace = true, optional = true}
+
+# Local Dependencies
+midnight-node-runtime = { workspace = true, default-features = true }
+midnight-node-ledger = { workspace = true, default-features = true }
+midnight-node-ledger-helpers = {workspace = true, default-features = true }
+midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
+midnight-primitives-upgrade = { workspace = true, default-features = true }
+midnight-primitives-upgrade-api = { workspace = true, default-features = true }
+midnight-primitives-ledger = { workspace = true, default-features = true }
+midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
+midnight-primitives-native-token-observation  = { workspace = true, default-features = true }
+pallet-midnight = { workspace = true, default-features = true }
+pallet-midnight-rpc = { workspace = true, default-features = true }
+mn-ledger.workspace = true
+
+# CLI-specific dependencies
+# try-runtime-cli = { optional = true, workspace = true }
+# The deprecated `try-runtime` subcommand and `try-runtime-cli` crate has been completely removed.
+# If you are not already, you should be using the standalone CLI at https://github.com/paritytech/try-runtime-cli.
+
+thiserror = "1.0.50"
+log.workspace = true
+authority-selection-inherents.workspace = true
+#sp-block-rewards = { workspace = true, optional = true }
+sp-sidechain.workspace = true
+sp-session-validator-management.workspace = true
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "native-token", "sidechain-rpc", "governed-map"] }
+partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "native-token", "sidechain-rpc", "governed-map"] }
+pallet-session-validator-management-rpc.workspace = true
+pallet-sidechain-rpc.workspace = true
+pallet-governed-map.workspace = true
+sidechain-slots.workspace = true
+sidechain-domain = { workspace = true, features = ["serde"] }
+sidechain-mc-hash = { workspace = true, features = ["mock"] }
+sp-partner-chains-consensus-aura.workspace = true
+sc-partner-chains-consensus-aura.workspace = true
+sp-session-validator-management-query.workspace = true
+sp-governed-map.workspace = true
+partner-chains-node-commands.workspace = true
+
+sc-storage-monitor.workspace = true
+sp-inherents.workspace = true
+sp-keystore.workspace = true
+sp-io.workspace = true
+frame-system.workspace = true
+time-source.workspace = true
+parity-scale-codec = { workspace = true, features = ["derive"] }
+config = "0.14.0"
+serde_valid = "0.24.0"
+documented.workspace = true
+shell-words = "1.1.0"
+derive-new.workspace = true
+
+sp-native-token-management = { workspace = true, default-features = true }
+sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
+tokio.workspace = true
+
+[dev-dependencies]
+
+[build-dependencies]
+substrate-build-script-utils.workspace = true
+
+[features]
+default = []
+
+# Dependencies that are only required if runtime benchmarking should be build.
+runtime-benchmarks = [
+    "midnight-node-runtime/runtime-benchmarks",
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-benchmarking-cli/runtime-benchmarks",
+]
+# Enable features that allow the runtime to be tried and debugged. Name might be subject to change
+# in the near future.
+try-runtime = ["midnight-node-runtime/try-runtime"]
+experimental = [
+    #"sp-block-rewards",
+    "partner-chains-db-sync-data-sources/native-token",
+    "partner-chains-mock-data-sources/native-token",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["midnight-ledger"]

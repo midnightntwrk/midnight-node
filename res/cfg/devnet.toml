@@ -1,0 +1,11 @@
+chain = "res/devnet/chain-spec-raw.json"
+base_path = "node/chain"
+
+chainspec_name = "devnet1"
+chainspec_id = "devnet"
+chainspec_network_id = "devnet"
+chainspec_genesis_state = "res/genesis/genesis_state_devnet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_devnet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/devnet/pc-chain-config.json"
+chainspec_federated_authority_config = "res/devnet/federated-authority-config.json"

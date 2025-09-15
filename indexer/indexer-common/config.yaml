@@ -1,0 +1,11 @@
+# Just for testing purposes!
+
+telemetry:
+  tracing:
+    enabled: false
+    service_name: "wallet-indexer"
+    otlp_exporter_endpoint: "http://localhost:4317"
+  metrics:
+    enabled: true
+    address: "0.0.0.0"
+    port: 9000
