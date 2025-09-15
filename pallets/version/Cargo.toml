@@ -1,0 +1,36 @@
+[package]
+name = "pallet-version"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight version pallet"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+parity-scale-codec.workspace = true
+frame-support.workspace = true
+frame-system.workspace = true
+scale-info.workspace = true
+sp-version.workspace = true
+sp-runtime.workspace = true
+
+[dev-dependencies]
+sp-io = { workspace = true, default-features = true }
+sp-api.workspace = true
+
+[features]
+default = ["std"]
+#TODO: remove feature once pallet::hooks stops refering to it.
+try-runtime = []
+std = [
+    "parity-scale-codec/std",
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "sp-version/std",
+    "sp-runtime/std",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info"]

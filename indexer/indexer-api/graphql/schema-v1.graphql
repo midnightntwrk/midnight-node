@@ -1,0 +1,492 @@
+"""
+A block with its relevant data.
+"""
+type Block {
+	"""
+	The block hash.
+	"""
+	hash: HexEncoded!
+	"""
+	The block height.
+	"""
+	height: Int!
+	"""
+	The protocol version.
+	"""
+	protocolVersion: Int!
+	"""
+	The UNIX timestamp.
+	"""
+	timestamp: Int!
+	"""
+	The hex-encoded block author.
+	"""
+	author: HexEncoded
+	"""
+	The parent of this block.
+	"""
+	parent: Block
+	"""
+	The transactions within this block.
+	"""
+	transactions: [Transaction!]!
+}
+
+"""
+Either a block hash or a block height.
+"""
+input BlockOffset @oneOf {
+	"""
+	A hex-encoded block hash.
+	"""
+	hash: HexEncoded
+	"""
+	A block height.
+	"""
+	height: Int
+}
+
+type CollapsedMerkleTree {
+	"""
+	The zswap state start index.
+	"""
+	startIndex: Int!
+	"""
+	The zswap state end index.
+	"""
+	endIndex: Int!
+	"""
+	The hex-encoded value.
+	"""
+	update: HexEncoded!
+	"""
+	The protocol version.
+	"""
+	protocolVersion: Int!
+}
+
+"""
+A contract action.
+"""
+interface ContractAction {
+	address: HexEncoded!
+	state: HexEncoded!
+	chainState: HexEncoded!
+	transaction: Transaction!
+}
+
+"""
+Either a block offset or a transaction offset.
+"""
+input ContractActionOffset @oneOf {
+	"""
+	Either a block hash or a block height.
+	"""
+	blockOffset: BlockOffset
+	"""
+	Either a transaction hash or a transaction identifier.
+	"""
+	transactionOffset: TransactionOffset
+}
+
+"""
+Represents a token balance held by a contract.
+This type is exposed through the GraphQL API to allow clients to query
+unshielded token balances for any contract action (Deploy, Call, Update).
+"""
+type ContractBalance {
+	"""
+	Hex-encoded token type identifier.
+	"""
+	tokenType: HexEncoded!
+	"""
+	Balance amount as string to support larger integer values (up to 16 bytes).
+	"""
+	amount: String!
+}
+
+"""
+A contract call.
+"""
+type ContractCall implements ContractAction {
+	"""
+	The hex-encoded serialized address.
+	"""
+	address: HexEncoded!
+	"""
+	The hex-encoded serialized state.
+	"""
+	state: HexEncoded!
+	"""
+	The hex-encoded serialized contract-specific zswap state.
+	"""
+	chainState: HexEncoded!
+	"""
+	The hex-encoded serialized entry point.
+	"""
+	entryPoint: HexEncoded!
+	transaction: Transaction!
+	deploy: ContractDeploy!
+	"""
+	Unshielded token balances held by this contract.
+	"""
+	unshieldedBalances: [ContractBalance!]!
+}
+
+"""
+A contract deployment.
+"""
+type ContractDeploy implements ContractAction {
+	"""
+	The hex-encoded serialized address.
+	"""
+	address: HexEncoded!
+	"""
+	The hex-encoded serialized state.
+	"""
+	state: HexEncoded!
+	"""
+	The hex-encoded serialized contract-specific zswap state.
+	"""
+	chainState: HexEncoded!
+	transaction: Transaction!
+	"""
+	Unshielded token balances held by this contract.
+	According to the architecture, deployed contracts must have zero balance.
+	"""
+	unshieldedBalances: [ContractBalance!]!
+}
+
+"""
+A contract update.
+"""
+type ContractUpdate implements ContractAction {
+	"""
+	The hex-encoded serialized address.
+	"""
+	address: HexEncoded!
+	"""
+	The hex-encoded serialized state.
+	"""
+	state: HexEncoded!
+	"""
+	The hex-encoded serialized contract-specific zswap state.
+	"""
+	chainState: HexEncoded!
+	transaction: Transaction!
+	"""
+	Unshielded token balances held by this contract after the update.
+	"""
+	unshieldedBalances: [ContractBalance!]!
+}
+
+scalar HexEncoded
+
+type Mutation {
+	"""
+	Connect the wallet with the given viewing key and return a session ID.
+	"""
+	connect(viewingKey: ViewingKey!): HexEncoded!
+	"""
+	Disconnect the wallet with the given session ID.
+	"""
+	disconnect(sessionId: HexEncoded!): Unit!
+}
+
+type Query {
+	"""
+	Find a block for the given optional offset; if not present, the latest block is returned.
+	"""
+	block(offset: BlockOffset): Block
+	"""
+	Find transactions for the given offset.
+	"""
+	transactions(offset: TransactionOffset!): [Transaction!]!
+	"""
+	Find a contract action for the given address and optional offset.
+	"""
+	contractAction(address: HexEncoded!, offset: ContractActionOffset): ContractAction
+}
+
+"""
+A transaction relevant for the subscribing wallet and an optional collapsed merkle tree.
+"""
+type RelevantTransaction {
+	"""
+	A transaction relevant for the subscribing wallet.
+	"""
+	transaction: Transaction!
+	"""
+	An optional collapsed merkle tree.
+	"""
+	collapsedMerkleTree: CollapsedMerkleTree
+}
+
+"""
+One of many segments for a partially successful transaction result showing success for some
+segment.
+"""
+type Segment {
+	"""
+	Segment ID.
+	"""
+	id: Int!
+	"""
+	Successful or not.
+	"""
+	success: Boolean!
+}
+
+"""
+An event of the shielded transactions subscription.
+"""
+union ShieldedTransactionsEvent = RelevantTransaction | ShieldedTransactionsProgress
+
+"""
+Information about the shielded transactions indexing progress.
+"""
+type ShieldedTransactionsProgress {
+	"""
+	The highest zswap state end index (see `endIndex` of `Transaction`) of all transactions. It
+	represents the known state of the blockchain. A value of zero (completely unlikely) means
+	that no shielded transactions have been indexed yet.
+	"""
+	highestEndIndex: Int!
+	"""
+	The highest zswap state end index (see `endIndex` of `Transaction`) of all transactions
+	checked for relevance. Initially less than and eventually (when some wallet has been fully
+	indexed) equal to `highest_end_index`. A value of zero (very unlikely) means that no wallet
+	has subscribed before and indexing for the subscribing wallet has not yet started.
+	"""
+	highestCheckedEndIndex: Int!
+	"""
+	The highest zswap state end index (see `endIndex` of `Transaction`) of all relevant
+	transactions for the subscribing wallet. Usually less than `highest_checked_end_index`
+	unless the latest checked transaction is relevant for the subscribing wallet. A value of
+	zero means that no relevant transactions have been indexed for the subscribing wallet.
+	"""
+	highestRelevantEndIndex: Int!
+}
+
+type Subscription {
+	"""
+	Subscribe to blocks starting at the given offset or at the latest block if the offset is
+	omitted.
+	"""
+	blocks(offset: BlockOffset): Block!
+	"""
+	Subscribe to contract actions with the given address starting at the given offset or at the
+	latest block if the offset is omitted.
+	"""
+	contractActions(address: HexEncoded!, offset: BlockOffset): ContractAction!
+	"""
+	Subscribe shielded transaction events for the given session ID starting at the given index
+	or at zero if omitted.
+	"""
+	shieldedTransactions(sessionId: HexEncoded!, index: Int): ShieldedTransactionsEvent!
+	"""
+	Subscribe unshielded transaction events for the given address and the given transaction ID
+	or zero if omitted.
+	"""
+	unshieldedTransactions(address: UnshieldedAddress!, transactionId: Int): UnshieldedTransactionsEvent!
+}
+
+"""
+A Midnight transaction.
+"""
+type Transaction {
+	"""
+	The transaction ID.
+	"""
+	id: Int!
+	"""
+	The hex-encoded transaction hash.
+	"""
+	hash: HexEncoded!
+	"""
+	The protocol version.
+	"""
+	protocolVersion: Int!
+	"""
+	The hex-encoded serialized transaction content.
+	"""
+	raw: HexEncoded!
+	"""
+	The result of applying a transaction to the ledger state.
+	"""
+	transactionResult: TransactionResult!
+	"""
+	Fee information for this transaction.
+	"""
+	fees: TransactionFees!
+	"""
+	The hex-encoded serialized transaction identifiers.
+	"""
+	identifiers: [HexEncoded!]!
+	"""
+	The hex-encoded serialized merkle-tree root.
+	"""
+	merkleTreeRoot: HexEncoded!
+	"""
+	The zswap state start index.
+	"""
+	startIndex: Int!
+	"""
+	The zswap state end index.
+	"""
+	endIndex: Int!
+	"""
+	The block for this transaction.
+	"""
+	block: Block!
+	"""
+	The contract actions.
+	"""
+	contractActions: [ContractAction!]!
+	"""
+	Unshielded UTXOs created by this transaction.
+	"""
+	unshieldedCreatedOutputs: [UnshieldedUtxo!]!
+	"""
+	Unshielded UTXOs spent (consumed) by this transaction.
+	"""
+	unshieldedSpentOutputs: [UnshieldedUtxo!]!
+}
+
+"""
+Fees information for a transaction, including both paid and estimated fees.
+"""
+type TransactionFees {
+	"""
+	The actual fees paid for this transaction in DUST.
+	"""
+	paidFees: String!
+	"""
+	The estimated fees that was calculated for this transaction in DUST.
+	"""
+	estimatedFees: String!
+}
+
+"""
+Either a transaction hash or a transaction identifier.
+"""
+input TransactionOffset @oneOf {
+	"""
+	A hex-encoded transaction hash.
+	"""
+	hash: HexEncoded
+	"""
+	A hex-encoded transaction identifier.
+	"""
+	identifier: HexEncoded
+}
+
+"""
+The result of applying a transaction to the ledger state. In case of a partial success (status),
+there will be segments.
+"""
+type TransactionResult {
+	status: TransactionResultStatus!
+	segments: [Segment!]
+}
+
+"""
+The status of the transaction result: success, partial success or failure.
+"""
+enum TransactionResultStatus {
+	SUCCESS
+	PARTIAL_SUCCESS
+	FAILURE
+}
+
+scalar Unit
+
+scalar UnshieldedAddress
+
+"""
+A transaction that created and/or spent UTXOs alongside these and other information.
+"""
+type UnshieldedTransaction {
+	"""
+	The transaction that created and/or spent UTXOs.
+	"""
+	transaction: Transaction!
+	"""
+	UTXOs created in the above transaction, possibly empty.
+	"""
+	createdUtxos: [UnshieldedUtxo!]!
+	"""
+	UTXOs spent in the above transaction, possibly empty.
+	"""
+	spentUtxos: [UnshieldedUtxo!]!
+}
+
+"""
+An event of the unshielded transactions subscription.
+"""
+union UnshieldedTransactionsEvent = UnshieldedTransaction | UnshieldedTransactionsProgress
+
+"""
+Information about the unshielded indexing progress.
+"""
+type UnshieldedTransactionsProgress {
+	"""
+	The highest transaction ID of all currently known transactions for a subscribed address.
+	"""
+	highestTransactionId: Int!
+}
+
+"""
+Represents an unshielded UTXO.
+"""
+type UnshieldedUtxo {
+	"""
+	Owner Bech32m-encoded address.
+	"""
+	owner: UnshieldedAddress!
+	"""
+	Token hex-encoded serialized token type.
+	"""
+	tokenType: HexEncoded!
+	"""
+	UTXO value (quantity) as a string to support u128.
+	"""
+	value: String!
+	"""
+	Index of this output within its creating transaction.
+	"""
+	outputIndex: Int!
+	"""
+	The hex-encoded serialized intent hash.
+	"""
+	intentHash: HexEncoded!
+	"""
+	Transaction that created this UTXO.
+	"""
+	createdAtTransaction: Transaction!
+	"""
+	Transaction that spent this UTXO.
+	"""
+	spentAtTransaction: Transaction
+}
+
+scalar ViewingKey
+
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
+directive @oneOf on INPUT_OBJECT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+schema {
+	query: Query
+	mutation: Mutation
+	subscription: Subscription
+}
+

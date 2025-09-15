@@ -1,0 +1,63 @@
+name: +contract-precompiles (Build ledger test static data contracts and CI image)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Once a week
+    - cron: "0 0 * * 0"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Precompile contracts (${{ matrix.platform }})
+    strategy:
+      matrix:
+        # Define matrix with platform and corresponding GitHub-hosted runner
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest-16-core-x64 # Default x86_64 GitHub-hosted runner
+          - platform: linux/arm64
+            runner: ubuntu-latest-8-core-arm64 # Native ARM64 GitHub-hosted runner (public preview)
+
+    runs-on: ${{ matrix.runner }}
+
+    env:
+      FORCE_COLOR: 1
+    steps:
+      # Install Earthly
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      # Checkout the node repo
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+
+      # Log in to GitHub Container Registry
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      # Run Earthly build with platform-specific flags
+      - name: Run Earthly build for ${{ matrix.platform }}
+        run: |
+          # Force cargo to use CLI git instead of libgit2 (more robust in CI)
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          # Run Earthly platform-specific image builds
+          . ./.envrc && earthly --ci --platform=${{ matrix.platform }} --push +node-ci-image-single-platform

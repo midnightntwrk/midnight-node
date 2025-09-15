@@ -1,0 +1,58 @@
+name: "Deploy and Test Against Ephemeral Environment"
+description: "Deploys a temporary environment and runs end-to-end tests."
+
+inputs:
+  sha:
+    description: "SHA to checkout"
+    required: true
+  image:
+    description: "Node Image"
+    required: true
+  tag:
+    description: "PC Artifact Tag"
+    required: true
+  ghcr-password:
+    description: "Password for Docker login to GHCR"
+    required: true
+  aws-role-arn:
+    description: "AWS Role ARN to assume"
+    required: true
+  aws-region:
+    description: "AWS Region"
+    required: true
+  aws-eks-cluster-name:
+    description: "EKS Cluster Name"
+    required: true
+  aws-secret-access-key:
+    description: "AWS Secret Access Key"
+    required: true
+  aws-access-key-id:
+    description: "AWS Access Key ID"
+    required: true
+
+outputs: {}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+
+    - name: Docker Login
+      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+      with:
+        registry: ghcr.io
+        username: ntwrk-bot
+        password: ${{ inputs.ghcr-password }}
+
+    - name: Install Kubectl
+      uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  #v4.0.1
+
+    - name: Deploy ephemeral environment
+      run: |
+        cd local-env
+        npm install
+        npm run run:qanet
+      shell: bash
+      env:
+        NODE_IMAGE: ${{ inputs.image }}

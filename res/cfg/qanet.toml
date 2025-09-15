@@ -1,0 +1,11 @@
+chain = "res/qanet/chain-spec-raw.json"
+base_path = "node/chain"
+
+chainspec_name = "qanet1"
+chainspec_id = "qanet"
+chainspec_network_id = "devnet"
+chainspec_genesis_state = "res/genesis/genesis_state_qanet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_qanet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/qanet/pc-chain-config.json"
+chainspec_federated_authority_config = "res/qanet/federated-authority-config.json"

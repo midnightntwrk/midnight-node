@@ -1,0 +1,39 @@
+{
+  "chain_parameters": {
+    "genesis_utxo": "c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
+  },
+  "cardano": {
+    "security_parameter": 432,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wqgdltkw2egyzv7q65j285dmvqcs3223qw9fp4q3y79jnvsefxzwg",
+    "d_parameter_policy_id": "f61808fc43f0c4bad6b7aff7e92d09e9ced29ff8c41b449e9e103235",
+    "permissioned_candidates_policy_id": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5",
+    "governed_map": {
+      "policy_id": "00000000000000000000000000000000000000000000000000000001",
+      "validator_address": "test_addr1"
+    },
+    "native_token": {
+      "illiquid_supply_address": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
+      "asset": {
+        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+        "asset_name": "0x"
+      }
+    }
+  },
+  "initial_permissioned_candidates": [
+    {
+      "name": "Alice",
+      "ss58": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+      "aura_pub_key": "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+      "grandpa_pub_key": "0x88dc3417d5058ec4b4503e0c12ea1a0a89be200fe98922423d4334014fa6b0ee",
+      "sidechain_pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
+      "beefy_pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
+    }
+  ]
+}

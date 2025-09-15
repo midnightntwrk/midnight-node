@@ -1,0 +1,362 @@
+name: Main - Toolkit and Node build/publish
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "The branch to build and deploy"
+        required: true
+        default: "main"
+
+jobs:
+  publish-amd64:
+    name: AMD Build and Publish
+    runs-on: ubuntu-latest-16-core-x64
+    outputs:
+      IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Checkout Season action repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          repository: midnight-ntwrk/season-action
+          ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
+          path: season-action
+          token: ${{ secrets.MIDNIGHTCI_REPO }}
+          submodules: true
+
+      - name: Setup Season
+        uses: ./season-action
+        with:
+          ghcr_registry: ghcr.io/midnight-ntwrk
+          ghcr_username: MidnightCI
+          ghcr_password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          suffix: ${{ github.event.inputs.suffix }}
+          tag_name: node
+          image_name: midnight-node
+          cargo_toml_path: node/Cargo.toml
+          changes_archive_dir: .changes_archive
+
+      - name: Install just
+        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        with:
+          tool: just
+
+      - name: Run build
+        id: export
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --push +node-image
+          . ./.envrc && earthly -P --ci --push +toolkit-image
+
+          # Pass IMAGE_TAG to next step (must match definition in Earthfile):
+          export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create or Update Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+        run: |
+          # Build release notes
+          export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_COMMIT"
+          export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-node-toolkit:$SEASON_IMAGE_TAG_COMMIT"
+          export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
+          season-build-release-notes
+
+          if [ "$BRANCH" != "main" ]; then
+            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation..."
+            exit 0
+          fi
+
+          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
+          IMAGE_TAG_RELEASE="$VERSION"
+          RELEASE_TITLE="[Unreleased]"
+
+          if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
+            echo "Release has already been published, skipping draft..."
+            exit 0
+          fi
+
+          if gh release view "$RELEASE_TITLE"; then
+            echo "Release already exists, modifying..."
+            EDIT_OR_CREATE="edit"
+          else
+            echo "Creating release..."
+            EDIT_OR_CREATE="create"
+          fi
+
+          gh release $EDIT_OR_CREATE "$RELEASE_TITLE" \
+            --title "$RELEASE_TITLE" \
+            --draft \
+            --notes-file RELEASE_NOTES.md
+
+      - name: Archive release notes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: success() || failure()
+        with:
+          name: Wasm Runtime and binaries
+          path: artifacts-amd64/
+
+  build-indexer-images:
+    name: Build Indexer Images
+    runs-on: ubuntu-latest-16-core-x64
+    permissions:
+      pull-requests: write
+      packages: read
+      contents: write
+    outputs:
+      INDEXER_IMAGE_TAG: ${{ steps.build_indexer.outputs.INDEXER_IMAGE_TAG }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          submodules: true
+
+
+      - name: Install just
+        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        with:
+          tool: just
+
+      - name: Build indexer images
+        id: build_indexer
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          # Force AMD64 architecture for all builds
+          export DOCKER_DEFAULT_PLATFORM=linux/amd64
+          export DOCKER_BUILDKIT=1
+          export BUILDX_PLATFORM=linux/amd64
+
+          # Login to Docker once at the start
+          echo "🔐 Logging into Docker..."
+          echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | docker login ghcr.io -u MidnightCI --password-stdin
+
+          pwd
+          ls
+          cd indexer
+          ls
+          . .envrc
+
+          # Check available docker builders and platforms
+          echo "Available docker builders:"
+          docker buildx ls
+          echo "Current platform: $(uname -m)"
+          echo "DOCKER_DEFAULT_PLATFORM: $DOCKER_DEFAULT_PLATFORM"
+
+          # Build with explicit AMD64 platform
+          echo "🔧 Building indexer-api with AMD64 platform..."
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image indexer-api
+
+          echo "🔧 Building chain-indexer with AMD64 platform..."
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
+
+          echo "🔧 Building wallet-indexer with AMD64 platform..."
+          DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
+
+          # Retag images with main repo's commit hash (not submodule's)
+          echo "🏷️ Retagging images with main repo commit hash..."
+
+          # Get commit hashes before changing directories
+          cd ..  # Go back to main repo directory
+          MAIN_COMMIT=$(git rev-parse --short=8 HEAD)
+          echo "Main repo commit: $MAIN_COMMIT"
+
+          cd indexer
+          SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
+          echo "Submodule commit: $SUBMODULE_COMMIT"
+
+          # Retag all indexer images
+          echo "🏷️ Retagging images..."
+          INDEXER_IMAGE_TAG="node-${MAIN_COMMIT}"
+          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
+          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
+          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+
+          # Push the new tags
+          echo "📤 Pushing retagged images..."
+          docker push ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
+          docker push ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
+          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+
+          echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "✅ Images retagged and pushed successfully!"
+  publish-arm64:
+    name: ARM Build and Publish
+    runs-on: ubuntu-latest-8-core-arm64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Run Node and toolkit builds
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --push +node-image
+          . ./.envrc && earthly -P --ci --push +toolkit-image
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: success() || failure()
+        with:
+          name: Wasm Runtime and binaries
+          path: artifacts-arm64/
+
+  publish-multi-arch:
+    name: Publish multi-arch image
+    runs-on: ubuntu-latest
+    needs: [publish-amd64, publish-arm64, build-indexer-images]
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          submodules: true
+
+      - name: Create and push Docker manifest
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+
+          echo "Creating manifests for node/toolkit with tags: $IMAGE_TAG"
+
+          # Multi-arch node image
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          # Multi-arch latest
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          # Toolkit manifests
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+
+          # Push node manifests
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
+
+      - name: Push NODE_DEV_01 images if indexer is on main
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          pushd indexer
+          # Get the upstream branch name for the submodule commit
+          git fetch --unshallow
+          INDEXER_BRANCH=$(git branch -r --contains HEAD | grep "origin/main" || true)
+          popd
+
+          if [ -z "$INDEXER_BRANCH" ]; then
+            echo "❌ Indexer submodule is not tracking origin/main."
+            echo "   Refusing to build/publish indexer images for node-dev-01."
+            exit 1
+          else
+            echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
+            export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+            export NODE_DEV_01_TAG="${IMAGE_TAG}-node-dev-01"
+
+            docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG} \
+              ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+              ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+            docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG} \
+              ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
+              ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+
+            docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
+            docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
+
+            docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
+            docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
+            docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+
+            docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
+            docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
+            docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+          fi

@@ -1,0 +1,16 @@
+export {store, check}
+
+import CompactStandardLibrary;
+
+ledger tree: HistoricMerkleTree<10, Uint<32>>;
+
+witness find(content: Uint<32>): MerkleTreePath<10, Uint<32>>;
+
+circuit store(something: Uint<32>): [] {
+  tree.insert(disclose(something));
+}
+
+circuit check(something: Uint<32>): [] {
+  assert(tree.checkRoot(disclose(merkleTreePathRoot<10, Uint<32>>(find(something)))),
+    "Must find the thing in the Merkle tree!");
+}

@@ -1,0 +1,5 @@
+global:
+    buildkit_additional_args: ["-m", "24Gb"]
+    disable_analytics: true
+    buildkit_max_parallelism: 16
+    cache_size_pct: 50

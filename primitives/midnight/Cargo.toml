@@ -1,0 +1,23 @@
+[package]
+name = "midnight-primitives"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight primitives"
+
+[dependencies]
+hex-literal = { workspace = true, default-features = false }
+scale-info = { workspace = true, features = ["derive"] }
+sp-std.workspace = true
+sp-runtime.workspace = true
+parity-scale-codec.workspace = true
+midnight-node-ledger.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-std/std",
+    "sp-runtime/std",
+    "midnight-node-ledger/std",
+]

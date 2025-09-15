@@ -1,0 +1,46 @@
+name: +partnerchains-dev (Build Docker image that contains Partner Chains tools)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Once a week
+    - cron: "0 0 * * 0"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+jobs:
+  run:
+    name: Build an image with Partner Chains tools
+    runs-on: ubuntu-latest-8-core-x64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Run build
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          # Set NETRC env var for Earthly to use for private repos
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly --ci --push +partnerchains-dev

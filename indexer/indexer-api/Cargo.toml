@@ -1,0 +1,57 @@
+[package]
+name          = "indexer-api"
+description   = "Indexer API"
+version       = { workspace = true }
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+anyhow             = { workspace = true }
+async-graphql      = { workspace = true, features = [ "uuid" ] }
+async-graphql-axum = { workspace = true }
+async-stream       = { workspace = true }
+axum               = { workspace = true, features = [ "http2" ] }
+byte-unit-serde    = { workspace = true }
+chacha20poly1305   = { workspace = true, features = [ "std" ] }
+clap               = { workspace = true, features = [ "derive" ] }
+const-hex          = { workspace = true }
+drop-stream        = { workspace = true }
+derive_more        = { workspace = true, features = [ "debug", "display", "from" ] }
+fastrace           = { workspace = true, features = [ "enable" ] }
+fastrace-axum      = { workspace = true }
+futures            = { workspace = true }
+indexer-common     = { path = "../indexer-common" }
+indoc              = { workspace = true }
+log                = { workspace = true, features = [ "kv" ] }
+metrics            = { workspace = true }
+secrecy            = { workspace = true }
+serde              = { workspace = true, features = [ "derive" ] }
+serde_with         = { workspace = true }
+sqlx               = { workspace = true, features = [ "runtime-tokio", "time" ] }
+stream-cancel      = { workspace = true }
+thiserror          = { workspace = true }
+tokio              = { workspace = true, features = [ "macros", "rt-multi-thread", "time", "signal" ] }
+tokio-stream       = { workspace = true }
+tower              = { workspace = true }
+tower-http         = { workspace = true, features = [ "cors", "limit" ] }
+trait-variant      = { workspace = true }
+uuid               = { workspace = true, features = [ "v7" ], optional = true }
+
+[features]
+cloud      = [ "indexer-common/cloud", "uuid" ]
+standalone = [ "indexer-common/standalone", "uuid" ]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [ 'cfg(coverage_nightly)' ] }
+
+[package.metadata.cargo-shear]
+ignored = [ "uuid" ]

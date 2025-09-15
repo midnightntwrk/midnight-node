@@ -1,0 +1,16 @@
+[package]
+name = "midnight-primitives-ledger"
+version = "0.1.0"
+edition = "2024"
+description = "Ledger primitives"
+
+[dependencies]
+log = { workspace =  true }
+sp-externalities = { workspace = true, default-features = false }
+prometheus-endpoint.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "sp-externalities/std",
+]

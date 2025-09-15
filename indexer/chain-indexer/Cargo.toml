@@ -1,0 +1,47 @@
+[package]
+name          = "chain-indexer"
+description   = "Chain Indexer"
+version       = { workspace = true }
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+anyhow             = { workspace = true }
+async-stream       = { workspace = true }
+byte-unit          = { workspace = true }
+derive_more        = { workspace = true, features = [ "from" ] }
+fastrace           = { workspace = true, features = [ "enable" ] }
+futures            = { workspace = true }
+humantime-serde    = { workspace = true }
+indexer-common     = { path = "../indexer-common" }
+indoc              = { workspace = true }
+itertools          = { workspace = true }
+log                = { workspace = true, features = [ "kv_std" ] }
+metrics            = { workspace = true }
+parity-scale-codec = { workspace = true }
+parking_lot        = { workspace = true }
+paste              = { workspace = true }
+serde              = { workspace = true, features = [ "derive" ] }
+serde_with         = { workspace = true }
+sqlx               = { workspace = true, features = [ "runtime-tokio", "time" ] }
+subxt              = { workspace = true, features = [ "reconnecting-rpc-client" ] }
+thiserror          = { workspace = true }
+tokio              = { workspace = true, features = [ "macros", "rt-multi-thread", "time", "signal" ] }
+trait-variant      = { workspace = true }
+
+[dev-dependencies]
+clap           = { workspace = true, features = [ "derive" ] }
+fake           = { workspace = true }
+
+[features]
+cloud      = [ "indexer-common/cloud" ]
+standalone = [ "indexer-common/standalone" ]

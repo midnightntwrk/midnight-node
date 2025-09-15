@@ -1,0 +1,190 @@
+use clap::Args;
+use midnight_node_ledger_helpers::{ProofMarker, Signature};
+use midnight_node_toolkit::{
+	ProofType, SignatureType,
+	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::{
+		TxGenerator, TxGeneratorError, builder::Builder, destination::Destination, source::Source,
+	},
+};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum GenerateTxsError {
+	#[error("failed to construct TxGenerator: {0}")]
+	Generator(#[from] TxGeneratorError),
+	#[error("failed to get transactions: {0}")]
+	GetTransactions(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to build transactions: {0}")]
+	BuildTransactions(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to build transactions: {0}")]
+	SendTransactions(Box<dyn std::error::Error + Send + Sync>),
+}
+
+#[derive(Args)]
+pub struct GenerateTxsArgs {
+	#[clap(subcommand)]
+	builder: Builder,
+	#[command(flatten)]
+	source: Source,
+	#[command(flatten)]
+	destination: Destination,
+	// Proof Server Host
+	#[arg(long, short)]
+	proof_server: Option<String>,
+}
+
+pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
+	let generator = TxGenerator::<SignatureType, ProofType>::new(
+		args.source,
+		args.destination,
+		args.builder,
+		args.proof_server,
+	)
+	.await?;
+	let received_txs =
+		generator.get_txs().await.map_err(|e| GenerateTxsError::GetTransactions(e))?;
+
+	send_txs(&generator, generate_txs(&generator, received_txs).await?).await
+}
+
+async fn generate_txs(
+	generator: &TxGenerator<SignatureType, ProofType>,
+	received_txs: SourceTransactions<Signature, ProofMarker>,
+) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
+	generator
+		.build_txs(&received_txs)
+		.await
+		.map_err(|e| GenerateTxsError::BuildTransactions(e.error))
+}
+
+async fn send_txs(
+	generator: &TxGenerator<SignatureType, ProofType>,
+	generated_txs: DeserializedTransactionsWithContext<Signature, ProofMarker>,
+) -> Result<(), GenerateTxsError> {
+	generator
+		.send_txs(&generated_txs)
+		.await
+		.map_err(|e| GenerateTxsError::SendTransactions(e))
+}
+
+// These tests are running against test data which has not been updated to ledger v6 compatible format.
+/*
+#[cfg(test)]
+mod tests {
+	use std::str::FromStr;
+
+	use super::*;
+	use midnight_node_ledger_helpers::WalletAddress;
+	use midnight_node_toolkit::tx_generator::builder::{BatchesArgs, ClaimMintArgs, SingleTxArgs};
+	use test_case::test_case;
+
+	// TODO: we need to consider using `proptest` here.
+	// That would allow us to more robustly test random transactions within our valid bounds
+
+	// TODO: write a better macro for this
+	macro_rules! test_fixture {
+		($builder:expr, $src_file:literal) => {
+			GenerateTxsArgs {
+				builder: $builder,
+				source: Source {
+					src_url: None,
+					fetch_concurrency: 20,
+					src_files: Some(vec![
+						concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/", $src_file).to_string(),
+					]),
+				},
+				destination: Destination {
+					dest_url: None,
+					rate: 1.0,
+					dest_file: Some("out.tx".to_string()),
+					to_bytes: true,
+				},
+				proof_server: None,
+			}
+		};
+	}
+
+	// TODO: There should be expected transactions here, not just an OK state.
+	// We also need to define reaonsable errors
+	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
+		shielded_amount: Some(100),
+		unshielded_amount: Some(100),
+		source_seed: "0000000000000000000000000000000000000000000000000000000000000000"
+			.to_string(),
+		destination_address: vec![
+			WalletAddress::from_str(
+				"mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj",
+			)
+			.unwrap(),
+		],
+		rng_seed: None,
+	}), "genesis/genesis_tx_undeployed.mn") =>
+	   matches Ok(..);
+		"single-tx"
+	)]
+	#[test_case(test_fixture!(Builder::Send, "genesis/genesis_tx_undeployed.mn") =>
+	   matches Ok(..);
+		"send-tx"
+	)]
+	#[test_case(test_fixture!(Builder::ClaimMint(ClaimMintArgs {
+		funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+		rng_seed:None,
+		amount: 500_000
+	}), "genesis/genesis_tx_undeployed.mn") =>
+	   matches Ok(..);
+		"claim-mint-tx"
+	)]
+	#[test_case(test_fixture!(Builder::Batches(BatchesArgs {
+		funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+		num_txs_per_batch: 1,
+		num_batches: 1,
+		concurrency: None,
+		rng_seed: None,
+		coin_amount: 100,
+		initial_unshielded_intent_value: 5_000_000_000_000_000,
+	}), "genesis/genesis_tx_undeployed.mn") =>
+	   matches Ok(..);
+		"batches-tx"
+	)]
+	// FIXME: the `ContractCalls` rely on `test_resolver` which panics when env var `MIDNIGHT_LEDGER_TEST_STATIC_DIR` is not set
+	// #[test_case(test_fixture!(Builder::ContractCalls(
+	//     ContractCall::Deploy(ContractDeployArgs {
+	// 				funding_seed: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+	// 				rng_seed: None,
+	// 				fee: 1_300_000
+	// 				})
+	// ), "genesis/genesis_tx_undeployed.mn") =>
+	//    matches Ok(..);
+	// 	"contract-call-deploy-tx"
+	// )]
+	// #[test_case(test_fixture!(Builder::ContractCalls(
+	//     ContractCall::Call(ContractCallArgs {
+	// 				funding_seed:"0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+	// 				call_key:"store".to_string(),
+	// 				contract_address: concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/contract/contract_address_devnet").to_string(),
+	// 				rng_seed: None,
+	// 				fee: 1_300_000
+	// 				})
+	// ), "contract/contract_tx_1_deploy_undeployed.mn") =>
+	//    matches Ok(..);
+	// 	"contract-call-call-tx"
+	// )]
+	#[tokio::test]
+	async fn test_generation(
+		args: GenerateTxsArgs,
+	) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
+		let generator = TxGenerator::<SignatureType, ProofType>::new(
+			args.source,
+			args.destination,
+			args.builder,
+			args.proof_server,
+		)
+		.await?;
+		let received_txs =
+			generator.get_txs().await.map_err(|e| GenerateTxsError::GetTransactions(e))?;
+
+		super::generate_txs(&generator, received_txs).await
+	}
+}
+ */

@@ -1,0 +1,25 @@
+# Node dependencies
+node_modules/
+
+# Yarn Zero-Install cache (only needed if using PnP — you're not)
+.yarn/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime files
+.pnp.*
+*.tsbuildinfo
+
+# Optional: OS & IDE-specific files
+.DS_Store
+.env
+dist/
+coverage/
+
+# Report files
+reports/

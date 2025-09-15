@@ -1,0 +1,44 @@
+[package]
+#name of the pallet
+name = "pallet-midnight-system"
+version = "0.1.0"
+description = "FRAME pallet for manually calling Midnight System Transactions."
+authors = ["Midnight <https://github.com/midnightntwrk>"]
+homepage = "https://midnight.network/"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+repository = "https://github.com/midnightntwrk/midnight-node/"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+scale-info = { workspace = true, features = ["derive"] }
+parity-scale-codec.workspace = true
+frame-support.workspace = true
+frame-system.workspace = true
+midnight-node-ledger = { default-features = false, workspace = true }
+midnight-primitives.workspace = true
+sp-std.workspace = true
+
+[features]
+default = ["std"]
+std = [
+	"frame-support/std",
+	"frame-system/std",
+	"scale-info/std",
+	"midnight-node-ledger/std",
+	"sp-std/std",
+    "midnight-primitives/std",
+]
+experimental = []
+runtime-benchmarks = [
+    "frame-system/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "midnight-node-ledger/runtime-benchmarks",
+    ]
+try-runtime = ["frame-support/try-runtime"]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec"]

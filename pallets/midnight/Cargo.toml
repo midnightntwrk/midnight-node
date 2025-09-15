@@ -1,0 +1,76 @@
+[package]
+#name of the pallet
+name = "pallet-midnight"
+version = "0.2.0"
+description = "FRAME pallet defining Midnight custom runtime logic."
+authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
+homepage = "https://substrate.io"
+edition = "2024"
+license = "Unlicense"
+publish = false
+repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+scale-info = { workspace = true, features = ["derive"] }
+parity-scale-codec.workspace = true
+frame-benchmarking = { workspace = true, optional = true}
+
+frame-support.workspace = true
+frame-system.workspace = true
+midnight-node-ledger = { default-features = false, workspace = true }
+midnight-primitives.workspace = true
+sp-std.workspace = true
+sp-api.workspace = true
+sp-runtime.workspace = true
+pallet-timestamp.workspace = true
+hex = { workspace = true, optional = true }
+sp-tracing = { workspace = true}
+
+log.workspace = true
+
+[dev-dependencies]
+sp-core.workspace = true
+sp-io.workspace = true
+sp-runtime.workspace = true
+#sp-block-rewards.workspace = true
+hex = {version = "0.4.3", features = ["alloc"] }
+midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
+assert_matches.workspace = true
+#pallet-block-rewards.workspace = true
+tempfile = "3.12"
+midnight-node-ledger-helpers = { workspace = true, features = ["test-utils"] }
+midnight-node-ledger = { workspace = true, features = ["test-utils"] }
+
+[features]
+default = ["std"]
+std = [
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"scale-info/std",
+	"midnight-node-ledger/std",
+	"sp-io/std",
+	"sp-api/std",
+	"sp-runtime/std",
+    #"sp-block-rewards/std",
+	"sp-std/std",
+    "midnight-primitives/std",
+    #"pallet-block-rewards/std",
+    "sp-tracing/std",
+    "pallet-timestamp/std",
+]
+experimental = []
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "hex",
+    "midnight-node-ledger/runtime-benchmarks",
+    ]
+try-runtime = ["frame-support/try-runtime"]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec"]

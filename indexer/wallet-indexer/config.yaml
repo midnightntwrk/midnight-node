@@ -1,0 +1,33 @@
+run_migrations: true
+
+application:
+  active_wallets_repeat_delay: "100ms"
+  active_wallets_ttl: "30m"
+  transaction_batch_size: 10
+  # Number of cores by default.
+  # parallelism:
+
+infra:
+  storage:
+    host: "localhost"
+    port: 5432
+    dbname: "indexer"
+    user: "indexer"
+    sslmode: "prefer"
+    max_connections: 25
+    idle_timeout: "1m"
+    max_lifetime: "5m"
+
+  pub_sub:
+    url: "localhost:4222"
+    username: "indexer"
+
+telemetry:
+  tracing:
+    enabled: false
+    service_name: "wallet-indexer"
+    otlp_exporter_endpoint: "http://localhost:4317"
+  metrics:
+    enabled: false
+    address: "0.0.0.0"
+    port: 9000

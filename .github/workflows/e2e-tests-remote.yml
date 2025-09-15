@@ -1,0 +1,257 @@
+name: +node-e2e-test-remote (Run e2e tests on integrated environment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      QA_BRANCH:
+        type: string
+        description: QA branch to use
+        required: false
+        default: 'qa-qanet'
+      RESET: 
+        type: choice
+        description: Reset the cache
+        required: true
+        default: 'false'
+        options:
+          - true
+          - false
+      TEST_ENV_INPUT:
+        type: choice
+        description: Env
+        options:
+          - qanet
+          - node-dev-01
+          - testnet-02
+          - local
+        default: 'qanet'
+  workflow_call:
+    inputs:
+      QA_BRANCH:
+        type: string
+        description: QA branch to use
+        required: false
+        default: 'qa-qanet'
+      RESET:
+        type: string
+        description: Reset the cache
+        required: true
+        default: 'false'
+      TEST_ENV_INPUT:
+        type: string
+        description: Midnight network to use (testnet/testnet-02/qanet/node-dev-01/local)
+        required: true
+        default: 'qanet'
+    secrets:
+      MIDNIGHTCI_PACKAGES_READ:
+        required: true
+      MIDNIGHTCI_PACKAGES_WRITE:
+        required: true
+      ALLURE_ADMIN_USER:
+        required: true
+      ALLURE_ADMIN_PASSWORD:
+        required: true
+      TESTNET_FUNDING_SEED:
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_ENV: ${{ inputs.TEST_ENV_INPUT || 'qanet' }}
+  QA_BRANCH: ${{ inputs.QA_BRANCH || 'qa-qanet' }}
+
+run-name: Run e2e tests on ${{ inputs.TEST_ENV_INPUT || 'qanet' }}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest-16-core-x64
+    name: Generate contract txs for ${{ inputs.TEST_ENV_INPUT || 'qanet' }}
+    steps:
+      - name: Log in to GitHub Container registry
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: 'https://ghcr.io'
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          clean: false
+
+      - name: Set url env variables
+        run: |
+          RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
+          WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
+          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
+          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+
+      - name: Determine the latest successful run ID with appropriate artifact
+        continue-on-error: true
+        if: ${{ inputs.RESET == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_RUN_ID=$(./.github/scripts/find_run_id.sh ${{ github.repository }} "+node-e2e-test-remote (${{ env.TEST_ENV }})" ".sync_cache-${{ env.TEST_ENV }}")
+          echo "LATEST_RUN_ID=$LATEST_RUN_ID" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        continue-on-error: true
+        if: ${{ inputs.RESET == 'false' }}
+        with:
+          run-id: ${{ env.LATEST_RUN_ID }}
+          path: ${{ github.workspace }}/.sync_cache-${{ env.TEST_ENV }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          name: .sync_cache-${{ env.TEST_ENV }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        if: ${{ env.TEST_ENV == 'local' }}
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Spin up node docker compose
+        if: ${{ env.TEST_ENV == 'local' }}
+        run: |
+          docker compose -f ui/tests/docker/test-compose-latest.yml up -d
+          sleep 10
+
+      - name: Determine the toolkit image tag needed for the integrated environment
+        run: |
+          if [ "${{ env.TEST_ENV }}" = 'qanet' ] || [ "${{ env.TEST_ENV }}" = 'testnet-02' ]; then
+              IMAGE_TAG=7c36d321
+          else
+            IMAGE_TAG=$(./.github/scripts/get_node_version.sh "${{ env.RPC_URL }}")
+          fi
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+        
+      - name: Run txs generation for testnet-02
+        if: ${{ env.TEST_ENV == 'testnet-02' }}
+        run: |
+          # image tag with testnet support
+          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/ --funding-seed ${{ secrets.TESTNET_FUNDING_SEED }}
+      
+      - name: Run txs generation for qanet
+        if: ${{ env.TEST_ENV == 'qanet' }}
+        run: |
+          # image tag with testnet support
+          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/
+
+      - name: Run txs generation for devnet
+        if: ${{ env.TEST_ENV == 'devnet' }}
+        run: |
+          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_devnet.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
+
+      - name: Run txs generation for node-dev-01
+        if: ${{ env.TEST_ENV == 'node-dev-01' }}
+        run: |
+          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
+
+      - name: Upload sync cache
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: success() || failure()
+        with:
+          name: .sync_cache-${{ env.TEST_ENV }}
+          path: .sync_cache-${{ env.TEST_ENV }}
+          include-hidden-files: true
+
+      - name: Upload generated contract txs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: test-contract
+          path: ./res/test-contract/
+
+  run:
+    needs: generate
+    name: Run node e2e tests on ${{ github.env.TEST_ENV }}
+    runs-on: ubuntu-latest-8-core-x64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+        with:
+          version: v0.8.0
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        with:
+          ref: ${{ env.QA_BRANCH }}
+          clean: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Set url env variables
+        run: |
+          RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
+          WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
+          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
+          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+
+      - name: Download sync cache
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          name: .sync_cache-${{ env.TEST_ENV }}
+          path: .sync_cache-${{ env.TEST_ENV }}
+
+      - name: Download generated contract txs
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        continue-on-error: true
+        with:
+          name: test-contract
+          path: ./res/test-contract/
+
+      - name: Spin up node docker compose
+        if: ${{ env.TEST_ENV == 'local' }}
+        run: |
+          docker compose -f ui/tests/docker/test-compose-latest.yml up -d
+          sleep 10
+
+      - name: Run e2e tests
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          echo "machine github.com" >> ./netrc
+          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
+          echo "  password x-oauth-basic" >> ./netrc
+          export NETRC="$(pwd)/netrc"
+
+          . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV=$TEST_ENV --build-arg WS_URL=$WS_URL +node-e2e-test-remote
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: success() || failure()
+        with:
+          name: Test Artifacts
+          path: ./test-artifacts-amd64/e2e/
+
+      - name: Send Results to Allure Server
+        uses: robkatona/send-allure-results@935714d2ab2c0de7b15a9d3e29a0cffe0fa64c59 # v1.0.5
+        if: success() || failure()
+        with:
+          allure-server-url: https://allure-server.prd.midnight.tools
+          allure-results-directory: ./test-artifacts-amd64/e2e/allure-results
+          project-id: node-e2e-${{ env.TEST_ENV }}
+          security-user: ${{ secrets.ALLURE_ADMIN_USER }}
+          security-pass: ${{ secrets.ALLURE_ADMIN_PASSWORD }}
+
+      - name: Set proper exit code (earthly will return success in case of test failures)
+        if: success() || failure()
+        run: |
+          find ./test-artifacts-amd64/e2e/ -name "*.xml" | sort -r | head -n 1 | xargs cat | grep 'failures="0"'
+              exit 0
+          else
+              exit 1
+          fi

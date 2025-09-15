@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.cjs",
+  "sourceRoot": "../../",
+  "sources": ["ledger/tests/simple-merkle-tree.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MAQA,AAAA,KAEC;;;;cAFa,WAAmB;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;mEAAnB,WAAmB;;;OAEhC;MAED,AAAA,KAGC;;;;cAHa,WAAmB;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;mEAAnB,WAAmB;;;OAGhC;;;;;;GACA;EAhBD;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;IAIA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;uDAA8C;;;;;;;GAY7C;EC8BD,AAAA,6CAAgC;mEAAA;;;EAEhC,AAAA,8CAAiC;qEAAA;;;EAEjC,AAAA,kDAAkC;yDAAA;;;EAgClC,AAAA,kDAAyC;;;;;;;;;;;;;uFAG8E;+BAChG;;EAYvB,AAAA;;8BACE;8BACA;;UAEA,SAAa,oBAAkB,oBAAkB;UACjD,UAAc;oBAAkB;oBAAsB;8DACd,QAAM;;EDlGhD,AAAA,QAA8D,4BAAjD,SAAiB;;0DAA9B,IAA8D;+DAAjD,SAAiB;;;;;;;;;;;;;GAAgC;EAE9D,AAAA,SAEC,4BAFa,WAAmB;IAC/B;;;;;;;;;;;;;;;;;;;;;;;;2GAAqB,WAAS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;sDAA1B;;GACL;EAED,AAAA,SAGC,4BAHa,WAAmB;QACxB,KAAI;;;;;+EAA0D,WAAS;qDAAvE;;;;;;;;;;;;;;;;;0JAAA,KAAI;;;;wGAAA;;;GAEZ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;"
+}

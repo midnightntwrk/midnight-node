@@ -1,0 +1,56 @@
+name: "Reusable E2E Test"
+description: "Runs a specific E2E test using JUST and GHCR images"
+inputs:
+  just-command:
+    description: "The JUST command to run"
+    required: true
+  node-image:
+    description: "The full node image name (with tag)"
+    required: false
+  upgrader-image:
+    description: "Optional: the upgrader image (if needed)"
+    required: false
+  toolkit-image:
+    description: "Optional: the toolkit image (if needed)"
+    required: false
+  ghcr-password:
+    description: "Password for Docker login to GHCR"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      with:
+        clean: false
+
+    - name: Install just
+      uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+      with:
+        tool: just
+
+    - name: Docker Login
+      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+      with:
+        registry: ghcr.io
+        username: MidnightCI
+        password: ${{ inputs.ghcr-password }}
+
+    - name: Run JUST command
+      run: |
+        echo "🧪 Running E2E command: ${{ inputs.just-command }}"
+
+        case "${{ inputs.just-command }}" in
+          indexer-api-e2e)
+            just ${{ inputs.just-command }}
+            ;;
+          startup-dev-e2e | startup-qanet-e2e)
+            just ${{ inputs.just-command }} "${{ inputs.node-image }}"
+            ;;
+          node-e2e | toolkit-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
+            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
+            ;;
+          *)
+            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+            ;;
+        esac
+      shell: bash

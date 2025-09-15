@@ -1,0 +1,19 @@
+# Nextest configuration for midnight-indexer
+# This configuration prevents nextest from cancelling long-running tests when other tests fail.
+# This is particularly important for e2e tests which take >60 seconds to complete.
+
+[profile.default]
+# Don't cancel test execution on first failure
+# This prevents issues where test_finalized_blocks_0_13 failure causes e2e.rs to be cancelled
+fail-fast = false
+
+# Alternative: Allow up to 5 failures before stopping (uncomment if preferred)
+# fail-fast = { max-fail = 5 }
+
+[profile.ci]
+# CI should always run all tests to get complete results
+fail-fast = false
+
+# Longer timeout for e2e tests in CI environment
+# e2e tests can take 3 minutes, giving extra headroom for CI
+slow-timeout = { period = "240s", terminate-after = 2 }

@@ -1,0 +1,27 @@
+version: 2
+
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    registries: "*"
+    schedule:
+      interval: "daily"
+    ignore:
+      - dependency-name: "midnight-ledger"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+registries:
+  github:
+    type: git
+    url: https://github.com
+    username: MidnightCI
+    password: ${{ secrets.MIDNIGHTCI_REPO }}
