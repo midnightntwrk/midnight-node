@@ -29,7 +29,7 @@ use sp_externalities::{Externalities, ExternalitiesExt};
 use sp_std::vec::Vec;
 
 pub mod types;
-use types::{LedgerApiError, TransactionError};
+use types::LedgerApiError;
 
 #[cfg(feature = "std")]
 pub mod api;
@@ -205,14 +205,7 @@ where
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
 
 		let tx_ctx = ledger.get_transaction_context(block_context.clone());
-		let valid_tx =
-			tx.0.well_formed(
-				&tx_ctx.ref_state,
-				mn_ledger::verify::WellFormedStrictness::default(),
-				tx_ctx.block_context.tblock,
-			)
-			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
-		let (ledger, applied_stage) = Ledger::apply_transaction(ledger, &api, &valid_tx, &tx_ctx)?;
+		let (ledger, applied_stage) = Ledger::apply_transaction(ledger, &api, &tx, &tx_ctx)?;
 
 		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
 
