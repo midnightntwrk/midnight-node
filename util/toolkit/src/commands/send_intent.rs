@@ -20,7 +20,7 @@ pub struct SendIntentArgs {
 	#[arg(long, short)]
 	proof_server: Option<String>,
 	#[command(flatten)]
-	other_args: CustomContractArgs,
+	contract_args: CustomContractArgs,
 }
 
 pub async fn execute(
@@ -29,7 +29,7 @@ pub async fn execute(
 	DeserializedTransactionsWithContext<SignatureType, ProofType>,
 	Box<dyn std::error::Error + Send + Sync>,
 > {
-	let builder = Builder::CustomContract(args.other_args);
+	let builder = Builder::CustomContract(args.contract_args);
 
 	let generator = TxGenerator::<SignatureType, ProofType>::new(
 		args.source,
@@ -53,27 +53,28 @@ mod test {
 	use midnight_node_toolkit::cli_parsers::hex_str_decode;
 	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
 	use std::fs;
-	use std::fs::{remove_dir_all, remove_file};
+	use tempfile::tempdir;
 
 	use super::{CustomContractArgs, Destination, SendIntentArgs, Source, execute};
 	#[tokio::test]
 	async fn test_send_intent() {
 		let rng_seed = "0000000000000000000000000000000000000000000000000000000000000037";
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
-		let artifacts_dir = "../../static/contracts/simple-merkle-tree";
+		let compiled_contract_dir = "../../static/contracts/simple-merkle-tree";
 
-		let output_file = "output.mn";
+		let out_dir = tempdir().expect("failed to create tempdir");
+		let out_dir_str = out_dir.path().to_string_lossy().to_string();
+
+		let output_file = out_dir.path().join("output.mn").to_string_lossy().to_string();
 		// generate deploy intent
 		{
 			let args = vec![
 				"midnight-node-toolkit",
-				"generate-intent",
+				"generate-sample-intent",
 				"--src-files",
 				src_files,
-				"--dest-file",
-				output_file,
 				"--dest-dir",
-				"../../static/contracts/simple-merkle-tree/intents",
+				&out_dir_str,
 				"deploy",
 				"--rng-seed",
 				rng_seed,
@@ -82,6 +83,11 @@ mod test {
 
 			run_command(cli.command).await.expect("should work");
 		}
+
+		let intent_files: Vec<String> = fs::read_dir(&out_dir)
+			.expect("directory not found")
+			.map(|p| p.unwrap().path().to_string_lossy().to_string())
+			.collect();
 
 		let source = Source {
 			src_url: None,
@@ -100,16 +106,15 @@ mod test {
 		let info =
 			ContractDeployArgs { funding_seed: FUNDING_SEED.to_string(), rng_seed: Some(rng_seed) };
 
-		let other_args = CustomContractArgs { info, artifacts_dir: artifacts_dir.to_string() };
+		let contract_args = CustomContractArgs {
+			info,
+			compiled_contract_dir: compiled_contract_dir.to_string(),
+			intent_files,
+		};
 
-		let args = SendIntentArgs { source, destination, proof_server: None, other_args };
+		let args = SendIntentArgs { source, destination, proof_server: None, contract_args };
 
 		execute(args).await.expect("should work during sending");
 		assert!(fs::exists(output_file).expect("should_exist"));
-
-		// remove intent files
-		remove_dir_all(format!("{artifacts_dir}/intents"))
-			.expect("failed to remove directory and files");
-		remove_file(output_file).expect("failed to remove file");
 	}
 }
