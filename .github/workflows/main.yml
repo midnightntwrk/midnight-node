@@ -2,13 +2,13 @@ name: Main - Toolkit and Node build/publish
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "release/*"]
   workflow_dispatch:
     inputs:
       branch:
         description: "The branch to build and deploy"
-        required: true
-        default: "main"
+        required: false
+        default: ""
 
 jobs:
   publish-amd64:
@@ -28,7 +28,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to GHCR
         uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
@@ -78,7 +78,7 @@ jobs:
           export NETRC="$(pwd)/netrc"
 
           . ./.envrc && earthly -P --ci --push +node-image
-          . ./.envrc && earthly -P --ci --push +toolkit-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
 
           # Pass IMAGE_TAG to next step (must match definition in Earthfile):
           export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
@@ -234,6 +234,13 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
+      # QEMU is currently required as compactc doesn't have a linux arm64 build of compactc.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        with:
+          image: tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6 # latest
+          platforms: 'amd64'
+
       - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
         with:
           version: v0.8.0
@@ -265,7 +272,7 @@ jobs:
           export NETRC="$(pwd)/netrc"
 
           . ./.envrc && earthly -P --ci --push +node-image
-          . ./.envrc && earthly -P --ci --push +toolkit-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +toolkit-image
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

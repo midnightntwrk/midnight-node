@@ -1,0 +1,57 @@
+use clap::Args;
+use midnight_node_ledger_helpers::{LedgerContext, deserialize, serialize};
+use midnight_node_toolkit::{
+	ProofType, SignatureType,
+	tx_generator::{TxGenerator, source::Source},
+};
+use std::{fs, path::Path};
+
+#[derive(Args)]
+pub struct ContractStateArgs {
+	#[command(flatten)]
+	source: Source,
+	/// Contract Address
+	#[arg(long)]
+	contract_address: String,
+	/// Destination file to save the state
+	#[arg(long, short)]
+	dest_file: String,
+}
+
+pub async fn execute(
+	args: ContractStateArgs,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let source = TxGenerator::<SignatureType, ProofType>::source(args.source)
+		.await
+		.expect("failed to init tx source");
+
+	let blocks = source.get_txs().await?;
+	let network_id = blocks.network();
+
+	let address = deserialize(&hex::decode(args.contract_address)?[..])?;
+
+	let context = LedgerContext::new(network_id);
+	for block in blocks.blocks {
+		context.update_from_block(block.transactions, block.context);
+	}
+
+	let state = context
+		.with_ledger_state(|ledger_state| ledger_state.index(address))
+		.expect("contract state for address does not exist");
+
+	let serialized_state = serialize(&state)?;
+
+	let full_path = Path::new(&args.dest_file);
+	if let Some(directory) = full_path.parent() {
+		fs::create_dir_all(directory).expect("failed to create directories");
+	}
+
+	fs::write(full_path, serialized_state).expect("failed to create file");
+
+	Ok(())
+}
+
+#[cfg(test)]
+mod test {
+	// TODO
+}

@@ -119,7 +119,7 @@ where
 		}
 	}
 
-	fn prover(proof_server: Option<String>) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn prover(proof_server: Option<String>) -> Arc<dyn ProofProvider<DefaultDB>> {
 		if let Some(url) = proof_server {
 			Arc::new(RemoteProofServer::new(url))
 		} else {

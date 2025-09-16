@@ -86,6 +86,7 @@ pub enum MalformedError {
 	InvalidCommitteeSignature,
 	ThresholdMissed,
 	TooManyZswapEntries,
+	BalanceCheckOverspend,
 	UnknownError,
 }
 
@@ -304,7 +305,8 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::InvalidCommitteeSignature => 135,
 					MalformedError::ThresholdMissed => 136,
 					MalformedError::TooManyZswapEntries => 137,
-					MalformedError::UnknownError => 138,
+					MalformedError::BalanceCheckOverspend => 138,
+					MalformedError::UnknownError => 139,
 				},
 				SystemTransaction(e) => match e {
 					SystemTransactionError::IllegalPayout => 139,

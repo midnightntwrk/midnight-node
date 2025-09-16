@@ -15,3 +15,7 @@ export THRESHOLD_DENOMINATOR=3
 export PAYMENT_SIGNING_KEY_FILE="path to payment.skey"
 export D_PARAMETER_PERMISSIONED_CANDIDATES_COUNT=5
 export D_PARAMETER_REGISTERED_CANDIDATES_COUNT=2
+
+## toolkit-js related
+export GITHUB_TOKEN="your github token"
+earthly --secret GITHUB_TOKEN +toolkit-js-prep-local

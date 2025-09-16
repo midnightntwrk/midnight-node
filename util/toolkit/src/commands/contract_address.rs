@@ -37,8 +37,8 @@ pub fn execute(args: ContractAddressArgs) -> Result<(), Box<dyn std::error::Erro
 	let deserialized_address = deploy.address();
 	let address = hex::encode(serialize(&deserialized_address)?);
 
-	println!("\nDeserialized Address {:?}\n", deserialized_address.0);
-	println!("\nSerialized Address {:?}\n", address);
+	println!("\nDeserialized Address {:?}", deserialized_address.0);
+	println!("\nSerialized Address {:?}", address);
 
 	let full_path = Path::new(&args.dest_file);
 	if let Some(directory) = full_path.parent() {

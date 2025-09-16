@@ -74,7 +74,10 @@ pub struct CustomContractArgs {
 	///  * intent directory, containing serialized intent files
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
-	pub artifacts_dir: String,
+	pub compiled_contract_dir: String,
+	/// List of intent files to include in the transaction
+	#[arg(short, long)]
+	pub intent_files: Vec<String>,
 }
 
 #[derive(Args, Clone)]

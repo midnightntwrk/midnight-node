@@ -42,6 +42,9 @@ sleep 10
 # Run toolkit commands
 echo "📦 Running toolkit tests..."
 
+echo "Get version for toolkit"
+docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
+
 tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
 deploy_filename="contract_deploy.mn"
 address_filename="contract_address.mn"

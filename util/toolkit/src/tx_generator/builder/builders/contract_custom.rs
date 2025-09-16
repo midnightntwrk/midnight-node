@@ -7,12 +7,13 @@ use crate::{
 	serde_def::SourceTransactions,
 };
 use async_trait::async_trait;
-use std::{collections::HashMap, convert::Infallible, fs, sync::Arc};
+use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc};
 
 pub struct CustomContractBuilder {
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	artifacts_dir: String,
+	intent_files: Vec<String>,
 }
 
 impl CustomContractBuilder {
@@ -20,12 +21,9 @@ impl CustomContractBuilder {
 		Self {
 			funding_seed: args.info.funding_seed,
 			rng_seed: args.info.rng_seed,
-			artifacts_dir: args.artifacts_dir,
+			artifacts_dir: args.compiled_contract_dir,
+			intent_files: args.intent_files,
 		}
-	}
-
-	pub fn intents_dir(&self) -> String {
-		format!("{}/intents", self.artifacts_dir)
 	}
 }
 
@@ -47,19 +45,17 @@ impl BuildTxsExt<HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send>>> for Custo
 			Box::new(IntentCustom::get_resolver(self.artifacts_dir.clone()).unwrap());
 		let static_ref_resolver = Box::leak(boxed_resolver);
 
-		// Go over all files with .mn extension inside the intents directory
-		let mut entries = fs::read_dir(self.intents_dir()).expect("directory not found");
-
 		let mut next_segment_id: SegmentId = 1;
-		while let Some(Ok(entry)) = entries.next() {
-			let path = entry.path();
+		for intent_path in &self.intent_files {
+			let path = PathBuf::from(&intent_path);
 
 			if !path.is_file() {
+				println!("Warning: {} is not a file", &intent_path);
 				continue;
 			}
 
 			let Some(extension) = path.extension() else { continue };
-			if extension == "mn" {
+			if extension == "bin" {
 				let intent_path = path.into_os_string();
 				let intent_path = intent_path.to_str().expect("should return str").to_string();
 

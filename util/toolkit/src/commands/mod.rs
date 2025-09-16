@@ -12,8 +12,9 @@
 // limitations under the License.
 
 pub mod contract_address;
+pub mod contract_state;
 pub mod generate_genesis;
-pub mod generate_intent;
+pub mod generate_sample_intent;
 pub mod generate_txs;
 pub mod get_tx_from_context;
 pub mod random_address;
@@ -22,3 +23,5 @@ pub mod show_address;
 pub mod show_transaction;
 pub mod show_viewing_key;
 pub mod show_wallet;
+
+pub mod generate_intent;
