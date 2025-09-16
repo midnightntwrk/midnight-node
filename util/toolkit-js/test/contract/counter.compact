@@ -3,6 +3,8 @@ import CompactStandardLibrary;
 export ledger round: Counter;
 
 witness private_increment(): [];
+witness private_reset(): [];
+witness private_decrement(amount: Uint<16>): [];
 
 export circuit increment(): [] {
   round.increment(1);
@@ -11,10 +13,10 @@ export circuit increment(): [] {
 
 export circuit decrement(amount: Uint<16>): [] {
   round.decrement(disclose(amount));
-  private_increment();
+  private_decrement(amount);
 }
 
 export circuit reset(): [] {
   round.resetToDefault();
-  private_increment();
+  private_reset();
 }
