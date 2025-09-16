@@ -5,3 +5,5 @@ test/contract/managed
 test/**/*.bin
 test/**/output-ps.json
 test/**/contract.config.js
+mint/mint.config.js
+mint/out

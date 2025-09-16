@@ -7,6 +7,17 @@ This toolkit works with or without transaction proofs:
 
 ## Usage
 
+### Check Version information
+
+To see compatibility with Node, Ledger, and Compactc versions, use the `version` command:
+
+```shell
+$ midnight-node-toolkit version
+Node: 0.16.2
+Ledger: ledger-6.1.0-alpha.2
+Compactc: 0.25.103-rc.1-UT-ledger6
+```
+
 ### Generate Transactions
 
 Since the introduction of
@@ -77,7 +88,10 @@ midnight-node-toolkit generate-txs -r <tps> --src-files txs.json --dest-url ws:/
 midnight-node-toolkit generate-txs single-tx --shielded-amount 100 --unshielded-amount 5 --source-seed "0000000000000000000000000000000000000000000000000000000000000001" --destination-address mn_shield-addr_undeployed14gxh... --destination-address mn_addr_undeployed1g9nr3... --destination-address mn_addr_undeployed12vv6y...
 ```
 
-#### Generate Deploy Contract
+#### Generate Deploy Contract (Built-in)
+
+**Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
+
 - Query from chain, generate, and send to chain:
 ```shell
 midnight-node-toolkit generate-txs contract-calls deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
@@ -92,30 +106,85 @@ midnight-node-toolkit generate-txs --dest-file deploy.mn --to-bytes contract-cal
 ```
 - Query fom chain, generate, and save as a serialized intent file:
 ```shell
-midnight-node-toolkit generate-intent --dest-dir "artifacts/intents" deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+```
+- Using the [toolkit-js](../toolkit-js), generate the deploy intent file:
+  * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
+  * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
+    * export TOOLKIT_JS_PATH="util/toolkit-js" 
+```shell
+midnight-node-toolkit generate-intent  -c util/toolkit-js/test/contract/contract.config.ts -C util/toolkit-js/test/contract/managed deploy
 ```
 
-#### Generate Maintenance Update
+#### Generate Maintenance Update (Built-in)
+
+**Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
+
 - Query from chain, generate, and send to chain:
 ```shell
 midnight-node-toolkit generate-txs contract-calls maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
 ```
 - Query fom chain, generate, and save as a serialized intent file:
 ```shell
-midnight-node-toolkit generate-intent --dest-dir "artifacts/intents" maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
 ```
 Rest of examples similar to Generate Deploy Contract
 
-#### Generate Contract Call
+#### Generate Contract Call (Built-in)
+
+**Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
+
 - Query from chain, generate, and send to chain:
 ```shell
 midnight-node-toolkit generate-txs contract-calls call --call-key <call_key> --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
 ```
 - Query fom chain, generate, and save as a serialized intent file:
 ```shell
-midnight-node-toolkit generate-intent --dest-dir "artifacts/intents" call --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" call --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
 ```
 Rest of examples similar to Generate Deploy Contract
+
+#### Custom Contracts
+
+The custom contract calls make use of **toolkit-js**. The nodejs `node` executable must be on the path, and a compiled version of toolkit js must be referenced by the `TOOLKIT_JS_PATH` environment variable for the following commands to work (if you're using the toolkit in a Docker container, this is done for you)
+
+When compiling contracts, you **must** use the correct `compactc` version. To check compatibility, run `midnight-node-toolkit version`
+
+- Generate a deploy intent
+```shell
+compactc counter.compact toolkit-js/contract/out # Compile your contract - compiled directory must be a child of $TOOLKIT_JS_PATH
+
+midnight-node-toolkit generate-intent deploy -c toolkit-js/contract/contract.config.ts --output-intent "/out/deploy.bin" --output-private-state "/out/initial_private_state.json
+```
+
+- Generate a tx from an intent
+```shell
+midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
+```
+
+- Generate and send a tx from an intent
+```shell
+midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out
+```
+
+- Get the contract address
+```shell
+midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed --dest-file /out/contract_address.mn
+```
+
+- Get the contract on-chain state
+```shell
+midnight-node-toolkit contract-state --contract-address <contract-address-file> --dest-file /out/contract_state.bin
+```
+
+- Generate a circuit call intent
+```shell
+midnight-node-toolkit generate-intent circuit -c toolkit-js/contract/contract.config.ts \
+    --input-onchain-state <contract-onchain-state-file> --input-private-state <contract-private-state-json> \
+    --contract-address <contract-address-file> --circuit-id <name-of-circuit-to-call> \
+    --output-intent "/out/call.bin" --output-private-state "/out/new_state.json"
+# To send it, see "Generate and send a tx from an intent" above
+```
 
 ---
 ### Send A Serialized Contract Intent (.mn) File:

@@ -404,6 +404,12 @@ prep-no-copy:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
     FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.89-$NATIVEARCH
 
+    # Used to add repository for nodejs
+    RUN apt-get update -qq \
+        && apt-get upgrade -y -qq \
+        && apt-get install -y -qq ca-certificates gnupg \
+        && rm -rf /var/lib/apt/lists/*
+
     RUN cargo --version
 
 prep:
@@ -421,6 +427,55 @@ prep:
     #   --target x86_64-unknown-linux-gnu \
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
+
+# prepares the toolkit-js, in time for testing
+toolkit-js-prep:
+    ARG NATIVEARCH
+    FROM node:22-bookworm
+
+    COPY util/toolkit-js toolkit-js
+    ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
+
+    WORKDIR /toolkit-js
+    RUN --secret GITHUB_TOKEN npm ci
+    RUN npm run build
+    RUN --secret GITHUB_TOKEN npm run compact
+
+    SAVE ARTIFACT /toolkit-js
+
+# toolkit-js-prep-local saves toolkit-js build artifacts
+toolkit-js-prep-local:
+    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
+    FROM --platform=linux/amd64 +toolkit-js-prep
+    SAVE ARTIFACT /toolkit-js/node_modules AS LOCAL ./util/toolkit-js/node_modules
+    SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
+    SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
+    SAVE ARTIFACT /toolkit-js/mint/out AS LOCAL ./util/toolkit-js/mint/out
+
+# toolkit-generate-test-data re-generates test data used for the toolkit tests
+toolkit-generate-test-data:
+    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
+    FROM +toolkit-image
+
+    COPY res res
+
+    RUN mkdir /out
+    RUN /midnight-node-toolkit generate-intent deploy -c /toolkit-js/test/contract/contract.config.ts \
+        --output-intent /out/deploy.bin --output-private-state /out/initial_state.json
+
+    RUN /midnight-node-toolkit send-intent --src-files /res/genesis/genesis_block_undeployed.mn \
+        --intent-files /out/deploy.bin --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
+        --rng-seed 0000000000000000000000000000000000000000000000000000000000000037 \
+        --to-bytes --dest-file /out/deploy_tx.mn
+
+    RUN /midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed \
+        --dest-file /out/contract_address.mn
+
+    RUN /midnight-node-toolkit contract-state --src-files /res/genesis/genesis_block_undeployed.mn /out/deploy_tx.mn \
+        --contract-address $(cat /out/contract_address.mn) \
+        --dest-file /out/contract_state.mn
+
+    SAVE ARTIFACT /out AS LOCAL ./util/toolkit/test-data/contract/counter
 
 # check-deps checks for unused dependencies
 check-deps:
@@ -497,10 +552,21 @@ check:
 # test runs the tests in parallel with code coverage.
 test:
     ARG NATIVEARCH
+    ARG GITHUB_TOKEN
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
+
+    # Add NodeSource repository with GPG verification
+    RUN mkdir -p /usr/share/keyrings && \
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg && \
+        echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+
+    # Install Node.js
+    RUN apt-get update && \
+        apt-get install -y nodejs && \
+        rm -rf /var/lib/apt/lists/*
 
     # Test
     RUN mkdir /test-artifacts
@@ -509,6 +575,10 @@ test:
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+
+    # extract the toolkit-js
+    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
+    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
     RUN --mount type=secret,id=netrc,target=/root/.netrc MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
     RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
@@ -658,11 +728,23 @@ node-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
-    FROM DOCKERFILE -f ./images/toolkit/Dockerfile .
+    # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
+    FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
+
+    RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+
+    # Install Node.js
+    RUN apt-get update && \
+        apt-get install -y nodejs && \
+        rm -rf /var/lib/apt/lists/*
+
+    # Add toolkit-js
+    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
+    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
@@ -892,7 +974,7 @@ stop-local-env:
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
 
 # node-e2e-test runs the node E2E tests using Earthly's container management
-# 
+#
 # Usage:
 #   earthly +node-e2e-test
 #
@@ -904,25 +986,25 @@ stop-local-env:
 #   - test-artifacts/e2e/node/ - All test results, logs, and reports
 node-e2e-test:
     ARG NATIVEARCH
-    
+
     LOCALLY
-    
+
     RUN echo "🧪 Running Node E2E tests with Earthly:"
-    
+
     # Setup test environment
     WORKDIR ui/tests
-    
+
     # Install dependencies
     RUN yarn config set -H enableImmutableInstalls false
     RUN yarn install
-    
+
     # Create test artifacts directory first
     RUN mkdir -p test-artifacts/e2e/node
-    
+
     # Run the tests from the test artifacts directory to generate CTRF report there
     RUN echo "🎯 Running Playwright + Testcontainers tests..." \
       && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-    
+
     # Save test results
     RUN cp -r ./reports test-artifacts/e2e/node/ || true
     RUN cp -r ./logs test-artifacts/e2e/node/ || true

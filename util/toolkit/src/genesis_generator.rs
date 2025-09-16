@@ -546,27 +546,10 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 	}
 }
 
-pub fn network_as_str(id: NetworkId) -> &'static str {
-	match id {
-		NetworkId::MainNet => "mainnet",
-		NetworkId::DevNet => "devnet",
-		NetworkId::TestNet => "testnet",
-		NetworkId::Undeployed => "undeployed",
-		_ => panic!("unknown network id: {id:?}"),
-	}
-}
-
 #[cfg(test)]
 mod test {
 	use super::*;
 	use std::{fs::File, io::Read, path::Path};
-
-	#[test]
-	fn test_network_as_str() {
-		assert_eq!("mainnet", network_as_str(NetworkId::MainNet));
-		assert_eq!("devnet", network_as_str(NetworkId::DevNet));
-		assert_eq!("undeployed", network_as_str(NetworkId::Undeployed));
-	}
 
 	#[test]
 	#[ignore = "data is in wrong format"]
