@@ -259,12 +259,36 @@ rebuild-genesis-state:
             && cp out/serialized_* /res/test-tx-deserialize \
         ; fi
 
+    RUN mkdir -p /res/test-data/contract/counter \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                -c /toolkit-js/test/contract/contract.config.ts \
+                --output-intent /res/test-data/contract/counter/deploy.bin \
+                --output-private-state /res/test-data/contract/counter/initial_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
+                --intent-files /res/test-data/contract/counter/deploy.bin \
+                --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/counter/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
+                --network $NETWORK \
+                --dest-file /res/test-data/contract/counter/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
+                --dest-file /res/test-data/contract/counter/contract_state.mn \
+        ; fi
+
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
     SAVE ARTIFACT --if-exists /res/test-zswap/* AS LOCAL res/test-zswap/
     SAVE ARTIFACT --if-exists /res/test-tx-deserialize/* AS LOCAL res/test-tx-deserialize/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -477,31 +501,6 @@ toolkit-js-prep-local:
     SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
     SAVE ARTIFACT /toolkit-js/mint/out AS LOCAL ./util/toolkit-js/mint/out
-
-# toolkit-generate-test-data re-generates test data used for the toolkit tests
-toolkit-generate-test-data:
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    FROM +toolkit-image
-
-    COPY res res
-
-    RUN mkdir /out
-    RUN /midnight-node-toolkit generate-intent deploy -c /toolkit-js/test/contract/contract.config.ts \
-        --output-intent /out/deploy.bin --output-private-state /out/initial_state.json
-
-    RUN /midnight-node-toolkit send-intent --src-files /res/genesis/genesis_block_undeployed.mn \
-        --intent-files /out/deploy.bin --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
-        --rng-seed 0000000000000000000000000000000000000000000000000000000000000037 \
-        --to-bytes --dest-file /out/deploy_tx.mn
-
-    RUN /midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed \
-        --dest-file /out/contract_address.mn
-
-    RUN /midnight-node-toolkit contract-state --src-files /res/genesis/genesis_block_undeployed.mn /out/deploy_tx.mn \
-        --contract-address $(cat /out/contract_address.mn) \
-        --dest-file /out/contract_state.mn
-
-    SAVE ARTIFACT /out AS LOCAL ./util/toolkit/test-data/contract/counter
 
 # check-deps checks for unused dependencies
 check-deps:
