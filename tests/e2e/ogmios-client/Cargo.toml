@@ -1,0 +1,30 @@
+[package]
+name = "ogmios-client"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+anyhow = "1.0.81"
+hex = { version = "0.4.3" }
+fraction = { version = "0.15.3", features = ["with-decimal", "with-serde-support"]}
+jsonrpsee = { version = "0.24", optional = true, features = ["client-core", "http-client", "macros", "ws-client"] } 
+serde = { version = "1.0.209" }
+serde_json = { version = '1.0.132', features = ["raw_value", "arbitrary_precision"] }
+thiserror = { version = "2.0" }
+time = { version = "0.3.36", features = ["std", "serde", "parsing"] }
+log = { version = "0.4", optional = true}
+
+
+[dev-dependencies]
+anyhow = "1.0.81"
+hex-literal = "1.0.0"
+tokio = { version = "1.46", features = ["rt-multi-thread", "macros"] }
+
+
+[features]
+default = ["jsonrpsee-client"]
+jsonrpsee-client = ["jsonrpsee", "log"]
