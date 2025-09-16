@@ -1034,7 +1034,7 @@ local-env-rust-e2e:
         -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
         tests/e2e/src/cfg/local/config.toml
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests
+    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
