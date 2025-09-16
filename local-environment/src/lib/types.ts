@@ -16,3 +16,23 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
 }
+
+/**
+ * Options for imageUpgrade
+ */
+export interface ImageUpgradeOptions extends RunOptions {
+  /** which env var controls the node image tag in your compose files default: MN_IMAGE_TAG */
+  imageEnvVar?: string;
+  /** explicit list of services to roll; if omitted, we'll infer via `docker compose config --services` */
+  services?: string[];
+  /** regex to include services (applied after explicit list if provided) */
+  includePattern?: string;
+  /** regex to exclude services */
+  excludePattern?: string;
+  /** time (ms) to wait between each service rollout default 5000 */
+  waitBetweenMs?: number;
+  /** max seconds to wait for a service to report healthy after restart default 180 */
+  healthTimeoutSec?: number;
+  /** if true, require container health=healthy; otherwise we only waitBetweenMs default true */
+  requireHealthy?: boolean;
+}

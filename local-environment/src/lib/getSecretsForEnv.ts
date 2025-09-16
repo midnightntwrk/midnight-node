@@ -11,40 +11,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { execSync } from "child_process";
+import { readFileSync } from "fs";
+
+/** Port map e.g. { "psql-dbsync-cardano-0-db-01": 54321 } */
+type PortMapping = Record<string, number>;
+
+interface PostgresSecret {
+  host: string;
+  password: string;
+  port: string; // note: env vars are strings; keep as string here
+  user: string;
+  db: string;
+  connectionString?: string;
+}
+
+/** Secrets we collect per node */
+interface NodeSecrets {
+  seed?: string;
+  postgres?: PostgresSecret;
+}
+
+type SecretsByNode = Record<string, NodeSecrets>;
 
 const execJsonPath = (cmd: string) =>
-  execSync(cmd, { encoding: 'utf-8' }).trim().split(/\s+/).filter(Boolean);
+  execSync(cmd, { encoding: "utf-8" }).trim().split(/\s+/).filter(Boolean);
 
-const formatNodeKey = (pod: string) =>
-  pod.replace(/-/g, '_').toUpperCase();
+const formatNodeKey = (pod: string) => pod.replace(/-/g, "_").toUpperCase();
 
-const getPortFromMapping = (key: string, mapping: Record<string, number>) =>
+const getPortFromMapping = (key: string, mapping: PortMapping) =>
   Object.entries(mapping).find(([name]) => name.includes(key))?.[1];
 
-
-function convertSecretsToEnvObject(secrets: Record<string, any>): Record<string, string> {
+function convertSecretsToEnvObject(
+  secrets: SecretsByNode,
+): Record<string, string> {
   const env: Record<string, string> = {};
 
   for (const [nodeName, nodeSecrets] of Object.entries(secrets)) {
     const prefix = nodeName.toUpperCase();
-    const { seed, postgres } = nodeSecrets as any;
+    const { seed, postgres } = nodeSecrets;
 
     if (seed) {
       env[`${prefix}_SEED`] = seed;
     }
 
     if (postgres?.connectionString) {
-      env[`DB_SYNC_POSTGRES_CONNECTION_STRING_${prefix}`] = postgres.connectionString;
+      env[`DB_SYNC_POSTGRES_CONNECTION_STRING_${prefix}`] =
+        postgres.connectionString;
     }
   }
   return env;
 }
 
-export function getSecrets(namespace: string): Record<string, any> {
+export function getSecrets(namespace: string): Record<string, string> {
   const portMapping: Record<string, number> = JSON.parse(
-    readFileSync('port-mapping.json', 'utf-8')
+    readFileSync("port-mapping.json", "utf-8"),
   );
 
   const getPodsByLabel = (label: string): string[] => {
@@ -53,36 +74,44 @@ export function getSecrets(namespace: string): Record<string, any> {
   };
 
   const execAndParseEnv = (pod: string, fields: string[]): string[] => {
-    const echoExpr = fields.map(f => `$${f}`).join('|');
+    const echoExpr = fields.map((f) => `$${f}`).join("|");
     const cmd = `kubectl exec -n ${namespace} ${pod} -- sh -c 'echo "${echoExpr}"'`;
-    const raw = execSync(cmd, { encoding: 'utf-8' }).trim();
-    return raw.split('|').map(f => f.trim());
+    const raw = execSync(cmd, { encoding: "utf-8" }).trim();
+    return raw.split("|").map((f) => f.trim());
   };
 
-  const dbSecrets: Record<string, any> = {};
+  const dbSecrets: SecretsByNode = {};
 
   const processAuthorityPods = () => {
-    const pods = getPodsByLabel('midnight.tech/node-type=authority');
+    const pods = getPodsByLabel("midnight.tech/node-type=authority");
 
     for (const pod of pods) {
       const [seed, host, password, port, user, db] = execAndParseEnv(pod, [
-        'SEED_PHRASE', 'POSTGRES_HOST', 'POSTGRES_PASSWORD',
-        'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_DB'
+        "SEED_PHRASE",
+        "POSTGRES_HOST",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_PORT",
+        "POSTGRES_USER",
+        "POSTGRES_DB",
       ]);
 
       const nodeKey = formatNodeKey(pod);
-      const podIdx = pod.match(/node-(\d+)/)?.[1] ?? 'X';
+      const podIdx = pod.match(/node-(\d+)/)?.[1] ?? "X";
       const dbKey = `psql-dbsync-cardano-${podIdx}-db-01`;
       const mappedPort = getPortFromMapping(dbKey, portMapping);
 
       dbSecrets[nodeKey] = {
         seed,
         postgres: {
-          host, password, port, user, db,
+          host,
+          password,
+          port,
+          user,
+          db,
           connectionString: mappedPort
             ? `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`
-            : undefined
-        }
+            : undefined,
+        },
       };
     }
     // TODO: fix and write this method
@@ -90,25 +119,32 @@ export function getSecrets(namespace: string): Record<string, any> {
   };
 
   const processBootPods = () => {
-    const pods = getPodsByLabel('midnight.tech/node-type=boot');
+    const pods = getPodsByLabel("midnight.tech/node-type=boot");
     for (const pod of pods) {
       const [host, password, port, user, db] = execAndParseEnv(pod, [
-        'POSTGRES_HOST', 'POSTGRES_PASSWORD',
-        'POSTGRES_PORT', 'POSTGRES_USER', 'POSTGRES_DB'
+        "POSTGRES_HOST",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_PORT",
+        "POSTGRES_USER",
+        "POSTGRES_DB",
       ]);
 
       const nodeKey = formatNodeKey(pod);
-      const podIdx = pod.match(/boot-node-(\d+)/)?.[1] ?? 'X';
+      const podIdx = pod.match(/boot-node-(\d+)/)?.[1] ?? "X";
       const dbKey = `psql-dbsync-cardano-boot-node-${podIdx}-db-01`;
       const mappedPort = getPortFromMapping(dbKey, portMapping);
 
       dbSecrets[nodeKey] = {
         postgres: {
-          host, password, port, user, db,
+          host,
+          password,
+          port,
+          user,
+          db,
           connectionString: mappedPort
             ? `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`
-            : undefined
-        }
+            : undefined,
+        },
       };
     }
   };
@@ -116,5 +152,5 @@ export function getSecrets(namespace: string): Record<string, any> {
   processAuthorityPods();
   processBootPods();
 
-  return convertSecretsToEnvObject(dbSecrets)
+  return convertSecretsToEnvObject(dbSecrets);
 }
