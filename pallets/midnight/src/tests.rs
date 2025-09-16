@@ -98,9 +98,10 @@ fn test_send_mn_transaction_invalid_tx() {
 			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
 		init_ledger_state(block_context.into());
 
-		let error: sp_runtime::DispatchError =
-			Error::<Test>::Transaction(TransactionError::Malformed(MalformedError::UnknownError))
-				.into();
+		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
+			TransactionError::Malformed(MalformedError::BalanceCheckOverspend),
+		)
+		.into();
 		assert_err!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx), error);
 
 		// Check emitted events
