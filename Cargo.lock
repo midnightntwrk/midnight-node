@@ -7048,6 +7048,7 @@ dependencies = [
  "frame-system-rpc-runtime-api",
  "frame-try-runtime",
  "hex",
+ "impl-trait-for-tuples",
  "log",
  "midnight-node-ledger",
  "midnight-primitives-native-token-observation",
@@ -7056,6 +7057,7 @@ dependencies = [
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collective",
+ "pallet-federated-authority",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -8602,6 +8604,23 @@ dependencies = [
  "sp-core",
  "sp-io",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-federated-authority"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
 ]
 
 [[package]]

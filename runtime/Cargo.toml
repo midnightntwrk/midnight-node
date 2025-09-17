@@ -14,6 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 log.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
+impl-trait-for-tuples.workspace = true
 
 frame-support.workspace = true
 frame-system.workspace = true
@@ -33,6 +34,7 @@ pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
 pallet-governed-map.workspace = true
+pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-arithmetic.workspace = true
 sp-block-builder.workspace = true
@@ -131,6 +133,7 @@ std = [
     "pallet-membership/std",
     "pallet-collective/std",
     "pallet-governed-map/std",
+    "pallet-federated-authority/std",
     "sp-api/std",
     "sp-arithmetic/std",
     "sp-block-builder/std",

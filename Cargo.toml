@@ -78,6 +78,7 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
 pallet-upgrade = { path = "pallets/upgrade", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
+pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
 documented = { path = "util/documented", default-features = false }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
@@ -240,6 +241,7 @@ sha2 = "0.10.8"
 toml = "0.9.0"
 bip32 = "0.5.3"
 derive-where = "1.5.0"
+impl-trait-for-tuples = "0.2.2"
 
 [profile.release]
 panic = "unwind"

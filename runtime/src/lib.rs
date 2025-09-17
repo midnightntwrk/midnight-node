@@ -41,8 +41,9 @@ pub use frame_support::{
 	pallet_prelude::DispatchResult,
 	parameter_types, storage,
 	traits::{
-		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EqualPrivilegeOnly,
-		InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing, Randomness, StorageInfo,
+		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EitherOfDiverse,
+		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing,
+		Randomness, StorageInfo,
 	},
 	weights::{
 		IdentityFee, Weight,
@@ -125,7 +126,7 @@ mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::MembershipHandler;
+use governance::{AuthorityBody, FederatedAuthorityOriginManager, MembershipHandler};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -749,7 +750,8 @@ parameter_types! {
 }
 
 /// Council
-impl pallet_collective::Config<pallet_collective::Instance1> for Runtime {
+type CouncilCollective = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -779,7 +781,8 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 }
 
 /// Technical Authority
-impl pallet_collective::Config<pallet_collective::Instance2> for Runtime {
+type TechnicalAuthorityCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalAuthorityCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -806,6 +809,28 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type MembershipChanged = MembershipHandler<Runtime, TechnicalAuthority>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
+}
+
+pub const NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+
+type CouncilApproval = AuthorityBody<CouncilCollective, Council, 2, 3>;
+type TechnicalAuthorityApproval =
+	AuthorityBody<TechnicalAuthorityCollective, TechnicalAuthority, 2, 3>;
+
+type CouncilKill = AuthorityBody<CouncilCollective, Council, 2, 3>;
+type TechnicalAuthorityKill = AuthorityBody<TechnicalAuthorityCollective, TechnicalAuthority, 2, 3>;
+
+impl pallet_federated_authority::Config for Runtime {
+	type RuntimeCall = RuntimeCall;
+	type MaxAuthorityBodies = ConstU32<NUM_BODIES>; // Technical Authority & Council
+	type MotionApprovalOrigin = FederatedAuthorityOriginManager<
+		AccountId,
+		(CouncilApproval, TechnicalAuthorityApproval),
+		2,
+		2,
+	>;
+	type MotionKillOrigin =
+		FederatedAuthorityOriginManager<AccountId, (CouncilKill, TechnicalAuthorityKill), 2, 2>;
 }
 
 pub struct MidnightTokenTransferHandler;
