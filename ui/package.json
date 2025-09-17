@@ -16,7 +16,7 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "test": "CI=true jest",
+    "test": "CI=true vitest",
     "eslint:check": "eslint --ext .jsx,.js src/",
     "eslint:write": "eslint --fix --ext .jsx,.js src/",
     "prettier:check": "prettier -c src/*",
@@ -53,11 +53,11 @@
     "eslint-config-prettier": "^8.10.1",
     "eslint-plugin-react": "^7.37.5",
     "gh-pages": "6.3.0",
-    "jest": "^30.1.3",
+    "jsdom": "^27.0.0",
     "prettier": "2.8.8",
-    "semistandard": "^16.0.1",
     "typescript": "^4.0.0",
     "vite": "^6.3.6",
+    "vitest": "^3.2.4",
     "webpack": "^5.101.0"
   },
   "resolutions": {
