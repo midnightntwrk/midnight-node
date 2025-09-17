@@ -3,6 +3,7 @@ name = "midnight-primitives-upgrade"
 version = "0.1.0"
 edition = "2024"
 description = "Midnight inherent for runtime upgrades"
+license-file.workspace = true
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
