@@ -1,4 +1,4 @@
-name: +audit (cargo audit)
+name: +audit (cargo deny)
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   run:
-    name: cargo audit job
+    name: cargo deny job
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
@@ -31,7 +31,7 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Run cargo audit
+      - name: Run cargo deny
         continue-on-error: true
         run: |
           # Set NETRC env var for Earthly to use for private repos
