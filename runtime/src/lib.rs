@@ -940,9 +940,10 @@ construct_runtime!(
         Council: pallet_collective::<Instance1> = 40,
         CouncilMembership: pallet_membership::<Instance1> = 41,
 
-        TechnicalAuthority: pallet_collective::<Instance2> = 43,
-        TechnicalAuthorityMembership: pallet_membership::<Instance2> = 42,
+        TechnicalAuthority: pallet_collective::<Instance2> = 42,
+        TechnicalAuthorityMembership: pallet_membership::<Instance2> = 43,
 
+        FederatedAuthority: pallet_federated_authority = 44,
 	}
 );
 

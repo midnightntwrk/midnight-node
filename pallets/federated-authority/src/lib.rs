@@ -45,10 +45,9 @@ pub mod pallet {
 	#[pallet::storage_version(STORAGE_VERSION)]
 	pub struct Pallet<T>(_);
 
-	#[pallet::config(with_default)]
+	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// A call to be executed by the pallet
-		#[pallet::no_default_bounds]
 		type RuntimeCall: Parameter
 			+ UnfilteredDispatchable<RuntimeOrigin = Self::RuntimeOrigin>
 			+ GetDispatchInfo;
@@ -79,6 +78,13 @@ pub mod pallet {
 		MotionAlreadyApprovedBy { auth_id: AuthId },
 	}
 
+	#[pallet::event]
+	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	pub enum Event<T: Config> {
+		/// A motion was executed. motion_result contains the call result
+		MotionDispatched { motion_result: DispatchResult },
+	}
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
@@ -103,12 +109,19 @@ pub mod pallet {
 				total_approvals,
 				T::MaxAuthorityBodies::get(),
 			) {
-				// TODO: enact call
+				let motion_result = Self::do_dispatch(call);
+				Self::deposit_event(Event::MotionDispatched { motion_result });
 			}
 
 			Ok(Pays::No.into())
 		}
 	}
 
-	impl<T: Config> Pallet<T> {}
+	impl<T: Config> Pallet<T> {
+		fn do_dispatch(call: Box<<T as Config>::RuntimeCall>) -> DispatchResult {
+			let res = call.dispatch_bypass_filter(frame_system::RawOrigin::Root.into());
+			let motion_result = res.map(|_| ()).map_err(|e| e.error);
+			motion_result
+		}
+	}
 }
