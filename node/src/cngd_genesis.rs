@@ -18,7 +18,7 @@ use std::{collections::HashMap, sync::Arc};
 use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
 
-const UTXO_CAPACITY: usize = 100_000;
+const UTXO_CAPACITY: usize = 1000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CngdGenesisError {
@@ -98,8 +98,11 @@ pub async fn get_cngd_genesis(
 			.await
 			.map_err(CngdGenesisError::UtxoQueryError)?;
 
-		// TODO: Check for inclusivity
 		current_position = observed.end;
+		println!(
+			"Fetched {} cNight utxos. Current tip: {current_position:?}",
+			observed.utxos.len(),
+		);
 		all_utxos.extend(observed.utxos);
 
 		// Optional: break early if position is past the tip
