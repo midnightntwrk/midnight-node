@@ -526,7 +526,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@polkadot/util-crypto@npm:12.6.2, @polkadot/util-crypto@npm:^12.2.1, @polkadot/util-crypto@npm:^12.6.2":
+"@polkadot/util-crypto@npm:12.6.2, @polkadot/util-crypto@npm:^12.6.2":
   version: 12.6.2
   resolution: "@polkadot/util-crypto@npm:12.6.2"
   dependencies:
@@ -566,7 +566,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@polkadot/util@npm:12.6.2, @polkadot/util@npm:^12.2.1, @polkadot/util@npm:^12.6.2":
+"@polkadot/util@npm:12.6.2, @polkadot/util@npm:^12.6.2":
   version: 12.6.2
   resolution: "@polkadot/util@npm:12.6.2"
   dependencies:
@@ -1005,6 +1005,15 @@ __metadata:
   dependencies:
     undici-types: "npm:~5.26.4"
   checksum: 10/6b6044d80ac66c1f59282704488dba70baa774a39df4e508ec2cabea23199a353c75ad7c4496c9df54557bb31b30c6bb738db2f94f646a121ed11001d104ef12
+  languageName: node
+  linkType: hard
+
+"@types/node@npm:^22.13.14":
+  version: 22.18.5
+  resolution: "@types/node@npm:22.18.5"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10/5a721e6e25e4997ecde0333a72463cf625f6a7f7e17b84fd107d4646efd0735a7f4cf37908e2c20a0072eda9e9ddfe1ccacf75cdef7c0ada8f5650d1331a1af4
   languageName: node
   linkType: hard
 
@@ -2282,8 +2291,9 @@ __metadata:
     "@polkadot/types": "npm:^10.7.2"
     "@polkadot/ui-keyring": "npm:^3.4.1"
     "@polkadot/ui-settings": "npm:^3.4.1"
-    "@polkadot/util": "npm:^12.2.1"
-    "@polkadot/util-crypto": "npm:^12.2.1"
+    "@polkadot/util": "npm:^13.5.1"
+    "@polkadot/util-crypto": "npm:^13.5.1"
+    "@types/node": "npm:^22.13.14"
     allure-playwright: "npm:^3.0.8"
     cross-env: "npm:^7.0.3"
     expect-playwright: "npm:^0.8.0"
