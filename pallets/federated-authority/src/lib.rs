@@ -57,9 +57,8 @@ pub mod pallet {
 		type MotionApprovalProportion: FederatedAuthorityProportion;
 		/// The priviledged origin to register an approved motion
 		type MotionApprovalOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthId>;
-		type MotionKillProportion: FederatedAuthorityProportion;
-		/// The priviledged origin to kill a previously registered approved motion before it gets enacted
-		type MotionKillOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthId>;
+		/// The priviledged origin to revoke a previously registered approved motion before it gets enacted
+		type MotionRevokeOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthId>;
 	}
 
 	#[pallet::storage]
@@ -75,7 +74,9 @@ pub mod pallet {
 	#[pallet::error]
 	pub enum Error<T> {
 		/// The motion has already been approved by this authority.
-		MotionAlreadyApprovedBy { auth_id: AuthId },
+		MotionAlreadyApproved { auth_id: AuthId },
+		/// The authority trying to kill a motion was not found in the list of approvers.
+		MotionApprovalMissing { auth_id: AuthId },
 	}
 
 	#[pallet::event]
@@ -83,6 +84,8 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// A motion was executed. motion_result contains the call result
 		MotionDispatched { motion_result: DispatchResult },
+		/// An previously approved motion gets revoked
+		MotionRevoked { auth_id: AuthId },
 	}
 
 	#[pallet::call]
@@ -94,13 +97,12 @@ pub mod pallet {
 			call: Box<<T as Config>::RuntimeCall>,
 		) -> DispatchResultWithPostInfo {
 			let auth_id = T::MotionApprovalOrigin::ensure_origin(origin)?;
-
 			let call_hash = T::Hashing::hash_of(&call);
 
 			MotionApprovals::<T>::try_mutate(call_hash, |approvers| {
 				approvers
 					.try_insert(auth_id)
-					.map_err(|_| Error::<T>::MotionAlreadyApprovedBy { auth_id })
+					.map_err(|_| Error::<T>::MotionAlreadyApproved { auth_id })
 			})?;
 
 			let total_approvals = MotionApprovals::<T>::get(call_hash).len() as u32;
@@ -112,6 +114,27 @@ pub mod pallet {
 				let motion_result = Self::do_dispatch(call);
 				Self::deposit_event(Event::MotionDispatched { motion_result });
 			}
+
+			Ok(Pays::No.into())
+		}
+
+		#[pallet::call_index(1)]
+		#[pallet::weight({0})] // TODO: fix weight
+		pub fn motion_revoke(
+			origin: OriginFor<T>,
+			call: Box<<T as Config>::RuntimeCall>,
+		) -> DispatchResultWithPostInfo {
+			let auth_id = T::MotionRevokeOrigin::ensure_origin(origin)?;
+			let call_hash = T::Hashing::hash_of(&call);
+
+			MotionApprovals::<T>::try_mutate(call_hash, |approvers| {
+				approvers
+					.remove(&auth_id)
+					.then(|| ())
+					.ok_or(Error::<T>::MotionApprovalMissing { auth_id })
+			})?;
+
+			Self::deposit_event(Event::MotionRevoked { auth_id });
 
 			Ok(Pays::No.into())
 		}

@@ -825,11 +825,11 @@ type TechnicalAuthorityApproval = AuthorityBody<
 	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
 >;
 
-type CouncilKill = AuthorityBody<
+type CouncilRevoke = AuthorityBody<
 	Council,
 	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
 >;
-type TechnicalAuthorityKill = AuthorityBody<
+type TechnicalAuthorityRevoke = AuthorityBody<
 	TechnicalAuthority,
 	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
 >;
@@ -840,8 +840,8 @@ impl pallet_federated_authority::Config for Runtime {
 	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
 	type MotionApprovalOrigin =
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
-	type MotionKillProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
-	type MotionKillOrigin = FederatedAuthorityOriginManager<(CouncilKill, TechnicalAuthorityKill)>;
+	type MotionRevokeOrigin =
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
 }
 
 pub struct MidnightTokenTransferHandler;
