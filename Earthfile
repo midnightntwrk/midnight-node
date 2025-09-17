@@ -416,8 +416,8 @@ prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -510,9 +510,9 @@ check-rust:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN cargo fmt --all -- --check
 
