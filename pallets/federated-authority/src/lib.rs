@@ -24,11 +24,10 @@ use frame_support::BoundedBTreeSet;
 use sp_runtime::traits::Hash;
 use sp_std::prelude::*;
 
-type AuthId = u8;
-pub struct AuthorityOriginInfo {
-	pub id: AuthId,
-	pub n: u32,
-	pub d: u32,
+pub type AuthId = u8;
+
+pub trait FederatedAuthorityProportion {
+	fn reached_proportion(n: u32, d: u32) -> bool;
 }
 
 #[frame_support::pallet]
@@ -56,10 +55,12 @@ pub mod pallet {
 		/// The number of expected authority bodies in the Federated Authority
 		#[pallet::constant]
 		type MaxAuthorityBodies: Get<u32>;
+		type MotionApprovalProportion: FederatedAuthorityProportion;
 		/// The priviledged origin to register an approved motion
-		type MotionApprovalOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthorityOriginInfo>;
+		type MotionApprovalOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthId>;
+		type MotionKillProportion: FederatedAuthorityProportion;
 		/// The priviledged origin to kill a previously registered approved motion before it gets enacted
-		type MotionKillOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthorityOriginInfo>;
+		type MotionKillOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = AuthId>;
 	}
 
 	#[pallet::storage]
@@ -86,15 +87,24 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			call: Box<<T as Config>::RuntimeCall>,
 		) -> DispatchResultWithPostInfo {
-			let auth_origin = T::MotionApprovalOrigin::ensure_origin(origin)?;
+			let auth_id = T::MotionApprovalOrigin::ensure_origin(origin)?;
 
 			let call_hash = T::Hashing::hash_of(&call);
 
 			MotionApprovals::<T>::try_mutate(call_hash, |approvers| {
 				approvers
-					.try_insert(auth_origin.id)
-					.map_err(|_| Error::<T>::MotionAlreadyApprovedBy { auth_id: auth_origin.id })
+					.try_insert(auth_id)
+					.map_err(|_| Error::<T>::MotionAlreadyApprovedBy { auth_id })
 			})?;
+
+			let total_approvals = MotionApprovals::<T>::get(call_hash).len() as u32;
+
+			if T::MotionApprovalProportion::reached_proportion(
+				total_approvals,
+				T::MaxAuthorityBodies::get(),
+			) {
+				// TODO: enact call
+			}
 
 			Ok(Pays::No.into())
 		}

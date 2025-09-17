@@ -126,7 +126,10 @@ mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::{AuthorityBody, FederatedAuthorityOriginManager, MembershipHandler};
+use governance::{
+	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
+	MembershipHandler,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -811,26 +814,34 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
-pub const NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+pub const MAX_NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
 
-type CouncilApproval = AuthorityBody<CouncilCollective, Council, 2, 3>;
-type TechnicalAuthorityApproval =
-	AuthorityBody<TechnicalAuthorityCollective, TechnicalAuthority, 2, 3>;
+type CouncilApproval = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalAuthorityApproval = AuthorityBody<
+	TechnicalAuthority,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
+>;
 
-type CouncilKill = AuthorityBody<CouncilCollective, Council, 2, 3>;
-type TechnicalAuthorityKill = AuthorityBody<TechnicalAuthorityCollective, TechnicalAuthority, 2, 3>;
+type CouncilKill = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalAuthorityKill = AuthorityBody<
+	TechnicalAuthority,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
+>;
 
 impl pallet_federated_authority::Config for Runtime {
 	type RuntimeCall = RuntimeCall;
-	type MaxAuthorityBodies = ConstU32<NUM_BODIES>; // Technical Authority & Council
-	type MotionApprovalOrigin = FederatedAuthorityOriginManager<
-		AccountId,
-		(CouncilApproval, TechnicalAuthorityApproval),
-		2,
-		2,
-	>;
-	type MotionKillOrigin =
-		FederatedAuthorityOriginManager<AccountId, (CouncilKill, TechnicalAuthorityKill), 2, 2>;
+	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionApprovalOrigin =
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
+	type MotionKillProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionKillOrigin = FederatedAuthorityOriginManager<(CouncilKill, TechnicalAuthorityKill)>;
 }
 
 pub struct MidnightTokenTransferHandler;
