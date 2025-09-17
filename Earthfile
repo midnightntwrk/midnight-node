@@ -415,7 +415,7 @@ prep-no-copy:
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger node pallets primitives README.md res runtime \
 	metadata rustfmt.toml util .
 
