@@ -32,7 +32,6 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Run cargo deny
-        continue-on-error: true
         run: |
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
