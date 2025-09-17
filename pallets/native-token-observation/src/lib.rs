@@ -616,33 +616,33 @@ pub mod pallet {
 			for utxo in utxos {
 				match utxo.data {
 					ObservedUtxoData::RedemptionCreate(data) => {
-						log::info!("Processing Redemption Create: {data:?}");
+						log::debug!("Processing Redemption Create: {data:?}");
 						if let Some(event) = Self::handle_redemption_create(now, data) {
 							events.push(event);
 						}
 					},
 					ObservedUtxoData::RedemptionSpend(data) => {
-						log::info!("Processing Redemption Spend: {data:?}");
+						log::debug!("Processing Redemption Spend: {data:?}");
 						if let Some(event) = Self::handle_redemption_spend(now, data) {
 							events.push(event);
 						}
 					},
 					ObservedUtxoData::Registration(data) => {
-						log::info!("Processing Registration: {data:?}");
+						log::debug!("Processing Registration: {data:?}");
 						Self::handle_registration(&utxo.header, data);
 					},
 					ObservedUtxoData::Deregistration(data) => {
-						log::info!("Processing Deregistration: {data:?}");
+						log::debug!("Processing Deregistration: {data:?}");
 						Self::handle_registration_removal(&utxo.header, data)
 					},
 					ObservedUtxoData::AssetCreate(data) => {
-						log::info!("Processing CNight Create: {data:?}");
+						log::debug!("Processing CNight Create: {data:?}");
 						if let Some(event) = Self::handle_create(now, data) {
 							events.push(event);
 						}
 					},
 					ObservedUtxoData::AssetSpend(data) => {
-						log::info!("Processing CNight Spend: {data:?}");
+						log::debug!("Processing CNight Spend: {data:?}");
 						if let Some(event) = Self::handle_spend(now, data) {
 							events.push(event);
 						}

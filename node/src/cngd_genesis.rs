@@ -99,7 +99,7 @@ pub async fn get_cngd_genesis(
 			.map_err(CngdGenesisError::UtxoQueryError)?;
 
 		current_position = observed.end;
-		println!(
+		log::info!(
 			"Fetched {} cNight utxos. Current tip: {current_position:?}",
 			observed.utxos.len(),
 		);
@@ -128,6 +128,6 @@ pub async fn get_cngd_genesis(
 	let json = serde_json::to_string_pretty(&config)?;
 	let mut file = File::create("cngd-config.json").await?;
 	file.write_all(json.as_bytes()).await?;
-	println!("Wrote cNIGHT Generates Dust genesis to cngd-config.json");
+	log::info!("Wrote cNIGHT Generates Dust genesis to cngd-config.json");
 	Ok(())
 }

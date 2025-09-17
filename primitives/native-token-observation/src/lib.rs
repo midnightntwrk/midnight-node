@@ -41,11 +41,24 @@ use scale_info::TypeInfo;
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub block_hash: [u8; 32],
 	/// Block number of the last processed block
 	pub block_number: u32,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
+}
+
+impl core::fmt::Display for CardanoPosition {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{{ block_number: {}, block_hash: {}, block_index: {} }}",
+			self.block_number,
+			hex::encode(self.block_hash),
+			self.tx_index_in_block
+		)
+	}
 }
 
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]

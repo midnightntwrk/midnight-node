@@ -121,6 +121,19 @@ pub struct ObservedUtxoHeader {
 	pub utxo_index: UtxoIndexInTx,
 }
 
+impl core::fmt::Display for ObservedUtxoHeader {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{{ tx_position: {}, tx_hash: {}, utxo: {}#{} }}",
+			self.tx_position,
+			hex::encode(self.tx_hash.0),
+			hex::encode(self.utxo_tx_hash.0),
+			self.utxo_index.0
+		)
+	}
+}
+
 #[derive(
 	Debug,
 	Copy,

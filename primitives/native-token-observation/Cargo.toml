@@ -9,10 +9,12 @@ sp-api.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 serde = { workspace = true , optional = true }
+hex = { workspace = true, optional = true, features = ["serde"] }
 
 [features]
 default = ["std"]
 std = [
+    "hex",
     "sp-api/std",
     "parity-scale-codec/std",
     "scale-info/std",
