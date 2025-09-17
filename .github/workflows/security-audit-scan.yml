@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   run:
-    name: cargo deny job
+    name: cargo audit job
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
