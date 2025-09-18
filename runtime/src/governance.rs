@@ -49,14 +49,13 @@ where
 }
 
 /// A type-level struct to hold the specification for a single federated authority.
-/// - `I`: The pallet's Instance marker type.
 /// - `P`: The pallet type itself (from `construct_runtime!`).
-/// - `N`, `D`: The numerator and denominator for the proportion.
+/// - `EnsureProportion`: The function that calculates if there is enough positive votes
 pub struct AuthorityBody<P, EnsureProportion> {
 	_phantom: PhantomData<(P, EnsureProportion)>,
 }
 
-/// Helper trait to check an origin against an `AuthorityBodySpec`.
+/// Helper trait to check an origin against an `AuthorityBody`.
 trait EnsureFromIdentity<O> {
 	/// On success, returns the pallet index of the authority that matched.
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O>;
