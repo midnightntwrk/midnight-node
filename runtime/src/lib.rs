@@ -815,6 +815,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 }
 
 pub const MAX_NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
 
 type CouncilApproval = AuthorityBody<
 	Council,
@@ -835,8 +836,9 @@ type TechnicalAuthorityRevoke = AuthorityBody<
 >;
 
 impl pallet_federated_authority::Config for Runtime {
-	type RuntimeCall = RuntimeCall;
+	type MotionCall = RuntimeCall;
 	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
+	type MotionDuration = ConstU32<MOTION_DURATION>;
 	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
 	type MotionApprovalOrigin =
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
