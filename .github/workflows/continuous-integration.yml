@@ -196,7 +196,7 @@ jobs:
         with:
           just-command: hardfork-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+          upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
   
   ledger-rollback-e2e:
