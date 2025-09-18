@@ -91,6 +91,7 @@ echo "$NODE_KEY" > "$node_temp_dir/node_key.txt"
 TMPFILE=$(mktemp)
 
 docker run \
+    -u root \
     "${BASE_PATH_ARGS[@]}" \
     --env SHOW_CONFIG=true \
     --env DB_SYNC_POSTGRES_CONNECTION_STRING=$DB_SYNC_POSTGRES_CONNECTION_STRING \

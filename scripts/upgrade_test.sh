@@ -100,6 +100,7 @@ start_container() {
     echo "$node_key" > "$container_data_path/node_key.secret"
 
     docker run  --network="host" -d --name "${container_name}" \
+        -u root \
         -v "${container_data_path}:/data" \
         -p "${rpc_host_port}:9944" \
         -e AURA_SEED_FILE="/data/seed.secret" \

@@ -295,10 +295,10 @@ earthly +generator-image
 ### Tips for running on Docker
 
 To access a node running on localhost, use the `--network option`. To write output files to your host system,
-use `-v /host/path:/container/path`. Example:
+use `-u root -v /host/path:/container/path`. Example:
 
 ```shell
-docker run --network host -v $(pwd):/out mn-generator2 generate-zswap -n 1 -f /out/tx.json
+docker run --network host -u root -v $(pwd):/out mn-generator2 generate-zswap -n 1 -f /out/tx.json
 ```
 
 **NOTE:** if you're running through Docker and want to access a node on localhost, use: `docker run --network host ...`

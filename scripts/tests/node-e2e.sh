@@ -102,6 +102,7 @@ docker run --rm \
 echo "🚀 Launching node container..."
 
 docker run -d --rm \
+  -u root \
   --name midnight-node-e2e \
   --network midnight-net-node \
   --ipc=private \

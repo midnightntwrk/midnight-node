@@ -49,7 +49,7 @@ tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
 deploy_filename="contract_deploy.mn"
 address_filename="contract_address.mn"
 
-docker run --rm -e RUST_BACKTRACE=1 -u root --network host "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
+docker run --rm -e RUST_BACKTRACE=1 --network host "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
 
 docker run --rm -e RUST_BACKTRACE=1 -u root -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs \
     --dest-file "/out/$deploy_filename" --to-bytes \
@@ -63,7 +63,7 @@ docker run --rm -e RUST_BACKTRACE=1 -u root -v $tempdir:/out --network host "$TO
 docker run --rm -e RUST_BACKTRACE=1 -u root -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs contract-calls call --call-key check --rng-seed "$RNG_SEED" --contract-address "/out/$address_filename"
 
 # Send just unshielded
-docker run --rm -e RUST_BACKTRACE=1 -u root --network host "$TOOLKIT_IMAGE" generate-txs single-tx --source-seed "0000000000000000000000000000000000000000000000000000000000000001" --unshielded-amount 10 --destination-address mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804
+docker run --rm -e RUST_BACKTRACE=1 --network host "$TOOLKIT_IMAGE" generate-txs single-tx --source-seed "0000000000000000000000000000000000000000000000000000000000000001" --unshielded-amount 10 --destination-address mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804
 
 rm -rf $tempdir
 

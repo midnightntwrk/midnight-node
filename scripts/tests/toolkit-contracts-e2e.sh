@@ -83,6 +83,7 @@ docker rm -v $tmpid
 
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent deploy -c /toolkit-js/contract/contract.config.ts \
