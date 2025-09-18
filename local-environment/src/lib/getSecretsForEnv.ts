@@ -83,7 +83,9 @@ export function getSecrets(namespace: string): Record<string, string> {
   const dbSecrets: SecretsByNode = {};
 
   const processAuthorityPods = () => {
-    const pods = getPodsByLabel("midnight.tech/node-type=authority");
+    const pods = getPodsByLabel("midnight.tech/node-type=authority")
+      // Hack - remove relay pods which have incorrectly received an authority pod label
+      .filter(pod => !pod.includes("relay"));
 
     for (const pod of pods) {
       const [seed, host, password, port, user, db] = execAndParseEnv(pod, [
