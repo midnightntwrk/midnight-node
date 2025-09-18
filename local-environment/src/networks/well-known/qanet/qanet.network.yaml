@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 x-common-variables: &common-variables
   CFG_PRESET: "qanet"
@@ -25,7 +25,7 @@ services:
     container_name: boot-node
     volumes:
       - ./data/boot-node:/data
-    ports:    
+    ports:
       - "9944:9944"
       - "30333:30333"
     healthcheck:
@@ -60,7 +60,7 @@ services:
       boot-node:
         condition: service_healthy
     ports:
-      - "9950:9944" 
+      - "9950:9944"
       - "30334:30334"
     volumes:
       - ./data/node-1:/data
@@ -484,38 +484,37 @@ services:
         --rpc-external
         --rpc-methods=Unsafe
         --name MidnightNode12_Local
-      
-  # node12:
-  #   <<: *node-common
-  #   hostname: node12
-  #   container_name: node12
-  #   depends_on:
-  #     boot-node:
-  #       condition: service_healthy
-  #   ports:
-  #     - "9962:9944"
-  #     - "30346:30333"
-  #   volumes:
-  #     - ./data/node-11:/data
-  #   environment:
-  #     <<: *common-variables
-  #     # SEED_PHRASE: $MIDNIGHT_NODE_13_0_SEED
-  #     DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_12_0}
-  #     ARGS: >
-  #       --node-key=0000000000000000000000000000000000000000000000000000000000000014
-  #       --validator
-  #       --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-  #       --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-  #       --port 30346 # P2P port for node5
-  #       --rpc-port 9944
-  #       --public-addr /dns4/node12/tcp/30346
-  #       --base-path=/data
-  #       --unsafe-rpc-external
-  #       --rpc-cors=all
-  #       --rpc-external
-  #       --rpc-methods=Unsafe
-  #       --name MidnightNode12_Local
 
+    # node12:
+    #   <<: *node-common
+    #   hostname: node12
+    #   container_name: node12
+    #   depends_on:
+    #     boot-node:
+    #       condition: service_healthy
+    #   ports:
+    #     - "9962:9944"
+    #     - "30346:30333"
+    #   volumes:
+    #     - ./data/node-11:/data
+    #   environment:
+    #     <<: *common-variables
+    #     # SEED_PHRASE: $MIDNIGHT_NODE_13_0_SEED
+    #     DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_MIDNIGHT_NODE_12_0}
+    #     ARGS: >
+    #       --node-key=0000000000000000000000000000000000000000000000000000000000000014
+    #       --validator
+    #       --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    #       --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    #       --port 30346 # P2P port for node5
+    #       --rpc-port 9944
+    #       --public-addr /dns4/node12/tcp/30346
+    #       --base-path=/data
+    #       --unsafe-rpc-external
+    #       --rpc-cors=all
+    #       --rpc-external
+    #       --rpc-methods=Unsafe
+    #       --name MidnightNode12_Local
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]

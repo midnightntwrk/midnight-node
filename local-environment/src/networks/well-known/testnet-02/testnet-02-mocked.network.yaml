@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 x-common-variables: &common-variables
   CFG_PRESET: "testnet-02"
@@ -44,7 +44,6 @@ services:
         --name MidnightBootNode_Local
         --public-addr /dns4/boot-node/tcp/30333/ws
 
-
   node0:
     <<: *node-common
     hostname: node0
@@ -53,7 +52,7 @@ services:
       boot-node:
         condition: service_healthy
     ports:
-      - "9950:9944" 
+      - "9950:9944"
       - "30334:30334"
     volumes:
       - ./data/node-0:/data
@@ -242,13 +241,12 @@ services:
       SEED_PHRASE: $MIDNIGHT_NODE_06_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_06_0}
 
-
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000007
         --validator
         --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
         --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-      
+
         --port 30339 # P2P port for node5
         --rpc-port 9944
         --public-addr /dns4/node5/tcp/30339
@@ -352,7 +350,7 @@ services:
       <<: *common-variables
       SEED_PHRASE: $MIDNIGHT_NODE_09_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_09_0}
-      
+
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000010
         --validator
@@ -391,7 +389,7 @@ services:
       <<: *common-variables
       SEED_PHRASE: $MIDNIGHT_NODE_10_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_10_0}
-      
+
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000011
         --validator
