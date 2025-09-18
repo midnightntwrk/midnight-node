@@ -132,23 +132,23 @@ jobs:
         if: ${{ env.TEST_ENV == 'testnet-02' }}
         run: |
           # image tag with testnet support
-          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/ --funding-seed ${{ secrets.TESTNET_FUNDING_SEED }}
+          docker run --network host -u root -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/ --funding-seed ${{ secrets.TESTNET_FUNDING_SEED }}
       
       - name: Run txs generation for qanet
         if: ${{ env.TEST_ENV == 'qanet' }}
         run: |
           # image tag with testnet support
-          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/
+          docker run --network host -u root -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/
 
       - name: Run txs generation for devnet
         if: ${{ env.TEST_ENV == 'devnet' }}
         run: |
-          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_devnet.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
+          docker run --network host -u root -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_devnet.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
 
       - name: Run txs generation for node-dev-01
         if: ${{ env.TEST_ENV == 'node-dev-01' }}
         run: |
-          docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
+          docker run --network host -u root -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
 
       - name: Upload sync cache
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

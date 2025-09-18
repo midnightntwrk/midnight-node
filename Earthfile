@@ -723,9 +723,39 @@ subwasm:
 node-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
-    FROM DOCKERFILE -f ./images/node/Dockerfile .
+    FROM debian:bookworm-slim
+
+    ENV BASE_PATH=/node/chain
+    ENV RUST_BACKTRACE=1
+
+    # ntp to keep correct time
+    # curl to enable compose healthchecks
+    RUN apt-get update -qq && \
+        apt-get upgrade -y -qq && \
+        apt-get install -y -qq --no-install-recommends ca-certificates curl procps strace \
+        gdb vim jq tree build-essential git cmake wget libtool autoconf automake && \
+        # Build libfaketime with FORCE_MONOTONIC_FIX and FORCE_PTHREAD_NONVER
+        git clone https://github.com/wolfcw/libfaketime.git && \
+        cd libfaketime/src && \
+        make clean && \
+        CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make && \
+        make install && \
+        cd ../.. && rm -rf libfaketime && \
+        # Download bytehound
+        wget -q https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
+        [ -f bytehound-x86_64-unknown-linux-gnu.tgz ] && \
+        tar -xzvf bytehound-x86_64-unknown-linux-gnu.tgz && \
+        mv libbytehound.so /usr/lib/libbytehound.so && \
+        rm -rf bytehound* && \
+        # Cleanup
+        apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    COPY .envrc ./bin/.envrc
+    COPY res/ ./res/
+    EXPOSE 30333 9933 9944 9615
 
     RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN mkdir -p /node
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
@@ -739,6 +769,12 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+
+    RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser && \
+        chown -R appuser:appuser /midnight-node /node ./bin ./res
+    USER appuser
+    ENTRYPOINT ["./midnight-node"]
+
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -753,23 +789,45 @@ node-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
-    # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
-    FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
+    FROM debian:bookworm-slim
 
-    RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    ENV TOOLKIT_JS_PATH="/toolkit-js"
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV MIDNIGHT_PP=/.cache/midnight/zk-params
+    ENV MN_SYNC_CACHE=/.cache/sync
 
-    # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
+    # Install various build deps,
+    # then use those deps to install node
+    RUN apt-get update -qq && \
+        apt-get upgrade -y -qq && \
+        apt-get install -y -qq ca-certificates curl gnupg procps strace gdb vim jq tree && \
+        echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null && \
+        mkdir -p /usr/share/keyrings && \
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg && \
+        apt-get update -qq && \
+        apt-get upgrade -y -qq && \
+        apt-get install -y -qq nodejs && \
         rm -rf /var/lib/apt/lists/*
 
     # Add toolkit-js
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
-
+    COPY .envrc ./bin/.envrc
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
 
+    # Get node version for the image tag
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
+    RUN rm -rf /node
     LET NODE_VERSION="$(cat node_version)"
+
+    RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser && \
+        chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
+    USER appuser
+    ENTRYPOINT ["/midnight-node-toolkit"]
+
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
@@ -783,20 +841,36 @@ toolkit-image:
 hardfork-test-upgrader-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
-    FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
+
+    FROM debian:bookworm-slim
+    # ntp to keep correct time
+    # curl to enable compose healthchecks
+    RUN apt-get update -qq \
+        && apt-get upgrade -y -qq \
+        && apt-get install -y -qq ca-certificates curl procps strace gdb vim jq tree \
+        && rm -rf /var/lib/apt/lists/*
+
+    ENV RUNTIME_PATH=/midnight_node_runtime.compact.compressed.wasm
 
     COPY +build/artifacts-$NATIVEARCH/upgrader /
     COPY +build/artifacts-$NATIVEARCH/test/* /
     COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
+    RUN rm -rf /node
     LET NODE_VERSION = "$(cat node_version)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
     ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVETARCH"
-
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
+
+    RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser && \
+        chown -R appuser:appuser /upgrader
+    USER appuser
+    ENTRYPOINT ["/upgrader"]
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     SAVE IMAGE --push \
         $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \

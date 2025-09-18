@@ -65,6 +65,7 @@ docker rm -v $tmpid
 
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent deploy -c /toolkit-js/contract/mint.config.ts \
@@ -75,6 +76,7 @@ test -f "$tempdir/$private_state_filename"
 
 echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent --intent-files "/out/$deploy_intent_filename" --compiled-contract-dir contract/managed/counter \
@@ -82,12 +84,14 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs --src-files /out/$deploy_tx_filename -r 1 send
 
 echo "Get contract address"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address --src-file /out/$deploy_tx_filename --network undeployed \
@@ -97,6 +101,7 @@ contract_address=$(cat "$tempdir/$address_filename")
 
 echo "Get contract state"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-state --contract-address $contract_address \
@@ -104,6 +109,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 
 echo "Generate circuit call intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c /toolkit-js/contract/mint.config.ts \
@@ -113,6 +119,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 
 echo "Generate and send mint tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -u root \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent --intent-files "/out/$mint_intent_filename" --compiled-contract-dir /toolkit-js/contract/out

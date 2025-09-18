@@ -54,6 +54,7 @@ echo "⚙️ Generating txs to be sent eventually to the chain..."
 OUTPUT_DIR="$(realpath ../../res/test-contract)"
 
 docker run --rm \
+    -u root \
     -v "$OUTPUT_DIR":/mnt/output \
     -w /mnt/output \
     $TOOLKIT_IMAGE \
@@ -65,6 +66,7 @@ docker run --rm \
     > "$OUTPUT_DIR/contract_tx_1_deploy_timestamp_undeployed.txt"
 
 docker run --rm \
+    -u root \
     -v "$OUTPUT_DIR":/mnt/output \
     -w /mnt/output \
     $TOOLKIT_IMAGE \
@@ -75,6 +77,7 @@ docker run --rm \
         --from-bytes 
 
 docker run --rm \
+    -u root \
     -v "$OUTPUT_DIR":/mnt/output \
     -w /mnt/output \
     $TOOLKIT_IMAGE \
@@ -85,6 +88,7 @@ docker run --rm \
         --from-bytes
 
 docker run --rm \
+    -u root \
     -v "$OUTPUT_DIR":/mnt/output \
     -w /mnt/output \
     $TOOLKIT_IMAGE \
