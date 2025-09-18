@@ -2,6 +2,7 @@
 name = "midnight-node-ledger-helpers"
 version = "0.1.0"
 edition = "2024"
+license-file.workspace = true
 
 [dependencies]
 hex.workspace = true

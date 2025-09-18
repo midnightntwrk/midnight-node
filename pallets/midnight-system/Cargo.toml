@@ -6,7 +6,7 @@ description = "FRAME pallet for manually calling Midnight System Transactions."
 authors = ["Midnight <https://github.com/midnightntwrk>"]
 homepage = "https://midnight.network/"
 edition = "2024"
-license = "Apache-2.0"
+license-file.workspace = true
 publish = false
 repository = "https://github.com/midnightntwrk/midnight-node/"
 

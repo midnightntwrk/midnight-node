@@ -431,7 +431,7 @@ node-ci-image-single-platform:
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-chef
+    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
 
     # subwasm can be used to diff between runtimes
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.21.3
@@ -465,9 +465,9 @@ prep-no-copy:
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -535,9 +535,9 @@ check-rust:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN cargo fmt --all -- --check
 
@@ -804,38 +804,11 @@ hardfork-test-upgrader-image:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
-audit-including-ignores:
-    FROM +prep
-    # Run with no ignores so someone looking through the output can see the warnings
-    RUN --no-cache cargo audit -c always || true
-
 # audit checks for rust security vulnerabilities
 audit:
-    FROM +audit-including-ignores
-    # No known fix yet:
-    # RUSTSEC-2023-0071 rsa crate indirectly used by partner-chains-db-sync-data-sources
-    #
-    # Things that should be fixed by an upcoming sidechains/substrate upgrade:
-    # RUSTSEC-2024-0336 rustls 0.20.9 used by libp2p. newer libp2p fixes this.
-    #
-    # Unmaintained crates (no known vulnerabilites):
-    # RUSTSEC-2021-0139 ansi_term unmaintained: no fix available yet (Aug24).
-    # RUSTSEC-2020-0168 mach unmaintained: longterm mitigation: switching wasm to risc.
-    # RUSTSEC-2022-0061 parity-wasm unmaintained: longterm mitigation: switching wasm to risc.
-    # RUSTSEC-2024-0320 yaml-rust crate used by config unmaintained.
-    #
-    # False positives:
-    # RUSTSEC-2023-0071 rsa sidechannel. False positive: in a feature we don't use: `cargo tree | rg rsa` 0 hits.
-    RUN --no-cache cargo audit -c always \
-      --ignore RUSTSEC-2023-0071 \
-      --ignore RUSTSEC-2024-0336 \
-      --ignore RUSTSEC-2023-0071 \
-      --ignore RUSTSEC-2022-0061 \
-      --ignore RUSTSEC-2021-0139 \
-      --ignore RUSTSEC-2020-0168 \
-      --ignore RUSTSEC-2023-0033 \
-      --ignore RUSTSEC-2024-0320
-    RUN echo https://input-output.atlassian.net/browse/PM-10374 has been rised for fixing warning RUSTSEC-2023-0033
+    FROM +prep
+    # See deny.toml for which advisories are getting ignored
+    RUN --no-cache cargo deny check
 
 # partnerchains-dev contains tools for working with partner chains contracts on Cardano
 partnerchains-dev:
