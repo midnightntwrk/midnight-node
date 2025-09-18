@@ -112,7 +112,7 @@ where
 			return Ok(vec![destination]);
 		}
 
-		// If not a dest file, then dest_url is default.
+		// --------- If not a dest file, then dest_url is default. ---------
 
 		// if dest url is empty, provide default url
 		let mut urls = dest.dest_url.unwrap_or(vec![DEFAULT_DEST_URL.to_string()]);
@@ -155,9 +155,16 @@ where
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		for dest in &self.destinations {
-			// No parallel sending; return immediately once a failure is encountered.
-			dest.send_txs(txs).await?;
+		let sends_txs_futs: Vec<_> =
+			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
+
+		// send transactions concurrently; no waiting needed for prev async calls
+		let results = futures::future::join_all(sends_txs_futs).await;
+
+		for result in results.iter() {
+			if let Err(e) = result {
+				println!("ERROR: {e}");
+			}
 		}
 
 		Ok(())

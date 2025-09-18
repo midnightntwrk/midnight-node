@@ -18,9 +18,19 @@ use subxt::{
 	OnlineClient, PolkadotConfig,
 	tx::{TxInBlock, TxProgress},
 };
+use thiserror::Error;
 use tokio::sync::Semaphore;
 
 use crate::hash_to_str;
+
+// Display from what url the sending error occurred
+#[derive(Debug, Error)]
+#[error("failed sending to {url}: {source}")]
+pub struct SendToUrlError {
+	url: String,
+	#[source]
+	source: subxt::Error,
+}
 
 pub struct Sender<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static> {
 	api: OnlineClient<PolkadotConfig>,
@@ -46,7 +56,7 @@ where
 	pub async fn send_tx(
 		&self,
 		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(), subxt::Error> {
+	) -> Result<(), SendToUrlError> {
 		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
 		self.send_and_log(&tx_hash_string, tx_progress).await;
 		Ok(())
@@ -79,11 +89,13 @@ where
 	async fn send_tx_no_wait(
 		&self,
 		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(String, TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>), subxt::Error> {
-		let tx_serialize = tx.serialize_inner()?;
+	) -> Result<(String, TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>), SendToUrlError>
+	{
+		let tx_serialize = tx.serialize_inner().map_err(|e| self.error(e.into()))?;
 
 		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_serialize);
-		let unsigned_extrinsic = self.api.tx().create_unsigned(&mn_tx)?;
+		let unsigned_extrinsic =
+			self.api.tx().create_unsigned(&mn_tx).map_err(|e| self.error(e.into()))?;
 		let tx_hash_string = format!("0x{}", hex::encode(unsigned_extrinsic.hash().as_bytes()));
 
 		log::info!(
@@ -91,7 +103,9 @@ where
 			tx_hash = &tx_hash_string;
 			"SENDING"
 		);
-		let tx_progress = self.api.tx().create_unsigned(&mn_tx)?.submit_and_watch().await?;
+		let tx_progress =
+			unsigned_extrinsic.submit_and_watch().await.map_err(|e| self.error(e.into()))?;
+
 		log::info!(
 			url = self.url,
 			tx_hash = &tx_hash_string;
@@ -157,5 +171,9 @@ where
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
 			"{message}"
 		);
+	}
+
+	fn error(&self, e: subxt::Error) -> SendToUrlError {
+		SendToUrlError { url: self.url.clone(), source: e }
 	}
 }
