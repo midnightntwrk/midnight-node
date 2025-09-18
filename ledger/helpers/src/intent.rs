@@ -181,7 +181,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
 
 		let mut intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
 		intent.ttl = ttl;
-
+		println!("custom intent: {intent:#?}");
 		intent
 	}
 }

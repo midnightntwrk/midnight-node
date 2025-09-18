@@ -97,7 +97,7 @@ where
 
 			Ok(source)
 		} else {
-			unreachable!()
+			Err(SourceError::InvalidSourceArgs(src))
 		}
 	}
 

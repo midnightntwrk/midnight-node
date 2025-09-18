@@ -29,8 +29,8 @@ midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 test-log = {version = "0.2"}
-midnight-node-ledger-helpers = { workspace = true}
-tempfile = "3.21"
+midnight-node-ledger-helpers.workspace = true
+tempfile.workspace = true
 
 [features]
 default = ["std"]

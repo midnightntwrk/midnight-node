@@ -170,7 +170,7 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::GenerateIntent(args) => {
-			generate_intent::execute(args);
+			generate_intent::execute(args).await?;
 			Ok(())
 		},
 
