@@ -1,5 +1,4 @@
-# Toolkit
-## Allow multiple url destinations to send a similar transaction
+# Toolkit - Allow multiple url destinations to send a similar transaction
 
 This is NOT backward compatible, as the argument `--dest-url` has been changed to `--dest-urls`.
 
