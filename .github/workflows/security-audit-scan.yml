@@ -1,4 +1,4 @@
-name: +audit (cargo deny)
+name: +audit (cargo deny + npm audit)
 
 on:
   pull_request:
@@ -31,7 +31,7 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Run cargo deny
+      - name: Run cargo deny and npm audit
         run: |
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
