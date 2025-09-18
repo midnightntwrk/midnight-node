@@ -22,6 +22,7 @@ use crate::{
 	remote_prover::RemoteProofServer,
 	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::destination::DEFAULT_DEST_URL,
 };
 
 pub mod builder;
@@ -52,7 +53,7 @@ where
 	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
 {
 	pub source: Box<dyn GetTxs<S, P>>,
-	pub destination: Box<dyn SendTxs<S, P>>,
+	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
 	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
 	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
 }
@@ -74,11 +75,11 @@ where
 		proof_server: Option<String>,
 	) -> Result<Self, TxGeneratorError> {
 		let source = Self::source(src).await?;
-		let destination = Self::destination(dest).await?;
+		let destinations = Self::destinations(dest).await?;
 		let builder = builder.into();
 		let prover = Self::prover(proof_server);
 
-		Ok(Self { source, destination, builder, prover })
+		Ok(Self { source, destinations, builder, prover })
 	}
 
 	pub async fn source(src: Source) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
@@ -101,22 +102,39 @@ where
 		}
 	}
 
-	async fn destination(dest: Destination) -> Result<Box<dyn SendTxs<S, P>>, DestinationError> {
+	async fn destinations(
+		dest: Destination,
+	) -> Result<Vec<Box<dyn SendTxs<S, P>>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
 			let destination: Box<dyn SendTxs<S, P>> =
 				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
 
-			Ok(destination)
-		} else if let Some(url) = dest.dest_url {
+			return Ok(vec![destination]);
+		}
+
+		// If not a dest file, then dest_url is default.
+
+		// if dest url is empty, provide default url
+		let mut urls = dest.dest_urls.unwrap_or(vec![DEFAULT_DEST_URL.to_string()]);
+
+		// ------ accept multiple urls ------
+		if urls.is_empty() {
+			println!("No urls provided. Using default: {DEFAULT_DEST_URL}");
+			// add the default
+			urls.push(DEFAULT_DEST_URL.to_string());
+		}
+
+		let mut dests = vec![];
+		for url in urls {
 			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api));
+			let sender = Arc::new(Sender::<S, P>::new(api, url));
 			let destination: Box<dyn SendTxs<S, P>> =
 				Box::new(SendTxsToUrl::new(sender, dest.rate));
 
-			Ok(destination)
-		} else {
-			unreachable!()
+			dests.push(destination);
 		}
+
+		Ok(dests)
 	}
 
 	pub fn prover(proof_server: Option<String>) -> Arc<dyn ProofProvider<DefaultDB>> {
@@ -137,7 +155,12 @@ where
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		self.destination.send_txs(txs).await
+		for dest in &self.destinations {
+			// No parallel sending; return immediately once a failure is encountered.
+			dest.send_txs(txs).await?;
+		}
+
+		Ok(())
 	}
 
 	pub async fn build_txs(

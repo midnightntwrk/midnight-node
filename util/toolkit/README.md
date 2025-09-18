@@ -37,7 +37,11 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
   - `--dest-file <file_path>` (use `--to-bytes` to specify whether to save in JSON or bytes)
-  - `--dest-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
+  - `--dest-urls <chain_url>` (defaults to `ws://127.0.0.1:9944`)
+    - Supports multiple urls:
+      - `--dest-urls="ws://127.0.0.1:9944" --d--dest-urls="ws://127.0.0.1:9933" --dest-urls="ws://127.0.0.1:9922"`
+      - `--dest-urls=ws://127.0.0.1:9944 --d--dest-urls=ws://127.0.0.1:9933 --dest-urls="ws://127.0.0.1:9922"`
+      - `--dest-urls="ws://127.0.0.1:9944, ws://127.0.0.1:9933, ws://127.0.0.1:9922"`
 
 - **`Prover`**: Chooses which proof server to use — either local (`LocalProofServer`) or remote (`RemoteProveServer`).
 
@@ -78,7 +82,7 @@ midnight-node-toolkit generate-txs --dest-file txs.json batches -n <num_txs_per_
 ```
 - Query from file and send to chain with rate control:
 ```shell
-midnight-node-toolkit generate-txs -r <tps> --src-files txs.json --dest-url ws://127.0.0.1:9944 send
+midnight-node-toolkit generate-txs -r <tps> --src-files txs.json --dest-urls ws://127.0.0.1:9944 send
 ```
 
 #### Send a single transaction

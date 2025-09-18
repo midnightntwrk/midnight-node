@@ -96,7 +96,7 @@ mod test {
 		};
 
 		let destination = Destination {
-			dest_url: None,
+			dest_urls: None,
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
 			to_bytes: false,
