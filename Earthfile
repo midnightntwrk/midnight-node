@@ -154,6 +154,7 @@ rebuild-genesis-state:
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
+    USER root
     ENV RUST_BACKTRACE=1
     COPY --if-exists res/genesis/genesis_funding_wallets_${SUFFIX}.txt funding_wallets.txt
     COPY --if-exists secrets/${SUFFIX}-genesis-seeds.json /secrets/genesis-seeds.json
@@ -863,7 +864,7 @@ hardfork-test-upgrader-image:
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVETARCH"
+    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
 
