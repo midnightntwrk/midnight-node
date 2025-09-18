@@ -17,8 +17,10 @@ use ogmios_client::{
 use std::fs;
 use std::time::Duration;
 use whisky::*;
+use whisky::builder::*;
 use whisky::csl::*;
 use whisky::data::constr0;
+use uplc::tx::script_context::SlotConfig;
 
 /// Generate a random hex string of the given byte length (default 32 bytes)
 fn new_dust_hex(bytes: usize) -> String {
@@ -144,33 +146,59 @@ async fn register(cardano_address_hex: &str, midnight_address_hex: &str, signing
 	let network = Network::Custom(get_local_env_cost_models());
 	let mut tx_builder = whisky::TxBuilder::new_core();
 	tx_builder
-		.network(network)
-		.set_fee("491434")
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
 		.tx_in(&input_tx_hash, input_index.into(), &input_assets, &payment_addr)
 		.tx_in_collateral(&hex::encode(collateral_utxo.transaction.id), collateral_utxo.index.into(), &build_asset_vector(&collateral_utxo), &payment_addr)
 		.tx_out(&validator_address, &send_assets)
 		.tx_out_inline_datum_value(&WData::JSON(datum))
-		.set_total_collateral("5000000")
 		.mint_plutus_script_v2()
 		.mint(1, &auth_token_policy_id, "")
 		.minting_script(&minting_script)
 		.mint_redeemer_value(&WRedeemer {
                 data: WData::JSON(constr0(serde_json::json!([])).to_string()),
-                ex_units: Budget { mem: 376570, steps: 94156294 },
+                ex_units: Budget { mem: 0, steps: 0 },
             })
-		// .mint_plutus_script_v2()
-        // .mint(1, "d8906ca5c7ba124a0407a32dab37b2c82b13b3dcd9111e42940dcea4",  "7465737431")
-        // .mint_redeemer_value(&WRedeemer {            
-        //     data: WData::JSON(constr0(serde_json::json!([])).to_string()),
-        //     ex_units: Budget {
-        //         mem: 7000000,
-        //         steps: 14000000
-        //     }})
-        // .minting_script("5251010000322253330034a229309b2b2b9a01")
 		.change_address(&payment_addr)
 		.complete_sync(None)
 		.unwrap();
+		
 	println!("{:?}", tx_builder.tx_builder_body);
+
+	// Evaluate tx scripts
+	let utxo_input: UtxoInput = serde_json::from_str(&format!("{{\"txHash\":\"{}\",\"outputIndex\":{}}}", input_tx_hash, input_index)).unwrap();
+	let utxo_output = UtxoOutput {
+		address: validator_address.clone(),
+		amount: send_assets.clone(),
+		data_hash: None,
+		plutus_data: None,
+		script_hash: None,
+		script_ref: None,
+	};
+	let utxo = UTxO { input: utxo_input, output: utxo_output };
+	println!("UTxO for evaluation: {:?}", utxo);
+    let utxos = vec![utxo];
+	let slot_config = SlotConfig {
+		zero_time: 1758209945,
+		zero_slot: 0,
+		slot_length: 1,
+	};
+	let evaluation_result = whisky::evaluate_tx_scripts(&tx_builder.tx_hex(), &utxos, &[], &network, &slot_config).unwrap();
+	println!("Evaluation result: {:?}", evaluation_result);
+	let budget = match &evaluation_result[0] {
+		EvalResult::Success(action) => &action.budget,
+		EvalResult::Error(e) => {
+			// handle the error – maybe panic! or return early
+			panic!("Evaluation failed: {:?}", e);
+		}
+	};
+
+	tx_builder.mint_redeemer_value(&WRedeemer {
+		data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+		ex_units: budget.clone(),
+	}).complete_sync(None).unwrap();
+	println!("Final tx builder: {:?}", tx_builder.tx_builder_body);
+
 	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex());
 	println!("Signed tx hex: {:?}", signed_tx);
 	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
