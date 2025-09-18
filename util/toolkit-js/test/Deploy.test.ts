@@ -17,7 +17,7 @@ const testLayer = Layer.mergeAll(
 
 describe('Deploy Command', () => {
   it('should run to success', async () => {
-    await Effect.gen(function* () {
+    await Effect.gen(function*() {
       // Make a command line instance from the 'deploy' command...
       const cli = Command.run(deployCommand, { name: 'deploy', version: '0.0.0' });
 

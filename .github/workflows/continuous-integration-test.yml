@@ -40,7 +40,8 @@ jobs:
           echo "  password x-oauth-basic" >> ./netrc
 
           export NETRC="$(pwd)/netrc"
-          . ./.envrc && earthly --strict +test
+
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

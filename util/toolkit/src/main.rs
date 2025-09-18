@@ -16,6 +16,7 @@ use commands::{
 	contract_address::{self, ContractAddressArgs},
 	generate_genesis::{self, GenerateGenesisArgs},
 	generate_intent::{self, GenerateIntentArgs},
+	generate_sample_intent::{self, GenerateSampleIntentArgs},
 	generate_txs::{self, GenerateTxsArgs},
 	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
@@ -37,11 +38,14 @@ use midnight_node_toolkit::{
 	tx_generator::{TxGenerator, source::Source},
 };
 
+use crate::commands::contract_state::{self, ContractStateArgs};
+
 mod commands;
+mod utils;
 
 /// Node Toolkit for Midnight
 #[derive(Parser)]
-#[command(version, about, long_about, verbatim_doc_comment)]
+#[command(about, long_about, verbatim_doc_comment)]
 struct Cli {
 	#[command(subcommand)]
 	command: Commands,
@@ -64,8 +68,9 @@ enum Commands {
 	/// Generates the genesis transaction and state, outputting them to file in the current working
 	/// directory. Genesis generation is seeded, so output is deterministic.
 	GenerateGenesis(GenerateGenesisArgs),
-	/// Generate Intent Files
 	GenerateIntent(GenerateIntentArgs),
+	/// Generate Intent Files
+	GenerateSampleIntent(GenerateSampleIntentArgs),
 	/// Sends a custom contract (serialized intent .mn files )
 	SendIntent(SendIntentArgs),
 	/// Show the state of a wallet using it's seed
@@ -78,10 +83,14 @@ enum Commands {
 	ShowTransaction(ShowTransactionArgs),
 	/// Show and save in a file the Contract Address included in a DeployContract tx
 	ContractAddress(ContractAddressArgs),
+	/// Show and save a Contract state
+	ContractState(ContractStateArgs),
 	/// Extract `Transaction` from `TransactionWithContext`
 	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
+	/// Get the version information
+	Version,
 }
 
 #[derive(Args)]
@@ -161,12 +170,16 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::GenerateIntent(args) => {
-			generate_intent::execute(args).await;
+			generate_intent::execute(args);
+			Ok(())
+		},
+
+		Commands::GenerateSampleIntent(args) => {
+			generate_sample_intent::execute(args).await;
 			Ok(())
 		},
 		Commands::SendIntent(args) => {
-			let txs = send_intent::execute(args).await?;
-			println!("The txs: {:#?}", txs);
+			send_intent::execute(args).await?;
 			Ok(())
 		},
 		Commands::GenerateGenesis(args) => {
@@ -205,6 +218,7 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::ContractAddress(args) => contract_address::execute(args),
+		Commands::ContractState(args) => contract_state::execute(args).await,
 		Commands::GetTxFromContext(args) => {
 			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
 			std::fs::write(args.dest_file, serialized_tx)?;
@@ -216,6 +230,18 @@ pub(crate) async fn run_command(
 			println!("{}", address);
 
 			Ok(())
+		},
+		Commands::Version => {
+			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
+			let ledger_version =
+				utils::find_dependency_version("mn-ledger").expect("missing ledger version");
+			let compactc_version = include_str!("../../toolkit-js/COMPACTC_VERSION").trim();
+
+			println!(
+				"Node: {}\nLedger: {}\nCompactc: {}",
+				node_version, ledger_version, compactc_version
+			);
+			return Ok(());
 		},
 	}
 }

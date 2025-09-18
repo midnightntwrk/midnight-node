@@ -31,7 +31,7 @@ use midnight_serialize_local as serialize;
 use midnight_serialize_local::Tagged;
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
-	structure::{LedgerParameters, LedgerState, SignatureKind, VerifiedTransaction},
+	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
 use onchain_runtime_local::context::BlockContext as LedgerBlockContext;
 use std::{borrow::Borrow, collections::HashMap};
@@ -164,15 +164,23 @@ impl<D: DB> Ledger<D> {
 		self.state.index(contract_address)
 	}
 
-	pub(crate) fn apply_transaction(
+	pub(crate) fn apply_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
-		tx: &VerifiedTransaction<D>,
+		tx: &Transaction<S, D>,
 		ctx: &TransactionContext<D>,
 	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
 		let tx_cost =
-			tx.cost(&sp.state.parameters).map_err(|_| LedgerApiError::FeeCalculationError)?;
-		let (next_state, result) = sp.state.apply(tx, ctx);
+			tx.0.cost(&sp.state.parameters)
+				.map_err(|_| LedgerApiError::FeeCalculationError)?;
+		let valid_tx =
+			tx.0.well_formed(
+				&ctx.ref_state,
+				mn_ledger::verify::WellFormedStrictness::default(),
+				ctx.block_context.tblock,
+			)
+			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
+		let (next_state, result) = sp.state.apply(&valid_tx, ctx);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
 		let new_sp = default_storage::<D>()
 			.arena
@@ -307,19 +315,9 @@ mod tests {
 		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes);
 		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
 		let tx_ctx = ledger.get_transaction_context(block_context.clone());
-		let valid_tx = tx.unwrap().0.well_formed(
-			&tx_ctx.ref_state,
-			mn_ledger::verify::WellFormedStrictness::default(),
-			tx_ctx.block_context.tblock,
-		);
-		assert!(valid_tx.is_ok(), "Can't validate transaction: {}", valid_tx.unwrap_err());
-		let (mut new_ledger_state, _applied_stage) = Ledger::<DefaultDB>::apply_transaction(
-			ledger.clone(),
-			api,
-			&valid_tx.unwrap(),
-			&tx_ctx,
-		)
-		.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
+		let (mut new_ledger_state, _applied_stage) =
+			Ledger::<DefaultDB>::apply_transaction(ledger.clone(), api, &tx.unwrap(), &tx_ctx)
+				.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		new_ledger_state =
 			Ledger::<DefaultDB>::post_block_update(new_ledger_state, block_context.clone())

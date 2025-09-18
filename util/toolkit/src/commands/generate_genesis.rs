@@ -1,5 +1,8 @@
 use clap::Args;
-use midnight_node_toolkit::cli_parsers::{self as cli};
+use midnight_node_toolkit::{
+	cli_parsers::{self as cli},
+	network_as_str,
+};
 use std::path::{Path, PathBuf};
 
 use midnight_node_ledger_helpers::{NetworkId, Serializable, Tagged, WalletSeed, serialize};
@@ -88,32 +91,15 @@ fn serialize_and_write<T: Serializable + Tagged>(
 	Ok(())
 }
 
-fn network_as_str(id: NetworkId) -> &'static str {
-	match id {
-		NetworkId::MainNet => "mainnet",
-		NetworkId::DevNet => "devnet",
-		NetworkId::TestNet => "testnet",
-		NetworkId::Undeployed => "undeployed",
-		_ => panic!("unknown network id: {id:?}"),
-	}
-}
-
 #[cfg(test)]
 mod test {
-	use super::{network_as_str, serialize_and_write};
+	use super::serialize_and_write;
 	use crate::{Cli, DefaultDB, LedgerState, NetworkId, run_command};
 	use clap::Parser;
 	use std::{
 		env::temp_dir,
 		fs::{self, remove_file},
 	};
-
-	#[test]
-	fn test_network_as_str() {
-		assert_eq!("mainnet", network_as_str(NetworkId::MainNet));
-		assert_eq!("devnet", network_as_str(NetworkId::DevNet));
-		assert_eq!("undeployed", network_as_str(NetworkId::Undeployed));
-	}
 
 	#[test]
 	fn test_serialize_and_write() {
@@ -139,18 +125,6 @@ mod test {
 		seed_map.insert(
 			"wallet-seed-0",
 			"0000000000000000000000000000000000000000000000000000000000000001",
-		);
-		seed_map.insert(
-			"wallet-seed-1",
-			"0000000000000000000000000000000000000000000000000000000000000002",
-		);
-		seed_map.insert(
-			"wallet-seed-2",
-			"0000000000000000000000000000000000000000000000000000000000000003",
-		);
-		seed_map.insert(
-			"wallet-seed-3",
-			"0000000000000000000000000000000000000000000000000000000000000004",
 		);
 
 		let mut dest = std::fs::OpenOptions::new()

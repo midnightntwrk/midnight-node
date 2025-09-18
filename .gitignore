@@ -59,6 +59,7 @@ netrc
 
 # Cardano secret keys
 *.skey
+!local-environment/src/networks/local-env/**/*.skey
 
 # Sidechains dependencies
 *.sqlite3

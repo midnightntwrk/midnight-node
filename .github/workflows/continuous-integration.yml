@@ -10,7 +10,6 @@ on:
   pull_request:
     branches: [ '**' ]
   workflow_dispatch:
-
 permissions:
   id-token: write
   contents: write
@@ -76,7 +75,7 @@ jobs:
           echo "  password x-oauth-basic" >> ./netrc
           export NETRC="$(pwd)/netrc"
 
-          . ./.envrc && earthly -P --ci --push +images
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
@@ -266,6 +265,27 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+  toolkit-mint-e2e:
+    name: Toolkit Mint E2E
+    needs: run
+    runs-on: ubuntu-latest-8-core-x64
+    if: false # disabled while minting is not working
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      - name: Get Version and git commit 
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
   metadata-check:
     name: Metadata Check
     needs: run
@@ -285,12 +305,14 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+
       - name: Get Version and git commit 
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "version=$version" >> $GITHUB_OUTPUT
+
       - name: Run metadata check
         run: |
           # Set NETRC env var for Earthly to use for private repos
@@ -300,6 +322,26 @@ jobs:
           export NETRC="$(pwd)/netrc"
 
           . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
+
+  toolkit-contracts-e2e:
+    name: Toolkit Contracts E2E
+    needs: run
+    runs-on: ubuntu-latest-8-core-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # 5.0.0
+      - name: Get Version and git commit 
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-contracts-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
     name: Startup E2E in dev mode

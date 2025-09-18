@@ -1,2 +1,3 @@
 *.json
+!test-data/**/*.json
 .sync_cache

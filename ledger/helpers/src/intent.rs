@@ -42,6 +42,7 @@ pub struct IntentInfo<D: DB + Clone> {
 	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub actions: Vec<Box<dyn BuildContractAction<D> + Send>>,
+	// TODO: Add TTL Option here
 }
 
 #[async_trait]
@@ -122,11 +123,19 @@ impl IntentCustom {
 				let sync_block = || {
 					let read_file = |dir, ext| {
 						let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
-						println!("PATH: {path}");
-						match std::fs::read(path) {
-							Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-							Err(e) => Err(e),
-							Ok(v) => Ok(Some(v)),
+						match std::fs::read(&path) {
+							Err(e) if e.kind() == io::ErrorKind::NotFound => {
+								println!("Resolver: missing key at path {path}");
+								Ok(None)
+							},
+							Err(e) => {
+								println!("Resolver: error reading key at path {path}: {e}");
+								Err(e)
+							},
+							Ok(v) => {
+								println!("Resolver: found key at path {path}");
+								Ok(Some(v))
+							},
 						}
 					};
 					let Some(prover_key) = read_file("keys", "prover")? else {
@@ -158,7 +167,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
-		_ttl: Timestamp,
+		ttl: Timestamp,
 		context: Arc<LedgerContext<D>>,
 		_segment_id: SegmentId,
 	) -> IntentOf<D> {
@@ -170,6 +179,9 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
 		let mut file = File::open(&self.intent_path).expect("Could not open file");
 		file.read_to_end(&mut bytes).expect("Failed to read file");
 
-		deserialize(bytes.as_slice()).expect("failed to deserialize")
+		let mut intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		intent.ttl = ttl;
+
+		intent
 	}
 }
