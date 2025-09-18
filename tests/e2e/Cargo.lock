@@ -1677,6 +1677,7 @@ dependencies = [
  "serde_json",
  "tiny-bip39",
  "tokio",
+ "uplc",
  "whisky",
 ]
 

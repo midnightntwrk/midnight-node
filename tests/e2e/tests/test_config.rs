@@ -89,6 +89,4 @@ async fn auth_token_policy_id() {
 async fn cost_models() {
 	let cost_models = whisky::constants::get_preview_cost_models();
 	println!("Cost Models: {:?}", cost_models);
-	let network = Network::custom();
 }
-
