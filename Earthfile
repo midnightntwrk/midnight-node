@@ -646,7 +646,7 @@ build-normal:
     RUN --mount type=secret,id=netrc,target=/root/.netrc \
         cargo build --workspace --locked --release
 
-    RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ && \
+    RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH \
