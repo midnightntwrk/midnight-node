@@ -667,15 +667,15 @@ build-normal:
     # ENV AR_X86_64_UNKNOWN_LINUX_GNU=ar
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
-    RUN mkdir -p /artifacts-$NATIVEARCH/
-
     # Default build (no hardfork)
     RUN --mount type=secret,id=netrc,target=/root/.netrc \
-        cargo build --workspace --locked --release \
+        cargo build --workspace --locked --release
+
+    RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH \
-        && cp -r /target/release/wbuild/midnight-node-runtime/ /artifacts-$NATIVEARCH
+        && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
