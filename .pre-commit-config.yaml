@@ -13,6 +13,7 @@ repos:
       - id: check-toml
       - id: check-json
 
+
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -22,9 +23,10 @@ repos:
         types: [rust]
         pass_filenames: false # This makes it a lot faster
 
-      - id: cargo-clippy
-        name: cargo clippy
-        language: system
-        types: [rust]
-        pass_filenames: false
-        entry: cargo clippy --workspace --all-targets --offline -- -D warnings
+## It's best to have this handled in the Earthfile
+  #     - id: cargo-clippy
+  #       name: cargo clippy
+  #       language: system
+  #       types: [rust]
+  #       pass_filenames: false
+  #       entry: cargo clippy --workspace --all-targets --offline -- -D warnings
