@@ -115,7 +115,7 @@ where
 		// If not a dest file, then dest_url is default.
 
 		// if dest url is empty, provide default url
-		let mut urls = dest.dest_urls.unwrap_or(vec![DEFAULT_DEST_URL.to_string()]);
+		let mut urls = dest.dest_url.unwrap_or(vec![DEFAULT_DEST_URL.to_string()]);
 
 		// ------ accept multiple urls ------
 		if urls.is_empty() {
