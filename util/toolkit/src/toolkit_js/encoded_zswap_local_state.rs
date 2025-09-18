@@ -2,7 +2,7 @@ use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, DB, HashOutpu
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncodedQualifiedShieldedCoinInfoSchema {
+pub struct EncodedQualifiedShieldedCoinInfo {
 	nonce: Vec<u8>,
 	color: Vec<u8>,
 	#[serde(with = "string")]
@@ -12,9 +12,17 @@ pub struct EncodedQualifiedShieldedCoinInfoSchema {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EncodedShieldedCoinInfo {
+	nonce: Vec<u8>,
+	color: Vec<u8>,
+	#[serde(with = "string")]
+	value: u128,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodedOutput {
-	coin_info: EncodedQualifiedShieldedCoinInfoSchema,
+	coin_info: EncodedShieldedCoinInfo,
 	#[serde(with = "bytes")]
 	recipient: EncodedRecipient,
 }
@@ -71,7 +79,7 @@ pub struct EncodedZswapLocalState {
 	coin_public_key: Vec<u8>,
 	#[serde(with = "string")]
 	current_index: u64,
-	inputs: Vec<EncodedQualifiedShieldedCoinInfoSchema>,
+	inputs: Vec<EncodedQualifiedShieldedCoinInfo>,
 	outputs: Vec<EncodedOutput>,
 }
 
@@ -85,11 +93,10 @@ impl EncodedZswapLocalState {
 				.coins
 				.iter()
 				.map(|(nullifier, c)| EncodedOutput {
-					coin_info: EncodedQualifiedShieldedCoinInfoSchema {
+					coin_info: EncodedShieldedCoinInfo {
 						nonce: nullifier.0.0.to_vec(),
 						color: c.type_.0.0.to_vec(),
 						value: c.value,
-						mt_index: c.mt_index,
 					},
 					recipient: EncodedRecipient::CoinPublicKey(coin_public),
 				})

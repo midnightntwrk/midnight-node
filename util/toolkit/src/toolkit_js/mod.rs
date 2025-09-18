@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, value_parser};
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, DB, NetworkId, WalletState};
+use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::EncodedZswapLocalState;
 
@@ -176,6 +176,7 @@ impl ToolkitJs {
 		let output_intent = args.output_intent.absolute();
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
+		let coin_public_key = hex::encode(args.coin_public.0.0);
 		let network_id = encode_network_id(args.network);
 		let mut cmd_args = vec![
 			"circuit",
@@ -184,7 +185,7 @@ impl ToolkitJs {
 			"--network",
 			network_id,
 			"--coin-public",
-			&args.coin_public,
+			&coin_public_key,
 			"--state-file-path",
 			&input_onchain_state,
 			"--ps-state-file-path",

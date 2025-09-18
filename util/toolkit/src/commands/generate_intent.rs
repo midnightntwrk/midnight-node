@@ -1,8 +1,6 @@
-use std::path::PathBuf;
-
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::{CoinPublicKey, LedgerContext, WalletSeed};
-use midnight_node_toolkit::toolkit_js::{EncodedZswapLocalState, RelativePath, ToolkitJsError};
+use midnight_node_toolkit::toolkit_js::{EncodedZswapLocalState, RelativePath};
 use midnight_node_toolkit::tx_generator::source::Source;
 use midnight_node_toolkit::{ProofType, SignatureType, toolkit_js};
 use midnight_node_toolkit::{cli_parsers as cli, tx_generator::TxGenerator};
@@ -82,7 +80,10 @@ pub async fn execute(
 			let input_zswap_state = if let Some(src) = args.source_wallet {
 				let encoded_zswap_state =
 					fetch_zswap_state(src, args.circuit_call.coin_public).await?;
-				Some(RelativePath(PathBuf::new()))
+				let (mut encoded_zswap_file, encoded_zswap_path) =
+					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
+				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
+				Some(RelativePath(encoded_zswap_path))
 			} else {
 				None
 			};
