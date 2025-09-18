@@ -42,6 +42,21 @@ sleep 10
 echo "📦 Running toolkit contract tests..."
 
 tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
+
+# --- Always-cleanup: runs on success, error, or interrupt ---
+cleanup() {
+  set +e
+  echo "🧹 Cleaning up..."
+  if [ -n "${tempdir:-}" ] && [ -d "$tempdir" ]; then
+    rm -rf "$tempdir"
+  fi
+  if docker ps -a --format '{{.Names}}' | grep -q '^midnight-node-contracts$'; then
+    echo "🛑 Killing node container..."
+    docker kill midnight-node-contracts >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
 deploy_intent_filename="deploy.bin"
 deploy_tx_filename="deploy_tx.mn"
 
@@ -53,6 +68,10 @@ incremented_private_state_filename="increment_state.json"
 
 increment_intent_filename="increment.bin"
 increment_tx_filename="increment_tx.mn"
+
+reset_private_state_filename="reset_state.json"
+reset_intent_filename="reset.bin"
+reset_tx_filename="reset_tx.mn"
 
 contract_dir="contract"
 
@@ -121,17 +140,29 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 test -f "$tempdir/$increment_intent_filename"
 test -f "$tempdir/$incremented_private_state_filename"
 
-cat "$tempdir/$incremented_private_state_filename"
-
 echo "Generate circuit call tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent --intent-files "/out/$increment_intent_filename" --compiled-contract-dir /toolkit-js/contract/managed/counter
 
-rm -rf $tempdir
+echo "Generate circuit call intent reset"
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    "$TOOLKIT_IMAGE" \
+    generate-intent circuit -c /toolkit-js/contract/contract.config.ts \
+    --input-onchain-state "/out/$state_filename" --input-private-state "/out/$incremented_private_state_filename" \
+    --contract-address $contract_address --circuit-id reset \
+    --output-intent "/out/$reset_intent_filename" --output-private-state "/out/$reset_private_state_filename"
 
-echo "🛑 Killing node container..."
-docker kill midnight-node-contracts
+# After "Generate circuit call intent reset" the private state must be {"count":0}
+set +x
+actual_state=$(cat "$tempdir/$reset_private_state_filename")
+echo "📄 Reset private state (expected: {\"count\":0}, actual: $actual_state)"
+if [ "$actual_state" != '{"count":0}' ]; then
+  echo "❌ Error: reset_private_state.json content is not {\"count\":0}"
+  exit 1
+fi
+set -x
 
 echo "✅ Toolkit Contracts E2E"
