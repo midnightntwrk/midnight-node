@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
-use clap::{Args, value_parser};
+use clap::{
+	Args,
+	builder::{PathBufValueParser, TypedValueParser, ValueParser},
+	value_parser,
+};
 use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::EncodedZswapLocalState;
@@ -59,7 +63,7 @@ pub enum Command {
 #[derive(Args)]
 pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
-	#[arg(long, short, value_parser = value_parser!(PathBuf))]
+	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
 	#[arg(long, short = 'a', value_parser = cli::hex_ledger_serialize_decode::<ContractAddress>)]
@@ -71,48 +75,48 @@ pub struct CircuitArgs {
 	#[arg(long, value_parser = cli::hex_ledger_serialize_decode::<CoinPublicKey>)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	input_onchain_state: RelativePath,
 	/// Input file containing the private circuit state
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	input_private_state: RelativePath,
 	/// The output file of the intent
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
 	/// The output file of the private state
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
 	/// Name of the circuit to invoke
 	circuit_id: String,
 	/// Arguments to pass to the circuit
-	circuit_args: Vec<String>,
+	call_args: Vec<String>,
 }
 
 #[derive(Args)]
 pub struct DeployArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
-	#[arg(long, short, value_parser = value_parser!(PathBuf))]
+	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Target network
 	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
 	network: NetworkId,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
-	#[arg(long)]
-	coin_public: Option<String>,
+	#[arg(long, value_parser = cli::hex_ledger_serialize_decode::<CoinPublicKey>)]
+	pub coin_public: Option<CoinPublicKey>,
 	/// A public BIP-340 signing key, hex encoded.
 	#[arg(long)]
 	signing: Option<String>,
 	/// The output file of the intent
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
 	/// The output file of the private state
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
-	#[arg(long, value_parser = value_parser!(PathBuf))]
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
 }
 
@@ -138,6 +142,8 @@ impl ToolkitJs {
 		let config = args.config.absolute();
 		let output_intent = args.output_intent.absolute();
 		let output_private_state = args.output_private_state.absolute();
+		let output_zswap_state = args.output_zswap_state.absolute();
+		let coin_public_key = args.coin_public.map(|c| hex::encode(c.0.0));
 		let mut cmd_args = vec![
 			"deploy",
 			"-c",
@@ -148,8 +154,10 @@ impl ToolkitJs {
 			&output_intent,
 			"--output-ps",
 			&output_private_state,
+			"--output-zswap",
+			&output_zswap_state,
 		];
-		if let Some(ref coin_public) = args.coin_public {
+		if let Some(ref coin_public) = coin_public_key {
 			cmd_args.extend_from_slice(&["--coin-public", coin_public]);
 		}
 		if let Some(ref signing) = args.signing {
@@ -203,7 +211,7 @@ impl ToolkitJs {
 		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
-		cmd_args.extend(args.circuit_args.iter().map(|s| s.as_str()));
+		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
 		println!(
 			"written: {}, {}, {}",

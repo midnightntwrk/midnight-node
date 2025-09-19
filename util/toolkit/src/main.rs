@@ -203,7 +203,7 @@ pub(crate) async fn run_command(
 		},
 		Commands::ShowAddress(args) => {
 			let address = show_address::execute(args);
-			println!("{}", address.to_bech32());
+			println!("{}", serde_json::to_string_pretty(&address)?);
 			Ok(())
 		},
 		Commands::ShowViewingKey(args) => {

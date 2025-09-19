@@ -7,8 +7,8 @@ use midnight_node_toolkit::{cli_parsers as cli, tx_generator::TxGenerator};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
-	Deploy(DeployArgs),
-	Circuit(CircuitArgs),
+	Deploy(DeployCommandArgs),
+	Circuit(CircuitCommandArgs),
 }
 
 #[derive(Args)]
@@ -21,7 +21,7 @@ pub struct SourceWallet {
 }
 
 #[derive(Args)]
-pub struct CircuitArgs {
+pub struct CircuitCommandArgs {
 	#[command(flatten)]
 	source_wallet: Option<SourceWallet>,
 
@@ -33,7 +33,7 @@ pub struct CircuitArgs {
 }
 
 #[derive(Args)]
-pub struct DeployArgs {
+pub struct DeployCommandArgs {
 	#[command(flatten)]
 	toolkit_js: toolkit_js::ToolkitJs,
 
@@ -118,17 +118,19 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
-		let output_zswap_state = out_dir.path().join("zswap.bin").to_string_lossy().to_string();
+		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"deploy",
+			"--coin-public",
+			"6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
 			&config,
-			"--output_intent",
+			"--output-intent",
 			&output_intent,
 			"--output-private-state",
 			&output_private_state,
@@ -140,6 +142,7 @@ mod test {
 
 		assert!(fs::exists(&output_intent).unwrap());
 		assert!(fs::exists(&output_private_state).unwrap());
+		assert!(fs::exists(&output_zswap_state).unwrap());
 	}
 
 	#[tokio::test]
@@ -151,7 +154,7 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
-		let output_zswap_state = out_dir.path().join("zswap.bin").to_string_lossy().to_string();
+		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
 
 		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
@@ -167,17 +170,21 @@ mod test {
 			&toolkit_js_path,
 			"--config",
 			&config,
+			"--wallet-seed",
+			"0000000000000000000000000000000000000000000000000000000000000001",
+			"--coin-public",
+			"6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--input-onchain-state",
 			"./test-data/contract/counter/contract_state.mn",
 			"--input-private-state",
 			"./test-data/contract/counter/initial_state.json",
-			"--output_intent",
+			"--output-intent",
 			&output_intent,
 			"--output-private-state",
 			&output_private_state,
 			"--output-zswap-state",
 			&output_zswap_state,
-			"--contract_address",
+			"--contract-address",
 			&contract_address_hex,
 			"increment",
 		];
@@ -187,5 +194,6 @@ mod test {
 
 		assert!(fs::exists(&output_intent).unwrap());
 		assert!(fs::exists(&output_private_state).unwrap());
+		assert!(fs::exists(&output_zswap_state).unwrap());
 	}
 }
