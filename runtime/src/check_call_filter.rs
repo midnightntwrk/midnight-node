@@ -14,7 +14,12 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	fn contains(call: &RuntimeCall) -> bool {
 		matches!(
 			call,
-			RuntimeCall::Council(_) | RuntimeCall::TechnicalAuthority(_) | RuntimeCall::Sudo(_)
+			RuntimeCall::Council(_)
+				| RuntimeCall::TechnicalAuthority(_)
+				| RuntimeCall::Sudo(_)
+				| RuntimeCall::FederatedAuthority(
+					pallet_federated_authority::Call::motion_close { .. }
+				)
 		)
 	}
 }
