@@ -4,7 +4,7 @@ version = "0.2.3"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"
-license = "Unlicense"
+license-file.workspace = true
 publish = false
 
 [package.metadata.docs.rs]
@@ -187,7 +187,6 @@ runtime-benchmarks = [
     "sp-runtime/runtime-benchmarks",
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-upgrade/runtime-benchmarks",
-    "pallet-midnight/runtime-benchmarks",
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",

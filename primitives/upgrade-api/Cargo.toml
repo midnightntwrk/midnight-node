@@ -3,6 +3,7 @@ name = "midnight-primitives-upgrade-api"
 version = "0.1.0"
 edition = "2024"
 description = "Midnight runtime api for upgrade information messages"
+license-file.workspace = true
 
 [dependencies]
 sp-api = { workspace = true, default-features = false }
