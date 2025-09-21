@@ -879,11 +879,57 @@ hardfork-test-upgrader-image:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
-# audit checks for rust security vulnerabilities
-audit:
+# audit-rust checks for rust security vulnerabilities
+audit-rust:
     FROM +prep
     # See deny.toml for which advisories are getting ignored
     RUN --no-cache cargo deny check
+
+audit-npm:
+    ARG DIRECTORY
+    FROM node:22-bookworm
+    COPY ${DIRECTORY} ${DIRECTORY}
+    WORKDIR ${DIRECTORY}
+    RUN corepack enable
+    RUN --no-cache npm audit
+
+audit-yarn:
+    ARG DIRECTORY
+    FROM node:22-bookworm
+    COPY metadata/static metadata/static
+    COPY ${DIRECTORY} ${DIRECTORY}
+    WORKDIR ${DIRECTORY}
+    RUN corepack enable
+    RUN yarn install --immutable
+    RUN --no-cache yarn npm audit
+
+audit-local-environment:
+    BUILD +audit-npm --DIRECTORY=local-environment/
+
+audit-toolkit-js:
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+
+audit-tests:
+    BUILD +audit-yarn --DIRECTORY=tests/
+
+audit-ui:
+    BUILD +audit-yarn --DIRECTORY=ui/
+
+audit-ui-tests:
+    BUILD +audit-yarn --DIRECTORY=ui/tests/
+
+# audit-nodejs checks for javascript security vulerabilities
+audit-nodejs:
+    BUILD +audit-local-environment
+    BUILD +audit-toolkit-js
+    BUILD +audit-tests
+    BUILD +audit-ui
+    BUILD +audit-ui-tests
+
+# audit checks for security vulnerabilities
+audit:
+    BUILD +audit-rust
+    BUILD +audit-nodejs
 
 # partnerchains-dev contains tools for working with partner chains contracts on Cardano
 partnerchains-dev:

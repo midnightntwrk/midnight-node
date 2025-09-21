@@ -12,14 +12,20 @@
 // limitations under the License.
 
 import configCommon from './common.json'
-// Using `require` as `import` does not support dynamic loading (yet).
-const configEnv = require(`./${process.env.NODE_ENV}.json`)
+import configDevelopment from './development.json'
+import configProduction from './production.json'
+import configTest from './test.json'
+const configEnv = {
+  development: configDevelopment,
+  production: configProduction,
+  test: configTest
+}[process.env.NODE_ENV]
 
 // Accepting React env vars and aggregating them into `config` object.
-const envVarNames = ['REACT_APP_PROVIDER_SOCKET']
+const envVarNames = ['VITE_PROVIDER_SOCKET']
 const envVars = envVarNames.reduce((mem, n) => {
-  // Remove the `REACT_APP_` prefix
-  if (process.env[n] !== undefined) mem[n.slice(10)] = process.env[n]
+  // Remove the `VITE_` prefix
+  if (import.meta.env[n] !== undefined) mem[n.slice('VITE_'.length)] = import.meta.env[n]
   return mem
 }, {})
 
