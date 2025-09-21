@@ -30,7 +30,6 @@ function Main(props) {
 
   useEffect(() => {
     let unsub = null
-    let keyNum = 0
     const allEvents = async () => {
       unsub = await api.query.system.events(events => {
         // loop through the Vec<EventRecord>
@@ -48,15 +47,13 @@ function Main(props) {
 
           setEventFeed(e => [
             {
-              key: keyNum,
+              key: e.length,
               icon: 'bell',
               summary: evName,
               content: evParams,
             },
             ...e,
           ])
-
-          keyNum += 1
         })
       })
     }
