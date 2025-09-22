@@ -1,5 +1,4 @@
-use frame_support::traits::{ChangeMembers, EnsureOrigin, InitializeMembers, PalletInfoAccess};
-use pallet_federated_authority::{AuthId, FederatedAuthorityProportion};
+use frame_support::traits::{ChangeMembers, InitializeMembers};
 use sp_std::marker::PhantomData;
 
 /// Wrapper struct to handle frame_system sufficients and delegate
@@ -45,68 +44,5 @@ where
 		for who in outgoing {
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
-	}
-}
-
-/// A type-level struct to hold the specification for a single federated authority.
-/// - `P`: The pallet type itself (from `construct_runtime!`).
-/// - `EnsureProportion`: The function that calculates if there is enough positive votes
-pub struct AuthorityBody<P, EnsureProportion> {
-	_phantom: PhantomData<(P, EnsureProportion)>,
-}
-
-/// Helper trait to check an origin against an `AuthorityBody`.
-trait EnsureFromIdentity<O> {
-	/// On success, returns the pallet index of the authority that matched.
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O>;
-}
-
-impl<O, P, EnsureProportion> EnsureFromIdentity<O> for AuthorityBody<P, EnsureProportion>
-where
-	O: Clone,
-	P: PalletInfoAccess,
-	EnsureProportion: EnsureOrigin<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		EnsureProportion::try_origin(o).map(|_| P::index() as u8)
-	}
-}
-
-#[impl_trait_for_tuples::impl_for_tuples(5)]
-impl<O: Clone> EnsureFromIdentity<O> for Tuple {
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		for_tuples!( #(
-            match Tuple::ensure_from_bodies(o.clone()) {
-                Ok(auth_origin_info) => return Ok(auth_origin_info),
-                Err(_) => {}
-            }
-        )* );
-		Err(o)
-	}
-}
-
-/// A generic `EnsureOrigin` implementation that checks an origin against a list
-/// of authority specifications provided in a tuple.
-pub struct FederatedAuthorityOriginManager<Authorities>(PhantomData<Authorities>);
-
-impl<O, Authorities> EnsureOrigin<O> for FederatedAuthorityOriginManager<Authorities>
-where
-	O: Clone,
-	Authorities: EnsureFromIdentity<O>,
-{
-	type Success = AuthId;
-
-	fn try_origin(o: O) -> Result<Self::Success, O> {
-		Authorities::ensure_from_bodies(o)
-	}
-}
-
-pub struct FederatedAuthorityEnsureProportionAtLeast<const N: u32, const D: u32>;
-
-impl<const N: u32, const D: u32> FederatedAuthorityProportion
-	for FederatedAuthorityEnsureProportionAtLeast<N, D>
-{
-	fn reached_proportion(n: u32, d: u32) -> bool {
-		n * D >= N * d
 	}
 }

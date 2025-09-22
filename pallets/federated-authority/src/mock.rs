@@ -11,13 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{self as pallet_federated_authority, AuthId};
+use crate::{
+	self as pallet_federated_authority, AuthId,
+	types::{
+		AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
+	},
+};
 use frame_support::{
 	derive_impl, parameter_types,
-	traits::{
-		ChangeMembers, ConstU32, EnsureOrigin, Everything, Hooks, InitializeMembers,
-		NeverEnsureOrigin, PalletInfoAccess,
-	},
+	traits::{ChangeMembers, ConstU32, Everything, Hooks, InitializeMembers, NeverEnsureOrigin},
 };
 use frame_system::{EnsureNone, EnsureRoot};
 use sp_core::H256;
@@ -113,68 +115,6 @@ where
 		for who in outgoing {
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
-	}
-}
-
-pub struct AuthorityBody<P, EnsureProportion> {
-	_phantom: PhantomData<(P, EnsureProportion)>,
-}
-
-trait EnsureFromIdentity<O> {
-	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O>;
-}
-
-impl<O, P, EnsureProportion> EnsureFromIdentity<O> for AuthorityBody<P, EnsureProportion>
-where
-	O: Clone,
-	P: PalletInfoAccess,
-	EnsureProportion: EnsureOrigin<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O> {
-		EnsureProportion::try_origin(o).map(|_| P::index() as u8)
-	}
-}
-
-// Manual implementation for tuples since we're in test code
-impl<O, A, B> EnsureFromIdentity<O> for (A, B)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match B::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(o) => Err(o),
-		}
-	}
-}
-
-pub struct FederatedAuthorityOriginManager<Authorities>(PhantomData<Authorities>);
-
-impl<O, Authorities> EnsureOrigin<O> for FederatedAuthorityOriginManager<Authorities>
-where
-	O: Clone,
-	Authorities: EnsureFromIdentity<O>,
-{
-	type Success = crate::AuthId;
-
-	fn try_origin(o: O) -> Result<Self::Success, O> {
-		Authorities::ensure_from_bodies(o)
-	}
-}
-
-pub struct FederatedAuthorityEnsureProportionAtLeast<const N: u32, const D: u32>;
-
-impl<const N: u32, const D: u32> crate::FederatedAuthorityProportion
-	for FederatedAuthorityEnsureProportionAtLeast<N, D>
-{
-	fn reached_proportion(n: u32, d: u32) -> bool {
-		n * D >= N * d
 	}
 }
 

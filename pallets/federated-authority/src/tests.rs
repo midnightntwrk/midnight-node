@@ -475,7 +475,7 @@ fn motion_close_fails_from_unsigned_origin() {
 
 #[test]
 fn federated_authority_proportion_works() {
-	use crate::FederatedAuthorityProportion;
+	use crate::{FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityProportion};
 
 	// Test unanimous proportion (1/1)
 	type Unanimous = FederatedAuthorityEnsureProportionAtLeast<1, 1>;

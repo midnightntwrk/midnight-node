@@ -17,8 +17,10 @@
 mod mock;
 #[cfg(test)]
 mod tests;
+pub mod types;
 
 pub use pallet::*;
+pub use types::*;
 
 use frame_support::{BoundedBTreeSet, dispatch::PostDispatchInfo};
 use sp_runtime::{
@@ -26,12 +28,6 @@ use sp_runtime::{
 	traits::{Dispatchable, Hash},
 };
 use sp_std::prelude::*;
-
-pub type AuthId = u8;
-
-pub trait FederatedAuthorityProportion {
-	fn reached_proportion(n: u32, d: u32) -> bool;
-}
 
 #[frame_support::pallet]
 pub mod pallet {

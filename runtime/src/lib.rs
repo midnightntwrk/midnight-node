@@ -126,9 +126,9 @@ mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::{
+use governance::MembershipHandler;
+use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
-	MembershipHandler,
 };
 
 /// An index to a block.
