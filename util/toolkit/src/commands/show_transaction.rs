@@ -1,16 +1,17 @@
 use std::fmt;
 
 use crate::{
-	DefaultDB, NetworkId, PedersenRandomness, ProofType, SignatureType, Transaction,
-	TransactionWithContext, deserialize,
+	DefaultDB, NetworkId, ProofType, SignatureType, Transaction, TransactionWithContext,
+	deserialize,
 };
 use clap::Args;
+use midnight_node_ledger_helpers::PureGeneratorPedersen;
 use midnight_node_toolkit::cli_parsers::{self as cli};
 
 type InnerReturnType = Result<ShowTransactionResult, Box<dyn std::error::Error + Send + Sync>>;
 
 pub enum TransactionInfo {
-	Transaction(Transaction<SignatureType, ProofType, PedersenRandomness, DefaultDB>),
+	Transaction(Transaction<SignatureType, ProofType, PureGeneratorPedersen, DefaultDB>),
 	TransactionWithContext(TransactionWithContext<SignatureType, ProofType, DefaultDB>),
 }
 pub struct ShowTransactionResult {
@@ -91,12 +92,9 @@ fn tx_from_file(src_file: String, with_context: bool, _network: NetworkId) -> In
 	})
 }
 
-// Tests commented out because input data is not automatically regenerated.
-// It's in LedgerV5 format
-/*
 #[cfg(test)]
 mod test {
-	use super::{InnerReturnType, NetworkId, TransactionInfo, tx_from_bytes, tx_from_file};
+	use super::{InnerReturnType, NetworkId, TransactionInfo, tx_from_file};
 	use test_case::test_case;
 
 	#[test_case(
@@ -110,18 +108,6 @@ mod test {
 		true,
 		tx_from_file;
 		"transaction with context"
-	)]
-	#[test_case(
-		"../../res/test-tx-deserialize/hex_serialized_tx_no_context.mn",
-		false,
-		tx_from_bytes;
-		"hex transaction no context"
-	)]
-	#[test_case(
-		"../../res/test-tx-deserialize/hex_serialized_tx_with_context.mn",
-		true,
-		tx_from_bytes;
-		"hex transaction with context"
 	)]
 	fn test_show_transaction_funcs<F>(src_file: &str, with_context: bool, func: F)
 	where
@@ -139,4 +125,3 @@ mod test {
 		}
 	}
 }
-	 */

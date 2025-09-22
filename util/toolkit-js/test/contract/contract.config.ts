@@ -32,8 +32,13 @@ const CounterContract = C_;
  */
 const witnesses: Contract.Contract.Witnesses<CounterContract> = {
   // In this example, we simply increment the count stored in our private state.
-  private_increment: ({ privateState }) => [{ count: privateState.count + 1 }, []]
-}
+  private_increment: ({ privateState }) => [{ count: privateState.count + 1 }, []],
+  private_decrement: ({ privateState }, amount) => [
+    { count: privateState.count - Number(amount as unknown as bigint) },
+    []
+  ],
+  private_reset: () => [{ count: 0 }, []]
+};
 
 /**
  * Creates the initial private state to use when deploying new instances of the contract.

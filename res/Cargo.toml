@@ -3,6 +3,7 @@ name = "midnight-node-res"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
+license-file.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

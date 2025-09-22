@@ -61,7 +61,7 @@ jobs:
             --base .
             --cache
             --max-cache-age 1d
-            --exclude-path ./ui/public/index.html
+            --exclude-path ./ui/index.html
             --exclude-path ./changes/index.md
             --exclude '^https://github\.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check'
             --exclude '^https://x\.com/MidnightNtwrk'

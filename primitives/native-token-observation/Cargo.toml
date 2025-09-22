@@ -3,6 +3,7 @@ name = "midnight-primitives-native-token-observation"
 version = "0.1.0"
 edition = "2024"
 description = "Midnight native token observation primitives"
+license-file.workspace = true
 
 [dependencies]
 sp-api.workspace = true
