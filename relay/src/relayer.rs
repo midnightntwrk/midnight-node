@@ -1,41 +1,57 @@
 use crate::{beefy, cardano_encoding::SignedCommitment, mn_meta};
 
-use mn_meta::runtime_types::sp_consensus_beefy::{ecdsa_crypto::Public as MidnBeefyPublic, mmr::BeefyAuthoritySet};
-use mmr_rpc::{LeavesProof};
-use sp_core::{ Bytes, H256};
-use sp_consensus_beefy::{ mmr::MmrLeaf as BeefyMmrLeaf, ecdsa_crypto::Signature as ECDSASig, VersionedFinalityProof};
+use mmr_rpc::LeavesProof;
+use mn_meta::runtime_types::sp_consensus_beefy::{
+	ecdsa_crypto::Public as MidnBeefyPublic, mmr::BeefyAuthoritySet,
+};
+use sp_consensus_beefy::{
+	VersionedFinalityProof, ecdsa_crypto::Signature as ECDSASig, mmr::MmrLeaf as BeefyMmrLeaf,
+};
+use sp_core::{Bytes, H256};
 
 use sp_mmr_primitives::{
-    AncestryProof, EncodableOpaqueLeaf, LeafProof,
-    mmr_lib::{helper::get_peaks, leaf_index_to_mmr_size}, utils::NodesUtils
+	AncestryProof, EncodableOpaqueLeaf, LeafProof,
+	mmr_lib::{helper::get_peaks, leaf_index_to_mmr_size},
+	utils::NodesUtils,
 };
 
-use subxt::{backend::rpc::RpcClient, ext::{ codec::Decode, subxt_rpcs::{client::{RpcParams, RpcSubscription}, rpc_params}}, OnlineClient, PolkadotConfig};
+use subxt::{
+	OnlineClient, PolkadotConfig,
+	backend::rpc::RpcClient,
+	ext::{
+		codec::Decode,
+		subxt_rpcs::{
+			client::{RpcParams, RpcSubscription},
+			rpc_params,
+		},
+	},
+};
 
 pub type Block = u32;
-pub type MmrLeaf = BeefyMmrLeaf<Block, H256,H256,Vec<u8>>;
+pub type MmrLeaf = BeefyMmrLeaf<Block, H256, H256, Vec<u8>>;
 pub type LeafIndex = u64;
-pub type PeakNodes = Vec<(LeafIndex,Vec<u64>)>;
+pub type PeakNodes = Vec<(LeafIndex, Vec<u64>)>;
 
 pub struct Relayer {
-    // Shared RPC client interface for the relayer
-    rpc: RpcClient,
-    // Shared subxt api client for the relayer
-    api: OnlineClient<PolkadotConfig>
+	// Shared RPC client interface for the relayer
+	rpc: RpcClient,
+	// Shared subxt api client for the relayer
+	api: OnlineClient<PolkadotConfig>,
 }
 
 impl Relayer {
-    pub async fn new(node_url: &str) -> Self {
-        println!("Connecting to {node_url}");
+	pub async fn new(node_url: &str) -> Self {
+		println!("Connecting to {node_url}");
 
-        // TODO: Handle
-        let api = OnlineClient::<PolkadotConfig>::from_insecure_url(node_url).await
-        .expect("Online Client failed to connect");
-        let rpc = RpcClient::from_url(node_url).await.expect("RPC Client failed to connect");
-        Relayer { rpc, api }
-    }
+		// TODO: Handle
+		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(node_url)
+			.await
+			.expect("Online Client failed to connect");
+		let rpc = RpcClient::from_url(node_url).await.expect("RPC Client failed to connect");
+		Relayer { rpc, api }
+	}
 
-    pub async fn new_with_keys_file(node_url: &str, key_file_path: String) -> Self {
+	pub async fn new_with_keys_file(node_url: &str, key_file_path: String) -> Self {
 		let relayer = Self::new(node_url).await;
 
 		// reading keys from file
@@ -49,204 +65,254 @@ impl Relayer {
 		relayer
 	}
 
-    pub async fn run_relay(&self) {
-        let mut sub: RpcSubscription<Bytes>  = self.rpc.subscribe(
-            "beefy_subscribeJustifications", rpc_params![], "beefy_unsubscribeJustifications")
-            .await.expect("beefy subsciption failed: ");
+	pub async fn run_relay(&self) {
+		let mut sub: RpcSubscription<Bytes> = self
+			.rpc
+			.subscribe(
+				"beefy_subscribeJustifications",
+				rpc_params![],
+				"beefy_unsubscribeJustifications",
+			)
+			.await
+			.expect("beefy subsciption failed: ");
 
-        while let Some(result) = sub.next().await {
-            let justification =  result.expect("failed to get justification");
-        
-            self.handle_justification_stream_data(justification).await;
-        }
-    }
+		while let Some(result) = sub.next().await {
+			let justification = result.expect("failed to get justification");
 
-    async fn handle_justification_stream_data(&self, justification: Bytes) {
-        let VersionedFinalityProof::<Block,ECDSASig>::V1(beef_signed_commitment) = Decode::decode (&mut &justification[..]).expect("failed to parse to VersionedFinalityProof");
+			self.handle_justification_stream_data(justification).await;
+		}
+	}
 
-        let block = beef_signed_commitment.commitment.block_number;
-        println!("Block Number: {block}");
+	async fn handle_justification_stream_data(&self, justification: Bytes) {
+		let VersionedFinalityProof::<Block, ECDSASig>::V1(beef_signed_commitment) =
+			Decode::decode(&mut &justification[..])
+				.expect("failed to parse to VersionedFinalityProof");
 
-        // TODO: decide whether you want to specify a block hash as of a certain time. Otherwise, `None` indicates latest (finalized?) block hash
-        let at_latest_block_hash = None;
+		let block = beef_signed_commitment.commitment.block_number;
+		println!("Block Number: {block}");
 
-        let validator_set = self.get_beefy_validator_set(at_latest_block_hash).await;
+		// TODO: decide whether you want to specify a block hash as of a certain time. Otherwise, `None` indicates latest (finalized?) block hash
+		let at_latest_block_hash = None;
 
-        let validators_as_hex : Vec<String> = validator_set.iter().map(|validator| {
-            hex::encode(validator.0)
-        }).collect();
+		let validator_set = self.get_beefy_validator_set(at_latest_block_hash).await;
 
-        println!("Beefy Validator set: {:#?}", validators_as_hex);
+		let validators_as_hex: Vec<String> =
+			validator_set.iter().map(|validator| hex::encode(validator.0)).collect();
 
-        let signed_commitment = SignedCommitment::from_signed_commitment_and_validators(
-            beef_signed_commitment, validator_set);
+		println!("Beefy Validator set: {:#?}", validators_as_hex);
 
-        // TODO: get encodings for MMR proof, then do something with it
-        let mmr_proof = self.get_mmr_proof(block, at_latest_block_hash).await; 
+		let signed_commitment = SignedCommitment::from_signed_commitment_and_validators(
+			beef_signed_commitment,
+			validator_set,
+		);
 
-        let leaf_proof = get_decoded_proof(&mmr_proof);
-        let peak_nodes = get_peak_nodes(&leaf_proof);
+		// TODO: get encodings for MMR proof, then do something with it
+		let mmr_proof = self.get_mmr_proof(block, at_latest_block_hash).await;
 
-        let block_hash = mmr_proof.block_hash;
-        let hex_block_hash = hex::encode(block_hash);
-        println!("block hash: {hex_block_hash}");
-       
-        get_leaves(&mmr_proof);
+		let leaf_proof = get_decoded_proof(&mmr_proof);
+		let peak_nodes = get_peak_nodes(&leaf_proof);
 
-        self.check_proof(block_hash, &leaf_proof.items, peak_nodes).await;
+		let block_hash = mmr_proof.block_hash;
+		let hex_block_hash = hex::encode(block_hash);
+		println!("block hash: {hex_block_hash}");
 
-        // TODO: get encodings for authority set, next authority set, and construct       
-        let authority_set = self.get_beefy_authority_set(at_latest_block_hash).await;
-        let next_authority_set = self.get_next_beefy_authority_set(at_latest_block_hash).await;
-   
-        // TODO: turn into Cardano-friendly version
-        // let relay_chain_proof = RelayChainProof {
-        //     mmr_proof,
-        //     signed_commitment
-        // };
-   }
+		get_leaves(&mmr_proof);
 
-    async fn get_mmr_proof(&self,
-        // The block to query for
-        block: u32,
-        // The block hash representing the chain as of the time you care about. Note this is different from the above.
-        // If unclear, use the same block hash that you use for other queries on the same data
-        at_block_hash: Option<H256>
-    ) -> LeavesProof<H256> {
-            let mut params = RpcParams::new();
+		self.check_proof(block_hash, &leaf_proof.items, peak_nodes).await;
 
-            let params = rpc_params![
-                [block],
-                 // TODO: do we need specificity to these? The storage might change 
-                 None::<u64>,
-                 at_block_hash
-            ];
+		// TODO: get encodings for authority set, next authority set, and construct
+		let authority_set = self.get_beefy_authority_set(at_latest_block_hash).await;
+		let next_authority_set = self.get_next_beefy_authority_set(at_latest_block_hash).await;
 
-            // TODO: handle
-            let raw_proof_data = self.rpc.request_raw(
-                "mmr_generateProof", params.build())
-                .await.expect("failed to ger raw proof data");
+		// TODO: turn into Cardano-friendly version
+		// let relay_chain_proof = RelayChainProof {
+		//     mmr_proof,
+		//     signed_commitment
+		// };
+	}
 
-          serde_json::from_str(raw_proof_data.get())
-            .expect("failed to parse raw proof")
-    }
+	async fn get_mmr_proof(
+		&self,
+		// The block to query for
+		block: u32,
+		// The block hash representing the chain as of the time you care about. Note this is different from the above.
+		// If unclear, use the same block hash that you use for other queries on the same data
+		at_block_hash: Option<H256>,
+	) -> LeavesProof<H256> {
+		let mut params = RpcParams::new();
 
-    async fn get_beefy_validator_set(&self, at_block_hash: Option<H256>) -> Vec<MidnBeefyPublic> {
-        let beefy_validator_set_query = mn_meta::storage().beefy().authorities();
+		let params = rpc_params![
+			[block],
+			// TODO: do we need specificity to these? The storage might change
+			None::<u64>,
+			at_block_hash
+		];
 
-        let storage_fetcher = match at_block_hash {
-            Some(block_hash) => self.api.storage().at(block_hash),
-            None => self.api.storage().at_latest().await.expect("failed to get latest storage")
-        };
+		// TODO: handle
+		let raw_proof_data = self
+			.rpc
+			.request_raw("mmr_generateProof", params.build())
+			.await
+			.expect("failed to ger raw proof data");
 
-        let Some(validator_set) = storage_fetcher.fetch(&beefy_validator_set_query)
-        .await.expect("failed to get validator set") else {
-            println!("WARN: no validator set found");
-            return vec![];
-        };
+		serde_json::from_str(raw_proof_data.get()).expect("failed to parse raw proof")
+	}
 
-        validator_set.0
-    }
+	async fn get_beefy_validator_set(&self, at_block_hash: Option<H256>) -> Vec<MidnBeefyPublic> {
+		let beefy_validator_set_query = mn_meta::storage().beefy().authorities();
 
-    async fn check_proof(&self, at_block_hash:H256, proof_items:&Vec<H256>, peak_nodes:PeakNodes) {
-        for (leaf_index, peaks) in peak_nodes {
-            for peak in peaks {
-                let mmr_nodes_query = mn_meta::storage().mmr().nodes(peak);
+		let storage_fetcher = match at_block_hash {
+			Some(block_hash) => self.api.storage().at(block_hash),
+			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
+		};
 
-                 let storage_fetcher = self.api.storage().at(at_block_hash);
+		let Some(validator_set) = storage_fetcher
+			.fetch(&beefy_validator_set_query)
+			.await
+			.expect("failed to get validator set")
+		else {
+			println!("WARN: no validator set found");
+			return vec![];
+		};
 
-                 match storage_fetcher.fetch(&mmr_nodes_query).await.expect("failed to get mmr nodes") {
-                    Some(node_hash) => {
-                        let result = proof_items.contains(&node_hash);
-                        let hash_as_hex = hex::encode(node_hash);
+		validator_set.0
+	}
 
-                        println!("LeafIndex({leaf_index}): Node Peak({peak})({hash_as_hex}) in proof: {result}");
-                    },
-                    None => println!("LeafIndex({leaf_index}): Node({peak}) not found")
-                 }
-            };    
-        }
-    }
+	async fn check_proof(
+		&self,
+		at_block_hash: H256,
+		proof_items: &Vec<H256>,
+		peak_nodes: PeakNodes,
+	) {
+		for (leaf_index, peaks) in peak_nodes {
+			for peak in peaks {
+				let mmr_nodes_query = mn_meta::storage().mmr().nodes(peak);
 
-    // Below are for authority set proofs
-    async fn get_beefy_authority_set(&self, at_block_hash: Option<H256>) -> BeefyAuthoritySet<H256> {
-        let get_authority_set_query = mn_meta::storage().beefy_mmr_leaf().beefy_authorities();
+				let storage_fetcher = self.api.storage().at(at_block_hash);
 
-          let storage_fetcher = match at_block_hash {
-            Some(block_hash) => self.api.storage().at(block_hash),
-            None => self.api.storage().at_latest().await.expect("failed to get latest storage")
-        };
+				match storage_fetcher
+					.fetch(&mmr_nodes_query)
+					.await
+					.expect("failed to get mmr nodes")
+				{
+					Some(node_hash) => {
+						let result = proof_items.contains(&node_hash);
+						let hash_as_hex = hex::encode(node_hash);
 
-        storage_fetcher.fetch(&get_authority_set_query)
-            .await.expect("failed to get authority set").expect("No BeefyAuthoritySet found")
-    }
+						println!(
+							"LeafIndex({leaf_index}): Node Peak({peak})({hash_as_hex}) in proof: {result}"
+						);
+					},
+					None => println!("LeafIndex({leaf_index}): Node({peak}) not found"),
+				}
+			}
+		}
+	}
 
-    async fn get_next_beefy_authority_set(&self, at_block_hash: Option<H256>) -> BeefyAuthoritySet<H256> {
-        let get_next_authority_set_query = mn_meta::storage().beefy_mmr_leaf().beefy_next_authorities();
+	// Below are for authority set proofs
+	async fn get_beefy_authority_set(
+		&self,
+		at_block_hash: Option<H256>,
+	) -> BeefyAuthoritySet<H256> {
+		let get_authority_set_query = mn_meta::storage().beefy_mmr_leaf().beefy_authorities();
 
-        let storage_fetcher = match at_block_hash {
-            Some(block_hash) => self.api.storage().at(block_hash),
-            None => self.api.storage().at_latest().await.expect("failed to get latest storage")
-        };
+		let storage_fetcher = match at_block_hash {
+			Some(block_hash) => self.api.storage().at(block_hash),
+			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
+		};
 
-        storage_fetcher.fetch(&get_next_authority_set_query)
-            .await.expect("failed to get next authority set").expect("No Next BeefyAuthoritySet found")
-    }
+		storage_fetcher
+			.fetch(&get_authority_set_query)
+			.await
+			.expect("failed to get authority set")
+			.expect("No BeefyAuthoritySet found")
+	}
 
-    // failed
-    async fn get_ancestry_proof(&self, previous_block:Block, best_known_block_number:Option<Block>) {
-       let gen_ancestry_proof =  mn_meta::runtime_apis::beefy_api::BeefyApi.generate_ancestry_proof(previous_block, best_known_block_number);
+	async fn get_next_beefy_authority_set(
+		&self,
+		at_block_hash: Option<H256>,
+	) -> BeefyAuthoritySet<H256> {
+		let get_next_authority_set_query =
+			mn_meta::storage().beefy_mmr_leaf().beefy_next_authorities();
 
-       let runtime_api = self.api.runtime_api().at_latest().await
-            .expect("failed to get runtime api");
+		let storage_fetcher = match at_block_hash {
+			Some(block_hash) => self.api.storage().at(block_hash),
+			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
+		};
 
-        let opaq_ancestry_proof = runtime_api.call(gen_ancestry_proof).await
-            .expect("failed to query ancestry proof").expect("No ancestry proof found");
+		storage_fetcher
+			.fetch(&get_next_authority_set_query)
+			.await
+			.expect("failed to get next authority set")
+			.expect("No Next BeefyAuthoritySet found")
+	}
 
-        let ancestry_proof: AncestryProof<H256> = Decode::decode(&mut &opaq_ancestry_proof.0[..]).expect("failed to decode to AncestryProof");
+	// failed
+	async fn get_ancestry_proof(
+		&self,
+		previous_block: Block,
+		best_known_block_number: Option<Block>,
+	) {
+		let gen_ancestry_proof = mn_meta::runtime_apis::beefy_api::BeefyApi
+			.generate_ancestry_proof(previous_block, best_known_block_number);
 
-       println!("\nANCESTRY PROOF: {ancestry_proof:?}");
+		let runtime_api =
+			self.api.runtime_api().at_latest().await.expect("failed to get runtime api");
 
-    }
+		let opaq_ancestry_proof = runtime_api
+			.call(gen_ancestry_proof)
+			.await
+			.expect("failed to query ancestry proof")
+			.expect("No ancestry proof found");
+
+		let ancestry_proof: AncestryProof<H256> = Decode::decode(&mut &opaq_ancestry_proof.0[..])
+			.expect("failed to decode to AncestryProof");
+
+		println!("\nANCESTRY PROOF: {ancestry_proof:?}");
+	}
 }
 
+fn get_decoded_proof(leaves_proof: &LeavesProof<H256>) -> LeafProof<H256> {
+	let encoded_mmr_proof = &leaves_proof.proof;
 
-fn get_decoded_proof(leaves_proof:&LeavesProof<H256>) -> LeafProof<H256> {
-    let encoded_mmr_proof = &leaves_proof.proof;
+	let hex_mmr_proof = hex::encode(&encoded_mmr_proof.0);
+	println!("hex mmr proof: {hex_mmr_proof}");
 
-    let hex_mmr_proof = hex::encode(&encoded_mmr_proof.0);
-    println!("hex mmr proof: {hex_mmr_proof}");
-
-    Decode::decode(&mut &encoded_mmr_proof.0[..]).expect("Failed to decode to LeafProof")
+	Decode::decode(&mut &encoded_mmr_proof.0[..]).expect("Failed to decode to LeafProof")
 }
 
 // List of (Leaf Indices, and the peaks)
-fn get_peak_nodes(leaf_proof:&LeafProof<H256>) -> PeakNodes {
-    println!("decoded proof: {leaf_proof:#?}");
+fn get_peak_nodes(leaf_proof: &LeafProof<H256>) -> PeakNodes {
+	println!("decoded proof: {leaf_proof:#?}");
 
-    leaf_proof.leaf_indices.iter().map(|leaf_index| {
-        let mmr_size = leaf_index_to_mmr_size(*leaf_index);
-        let peaks = get_peaks(mmr_size);
+	leaf_proof
+		.leaf_indices
+		.iter()
+		.map(|leaf_index| {
+			let mmr_size = leaf_index_to_mmr_size(*leaf_index);
+			let peaks = get_peaks(mmr_size);
 
-        let utils = NodesUtils::new(*leaf_index) ;
+			let utils = NodesUtils::new(*leaf_index);
 
-        let peak_len = utils.number_of_peaks();
-        println!("\nNumber of peaks {peak_len}: of leaf index({leaf_index}) with mmr size({mmr_size})");
+			let peak_len = utils.number_of_peaks();
+			println!(
+				"\nNumber of peaks {peak_len}: of leaf index({leaf_index}) with mmr size({mmr_size})"
+			);
 
-        (*leaf_index, peaks)
-
-    }).collect()
+			(*leaf_index, peaks)
+		})
+		.collect()
 }
 
-fn get_leaves(leaves_proof:&LeavesProof<H256>) {
-    let leaves:Vec<EncodableOpaqueLeaf> = Decode::decode(&mut &leaves_proof.leaves.0[..])
-            .expect("failed to convert to mmrleaf");
+fn get_leaves(leaves_proof: &LeavesProof<H256>) {
+	let leaves: Vec<EncodableOpaqueLeaf> =
+		Decode::decode(&mut &leaves_proof.leaves.0[..]).expect("failed to convert to mmrleaf");
 
-    for leaf in leaves {
-        let leaf_as_bytes = leaf.into_opaque_leaf().0;
-        let mmr_leaf: MmrLeaf = Decode::decode(&mut &leaf_as_bytes[..])
-        .expect("failed to decode to mmrleaf");
+	for leaf in leaves {
+		let leaf_as_bytes = leaf.into_opaque_leaf().0;
+		let mmr_leaf: MmrLeaf =
+			Decode::decode(&mut &leaf_as_bytes[..]).expect("failed to decode to mmrleaf");
 
-        println!("The MMR Leaf: {mmr_leaf:#?}");
-    }
+		println!("The MMR Leaf: {mmr_leaf:#?}");
+	}
 }

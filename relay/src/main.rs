@@ -2,8 +2,8 @@ mod beefy;
 mod cardano_encoding;
 mod relayer;
 
-use tokio::time::{sleep, Duration};
 use clap::Parser;
+use tokio::time::{Duration, sleep};
 
 pub use midnight_node_metadata::midnight_metadata as mn_meta;
 /// BEEFY Relayer CLI
@@ -19,10 +19,9 @@ struct Cli {
 	keys_path: Option<String>,
 }
 
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
+	let cli = Cli::parse();
 
 	let beefy_relayer = match cli.keys_path {
 		None => relayer::Relayer::new(&cli.node_url.clone()).await,
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	loop {
 		println!("Starting relay...");
-		
+
 		beefy_relayer.run_relay().await;
 	}
 

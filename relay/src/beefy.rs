@@ -16,20 +16,19 @@ pub struct BeefyKeyInfo {
 }
 
 impl BeefyKeyInfo {
-    pub async fn insert_key(self, rpc: &RpcClient) {
-        let params = rpc_params!["beef".to_string(), self.suri, self.pub_key.clone()];
+	pub async fn insert_key(self, rpc: &RpcClient) {
+		let params = rpc_params!["beef".to_string(), self.suri, self.pub_key.clone()];
 
-        if let Err(e) = rpc.request::<()>("author_insertKey", params).await {
-            println!("Warning: failed to insert key({}): {e:?}", self.pub_key);
-            return;
+		if let Err(e) = rpc.request::<()>("author_insertKey", params).await {
+			println!("Warning: failed to insert key({}): {e:?}", self.pub_key);
+			return;
+		}
 
-        }
-
-        println!("Added beefy key: {}", self.pub_key);
-    }
+		println!("Added beefy key: {}", self.pub_key);
+	}
 }
 
-pub fn keys_from_file<T: AsRef<Path> + Display >(key_file: T) -> BeefyKeys {
+pub fn keys_from_file<T: AsRef<Path> + Display>(key_file: T) -> BeefyKeys {
 	let file_open_err = format!("failed to read from key_file {key_file}");
 	let file_read_err = format!("cannot read beefy keys in key_file {key_file}");
 
