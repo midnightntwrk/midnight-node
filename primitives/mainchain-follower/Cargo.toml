@@ -3,6 +3,7 @@ name = "midnight-primitives-mainchain-follower"
 version = "0.1.0"
 edition = "2024"
 description = "Extensions to Partnerchains mainchain follower"
+license-file.workspace = true
 
 [dependencies]
 hex = { workspace = true, default-features = false }

@@ -3,6 +3,7 @@ name = "midnight-primitives"
 version = "0.1.0"
 edition = "2024"
 description = "Midnight primitives"
+license-file.workspace = true
 
 [dependencies]
 hex-literal = { workspace = true, default-features = false }
