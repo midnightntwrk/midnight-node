@@ -18,6 +18,7 @@ members = [
     "util/documented",
     "util/upgrader",
     "docs",
+    "relay"
 ]
 
 # Same lint list as polkadot-sdk
@@ -184,6 +185,8 @@ sc-service = { default-features = false, git = "https://github.com/paritytech/po
 sc-rpc-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-storage-monitor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
+
+substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-runtime-interface = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }

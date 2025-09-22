@@ -4,32 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-midnight-node-res.workspace = true
-subxt.workspace = true 
-tokio.workspace = true
-futures.workspace = true 
-sp-core.workspace = true
-sc-consensus-beefy.workspace = true
-sp-consensus-beefy.workspace = true
-sp-io.workspace = true
-sp-runtime.workspace = true
-substrate-test-runtime-client.workspace = true
-parity-scale-codec.workspace = true
-hex.workspace = true 
-midnight-node-runtime = { workspace = true, default-features = false }
-serde.workspace = true
-serde_json.workspace = true
+mmr-rpc = { workspace = true, default-features = true }
+sp-core = { workspace = true, default-features = true }
+sp-consensus-beefy = { workspace = true, default-features = true }
+sp-mmr-primitives = { workspace = true, default-features = true }
+subxt = { workspace = true, default-features = true }
+
+midnight-node-metadata = { workspace = true, default-features = true }
 pallas = "0.33.0"
-cardano-serialization-lib.workspace = true
-mmr-rpc.workspace = true
-clap = { workspace = true, features = ["derive", "env"]}
-thiserror.workspace = true
 
-[lints]
-workspace = true
-
-[features]
-default = ["std"]
-std = [
-    "midnight-node-runtime/std"
-]
+clap = { workspace = true, default-features = true, features = ["derive", "env"] }
+hex = { workspace = true, default-features = true }
+serde = { workspace = true, default-features = true }
+serde_json = { workspace = true, default-features = true }
+thiserror = { workspace = true, default-features = true }
+tokio = { workspace = true, default-features = true, features = ["time", "rt-multi-thread"]}

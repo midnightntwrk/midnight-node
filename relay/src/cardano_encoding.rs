@@ -8,8 +8,8 @@ use sp_consensus_beefy::{
     SignedCommitment as BeefySignedCommitment,
     known_payloads::MMR_ROOT_ID
 };
-use midnight_node_res::subxt_metadata::api as mn_meta;
-use mn_meta::runtime_types::sp_consensus_beefy::ecdsa_crypto::Public as BeefyRuntimePublic;
+
+use crate::mn_meta::runtime_types::sp_consensus_beefy::ecdsa_crypto::Public as MidnBeefyPublic;
 
 // Known encoding tag
 const TAG: u64 = 121;
@@ -23,9 +23,9 @@ pub struct Vote {
     pub signature: Vec<u8>,
     pub authority_index: usize,
     pub public_key: Vec<u8>,
-  }
-  
-  impl ToPlutusData for Vote {
+}
+
+impl ToPlutusData for Vote {
     fn to_plutus_data(&self) -> PlutusData {
         PlutusData::Constr(
             Constr {
@@ -42,15 +42,16 @@ pub struct Vote {
             }
         )
     }
-  }
+}
 
   #[derive(Clone)]
   pub struct Payload {
     pub id: Vec<u8>,
     pub data: Vec<u8>,
   }
-  
-  impl ToPlutusData for Payload {
+
+
+impl ToPlutusData for Payload {
     fn to_plutus_data(&self) -> PlutusData {
         PlutusData::Constr(
             Constr {
@@ -73,7 +74,7 @@ pub struct Vote {
     pub validator_set_id: usize,
   }
 
-  impl ToPlutusData for Commitment {
+impl ToPlutusData for Commitment {
     fn to_plutus_data(&self) -> PlutusData {
         PlutusData::Constr(
             Constr {
@@ -96,15 +97,15 @@ pub struct Vote {
             }
         )
     }
-  }
+}
 
-  #[derive(Clone)]
-  pub struct SignedCommitment {
+#[derive(Clone)]
+pub struct SignedCommitment {
     pub commitment: Commitment,
     pub votes: Vec<Vote>,
-  }
+}
   
-  impl ToPlutusData for SignedCommitment {
+impl ToPlutusData for SignedCommitment {
     fn to_plutus_data(&self) -> PlutusData {
         PlutusData::Constr(
             Constr {
@@ -121,12 +122,12 @@ pub struct Vote {
                 ])
         })
     }
-  }
+}
 
-  impl SignedCommitment {
+impl SignedCommitment {
     pub fn from_signed_commitment_and_validators(
         signed_commitment: BeefySignedCommitment<u32, sp_consensus_beefy::ecdsa_crypto::Signature>,
-        validator_set: Vec<BeefyRuntimePublic>
+        validator_set: Vec<MidnBeefyPublic>
         ) -> Self {
         let commitment = Commitment {
             payloads: signed_commitment.commitment.payload.get_all_raw(&MMR_ROOT_ID).into_iter().map(|i| {
@@ -157,24 +158,24 @@ pub struct Vote {
             commitment,
             votes
         }
-  }
+    }                       
 }
 
-  // TODO: implement
-  pub struct Node {
+// TODO: implement
+pub struct Node {
     pub k_index: usize,
     pub hash: Vec<u8>,
-  }
+}
 
 pub struct RelayChainProof {
     pub signed_commitment: SignedCommitment,
     // latest_mmr_leaf: BeefyMmrLeaf,
     pub mmr_proof: Vec<u8>,
     // TODO: complete
-  }
+}
 
 
-  impl ToPlutusData for RelayChainProof {
+impl ToPlutusData for RelayChainProof {
     fn to_plutus_data(&self) -> PlutusData {
         PlutusData::Constr(
             Constr {
