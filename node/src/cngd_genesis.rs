@@ -87,6 +87,7 @@ pub async fn get_cngd_genesis(
 		asset_name: TEST_CNIGHT_ASSET_NAME.to_string(),
 	};
 
+	// TODO: Ensure that cTime matches Cardano UTXO creation time, not the current pallet time
 	loop {
 		let observed = native_token_observation_data_source
 			.get_utxos_up_to_capacity(
