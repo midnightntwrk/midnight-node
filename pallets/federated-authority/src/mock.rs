@@ -19,7 +19,7 @@ use crate::{
 };
 use frame_support::{
 	derive_impl, parameter_types,
-	traits::{ChangeMembers, ConstU32, Everything, Hooks, InitializeMembers, NeverEnsureOrigin},
+	traits::{ConstU32, Everything, Hooks, NeverEnsureOrigin},
 };
 use frame_system::{EnsureNone, EnsureRoot};
 use sp_core::H256;
@@ -27,7 +27,6 @@ use sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, IdentityLookup},
 };
-use sp_std::{marker::PhantomData, vec, vec::Vec};
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -79,45 +78,6 @@ impl frame_system::Config for Test {
 	type MaxConsumers = ConstU32<16>;
 }
 
-// Governance helpers - matching runtime/src/governance.rs
-pub struct MembershipHandler<T, P>(PhantomData<(T, P)>)
-where
-	T: frame_system::Config,
-	P: InitializeMembers<T::AccountId> + ChangeMembers<T::AccountId>;
-
-impl<T, P> InitializeMembers<T::AccountId> for MembershipHandler<T, P>
-where
-	T: frame_system::Config,
-	P: InitializeMembers<T::AccountId> + ChangeMembers<T::AccountId>,
-{
-	fn initialize_members(members: &[T::AccountId]) {
-		<P as InitializeMembers<T::AccountId>>::initialize_members(members);
-		for who in members {
-			frame_system::Pallet::<T>::inc_sufficients(who);
-		}
-	}
-}
-
-impl<T, P> ChangeMembers<T::AccountId> for MembershipHandler<T, P>
-where
-	T: frame_system::Config,
-	P: ChangeMembers<T::AccountId> + InitializeMembers<T::AccountId>,
-{
-	fn change_members_sorted(
-		incoming: &[T::AccountId],
-		outgoing: &[T::AccountId],
-		new: &[T::AccountId],
-	) {
-		<P as ChangeMembers<T::AccountId>>::change_members_sorted(incoming, outgoing, new);
-		for who in incoming {
-			frame_system::Pallet::<T>::inc_sufficients(who);
-		}
-		for who in outgoing {
-			frame_system::Pallet::<T>::dec_sufficients(who);
-		}
-	}
-}
-
 // Parameters matching runtime
 pub const MOTION_DURATION: u64 = 5 * 24 * 60 * 60 / 6; // 5 days in 6-second blocks
 pub const MAX_PROPOSALS: u32 = 100;
@@ -153,8 +113,8 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	type ResetOrigin = EnsureNone<u64>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
-	type MembershipInitialized = MembershipHandler<Test, Council>;
-	type MembershipChanged = MembershipHandler<Test, Council>;
+	type MembershipInitialized = Council;
+	type MembershipChanged = Council;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = ();
 }
@@ -184,8 +144,8 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	type ResetOrigin = EnsureNone<u64>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
-	type MembershipInitialized = MembershipHandler<Test, TechnicalAuthority>;
-	type MembershipChanged = MembershipHandler<Test, TechnicalAuthority>;
+	type MembershipInitialized = TechnicalAuthority;
+	type MembershipChanged = TechnicalAuthority;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = ();
 }
