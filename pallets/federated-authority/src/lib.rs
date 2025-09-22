@@ -13,10 +13,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-// #[cfg(test)]
-// mod mock;
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
 
 pub use pallet::*;
 
@@ -91,16 +91,24 @@ pub mod pallet {
 		/// Motion not found
 		MotionNotFound,
 		/// Motion not finished
-		MotionNotFinished,
+		MotionNotEnded,
+		/// Motion is approved but need to wait until the approval period ends
+		MotionTooEarlyToClose,
 		/// Motion already exists
 		MotionAlreadyExists,
+		/// Motion expired without enough approvals
+		MotionExpired,
 	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// A motion was executed. motion_result contains the call result
+		/// A motion was approved by one authority body
+		MotionApproved { motion_hash: T::Hash, auth_id: AuthId },
+		/// A motion was executed after approval. `motion_result` contains the call result
 		MotionDispatched { motion_hash: T::Hash, motion_result: DispatchResult },
+		/// A motion expired after not being
+		MotionExpired { motion_hash: T::Hash },
 		/// An previously approved motion gets revoked
 		MotionRevoked { motion_hash: T::Hash, auth_id: AuthId },
 		/// A motion has been removed
@@ -140,6 +148,8 @@ pub mod pallet {
 					Ok(())
 				}
 			})?;
+
+			Self::deposit_event(Event::MotionApproved { motion_hash, auth_id });
 
 			Ok(Pays::No.into())
 		}
@@ -181,30 +191,27 @@ pub mod pallet {
 			// Anyone can try to close a motion
 			ensure_signed(origin)?;
 
-			Motions::<T>::try_mutate_exists(motion_hash, |maybe_motion| -> DispatchResult {
-				let motion = maybe_motion.as_mut().ok_or(Error::<T>::MotionNotFound)?;
-				let total_approvals = motion.approvals.len() as u32;
-				// Check if motion is approved
-				if Self::is_motion_approved(total_approvals) {
-					// Dispatch motion
-					Self::motion_dispatch(motion_hash)?;
-					// Remove after dispatch
-					*maybe_motion = None;
-				// If it has not been approved yet it can only be closed if the motion has finished
-				} else {
-					// Check if motion has expired
-					let current_block = <frame_system::Pallet<T>>::block_number();
-					if current_block >= motion.ends_block {
-						// Motion expired without enough approvals, remove it
-						*maybe_motion = None;
-					} else {
-						// Motion still ongoing
-						return Err(Error::<T>::MotionNotFinished.into());
-					}
-				}
+			let motion = Motions::<T>::get(motion_hash).ok_or(Error::<T>::MotionNotFound)?;
+			let total_approvals = motion.approvals.len() as u32;
 
-				Ok(())
-			})?;
+			if Self::is_motion_approved(total_approvals) {
+				// Only allow closure if the motion has finished
+				ensure!(Self::has_ended(&motion), Error::<T>::MotionTooEarlyToClose);
+
+				// Dispatch motion
+				Self::motion_dispatch(motion_hash)?;
+				// Remove after dispatch
+				Self::motion_remove(motion_hash);
+			} else {
+				if Self::has_ended(&motion) {
+					// Motion expired without enough approvals
+					Self::deposit_event(Event::MotionExpired { motion_hash });
+					Self::motion_remove(motion_hash);
+				} else {
+					// Motion still ongoing
+					return Err(Error::<T>::MotionNotEnded.into());
+				}
+			}
 
 			Ok(Pays::No.into())
 		}
@@ -233,6 +240,11 @@ pub mod pallet {
 
 		fn block_number() -> BlockNumberFor<T> {
 			<frame_system::Pallet<T>>::block_number()
+		}
+
+		/// Returns `true` if the motion has finished (expired).
+		fn has_ended(motion: &MotionInfo<T>) -> bool {
+			Self::block_number() >= motion.ends_block
 		}
 	}
 }

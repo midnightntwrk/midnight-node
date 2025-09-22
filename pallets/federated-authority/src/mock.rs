@@ -1,0 +1,328 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::{self as pallet_federated_authority, AuthId};
+use frame_support::{
+	derive_impl, parameter_types,
+	traits::{
+		ChangeMembers, ConstU32, EnsureOrigin, Everything, Hooks, InitializeMembers,
+		NeverEnsureOrigin, PalletInfoAccess,
+	},
+};
+use frame_system::{EnsureNone, EnsureRoot};
+use sp_core::H256;
+use sp_runtime::{
+	BuildStorage,
+	traits::{BlakeTwo256, IdentityLookup},
+};
+use sp_std::{marker::PhantomData, vec, vec::Vec};
+
+type Block = frame_system::mocking::MockBlock<Test>;
+
+pub(crate) const COUNCIL_PALLET_ID: AuthId = 40;
+pub(crate) const TECHNICAL_AUTHORITY_PALLET_ID: AuthId = 42;
+
+frame_support::construct_runtime!(
+	pub struct Test {
+		System: frame_system = 0,
+		// Governance - matching runtime structure
+		Council: pallet_collective::<Instance1> = 40,
+		CouncilMembership: pallet_membership::<Instance1> = 41,
+		TechnicalAuthority: pallet_collective::<Instance2> = 42,
+		TechnicalAuthorityMembership: pallet_membership::<Instance2> = 43,
+		FederatedAuthority: pallet_federated_authority = 44,
+	}
+);
+
+parameter_types! {
+	pub const BlockHashCount: u64 = 250;
+	pub const SS58Prefix: u8 = 42;
+}
+
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+impl frame_system::Config for Test {
+	type BaseCallFilter = Everything;
+	type BlockWeights = ();
+	type BlockLength = ();
+	type RuntimeOrigin = RuntimeOrigin;
+	type RuntimeCall = RuntimeCall;
+	type RuntimeTask = RuntimeTask;
+	type Nonce = u64;
+	type Hash = H256;
+	type Hashing = BlakeTwo256;
+	type AccountId = u64;
+	type Lookup = IdentityLookup<Self::AccountId>;
+	type Block = Block;
+	type RuntimeEvent = RuntimeEvent;
+	type BlockHashCount = BlockHashCount;
+	type DbWeight = ();
+	type Version = ();
+	type PalletInfo = PalletInfo;
+	type AccountData = ();
+	type OnNewAccount = ();
+	type OnKilledAccount = ();
+	type SystemWeightInfo = ();
+	type SS58Prefix = SS58Prefix;
+	type OnSetCode = ();
+	type MaxConsumers = ConstU32<16>;
+}
+
+// Governance helpers - matching runtime/src/governance.rs
+pub struct MembershipHandler<T, P>(PhantomData<(T, P)>)
+where
+	T: frame_system::Config,
+	P: InitializeMembers<T::AccountId> + ChangeMembers<T::AccountId>;
+
+impl<T, P> InitializeMembers<T::AccountId> for MembershipHandler<T, P>
+where
+	T: frame_system::Config,
+	P: InitializeMembers<T::AccountId> + ChangeMembers<T::AccountId>,
+{
+	fn initialize_members(members: &[T::AccountId]) {
+		<P as InitializeMembers<T::AccountId>>::initialize_members(members);
+		for who in members {
+			frame_system::Pallet::<T>::inc_sufficients(who);
+		}
+	}
+}
+
+impl<T, P> ChangeMembers<T::AccountId> for MembershipHandler<T, P>
+where
+	T: frame_system::Config,
+	P: ChangeMembers<T::AccountId> + InitializeMembers<T::AccountId>,
+{
+	fn change_members_sorted(
+		incoming: &[T::AccountId],
+		outgoing: &[T::AccountId],
+		new: &[T::AccountId],
+	) {
+		<P as ChangeMembers<T::AccountId>>::change_members_sorted(incoming, outgoing, new);
+		for who in incoming {
+			frame_system::Pallet::<T>::inc_sufficients(who);
+		}
+		for who in outgoing {
+			frame_system::Pallet::<T>::dec_sufficients(who);
+		}
+	}
+}
+
+pub struct AuthorityBody<P, EnsureProportion> {
+	_phantom: PhantomData<(P, EnsureProportion)>,
+}
+
+trait EnsureFromIdentity<O> {
+	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O>;
+}
+
+impl<O, P, EnsureProportion> EnsureFromIdentity<O> for AuthorityBody<P, EnsureProportion>
+where
+	O: Clone,
+	P: PalletInfoAccess,
+	EnsureProportion: EnsureOrigin<O>,
+{
+	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O> {
+		EnsureProportion::try_origin(o).map(|_| P::index() as u8)
+	}
+}
+
+// Manual implementation for tuples since we're in test code
+impl<O, A, B> EnsureFromIdentity<O> for (A, B)
+where
+	O: Clone,
+	A: EnsureFromIdentity<O>,
+	B: EnsureFromIdentity<O>,
+{
+	fn ensure_from_bodies(o: O) -> Result<crate::AuthId, O> {
+		match A::ensure_from_bodies(o.clone()) {
+			Ok(auth_id) => return Ok(auth_id),
+			Err(_) => {},
+		}
+		match B::ensure_from_bodies(o.clone()) {
+			Ok(auth_id) => return Ok(auth_id),
+			Err(o) => Err(o),
+		}
+	}
+}
+
+pub struct FederatedAuthorityOriginManager<Authorities>(PhantomData<Authorities>);
+
+impl<O, Authorities> EnsureOrigin<O> for FederatedAuthorityOriginManager<Authorities>
+where
+	O: Clone,
+	Authorities: EnsureFromIdentity<O>,
+{
+	type Success = crate::AuthId;
+
+	fn try_origin(o: O) -> Result<Self::Success, O> {
+		Authorities::ensure_from_bodies(o)
+	}
+}
+
+pub struct FederatedAuthorityEnsureProportionAtLeast<const N: u32, const D: u32>;
+
+impl<const N: u32, const D: u32> crate::FederatedAuthorityProportion
+	for FederatedAuthorityEnsureProportionAtLeast<N, D>
+{
+	fn reached_proportion(n: u32, d: u32) -> bool {
+		n * D >= N * d
+	}
+}
+
+// Parameters matching runtime
+pub const MOTION_DURATION: u64 = 5 * 24 * 60 * 60 / 6; // 5 days in 6-second blocks
+pub const MAX_PROPOSALS: u32 = 100;
+pub const MAX_MEMBERS: u32 = 10;
+
+parameter_types! {
+	pub const MotionDurationParam: u64 = MOTION_DURATION;
+	pub MaxProposalWeight: frame_support::weights::Weight = frame_support::weights::Weight::from_parts(u64::MAX, u64::MAX);
+}
+
+// Council configuration
+pub type CouncilCollective = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollective> for Test {
+	type RuntimeOrigin = RuntimeOrigin;
+	type Proposal = RuntimeCall;
+	type RuntimeEvent = RuntimeEvent;
+	type MotionDuration = MotionDurationParam;
+	type MaxProposals = ConstU32<MAX_PROPOSALS>;
+	type MaxMembers = ConstU32<MAX_PROPOSALS>;
+	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote;
+	type SetMembersOrigin = NeverEnsureOrigin<()>;
+	type MaxProposalWeight = MaxProposalWeight;
+	type DisapproveOrigin = EnsureRoot<u64>;
+	type KillOrigin = EnsureRoot<u64>;
+	type Consideration = ();
+	type WeightInfo = ();
+}
+
+impl pallet_membership::Config<pallet_membership::Instance1> for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type AddOrigin = NeverEnsureOrigin<()>;
+	type RemoveOrigin = NeverEnsureOrigin<()>;
+	type SwapOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<u64>;
+	type PrimeOrigin = NeverEnsureOrigin<()>;
+	type MembershipInitialized = MembershipHandler<Test, Council>;
+	type MembershipChanged = MembershipHandler<Test, Council>;
+	type MaxMembers = ConstU32<MAX_MEMBERS>;
+	type WeightInfo = ();
+}
+
+// Technical Authority configuration
+pub type TechnicalAuthorityCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalAuthorityCollective> for Test {
+	type RuntimeOrigin = RuntimeOrigin;
+	type Proposal = RuntimeCall;
+	type RuntimeEvent = RuntimeEvent;
+	type MotionDuration = MotionDurationParam;
+	type MaxProposals = ConstU32<MAX_PROPOSALS>;
+	type MaxMembers = ConstU32<MAX_PROPOSALS>;
+	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote;
+	type SetMembersOrigin = NeverEnsureOrigin<()>;
+	type MaxProposalWeight = MaxProposalWeight;
+	type DisapproveOrigin = EnsureRoot<u64>;
+	type KillOrigin = EnsureRoot<u64>;
+	type Consideration = ();
+	type WeightInfo = ();
+}
+
+impl pallet_membership::Config<pallet_membership::Instance2> for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type AddOrigin = NeverEnsureOrigin<()>;
+	type RemoveOrigin = NeverEnsureOrigin<()>;
+	type SwapOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<u64>;
+	type PrimeOrigin = NeverEnsureOrigin<()>;
+	type MembershipInitialized = MembershipHandler<Test, TechnicalAuthority>;
+	type MembershipChanged = MembershipHandler<Test, TechnicalAuthority>;
+	type MaxMembers = ConstU32<MAX_MEMBERS>;
+	type WeightInfo = ();
+}
+
+// Federated Authority configuration - matching runtime exactly
+pub const MAX_NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+
+type CouncilApproval = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<u64, CouncilCollective, 2, 3>,
+>;
+type TechnicalAuthorityApproval = AuthorityBody<
+	TechnicalAuthority,
+	pallet_collective::EnsureProportionAtLeast<u64, TechnicalAuthorityCollective, 2, 3>,
+>;
+
+type CouncilRevoke = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<u64, CouncilCollective, 2, 3>,
+>;
+type TechnicalAuthorityRevoke = AuthorityBody<
+	TechnicalAuthority,
+	pallet_collective::EnsureProportionAtLeast<u64, TechnicalAuthorityCollective, 2, 3>,
+>;
+
+impl crate::Config for Test {
+	type MotionCall = RuntimeCall;
+	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
+	type MotionDuration = MotionDurationParam;
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionApprovalOrigin =
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
+	type MotionRevokeOrigin =
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
+}
+
+pub fn new_test_ext() -> sp_io::TestExternalities {
+	let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+
+	// Initialize Council members
+	pallet_membership::GenesisConfig::<Test, pallet_membership::Instance1> {
+		members: vec![1, 2, 3].try_into().unwrap(),
+		phantom: Default::default(),
+	}
+	.assimilate_storage(&mut t)
+	.unwrap();
+
+	// Initialize Technical Authority members
+	pallet_membership::GenesisConfig::<Test, pallet_membership::Instance2> {
+		members: vec![4, 5, 6].try_into().unwrap(),
+		phantom: Default::default(),
+	}
+	.assimilate_storage(&mut t)
+	.unwrap();
+
+	t.into()
+}
+
+pub fn run_to_block(n: u64) {
+	while System::block_number() < n {
+		<System as Hooks<u64>>::on_finalize(System::block_number());
+		System::set_block_number(System::block_number() + 1);
+		<System as Hooks<u64>>::on_initialize(System::block_number());
+	}
+}
+
+pub fn last_event() -> RuntimeEvent {
+	System::events().pop().expect("Event expected").event
+}
+
+pub fn federated_authority_events() -> Vec<crate::Event<Test>> {
+	System::events()
+		.into_iter()
+		.filter_map(
+			|r| {
+				if let RuntimeEvent::FederatedAuthority(e) = r.event { Some(e) } else { None }
+			},
+		)
+		.collect::<Vec<_>>()
+}

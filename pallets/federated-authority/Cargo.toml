@@ -25,6 +25,7 @@ sp-core.workspace = true
 sp-io.workspace = true
 pallet-collective.workspace = true
 pallet-membership.workspace = true
+impl-trait-for-tuples.workspace = true
 
 [features]
 default = ["std"]
