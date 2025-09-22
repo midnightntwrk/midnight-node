@@ -235,7 +235,7 @@ fn execute_command(working_dir: &str, cmd: &str, args: &[&str]) {
 /// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
-/// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-generate-test-data
+/// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
 	use crate::commands::generate_intent::{CircuitArgs, DeployArgs};

@@ -3,7 +3,7 @@ name = "pallet-native-token-observation"
 version = "1.4.0"
 edition = "2024"
 description = "Pallet responsible for handling changes to the illiquid supply of the native token on main chain."
-license = "Apache-2.0"
+license-file.workspace = true
 
 [dependencies]
 frame-support.workspace = true
