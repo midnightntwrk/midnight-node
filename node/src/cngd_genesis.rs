@@ -20,6 +20,13 @@ use tokio::{fs::File, io::AsyncWriteExt};
 
 const UTXO_CAPACITY: usize = 1000;
 
+#[derive(Serialize, Deserialize)]
+pub struct CNightGeneratesDustConfig {
+	cardano_addresses: TokenObservationConfig,
+	initial_utxos: ObservedUtxos,
+	initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CngdGenesisError {
 	#[error("Failed to query UTXOs: {0}")]
@@ -30,13 +37,6 @@ pub enum CngdGenesisError {
 
 	#[error("I/O error: {0}")]
 	IoError(#[from] std::io::Error),
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CNightGeneratesDustConfig {
-	cardano_addresses: TokenObservationConfig,
-	initial_utxos: ObservedUtxos,
-	initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
 }
 
 fn create_inherent(

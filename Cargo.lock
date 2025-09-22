@@ -7026,6 +7026,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto",
  "midnight-ledger",
+ "midnight-primitives-native-token-observation",
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto",

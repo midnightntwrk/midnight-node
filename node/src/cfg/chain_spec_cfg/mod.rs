@@ -92,6 +92,12 @@ pub struct ChainSpecCfg {
 	pub chainspec_pc_chain_config: Option<String>,
 
 	/// Required for generic Live network chain spec
+	/// CNight Generates Dust config file e.g. devnet/cngd-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_cngd_config: Option<String>,
+
+	/// Required for generic Live network chain spec
 	/// Members of the Council Governance Authority
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
@@ -106,6 +112,7 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		|| cfg.chainspec_network_id.is_some()
 		|| cfg.chainspec_chain_type.is_some()
 		|| cfg.chainspec_pc_chain_config.is_some()
+		|| cfg.chainspec_cngd_config.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
 	{
 		if cfg.chainspec_name.is_none() {
@@ -127,6 +134,9 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 			missing.push("chainspec_genesis_block".to_string());
 		}
 		if cfg.chainspec_pc_chain_config.is_none() {
+			missing.push("chainspec_pc_chain_config".to_string());
+		}
+		if cfg.chainspec_cngd_config.is_none() {
 			missing.push("chainspec_pc_chain_config".to_string());
 		}
 		if cfg.chainspec_federated_authority_config.is_none() {

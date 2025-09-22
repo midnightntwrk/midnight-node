@@ -61,6 +61,7 @@ impl core::fmt::Display for CardanoPosition {
 	}
 }
 
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct TokenObservationConfig {
 	pub mapping_validator_address: String,

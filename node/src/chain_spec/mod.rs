@@ -13,10 +13,6 @@
 
 use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
-use midnight_node_res::native_token_observation_consts::{
-	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
-	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
-};
 use midnight_node_res::networks::MidnightNetwork;
 
 use midnight_node_ledger_helpers::{
@@ -268,10 +264,16 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		pallet_session: Default::default(),
 		native_token_management: NativeTokenManagementConfig { ..Default::default() },
 		native_token_observation: NativeTokenObservationConfig {
-			redemption_validator_address: TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS.into(),
-			mapping_validator_address: TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS.into(),
-			token_policy_id: TEST_CNIGHT_CURRENCY_POLICY_ID.into(),
-			token_asset_name: TEST_CNIGHT_ASSET_NAME.into(),
+			redemption_validator_address: genesis
+				.cnight_generates_dust_config()
+				.redemption_validator_address
+				.into(),
+			mapping_validator_address: genesis
+				.cnight_generates_dust_config()
+				.mapping_validator_address
+				.into(),
+			token_policy_id: genesis.cnight_generates_dust_config().policy_id.into(),
+			token_asset_name: genesis.cnight_generates_dust_config().asset_name.into(),
 			_marker: Default::default(),
 		},
 		council: CouncilConfig { ..Default::default() },

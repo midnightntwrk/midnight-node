@@ -22,6 +22,7 @@ use midnight_node_res::{
 		UndeployedNetwork,
 	},
 };
+use midnight_primitives_native_token_observation::TokenObservationConfig;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
 
@@ -107,13 +108,21 @@ impl SubstrateCli for Cfg {
 				let pc_chain_config_str = std::fs::read_to_string(
 					self.chain_spec_cfg.chainspec_pc_chain_config.as_ref().unwrap(),
 				)
-				.map_err(|e| format!("failed to read initial_authorities: {e}"))?;
+				.map_err(|e| format!("failed to read pc chain config: {e}"))?;
 
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
 				let initial_authorities =
 					InitialAuthorityData::load_from_pc_chain_config(&pc_chain_config);
+
+				let cngd_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_cngd_config.as_ref().unwrap(),
+				)
+				.map_err(|e| format!("failed to read cngd config: {e}"))?;
+
+				let cngd_config: TokenObservationConfig = serde_json::from_str(&cngd_config_str)
+					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
 				let main_chain_scripts =
 					MainChainScripts::load_from_pc_chain_config(&pc_chain_config);
@@ -152,6 +161,7 @@ impl SubstrateCli for Cfg {
 					genesis_block,
 					genesis_state,
 					initial_authorities,
+					cngd_config,
 					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
 					council_membership,
 					technical_authority_membership,
