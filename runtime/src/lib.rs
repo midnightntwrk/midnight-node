@@ -435,7 +435,7 @@ impl pallet_mmr::Config for Runtime {
 }
 
 /// MMR helper types.
-pub mod mmr {
+mod mmr {
 	use super::Runtime;
 	pub use pallet_mmr::primitives::*;
 
