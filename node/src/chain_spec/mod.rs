@@ -272,7 +272,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.cnight_generates_dust_config()
 				.mapping_validator_address
 				.into(),
-			token_policy_id: genesis.cnight_generates_dust_config().policy_id.into(),
+			token_policy_id: hex::decode(genesis.cnight_generates_dust_config().policy_id)
+				.expect("failed to decode policy id as hex"),
 			token_asset_name: genesis.cnight_generates_dust_config().asset_name.into(),
 			_marker: Default::default(),
 		},
