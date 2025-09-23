@@ -400,7 +400,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c  #v2.62.2
         with:
           tool: just
 
@@ -588,7 +588,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df  # v4.2.1
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
         with:
           role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
           aws-region: eu-west-1
