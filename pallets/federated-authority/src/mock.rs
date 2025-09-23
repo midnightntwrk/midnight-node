@@ -180,6 +180,7 @@ impl crate::Config for Test {
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
 	type MotionRevokeOrigin =
 		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
+	type WeightInfo = ();
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

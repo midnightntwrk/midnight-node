@@ -844,6 +844,7 @@ impl pallet_federated_authority::Config for Runtime {
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
 	type MotionRevokeOrigin =
 		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
+	type WeightInfo = ();
 }
 
 pub struct MidnightTokenTransferHandler;
@@ -993,6 +994,7 @@ mod benches {
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
 		[pallet_upgrade, RuntimeUpgrade]
 		[pallet_midnight, Midnight]
+		[pallet_federated_authority, FederatedAuthority]
 	);
 }
 

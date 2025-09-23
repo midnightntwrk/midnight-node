@@ -262,7 +262,7 @@ pub trait LedgerBridge {
 	#[cfg(feature = "runtime-benchmarks")]
 	fn build_standard_transactions(
 		ledger_state: PassFatPointerAndRead<&[u8]>,
-		args: BenchmarkStandardTxBuilder,
+		args: PassFatPointerAndDecode<BenchmarkStandardTxBuilder>,
 	) -> Result<(Vec<u8>, Vec<u8>), latest::types::LedgerApiError> {
 		latest::Bridge::<Signature, Database>::build_standard_transactions(ledger_state, args)
 	}
@@ -275,7 +275,7 @@ pub trait LedgerBridge {
 	#[cfg(feature = "runtime-benchmarks")]
 	fn build_claim_mint_transactions(
 		ledger_state: PassFatPointerAndRead<&[u8]>,
-		args: BenchmarkClaimMintTxBuilder,
+		args: PassFatPointerAndDecode<BenchmarkClaimMintTxBuilder>,
 	) -> Result<Vec<u8>, latest::types::LedgerApiError> {
 		latest::Bridge::<Signature, Database>::build_claim_mint_transactions(ledger_state, args)
 	}
@@ -289,7 +289,7 @@ pub trait LedgerBridge {
 	#[cfg(feature = "runtime-benchmarks")]
 	fn execute_contract_call(
 		ledger_state: PassFatPointerAndRead<&[u8]>,
-		tx: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndDecode<PassFatPointerAndRead<&[u8]>>,
 	) -> Result<(), latest::types::LedgerApiError> {
 		latest::Bridge::<Signature, Database>::execute_contract_call(ledger_state, tx)
 	}
