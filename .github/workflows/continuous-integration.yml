@@ -495,16 +495,13 @@ jobs:
           cargo install cargo-nextest --locked
 
       - name: just test
+        env:
+          APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
           . ./.envrc
           git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
           cd indexer
           just feature=standalone test
-        env:
-          APP__INFRA__STORAGE__PASSWORD: ${{ secrets.APP__INFRA__STORAGE__PASSWORD }}
-          APP__INFRA__PUB_SUB__PASSWORD: ${{ secrets.APP__INFRA__PUB_SUB__PASSWORD }}
-          APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: ${{ secrets.APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD }}
-          APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
 
   local-environment-tests:
     name: Local Environment Tests
