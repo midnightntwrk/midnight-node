@@ -7,7 +7,7 @@ use clap::{
 };
 use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
 mod encoded_zswap_local_state;
-pub use encoded_zswap_local_state::EncodedZswapLocalState;
+pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
 use crate::cli_parsers as cli;
 

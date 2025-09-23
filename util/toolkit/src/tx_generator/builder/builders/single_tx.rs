@@ -109,7 +109,7 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
-			tx_info.set_guaranteed_coins(offer);
+			tx_info.set_guaranteed_offer(offer);
 		}
 
 		if !unshielded_wallets.is_empty() {

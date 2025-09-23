@@ -14,16 +14,16 @@ pub enum JsCommand {
 #[derive(Args)]
 pub struct SourceWallet {
 	#[command(flatten)]
-	source: Source,
+	source: Option<Source>,
 	/// Seed for the source wallet zswap state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	wallet_seed: WalletSeed,
+	wallet_seed: Option<WalletSeed>,
 }
 
 #[derive(Args)]
 pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source_wallet: Option<SourceWallet>,
+	source_wallet: SourceWallet,
 
 	#[command(flatten)]
 	toolkit_js: toolkit_js::ToolkitJs,
@@ -49,27 +49,36 @@ pub struct GenerateIntentArgs {
 }
 
 pub async fn fetch_zswap_state(
-	src: SourceWallet,
+	source: Source,
+	wallet_seed: WalletSeed,
 	coin_public: CoinPublicKey,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(src.source).await?;
+	let source = TxGenerator::<SignatureType, ProofType>::source(source).await?;
 	let received_tx = source.get_txs().await?;
 	let network_id = received_tx.network();
-	let context = LedgerContext::new_from_wallet_seeds(network_id, &[src.wallet_seed]);
+	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
 	for block in received_tx.blocks {
 		context.update_from_block(block.transactions, block.context);
 	}
-	let wallet = context.wallet_from_seed(src.wallet_seed);
+	let wallet = context.wallet_from_seed(wallet_seed);
 	let zswap_local_state = wallet.shielded.state;
 
 	Ok(EncodedZswapLocalState::from_zswap_state(zswap_local_state, coin_public))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GenerateIntentError {
+	#[error("missing transaction source")]
+	MissingSource,
+	#[error("failed to create temporary dir for toolkit-js file interop")]
+	FailedToCreateTempDir(std::io::Error),
 }
 
 pub async fn execute(
 	args: GenerateIntentArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	println!("Executing generate-intent");
-	let temp_dir = tempfile::tempdir()?;
+	let temp_dir = tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
 
 	match args.js_command {
 		JsCommand::Deploy(args) => {
@@ -77,9 +86,18 @@ pub async fn execute(
 			args.toolkit_js.execute(command)?;
 		},
 		JsCommand::Circuit(args) => {
-			let input_zswap_state = if let Some(src) = args.source_wallet {
-				let encoded_zswap_state =
-					fetch_zswap_state(src, args.circuit_call.coin_public).await?;
+			let input_zswap_state = if args.source_wallet.wallet_seed.is_some() {
+				let Some(source) = args.source_wallet.source else {
+					println!("wallet_seed is present, but source is missing!");
+					return Err(GenerateIntentError::MissingSource.into());
+				};
+				println!("getting input zswap...");
+				let encoded_zswap_state = fetch_zswap_state(
+					source,
+					args.source_wallet.wallet_seed.unwrap(),
+					args.circuit_call.coin_public,
+				)
+				.await?;
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -170,8 +188,10 @@ mod test {
 			&toolkit_js_path,
 			"--config",
 			&config,
-			"--wallet-seed",
-			"0000000000000000000000000000000000000000000000000000000000000001",
+			//			"--src-files",
+			//			"./test-data/genesis/genesis_block_undeployed.mn",
+			//			"--wallet-seed",
+			//			"0000000000000000000000000000000000000000000000000000000000000001",
 			"--coin-public",
 			"6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--input-onchain-state",

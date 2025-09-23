@@ -23,7 +23,7 @@ use crate::{
 		VerifyingKey, Wallet,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, IntentToFile},
+	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, CreateIntentInfo, IntentToFile},
 };
 
 #[allow(dead_code)]
@@ -52,7 +52,7 @@ impl ContractMaintenanceBuilder {
 #[async_trait]
 impl IntentToFile for ContractMaintenanceBuilder {}
 
-impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractMaintenanceBuilder {
+impl BuildTxsExt for ContractMaintenanceBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -60,7 +60,9 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractMaintenance
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
 	}
+}
 
+impl CreateIntentInfo for ContractMaintenanceBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send> {
 		println!("Create intent info for Maintenance");
 		let contract_address = self.contract_address(&self.contract_address);
@@ -117,7 +119,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };
 
-		tx_info.set_guaranteed_coins(offer_info);
+		tx_info.set_guaranteed_offer(offer_info);
 
 		tx_info.set_wallet_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(true);

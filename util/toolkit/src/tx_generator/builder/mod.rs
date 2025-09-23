@@ -19,7 +19,11 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::{fs, path::Path, sync::Arc};
+use std::{
+	fs,
+	path::{Path, PathBuf},
+	sync::Arc,
+};
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
@@ -75,9 +79,12 @@ pub struct CustomContractArgs {
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
 	pub compiled_contract_dir: String,
-	/// List of intent files to include in the transaction
+	/// Intent file to include in the transaction
 	#[arg(short, long)]
-	pub intent_files: Vec<String>,
+	pub intent_file: String,
+	/// Zswap State file containing coin info
+	#[arg(long)]
+	pub zswap_state_file: Option<String>,
 }
 
 #[derive(Args, Clone)]
@@ -301,7 +308,7 @@ pub trait BuildTxs {
 }
 
 /// An extension to help build transactions
-pub trait BuildTxsExt<R> {
+pub trait BuildTxsExt {
 	fn funding_seed(&self) -> WalletSeed;
 
 	fn rng_seed(&self) -> Option<[u8; 32]>;
@@ -338,13 +345,16 @@ pub trait BuildTxsExt<R> {
 
 		(context_arc, tx_info)
 	}
+}
 
-	fn create_intent_info(&self) -> R;
+/// Create Intent Info
+pub trait CreateIntentInfo {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send>;
 }
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file
 #[async_trait]
-pub trait IntentToFile: BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> {
+pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,

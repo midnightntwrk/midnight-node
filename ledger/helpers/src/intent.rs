@@ -12,14 +12,17 @@
 // limitations under the License.
 
 use crate::{
-	BuildContractAction, DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation,
-	LedgerContext, MidnightDataProvider, NetworkId, OutputMode, PUBLIC_PARAMS, PedersenRandomness,
-	ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	BuildContractAction, ContractEffects, DB, DUST_EXPECTED_FILES, DefaultDB, DustResolver,
+	FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
+	PedersenRandomness, ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp,
+	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
+use mn_ledger::structure::ContractAction;
 use std::{
 	fs::File,
 	io::{self, Read},
+	path::Path,
 	sync::Arc,
 };
 use transient_crypto::proofs::ProvingKeyMaterial;
@@ -104,13 +107,37 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 	}
 }
 
-pub struct IntentCustom {
-	pub intent_path: String,
-	pub network: NetworkId,
+pub struct IntentCustom<D: DB + Clone> {
+	pub intent: IntentOf<D>,
 	pub resolver: &'static Resolver,
 }
 
-impl IntentCustom {
+impl<D: DB + Clone> IntentCustom<D> {
+	pub fn new_from_file(
+		path: impl AsRef<Path>,
+		resolver: &'static Resolver,
+	) -> Result<Self, std::io::Error> {
+		let bytes = std::fs::read(path)?;
+		let intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		Ok(Self { intent, resolver })
+	}
+
+	pub fn find_effects(&self) -> (Vec<ContractEffects<D>>, Vec<ContractEffects<D>>) {
+		let mut guaranteed_effects: Vec<ContractEffects<D>> = Vec::new();
+		let mut fallible_effects: Vec<ContractEffects<D>> = Vec::new();
+		for action in self.intent.actions.iter() {
+			if let ContractAction::Call(ref c) = *action.clone() {
+				if let Some(ref t) = c.guaranteed_transcript {
+					guaranteed_effects.push(t.effects.clone());
+				}
+				if let Some(ref t) = c.fallible_transcript {
+					fallible_effects.push(t.effects.clone());
+				}
+			}
+		}
+		(guaranteed_effects, fallible_effects)
+	}
+
 	pub fn get_resolver(parent_dir: String) -> Result<Resolver, std::io::Error> {
 		Ok(Resolver::new(
 			PUBLIC_PARAMS.clone(),
@@ -163,7 +190,7 @@ impl IntentCustom {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
+impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
@@ -173,13 +200,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
 	) -> IntentOf<D> {
 		println!("Updating the resolver...");
 		context.update_resolver(self.resolver).await;
-
-		let mut bytes = vec![];
-
-		let mut file = File::open(&self.intent_path).expect("Could not open file");
-		file.read_to_end(&mut bytes).expect("Failed to read file");
-
-		let mut intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		let mut intent = self.intent.clone();
 		intent.ttl = ttl;
 		println!("custom intent: {intent:#?}");
 		intent

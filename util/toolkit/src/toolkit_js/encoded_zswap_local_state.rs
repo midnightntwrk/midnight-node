@@ -1,4 +1,10 @@
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, DB, HashOutput, WalletState};
+use std::sync::Arc;
+
+use midnight_node_ledger_helpers::{
+	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, HashOutput, LedgerContext, Nonce,
+	Output, PERSISTENT_HASH_BYTES, ProofPreimage, Segment, ShieldedTokenType, TokenInfo,
+	WalletState,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -13,74 +19,117 @@ pub struct EncodedQualifiedShieldedCoinInfo {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EncodedShieldedCoinInfo {
-	nonce: Vec<u8>,
-	color: Vec<u8>,
+	nonce: [u8; PERSISTENT_HASH_BYTES],
+	color: [u8; PERSISTENT_HASH_BYTES],
 	#[serde(with = "string")]
 	value: u128,
+}
+
+impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
+	fn build(
+		&self,
+		rng: &mut rand::prelude::StdRng,
+		_context: Arc<LedgerContext<D>>,
+	) -> Output<ProofPreimage, D> {
+		let coin_info = CoinInfo {
+			nonce: Nonce(HashOutput(self.encoded_output.coin_info.nonce)),
+			type_: ShieldedTokenType(HashOutput(self.encoded_output.coin_info.color)),
+			value: self.encoded_output.coin_info.value,
+		};
+
+		if self.encoded_output.recipient.is_left {
+			Output::new(rng, &coin_info, self.segment, &self.encoded_output.recipient.left.0, None)
+				.expect("failed to construct output")
+		} else {
+			Output::new_contract_owned(
+				rng,
+				&coin_info,
+				self.segment,
+				self.encoded_output.recipient.right.0,
+			)
+			.expect("failed to construct output")
+		}
+	}
+}
+
+pub struct EncodedOutputInfo {
+	pub encoded_output: EncodedOutput,
+	pub segment: u16,
+}
+
+impl TokenInfo for EncodedOutputInfo {
+	fn token_type(&self) -> ShieldedTokenType {
+		ShieldedTokenType(HashOutput(self.encoded_output.coin_info.color))
+	}
+
+	fn value(&self) -> u128 {
+		self.encoded_output.coin_info.value
+	}
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodedOutput {
 	coin_info: EncodedShieldedCoinInfo,
-	#[serde(with = "bytes")]
 	recipient: EncodedRecipient,
 }
 
 /// Either a coin public key if the recipient is a user, or a contract address
-#[derive(Clone, Debug)]
-pub enum EncodedRecipient {
-	CoinPublicKey(CoinPublicKey),
-	ContractAddress(ContractAddress),
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EncodedRecipient {
+	is_left: bool,
+	#[serde(with = "bytes")]
+	left: EncodedCoinPublic,
+	#[serde(with = "bytes")]
+	right: EncodedContractAddress,
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
-pub enum InvalidRecipient {
-	#[error("byte repr invalid")]
-	InvalidBytes(Vec<u8>),
-}
+#[derive(Debug, Clone)]
+pub struct EncodedContractAddress(ContractAddress);
 
-impl TryFrom<Vec<u8>> for EncodedRecipient {
-	type Error = InvalidRecipient;
-
-	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-		match value[0] {
-			0 => Ok(EncodedRecipient::CoinPublicKey(CoinPublicKey(HashOutput(
-				value[1..].try_into().map_err(|_| InvalidRecipient::InvalidBytes(value))?,
-			)))),
-			1 => Ok(EncodedRecipient::ContractAddress(ContractAddress(HashOutput(
-				value[1..].try_into().map_err(|_| InvalidRecipient::InvalidBytes(value))?,
-			)))),
-			_ => Err(InvalidRecipient::InvalidBytes(value)),
-		}
+impl From<&EncodedContractAddress> for Vec<u8> {
+	fn from(value: &EncodedContractAddress) -> Self {
+		value.0.0.0.to_vec()
 	}
 }
 
-impl From<&EncodedRecipient> for Vec<u8> {
-	fn from(value: &EncodedRecipient) -> Self {
-		let mut bytes = Vec::new();
-		match value {
-			EncodedRecipient::CoinPublicKey(public_key) => {
-				bytes.push(0);
-				bytes.extend(&public_key.0.0);
-			},
-			EncodedRecipient::ContractAddress(contract_address) => {
-				bytes.push(1);
-				bytes.extend(&contract_address.0.0);
-			},
-		}
-		bytes
+impl TryFrom<Vec<u8>> for EncodedContractAddress {
+	type Error = String;
+
+	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+		Ok(EncodedContractAddress(ContractAddress(HashOutput(
+			value.try_into().map_err(|_| "failed to convert to coin_public".to_string())?,
+		))))
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct EncodedCoinPublic(CoinPublicKey);
+
+impl From<&EncodedCoinPublic> for Vec<u8> {
+	fn from(value: &EncodedCoinPublic) -> Self {
+		value.0.0.0.to_vec()
+	}
+}
+
+impl TryFrom<Vec<u8>> for EncodedCoinPublic {
+	type Error = String;
+
+	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+		Ok(EncodedCoinPublic(CoinPublicKey(HashOutput(
+			value.try_into().map_err(|_| "failed to convert to coin_public".to_string())?,
+		))))
 	}
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodedZswapLocalState {
-	coin_public_key: Vec<u8>,
+	pub coin_public_key: Vec<u8>,
 	#[serde(with = "string")]
-	current_index: u64,
-	inputs: Vec<EncodedQualifiedShieldedCoinInfo>,
-	outputs: Vec<EncodedOutput>,
+	pub current_index: u64,
+	pub inputs: Vec<EncodedQualifiedShieldedCoinInfo>,
+	pub outputs: Vec<EncodedOutput>,
 }
 
 impl EncodedZswapLocalState {
@@ -94,11 +143,15 @@ impl EncodedZswapLocalState {
 				.iter()
 				.map(|(nullifier, c)| EncodedOutput {
 					coin_info: EncodedShieldedCoinInfo {
-						nonce: nullifier.0.0.to_vec(),
-						color: c.type_.0.0.to_vec(),
+						nonce: nullifier.0.0,
+						color: c.type_.0.0,
 						value: c.value,
 					},
-					recipient: EncodedRecipient::CoinPublicKey(coin_public),
+					recipient: EncodedRecipient {
+						is_left: true,
+						left: EncodedCoinPublic(coin_public),
+						right: EncodedContractAddress(ContractAddress::default()),
+					},
 				})
 				.collect(),
 		}

@@ -58,8 +58,8 @@ pub trait FromContext<D: DB + Clone> {
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D> + Send>>,
-	pub guaranteed_coins: Option<OfferInfo<D>>,
-	pub fallible_coins: HashMap<u16, OfferInfo<D>>,
+	pub guaranteed_offer: Option<OfferInfo<D>>,
+	pub fallible_offers: HashMap<u16, OfferInfo<D>>,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 	pub funding_seeds: Vec<WalletSeed>,
@@ -87,8 +87,8 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 		Self {
 			context,
 			intents: HashMap::new(),
-			guaranteed_coins: None,
-			fallible_coins: HashMap::new(),
+			guaranteed_offer: None,
+			fallible_offers: HashMap::new(),
 			rng,
 			prover,
 			funding_seeds: vec![],
@@ -99,12 +99,12 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 }
 
 impl<D: DB + Clone> StandardTrasactionInfo<D> {
-	pub fn set_guaranteed_coins(&mut self, offer: OfferInfo<D>) {
-		self.guaranteed_coins = Some(offer);
+	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D>) {
+		self.guaranteed_offer = Some(offer);
 	}
 
-	pub fn set_fallible_coins(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
-		self.fallible_coins = offers;
+	pub fn set_fallible_offers(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
+		self.fallible_offers = offers;
 	}
 
 	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D> + Send>>) {
@@ -118,7 +118,9 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	pub fn is_empty(&self) -> bool {
-		self.intents.is_empty() && self.guaranteed_coins.is_none() && self.fallible_coins.is_empty()
+		self.intents.is_empty()
+			&& self.guaranteed_offer.is_none()
+			&& self.fallible_offers.is_empty()
 	}
 
 	pub fn set_wallet_seeds(&mut self, seeds: Vec<WalletSeed>) {
@@ -139,13 +141,13 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let ttl = now + delay;
 
-		let guaranteed_coins = self
-			.guaranteed_coins
+		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
+			.guaranteed_offer
 			.as_mut()
 			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
 
-		let fallible_coins: HashMap<u16, Offer<ProofPreimage, D>> = self
-			.fallible_coins
+		let fallible_offer: HashMap<u16, Offer<ProofPreimage, D>> = self
+			.fallible_offers
 			.iter_mut()
 			.map(|(segment_id, offer_info)| {
 				(*segment_id, offer_info.build(&mut self.rng, self.context.clone()))
@@ -173,7 +175,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			guard.network_id.clone()
 		};
 
-		let tx = Transaction::new(network_id.clone(), intents, guaranteed_coins, fallible_coins);
+		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {

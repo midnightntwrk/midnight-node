@@ -84,9 +84,10 @@ mod test {
 			run_command(cli.command).await.expect("should work");
 		}
 
-		let intent_files: Vec<String> = fs::read_dir(&out_dir)
+		let intent_file: String = fs::read_dir(&out_dir)
 			.expect("directory not found")
 			.map(|p| p.unwrap().path().to_string_lossy().to_string())
+			.take(1)
 			.collect();
 
 		let source = Source {
@@ -109,7 +110,8 @@ mod test {
 		let contract_args = CustomContractArgs {
 			info,
 			compiled_contract_dir: compiled_contract_dir.to_string(),
-			intent_files,
+			intent_file,
+			zswap_state_file: None,
 		};
 
 		let args = SendIntentArgs { source, destination, proof_server: None, contract_args };
