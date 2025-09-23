@@ -49,7 +49,7 @@ impl ContractCallBuilder {
 #[async_trait]
 impl IntentToFile for ContractCallBuilder {}
 
-impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractCallBuilder {
+impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send + Sync>> for ContractCallBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -58,21 +58,23 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractCallBuilder
 		self.rng_seed
 	}
 
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send + Sync> {
 		println!("Create intent info for contract call");
 
 		// - Contract Calls
 		let contract_address = self.contract_address(&self.contract_address);
 
-		let call_contract: Box<dyn BuildContractAction<DefaultDB> + Send> = Box::new(CallInfo {
-			type_: MerkleTreeContract::new(),
-			address: contract_address,
-			key: self.call_key,
-			input: Box::new(CONTRACT_INPUT),
-			_marker: PhantomData,
-		});
+		let call_contract: Box<dyn BuildContractAction<DefaultDB> + Send + Sync> =
+			Box::new(CallInfo {
+				type_: MerkleTreeContract::new(),
+				address: contract_address,
+				key: self.call_key,
+				input: Box::new(CONTRACT_INPUT),
+				_marker: PhantomData,
+			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send>> = vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send + Sync>> =
+			vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -102,10 +104,10 @@ impl BuildTxs for ContractCallBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

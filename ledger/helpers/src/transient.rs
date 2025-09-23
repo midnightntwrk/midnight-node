@@ -38,7 +38,7 @@ impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> 
 		context: Arc<LedgerContext<D>>,
 	) -> Transient<ProofPreimage, D> {
 		let inputs = vec![];
-		let outputs: Vec<Box<dyn BuildOutput<D> + Send>> = vec![Box::new(self.output)];
+		let outputs: Vec<Box<dyn BuildOutput<D> + Send + Sync>> = vec![Box::new(self.output)];
 		let transients = vec![];
 
 		let mut offer_arg = OfferInfo { inputs, outputs, transients };

@@ -23,12 +23,12 @@ pub struct CallInfo<C: Contract<D>, D: DB + Clone> {
 	pub type_: C,
 	pub address: ContractAddress,
 	pub key: &'static str,
-	pub input: Box<dyn Any + Send>,
+	pub input: Box<dyn Any + Send + Sync>,
 	pub _marker: PhantomData<D>,
 }
 
 #[async_trait]
-impl<C: Contract<D> + Send, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
+impl<C: Contract<D> + Send + Sync, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,

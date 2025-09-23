@@ -41,7 +41,7 @@ pub trait BuildIntent<D: DB + Clone> {
 pub struct IntentInfo<D: DB + Clone> {
 	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub actions: Vec<Box<dyn BuildContractAction<D> + Send>>,
+	pub actions: Vec<Box<dyn BuildContractAction<D> + Send + Sync>>,
 	// TODO: Add TTL Option here
 }
 

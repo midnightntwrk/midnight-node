@@ -39,7 +39,7 @@ pub trait Contract<D: DB + Clone> {
 	fn transcript(
 		&self,
 		key: &str,
-		input: &Box<dyn Any + Send>,
+		input: &Box<dyn Any + Send + Sync>,
 		address: &ContractAddress,
 		context: Arc<LedgerContext<D>>,
 	) -> (AlignedValue, Vec<AlignedValue>, Vec<Transcripts<D>>);
@@ -60,7 +60,7 @@ pub trait Contract<D: DB + Clone> {
 		&self,
 		address: &ContractAddress,
 		key: &'static str,
-		input: &Box<dyn Any + Send>,
+		input: &Box<dyn Any + Send + Sync>,
 		rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 	) -> ContractCallPrototype<D>;

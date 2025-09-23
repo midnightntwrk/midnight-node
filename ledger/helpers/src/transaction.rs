@@ -58,7 +58,7 @@ pub trait FromContext<D: DB + Clone> {
 
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
-	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D> + Send>>,
+	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D> + Send + Sync>>,
 	pub guaranteed_coins: Option<OfferInfo<D>>,
 	pub fallible_coins: HashMap<u16, OfferInfo<D>>,
 	pub rng: StdRng,
@@ -108,11 +108,15 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		self.fallible_coins = offers;
 	}
 
-	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D> + Send>>) {
+	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D> + Send + Sync>>) {
 		self.intents = intents;
 	}
 
-	pub fn add_intent(&mut self, segment_id: SegmentId, intent: Box<dyn BuildIntent<D> + Send>) {
+	pub fn add_intent(
+		&mut self,
+		segment_id: SegmentId,
+		intent: Box<dyn BuildIntent<D> + Send + Sync>,
+	) {
 		if self.intents.insert(segment_id, intent).is_some() {
 			println!("WARN: value of segment_id({segment_id}) has been replaced.");
 		};
@@ -191,29 +195,31 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		now: Timestamp,
 		ttl: Timestamp,
 	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
-		let tx_sealed = tx.seal(self.rng.clone());
-		let Some(mut missing_dust) = self.compute_missing_dust(&tx_sealed)? else {
+		let Some(mut missing_dust) = self.compute_missing_dust(&tx).await? else {
 			// we have enough dust after all I guess
 			return Ok(tx);
 		};
 
 		for _ in 0..10 {
-			let speculative_payment_tx =
-				self.build_dust_spend_tx(missing_dust, &network_id, now, ttl, true)?;
+			let speculative_payment_tx = self.build_dust_spend_tx(
+				self.rng.clone().split(),
+				missing_dust,
+				&network_id,
+				now,
+				ttl,
+				true,
+			)?;
 			let paid_tx = tx.merge(&speculative_payment_tx)?;
-			let computed_missing_dust = if self.mock_proofs_for_fees {
-				self.compute_missing_dust(&paid_tx.mock_prove()?)?
-			} else {
-				let proven_tx = self.prove_tx(paid_tx).await?.seal(self.rng.clone());
-				self.compute_missing_dust(&proven_tx)?
-			};
+
+			let computed_missing_dust = self.compute_missing_dust(&paid_tx).await?;
 			if let Some(dust) = computed_missing_dust {
 				missing_dust += dust;
 			} else {
 				// We know exactly how much dust is needed to balance the TX!
 				// So just balance it
+				let rng = self.rng.split();
 				let payment_tx =
-					self.build_dust_spend_tx(missing_dust, &network_id, now, ttl, false)?;
+					self.build_dust_spend_tx(rng, missing_dust, &network_id, now, ttl, false)?;
 				return Ok(tx.merge(&payment_tx)?);
 			}
 		}
@@ -221,9 +227,10 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	async fn prove_tx(
-		&mut self,
+		&self,
+		mut rng: StdRng,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Result<Transaction<Signature, ProofMarker, PedersenRandomness, D>> {
+	) -> Result<Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>> {
 		let resolver = self.context.resolver().await;
 		let parameters = self
 			.context
@@ -234,26 +241,24 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.clone();
 		Ok(self
 			.prover
-			.prove(tx, self.rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
-			.await)
+			.prove(tx, rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
+			.await
+			.seal(rng))
 	}
 
-	fn compute_missing_dust<
-		P: ProofKind<D>,
-		B: Storable<D> + PedersenDowngradeable<D> + Serializable,
-	>(
+	async fn compute_missing_dust(
 		&self,
-		tx: &Transaction<Signature, P, B, D>,
+		tx: &Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Result<Option<u128>> {
-		let fees = {
-			let ledger_state = self
-				.context
-				.ledger_state
-				.lock()
-				.map_err(|_| "ledger state lock was poisoned".to_string())?;
-			tx.fees(&ledger_state.parameters)?
+		let proven_tx = if self.mock_proofs_for_fees {
+			tx.mock_prove()?
+		} else {
+			let mut rng = self.rng.clone();
+			self.prove_tx(rng.split(), tx.clone()).await?
 		};
-		let imbalances = tx.balance(Some(fees))?;
+
+		let fees = self.context.with_ledger_state(|s| proven_tx.fees(&s.parameters))?;
+		let imbalances = proven_tx.balance(Some(fees))?;
 		let dust_imbalance = imbalances
 			.get(&(TokenType::Dust, Segment::Guaranteed.into()))
 			.copied()
@@ -264,7 +269,8 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	// Builds a transaction which spends exactly `required_amount` DUST from the configured funding seeds.
 	// Fails if the seeds do not have enough DUST available.
 	fn build_dust_spend_tx(
-		&mut self,
+		&self,
+		mut rng: StdRng,
 		required_amount: u128,
 		network_id: &str,
 		now: Timestamp,
@@ -272,7 +278,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		speculative: bool,
 	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
 		let spends = self.gather_dust_spends(required_amount, now, speculative)?;
-		let mut intent = Intent::empty(&mut self.rng, ttl);
+		let mut intent = Intent::empty(&mut rng, ttl);
 		intent.dust_actions = Some(Sp::new(DustActions {
 			spends: spends.into(),
 			registrations: vec![].into(),
@@ -368,9 +374,9 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		mut self,
 	) -> Result<Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>> {
 		let tx_unproven = self.build().await?;
-		let tx_proven = self.prove_tx(tx_unproven).await?;
-		let tx_sealed = tx_proven.seal(self.rng.clone());
-		Self::validate(self.context, self.now, tx_sealed)
+		let rng = self.rng.split();
+		let tx_proven = self.prove_tx(rng, tx_unproven).await?;
+		Self::validate(self.context, self.now, tx_proven)
 	}
 
 	fn validate<
