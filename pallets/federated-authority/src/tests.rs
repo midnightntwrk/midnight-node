@@ -492,6 +492,65 @@ fn federated_authority_proportion_works() {
 }
 
 #[test]
+fn motion_approve_fails_after_motion_ended() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+
+		let call = create_remark_call(vec![1, 2, 3]);
+
+		// Council approves the motion
+		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
+
+		// Fast-forward past the motion end time
+		run_to_block(MOTION_DURATION + 2);
+
+		// Try to approve from Technical Authority after motion has ended
+		assert_noop!(
+			FederatedAuthority::motion_approve(tech_origin(), call.clone()),
+			Error::<Test>::MotionHasEnded
+		);
+	});
+}
+
+#[test]
+fn motion_revoke_fails_after_motion_ended() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+
+		let call = create_remark_call(vec![1, 2, 3]);
+		let motion_hash = get_motion_hash(&call);
+
+		// Both authorities approve the motion
+		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
+		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call.clone()));
+
+		// Fast-forward past the motion end time
+		run_to_block(MOTION_DURATION + 2);
+
+		// Try to revoke from Council after motion has ended
+		assert_noop!(
+			FederatedAuthority::motion_revoke(council_origin(), motion_hash),
+			Error::<Test>::MotionHasEnded
+		);
+
+		// Try to revoke from Technical Authority after motion has ended
+		assert_noop!(
+			FederatedAuthority::motion_revoke(tech_origin(), motion_hash),
+			Error::<Test>::MotionHasEnded
+		);
+
+		// Verify motion still has both approvals
+		let motion = Motions::<Test>::get(motion_hash).unwrap();
+		assert_eq!(motion.approvals.len(), 2);
+		assert!(motion.approvals.contains(&COUNCIL_PALLET_ID));
+		assert!(motion.approvals.contains(&TECHNICAL_AUTHORITY_PALLET_ID));
+
+		// Motion can still be closed since it's approved and ended
+		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
+	});
+}
+
+#[test]
 fn multiple_concurrent_motions_work() {
 	new_test_ext().execute_with(|| {
 		System::set_block_number(1);

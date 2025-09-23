@@ -88,6 +88,8 @@ pub mod pallet {
 		MotionNotFound,
 		/// Motion not finished
 		MotionNotEnded,
+		/// Motion has ended and therefore it doesn't accept more changes
+		MotionHasEnded,
 		/// Motion is approved but need to wait until the approval period ends
 		MotionTooEarlyToClose,
 		/// Motion already exists
@@ -125,6 +127,9 @@ pub mod pallet {
 			Motions::<T>::try_mutate(motion_hash, |maybe_motion| {
 				// Motion already exists, just try to insert approval
 				if let Some(motion) = maybe_motion {
+					// Only proceed if the motion has not ended yet
+					ensure!(!Self::has_ended(&motion), Error::<T>::MotionHasEnded);
+
 					match motion.approvals.try_insert(auth_id) {
 						Ok(true) => Ok(()),
 						Ok(false) => Err(Error::<T>::MotionAlreadyApproved),
@@ -161,6 +166,9 @@ pub mod pallet {
 			let total_approvals = Motions::<T>::try_mutate(motion_hash, |maybe_motion| {
 				let motion = maybe_motion.as_mut().ok_or(Error::<T>::MotionNotFound)?;
 
+				// Only proceed if the motion has not ended yet
+				ensure!(!Self::has_ended(&motion), Error::<T>::MotionHasEnded);
+
 				motion
 					.approvals
 					.remove(&auth_id)
@@ -191,7 +199,7 @@ pub mod pallet {
 			let total_approvals = motion.approvals.len() as u32;
 
 			if Self::is_motion_approved(total_approvals) {
-				// Only allow closure if the motion has finished
+				// Only allow closure if the motion has ended
 				ensure!(Self::has_ended(&motion), Error::<T>::MotionTooEarlyToClose);
 
 				// Dispatch motion
@@ -199,14 +207,12 @@ pub mod pallet {
 				// Remove after dispatch
 				Self::motion_remove(motion_hash);
 			} else {
-				if Self::has_ended(&motion) {
-					// Motion expired without enough approvals
-					Self::deposit_event(Event::MotionExpired { motion_hash });
-					Self::motion_remove(motion_hash);
-				} else {
-					// Motion still ongoing
-					return Err(Error::<T>::MotionNotEnded.into());
-				}
+				// Only allow closure if the motion has ended
+				ensure!(Self::has_ended(&motion), Error::<T>::MotionNotEnded);
+
+				// Motion expired without enough approvals
+				Self::deposit_event(Event::MotionExpired { motion_hash });
+				Self::motion_remove(motion_hash);
 			}
 
 			Ok(Pays::No.into())
