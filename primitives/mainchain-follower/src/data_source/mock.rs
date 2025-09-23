@@ -73,7 +73,8 @@ impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSour
 		end.block_number += 1;
 		end.block_hash = rand::random();
 
-		let utxos = if start.block_number % 5 == 0 { mock_utxos(&start) } else { Vec::new() };
+		let utxos =
+			if start.block_number.is_multiple_of(5) { mock_utxos(&start) } else { Vec::new() };
 
 		Ok(ObservedUtxos { start, end, utxos })
 	}
