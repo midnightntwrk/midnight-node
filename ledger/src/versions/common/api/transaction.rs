@@ -219,7 +219,7 @@ impl UnshieldedUtxos {
 }
 
 impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
-	#[cfg(not(feature = "runtime-benchmarks"))]
+	// #[cfg(not(feature = "runtime-benchmarks"))]
 	pub(crate) fn validate(
 		&self,
 		ledger: &Ledger<D>,
@@ -245,14 +245,14 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 		Ok(())
 	}
 
-	#[cfg(feature = "runtime-benchmarks")]
-	pub(crate) fn validate(
-		&self,
-		_ledger: &Ledger<D>,
-		_block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		Ok(())
-	}
+	// #[cfg(feature = "runtime-benchmarks")]
+	// pub(crate) fn validate(
+	// 	&self,
+	// 	_ledger: &Ledger<D>,
+	// 	_block_context: &BlockContext,
+	// ) -> Result<(), LedgerApiError> {
+	// 	Ok(())
+	// }
 
 	pub(crate) fn hash(&self) -> Hash {
 		self.0.transaction_hash().0.0

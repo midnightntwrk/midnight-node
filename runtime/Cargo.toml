@@ -192,6 +192,7 @@ runtime-benchmarks = [
     "pallet-upgrade/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
+    "pallet-governed-map/runtime-benchmarks"
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",

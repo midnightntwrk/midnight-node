@@ -16,11 +16,9 @@
 use super::*;
 
 use frame_benchmarking::v2::*;
-use frame_support::{assert_ok, traits::EnsureOrigin};
+use frame_support::traits::{EnsureOrigin, Get};
 use frame_system::RawOrigin;
-use sp_runtime::traits::Hash;
-use sp_std::vec;
-
+use parity_scale_codec::Decode;
 #[benchmarks]
 mod benchmarks {
 	use super::*;
@@ -301,8 +299,10 @@ mod benchmarks {
 		// Create a motion that is not approved and not ended
 		let (motion_hash, _call) = create_motion_with_approvals::<T>(0);
 
-		let origin =
-			RawOrigin::Signed(T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_default());
+		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
+			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
+		});
+		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
 		motion_close(origin, motion_hash);
@@ -316,8 +316,10 @@ mod benchmarks {
 		// Create an ended motion that is not approved (less than required approvals)
 		let (motion_hash, _call) = create_ended_motion_with_approvals::<T>(0);
 
-		let origin =
-			RawOrigin::Signed(T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_default());
+		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
+			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
+		});
+		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
 		motion_close(origin, motion_hash);
@@ -335,8 +337,10 @@ mod benchmarks {
 		let num_approvals = T::MaxAuthorityBodies::get();
 		let (motion_hash, _call) = create_ended_motion_with_approvals::<T>(num_approvals);
 
-		let origin =
-			RawOrigin::Signed(T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_default());
+		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
+			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
+		});
+		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
 		motion_close(origin, motion_hash);

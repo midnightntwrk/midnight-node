@@ -184,6 +184,11 @@ where
 	fn try_origin(o: O) -> Result<Self::Success, O> {
 		Authorities::ensure_from_bodies(o)
 	}
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin() -> Result<O, ()> {
+		Err(())
+	}
 }
 
 pub struct FederatedAuthorityEnsureProportionAtLeast<const N: u32, const D: u32>;
