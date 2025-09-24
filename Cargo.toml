@@ -17,6 +17,7 @@ members = [
     "util/toolkit",
     "util/documented",
     "util/upgrader",
+    "tests/e2e",
     "docs",
 ]
 package = { license-file = "LICENSE" }
