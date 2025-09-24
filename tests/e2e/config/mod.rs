@@ -10,7 +10,6 @@ pub struct AppConfig {
 	pub payment_addr: String,
 	pub payment_addr_file: String,
 	pub payment_skey_file: String,
-	pub cnight_policy_file: String,
 	pub mapping_validator_policy_file: String,
 	pub auth_token_policy_file: String,
 }
@@ -22,7 +21,7 @@ pub fn load_config() -> AppConfig {
 		.add_source(config_rs::File::with_name(&config_path))
 		.build();
 	let mut cfg: AppConfig = settings.unwrap().try_deserialize().unwrap();
-	cfg.payment_addr = fs::read_to_string(format!("./config/{}/{}", env, cfg.payment_addr_file))
+	cfg.payment_addr = fs::read_to_string(&cfg.payment_addr_file)
 		.expect("Failed to read payment address file")
 		.trim()
 		.to_string();
