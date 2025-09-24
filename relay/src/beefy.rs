@@ -134,17 +134,16 @@ impl BeefyRelayChainProof {
 		let mut mmr_leaves = vec![];
 
 		let leaves = &self.consensus_proof.leaves.0;
+
 		let leaves: Vec<EncodableOpaqueLeaf> =
 			Decode::decode(&mut &leaves[..]).expect("failed to convert to mmrleaf");
 
 		for leaf in leaves {
 			let leaf_as_bytes = leaf.into_opaque_leaf().0;
-			let hex_opaque_leaf = hex::encode(&leaf_as_bytes);
-			println!("\nEncodableOpaqueLeaf hex: {hex_opaque_leaf}");
 
 			let mmr_leaf: MmrLeaf =
 				Decode::decode(&mut &leaf_as_bytes[..]).expect("failed to decode to mmrleaf");
-			let emcoded_mmr_leaf = mmr_leaf.encode();
+			//let emcoded_mmr_leaf = mmr_leaf.encode();
 			// let hex_mmr_leaf = hex::encode(&emcoded_mmr_leaf);
 			// println!("MMR Leaf hex: {hex_mmr_leaf}");
 			println!("The MMR Leaf: {mmr_leaf:#?}");
@@ -166,6 +165,9 @@ impl BeefyRelayChainProof {
 		let hex_proof = hex::encode(&leaf_proof_as_bytes.0);
 		println!("hex mmr proof: {hex_proof}");
 
-		Decode::decode(&mut &leaf_proof_as_bytes.0[..]).expect("Failed to decode to LeafProof")
+		let decoded =
+			Decode::decode(&mut &leaf_proof_as_bytes.0[..]).expect("Failed to decode to LeafProof");
+		println!("mmr proof: {decoded:#?}");
+		decoded
 	}
 }

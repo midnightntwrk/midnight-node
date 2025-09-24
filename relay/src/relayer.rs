@@ -18,7 +18,10 @@ use subxt::{
 	backend::rpc::RpcClient,
 	ext::{
 		codec::Decode,
-		subxt_rpcs::{client::RpcSubscription, rpc_params},
+		subxt_rpcs::{
+			client::{RpcParams, RpcSubscription},
+			rpc_params,
+		},
 	},
 };
 
@@ -75,10 +78,7 @@ impl Relayer {
 			println!("Commitment Hash: {commitment_hash}");
 			let _ = proof.mmr_root_hash();
 			let _ = proof.mmr_leaves();
-			let peak_nodes = proof.peak_nodes();
-			let node_hashes = proof.node_hashes();
-
-			self.check_proof_items(proof.block_hash(), &node_hashes, peak_nodes).await;
+			let _ = proof.peak_nodes();
 		}
 	}
 
@@ -103,6 +103,35 @@ impl Relayer {
 			signed_commitment: beef_signed_commitment,
 			validator_set,
 		}
+	}
+
+	pub async fn get_consensus_proof(
+		&self,
+		beefy_signed_commitment: &BeefySignedCommitment<Block, ECDSASig>,
+	) -> LeavesProof<H256> {
+		let block = beefy_signed_commitment.commitment.block_number;
+		println!("Block Number: {block}");
+
+		let at_block_hash = self.get_block_hash(block).await;
+
+		self.get_mmr_proof(block, at_block_hash).await
+	}
+
+	pub async fn verify_proof(
+		&self,
+		root_hash: H256,
+		leaves_proof: LeavesProof<H256>,
+	) -> Option<bool> {
+		let root_hash_as_hex = hex::encode(root_hash);
+
+		let mut rpc_params = RpcParams::new();
+		rpc_params.push(root_hash_as_hex).expect("could not insert root hash in params");
+		rpc_params.push(leaves_proof).expect("could not insert leaves proof in params");
+
+		self.rpc
+			.request::<Option<bool>>("mmr_verifyProofStateless", rpc_params)
+			.await
+			.expect("failed to get result of verifying proof")
 	}
 
 	pub async fn check_proof_items(
@@ -135,18 +164,6 @@ impl Relayer {
 		}
 	}
 
-	pub async fn get_consensus_proof(
-		&self,
-		beefy_signed_commitment: &BeefySignedCommitment<Block, ECDSASig>,
-	) -> LeavesProof<H256> {
-		let block = beefy_signed_commitment.commitment.block_number;
-		println!("Block Number: {block}");
-
-		let at_block_hash = self.get_block_hash(block).await;
-
-		self.get_mmr_proof(block, at_block_hash).await
-	}
-
 	async fn get_mmr_proof(
 		&self,
 		// The block to query for
@@ -165,7 +182,7 @@ impl Relayer {
 			.rpc
 			.request_raw("mmr_generateProof", params.build())
 			.await
-			.expect("failed to ger raw proof data");
+			.expect("failed to get raw proof data");
 
 		serde_json::from_str(raw_proof_data.get()).expect("failed to parse raw proof")
 	}
