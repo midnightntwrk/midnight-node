@@ -24,5 +24,4 @@ async fn register_for_dust_production() {
 	assert_eq!(utxos.len(), 2, "New wallet should have exactly two UTXOs after funding");
 
 	register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
-	subscribe_to_events().await;
 }
