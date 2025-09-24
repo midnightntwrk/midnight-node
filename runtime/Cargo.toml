@@ -77,6 +77,7 @@ pallet-session-validator-management.workspace = true
 pallet-session-validator-management-benchmarking = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots.workspace = true
+cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
 
 # Midnight Dependencies
 midnight-node-ledger.workspace = true

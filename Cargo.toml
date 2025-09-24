@@ -93,7 +93,7 @@ runtime-common = { path = "runtime/common", default-features = false }
 # Partnerchains dependencies
 partner-chains-db-sync-data-sources = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.7.1", features = ["block-source", "candidate-source"] }
 partner-chains-mock-data-sources = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.7.1" }
-cardano-serialization-lib = { default-features = false, version = "^14.1.1" }
+cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
 figment = { version = "0.10.19", features = ["env", "test"], default-features = false  }
 substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
