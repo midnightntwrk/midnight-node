@@ -161,3 +161,17 @@ impl From<Segment> for u16 {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use crate::WalletSeed;
+
+	#[test]
+	fn should_decode_wallet_seeds_in_different_formats() {
+		let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel";
+		let mnemonic_seed: WalletSeed = mnemonic.parse().unwrap();
+		let hex = "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9";
+		let hex_seed: WalletSeed = hex.parse().unwrap();
+		assert_eq!(mnemonic_seed, hex_seed);
+	}
+}
