@@ -20,6 +20,8 @@ config = "0.13"
 serde_json.workspace = true
 rand = "0.9.2"
 uplc = "1.1.9"
+subxt.workspace = true
+midnight-node-metadata.workspace = true
 
 # sidechain-domain = { path = "sidechain-domain" }
 
