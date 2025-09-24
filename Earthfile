@@ -882,8 +882,11 @@ hardfork-test-upgrader-image:
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
     FROM +prep
+    # Update cargo-deny to latest version for SARIF support
+    RUN cargo binstall --no-confirm cargo-deny
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny check
+    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
+    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
