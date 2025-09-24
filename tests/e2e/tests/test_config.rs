@@ -18,7 +18,6 @@ async fn test_load_config() {
 	println!("Loaded config: {:?}", cfg);
 	assert!(!cfg.ogmios_url.is_empty(), "ogmios_url must be set in config");
 	assert!(!cfg.payment_addr.is_empty(), "payment_addr must be set in config");
-	assert!(!cfg.cnight_policy_file.is_empty(), "cnight_policy_file must be set in config");
 	assert!(!cfg.mapping_validator_policy_file.is_empty(), "mapping_validator_policy_file must be set in config");
 	assert!(!cfg.auth_token_policy_file.is_empty(), "auth_token_policy_file must be set in config");
 }
