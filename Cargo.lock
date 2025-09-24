@@ -6985,6 +6985,7 @@ dependencies = [
  "async-trait",
  "bech32 0.11.0",
  "bip32",
+ "bip39",
  "derive-where",
  "futures",
  "hex",
