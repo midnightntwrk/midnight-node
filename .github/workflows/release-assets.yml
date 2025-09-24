@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       releaseTag:
-        description: 'Release tag to attach to'
+        description: "Release tag to attach to"
         required: true
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI

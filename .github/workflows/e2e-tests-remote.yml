@@ -7,12 +7,12 @@ on:
         type: string
         description: QA branch to use
         required: false
-        default: 'qa-qanet'
-      RESET: 
+        default: "qa-qanet"
+      RESET:
         type: choice
         description: Reset the cache
         required: true
-        default: 'false'
+        default: "false"
         options:
           - true
           - false
@@ -24,24 +24,24 @@ on:
           - node-dev-01
           - testnet-02
           - local
-        default: 'qanet'
+        default: "qanet"
   workflow_call:
     inputs:
       QA_BRANCH:
         type: string
         description: QA branch to use
         required: false
-        default: 'qa-qanet'
+        default: "qa-qanet"
       RESET:
         type: string
         description: Reset the cache
         required: true
-        default: 'false'
+        default: "false"
       TEST_ENV_INPUT:
         type: string
         description: Midnight network to use (testnet/testnet-02/qanet/node-dev-01/local)
         required: true
-        default: 'qanet'
+        default: "qanet"
     secrets:
       MIDNIGHTCI_PACKAGES_READ:
         required: true
@@ -70,13 +70,13 @@ jobs:
     name: Generate contract txs for ${{ inputs.TEST_ENV_INPUT || 'qanet' }}
     steps:
       - name: Log in to GitHub Container registry
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
-          registry: 'https://ghcr.io'
+          registry: "https://ghcr.io"
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           clean: false
 
@@ -106,7 +106,7 @@ jobs:
           name: .sync_cache-${{ env.TEST_ENV }}
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         if: ${{ env.TEST_ENV == 'local' }}
         with:
           registry: ghcr.io
@@ -127,13 +127,13 @@ jobs:
             IMAGE_TAG=$(./.github/scripts/get_node_version.sh "${{ env.RPC_URL }}")
           fi
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-        
+
       - name: Run txs generation for testnet-02
         if: ${{ env.TEST_ENV == 'testnet-02' }}
         run: |
           # image tag with testnet support
           docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/ --funding-seed ${{ secrets.TESTNET_FUNDING_SEED }}
-      
+
       - name: Run txs generation for qanet
         if: ${{ env.TEST_ENV == 'qanet' }}
         run: |
@@ -151,7 +151,7 @@ jobs:
           docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
 
       - name: Upload sync cache
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: .sync_cache-${{ env.TEST_ENV }}
@@ -159,7 +159,7 @@ jobs:
           include-hidden-files: true
 
       - name: Upload generated contract txs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-contract
           path: ./res/test-contract/
@@ -178,13 +178,13 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           ref: ${{ env.QA_BRANCH }}
           clean: false
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -231,7 +231,7 @@ jobs:
           . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV=$TEST_ENV --build-arg WS_URL=$WS_URL +node-e2e-test-remote
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: Test Artifacts

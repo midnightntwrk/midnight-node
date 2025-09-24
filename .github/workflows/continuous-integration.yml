@@ -8,7 +8,7 @@ env:
 
 on:
   pull_request:
-    branches: [ '**' ]
+    branches: ["**"]
   workflow_dispatch:
 permissions:
   id-token: write
@@ -50,14 +50,14 @@ jobs:
           allow-privileged: true
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Get current commit SHA
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -78,14 +78,14 @@ jobs:
           . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries
           path: artifacts-${{ matrix.arch }}/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries
@@ -102,10 +102,10 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -145,7 +145,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Get Version and git commit
         id: meta
@@ -159,7 +159,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -185,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -205,7 +205,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -228,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       # - name: Get Version and git commit
       #   id: meta
       #   run: |
@@ -251,7 +251,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -272,7 +272,7 @@ jobs:
     if: false # disabled while minting is not working
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -298,13 +298,13 @@ jobs:
           use-cache: false
           allow-privileged: true
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Get Version and git commit
         id: meta
@@ -349,7 +349,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -368,7 +368,7 @@ jobs:
     runs-on: ubuntu-latest-8-core-x64
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
       - name: Get Version and git commit
         id: meta
         run: |
@@ -395,12 +395,12 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c  #v2.62.2
+        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c #v2.62.2
         with:
           tool: just
 
@@ -482,7 +482,7 @@ jobs:
           echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
           echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
 
-      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1  #v2.8.1
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
 
       - name: Configure git for private repos
         run: |
@@ -514,7 +514,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           submodules: true
 
@@ -555,7 +555,6 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-
   ephemeral-environment-tests:
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
     # needs:
@@ -571,9 +570,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Get Version and git commit
         id: meta
@@ -585,12 +583,11 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
         with:
           role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
           aws-region: eu-west-1
           role-duration-seconds: 3600
-
 
       - name: Pull Kubeconfig and Set Locally
         run: |
