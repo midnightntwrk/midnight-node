@@ -95,7 +95,7 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
-		input.parse().unwrap()
+		input.parse().expect("failed to decode seed")
 	}
 }
 
