@@ -60,10 +60,10 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	let client = get_ogmios_client().await;
 	let utxos = client.query_utxos(&[payment_addr.clone().into()]).await.unwrap();
 	assert!(!utxos.is_empty(), "No UTXOs found for funding address");
+	let utxo = utxos.iter().max_by_key(|u| u.value.lovelace).expect("No UTXO with lovelace found");
 	let skey_json = fs::read_to_string(&cfg.payment_skey_file).expect("Failed to read payment.skey");
 	let skey_value: serde_json::Value = serde_json::from_str(&skey_json).expect("Invalid skey JSON");
 	let cbor_hex = skey_value["cborHex"].as_str().expect("No cborHex in skey JSON");
-	let utxo = &utxos[0];
 	let input_tx_hash = hex::encode(utxo.transaction.id);
 	let input_index = utxo.index;
 	let input_assets = build_asset_vector(&utxo);
