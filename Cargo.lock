@@ -7047,7 +7047,6 @@ name = "midnight-node-runtime"
 version = "0.2.3"
 dependencies = [
  "authority-selection-inherents",
- "cardano-serialization-lib",
  "frame-benchmarking",
  "frame-executive",
  "frame-support",
