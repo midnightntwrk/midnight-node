@@ -154,16 +154,15 @@ impl SingleTxBuilder {
 		let input_info =
 			InputInfo { origin: funding_seed, token_type: t_token(), value: total_required };
 
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> =
-			vec![Box::new(input_info)];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
 
-		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>>;
+		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>>;
 
 		// Outputs info
 		outputs_info = output_wallets
 			.iter()
 			.map(|wallet| {
-				let output: Box<dyn BuildOutput<DefaultDB> + Send + Sync> = Box::new(OutputInfo {
+				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
 					destination: wallet.clone(),
 					token_type: t_token(),
 					value: amount,
@@ -177,12 +176,11 @@ impl SingleTxBuilder {
 		let remaining_coins = input_amount - total_required;
 
 		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB> + Send + Sync> =
-			Box::new(OutputInfo {
-				destination: funding_seed,
-				token_type: t_token(),
-				value: remaining_coins,
-			});
+		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
+			destination: funding_seed,
+			token_type: t_token(),
+			value: remaining_coins,
+		});
 
 		outputs_info.push(output_info_refund);
 
@@ -195,7 +193,7 @@ impl SingleTxBuilder {
 		source_seed: WalletSeed,
 		output_wallets: Vec<UnshieldedWallet>,
 		amount_to_send_per_output: u128,
-	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>> {
+	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let total_required = amount_to_send_per_output * output_wallets.len() as u128;
 
 		let utxo_spend_info =
@@ -204,34 +202,30 @@ impl SingleTxBuilder {
 		let funding_wallet = context.clone().wallet_from_seed(source_seed);
 		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);
 
-		let input_info: Box<dyn BuildUtxoSpend<DefaultDB> + Send + Sync> =
-			Box::new(utxo_spend_info);
+		let input_info: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(utxo_spend_info);
 
 		// Outputs info
-		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB> + Send + Sync>> =
-			output_wallets
-				.iter()
-				.map(|wallet| {
-					let output: Box<dyn BuildUtxoOutput<DefaultDB> + Send + Sync> =
-						Box::new(UtxoOutputInfo {
-							value: amount_to_send_per_output,
-							owner: wallet.clone(),
-							token_type: NIGHT,
-						});
-					output
-				})
-				.collect();
+		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
+			.iter()
+			.map(|wallet| {
+				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+					value: amount_to_send_per_output,
+					owner: wallet.clone(),
+					token_type: NIGHT,
+				});
+				output
+			})
+			.collect();
 
 		let input_amount = min_match_utxo.value;
 		let remaining_nights = input_amount - total_required;
 
 		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
-		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB> + Send + Sync> =
-			Box::new(UtxoOutputInfo {
-				value: remaining_nights,
-				owner: source_seed,
-				token_type: NIGHT,
-			});
+		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+			value: remaining_nights,
+			owner: source_seed,
+			token_type: NIGHT,
+		});
 
 		if remaining_nights > 0 {
 			outputs_info.push(output_info_refund);
@@ -245,7 +239,7 @@ impl SingleTxBuilder {
 			fallible_unshielded_offer: None,
 			actions: vec![],
 		};
-		let boxed_intent: Box<dyn BuildIntent<DefaultDB> + Send + Sync> = Box::new(intent_info);
+		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
 
 		let mut intents = HashMap::new();
 		intents.insert(Segment::Fallible.into(), boxed_intent);

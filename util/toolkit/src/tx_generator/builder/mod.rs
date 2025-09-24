@@ -344,7 +344,7 @@ pub trait BuildTxsExt<R> {
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file
 #[async_trait]
-pub trait IntentToFile: BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send + Sync>> {
+pub trait IntentToFile: BuildTxsExt<Box<dyn BuildIntent<DefaultDB>>> {
 	async fn generate_intent_file(
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,

@@ -31,7 +31,7 @@ pub use deploy::*;
 pub use maintenance::*;
 
 #[async_trait]
-pub trait Contract<D: DB + Clone> {
+pub trait Contract<D: DB + Clone>: Send + Sync {
 	async fn deploy(&self, rng: &mut StdRng) -> ContractDeploy<D>;
 
 	fn resolver(&self) -> &'static Resolver;
@@ -67,7 +67,7 @@ pub trait Contract<D: DB + Clone> {
 }
 
 #[async_trait]
-pub trait BuildContractAction<D: DB + Clone> {
+pub trait BuildContractAction<D: DB + Clone>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,

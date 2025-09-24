@@ -72,14 +72,13 @@ impl BatchesBuilder {
 		let input_info =
 			InputInfo { origin: funding_seed, token_type: t_token(), value: 1_000_000_000_000_000 };
 
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> =
-			vec![Box::new(input_info)];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
 
 		// Outputs info
-		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>> = output_wallets
+		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
 			.iter()
 			.map(|wallet_seed| {
-				let output: Box<dyn BuildOutput<DefaultDB> + Send + Sync> = Box::new(OutputInfo {
+				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
 					destination: *wallet_seed,
 					token_type: t_token(),
 					value: self.coin_amount,
@@ -96,12 +95,11 @@ impl BatchesBuilder {
 		let remaining_coins = already_spent - total_coins_required;
 
 		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB> + Send + Sync> =
-			Box::new(OutputInfo {
-				destination: funding_seed,
-				token_type: t_token(),
-				value: remaining_coins,
-			});
+		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
+			destination: funding_seed,
+			token_type: t_token(),
+			value: remaining_coins,
+		});
 
 		outputs_info.push(output_info_refund);
 
@@ -115,7 +113,7 @@ impl BatchesBuilder {
 		funding_seed: WalletSeed,
 		output_wallets: Vec<WalletSeed>,
 		amount_to_send_per_output: u128,
-	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>> {
+	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let utxo_spend_info = UtxoSpendInfo {
 			value: self.initial_unshielded_intent_value,
 			owner: funding_seed,
@@ -128,19 +126,17 @@ impl BatchesBuilder {
 		let input_info = Box::new(utxo_spend_info);
 
 		// Outputs info
-		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB> + Send + Sync>> =
-			output_wallets
-				.iter()
-				.map(|wallet_seed| {
-					let output: Box<dyn BuildUtxoOutput<DefaultDB> + Send + Sync> =
-						Box::new(UtxoOutputInfo {
-							value: amount_to_send_per_output,
-							owner: *wallet_seed,
-							token_type: NIGHT,
-						});
-					output
-				})
-				.collect();
+		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
+			.iter()
+			.map(|wallet_seed| {
+				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+					value: amount_to_send_per_output,
+					owner: *wallet_seed,
+					token_type: NIGHT,
+				});
+				output
+			})
+			.collect();
 
 		let already_spent = min_match_utxo.value;
 		let remaining_nights =
@@ -165,7 +161,7 @@ impl BatchesBuilder {
 			fallible_unshielded_offer: None,
 			actions: vec![],
 		};
-		let boxed_intent: Box<dyn BuildIntent<DefaultDB> + Send + Sync> = Box::new(intent_info);
+		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
 
 		let mut intents = HashMap::new();
 		intents.insert(Segment::Fallible.into(), boxed_intent);
@@ -367,7 +363,7 @@ impl BuildTxs for BatchesBuilder {
 							// All funds that where intially received
 							value: self.coin_amount,
 						};
-						let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> =
+						let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> =
 							vec![Box::new(input_info)];
 
 						// Output info
@@ -376,7 +372,7 @@ impl BuildTxs for BatchesBuilder {
 							token_type: t_token(),
 							value: self.coin_amount,
 						};
-						let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>> =
+						let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> =
 							vec![Box::new(output_info)];
 
 						// Offer info

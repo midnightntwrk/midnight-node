@@ -52,7 +52,7 @@ impl ContractMaintenanceBuilder {
 #[async_trait]
 impl IntentToFile for ContractMaintenanceBuilder {}
 
-impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send + Sync>> for ContractMaintenanceBuilder {
+impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB>>> for ContractMaintenanceBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -61,7 +61,7 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send + Sync>> for ContractMain
 		self.rng_seed
 	}
 
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send + Sync> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for Maintenance");
 		let contract_address = self.contract_address(&self.contract_address);
 
@@ -72,15 +72,14 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send + Sync>> for ContractMain
 			counter: self.counter + 1,
 		});
 
-		let call_contract: Box<dyn BuildContractAction<DefaultDB> + Send + Sync> =
+		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
 				address: contract_address,
 				updates: vec![update],
 				counter: self.counter,
 			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send + Sync>> =
-			vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -110,10 +109,10 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

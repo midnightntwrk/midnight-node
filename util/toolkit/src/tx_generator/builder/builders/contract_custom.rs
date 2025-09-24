@@ -27,9 +27,7 @@ impl CustomContractBuilder {
 	}
 }
 
-impl BuildTxsExt<HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>>>
-	for CustomContractBuilder
-{
+impl BuildTxsExt<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>> for CustomContractBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -38,10 +36,9 @@ impl BuildTxsExt<HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>>>
 		self.rng_seed
 	}
 
-	fn create_intent_info(&self) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>> {
+	fn create_intent_info(&self) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		println!("Create intent info for contract custom");
-		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send + Sync>> =
-			HashMap::new();
+		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
 		let boxed_resolver =
@@ -99,10 +96,10 @@ impl BuildTxs for CustomContractBuilder {
 		tx_info.set_intents(intents);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send + Sync>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send + Sync>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

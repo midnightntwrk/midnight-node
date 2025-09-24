@@ -28,7 +28,7 @@ pub struct CallInfo<C: Contract<D>, D: DB + Clone> {
 }
 
 #[async_trait]
-impl<C: Contract<D> + Send + Sync, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
+impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,

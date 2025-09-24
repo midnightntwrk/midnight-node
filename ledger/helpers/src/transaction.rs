@@ -58,7 +58,7 @@ pub trait FromContext<D: DB + Clone> {
 
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
-	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D> + Send + Sync>>,
+	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D>>>,
 	pub guaranteed_coins: Option<OfferInfo<D>>,
 	pub fallible_coins: HashMap<u16, OfferInfo<D>>,
 	pub rng: StdRng,
@@ -108,15 +108,11 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		self.fallible_coins = offers;
 	}
 
-	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D> + Send + Sync>>) {
+	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D>>>) {
 		self.intents = intents;
 	}
 
-	pub fn add_intent(
-		&mut self,
-		segment_id: SegmentId,
-		intent: Box<dyn BuildIntent<D> + Send + Sync>,
-	) {
+	pub fn add_intent(&mut self, segment_id: SegmentId, intent: Box<dyn BuildIntent<D>>) {
 		if self.intents.insert(segment_id, intent).is_some() {
 			println!("WARN: value of segment_id({segment_id}) has been replaced.");
 		};
