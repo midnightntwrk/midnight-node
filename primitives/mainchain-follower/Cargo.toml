@@ -17,7 +17,7 @@ sp-blockchain = { workspace = true, optional = true }
 sp-runtime.workspace = true
 sp-inherents.workspace = true
 thiserror = { workspace = true, optional = true }
-cardano-serialization-lib = { workspace = true, optional = true }
+cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen", optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
