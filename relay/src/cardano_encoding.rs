@@ -109,7 +109,7 @@ impl ToPlutusData for SignedCommitment {
 impl SignedCommitment {
 	pub fn from_signed_commitment_and_validators(
 		signed_commitment: BeefySignedCommitment<u32, sp_consensus_beefy::ecdsa_crypto::Signature>,
-		validator_set: Vec<MidnBeefyPublic>,
+		validator_set: &[MidnBeefyPublic],
 	) -> Self {
 		let commitment = Commitment {
 			payloads: signed_commitment

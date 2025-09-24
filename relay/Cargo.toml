@@ -8,7 +8,6 @@ mmr-rpc = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
 sp-consensus-beefy = { workspace = true, default-features = true }
 sp-mmr-primitives = { workspace = true, default-features = true }
-sp-runtime = { workspace = true, default-features = true }
 subxt = { workspace = true, default-features = true }
 
 midnight-node-metadata = { workspace = true, default-features = true }

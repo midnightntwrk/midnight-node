@@ -6,6 +6,8 @@ use clap::Parser;
 use tokio::time::{Duration, sleep};
 
 pub use midnight_node_metadata::midnight_metadata as mn_meta;
+
+pub type Block = u32;
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
