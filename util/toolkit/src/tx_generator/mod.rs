@@ -91,9 +91,8 @@ where
 			Ok(source)
 		} else if let Some(url) = src.src_url {
 			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer = Arc::new(
-				Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?,
-			);
+			let indexer =
+				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
 			Ok(source)
 		} else {
