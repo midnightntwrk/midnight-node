@@ -351,13 +351,13 @@ where
 			.collect();
 
 		// Some transactions are communicated by the node through events, we need to get those as well
-		// TODO: get events correct ordering w.r.t to extrinsic order
 		let events = block
 			.events()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
 
+		// TODO: If more pallets use midnight_system events, the ordering of this will need to be updated
 		for event in events.iter() {
 			let event =
 				event.unwrap_or_else(|err| panic!("Error while iterating events: {}", err));
