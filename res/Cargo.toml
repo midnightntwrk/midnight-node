@@ -10,6 +10,7 @@ license-file.workspace = true
 [features]
 default = ["std"]
 chain-spec = [
+    "midnight-primitives-native-token-observation/std",
     "std",
     "sp-core/std",
     "sc-service",
@@ -32,6 +33,7 @@ sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
 sp-governed-map = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
+midnight-primitives-native-token-observation = { workspace = true, optional = true }
 
 [dev-dependencies]
 mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }

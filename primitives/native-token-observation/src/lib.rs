@@ -38,9 +38,10 @@ use scale_info::TypeInfo;
 	Debug,
 	Default,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub block_hash: [u8; 32],
 	/// Block number of the last processed block
 	pub block_number: u32,
@@ -48,10 +49,28 @@ pub struct CardanoPosition {
 	pub tx_index_in_block: u32,
 }
 
+impl core::fmt::Display for CardanoPosition {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{{ block_number: {}, block_hash: {}, block_index: {} }}",
+			self.block_number,
+			hex::encode(self.block_hash),
+			self.tx_index_in_block
+		)
+	}
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct TokenObservationConfig {
+	/// Address of the cNight mapping validator
 	pub mapping_validator_address: String,
+	/// Address of the glacier drop redemption validator
 	pub redemption_validator_address: String,
+	/// Policy ID of the currency token (i.e. cNIGHT)
 	pub policy_id: String,
+	/// Asset name of the currency token (i.e. cNIGHT)
 	pub asset_name: String,
 }
 
