@@ -1,48 +1,98 @@
-# Midnight Local Environment
+# Midnight Network Tools
 
-This stack is designed to run a 5 x node local environment for a Midnight chain. The environment is designed to be a self-contained, local development environment for testing and development of the Midnight Node and the Cardano main chain.
+A flexible set of tools for launching **well-known networks, custom networks, and dynamic local environments**, as well as **performing state changes** against those networks (image upgrades now, runtime upgrades and hard forks coming soon).  
 
-The local environment includes:
+This project provides a unified way to spin up Midnight resources for development, testing, and experimentation.  
 
-- 5 x Midnight Nodes
-- 1 x Cardano Node running private testnet with pre-configured genesis files (2 minutes epochs)
-- 1 x PostgreSQL database
-- 1 x Db-sync
-- 1 x Ogmios
-- 1 x Ubuntu / NodeJS image for running pc-contracts-cli
+---
 
-## Local env - step by step
+## Features
 
-- When first run, all images will be pulled from public repositories. This stage may take some time. The stack will then be built and run.
-- When the stack is running, the Cardano node begins block production. This is a private testnet and will not connect to the public Cardano network, but rather from a pre-configured genesis file.
-- Once the Cardano chain is synced, Ogmios and DB-Sync will in turn connect to the Cardano node node.socket and begin syncing the chain.
-- The pc-contracts-cli will insert D parameter values and register Midnight Node keys with the Cardano chain.
-- Once Postgres is populated with the required data, the Midnight nodes will begin block production after 2 main chain epochs.
+- Launch dockerized **well-known Midnight networks** (e.g. `qanet`, `devnet`, `testnet-02`, etc.)
+- Perform **state-changing operations** such as image upgrades (runtime upgrades and hard forks planned).
+- Launch a fully **dynamic local environment** with sped-up Cardano resources for quick testing of Partner Chains/Cardano capabilities.
 
-## Starting the environment
+---
 
-To start the environment, use the Earthly target in the Earthfile at the root of this repo:
+## Usage
 
+All functionality is available via npm/yarn scripts defined in `package.json`.
+
+### Launching Networks
+
+You can run different Midnight networks locally with:
+
+```bash
+npm run run:qanet
+npm run run:devnet
+npm run run:testnet-02
+npm run run:node-dev-01
 ```
+
+### Upgrading Networks
+
+You can also launch a network and immediately apply image upgrades:
+
+```bash
+npm run image-upgrade:qanet
+npm run image-upgrade:devnet
+npm run image-upgrade:testnet-02
+npm run image-upgrade:node-dev-01
+```
+
+### Stopping Networks
+
+To stop any running network:
+
+```bash
+npm run stop:qanet
+npm run stop:devnet
+npm run stop:testnet-02
+npm run stop:node-dev-01
+```
+
+### Local Environment
+
+In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.
+
+### Local env – step by step
+
+When first run, all images are pulled from public repositories. This may take some time.
+
+The stack is built and started. A Cardano node begins block production from a pre-configured genesis file (private testnet, no public connectivity).
+
+Once Cardano is synced, Ogmios and DB-Sync connect and begin syncing.
+
+pc-contracts-cli inserts D parameter values and registers Midnight Node keys with Cardano.
+
+Once Postgres is populated, Midnight nodes begin block production after 2 main chain epochs.
+
+Starting the environment
+
+To start the environment via Earthly:
+
+```bash
 earthly +start-local-env-latest
 ```
 
-To specify a released node image, use the `+start-local-env` target with the `NODE_IMAGE` arg:
-
-```
+Or specify a released node image:
+```bash
 earthly +start-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 ```
 
-We recommend using a visual Docker UI tool such as [lazydocker](https://github.com/jesseduffield/lazydocker) or [Docker Desktop](https://www.docker.com/products/docker-desktop/) for following the live logs and performance of all containers in the environment. Each component has been scripted to provide verbose logging of all configuration actions it is performing to demonstrate the end-to-end setup of a Midnight testnet
-
-## Stopping the environment
-
-When stopping the stack, it is mandatory to also wipe all volumes. The environment does not yet support persistent state. To tear down the environment and remove all volumes, use following Earthly targets:
-
+You can also use npm scripts:
+```bash
+npm run run:local-env
+npm run run:local-env-with-indexer
 ```
+
+Stopping the environment
+
+When stopping, volumes must also be wiped (persistent state is not supported yet).
+```bash
 earthly +stop-local-env-latest
+```
 # or
+```bash
 earthly +stop-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 ```
-
-Make sure you use the `stop` target with the same args as your `start` target.

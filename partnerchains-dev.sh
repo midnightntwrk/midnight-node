@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -euxo pipefail
+
 # Default configuration
 push_image=false
 local=false
@@ -41,9 +43,9 @@ else
     earthly +partnerchains-dev
 fi
 
-NODE_POD_NAME=${POD_NAME:-db-sync-cardano-node-01-0}
-POSTGRES_POD_GREP=${POSTGRES_POD_GREP:-psql-dbsync-cardano-01-db}
-DBSYNC_POD_NAME=${POD_NAME:-db-sync-cardano-01-0}
+NODE_POD_NAME=${POD_NAME:-db-sync-cardano-node-02-0}
+POSTGRES_POD_GREP=${POSTGRES_POD_GREP:-psql-dbsync-cardano-02-db}
+DBSYNC_POD_NAME=${POD_NAME:-db-sync-cardano-02-0}
 NAMESPACE=${NAMESPACE:-qanet}
 
 # Check kubectl is installed
@@ -71,7 +73,7 @@ fi
 function port_forward_pod {
     POD_NAME=$1
     PORT=$2
-    # Check cardano-node-01-0 pod is running
+    # Check cardano-node-02-0 pod is running
     if ! kubectl get pod "$POD_NAME" -n $NAMESPACE --context "$context_name"
     then
         echo "$POD_NAME pod is not running"
@@ -89,14 +91,19 @@ trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
 # Port forward node & socat to socket file
 port_forward_pod $NODE_POD_NAME 30000
-# Port forward dbsync
-port_forward_pod $postgres_pod_name 5432
-
-echo "Writing postgres connection string to pc-chain-config.json..."
 
 DBSYNC_ENV=$(kubectl exec $DBSYNC_POD_NAME -n $NAMESPACE --context "$context_name" -- env | cat)
 export DB_SYNC_POSTGRES_USER=$(env $DBSYNC_ENV bash -c 'echo $POSTGRES_USER')
-export DB_SYNC_POSTGRES_PASSWORD=$(env $DBSYNC_ENV bash -c 'echo $POSTGRES_PASSWORD')
+
+tsh db login --db-user "$DB_SYNC_POSTGRES_USER" --db-name cexplorer psql-dbsync-cardano-02-qanet
+
+# Get DB Config
+DB_CONNECTION_STRING=$(tsh db config --format=cmd psql-dbsync-cardano-02-qanet | awk '{gsub(/^"|"$/, "", $NF); print $NF}')
+DB_CONFIG=$(tsh db config --format=json psql-dbsync-cardano-02-qanet)
+
+CA_PATH=$(echo "$DB_CONFIG" | jq -r '.ca')
+CERT_PATH=$(echo "$DB_CONFIG" | jq -r '.cert')
+KEY_PATH=$(echo "$DB_CONFIG" | jq -r '.key')
 
 sleep 2
 
@@ -133,11 +140,21 @@ if [ "${mount_scripts,,}" == "true" ]; then
     fi
 fi
 
+# Replace paths in connection string with mounted paths
+export DB_SYNC_POSTGRES_CONNECTION_STRING=$(echo "$DB_CONNECTION_STRING" | \
+    sed "s|sslrootcert=[^&]*|sslrootcert=/db-keys/ca.pem|g" | \
+    sed "s|sslcert=[^&]*|sslcert=/db-keys/cert.crt|g" | \
+    sed "s|sslkey=[^&]*|sslkey=/db-keys/key.key|g")
+
 # Run container with the new image
 docker run -it \
-    --env DB_SYNC_POSTGRES_USER=$DB_SYNC_POSTGRES_USER \
-    --env DB_SYNC_POSTGRES_PASSWORD=$DB_SYNC_POSTGRES_PASSWORD \
+    --env DB_SYNC_POSTGRES_USER \
+    --env DB_SYNC_POSTGRES_CONNECTION_STRING \
+    --mount type=bind,source=$CA_PATH,target=/db-keys/ca.pem \
+    --mount type=bind,source=$CERT_PATH,target=/db-keys/cert.crt \
+    --mount type=bind,source=$KEY_PATH,target=/db-keys/key.key \
     --add-host=host.docker.internal:host-gateway \
+    --network host \
     --name $CONTAINER_NAME \
     -v $PWD/res:/res \
     ${mount_scripts_args[@]} \

@@ -1,4 +1,4 @@
-name: +audit (cargo deny)
+name: +audit (cargo deny + npm audit)
 
 on:
   pull_request:
@@ -31,7 +31,7 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Run cargo deny
+      - name: Run cargo deny and npm audit
         run: |
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
@@ -39,3 +39,24 @@ jobs:
           echo "  password x-oauth-basic" >> ./netrc
           export NETRC="$(pwd)/netrc"
           . ./.envrc && earthly --ci +audit
+
+      # TODO: Remove this checkout step once upload-sarif-github-action repo is made public
+      - name: Checkout Upload action repository
+        if: hashFiles('cargo-deny.sarif') != ''
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: midnightntwrk/upload-sarif-github-action
+          ref: main
+          path: upload-sarif-github-action
+          token: ${{ secrets.MIDNIGHTCI_REPO }}
+
+      - name: Upload cargo-deny SARIF to Checkmarx
+        if: hashFiles('cargo-deny.sarif') != ''
+        uses: ./upload-sarif-github-action
+        with:
+          sarif-file: cargo-deny.sarif
+          project-name: midnightntwrk/midnight-node
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+        continue-on-error: true
