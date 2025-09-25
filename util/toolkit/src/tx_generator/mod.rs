@@ -17,11 +17,7 @@ use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
-	ProofType, SignatureType,
-	indexer::Indexer,
-	remote_prover::RemoteProofServer,
-	sender::Sender,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	indexer::{Indexer, MidnightNodeClient}, remote_prover::RemoteProofServer, sender::Sender, serde_def::{DeserializedTransactionsWithContext, SourceTransactions}, ProofType, SignatureType
 };
 
 pub mod builder;
@@ -90,11 +86,8 @@ where
 
 			Ok(source)
 		} else if let Some(url) = src.src_url {
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-
-			let indexer = Arc::new(Indexer::<S, P>::new(url, api, src.fetch_concurrency).await?);
+			let indexer = Arc::new(Indexer::<S, P>::new(url, midnight_node_client, src.fetch_concurrency).await?);
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
-
 			Ok(source)
 		} else {
 			unreachable!()
