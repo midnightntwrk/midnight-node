@@ -93,7 +93,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.89-bookworm
+    FROM rust:1.90-bookworm
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -234,11 +234,61 @@ rebuild-genesis-state:
             && cp out/zswap_*.mn /res/test-zswap \
         ; fi
 
+    RUN mkdir -p /res/test-tx-deserialize
+    RUN mkdir -p out /res/test-tx-deserialize \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit show-address \
+                --network $NETWORK \
+                --seed "0000000000000000000000000000000000000000000000000000000000000002" \
+                --unshielded \
+                > out/dest_addr.mn \
+            && /midnight-node-toolkit generate-txs \
+                --src-files out/genesis_block_${SUFFIX}.mn \
+                --dest-file out/serialized_tx_with_context.mn \
+                --to-bytes \
+                single-tx \
+                --unshielded-amount 500 \
+                --rng-seed "$RNG_SEED" \
+                --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+                --destination-address $(cat out/dest_addr.mn) \
+            && /midnight-node-toolkit get-tx-from-context \
+                --network $NETWORK \
+                --src-file out/serialized_tx_with_context.mn \
+                --dest-file out/serialized_tx_no_context.mn \
+                --from-bytes \
+            && cp out/serialized_* /res/test-tx-deserialize \
+        ; fi
+
+    RUN mkdir -p /res/test-data/contract/counter \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                -c /toolkit-js/test/contract/contract.config.ts \
+                --output-intent /res/test-data/contract/counter/deploy.bin \
+                --output-private-state /res/test-data/contract/counter/initial_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
+                --intent-files /res/test-data/contract/counter/deploy.bin \
+                --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/counter/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
+                --network $NETWORK \
+                --dest-file /res/test-data/contract/counter/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
+                --dest-file /res/test-data/contract/counter/contract_state.mn \
+        ; fi
+
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
     SAVE ARTIFACT --if-exists /res/test-zswap/* AS LOCAL res/test-zswap/
+    SAVE ARTIFACT --if-exists /res/test-tx-deserialize/* AS LOCAL res/test-tx-deserialize/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -348,7 +398,7 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.89-bookworm
+    FROM rust:1.90-bookworm
 
     # Install build dependencies
     RUN apt-get update -qq && \
@@ -381,7 +431,7 @@ node-ci-image-single-platform:
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-chef
+    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
 
     # subwasm can be used to diff between runtimes
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.21.3
@@ -391,7 +441,7 @@ node-ci-image-single-platform:
 
     # SAVE IMAGE under the rust version used.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.89"
+    ENV IMAGE_TAG="1.90"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -402,7 +452,7 @@ node-ci-image-single-platform:
 prep-no-copy:
     ARG NATIVEARCH
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.89-$NATIVEARCH
+    FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.90-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
@@ -415,9 +465,9 @@ prep-no-copy:
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -452,31 +502,6 @@ toolkit-js-prep-local:
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
     SAVE ARTIFACT /toolkit-js/mint/out AS LOCAL ./util/toolkit-js/mint/out
 
-# toolkit-generate-test-data re-generates test data used for the toolkit tests
-toolkit-generate-test-data:
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    FROM +toolkit-image
-
-    COPY res res
-
-    RUN mkdir /out
-    RUN /midnight-node-toolkit generate-intent deploy -c /toolkit-js/test/contract/contract.config.ts \
-        --output-intent /out/deploy.bin --output-private-state /out/initial_state.json
-
-    RUN /midnight-node-toolkit send-intent --src-files /res/genesis/genesis_block_undeployed.mn \
-        --intent-files /out/deploy.bin --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
-        --rng-seed 0000000000000000000000000000000000000000000000000000000000000037 \
-        --to-bytes --dest-file /out/deploy_tx.mn
-
-    RUN /midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed \
-        --dest-file /out/contract_address.mn
-
-    RUN /midnight-node-toolkit contract-state --src-files /res/genesis/genesis_block_undeployed.mn /out/deploy_tx.mn \
-        --contract-address $(cat /out/contract_address.mn) \
-        --dest-file /out/contract_state.mn
-
-    SAVE ARTIFACT /out AS LOCAL ./util/toolkit/test-data/contract/counter
-
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
@@ -510,9 +535,9 @@ check-rust:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx docs \
-        ledger node pallets primitives README.md res runtime \
-	metadata rustfmt.toml util .
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util .
 
     RUN cargo fmt --all -- --check
 
@@ -779,38 +804,60 @@ hardfork-test-upgrader-image:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
-audit-including-ignores:
+# audit-rust checks for rust security vulnerabilities
+audit-rust:
     FROM +prep
-    # Run with no ignores so someone looking through the output can see the warnings
-    RUN --no-cache cargo audit -c always || true
+    # Update cargo-deny to latest version for SARIF support
+    RUN cargo binstall --no-confirm cargo-deny
+    # See deny.toml for which advisories are getting ignored
+    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
+    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
 
-# audit checks for rust security vulnerabilities
+audit-npm:
+    ARG DIRECTORY
+    FROM node:22-bookworm
+    COPY ${DIRECTORY} ${DIRECTORY}
+    WORKDIR ${DIRECTORY}
+    RUN corepack enable
+    RUN --no-cache npm audit
+
+audit-yarn:
+    ARG DIRECTORY
+    FROM node:22-bookworm
+    COPY metadata/static metadata/static
+    COPY ${DIRECTORY} ${DIRECTORY}
+    WORKDIR ${DIRECTORY}
+    RUN corepack enable
+    RUN yarn install --immutable
+    RUN --no-cache yarn npm audit
+
+audit-local-environment:
+    BUILD +audit-npm --DIRECTORY=local-environment/
+
+audit-toolkit-js:
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+
+audit-tests:
+    BUILD +audit-yarn --DIRECTORY=tests/
+
+audit-ui:
+    BUILD +audit-yarn --DIRECTORY=ui/
+
+audit-ui-tests:
+    BUILD +audit-yarn --DIRECTORY=ui/tests/
+
+# audit-nodejs checks for javascript security vulerabilities
+audit-nodejs:
+    BUILD +audit-local-environment
+    BUILD +audit-toolkit-js
+    BUILD +audit-tests
+    BUILD +audit-ui
+    BUILD +audit-ui-tests
+
+# audit checks for security vulnerabilities
 audit:
-    FROM +audit-including-ignores
-    # No known fix yet:
-    # RUSTSEC-2023-0071 rsa crate indirectly used by partner-chains-db-sync-data-sources
-    #
-    # Things that should be fixed by an upcoming sidechains/substrate upgrade:
-    # RUSTSEC-2024-0336 rustls 0.20.9 used by libp2p. newer libp2p fixes this.
-    #
-    # Unmaintained crates (no known vulnerabilites):
-    # RUSTSEC-2021-0139 ansi_term unmaintained: no fix available yet (Aug24).
-    # RUSTSEC-2020-0168 mach unmaintained: longterm mitigation: switching wasm to risc.
-    # RUSTSEC-2022-0061 parity-wasm unmaintained: longterm mitigation: switching wasm to risc.
-    # RUSTSEC-2024-0320 yaml-rust crate used by config unmaintained.
-    #
-    # False positives:
-    # RUSTSEC-2023-0071 rsa sidechannel. False positive: in a feature we don't use: `cargo tree | rg rsa` 0 hits.
-    RUN --no-cache cargo audit -c always \
-      --ignore RUSTSEC-2023-0071 \
-      --ignore RUSTSEC-2024-0336 \
-      --ignore RUSTSEC-2023-0071 \
-      --ignore RUSTSEC-2022-0061 \
-      --ignore RUSTSEC-2021-0139 \
-      --ignore RUSTSEC-2020-0168 \
-      --ignore RUSTSEC-2023-0033 \
-      --ignore RUSTSEC-2024-0320
-    RUN echo https://input-output.atlassian.net/browse/PM-10374 has been rised for fixing warning RUSTSEC-2023-0033
+    BUILD +audit-rust
+    BUILD +audit-nodejs
 
 # partnerchains-dev contains tools for working with partner chains contracts on Cardano
 partnerchains-dev:

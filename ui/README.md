@@ -42,9 +42,9 @@ and finally environment variables, with precedence.
 Some environment variables are read and integrated in the template `config` object,
 including:
 
-- `REACT_APP_PROVIDER_SOCKET` overriding `config[PROVIDER_SOCKET]`
+- `VITE_PROVIDER_SOCKET` overriding `config[PROVIDER_SOCKET]`
 
-More on [React environment variables](https://create-react-app.dev/docs/adding-custom-environment-variables).
+More on [Vite environment variables](https://vite.dev/guide/env-and-mode.html#env-variables).
 
 When writing and deploying your own front end, you should configure:
 

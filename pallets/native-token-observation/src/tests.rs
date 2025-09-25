@@ -453,11 +453,14 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::NativeTokenObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored = NativeTokenObservation::get_registrations_for(cardano_addr.clone());
+		let stored: Vec<DustAddress> = Mappings::<Test>::get(cardano_addr.clone())
+			.into_iter()
+			.map(|r| r.dust_address)
+			.collect();
 		let expected: [u8; 32] =
 			dust_addr.as_slice().try_into().expect("dust addr must be 32 bytes");
 
-		assert_eq!(stored.into_inner(), vec![expected]);
+		assert_eq!(stored, vec![expected]);
 
 		let last_processed_block = NextCardanoPosition::<Test>::get();
 		assert_eq!(

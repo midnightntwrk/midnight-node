@@ -39,7 +39,7 @@ impl<D> OutputInfo<D> {
 	}
 }
 
-pub trait BuildOutput<D: DB + Clone>: TokenInfo {
+pub trait BuildOutput<D: DB + Clone>: TokenInfo + Send + Sync {
 	fn build(&self, rng: &mut StdRng, context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D>;
 }
 
