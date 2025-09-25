@@ -19,11 +19,7 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::{
-	fs,
-	path::{Path, PathBuf},
-	sync::Arc,
-};
+use std::{fs, path::Path, sync::Arc};
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,

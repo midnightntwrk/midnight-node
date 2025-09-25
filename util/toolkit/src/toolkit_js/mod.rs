@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use clap::{
 	Args,
-	builder::{PathBufValueParser, TypedValueParser, ValueParser},
-	value_parser,
+	builder::{PathBufValueParser, TypedValueParser},
 };
 use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
 mod encoded_zswap_local_state;

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use midnight_node_ledger_helpers::{
-	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, HashOutput, LedgerContext, Nonce,
-	Output, PERSISTENT_HASH_BYTES, ProofPreimage, Segment, ShieldedTokenType, TokenInfo,
-	WalletState,
+	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, Deserializable, HashOutput,
+	LedgerContext, Nonce, Output, PERSISTENT_HASH_BYTES, ProofPreimage, Recipient, Serializable,
+	ShieldedTokenType, TokenInfo, WalletState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,17 +37,18 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 			value: self.encoded_output.coin_info.value,
 		};
 
-		if self.encoded_output.recipient.is_left {
-			Output::new(rng, &coin_info, self.segment, &self.encoded_output.recipient.left.0, None)
-				.expect("failed to construct output")
-		} else {
-			Output::new_contract_owned(
-				rng,
-				&coin_info,
-				self.segment,
-				self.encoded_output.recipient.right.0,
-			)
-			.expect("failed to construct output")
+		println!("coin_info: {coin_info:?}");
+		let recipient: Recipient = self.encoded_output.recipient.clone().into();
+
+		match recipient {
+			Recipient::User(public_key) => {
+				Output::new(rng, &coin_info, self.segment, &public_key, None)
+					.expect("failed to construct output")
+			},
+			Recipient::Contract(contract_address) => {
+				Output::new_contract_owned(rng, &coin_info, self.segment, contract_address)
+					.expect("failed to construct output")
+			},
 		}
 	}
 }
@@ -84,12 +85,25 @@ pub struct EncodedRecipient {
 	right: EncodedContractAddress,
 }
 
+impl From<EncodedRecipient> for Recipient {
+	fn from(value: EncodedRecipient) -> Self {
+		if value.is_left {
+			Recipient::User(value.left.0)
+		} else {
+			Recipient::Contract(value.right.0)
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct EncodedContractAddress(ContractAddress);
 
 impl From<&EncodedContractAddress> for Vec<u8> {
 	fn from(value: &EncodedContractAddress) -> Self {
-		value.0.0.0.to_vec()
+		let mut bytes = Vec::new();
+		<ContractAddress as Serializable>::serialize(&value.0, &mut bytes)
+			.expect("failed to serialize contract address");
+		bytes
 	}
 }
 
@@ -97,9 +111,9 @@ impl TryFrom<Vec<u8>> for EncodedContractAddress {
 	type Error = String;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-		Ok(EncodedContractAddress(ContractAddress(HashOutput(
-			value.try_into().map_err(|_| "failed to convert to coin_public".to_string())?,
-		))))
+		let contract_address = <ContractAddress as Deserializable>::deserialize(&mut &value[..], 0)
+			.map_err(|e| format!("failed deserializing encoded contract address: {e}"))?;
+		Ok(EncodedContractAddress(contract_address))
 	}
 }
 
@@ -108,7 +122,10 @@ pub struct EncodedCoinPublic(CoinPublicKey);
 
 impl From<&EncodedCoinPublic> for Vec<u8> {
 	fn from(value: &EncodedCoinPublic) -> Self {
-		value.0.0.0.to_vec()
+		let mut bytes = Vec::new();
+		<CoinPublicKey as Serializable>::serialize(&value.0, &mut bytes)
+			.expect("failed to serialize contract address");
+		bytes
 	}
 }
 
@@ -116,16 +133,17 @@ impl TryFrom<Vec<u8>> for EncodedCoinPublic {
 	type Error = String;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-		Ok(EncodedCoinPublic(CoinPublicKey(HashOutput(
-			value.try_into().map_err(|_| "failed to convert to coin_public".to_string())?,
-		))))
+		let coin_public = <CoinPublicKey as Deserializable>::deserialize(&mut &value[..], 0)
+			.map_err(|e| format!("failed deserializing coin public key: {e}"))?;
+		Ok(EncodedCoinPublic(coin_public))
 	}
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodedZswapLocalState {
-	pub coin_public_key: Vec<u8>,
+	#[serde(with = "bytes")]
+	pub coin_public_key: EncodedCoinPublic,
 	#[serde(with = "string")]
 	pub current_index: u64,
 	pub inputs: Vec<EncodedQualifiedShieldedCoinInfo>,
@@ -135,7 +153,7 @@ pub struct EncodedZswapLocalState {
 impl EncodedZswapLocalState {
 	pub fn from_zswap_state<D: DB>(value: WalletState<D>, coin_public: CoinPublicKey) -> Self {
 		Self {
-			coin_public_key: coin_public.0.0.to_vec(),
+			coin_public_key: EncodedCoinPublic(coin_public),
 			current_index: value.first_free,
 			inputs: vec![],
 			outputs: value
@@ -184,7 +202,12 @@ mod string {
 
 mod bytes {
 	use core::fmt::Display;
-	use serde::{Deserialize, Deserializer, Serializer, de};
+	use serde::{Deserialize, Deserializer, Serializer, de, ser::SerializeMap};
+
+	#[derive(Deserialize)]
+	pub struct BytesSerDe {
+		bytes: Vec<u8>,
+	}
 
 	pub fn serialize<T, S>(value: T, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -192,7 +215,9 @@ mod bytes {
 		S: Serializer,
 	{
 		let value_bytes: Vec<u8> = value.into();
-		serializer.serialize_bytes(&value_bytes)
+		let mut map = serializer.serialize_map(Some(1))?;
+		map.serialize_entry("bytes", &value_bytes)?;
+		map.end()
 	}
 
 	pub fn deserialize<'de, T, D>(deserializer: D) -> Result<T, D::Error>
@@ -201,6 +226,7 @@ mod bytes {
 		T::Error: Display,
 		D: Deserializer<'de>,
 	{
-		Vec::<u8>::deserialize(deserializer)?.try_into().map_err(de::Error::custom)
+		let bytes_struct = BytesSerDe::deserialize(deserializer)?;
+		bytes_struct.bytes.try_into().map_err(de::Error::custom)
 	}
 }

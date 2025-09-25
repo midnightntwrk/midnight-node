@@ -81,7 +81,7 @@ echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-files "/out/$deploy_intent_filename" --compiled-contract-dir contract/managed/counter \
+    send-intent --intent-file "/out/$deploy_intent_filename" --compiled-contract-dir contract/managed/counter \
     --to-bytes --dest-file "/out/$deploy_tx_filename"
 
 echo "Send deploy tx"
@@ -123,7 +123,7 @@ echo "Generate and send mint tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-files "/out/$mint_intent_filename" --compiled-contract-dir /toolkit-js/contract/out
+    send-intent --intent-file "/out/$mint_intent_filename" --zswap-state-file "/out/$mint_zswap_filename" --compiled-contract-dir /toolkit-js/contract/out
 
 show_wallet_output=$(docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts $TOOLKIT_IMAGE \
     show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001")

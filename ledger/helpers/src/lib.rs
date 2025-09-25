@@ -26,6 +26,7 @@ pub use coin_structure::{
 		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
+	transfer::Recipient,
 };
 pub use midnight_serialize::{self as mn_ledger_serialize, Deserializable, Serializable, Tagged};
 pub use onchain_runtime::{

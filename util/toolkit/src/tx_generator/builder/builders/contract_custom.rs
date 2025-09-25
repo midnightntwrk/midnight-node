@@ -94,7 +94,7 @@ impl BuildTxs for CustomContractBuilder {
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		println!("Building Txs for CustomContract");
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
 
 		// Use segment 1 for the custom contract
 		let contract_segment = 1;
@@ -114,10 +114,9 @@ impl BuildTxs for CustomContractBuilder {
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = Vec::new();
 		if let Some(zswap_state) = zswap_state {
 			for encoded_output in zswap_state.outputs.into_iter() {
-				outputs_info.push(Box::new(EncodedOutputInfo {
-					encoded_output,
-					segment: contract_segment,
-				}));
+				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
+				// transcript
+				outputs_info.push(Box::new(EncodedOutputInfo { encoded_output, segment: 0 }));
 			}
 		}
 

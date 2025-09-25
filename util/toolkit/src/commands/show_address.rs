@@ -1,6 +1,6 @@
 use crate::{
 	DefaultDB, DerivationPath, IntoWalletAddress, NetworkId, Role, ShieldedWallet,
-	UnshieldedWallet, WalletAddress, WalletSeed,
+	UnshieldedWallet, WalletSeed,
 };
 use clap::Args;
 use midnight_node_ledger_helpers::serialize;

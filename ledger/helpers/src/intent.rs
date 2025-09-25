@@ -12,19 +12,14 @@
 // limitations under the License.
 
 use crate::{
-	BuildContractAction, ContractEffects, DB, DUST_EXPECTED_FILES, DefaultDB, DustResolver,
-	FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
+	BuildContractAction, ContractEffects, DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent,
+	KeyLocation, LedgerContext, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
 	PedersenRandomness, ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp,
 	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
 use mn_ledger::structure::ContractAction;
-use std::{
-	fs::File,
-	io::{self, Read},
-	path::Path,
-	sync::Arc,
-};
+use std::{io, path::Path, sync::Arc};
 use transient_crypto::proofs::ProvingKeyMaterial;
 
 pub type SegmentId = u16;
@@ -122,16 +117,16 @@ impl<D: DB + Clone> IntentCustom<D> {
 		Ok(Self { intent, resolver })
 	}
 
-	pub fn find_effects(&self) -> (Vec<ContractEffects<D>>, Vec<ContractEffects<D>>) {
-		let mut guaranteed_effects: Vec<ContractEffects<D>> = Vec::new();
-		let mut fallible_effects: Vec<ContractEffects<D>> = Vec::new();
+	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
+		let mut guaranteed_effects: Option<ContractEffects<D>> = None;
+		let mut fallible_effects: Option<ContractEffects<D>> = None;
 		for action in self.intent.actions.iter() {
 			if let ContractAction::Call(ref c) = *action.clone() {
 				if let Some(ref t) = c.guaranteed_transcript {
-					guaranteed_effects.push(t.effects.clone());
+					guaranteed_effects = Some(t.effects.clone());
 				}
 				if let Some(ref t) = c.fallible_transcript {
-					fallible_effects.push(t.effects.clone());
+					fallible_effects = Some(t.effects.clone());
 				}
 			}
 		}
