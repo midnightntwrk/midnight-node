@@ -40,8 +40,6 @@ services:
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "32000:32000"
-  
-  
 
   kupo:
     container_name: kupo
@@ -67,7 +65,7 @@ services:
 
   ogmios:
     container_name: ogmios
-    image: ${OGMIOS_IMAGE} 
+    image: ${OGMIOS_IMAGE}
     platform: linux/amd64
     depends_on:
       cardano-node-1:
@@ -269,7 +267,8 @@ services:
     container_name: nats
     image: "nats:2.11.8@sha256:e7ecc3cf81f4ccada9d24f8466d157ff472c20a12a5f8dddaeb26d71e7b42ee1"
     restart: "always"
-    command: ["--user", "indexer", "--pass", "${APP__INFRA__PUB_SUB__PASSWORD}", "-js"]
+    command:
+      ["--user", "indexer", "--pass", "${APP__INFRA__PUB_SUB__PASSWORD}", "-js"]
     ports:
       - "4222:4222"
     volumes:
@@ -349,7 +348,7 @@ services:
   midnight-node-3:
     container_name: midnight-node-3
     image: ${MIDNIGHT_NODE_IMAGE}
-    platform: ${ARCHITECTURE}    
+    platform: ${ARCHITECTURE}
     depends_on:
       midnight-setup:
         condition: service_completed_successfully

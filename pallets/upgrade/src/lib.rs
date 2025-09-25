@@ -304,7 +304,7 @@ pub mod pallet {
 
 		// Logic to perform at the end of every session
 		pub fn on_session_end(session: SessionIndex) {
-			if session > 1 && session % T::SessionsPerVotingPeriod::get() == 0 {
+			if session > 1 && session.is_multiple_of(T::SessionsPerVotingPeriod::get()) {
 				// Get votes, if there are valid ones
 				let votes = RuntimeUpgradeVotes::<T>::get();
 				let max_votes = votes.iter().max_set_by_key(|i| i.1);

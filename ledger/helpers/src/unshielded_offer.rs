@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 #[derive(Default)]
 pub struct UnshieldedOfferInfo<D: DB + Clone> {
-	pub inputs: Vec<Box<dyn BuildUtxoSpend<D> + Send>>,
-	pub outputs: Vec<Box<dyn BuildUtxoOutput<D> + Send>>,
+	pub inputs: Vec<Box<dyn BuildUtxoSpend<D>>>,
+	pub outputs: Vec<Box<dyn BuildUtxoOutput<D>>>,
 }
 
 impl<D: DB + Clone> UnshieldedOfferInfo<D> {
