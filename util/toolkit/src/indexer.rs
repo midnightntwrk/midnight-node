@@ -14,7 +14,6 @@
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
 use itertools::Itertools;
-use midnight_node_metadata::midnight_metadata::runtime_types::bounded_collections::bounded_vec::BoundedVec;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeMap, VecDeque},
@@ -51,21 +50,19 @@ fn fatal(msg: String) {
 /// Shared Midnight node client to manage communication, node types, and common queries. Exposes common subxt interfaces
 pub struct MidnightNodeClient {
 	pub api: OnlineClient<PolkadotConfig>,
-	pub rpc: LegacyRpcMethods<PolkadotConfig>
+	pub rpc: LegacyRpcMethods<PolkadotConfig>,
 }
 
 impl MidnightNodeClient {
 	pub async fn new(rpc_url: &str) -> Result<Self, IndexerError> {
 		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
-		let rpc: LegacyRpcMethods<PolkadotConfig> = LegacyRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
+		let rpc: LegacyRpcMethods<PolkadotConfig> =
+			LegacyRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
 		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(rpc_url).await?;
-		Ok(MidnightNodeClient {
-			rpc,
-			api
-		})
+		Ok(MidnightNodeClient { rpc, api })
 	}
 
-	pub async fn get_network_id(&self,) -> Result<NetworkId, IndexerError> {
+	pub async fn get_network_id(&self) -> Result<NetworkId, IndexerError> {
 		let storage_query = mn_meta::storage().midnight().network_id();
 		let network_id_vec = self.api.storage().at_latest().await?.fetch(&storage_query).await?;
 
@@ -84,7 +81,6 @@ impl MidnightNodeClient {
 
 		Ok(network_id)
 	}
-
 }
 
 #[derive(Error, Debug)]
@@ -231,10 +227,9 @@ where
 {
 	state: Mutex<InternalState<S, P>>,
 	looping: AtomicBool,
-	rpc_url: String,
 	fetch_concurrency: usize,
 	notify_sync: Notify,
-	node_client: MidnightNodeClient
+	node_client: MidnightNodeClient,
 }
 
 impl<
@@ -248,14 +243,12 @@ where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
 	pub async fn new(
-		rpc_url: String,
 		node_client: MidnightNodeClient,
 		fetch_concurrency: usize,
 	) -> Result<Self, IndexerError> {
 		Ok(Indexer {
 			state: Mutex::new(InternalState::new()),
 			looping: AtomicBool::new(false),
-			rpc_url,
 			fetch_concurrency,
 			notify_sync: Notify::new(),
 			node_client,
@@ -308,8 +301,8 @@ where
 				matches!(
 					call,
 					mn_meta::Call::Midnight(_)
-					| mn_meta::Call::MidnightSystem(_)
-					| mn_meta::Call::Timestamp(_)
+						| mn_meta::Call::MidnightSystem(_)
+						| mn_meta::Call::Timestamp(_)
 				)
 			})
 			.collect::<Result<Vec<_>, subxt::Error>>()?;
@@ -337,15 +330,15 @@ where
 						.unwrap_or_else(|err| panic!("Error deserializing tx: {}", err));
 					Some(SerdeTransaction::Midnight(tx))
 				},
-			 mn_meta::Call::MidnightSystem(
-			         mn_meta::midnight_system::Call::send_mn_system_transaction {
-			                 midnight_system_tx,
-			         },
-			 ) => {
-			         let tx = tagged_deserialize(&mut midnight_system_tx.as_slice())
-			                 .unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
-			         Some(SerdeTransaction::System(tx))
-			 },
+				mn_meta::Call::MidnightSystem(
+					mn_meta::midnight_system::Call::send_mn_system_transaction {
+						midnight_system_tx,
+					},
+				) => {
+					let tx = tagged_deserialize(&mut midnight_system_tx.as_slice())
+						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
+					Some(SerdeTransaction::System(tx))
+				},
 				_ => None,
 			})
 			.collect();
@@ -356,20 +349,21 @@ where
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
-
 		// TODO: If more pallets use midnight_system events, the ordering of this will need to be updated
 		for event in events.iter() {
-			let event =
-				event.unwrap_or_else(|err| panic!("Error while iterating events: {}", err));
+			let event = event.unwrap_or_else(|err| panic!("Error while iterating events: {}", err));
 
 			let system_event = event
 				.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>()
-				.unwrap_or_else(|err| panic!("Error decoding SystemTransactionApplied event: {}", err));
+				.unwrap_or_else(|err| {
+					panic!("Error decoding SystemTransactionApplied event: {}", err)
+				});
 
 			if let Some(system_event) = system_event {
 				let mut serialized = system_event.0.serialized_system_transaction.as_slice();
-				let tx = tagged_deserialize(&mut serialized)
-					.unwrap_or_else(|err| panic!("Error deserializing system tx from event: {}", err));
+				let tx = tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
+					panic!("Error deserializing system tx from event: {}", err)
+				});
 				transactions.push(SerdeTransaction::System(tx));
 			}
 		}
@@ -458,7 +452,9 @@ where
 
 			if i < self.fetch_concurrency - 1 {
 				let block_number = (from.1 as f32 - (block_div * (i + 1) as f32)) as u64;
-				let block = self.node_client.rpc
+				let block = self
+					.node_client
+					.rpc
 					.chain_get_block_hash(Some(
 						subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
 					))
@@ -536,7 +532,6 @@ where
 		tx_start: oneshot::Sender<usize>,
 		mut rx_stop: oneshot::Receiver<bool>,
 	) -> Result<(), IndexerError> {
-
 		let start = std::time::Instant::now();
 
 		// Subscribe to all finalized blocks:

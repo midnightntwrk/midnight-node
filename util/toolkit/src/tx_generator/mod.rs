@@ -17,7 +17,11 @@ use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
-	indexer::{Indexer, MidnightNodeClient}, remote_prover::RemoteProofServer, sender::Sender, serde_def::{DeserializedTransactionsWithContext, SourceTransactions}, ProofType, SignatureType
+	ProofType, SignatureType,
+	indexer::{Indexer, MidnightNodeClient},
+	remote_prover::RemoteProofServer,
+	sender::Sender,
+	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 };
 
 pub mod builder;
@@ -86,7 +90,10 @@ where
 
 			Ok(source)
 		} else if let Some(url) = src.src_url {
-			let indexer = Arc::new(Indexer::<S, P>::new(url, midnight_node_client, src.fetch_concurrency).await?);
+			let midnight_node_client = MidnightNodeClient::new(&url).await?;
+			let indexer = Arc::new(
+				Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?,
+			);
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
 			Ok(source)
 		} else {
