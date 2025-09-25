@@ -137,7 +137,7 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 			missing.push("chainspec_pc_chain_config".to_string());
 		}
 		if cfg.chainspec_cngd_config.is_none() {
-			missing.push("chainspec_pc_chain_config".to_string());
+			missing.push("chainspec_cngd_config".to_string());
 		}
 		if cfg.chainspec_federated_authority_config.is_none() {
 			missing.push("chainspec_federated_authority_config".to_string());
