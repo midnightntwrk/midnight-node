@@ -28,7 +28,7 @@ pub type SegmentId = u16;
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[async_trait]
-pub trait BuildIntent<D: DB + Clone> {
+pub trait BuildIntent<D: DB + Clone>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
@@ -41,7 +41,7 @@ pub trait BuildIntent<D: DB + Clone> {
 pub struct IntentInfo<D: DB + Clone> {
 	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub actions: Vec<Box<dyn BuildContractAction<D> + Send>>,
+	pub actions: Vec<Box<dyn BuildContractAction<D>>>,
 	// TODO: Add TTL Option here
 }
 
