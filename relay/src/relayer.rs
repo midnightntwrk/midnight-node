@@ -1,6 +1,7 @@
 use crate::{
-	Block,
+	Block, BlockHash,
 	beefy::{self, BeefyRelayChainProof, PeakNodes},
+	helpers::ToHex,
 	mn_meta,
 };
 
@@ -58,7 +59,7 @@ impl Relayer {
 		relayer
 	}
 
-	pub async fn run_relay(&self) {
+	pub async fn run_relay_by_subscription(&self) {
 		let mut sub: RpcSubscription<Bytes> = self
 			.rpc
 			.subscribe(
@@ -72,17 +73,16 @@ impl Relayer {
 		while let Some(result) = sub.next().await {
 			let justification = result.expect("failed to get justification");
 
-			let proof = self.handle_justification_stream_data(justification).await;
-			println!("------------- THE PROOF: {proof:?}");
-			let commitment_hash = proof.hex_scale_encoded_signed_commitment();
-			println!("Commitment Hash: {commitment_hash}");
-			let _ = proof.mmr_root_hash();
-			let _ = proof.mmr_leaves();
-			let _ = proof.peak_nodes();
+			let proof = self.handle_justification_stream_data(justification.0).await;
+
+			proof.print_as_hex();
 		}
 	}
 
-	async fn handle_justification_stream_data(&self, justification: Bytes) -> BeefyRelayChainProof {
+	async fn handle_justification_stream_data(
+		&self,
+		justification: Vec<u8>,
+	) -> BeefyRelayChainProof {
 		let VersionedFinalityProof::<Block, ECDSASig>::V1(beef_signed_commitment) =
 			Decode::decode(&mut &justification[..])
 				.expect("failed to parse to VersionedFinalityProof");
@@ -109,12 +109,21 @@ impl Relayer {
 		&self,
 		beefy_signed_commitment: &BeefySignedCommitment<Block, ECDSASig>,
 	) -> LeavesProof<H256> {
-		let block = beefy_signed_commitment.commitment.block_number;
-		println!("Block Number: {block}");
+		let commitment_block = beefy_signed_commitment.commitment.block_number;
 
-		let at_block_hash = self.get_block_hash(block).await;
+		let best_block = self.api.blocks().at_latest().await.expect("get the best block");
+		println!("\nBest Block Number: {}", best_block.number());
 
-		self.get_mmr_proof(block, at_block_hash).await
+		println!("Creating proof of block({commitment_block})....");
+
+		let at_block_hash = self.get_block_hash(commitment_block).await;
+		if let Some(block_hash) = &at_block_hash {
+			println!("Block Hash: {}", block_hash.as_hex());
+
+			self.current_mmr_root(*block_hash).await;
+		};
+
+		self.get_mmr_proof(vec![commitment_block], None, at_block_hash).await
 	}
 
 	pub async fn verify_proof(
@@ -167,15 +176,16 @@ impl Relayer {
 	async fn get_mmr_proof(
 		&self,
 		// The block to query for
-		block: u32,
-		at_block_hash: Option<H256>,
+		blocks: Vec<Block>,
+		best_block_number: Option<Block>,
+		at_block_hash: Option<BlockHash>,
 	) -> LeavesProof<H256> {
-		let params = rpc_params![
-			[block],
-			// TODO: do we need specificity to these? The storage might change
-			None::<u64>,
-			at_block_hash
-		];
+		let mut params = RpcParams::new();
+		params.push(blocks).expect("should be able to push multiple blocks");
+		params.push(best_block_number).expect("failed to add best_block_number");
+		params.push(at_block_hash).expect("failed to add block hash");
+
+		println!("Generating proof with params: {params:?}");
 
 		// TODO: handle
 		let raw_proof_data = self
@@ -187,15 +197,17 @@ impl Relayer {
 		serde_json::from_str(raw_proof_data.get()).expect("failed to parse raw proof")
 	}
 
-	// getting
+	// getting mmr root based on the block hash
 	async fn current_mmr_root(&self, block_hash: H256) {
-		let hex_block_hash = hex::encode(block_hash);
-		let params = rpc_params![hex_block_hash.clone()];
+		let params = rpc_params![block_hash.as_hex()];
 
 		match self.rpc.request::<String>("mmr_root", params).await {
 			Ok(root) => println!("Root Hash: {root}"),
 			Err(e) => {
-				println!("Warning: failed to get mmr proof of block hash({hex_block_hash}): {e:?}")
+				println!(
+					"Warning: failed to get mmr proof of block hash({}): {e:?}",
+					block_hash.as_hex()
+				)
 			},
 		}
 	}
@@ -217,17 +229,13 @@ impl Relayer {
 			return vec![];
 		};
 
-		let validators_as_hex: Vec<String> =
-			validator_set.0.iter().map(|validator| hex::encode(validator.0)).collect();
-		println!("All Validators: {validators_as_hex:#?}");
-
 		validator_set.0
 	}
 
 	// Below are for authority set proofs
 	async fn get_beefy_authority_set(
 		&self,
-		at_block_hash: Option<H256>,
+		at_block_hash: Option<BlockHash>,
 	) -> BeefyAuthoritySet<H256> {
 		let get_authority_set_query = mn_meta::storage().beefy_mmr_leaf().beefy_authorities();
 
@@ -245,7 +253,7 @@ impl Relayer {
 
 	async fn get_next_beefy_authority_set(
 		&self,
-		at_block_hash: Option<H256>,
+		at_block_hash: Option<BlockHash>,
 	) -> BeefyAuthoritySet<H256> {
 		let get_next_authority_set_query =
 			mn_meta::storage().beefy_mmr_leaf().beefy_next_authorities();
@@ -272,20 +280,4 @@ impl Relayer {
 
 		block_hash
 	}
-
-	// failed
-	// async fn get_ancestry_proof(&self, previous_block:Block, best_known_block_number:Option<Block>) {
-	//    let gen_ancestry_proof =  mn_meta::runtime_apis::beefy_api::BeefyApi.generate_ancestry_proof(previous_block, best_known_block_number);
-
-	//    let runtime_api = self.api.runtime_api().at_latest().await
-	//         .expect("failed to get runtime api");
-
-	//     let opaq_ancestry_proof = runtime_api.call(gen_ancestry_proof).await
-	//         .expect("failed to query ancestry proof").expect("No ancestry proof found");
-
-	//     let ancestry_proof: AncestryProof<H256> = Decode::decode(&mut &opaq_ancestry_proof.0[..]).expect("failed to decode to AncestryProof");
-
-	//    println!("\nANCESTRY PROOF: {ancestry_proof:?}");
-
-	// }
 }

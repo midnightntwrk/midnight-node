@@ -1,5 +1,6 @@
 mod beefy;
 mod cardano_encoding;
+mod helpers;
 mod relayer;
 
 use clap::Parser;
@@ -8,6 +9,7 @@ use tokio::time::{Duration, sleep};
 pub use midnight_node_metadata::midnight_metadata as mn_meta;
 
 pub type Block = u32;
+pub type BlockHash = sp_core::H256;
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -32,10 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	loop {
 		println!("Starting relay...");
-
-		beefy_relayer.run_relay().await;
+		beefy_relayer.run_relay_by_subscription().await;
 	}
 
-	println!("the end");
 	Ok(())
 }
