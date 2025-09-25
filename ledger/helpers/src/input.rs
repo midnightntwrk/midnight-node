@@ -35,7 +35,7 @@ impl<O> TokenInfo for InputInfo<O> {
 	}
 }
 
-pub trait BuildInput<D: DB + Clone>: TokenInfo {
+pub trait BuildInput<D: DB + Clone>: TokenInfo + Send + Sync {
 	fn build(
 		&mut self,
 		rng: &mut StdRng,
