@@ -19,6 +19,7 @@ members = [
     "util/upgrader",
     "docs",
 ]
+package = { license-file = "LICENSE" }
 
 # Same lint list as polkadot-sdk
 [workspace.lints.clippy]

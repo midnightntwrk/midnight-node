@@ -118,7 +118,7 @@ pub async fn execute(
 /// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
-/// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-generate-test-data
+/// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
 	use clap::Parser as _;

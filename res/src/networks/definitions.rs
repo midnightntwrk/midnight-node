@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_native_token_observation::TokenObservationConfig;
+
 use super::{InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts, MidnightNetwork};
 
 pub struct UndeployedNetwork;
@@ -41,6 +43,11 @@ impl MidnightNetwork for UndeployedNetwork {
 
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData> {
 		vec![InitialAuthorityData::new_from_uri("//Alice")]
+	}
+
+	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cngd-config.json"));
+		serde_json::from_str(&config_str).unwrap()
 	}
 
 	fn council(&self) -> InitialFederedatedAuthority {
@@ -74,6 +81,7 @@ pub struct CustomNetwork {
 	pub genesis_block: Vec<u8>,
 	pub chain_type: sc_service::ChainType,
 	pub initial_authorities: Vec<InitialAuthorityData>,
+	pub cngd_config: TokenObservationConfig,
 	pub council_membership: InitialFederedatedAuthority,
 	pub technical_authority_membership: InitialFederedatedAuthority,
 	pub main_chain_scripts: MainChainScripts,
@@ -106,6 +114,10 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData> {
 		self.initial_authorities.clone()
+	}
+
+	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
+		self.cngd_config.clone()
 	}
 
 	fn council(&self) -> InitialFederedatedAuthority {

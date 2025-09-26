@@ -63,7 +63,7 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 }
 
 impl CreateIntentInfo for ContractMaintenanceBuilder {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for Maintenance");
 		let contract_address = self.contract_address(&self.contract_address);
 
@@ -74,14 +74,14 @@ impl CreateIntentInfo for ContractMaintenanceBuilder {
 			counter: self.counter + 1,
 		});
 
-		let call_contract: Box<dyn BuildContractAction<DefaultDB> + Send> =
+		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
 				address: contract_address,
 				updates: vec![update],
 				counter: self.counter,
 			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send>> = vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -111,10 +111,10 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

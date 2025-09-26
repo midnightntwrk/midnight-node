@@ -2,6 +2,7 @@
 name = "midnight-node-toolkit"
 version = "0.1.0"
 edition = "2024"
+license-file.workspace = true
 
 [[bin]]
 name = "midnight-node-toolkit"

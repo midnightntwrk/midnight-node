@@ -108,7 +108,7 @@ impl BuildTxs for CustomContractBuilder {
 		tx_info.set_intents(intents);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = Vec::new();
