@@ -103,7 +103,7 @@ impl BuildTxs for CustomContractBuilder {
 		let contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
 
-		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB> + Send>> = HashMap::new();
+		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
 		intents.insert(contract_segment, Box::new(contract_intent));
 		tx_info.set_intents(intents);
 
@@ -111,7 +111,7 @@ impl BuildTxs for CustomContractBuilder {
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = Vec::new();
+		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = Vec::new();
 		if let Some(zswap_state) = zswap_state {
 			for encoded_output in zswap_state.outputs.into_iter() {
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed

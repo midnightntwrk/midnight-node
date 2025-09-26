@@ -345,7 +345,7 @@ pub trait BuildTxsExt {
 
 /// Create Intent Info
 pub trait CreateIntentInfo {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send>;
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
 }
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file
