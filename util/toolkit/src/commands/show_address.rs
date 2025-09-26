@@ -85,9 +85,10 @@ mod test {
 
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			specific_address,
 		};
 
@@ -106,9 +107,10 @@ mod test {
 
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			specific_address,
 		};
 
@@ -123,9 +125,10 @@ mod test {
 	fn test_all() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			specific_address: Default::default(),
 		};
 

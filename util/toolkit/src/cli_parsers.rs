@@ -39,8 +39,14 @@ pub fn token_decode<T: TokenDecode>(input: &str) -> Result<T, clap::error::Error
 }
 
 pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error> {
-	let wallet_seed_bytes: [u8; 32] = hex_str_decode(input)?;
-	Ok(WalletSeed::from(wallet_seed_bytes))
+	input.parse().map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+		);
+		err
+	})
 }
 
 pub fn hex_ledger_serialize_decode<T>(input: &str) -> Result<T, clap::error::Error>
