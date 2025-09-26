@@ -82,11 +82,11 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	hex::encode(response.transaction.id)
 }
 
-pub async fn register(cardano_address: &str, midnight_address_hex: &str, signing_wallet: &Wallet, tx_in: &OgmiosUtxo, collateral_utxo: &OgmiosUtxo) {
+pub async fn register(cardano_address: &str, midnight_address_hex: &str, signing_wallet: &Wallet, tx_in: &OgmiosUtxo, collateral_utxo: &OgmiosUtxo) -> [u8; 32] {
 	let validator_address = get_mapping_validator_address();
 	let cardano_address_hex = Address::from_bech32(cardano_address).unwrap().to_hex();
 	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": [{ "bytes": cardano_address_hex }, { "bytes": midnight_address_hex }]})).unwrap();
-	let payment_addr = get_wallet_address(signing_wallet);
+	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
 	let auth_token_policy_id = get_auth_token_policy_id();
 	let send_assets = vec![Asset::new_from_str("lovelace", "150000000"), Asset::new_from_str(&auth_token_policy_id, "1")];
     let cfg = load_config();
@@ -117,6 +117,7 @@ pub async fn register(cardano_address: &str, midnight_address_hex: &str, signing
 	let client = get_ogmios_client().await;
 	let response = client.submit_transaction(&tx_bytes).await.unwrap();
 	println!("Transaction submitted, response: {:?}", response);
+	response.transaction.id
 }
 
 pub fn create_wallet() -> Wallet {
@@ -126,13 +127,21 @@ pub fn create_wallet() -> Wallet {
 	wallet
 }
 
-pub fn get_wallet_address(wallet: &Wallet) -> String {
+pub fn get_cardano_address(wallet: &Wallet) -> Address {
 	let pub_key_hash = wallet.account.public_key.hash();
 	let payment_cred = whisky::csl::Credential::from_keyhash(&pub_key_hash);
 	let network = NetworkInfo::testnet_preview().network_id();
-	let address = whisky::csl::EnterpriseAddress::new(network, &payment_cred);
-	let bech32_address = address.to_address().to_bech32(None).unwrap();
-	bech32_address
+	whisky::csl::EnterpriseAddress::new(network, &payment_cred).to_address()
+}
+
+pub fn get_cardano_address_as_bech32(wallet: &Wallet) -> String {
+	let address = get_cardano_address(wallet);
+	address.to_bech32(None).unwrap()
+}
+
+pub fn get_cardano_address_as_bytes(wallet: &Wallet) -> Vec<u8> {
+	let address = get_cardano_address(wallet);
+	address.to_bytes()
 }
 
 pub async fn make_collateral(address: &str) -> OgmiosUtxo {
