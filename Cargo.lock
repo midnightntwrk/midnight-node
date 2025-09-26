@@ -4600,6 +4600,9 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hex-conservative"
@@ -6876,6 +6879,7 @@ dependencies = [
  "documented",
  "frame-benchmarking",
  "frame-benchmarking-cli",
+ "frame-support",
  "frame-system",
  "futures",
  "hex",
@@ -6896,6 +6900,7 @@ dependencies = [
  "pallet-governed-map",
  "pallet-midnight",
  "pallet-midnight-rpc",
+ "pallet-native-token-observation",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "parity-scale-codec",
@@ -7041,6 +7046,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto",
  "midnight-ledger",
+ "midnight-primitives-native-token-observation",
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto",
@@ -7279,6 +7285,7 @@ dependencies = [
 name = "midnight-primitives-native-token-observation"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -9002,6 +9009,7 @@ dependencies = [
  "parity-scale-codec",
  "rand 0.8.5",
  "scale-info",
+ "serde",
  "sidechain-domain",
  "sp-core",
  "sp-io",
