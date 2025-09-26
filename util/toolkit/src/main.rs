@@ -38,7 +38,10 @@ use midnight_node_toolkit::{
 	tx_generator::{TxGenerator, source::Source},
 };
 
-use crate::commands::contract_state::{self, ContractStateArgs};
+use crate::commands::{
+	contract_state::{self, ContractStateArgs},
+	show_address::ShowAddress,
+};
 
 mod commands;
 mod utils;
@@ -203,7 +206,13 @@ pub(crate) async fn run_command(
 		},
 		Commands::ShowAddress(args) => {
 			let address = show_address::execute(args);
-			println!("{}", serde_json::to_string_pretty(&address)?);
+			match address {
+				ShowAddress::Addresses(addresses) => {
+					println!("{}", serde_json::to_string_pretty(&addresses)?);
+				},
+				ShowAddress::SingleAddress(address) => println!("{address}"),
+			};
+
 			Ok(())
 		},
 		Commands::ShowViewingKey(args) => {
