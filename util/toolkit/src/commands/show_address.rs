@@ -54,9 +54,10 @@ mod test {
 	fn test_shielded_address() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			shielded: true,
 			unshielded: false,
 			path: None,
@@ -73,9 +74,10 @@ mod test {
 	fn test_unshielded_address() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			shielded: false,
 			unshielded: true,
 			path: None,
@@ -92,9 +94,10 @@ mod test {
 	fn test_prefer_path_over_shielded() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			shielded: true,
 			unshielded: false,
 			path: Some("m/44'/2400'/0'/0/0".to_string()),
@@ -111,9 +114,10 @@ mod test {
 	fn test_prefer_path_over_unshielded() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: NetworkId::TestNet,
-			seed: WalletSeed::from(
+			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
-			),
+			)
+			.unwrap(),
 			shielded: false,
 			unshielded: true,
 			path: Some("m/44'/2400'/0'/3/0".to_string()),

@@ -22,6 +22,7 @@ use commands::{
 	random_address::{self, RandomAddressArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::{self, ShowAddressArgs},
+	show_seed::{self, ShowSeedArgs},
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
@@ -77,6 +78,8 @@ enum Commands {
 	ShowWallet(ShowWalletArgs),
 	/// Show the address of a wallet using it's seed
 	ShowAddress(ShowAddressArgs),
+	/// Show the seed of a wallet
+	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
 	ShowViewingKey(ShowViewingKeyArgs),
 	/// Show the deserialized value of a serialized transaction
@@ -204,6 +207,11 @@ pub(crate) async fn run_command(
 		Commands::ShowAddress(args) => {
 			let address = show_address::execute(args);
 			println!("{}", address.to_bech32());
+			Ok(())
+		},
+		Commands::ShowSeed(args) => {
+			let seed = show_seed::execute(args);
+			println!("{}", seed);
 			Ok(())
 		},
 		Commands::ShowViewingKey(args) => {
