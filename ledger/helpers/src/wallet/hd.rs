@@ -118,7 +118,7 @@ pub trait DeriveSeed {
 	fn derive_seed(root_seed: WalletSeed, derivation_path: &DerivationPath) -> [u8; 32] {
 		let derivation_path = Bip32DerivationPath::from_str(&derivation_path.path)
 			.unwrap_or_else(|err| panic!("Error calculating the `DerivationPath`: {err}"));
-		let derived = XPrv::derive_from_path(root_seed.0, &derivation_path)
+		let derived = XPrv::derive_from_path(root_seed.as_bytes(), &derivation_path)
 			.unwrap_or_else(|err| panic!("Error calculating the `ExtendedPrivateKey`: {err}"));
 
 		derived.private_key().to_bytes().into()
