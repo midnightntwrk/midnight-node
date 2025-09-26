@@ -27,9 +27,9 @@
   "dependencies": {
     "effect": "^3.17.7",
     "@effect/cli": "^0.69.0",
-    "@midnight-ntwrk/compact-js": "2.0.0-rc.0",
-    "@midnight-ntwrk/compact-js-command": "2.0.0-rc.0",
-    "@midnight-ntwrk/compact-js-node": "2.0.0-rc.0"
+    "@midnight-ntwrk/compact-js": "2.0.0-rc.2",
+    "@midnight-ntwrk/compact-js-command": "2.0.0-rc.2",
+    "@midnight-ntwrk/compact-js-node": "2.0.0-rc.2"
   },
     "devDependencies": {
     "@types/node": "^22.15.29",

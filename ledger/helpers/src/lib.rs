@@ -26,11 +26,12 @@ pub use coin_structure::{
 		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
+	transfer::Recipient,
 };
 pub use midnight_serialize::{self as mn_ledger_serialize, Deserializable, Serializable, Tagged};
 pub use onchain_runtime::{
 	HistoricMerkleTree_check_root, HistoricMerkleTree_insert,
-	context::{BlockContext, QueryContext},
+	context::{BlockContext, Effects as ContractEffects, QueryContext},
 	cost_model::CostModel,
 	error::TranscriptRejected,
 	ops::{Key, Op, key},

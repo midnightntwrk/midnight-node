@@ -19,6 +19,7 @@ pub mod progress;
 pub mod remote_prover;
 pub mod sender;
 pub mod serde_def;
+pub mod toolkit_js;
 pub mod tx_generator;
 
 use progress::{Progress, Spin};

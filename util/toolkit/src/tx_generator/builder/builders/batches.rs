@@ -261,7 +261,7 @@ impl BuildTxs for BatchesBuilder {
 				first_batch_output_wallets.clone(),
 			);
 
-			tx_info.set_guaranteed_coins(initial_shielded_offer_info);
+			tx_info.set_guaranteed_offer(initial_shielded_offer_info);
 		}
 
 		// ---------------- UNSHIELDED ------------------------
@@ -382,7 +382,7 @@ impl BuildTxs for BatchesBuilder {
 							transients: vec![],
 						};
 
-						tx_info.set_guaranteed_coins(offer_info);
+						tx_info.set_guaranteed_offer(offer_info);
 					}
 
 					// ---------------- UNSHIELDED ------------------------

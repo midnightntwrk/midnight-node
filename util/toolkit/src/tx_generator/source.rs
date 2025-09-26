@@ -22,7 +22,7 @@ use crate::{
 	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
 };
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct Source {
 	/// RPC URL of node instance; Used to fetch existing transactions
 	#[arg(long, short = 's', conflicts_with = "src_files", default_value = "ws://127.0.0.1:9944")]
@@ -47,6 +47,8 @@ pub enum SourceError {
 	TransactionReadDeserialzeError(#[from] serde_json::Error),
 	#[error("failed to fetch network id from rpc")]
 	NetworkIdFetchError(#[from] subxt::Error),
+	#[error("invalid source args")]
+	InvalidSourceArgs(Source),
 }
 
 #[async_trait]
