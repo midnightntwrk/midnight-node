@@ -18,7 +18,8 @@ use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
-	indexer::{Indexer, MidnightNodeClient},
+	client::MidnightNodeClient,
+	indexer::Indexer,
 	remote_prover::RemoteProofServer,
 	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},

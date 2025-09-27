@@ -20,6 +20,7 @@ pub mod remote_prover;
 pub mod sender;
 pub mod serde_def;
 pub mod tx_generator;
+pub mod client;
 
 use progress::{Progress, Spin};
 use rand::{SeedableRng, rngs::StdRng};

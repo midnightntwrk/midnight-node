@@ -22,7 +22,10 @@ use std::{
 	time::Duration,
 };
 use subxt::{
-	backend::{legacy::LegacyRpcMethods, rpc::RpcClient}, blocks::Block, config::{substrate::H256, HashFor}, events::Phase, OnlineClient, PolkadotConfig, SubstrateConfig
+	blocks::Block,
+	config::{substrate::H256, HashFor},
+	events::Phase,
+	OnlineClient,
 };
 use thiserror::Error;
 use tokio::{
@@ -38,46 +41,12 @@ use crate::{
 
 use midnight_node_ledger_helpers::{mn_ledger_serialize::tagged_deserialize, *};
 
+use crate::client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig};
+
 fn fatal(msg: String) {
 	eprintln!("{}", msg);
 	eprintln!("exiting...");
 	std::process::exit(1);
-}
-
-/// Shared Midnight node client to manage communication, node types, and common queries. Exposes common subxt interfaces
-pub struct MidnightNodeClient {
-	pub api: OnlineClient<PolkadotConfig>,
-	pub rpc: LegacyRpcMethods<PolkadotConfig>,
-}
-
-impl MidnightNodeClient {
-	pub async fn new(rpc_url: &str) -> Result<Self, IndexerError> {
-		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
-		let rpc: LegacyRpcMethods<PolkadotConfig> =
-			LegacyRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
-		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(rpc_url).await?;
-		Ok(MidnightNodeClient { rpc, api })
-	}
-
-	pub async fn get_network_id(&self) -> Result<NetworkId, IndexerError> {
-		let storage_query = mn_meta::storage().midnight().network_id();
-		let network_id_vec = self.api.storage().at_latest().await?.fetch(&storage_query).await?;
-
-		// TODO: Update this when we launch testnet/mainnet
-		let network_id = if let Some(val) = network_id_vec {
-			match val.0.as_slice() {
-				[0] => NetworkId::Undeployed,
-				[1] => NetworkId::DevNet,
-				[2] => NetworkId::TestNet,
-				[3] => NetworkId::MainNet,
-				_ => return Err(IndexerError::UnsupportedNetworkId(val.0).into()),
-			}
-		} else {
-			NetworkId::Undeployed
-		};
-
-		Ok(network_id)
-	}
 }
 
 #[derive(Error, Debug)]
@@ -136,14 +105,24 @@ impl IndexerHandle {
 	}
 }
 
+impl From<ClientError> for IndexerError {
+	fn from(err: ClientError) -> Self {
+		match err {
+			ClientError::SubxtError(err) => Self::SubxtError(err),
+			ClientError::RpcClientError(err) => Self::RpcClientError(err),
+			ClientError::UnsupportedNetworkId(bytes) => Self::UnsupportedNetworkId(bytes),
+		}
+	}
+}
+
 #[derive(Serialize, Deserialize)]
 struct SyncCache<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB>>
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	genesis: HashFor<SubstrateConfig>,
+	genesis: HashFor<MidnightNodeClientConfig>,
 	/// Block hash and number
-	until: Option<(HashFor<SubstrateConfig>, u64)>,
+	until: Option<(HashFor<MidnightNodeClientConfig>, u64)>,
 	#[serde(with = "serde_def::block_vec")]
 	blocks: Vec<SourceBlockTransactions<S, P>>,
 }
@@ -156,11 +135,11 @@ where
 		std::env::var("MN_SYNC_CACHE").unwrap_or(".sync_cache".to_string())
 	}
 
-	fn filename(genesis: HashFor<SubstrateConfig>) -> PathBuf {
+	fn filename(genesis: HashFor<MidnightNodeClientConfig>) -> PathBuf {
 		Path::new(&Self::dir()).join(format!("{}.bin", hash_to_str(genesis)))
 	}
 
-	pub fn load(genesis: HashFor<SubstrateConfig>) -> Result<Self, IndexerError> {
+	pub fn load(genesis: HashFor<MidnightNodeClientConfig>) -> Result<Self, IndexerError> {
 		let default = SyncCache { genesis, until: None, blocks: Vec::new() };
 
 		let dir = Self::dir();
@@ -199,7 +178,7 @@ where
 
 	pub fn save(
 		&mut self,
-		hash: HashFor<SubstrateConfig>,
+		hash: HashFor<MidnightNodeClientConfig>,
 		number: u64,
 		blocks: &[SourceBlockTransactions<S, P>],
 	) {
@@ -278,7 +257,7 @@ where
 
 	async fn process_block(
 		self: Arc<Self>,
-		block: &Block<PolkadotConfig, OnlineClient<PolkadotConfig>>,
+		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
 		let block_header = block.header();
 		let parent_block_hash = block_header.parent_hash;
@@ -378,15 +357,15 @@ where
 	async fn fetch_midnight_block(
 		self: Arc<Self>,
 		hash: H256,
-	) -> Result<Block<PolkadotConfig, OnlineClient<PolkadotConfig>>, subxt::Error> {
+	) -> Result<Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>, subxt::Error> {
 		self.node_client.api.blocks().at(hash).await
 	}
 
 	async fn fetch_until(
 		self: Arc<Self>,
 		tx_prog: Option<tokio::sync::mpsc::Sender<u32>>,
-		start_hash: HashFor<SubstrateConfig>,
-		end_hash: Option<HashFor<SubstrateConfig>>,
+		start_hash: HashFor<MidnightNodeClientConfig>,
+		end_hash: Option<HashFor<MidnightNodeClientConfig>>,
 	) -> Result<VecDeque<SourceBlockTransactions<S, P>>, IndexerError> {
 		if start_hash == end_hash.unwrap_or(H256::default()) {
 			return Ok(VecDeque::new());
@@ -438,8 +417,8 @@ where
 
 	async fn fetch_all_blocks(
 		self: Arc<Self>,
-		from: (HashFor<SubstrateConfig>, u64),
-		to: Option<(HashFor<SubstrateConfig>, u64)>,
+		from: (HashFor<MidnightNodeClientConfig>, u64),
+		to: Option<(HashFor<MidnightNodeClientConfig>, u64)>,
 	) -> Result<VecDeque<SourceBlockTransactions<S, P>>, IndexerError> {
 		let mut prev_block_hash = Some(from.0);
 
@@ -451,7 +430,7 @@ where
 		let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
 		for i in 0..self.fetch_concurrency {
-			let mut block_hash: Option<HashFor<SubstrateConfig>> =
+			let mut block_hash: Option<HashFor<MidnightNodeClientConfig>> =
 				to.map(|to| Some(to.0)).unwrap_or(None);
 
 			if i < self.fetch_concurrency - 1 {
