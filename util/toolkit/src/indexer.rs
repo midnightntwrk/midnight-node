@@ -22,10 +22,7 @@ use std::{
 	time::Duration,
 };
 use subxt::{
-	OnlineClient, PolkadotConfig, SubstrateConfig,
-	backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
-	blocks::Block,
-	config::{HashFor, substrate::H256},
+	backend::{legacy::LegacyRpcMethods, rpc::RpcClient}, blocks::Block, config::{substrate::H256, HashFor}, events::Phase, OnlineClient, PolkadotConfig, SubstrateConfig
 };
 use thiserror::Error;
 use tokio::{
@@ -295,13 +292,14 @@ where
 			.iter()
 			.map(|extrinsic| {
 				let call = extrinsic.as_root_extrinsic::<mn_meta::Call>()?;
-				Ok(call)
+				Ok((call, extrinsic))
 			})
-			.filter_ok(|call| {
+			.filter_ok(|(call, _)| {
 				matches!(
 					call,
 					mn_meta::Call::Midnight(_)
 						| mn_meta::Call::MidnightSystem(_)
+						| mn_meta::Call::NativeTokenObservation(_)
 						| mn_meta::Call::Timestamp(_)
 				)
 			})
@@ -309,7 +307,7 @@ where
 
 		let timestamp_ms = *calls
 			.iter()
-			.find_map(|call| match call {
+			.find_map(|(call, _)| match call {
 				mn_meta::Call::Timestamp(mn_meta::timestamp::Call::set { now }) => Some(now),
 				_ => None,
 			})
@@ -320,9 +318,14 @@ where
 			parent_block_hash: HashOutput(parent_block_hash.0),
 		};
 
-		let mut transactions: Vec<_> = calls
+		let events = block
+			.events()
+			.await
+			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
+
+		let transactions: Vec<_> = calls
 			.into_iter()
-			.filter_map(|call| match call {
+			.filter_map(|(call, ext)| match call {
 				mn_meta::Call::Midnight(mn_meta::midnight::Call::send_mn_transaction {
 					midnight_tx,
 				}) => {
@@ -339,35 +342,36 @@ where
 						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
 					Some(SerdeTransaction::System(tx))
 				},
+				mn_meta::Call::NativeTokenObservation(
+					mn_meta::native_token_observation::Call::process_tokens { .. },
+				) => {
+					events
+						.iter()
+						.filter_map(Result::ok)
+						.find_map(|ev| {
+							// Only consider events emitted by this extrinsic
+							if !matches!(ev.phase(), Phase::ApplyExtrinsic(i) if i == ext.index()) {
+								return None;
+							}
+
+							// Try to decode the system event and deserialize its tx
+							ev.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>()
+								.ok()
+								.flatten()
+								.map(|system_event| {
+									let mut serialized =
+										system_event.0.serialized_system_transaction.as_slice();
+									let tx = tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
+										panic!("Error deserializing system tx from event: {}", err)
+									});
+									SerdeTransaction::System(tx)
+								})
+						})
+				}
+
 				_ => None,
 			})
 			.collect();
-
-		// Some transactions are communicated by the node through events, we need to get those as well
-		let events = block
-			.events()
-			.await
-			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
-
-		// TODO: If more pallets use midnight_system events, the ordering of this will need to be updated
-		for event in events.iter() {
-			let event = event.unwrap_or_else(|err| panic!("Error while iterating events: {}", err));
-
-			let system_event = event
-				.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>()
-				.unwrap_or_else(|err| {
-					panic!("Error decoding SystemTransactionApplied event: {}", err)
-				});
-
-			if let Some(system_event) = system_event {
-				let mut serialized = system_event.0.serialized_system_transaction.as_slice();
-				let tx = tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
-					panic!("Error deserializing system tx from event: {}", err)
-				});
-				transactions.push(SerdeTransaction::System(tx));
-			}
-		}
-
 		Ok(SourceBlockTransactions { transactions, context })
 	}
 
