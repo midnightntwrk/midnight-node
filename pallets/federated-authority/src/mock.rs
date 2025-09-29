@@ -31,7 +31,7 @@ use sp_runtime::{
 type Block = frame_system::mocking::MockBlock<Test>;
 
 pub(crate) const COUNCIL_PALLET_ID: AuthId = 40;
-pub(crate) const TECHNICAL_AUTHORITY_PALLET_ID: AuthId = 42;
+pub(crate) const TECHNICAL_COMMITTEE_PALLET_ID: AuthId = 42;
 
 frame_support::construct_runtime!(
 	pub struct Test {
@@ -39,8 +39,8 @@ frame_support::construct_runtime!(
 		// Governance - matching runtime structure
 		Council: pallet_collective::<Instance1> = 40,
 		CouncilMembership: pallet_membership::<Instance1> = 41,
-		TechnicalAuthority: pallet_collective::<Instance2> = 42,
-		TechnicalAuthorityMembership: pallet_membership::<Instance2> = 43,
+		TechnicalCommittee: pallet_collective::<Instance2> = 42,
+		TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
 		FederatedAuthority: pallet_federated_authority = 44,
 	}
 );
@@ -119,9 +119,9 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type WeightInfo = ();
 }
 
-// Technical Authority configuration
-pub type TechnicalAuthorityCollective = pallet_collective::Instance2;
-impl pallet_collective::Config<TechnicalAuthorityCollective> for Test {
+// Technical Committee configuration
+pub type TechnicalCommitteeCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollective> for Test {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -144,8 +144,8 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	type ResetOrigin = EnsureNone<u64>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
-	type MembershipInitialized = TechnicalAuthority;
-	type MembershipChanged = TechnicalAuthority;
+	type MembershipInitialized = TechnicalCommittee;
+	type MembershipChanged = TechnicalCommittee;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = ();
 }
@@ -157,29 +157,29 @@ type CouncilApproval = AuthorityBody<
 	Council,
 	pallet_collective::EnsureProportionAtLeast<u64, CouncilCollective, 2, 3>,
 >;
-type TechnicalAuthorityApproval = AuthorityBody<
-	TechnicalAuthority,
-	pallet_collective::EnsureProportionAtLeast<u64, TechnicalAuthorityCollective, 2, 3>,
+type TechnicalCommitteeApproval = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<u64, TechnicalCommitteeCollective, 2, 3>,
 >;
 
 type CouncilRevoke = AuthorityBody<
 	Council,
 	pallet_collective::EnsureProportionAtLeast<u64, CouncilCollective, 2, 3>,
 >;
-type TechnicalAuthorityRevoke = AuthorityBody<
-	TechnicalAuthority,
-	pallet_collective::EnsureProportionAtLeast<u64, TechnicalAuthorityCollective, 2, 3>,
+type TechnicalCommitteeRevoke = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<u64, TechnicalCommitteeCollective, 2, 3>,
 >;
 
 impl crate::Config for Test {
 	type MotionCall = RuntimeCall;
 	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
 	type MotionDuration = MotionDurationParam;
-	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<2, MAX_NUM_BODIES>; // Council +  TechnicalAuthority approvals should be enough
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<2, MAX_NUM_BODIES>; // Council +  TechnicalCommittee approvals should be enough
 	type MotionApprovalOrigin =
-		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalCommitteeApproval)>;
 	type MotionRevokeOrigin =
-		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
 	type WeightInfo = ();
 }
 
@@ -194,7 +194,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	.assimilate_storage(&mut t)
 	.unwrap();
 
-	// Initialize Technical Authority members
+	// Initialize Technical Committee members
 	pallet_membership::GenesisConfig::<Test, pallet_membership::Instance2> {
 		members: vec![4, 5, 6].try_into().unwrap(),
 		phantom: Default::default(),

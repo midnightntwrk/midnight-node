@@ -54,7 +54,7 @@ impl MidnightNetwork for UndeployedNetwork {
 		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob"])
 	}
 
-	fn technical_authority(&self) -> InitialFederedatedAuthority {
+	fn technical_committee(&self) -> InitialFederedatedAuthority {
 		InitialFederedatedAuthority::new_from_uris(vec!["//Charlie", "//Dave"])
 	}
 
@@ -83,7 +83,7 @@ pub struct CustomNetwork {
 	pub initial_authorities: Vec<InitialAuthorityData>,
 	pub cngd_config: TokenObservationConfig,
 	pub council_membership: InitialFederedatedAuthority,
-	pub technical_authority_membership: InitialFederedatedAuthority,
+	pub technical_committee_membership: InitialFederedatedAuthority,
 	pub main_chain_scripts: MainChainScripts,
 	pub genesis_utxo: String,
 }
@@ -124,8 +124,8 @@ impl MidnightNetwork for CustomNetwork {
 		self.council_membership.clone()
 	}
 
-	fn technical_authority(&self) -> InitialFederedatedAuthority {
-		self.technical_authority_membership.clone()
+	fn technical_committee(&self) -> InitialFederedatedAuthority {
+		self.technical_committee_membership.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {

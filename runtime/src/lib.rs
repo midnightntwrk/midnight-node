@@ -785,9 +785,9 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
-/// Technical Authority
-type TechnicalAuthorityCollective = pallet_collective::Instance2;
-impl pallet_collective::Config<TechnicalAuthorityCollective> for Runtime {
+/// Technical Committee
+type TechnicalCommitteeCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -810,31 +810,31 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
 	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type MembershipInitialized = MembershipHandler<Runtime, TechnicalAuthority>;
-	type MembershipChanged = MembershipHandler<Runtime, TechnicalAuthority>;
+	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
+	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
-pub const MAX_NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+pub const MAX_NUM_BODIES: u32 = 2; // TechnicalCommittee + Council
 pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
 
 type CouncilApproval = AuthorityBody<
 	Council,
 	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
 >;
-type TechnicalAuthorityApproval = AuthorityBody<
-	TechnicalAuthority,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
+type TechnicalCommitteeApproval = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
 >;
 
 type CouncilRevoke = AuthorityBody<
 	Council,
 	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
 >;
-type TechnicalAuthorityRevoke = AuthorityBody<
-	TechnicalAuthority,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalAuthorityCollective, 2, 3>,
+type TechnicalCommitteeRevoke = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
 >;
 
 impl pallet_federated_authority::Config for Runtime {
@@ -843,9 +843,9 @@ impl pallet_federated_authority::Config for Runtime {
 	type MotionDuration = ConstU32<MOTION_DURATION>;
 	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
 	type MotionApprovalOrigin =
-		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalCommitteeApproval)>;
 	type MotionRevokeOrigin =
-		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalAuthorityRevoke)>;
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
 	type WeightInfo = ();
 }
 
@@ -940,8 +940,8 @@ construct_runtime!(
         Council: pallet_collective::<Instance1> = 40,
         CouncilMembership: pallet_membership::<Instance1> = 41,
 
-        TechnicalAuthority: pallet_collective::<Instance2> = 42,
-        TechnicalAuthorityMembership: pallet_membership::<Instance2> = 43,
+        TechnicalCommittee: pallet_collective::<Instance2> = 42,
+        TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
 
         FederatedAuthority: pallet_federated_authority = 44,
 	}

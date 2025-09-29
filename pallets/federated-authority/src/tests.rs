@@ -127,13 +127,13 @@ fn motion_approve_adds_approval_to_existing_motion() {
 		// First approval from Council
 		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
 
-		// Second approval from Technical Authority
+		// Second approval from Technical Committee
 		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call.clone()));
 
 		let motion = Motions::<Test>::get(motion_hash).unwrap();
 		assert_eq!(motion.approvals.len(), 2);
 		assert!(motion.approvals.contains(&COUNCIL_PALLET_ID));
-		assert!(motion.approvals.contains(&TECHNICAL_AUTHORITY_PALLET_ID));
+		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID));
 	});
 }
 
@@ -235,7 +235,7 @@ fn motion_revoke_removes_approval() {
 		let motion = Motions::<Test>::get(motion_hash).unwrap();
 		assert_eq!(motion.approvals.len(), 1);
 		assert!(!motion.approvals.contains(&COUNCIL_PALLET_ID)); // Council removed
-		assert!(motion.approvals.contains(&TECHNICAL_AUTHORITY_PALLET_ID)); // TechnicalAuthority still there
+		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID)); // TechnicalCommittee still there
 
 		assert_eq!(
 			last_event(),
@@ -348,7 +348,7 @@ fn motion_close_dispatches_when_approved() {
 		let call = create_remark_call(vec![1, 2, 3]);
 		let motion_hash = get_motion_hash(&call);
 
-		// Both Council and TechnicalAuthority approve (unanimous = 2/2)
+		// Both Council and TechnicalCommittee approve (unanimous = 2/2)
 		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
 		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
 
@@ -502,7 +502,7 @@ fn motion_approve_fails_after_motion_ended() {
 		// Fast-forward past the motion end time
 		run_to_block(MOTION_DURATION + 2);
 
-		// Try to approve from Technical Authority after motion has ended
+		// Try to approve from Technical Committee after motion has ended
 		assert_noop!(
 			FederatedAuthority::motion_approve(tech_origin(), call.clone()),
 			DispatchErrorWithPostInfo {
@@ -543,7 +543,7 @@ fn motion_revoke_fails_after_motion_ended() {
 			}
 		);
 
-		// Try to revoke from Technical Authority after motion has ended
+		// Try to revoke from Technical Committee after motion has ended
 		assert_noop!(
 			FederatedAuthority::motion_revoke(tech_origin(), motion_hash),
 			DispatchErrorWithPostInfo {
@@ -559,7 +559,7 @@ fn motion_revoke_fails_after_motion_ended() {
 		let motion = Motions::<Test>::get(motion_hash).unwrap();
 		assert_eq!(motion.approvals.len(), 2);
 		assert!(motion.approvals.contains(&COUNCIL_PALLET_ID));
-		assert!(motion.approvals.contains(&TECHNICAL_AUTHORITY_PALLET_ID));
+		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID));
 
 		// Motion can still be closed since it's approved and ended
 		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
@@ -705,7 +705,7 @@ fn complete_collective_to_federated_flow() {
 			.dispatch(RuntimeOrigin::signed(2))
 		);
 
-		// Step 3: Technical Authority also internally votes
+		// Step 3: Technical Committee also internally votes
 		let tech_fed_call =
 			Box::new(RuntimeCall::FederatedAuthority(crate::Call::motion_approve {
 				call: actual_call.clone(),
@@ -713,7 +713,7 @@ fn complete_collective_to_federated_flow() {
 
 		// Tech member 4 proposes
 		assert_ok!(
-			RuntimeCall::TechnicalAuthority(pallet_collective::Call::propose {
+			RuntimeCall::TechnicalCommittee(pallet_collective::Call::propose {
 				threshold: 2,
 				proposal: tech_fed_call.clone(),
 				length_bound: 1000,
@@ -728,7 +728,7 @@ fn complete_collective_to_federated_flow() {
 
 		// Tech member 4 (proposer) votes yes
 		assert_ok!(
-			RuntimeCall::TechnicalAuthority(pallet_collective::Call::vote {
+			RuntimeCall::TechnicalCommittee(pallet_collective::Call::vote {
 				proposal: tech_proposal_hash,
 				index: tech_proposal_index,
 				approve: true,
@@ -738,7 +738,7 @@ fn complete_collective_to_federated_flow() {
 
 		// Tech member 5 votes yes (reaching 2/3 majority)
 		assert_ok!(
-			RuntimeCall::TechnicalAuthority(pallet_collective::Call::vote {
+			RuntimeCall::TechnicalCommittee(pallet_collective::Call::vote {
 				proposal: tech_proposal_hash,
 				index: tech_proposal_index,
 				approve: true,
@@ -746,9 +746,9 @@ fn complete_collective_to_federated_flow() {
 			.dispatch(RuntimeOrigin::signed(5))
 		);
 
-		// Close the Technical Authority proposal to execute FederatedAuthority::motion_approve
+		// Close the Technical Committee proposal to execute FederatedAuthority::motion_approve
 		assert_ok!(
-			RuntimeCall::TechnicalAuthority(pallet_collective::Call::close {
+			RuntimeCall::TechnicalCommittee(pallet_collective::Call::close {
 				proposal_hash: tech_proposal_hash,
 				index: tech_proposal_index,
 				proposal_weight_bound: frame_support::weights::Weight::from_parts(
@@ -764,7 +764,7 @@ fn complete_collective_to_federated_flow() {
 		let motion = Motions::<Test>::get(motion_hash).unwrap();
 		assert_eq!(motion.approvals.len(), 2);
 		assert!(motion.approvals.contains(&COUNCIL_PALLET_ID)); // Council
-		assert!(motion.approvals.contains(&TECHNICAL_AUTHORITY_PALLET_ID)); // TechnicalAuthority
+		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID)); // TechnicalCommittee
 
 		// Step 5: Any user can now close the motion to execute it with Root origin
 		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(100), motion_hash));

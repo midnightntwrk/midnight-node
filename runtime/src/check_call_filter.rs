@@ -15,7 +15,7 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 		matches!(
 			call,
 			RuntimeCall::Council(_)
-				| RuntimeCall::TechnicalAuthority(_)
+				| RuntimeCall::TechnicalCommittee(_)
 				| RuntimeCall::Sudo(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
