@@ -45,3 +45,6 @@ runtime-benchmarks = [
     "frame-support/runtime-benchmarks",
     "pallet-collective",
     ]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec", "log"]

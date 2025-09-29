@@ -126,6 +126,7 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight(T::WeightInfo::motion_approve(T::MaxAuthorityBodies::get()))]
+		#[allow(clippy::useless_conversion)]
 		pub fn motion_approve(
 			origin: OriginFor<T>,
 			call: Box<<T as Config>::MotionCall>,
@@ -139,7 +140,7 @@ pub mod pallet {
 					let total_approvals = motion.approvals.len() as u32;
 
 					// Only proceed if the motion has not ended yet
-					if Self::has_ended(&motion) {
+					if Self::has_ended(motion) {
 						return Err((Error::<T>::MotionHasEnded, total_approvals));
 					}
 
@@ -194,6 +195,7 @@ pub mod pallet {
 
 		#[pallet::call_index(1)]
 		#[pallet::weight(T::WeightInfo::motion_revoke(T::MaxAuthorityBodies::get()).max(T::WeightInfo::motion_revoke_remove()))]
+		#[allow(clippy::useless_conversion)]
 		pub fn motion_revoke(
 			origin: OriginFor<T>,
 			motion_hash: T::Hash,
@@ -206,7 +208,7 @@ pub mod pallet {
 					let initial_count = motion.approvals.len() as u32;
 
 					// Only proceed if the motion has not ended yet
-					if Self::has_ended(&motion) {
+					if Self::has_ended(motion) {
 						return Err((Error::<T>::MotionHasEnded, initial_count));
 					}
 
@@ -249,6 +251,7 @@ pub mod pallet {
 
 		#[pallet::call_index(2)]
 		#[pallet::weight(T::WeightInfo::motion_close_approved().max(T::WeightInfo::motion_close_expired()))]
+		#[allow(clippy::useless_conversion)]
 		pub fn motion_close(
 			origin: OriginFor<T>,
 			motion_hash: T::Hash,

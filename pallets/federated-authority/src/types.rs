@@ -52,6 +52,7 @@ where
 	}
 }
 
+#[allow(clippy::single_match)]
 #[impl_trait_for_tuples::impl_for_tuples(5)]
 impl<O: Clone> EnsureFromIdentity<O> for Tuple {
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {

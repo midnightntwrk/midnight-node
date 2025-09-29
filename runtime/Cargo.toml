@@ -14,7 +14,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 log.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
-impl-trait-for-tuples.workspace = true
 
 frame-support.workspace = true
 frame-system.workspace = true
@@ -220,4 +219,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec", "serde"]
+ignored = ["scale-info", "parity-scale-codec", "serde", "frame-storage-access-test-runtime"]
