@@ -1,22 +1,22 @@
 #[path = "../../config/mod.rs"]
 mod config;
-use config::load_config;
-use config::get_mapping_validator_address;
 use config::get_auth_token_policy_id;
 use config::get_local_env_cost_models;
+use config::get_mapping_validator_address;
 use config::load_cbor;
+use config::load_config;
 
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::{
-	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState, transactions::*,
-	types::OgmiosUtxo,
+	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
+	transactions::*, types::OgmiosUtxo,
 };
 
 use std::fs;
 use std::time::Duration;
-use whisky::*;
 use whisky::csl::*;
 use whisky::data::constr0;
+use whisky::*;
 
 pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo> {
 	let client = get_ogmios_client().await;
@@ -37,7 +37,7 @@ pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo
 }
 
 pub async fn get_ogmios_client() -> OgmiosClients {
-    let cfg = load_config();
+	let cfg = load_config();
 	let ogmios_url = cfg.ogmios_url.clone();
 	client_for_url(&ogmios_url, Duration::from_secs(5)).await.unwrap()
 }
@@ -48,7 +48,8 @@ pub fn build_asset_vector(ogmios_utxo: &OgmiosUtxo) -> Vec<Asset> {
 	for (policy_id, assets) in &ogmios_utxo.value.native_tokens {
 		let policy_id_str = hex::encode(policy_id);
 		for asset in assets {
-			input_assets.push(Asset::new_from_str(&policy_id_str, asset.amount.to_string().as_str()));
+			input_assets
+				.push(Asset::new_from_str(&policy_id_str, asset.amount.to_string().as_str()));
 		}
 	}
 	input_assets
@@ -60,9 +61,14 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	let client = get_ogmios_client().await;
 	let utxos = client.query_utxos(&[payment_addr.clone().into()]).await.unwrap();
 	assert!(!utxos.is_empty(), "No UTXOs found for funding address");
-	let utxo = utxos.iter().max_by_key(|u| u.value.lovelace).expect("No UTXO with lovelace found");
-	let skey_json = fs::read_to_string(&cfg.payment_skey_file).expect("Failed to read payment.skey");
-	let skey_value: serde_json::Value = serde_json::from_str(&skey_json).expect("Invalid skey JSON");
+	let utxo = utxos
+		.iter()
+		.max_by_key(|u| u.value.lovelace)
+		.expect("No UTXO with lovelace found");
+	let skey_json =
+		fs::read_to_string(&cfg.payment_skey_file).expect("Failed to read payment.skey");
+	let skey_value: serde_json::Value =
+		serde_json::from_str(&skey_json).expect("Invalid skey JSON");
 	let cbor_hex = skey_value["cborHex"].as_str().expect("No cborHex in skey JSON");
 	let input_tx_hash = hex::encode(utxo.transaction.id);
 	let input_index = utxo.index;
@@ -82,14 +88,23 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	hex::encode(response.transaction.id)
 }
 
-pub async fn register(cardano_address: &str, midnight_address_hex: &str, signing_wallet: &Wallet, tx_in: &OgmiosUtxo, collateral_utxo: &OgmiosUtxo) -> [u8; 32] {
+pub async fn register(
+	cardano_address: &str,
+	midnight_address_hex: &str,
+	signing_wallet: &Wallet,
+	tx_in: &OgmiosUtxo,
+	collateral_utxo: &OgmiosUtxo,
+) -> [u8; 32] {
 	let validator_address = get_mapping_validator_address();
 	let cardano_address_hex = Address::from_bech32(cardano_address).unwrap().to_hex();
 	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": [{ "bytes": cardano_address_hex }, { "bytes": midnight_address_hex }]})).unwrap();
 	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
 	let auth_token_policy_id = get_auth_token_policy_id();
-	let send_assets = vec![Asset::new_from_str("lovelace", "150000000"), Asset::new_from_str(&auth_token_policy_id, "1")];
-    let cfg = load_config();
+	let send_assets = vec![
+		Asset::new_from_str("lovelace", "150000000"),
+		Asset::new_from_str(&auth_token_policy_id, "1"),
+	];
+	let cfg = load_config();
 	let minting_script = load_cbor(&cfg.auth_token_policy_file);
 	let network = Network::Custom(get_local_env_cost_models());
 
@@ -97,17 +112,27 @@ pub async fn register(cardano_address: &str, midnight_address_hex: &str, signing
 	tx_builder
 		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
-		.tx_in(&hex::encode(tx_in.transaction.id), tx_in.index.into(), &build_asset_vector(&tx_in), &payment_addr)
-		.tx_in_collateral(&hex::encode(collateral_utxo.transaction.id), collateral_utxo.index.into(), &build_asset_vector(&collateral_utxo), &payment_addr)
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(&tx_in),
+			&payment_addr,
+		)
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(&collateral_utxo),
+			&payment_addr,
+		)
 		.tx_out(&validator_address, &send_assets)
 		.tx_out_inline_datum_value(&WData::JSON(datum))
 		.mint_plutus_script_v2()
 		.mint(1, &auth_token_policy_id, "")
 		.minting_script(&minting_script)
 		.mint_redeemer_value(&WRedeemer {
-                data: WData::JSON(constr0(serde_json::json!([])).to_string()),
-                ex_units: Budget { mem: 376570, steps: 94156294 },
-            })
+			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			ex_units: Budget { mem: 376570, steps: 94156294 },
+		})
 		.change_address(&payment_addr)
 		.complete_sync(None)
 		.unwrap();
