@@ -19,7 +19,6 @@ use crate::{
 };
 use bech32::{Bech32m, Hrp};
 use derive_where::derive_where;
-use midnight_serialize::tagged_serialize;
 
 #[derive(Debug)]
 #[derive_where(Clone)]
@@ -91,8 +90,10 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		let hrp = Hrp::parse(&hrp).expect("HRP for encryption secret key can be parsed");
 
 		let mut data = Vec::with_capacity(64);
-		tagged_serialize(&self.secret_keys().encryption_secret_key, &mut data)
-			.expect("encryption secret key can be deserialized");
+		self.secret_keys()
+			.encryption_secret_key
+			.serialize(&mut data)
+			.expect("encryption secret key can be serialized");
 
 		bech32::encode::<Bech32m>(hrp, &data).expect("viewing key can be bech32 encoded")
 	}
