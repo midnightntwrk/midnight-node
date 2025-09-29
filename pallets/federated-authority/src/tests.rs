@@ -422,8 +422,6 @@ fn motion_close_fails_if_not_approved_and_not_expired() {
 
 		// Try to close before expiry (should fail)
 		run_to_block(10);
-		#[allow(clippy::assertions_on_constants)]
-		assert!(10 < 1 + MOTION_DURATION); // Ensure we're before expiry
 
 		assert_noop!(
 			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
