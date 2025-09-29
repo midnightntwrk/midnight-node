@@ -16,7 +16,6 @@ use super::{
 	onchain_runtime_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{hash::HashOutput as HashOutputLedger, time::Timestamp};
-use core::marker::PhantomData;
 use derive_where::derive_where;
 use ledger_storage_local as storage;
 use ledger_storage_local::db::DB;
