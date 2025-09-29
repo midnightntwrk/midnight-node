@@ -1,5 +1,6 @@
+use rs_merkle::{MerkleProof, MerkleTree};
 use serde::{Deserialize, Serialize};
-use sp_core::H256;
+use sp_core::{H256};
 use std::{fmt::Display, fs::File, io::BufReader, path::Path};
 
 use mmr_rpc::LeavesProof;
@@ -12,7 +13,7 @@ use subxt::{
 	},
 };
 
-use sp_consensus_beefy::known_payloads::MMR_ROOT_ID;
+use sp_consensus_beefy::{ecdsa_crypto::Public, known_payloads::MMR_ROOT_ID, mmr::BeefyAuthoritySet, BeefySignatureHasher, ValidatorSet};
 use sp_mmr_primitives::{
 	EncodableOpaqueLeaf, LeafProof,
 	mmr_lib::{helper::get_peaks, leaf_index_to_mmr_size},
@@ -20,17 +21,13 @@ use sp_mmr_primitives::{
 };
 
 use crate::{
-	Block,
-	cardano_encoding::SignedCommitment,
-	helpers::{HexBeefyRelayChainProof, ToHex},
+	cardano_encoding::SignedCommitment, helpers::{HexBeefyRelayChainProof, ToHex}, keccak::{authorities_merkle_tree, get_authorities_proof, KeccakHasher}, Block
 };
 
 pub type BeefyKeys = Vec<BeefyKeyInfo>;
 
 pub type BeefySignedCommitment =
 	sp_consensus_beefy::SignedCommitment<Block, sp_consensus_beefy::ecdsa_crypto::Signature>;
-pub type BeefyValidatorSet =
-	Vec<crate::mn_meta::runtime_types::sp_consensus_beefy::ecdsa_crypto::Public>;
 
 pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<Block, H256, H256, Vec<u8>>;
 pub type LeafIndex = u64;
@@ -70,16 +67,30 @@ pub fn keys_from_file<T: AsRef<Path> + Display>(key_file: T) -> BeefyKeys {
 	serde_json::from_reader(reader).expect(&file_read_err)
 }
 
-#[derive(Debug)]
 pub struct BeefyRelayChainProof {
 	pub consensus_proof: LeavesProof<H256>,
 	//todo
-	pub authority_proof: (),
+	pub merkle_authorities: MerkleTree<KeccakHasher>,
 	pub signed_commitment: BeefySignedCommitment,
-	pub validator_set: BeefyValidatorSet,
+	pub validators: Vec<Public>
 }
 
 impl BeefyRelayChainProof {
+	pub fn create(
+		consensus_proof: LeavesProof<H256>, 
+		signed_commitment: BeefySignedCommitment, 
+		validator_set: ValidatorSet<Public>,
+		next_authorities: BeefyAuthoritySet<H256>
+	) -> Option<Self> {
+		if !verify_next_authority_set(next_authorities, &consensus_proof) {
+			return None;
+		}
+
+		let merkle_authorities = authorities_merkle_tree(&signed_commitment, &validator_set)?;
+
+		Some(BeefyRelayChainProof { consensus_proof, merkle_authorities, signed_commitment, validators: validator_set.validators().to_vec() })
+	}
+
 	pub fn print_as_hex(&self) {
 		let result = HexBeefyRelayChainProof::from(self);
 		println!("{result:#?}");
@@ -110,8 +121,12 @@ impl BeefyRelayChainProof {
 	pub fn signed_commitment_as_cardano(&self) -> SignedCommitment {
 		SignedCommitment::from_signed_commitment_and_validators(
 			self.signed_commitment.clone(),
-			&self.validator_set,
+			&self.validators,
 		)
+	}
+
+	pub fn authorities_proof(&self) -> MerkleProof<KeccakHasher> {
+		get_authorities_proof(&self.merkle_authorities, &self.signed_commitment)
 	}
 
 	/// Returns a list of peaks per leaf index, taken from the LeafProof
@@ -138,23 +153,7 @@ impl BeefyRelayChainProof {
 
 	/// Returns the decoded leaves of `LeavesProof`
 	pub fn mmr_leaves(&self) -> Vec<MmrLeaf> {
-		let mut mmr_leaves = vec![];
-
-		let leaves = &self.consensus_proof.leaves.0;
-
-		let leaves: Vec<EncodableOpaqueLeaf> =
-			Decode::decode(&mut &leaves[..]).expect("failed to convert to mmrleaf");
-
-		for leaf in leaves {
-			let leaf_as_bytes = leaf.into_opaque_leaf().0;
-
-			let mmr_leaf: MmrLeaf =
-				Decode::decode(&mut &leaf_as_bytes[..]).expect("failed to decode to mmrleaf");
-
-			mmr_leaves.push(mmr_leaf);
-		}
-
-		mmr_leaves
+		get_mmr_leaves(&self.consensus_proof)
 	}
 
 	/// Returns all the node hashes of the peaks
@@ -169,4 +168,36 @@ impl BeefyRelayChainProof {
 
 		Decode::decode(&mut &leaf_proof_as_bytes.0[..]).expect("Failed to decode to LeafProof")
 	}
+}
+
+fn verify_next_authority_set(next_auth_set:BeefyAuthoritySet<H256>,  consensus_proof:&LeavesProof<H256>) -> bool {
+	let mmr_leaves = get_mmr_leaves(consensus_proof);
+
+	for leaf in mmr_leaves {
+		if leaf.beefy_next_authority_set != next_auth_set {
+			println!("WARNING: next authority sets are invalid: from proof: {:?}, from storage: {:?}",leaf.beefy_next_authority_set, next_auth_set);
+			return false
+		}
+	}
+
+	true
+}
+
+fn get_mmr_leaves(consensus_proof:&LeavesProof<H256>) -> Vec<MmrLeaf>  {
+	let mut mmr_leaves = vec![];
+
+		let leaves = &consensus_proof.leaves.0;
+		let leaves: Vec<EncodableOpaqueLeaf> =
+			Decode::decode(&mut &leaves[..]).expect("failed to convert to mmrleaf");
+
+		for leaf in leaves {
+			let leaf_as_bytes = leaf.into_opaque_leaf().0;
+
+			let mmr_leaf: MmrLeaf =
+				Decode::decode(&mut &leaf_as_bytes[..]).expect("failed to decode to mmrleaf");
+
+			mmr_leaves.push(mmr_leaf);
+		}
+
+		mmr_leaves
 }

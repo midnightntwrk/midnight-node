@@ -7,9 +7,8 @@ use pallas::{
 	ledger::primitives::{BoundedBytes, Constr, PlutusData},
 };
 
+use sp_consensus_beefy::ecdsa_crypto::Public;
 use sp_consensus_beefy::{SignedCommitment as BeefySignedCommitment, known_payloads::MMR_ROOT_ID};
-
-use crate::mn_meta::runtime_types::sp_consensus_beefy::ecdsa_crypto::Public as MidnBeefyPublic;
 
 // Known encoding tag
 const TAG: u64 = 121;
@@ -109,7 +108,7 @@ impl ToPlutusData for SignedCommitment {
 impl SignedCommitment {
 	pub fn from_signed_commitment_and_validators(
 		signed_commitment: BeefySignedCommitment<u32, sp_consensus_beefy::ecdsa_crypto::Signature>,
-		validator_set: &[MidnBeefyPublic],
+		validator_set: &[Public],
 	) -> Self {
 		let commitment = Commitment {
 			payloads: signed_commitment
@@ -135,7 +134,7 @@ impl SignedCommitment {
 						// Substrate adds an extra byte to these signatures. We'll remove this manually for compatibility
 						signature.pop();
 
-						Some(Vote { signature, authority_index: i, public_key: pk.0.to_vec() })
+						Some(Vote { signature, authority_index: i, public_key: pk.clone().into_inner().to_vec() })
 					},
 					None => None,
 				}

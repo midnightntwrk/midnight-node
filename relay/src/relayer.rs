@@ -1,17 +1,10 @@
 use crate::{
-	Block, BlockHash,
-	beefy::{self, BeefyRelayChainProof, PeakNodes},
-	helpers::ToHex,
-	mn_meta,
+	beefy::{self, BeefyRelayChainProof, PeakNodes}, helpers::{FromMnMeta, ToHex}, mn_meta, Block, BlockHash
 };
 
 use mmr_rpc::LeavesProof;
-use mn_meta::runtime_types::sp_consensus_beefy::{
-	ecdsa_crypto::Public as MidnBeefyPublic, mmr::BeefyAuthoritySet,
-};
 use sp_consensus_beefy::{
-	SignedCommitment as BeefySignedCommitment, VersionedFinalityProof,
-	ecdsa_crypto::Signature as ECDSASig,
+	ecdsa_crypto::{Public as BeefyPublic, Signature as ECDSASig}, mmr::BeefyAuthoritySet, SignedCommitment as BeefySignedCommitment, ValidatorSet as BeefyValidatorSet, VersionedFinalityProof
 };
 use sp_core::{Bytes, H256};
 use subxt::{
@@ -73,7 +66,13 @@ impl Relayer {
 		while let Some(result) = sub.next().await {
 			let justification = result.expect("failed to get justification");
 
-			let proof = self.handle_justification_stream_data(justification.0).await;
+			let Some(proof) = self.handle_justification_stream_data(justification.0).await else {
+				println!("Proof failed");
+				continue
+			};
+
+			let block_hash = proof.block_hash();
+			
 
 			proof.print_as_hex();
 		}
@@ -82,27 +81,19 @@ impl Relayer {
 	async fn handle_justification_stream_data(
 		&self,
 		justification: Vec<u8>,
-	) -> BeefyRelayChainProof {
+	) -> Option<BeefyRelayChainProof> {
 		let VersionedFinalityProof::<Block, ECDSASig>::V1(beef_signed_commitment) =
 			Decode::decode(&mut &justification[..])
 				.expect("failed to parse to VersionedFinalityProof");
 
 		let mmr_proof = self.get_consensus_proof(&beef_signed_commitment).await;
-		let at_block_hash = Some(mmr_proof.block_hash);
-
-		let validator_set = self.get_beefy_validator_set(at_block_hash).await;
+		let at_block_hash = mmr_proof.block_hash;
 
 		// TODO: get encodings for authority set, next authority set, and construct
-		let authority_set = self.get_beefy_authority_set(at_block_hash).await;
-		let next_authority_set = self.get_next_beefy_authority_set(at_block_hash).await;
+		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+		let next_authorities = self.get_next_beefy_authority_set(at_block_hash).await;
 
-		BeefyRelayChainProof {
-			consensus_proof: mmr_proof,
-			//todo
-			authority_proof: (),
-			signed_commitment: beef_signed_commitment,
-			validator_set,
-		}
+		BeefyRelayChainProof::create(mmr_proof, beef_signed_commitment, validator_set, next_authorities)
 	}
 
 	pub async fn get_consensus_proof(
@@ -212,15 +203,11 @@ impl Relayer {
 		}
 	}
 
-	async fn get_beefy_validator_set(&self, at_block_hash: Option<H256>) -> Vec<MidnBeefyPublic> {
+	async fn get_beefy_validators(&self, at_block_hash: BlockHash) -> Vec<BeefyPublic> {
 		let beefy_validator_set_query = mn_meta::storage().beefy().authorities();
+		let storage_fetcher = self.api.storage().at(at_block_hash);
 
-		let storage_fetcher = match at_block_hash {
-			Some(block_hash) => self.api.storage().at(block_hash),
-			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
-		};
-
-		let Some(validator_set) = storage_fetcher
+		let Some(validators) = storage_fetcher
 			.fetch(&beefy_validator_set_query)
 			.await
 			.expect("failed to get validator set")
@@ -229,45 +216,58 @@ impl Relayer {
 			return vec![];
 		};
 
-		validator_set.0
+		validators.0.into_iter().map(|v| BeefyPublic::into_non_metadata(v)).collect()
 	}
 
+	async fn get_beefy_validator_set(&self, at_block_hash: BlockHash) -> Option<BeefyValidatorSet<BeefyPublic>> {
+		let validator_set_call = mn_meta::apis().beefy_api().validator_set();
+		
+		let validator_set = self.api.runtime_api().at(at_block_hash).call(validator_set_call).await.expect("failed to query validator set");
+
+		validator_set.map(|v_set| BeefyValidatorSet::into_non_metadata(v_set))
+	}
+
+
 	// Below are for authority set proofs
-	async fn get_beefy_authority_set(
-		&self,
-		at_block_hash: Option<BlockHash>,
-	) -> BeefyAuthoritySet<H256> {
+	async fn get_beefy_authority_set(&self, at_block_hash: BlockHash) -> BeefyAuthoritySet<H256> {
 		let get_authority_set_query = mn_meta::storage().beefy_mmr_leaf().beefy_authorities();
 
-		let storage_fetcher = match at_block_hash {
-			Some(block_hash) => self.api.storage().at(block_hash),
-			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
-		};
+		let storage_fetcher = self.api.storage().at(at_block_hash);
 
-		storage_fetcher
+		let result = storage_fetcher
 			.fetch(&get_authority_set_query)
 			.await
 			.expect("failed to get authority set")
-			.expect("No BeefyAuthoritySet found")
+			.expect("No BeefyAuthoritySet found");
+
+		BeefyAuthoritySet::into_non_metadata(result)
+	}
+
+	async fn get_beefy_authorities_proof(&self, at_block_hash: BlockHash) -> BeefyAuthoritySet<H256> {
+		let authorities_proof_call = mn_meta::apis().beefy_mmr_api().authority_set_proof();
+
+		let result = self.api.runtime_api().at(at_block_hash).call(authorities_proof_call).await.expect("failed to query authorities proof");
+
+		BeefyAuthoritySet::into_non_metadata(result)
+
 	}
 
 	async fn get_next_beefy_authority_set(
 		&self,
-		at_block_hash: Option<BlockHash>,
-	) -> BeefyAuthoritySet<H256> {
+		at_block_hash: BlockHash,
+	) ->  BeefyAuthoritySet<H256> {
 		let get_next_authority_set_query =
 			mn_meta::storage().beefy_mmr_leaf().beefy_next_authorities();
 
-		let storage_fetcher = match at_block_hash {
-			Some(block_hash) => self.api.storage().at(block_hash),
-			None => self.api.storage().at_latest().await.expect("failed to get latest storage"),
-		};
+		let storage_fetcher = self.api.storage().at(at_block_hash);
 
-		storage_fetcher
+		let result = storage_fetcher
 			.fetch(&get_next_authority_set_query)
 			.await
 			.expect("failed to get next authority set")
-			.expect("No Next BeefyAuthoritySet found")
+			.expect("No Next BeefyAuthoritySet found");
+
+		BeefyAuthoritySet::into_non_metadata(result)
 	}
 
 	async fn get_block_hash(&self, block: Block) -> Option<H256> {
