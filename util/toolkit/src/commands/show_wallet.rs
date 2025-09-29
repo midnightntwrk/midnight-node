@@ -159,7 +159,7 @@ mod tests {
 	async fn test_from_seed(
 		(seed, src_files): (&str, Vec<String>),
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
-		let seed = WalletSeed::from(seed);
+		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = ShowWalletArgs {
 			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
 			seed: Some(seed),
