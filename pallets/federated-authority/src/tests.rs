@@ -27,7 +27,7 @@ fn create_remark_call(data: Vec<u8>) -> Box<RuntimeCall> {
 	Box::new(RuntimeCall::System(frame_system::Call::remark { remark: data }))
 }
 
-fn get_motion_hash(call: &Box<RuntimeCall>) -> H256 {
+fn get_motion_hash(call: &RuntimeCall) -> H256 {
 	<Test as frame_system::Config>::Hashing::hash_of(call)
 }
 
@@ -422,6 +422,7 @@ fn motion_close_fails_if_not_approved_and_not_expired() {
 
 		// Try to close before expiry (should fail)
 		run_to_block(10);
+		#[allow(clippy::assertions_on_constants)]
 		assert!(10 < 1 + MOTION_DURATION); // Ensure we're before expiry
 
 		assert_noop!(
