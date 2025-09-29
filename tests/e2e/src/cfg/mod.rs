@@ -6,6 +6,7 @@ use whisky::LanguageVersion;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
+	pub node_url: String,
 	pub ogmios_url: String,
 	pub payment_addr: String,
 	pub payment_addr_file: String,
