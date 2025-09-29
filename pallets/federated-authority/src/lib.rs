@@ -165,20 +165,19 @@ pub mod pallet {
 			.map_err(|(err, total_approvals)| {
 				// Return actual weight based on the specific error case
 				let actual_weight = match err {
-					Error::<T>::MotionHasEnded => T::WeightInfo::motion_approve_ended(),
+					Error::<T>::MotionHasEnded => Some(T::WeightInfo::motion_approve_ended()),
 					Error::<T>::MotionAlreadyApproved => {
-						T::WeightInfo::motion_approve_already_approved(total_approvals)
+						Some(T::WeightInfo::motion_approve_already_approved(total_approvals))
 					},
 					Error::<T>::MotionApprovalExceedsBounds => {
-						T::WeightInfo::motion_approve_exceeds_bounds(total_approvals)
+						Some(T::WeightInfo::motion_approve_exceeds_bounds())
 					},
 					_ => return err.into(), // This should be unreachable
 				};
 
-				DispatchErrorWithPostInfo {
-					post_info: Some(actual_weight).into(),
-					error: err.into(),
-				}
+				let post_info = PostDispatchInfo { actual_weight, pays_fee: Pays::No };
+
+				DispatchErrorWithPostInfo { post_info, error: err.into() }
 			})?;
 
 			Self::deposit_event(Event::MotionApproved { motion_hash, auth_id });
@@ -220,18 +219,19 @@ pub mod pallet {
 				.map_err(|(err, approvals)| {
 					// Return actual weight based on the specific error case
 					let actual_weight = match err {
-						Error::<T>::MotionNotFound => T::WeightInfo::motion_revoke_not_found(),
-						Error::<T>::MotionHasEnded => T::WeightInfo::motion_revoke_ended(),
+						Error::<T>::MotionNotFound => {
+							Some(T::WeightInfo::motion_revoke_not_found())
+						},
+						Error::<T>::MotionHasEnded => Some(T::WeightInfo::motion_revoke_ended()),
 						Error::<T>::MotionApprovalMissing => {
-							T::WeightInfo::motion_revoke_approval_missing(approvals)
+							Some(T::WeightInfo::motion_revoke_approval_missing(approvals))
 						},
 						_ => return err.into(), // This should be unreachable
 					};
 
-					DispatchErrorWithPostInfo {
-						post_info: Some(actual_weight).into(),
-						error: err.into(),
-					}
+					let post_info = PostDispatchInfo { actual_weight, pays_fee: Pays::No };
+
+					DispatchErrorWithPostInfo { post_info, error: err.into() }
 				})?;
 
 			Self::deposit_event(Event::MotionRevoked { motion_hash, auth_id });
@@ -256,19 +256,18 @@ pub mod pallet {
 			// Anyone can try to close a motion
 			ensure_signed(origin)?;
 
-			let motion = Motions::<T>::get(motion_hash).ok_or(Error::<T>::MotionNotFound)?;
+			let motion = Motions::<T>::get(motion_hash).ok_or_else(|| {
+				let post_info = PostDispatchInfo {
+					actual_weight: Some(T::WeightInfo::motion_close_not_found()),
+					pays_fee: Pays::No,
+				};
+				DispatchErrorWithPostInfo { post_info, error: Error::<T>::MotionNotFound.into() }
+			})?;
+
 			let total_approvals = motion.approvals.len() as u32;
 			let has_ended = Self::has_ended(&motion);
 
 			if Self::is_motion_approved(total_approvals) {
-				// Only allow closure if the motion has ended
-				if !has_ended {
-					return Err(DispatchErrorWithPostInfo {
-						post_info: Some(T::WeightInfo::motion_close_still_ongoing()).into(),
-						error: Error::<T>::MotionTooEarlyToClose.into(),
-					});
-				}
-
 				// Dispatch motion
 				Self::motion_dispatch(motion_hash)?;
 				// Remove after dispatch
@@ -282,8 +281,13 @@ pub mod pallet {
 			} else {
 				// Only allow closure if the motion has ended
 				if !has_ended {
+					let post_info = PostDispatchInfo {
+						actual_weight: Some(T::WeightInfo::motion_close_still_ongoing()),
+						pays_fee: Pays::No,
+					};
+
 					return Err(DispatchErrorWithPostInfo {
-						post_info: Some(T::WeightInfo::motion_close_still_ongoing()).into(),
+						post_info,
 						error: Error::<T>::MotionNotEnded.into(),
 					});
 				}
@@ -329,6 +333,73 @@ pub mod pallet {
 		/// Returns `true` if the motion has finished (expired).
 		fn has_ended(motion: &MotionInfo<T>) -> bool {
 			Self::block_number() >= motion.ends_block
+		}
+
+		#[cfg(feature = "runtime-benchmarks")]
+		fn motion_call() -> (T::Hash, T::MotionCall) {
+			let call: T::MotionCall =
+				frame_system::Call::<T>::remark { remark: vec![1, 2, 3] }.into();
+			let motion_hash = T::Hashing::hash_of(&call);
+
+			(motion_hash, call)
+		}
+
+		#[cfg(feature = "runtime-benchmarks")]
+		pub fn create_motion_approvals(
+			num_approvals: u32,
+			ends_block: BlockNumberFor<T>,
+		) -> (T::Hash, T::MotionCall) {
+			let (motion_hash, call) = Self::motion_call();
+
+			// Collect approvals to add
+			let mut new_approvals = BoundedBTreeSet::new();
+			for i in 0..num_approvals {
+				new_approvals.try_insert(i).unwrap();
+			}
+
+			Self::add_approvals_to_motion(new_approvals, motion_hash, call.clone(), ends_block);
+
+			(motion_hash, call)
+		}
+
+		#[cfg(feature = "runtime-benchmarks")]
+		pub fn create_motion_approval(
+			auth_id: AuthId,
+			ends_block: BlockNumberFor<T>,
+		) -> (T::Hash, T::MotionCall) {
+			let (motion_hash, call) = Self::motion_call();
+
+			// Collect approvals to add
+			let mut new_approvals = BoundedBTreeSet::new();
+			new_approvals.try_insert(auth_id).unwrap();
+
+			Self::add_approvals_to_motion(new_approvals, motion_hash, call.clone(), ends_block);
+
+			(motion_hash, call)
+		}
+
+		#[cfg(feature = "runtime-benchmarks")]
+		fn add_approvals_to_motion(
+			approvals: BoundedBTreeSet<AuthId, T::MaxAuthorityBodies>,
+			motion_hash: T::Hash,
+			call: T::MotionCall,
+			ends_block: BlockNumberFor<T>,
+		) {
+			Motions::<T>::mutate(motion_hash, |maybe_motion| {
+				match maybe_motion {
+					// If it already exists, just extend the approvals
+					Some(motion) => {
+						for a in approvals {
+							let _ = motion.approvals.try_insert(a);
+						}
+					},
+					// If not, create a new MotionInfo
+					None => {
+						*maybe_motion =
+							Some(MotionInfo::<T> { approvals, ends_block, call: call.clone() });
+					},
+				}
+			});
 		}
 	}
 }

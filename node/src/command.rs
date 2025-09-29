@@ -31,10 +31,8 @@ use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
 use {
-	crate::benchmarking::{RemarkBuilder, TransferKeepAliveBuilder, inherent_benchmark_data},
+	crate::benchmarking::{RemarkBuilder, inherent_benchmark_data},
 	frame_benchmarking_cli::*,
-	midnight_node_runtime::EXISTENTIAL_DEPOSIT,
-	sp_keyring::Sr25519Keyring,
 	sp_runtime::traits::HashingFor,
 };
 
@@ -417,7 +415,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
 
-						cmd.run(config, partial.client, db, storage)
+						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
                         let data_sources = config.tokio_handle.block_on(
@@ -463,11 +461,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						// Register the *Remark* and *TKA* builders.
 						let ext_factory = ExtrinsicFactory(vec![
 							Box::new(RemarkBuilder::new(partial.client.clone())),
-							Box::new(TransferKeepAliveBuilder::new(
-								partial.client.clone(),
-								Sr25519Keyring::Alice.to_account_id(),
-								EXISTENTIAL_DEPOSIT,
-							)),
 						]);
 
 						cmd.run(

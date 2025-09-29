@@ -96,7 +96,7 @@ impl pallet_collective::Config<CouncilCollective> for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDurationParam;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>;
+	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote;
 	type SetMembersOrigin = NeverEnsureOrigin<()>;
 	type MaxProposalWeight = MaxProposalWeight;
@@ -127,7 +127,7 @@ impl pallet_collective::Config<TechnicalAuthorityCollective> for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDurationParam;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>;
+	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote;
 	type SetMembersOrigin = NeverEnsureOrigin<()>;
 	type MaxProposalWeight = MaxProposalWeight;
@@ -150,8 +150,8 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type WeightInfo = ();
 }
 
-// Federated Authority configuration - matching runtime exactly
-pub const MAX_NUM_BODIES: u32 = 2; // TechnicalAuthority + Council
+// Federated Authority configuration
+pub const MAX_NUM_BODIES: u32 = 30; // Bigger number to properly measure `a` impact in the benchmarks
 
 type CouncilApproval = AuthorityBody<
 	Council,
@@ -175,7 +175,7 @@ impl crate::Config for Test {
 	type MotionCall = RuntimeCall;
 	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
 	type MotionDuration = MotionDurationParam;
-	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<2, MAX_NUM_BODIES>; // Council +  TechnicalAuthority approvals should be enough
 	type MotionApprovalOrigin =
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalAuthorityApproval)>;
 	type MotionRevokeOrigin =

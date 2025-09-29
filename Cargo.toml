@@ -7,16 +7,16 @@ members = [
     "node",
     "pallets/midnight",
     "pallets/midnight-system",
-    "pallets/upgrade",
+    # "pallets/upgrade",
     "pallets/version",
-    "primitives/upgrade",
+    # "primitives/upgrade",
     "primitives/midnight",
     "primitives/ledger",
     "res",
     "runtime",
     "util/toolkit",
     "util/documented",
-    "util/upgrader",
+    # "util/upgrader",
     "docs",
 ]
 
@@ -158,6 +158,7 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
+frame-storage-access-test-runtime  = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }

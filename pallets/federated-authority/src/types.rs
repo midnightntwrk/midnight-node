@@ -14,7 +14,7 @@
 use frame_support::traits::{EnsureOrigin, PalletInfoAccess};
 use sp_std::marker::PhantomData;
 
-pub type AuthId = u8;
+pub type AuthId = u32;
 
 pub trait FederatedAuthorityProportion {
 	fn reached_proportion(n: u32, d: u32) -> bool;
@@ -31,6 +31,9 @@ pub struct AuthorityBody<P, EnsureProportion> {
 pub trait EnsureFromIdentity<O> {
 	/// On success, returns the pallet index of the authority that matched.
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O>;
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin() -> Result<O, ()>;
 }
 
 impl<O, P, EnsureProportion> EnsureFromIdentity<O> for AuthorityBody<P, EnsureProportion>
@@ -40,133 +43,37 @@ where
 	EnsureProportion: EnsureOrigin<O>,
 {
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		EnsureProportion::try_origin(o).map(|_| P::index() as u8)
+		EnsureProportion::try_origin(o).map(|_| P::index() as u32)
+	}
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin() -> Result<O, ()> {
+		EnsureProportion::try_successful_origin()
 	}
 }
 
-// Manual implementation for tuples - supporting up to 5 authorities
-#[cfg(not(test))]
-impl<O, A> EnsureFromIdentity<O> for (A,)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-{
+#[impl_trait_for_tuples::impl_for_tuples(5)]
+impl<O: Clone> EnsureFromIdentity<O> for Tuple {
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		A::ensure_from_bodies(o)
+		for_tuples!( #(
+            match Tuple::ensure_from_bodies(o.clone()) {
+                Ok(auth_origin_info) => return Ok(auth_origin_info),
+                Err(_) => {}
+            }
+        )* );
+		Err(o)
 	}
-}
 
-#[cfg(not(test))]
-impl<O, A, B> EnsureFromIdentity<O> for (A, B)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		B::ensure_from_bodies(o)
-	}
-}
-
-#[cfg(not(test))]
-impl<O, A, B, C> EnsureFromIdentity<O> for (A, B, C)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-	C: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match B::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		C::ensure_from_bodies(o)
-	}
-}
-
-#[cfg(not(test))]
-impl<O, A, B, C, D> EnsureFromIdentity<O> for (A, B, C, D)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-	C: EnsureFromIdentity<O>,
-	D: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match B::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match C::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		D::ensure_from_bodies(o)
-	}
-}
-
-#[cfg(not(test))]
-impl<O, A, B, C, D, E> EnsureFromIdentity<O> for (A, B, C, D, E)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-	C: EnsureFromIdentity<O>,
-	D: EnsureFromIdentity<O>,
-	E: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match B::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match C::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match D::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		E::ensure_from_bodies(o)
-	}
-}
-
-// Manual implementation for tuples in test code
-#[cfg(test)]
-impl<O, A, B> EnsureFromIdentity<O> for (A, B)
-where
-	O: Clone,
-	A: EnsureFromIdentity<O>,
-	B: EnsureFromIdentity<O>,
-{
-	fn ensure_from_bodies(o: O) -> Result<AuthId, O> {
-		match A::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(_) => {},
-		}
-		match B::ensure_from_bodies(o.clone()) {
-			Ok(auth_id) => return Ok(auth_id),
-			Err(o) => Err(o),
-		}
+	#[cfg(feature = "runtime-benchmarks")]
+	fn try_successful_origin() -> Result<O, ()> {
+		for_tuples!( #(
+            match Tuple::try_successful_origin() {
+                Ok(successful_origin) => return Ok(successful_origin),
+                Err(_) => {}
+            }
+        )* );
+		// All tuple members returned Err, so none can provide a successful origin
+		Err(())
 	}
 }
 
@@ -176,6 +83,7 @@ pub struct FederatedAuthorityOriginManager<Authorities>(pub PhantomData<Authorit
 
 impl<O, Authorities> EnsureOrigin<O> for FederatedAuthorityOriginManager<Authorities>
 where
+	// O: Clone + From<pallet_collective::RawOrigin<u64, pallet_collective::Instance1>> + From<pallet_collective::RawOrigin<u64, pallet_collective::Instance2>>,
 	O: Clone,
 	Authorities: EnsureFromIdentity<O>,
 {
@@ -187,7 +95,7 @@ where
 
 	#[cfg(feature = "runtime-benchmarks")]
 	fn try_successful_origin() -> Result<O, ()> {
-		Err(())
+		Authorities::try_successful_origin()
 	}
 }
 

@@ -99,7 +99,8 @@ plutus.workspace = true
 serde.workspace = true
 
 [build-dependencies]
-substrate-wasm-builder = { workspace = true, optional = true }
+substrate-wasm-builder = { workspace = true, optional = true, default-features = true }
+frame-storage-access-test-runtime = { workspace = true, optional = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -158,6 +159,7 @@ std = [
     "sp-genesis-builder/std",
     "sp-governed-map/std",
     "substrate-wasm-builder",
+    "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",

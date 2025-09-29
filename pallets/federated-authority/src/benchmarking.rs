@@ -14,58 +14,36 @@
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
+use crate::Pallet;
 
-use frame_benchmarking::v2::*;
+use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{EnsureOrigin, Get};
 use frame_system::RawOrigin;
-use parity_scale_codec::Decode;
+use sp_runtime::DispatchError;
+
 #[benchmarks]
 mod benchmarks {
 	use super::*;
 
 	// Helper function to create a motion with a specific number of approvals
 	fn create_motion_with_approvals<T: Config>(num_approvals: u32) -> (T::Hash, T::MotionCall) {
-		let call: T::MotionCall = frame_system::Call::<T>::remark { remark: vec![1, 2, 3] }.into();
-		let motion_hash = T::Hashing::hash_of(&call);
-
-		// Create motion with approvals
-		let mut approvals = BoundedBTreeSet::new();
-		for i in 1..num_approvals {
-			approvals.try_insert(i as u8).unwrap();
-		}
-
 		let ends_block = frame_system::Pallet::<T>::block_number() + T::MotionDuration::get();
-
-		Motions::<T>::insert(
-			motion_hash,
-			MotionInfo::<T> { approvals, ends_block, call: call.clone() },
-		);
-
-		(motion_hash, call)
+		Pallet::<T>::create_motion_approvals(num_approvals, ends_block)
 	}
 
 	// Helper function to create an ended motion with a specific number of approvals
 	fn create_ended_motion_with_approvals<T: Config>(
 		num_approvals: u32,
 	) -> (T::Hash, T::MotionCall) {
-		let call: T::MotionCall = frame_system::Call::<T>::remark { remark: vec![1, 2, 3] }.into();
-		let motion_hash = T::Hashing::hash_of(&call);
-
-		// Create motion with approvals
-		let mut approvals = BoundedBTreeSet::new();
-		for i in 0..num_approvals {
-			approvals.try_insert(i as u8).unwrap();
-		}
-
-		// Set ends_block to current block to make it expired
+		// Set ends_block to current block to make it already ended
 		let ends_block = frame_system::Pallet::<T>::block_number();
+		Pallet::<T>::create_motion_approvals(num_approvals, ends_block)
+	}
 
-		Motions::<T>::insert(
-			motion_hash,
-			MotionInfo::<T> { approvals, ends_block, call: call.clone() },
-		);
-
-		(motion_hash, call)
+	// Helper function to create a motion with a specific `AuthId` approver
+	fn create_motion_with_approval<T: Config>(auth_id: AuthId) -> (T::Hash, T::MotionCall) {
+		let ends_block = frame_system::Pallet::<T>::block_number() + T::MotionDuration::get();
+		Pallet::<T>::create_motion_approval(auth_id, ends_block)
 	}
 
 	#[benchmark]
@@ -73,18 +51,18 @@ mod benchmarks {
 		a: Linear<1, { T::MaxAuthorityBodies::get() }>,
 	) -> Result<(), BenchmarkError> {
 		// Create a motion with `a` existing approvals (leaving room for one more)
-		let (motion_hash, call) = create_motion_with_approvals::<T>(a);
+		let (motion_hash, call) = create_motion_with_approvals::<T>(a - 1);
 
 		// Get a valid origin for the next authority
 		let origin = T::MotionApprovalOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
 		#[extrinsic_call]
-		_(origin as T::RuntimeOrigin, Box::new(call));
+		_(origin, Box::new(call));
 
 		// Verify the motion has one more approval
 		let motion = Motions::<T>::get(motion_hash).unwrap();
-		assert_eq!(motion.approvals.len() as u32, a + 1);
+		assert_eq!(motion.approvals.len() as u32, a);
 
 		Ok(())
 	}
@@ -96,10 +74,10 @@ mod benchmarks {
 
 		// Get a valid origin
 		let origin = T::MotionApprovalOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
 		#[extrinsic_call]
-		motion_approve(origin as T::RuntimeOrigin, Box::new(call));
+		motion_approve(origin, Box::new(call));
 
 		// Verify the motion was created with one approval
 		let motion = Motions::<T>::get(motion_hash).unwrap();
@@ -116,12 +94,20 @@ mod benchmarks {
 
 		// Get a valid origin
 		let origin = T::MotionApprovalOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_approve(origin as T::RuntimeOrigin, Box::new(call));
+		let result;
 
-		// The call should fail with MotionHasEnded error
+		#[block]
+		{
+			result = Pallet::<T>::motion_approve(origin, Box::new(call));
+		}
+
+		// The call should fail with `MotionHasEnded` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionHasEnded")))
+		);
+
 		Ok(())
 	}
 
@@ -129,18 +115,29 @@ mod benchmarks {
 	fn motion_approve_already_approved(
 		a: Linear<1, { T::MaxAuthorityBodies::get() }>,
 	) -> Result<(), BenchmarkError> {
-		// Create a motion with `a` existing approvals, including approval from auth_id 0
-		let (motion_hash, call) = create_motion_with_approvals::<T>(a);
-
-		// Get the same origin that already approved (auth_id 0 should be included)
+		// Get the origin that will approve and its `auth_id`
 		let origin = T::MotionApprovalOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
+		let auth_id = T::MotionApprovalOrigin::ensure_origin(origin.clone())
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_approve(origin as T::RuntimeOrigin, Box::new(call));
+		// Create a motion with `a` existing approvals, including approval from `auth_id``
+		create_motion_with_approval::<T>(auth_id);
+		let (motion_hash, call) = create_motion_with_approvals::<T>(a - 1);
 
-		// The call should fail with MotionAlreadyApproved error
+		let result;
+
+		#[block]
+		{
+			result = Pallet::<T>::motion_approve(origin, Box::new(call));
+		}
+
+		// The call should fail with `MotionAlreadyApproved` error
 		// Verify the motion still has the same number of approvals
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionAlreadyApproved")))
+		);
+
 		let motion = Motions::<T>::get(motion_hash).unwrap();
 		assert_eq!(motion.approvals.len() as u32, a);
 
@@ -148,48 +145,42 @@ mod benchmarks {
 	}
 
 	#[benchmark]
-	fn motion_approve_exceeds_bounds(
-		a: Linear<{ T::MaxAuthorityBodies::get() }, { T::MaxAuthorityBodies::get() }>,
-	) -> Result<(), BenchmarkError> {
-		// Create a motion with maximum approvals already (a should equal MaxAuthorityBodies)
-		let max_approvals = T::MaxAuthorityBodies::get();
-		let (_motion_hash, call) = create_motion_with_approvals::<T>(max_approvals);
-
-		// Try to add one more approval (should fail)
-		// We need to ensure the origin returns an auth_id that's not already in the set
-		// For this benchmark, we'll need to manipulate the motion to not include our origin's auth_id
-		let motion_hash = T::Hashing::hash_of(&call);
-
-		// Update the motion to remove one approval and add a different one to keep it at max
-		Motions::<T>::mutate(motion_hash, |maybe_motion| {
-			if let Some(motion) = maybe_motion {
-				// Remove auth_id 0 and add max_approvals as auth_id instead
-				motion.approvals.remove(&0);
-				motion.approvals.try_insert(max_approvals as u8).ok();
-			}
-		});
+	fn motion_approve_exceeds_bounds() -> Result<(), BenchmarkError> {
+		// Create a motion with maximum approvals `T::MaxAuthorityBodies`
+		let (_motion_hash, call) = create_motion_with_approvals::<T>(T::MaxAuthorityBodies::get());
 
 		let origin = T::MotionApprovalOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_approve(origin as T::RuntimeOrigin, Box::new(call));
+		let result;
 
-		// The call should fail with MotionApprovalExceedsBounds error
+		#[block]
+		{
+			result = Pallet::<T>::motion_approve(origin, Box::new(call));
+		}
+
+		// The call should fail with `MotionApprovalExceedsBounds` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionApprovalExceedsBounds")))
+		);
+
 		Ok(())
 	}
 
 	#[benchmark]
 	fn motion_revoke(a: Linear<1, { T::MaxAuthorityBodies::get() }>) -> Result<(), BenchmarkError> {
-		// Create a motion with `a` existing approvals
-		let (motion_hash, _call) = create_motion_with_approvals::<T>(a);
-
-		// Get a valid origin (we'll use authority 0 which should exist)
+		// Get a valid origin
 		let origin = T::MotionRevokeOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
+		let auth_id = T::MotionApprovalOrigin::ensure_origin(origin.clone())
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
+
+		// Create a motion with `a` existing approvals, including approval from `auth_id``
+		create_motion_with_approval::<T>(auth_id);
+		let (motion_hash, _call) = create_motion_with_approvals::<T>(a - 1);
 
 		#[extrinsic_call]
-		_(origin as T::RuntimeOrigin, motion_hash);
+		_(origin, motion_hash);
 
 		// Verify the motion has one less approval if there were more than 1
 		if a > 1 {
@@ -211,12 +202,19 @@ mod benchmarks {
 
 		// Get a valid origin
 		let origin = T::MotionRevokeOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_revoke(origin as T::RuntimeOrigin, motion_hash);
+		let result;
 
-		// The call should fail with MotionHasEnded error
+		#[block]
+		{
+			result = Pallet::<T>::motion_revoke(origin, motion_hash);
+		}
+
+		// The call should fail with `MotionHasEnded`` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionHasEnded")))
+		);
 		Ok(())
 	}
 
@@ -228,12 +226,19 @@ mod benchmarks {
 
 		// Get a valid origin
 		let origin = T::MotionRevokeOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_revoke(origin as T::RuntimeOrigin, motion_hash);
+		let result;
 
-		// The call should fail with MotionNotFound error
+		#[block]
+		{
+			result = Pallet::<T>::motion_revoke(origin, motion_hash);
+		}
+
+		// The call should fail with `MotionNotFound` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionNotFound")))
+		);
 		Ok(())
 	}
 
@@ -244,49 +249,37 @@ mod benchmarks {
 		// Create a motion with `a` approvals, but NOT from auth_id 0 (our origin)
 		let (motion_hash, _call) = create_motion_with_approvals::<T>(a);
 
-		// Remove auth_id 1 (if exists) and ensure auth_id 0 is not in the set
-		Motions::<T>::mutate(motion_hash, |maybe_motion| {
-			if let Some(motion) = maybe_motion {
-				motion.approvals.remove(&1);
-				// Ensure we don't have auth_id 0
-				motion.approvals.remove(&0);
-			}
-		});
-
 		// Get a valid origin (should be auth_id 0)
 		let origin = T::MotionRevokeOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
 
-		#[extrinsic_call]
-		motion_revoke(origin as T::RuntimeOrigin, motion_hash);
+		let result;
 
-		// The call should fail with MotionApprovalMissing error
+		#[block]
+		{
+			result = Pallet::<T>::motion_revoke(origin, motion_hash);
+		}
+
+		// The call should fail with `MotionApprovalMissing` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionApprovalMissing")))
+		);
 		Ok(())
 	}
 
 	#[benchmark]
 	fn motion_revoke_remove() -> Result<(), BenchmarkError> {
-		// Create a motion with exactly 1 approval from auth_id 0
-		// When we revoke it, the motion should be removed
-		let call: T::MotionCall = frame_system::Call::<T>::remark { remark: vec![1, 2, 3] }.into();
-		let motion_hash = T::Hashing::hash_of(&call);
-
-		let mut approvals = BoundedBTreeSet::new();
-		approvals.try_insert(0).unwrap(); // Only auth_id 0
-
-		let ends_block = frame_system::Pallet::<T>::block_number() + T::MotionDuration::get();
-
-		Motions::<T>::insert(
-			motion_hash,
-			MotionInfo::<T> { approvals, ends_block, call: call.clone() },
-		);
-
-		// Get a valid origin (should be auth_id 0)
+		// Get a valid origin
 		let origin = T::MotionRevokeOrigin::try_successful_origin()
-			.map_err(|_| BenchmarkError::Weightless)?;
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
+		let auth_id = T::MotionApprovalOrigin::ensure_origin(origin.clone())
+			.map_err(|_| BenchmarkError::Stop("BadOrigin"))?;
+
+		// Create a motion with `auth_id` approval
+		let (motion_hash, _call) = create_motion_with_approval::<T>(auth_id);
 
 		#[extrinsic_call]
-		motion_revoke(origin as T::RuntimeOrigin, motion_hash);
+		motion_revoke(origin, motion_hash);
 
 		// Verify the motion was removed
 		assert!(Motions::<T>::get(motion_hash).is_none());
@@ -296,29 +289,33 @@ mod benchmarks {
 
 	#[benchmark]
 	fn motion_close_still_ongoing() -> Result<(), BenchmarkError> {
-		// Create a motion that is not approved and not ended
-		let (motion_hash, _call) = create_motion_with_approvals::<T>(0);
+		// Create a motion
+		let (motion_hash, _call) = create_motion_with_approvals::<T>(1);
 
-		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
-			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
-		});
+		let account = account("anyone", 0, 0);
 		let origin = RawOrigin::Signed(account);
 
-		#[extrinsic_call]
-		motion_close(origin, motion_hash);
+		let result;
 
-		// The call should fail with MotionNotEnded error
+		#[block]
+		{
+			result = Pallet::<T>::motion_close(origin.into(), motion_hash);
+		}
+
+		// The call should fail with `MotionNotEnded` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionNotEnded")))
+		);
+
 		Ok(())
 	}
 
 	#[benchmark]
 	fn motion_close_expired() -> Result<(), BenchmarkError> {
-		// Create an ended motion that is not approved (less than required approvals)
-		let (motion_hash, _call) = create_ended_motion_with_approvals::<T>(0);
+		// Create an ended motion
+		let (motion_hash, _call) = create_ended_motion_with_approvals::<T>(1);
 
-		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
-			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
-		});
+		let account = account("anyone", 0, 0);
 		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
@@ -337,9 +334,7 @@ mod benchmarks {
 		let num_approvals = T::MaxAuthorityBodies::get();
 		let (motion_hash, _call) = create_ended_motion_with_approvals::<T>(num_approvals);
 
-		let account = T::AccountId::decode(&mut &[1u8; 32][..]).unwrap_or_else(|_| {
-			T::AccountId::decode(&mut &[0u8; 32][..]).expect("32 bytes should decode")
-		});
+		let account = account("anyone", 0, 0);
 		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
@@ -347,6 +342,30 @@ mod benchmarks {
 
 		// Verify the motion was removed after execution
 		assert!(Motions::<T>::get(motion_hash).is_none());
+
+		Ok(())
+	}
+
+	#[benchmark]
+	fn motion_close_not_found() -> Result<(), BenchmarkError> {
+		let account = account("anyone", 0, 0);
+		let origin = RawOrigin::Signed(account);
+
+		// Create a call that never has been approved
+		let call: T::MotionCall = frame_system::Call::<T>::remark { remark: vec![0] }.into();
+		let motion_hash = T::Hashing::hash_of(&call);
+
+		let result;
+
+		#[block]
+		{
+			result = Pallet::<T>::motion_close(origin.into(), motion_hash);
+		}
+
+		// The call should fail with `MotionNotFound` error
+		assert!(
+			matches!(result, Err(e) if matches!(e.error, DispatchError::Module(ref m) if m.message == Some("MotionNotFound")))
+		);
 
 		Ok(())
 	}

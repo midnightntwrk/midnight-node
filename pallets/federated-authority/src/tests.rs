@@ -11,8 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Error, Event, MotionInfo, Motions, mock::*};
-use frame_support::{BoundedBTreeSet, assert_noop, assert_ok};
+use crate::{Config, Error, Event, MotionInfo, Motions, mock::*, weights::WeightInfo};
+use frame_support::{
+	BoundedBTreeSet, assert_noop, assert_ok,
+	dispatch::{DispatchErrorWithPostInfo, Pays, PostDispatchInfo},
+};
 use pallet_collective::Proposals;
 use sp_core::H256;
 use sp_runtime::traits::{Dispatchable, Hash};
@@ -143,7 +146,15 @@ fn motion_approve_fails_if_already_approved_by_same_authority() {
 		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
 		assert_noop!(
 			FederatedAuthority::motion_approve(council_origin(), call),
-			Error::<Test>::MotionAlreadyApproved
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(
+						<Test as Config>::WeightInfo::motion_approve_already_approved(1)
+					),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionAlreadyApproved.into()
+			}
 		);
 	});
 }
@@ -184,7 +195,7 @@ fn motion_approve_fails_when_exceeding_max_authorities() {
 		let mut approvals = BoundedBTreeSet::new();
 
 		// Fill approvals with `MAX_NUM_BODIES`
-		for i in 1..=MAX_NUM_BODIES as u8 {
+		for i in 1..=MAX_NUM_BODIES {
 			approvals.try_insert(i).unwrap();
 		}
 
@@ -196,7 +207,15 @@ fn motion_approve_fails_when_exceeding_max_authorities() {
 		// Trying to increase `approvals` should fail as it is already full with `MAX_NUM_BODIES` length
 		assert_noop!(
 			FederatedAuthority::motion_approve(council_origin(), call),
-			Error::<Test>::MotionApprovalExceedsBounds
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(
+						<Test as Config>::WeightInfo::motion_approve_exceeds_bounds()
+					),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionApprovalExceedsBounds.into()
+			}
 		);
 	});
 }
@@ -242,11 +261,13 @@ fn motion_revoke_removes_motion_when_last_approval_removed() {
 		assert!(Motions::<Test>::get(motion_hash).is_none());
 
 		let events = federated_authority_events();
+		let motion_approved = events.iter().find(|e| matches!(e, Event::MotionApproved { motion_hash: mh, auth_id: COUNCIL_PALLET_ID } if *mh == motion_hash));
+		let motion_revoked = events.iter().find(|e| matches!(e, Event::MotionRevoked { motion_hash: mh, auth_id: COUNCIL_PALLET_ID } if *mh == motion_hash));
+		let motion_removed = events.iter().find(|e| matches!(e, Event::MotionRemoved { motion_hash: mh } if *mh == motion_hash));
 
-		assert_eq!(events.len(), 3);
-		assert_eq!(events[0], Event::MotionApproved { motion_hash, auth_id: COUNCIL_PALLET_ID });
-		assert_eq!(events[1], Event::MotionRemoved { motion_hash });
-		assert_eq!(events[2], Event::MotionRevoked { motion_hash, auth_id: COUNCIL_PALLET_ID });
+		assert!(motion_approved.is_some(), "MotionApproved event should be emitted");
+		assert!(motion_revoked.is_some(), "MotionRevoked event should be emitted");
+		assert!(motion_removed.is_some(), "MotionRemoved event should be emitted");
 	});
 }
 
@@ -261,7 +282,16 @@ fn motion_revoke_fails_if_not_approved_by_authority() {
 
 		assert_noop!(
 			FederatedAuthority::motion_revoke(tech_origin(), motion_hash),
-			Error::<Test>::MotionApprovalMissing
+			// Error::<Test>::MotionApprovalMissing
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(
+						<Test as Config>::WeightInfo::motion_revoke_approval_missing(1)
+					),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionApprovalMissing.into()
+			}
 		);
 	});
 }
@@ -274,7 +304,13 @@ fn motion_revoke_fails_if_motion_not_found() {
 
 		assert_noop!(
 			FederatedAuthority::motion_revoke(council_origin(), motion_hash),
-			Error::<Test>::MotionNotFound
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_revoke_not_found()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionNotFound.into()
+			}
 		);
 	});
 }
@@ -316,15 +352,6 @@ fn motion_close_dispatches_when_approved() {
 		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
 		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
 
-		// Cannot close before motion ends (even if approved)
-		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionTooEarlyToClose
-		);
-
-		// Fast forward to when motion ends
-		run_to_block(1 + MOTION_DURATION);
-
 		// Now can close the approved motion
 		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
 
@@ -353,7 +380,13 @@ fn motion_close_removes_expired_motion() {
 		// Cannot close before expiry (not approved and not expired)
 		assert_noop!(
 			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionNotEnded
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_still_ongoing()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionNotEnded.into()
+			}
 		);
 
 		// Fast forward to expiry
@@ -393,7 +426,13 @@ fn motion_close_fails_if_not_approved_and_not_expired() {
 
 		assert_noop!(
 			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionNotEnded
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_still_ongoing()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionNotEnded.into()
+			}
 		);
 	});
 }
@@ -406,55 +445,13 @@ fn motion_close_fails_if_motion_not_found() {
 
 		assert_noop!(
 			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionNotFound
-		);
-	});
-}
-
-#[test]
-fn motion_close_too_early_for_approved_motion() {
-	new_test_ext().execute_with(|| {
-		System::set_block_number(1);
-		let call = create_remark_call(vec![1, 2, 3]);
-		let motion_hash = get_motion_hash(&call);
-
-		// Both authorities approve (motion is approved)
-		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
-		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
-
-		// Try to close immediately (should fail with MotionTooEarlyToClose)
-		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionTooEarlyToClose
-		);
-
-		// Try again halfway through (still too early)
-		run_to_block(MOTION_DURATION / 2);
-		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionTooEarlyToClose
-		);
-
-		// Try at block right before expiry (still too early)
-		run_to_block(MOTION_DURATION);
-		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
-			Error::<Test>::MotionTooEarlyToClose
-		);
-
-		// Now at expiry, should succeed
-		run_to_block(1 + MOTION_DURATION);
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
-
-		// Verify both MotionDispatched and MotionRemoved events were emitted
-		let events = federated_authority_events();
-		assert!(
-			events.iter().any(|e| matches!(e, Event::MotionDispatched { .. })),
-			"MotionDispatched event should be emitted"
-		);
-		assert!(
-			events.iter().any(|e| matches!(e, Event::MotionRemoved { .. })),
-			"MotionRemoved event should be emitted"
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_not_found()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionNotFound.into()
+			}
 		);
 	});
 }
@@ -507,7 +504,13 @@ fn motion_approve_fails_after_motion_ended() {
 		// Try to approve from Technical Authority after motion has ended
 		assert_noop!(
 			FederatedAuthority::motion_approve(tech_origin(), call.clone()),
-			Error::<Test>::MotionHasEnded
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_approve_ended()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionHasEnded.into()
+			}
 		);
 	});
 }
@@ -530,13 +533,25 @@ fn motion_revoke_fails_after_motion_ended() {
 		// Try to revoke from Council after motion has ended
 		assert_noop!(
 			FederatedAuthority::motion_revoke(council_origin(), motion_hash),
-			Error::<Test>::MotionHasEnded
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_revoke_ended()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionHasEnded.into()
+			}
 		);
 
 		// Try to revoke from Technical Authority after motion has ended
 		assert_noop!(
 			FederatedAuthority::motion_revoke(tech_origin(), motion_hash),
-			Error::<Test>::MotionHasEnded
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_revoke_ended()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionHasEnded.into()
+			}
 		);
 
 		// Verify motion still has both approvals
@@ -626,6 +641,7 @@ fn motion_dispatchs_with_root_origin() {
 #[test]
 fn complete_collective_to_federated_flow() {
 	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
 		// This test demonstrates the complete flow from collective voting to federated execution
 
 		// Step 1: Define the actual call we want to execute with Root origin
@@ -673,9 +689,6 @@ fn complete_collective_to_federated_flow() {
 			})
 			.dispatch(RuntimeOrigin::signed(2))
 		);
-
-		// Fast-forward past the Council voting period
-		run_to_block(MOTION_DURATION + 1);
 
 		// Close the Council proposal to execute FederatedAuthority::motion_approve
 		assert_ok!(
@@ -731,9 +744,6 @@ fn complete_collective_to_federated_flow() {
 			})
 			.dispatch(RuntimeOrigin::signed(5))
 		);
-
-		// Fast-forward past the Technical Authority voting period (we're already past it from Council)
-		run_to_block(MOTION_DURATION * 2 + 1);
 
 		// Close the Technical Authority proposal to execute FederatedAuthority::motion_approve
 		assert_ok!(

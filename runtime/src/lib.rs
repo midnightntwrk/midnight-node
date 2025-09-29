@@ -118,7 +118,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 1200;
 
 pub mod authorship;
-mod check_call_filter;
+pub mod check_call_filter;
 mod constants;
 mod currency;
 mod governance;
@@ -762,7 +762,7 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -793,7 +793,7 @@ impl pallet_collective::Config<TechnicalAuthorityCollective> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -1299,7 +1299,7 @@ impl_runtime_apis! {
 			Vec<frame_benchmarking::BenchmarkList>,
 			Vec<frame_support::traits::StorageInfo>,
 		) {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkList};
+			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
@@ -1313,10 +1313,11 @@ impl_runtime_apis! {
 			(list, storage_info)
 		}
 
+		#[allow(non_local_definitions)]
 		fn dispatch_benchmark(
 			config: frame_benchmarking::BenchmarkConfig
 		) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkBatch};
+			use frame_benchmarking::{baseline, BenchmarkBatch};
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;

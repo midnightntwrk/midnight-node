@@ -20,6 +20,8 @@ frame-system.workspace = true
 sp-std.workspace = true
 sp-runtime.workspace = true
 frame-benchmarking = { workspace = true, optional = true}
+pallet-collective = { workspace = true, optional = true}
+impl-trait-for-tuples.workspace = true
 
 [dev-dependencies]
 sp-core.workspace = true
@@ -41,4 +43,5 @@ runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
     "frame-support/runtime-benchmarks",
+    "pallet-collective",
     ]
