@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 x-common-variables: &common-variables
   CFG_PRESET: "testnet-02"
@@ -11,7 +11,7 @@ x-common-variables: &common-variables
   MC__EPOCH_DURATION_MILLIS: 86400000
   MC__FIRST_SLOT_NUMBER: 0
   MC__SLOT_DURATION_MILLIS: 1000
-  
+
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
   volumes:
@@ -51,7 +51,6 @@ services:
         --name MidnightBootNode_Local
         --public-addr /dns4/boot-node/tcp/30333/ws
 
-
   node1:
     <<: *node-common
     hostname: node1
@@ -60,7 +59,7 @@ services:
       boot-node:
         condition: service_healthy
     ports:
-      - "9950:9944" 
+      - "9950:9944"
       - "30334:30334"
     volumes:
       - ./data/node-1:/data
@@ -74,7 +73,7 @@ services:
         --port 30334 
         --rpc-port 9944
         --base-path=/data
-        
+
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
@@ -111,7 +110,7 @@ services:
         --port 30335
         --rpc-port 9944
         --base-path=/data
-        
+
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
@@ -147,7 +146,7 @@ services:
         --port 30336
         --rpc-port 9944
         --base-path=/data
-        
+
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
@@ -184,11 +183,11 @@ services:
         --rpc-port 9944
         --public-addr /dns4/node4/tcp/30337
         --base-path=/data
-        
+
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -219,7 +218,7 @@ services:
         --port 30338
         --rpc-port 9944
         --base-path=/data
-        
+
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
@@ -258,7 +257,7 @@ services:
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -294,7 +293,7 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
         --public-addr /dns4/node7/tcp/30340
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -330,7 +329,7 @@ services:
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -434,7 +433,7 @@ services:
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -468,7 +467,7 @@ services:
         --rpc-external
         --rpc-methods=Unsafe
         --rpc-cors=all
-        
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s

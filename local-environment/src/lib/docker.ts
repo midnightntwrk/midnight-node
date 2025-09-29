@@ -11,10 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { globSync } from 'glob';
-import { existsSync } from 'fs';
-import { spawn } from 'child_process';
-import { RunOptions } from './types';
+import { spawn } from "child_process";
 
 export interface DockerComposeOptions {
   composeFile: string;
@@ -24,21 +21,21 @@ export interface DockerComposeOptions {
 }
 
 export function stopDockerCompose(options: DockerComposeOptions) {
-  const args = ['-f', options.composeFile, 'down', '--volumes'];
+  const args = ["-f", options.composeFile, "down", "--volumes", "--timeout", "0"];
 
   if (options.profiles) {
     for (const profile of options.profiles) {
       args.unshift(`--profile=${profile}`);
     }
   }
-  args.unshift('compose');
+  args.unshift("compose");
 
-  const docker = spawn('docker', args, {
-    stdio: 'inherit',
+  const docker = spawn("docker", args, {
+    stdio: "inherit",
     env: options.env,
   });
 
-  docker.on('exit', (code) => {
+  docker.on("exit", (code) => {
     if (code !== 0) {
       console.error(`❌ docker-compose down failed`);
       process.exit(code ?? 1);
@@ -47,23 +44,23 @@ export function stopDockerCompose(options: DockerComposeOptions) {
 }
 
 export function runDockerCompose(options: DockerComposeOptions) {
-  const args = ['-f', options.composeFile, 'up'];
+  const args = ["-f", options.composeFile, "up"];
   if (options.detach) {
-    args.push('--detach');
+    args.push("--detach");
   }
   if (options.profiles) {
     for (const profile of options.profiles) {
       args.unshift(`--profile=${profile}`);
     }
   }
-  args.unshift('compose');
+  args.unshift("compose");
 
-  const docker = spawn('docker', args, {
-    stdio: 'inherit',
+  const docker = spawn("docker", args, {
+    stdio: "inherit",
     env: options.env,
   });
 
-  docker.on('exit', (code) => {
+  docker.on("exit", (code) => {
     if (code !== 0) {
       console.error(`❌ docker-compose exited with code ${code}`);
       process.exit(code ?? 1);

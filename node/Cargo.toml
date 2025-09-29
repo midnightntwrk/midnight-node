@@ -1,11 +1,11 @@
 [package]
 name = "midnight-node"
-version = "0.16.2"
+version = "0.16.3"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
 edition = "2024"
-license = "Unlicense"
+license-file.workspace = true
 publish = false
 repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
 build = "build.rs"
@@ -83,6 +83,7 @@ midnight-primitives-mainchain-follower = { workspace = true, default-features = 
 midnight-primitives-native-token-observation  = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
+pallet-native-token-observation = { workspace = true, default-features = true, features = ["mock"] }
 mn-ledger.workspace = true
 
 # CLI-specific dependencies
@@ -115,6 +116,7 @@ sp-inherents.workspace = true
 sp-keystore.workspace = true
 sp-io.workspace = true
 frame-system.workspace = true
+frame-support.workspace = true
 time-source.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive"] }
 config = "0.14.0"

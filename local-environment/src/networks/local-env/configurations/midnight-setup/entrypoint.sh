@@ -209,11 +209,12 @@ jq 'env as $env | . + {
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
-export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_qanet.mn
-export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_qanet.mn  
-export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_qanet.mn  #  0.13.5 compatibility, can be removed in the future
+export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
+export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
+export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
+export CHAINSPEC_CNGD_CONFIG=res/qanet/cngd-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/qanet/federated-authority-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."

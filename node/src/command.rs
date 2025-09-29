@@ -192,8 +192,8 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				None,
 			)
 			.await?;
-		//For libp2p use `sc_network::NetworkWorker<_, _>``
-		service::new_full::<sc_network::Litep2pNetworkBackend>(
+		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
+		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
 			data_sources,

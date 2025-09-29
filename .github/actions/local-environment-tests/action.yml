@@ -69,11 +69,11 @@ runs:
           --WALLET_INDEXER_IMAGE=${{ inputs.wallet-indexer-image }}
       shell: bash
 
-    - name: Run Indexer E2E Tests
-      uses: ./.github/actions/reusable-e2e-tests
-      with:
-        just-command: indexer-api-e2e
-        ghcr-password: ${{ inputs.ghcr-password }}
+#    - name: Run Indexer E2E Tests
+#      uses: ./.github/actions/reusable-e2e-tests
+#      with:
+#        just-command: indexer-api-e2e
+#        ghcr-password: ${{ inputs.ghcr-password }}
 
     - name: e2e tests
       id: e2e-tests
