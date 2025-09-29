@@ -313,3 +313,6 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
+
+[workspace.metadata.cargo-shear]
+ignored = ["frame-storage-access-test-runtime"]
