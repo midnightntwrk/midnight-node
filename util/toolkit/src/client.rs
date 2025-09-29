@@ -1,0 +1,77 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use crate::mn_meta;
+use midnight_node_ledger_helpers::NetworkId;
+use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
+use subxt::{
+	Config, OnlineClient,
+	backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
+	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
+};
+use thiserror::Error;
+
+pub struct MidnightNodeClientConfig;
+
+impl Config for MidnightNodeClientConfig {
+	type AccountId = AccountId32;
+	type Address = MultiAddress<Self::AccountId, ()>;
+	type Signature = MultiSignature;
+	type Hasher = BlakeTwo256;
+	type Header = SubstrateHeader<u32, BlakeTwo256>;
+	type ExtrinsicParams = SubstrateExtrinsicParams<Self>;
+	type AssetId = u32;
+}
+
+pub struct MidnightNodeClient {
+	pub api: OnlineClient<MidnightNodeClientConfig>,
+	pub rpc: LegacyRpcMethods<MidnightNodeClientConfig>,
+}
+
+impl MidnightNodeClient {
+	pub async fn new(rpc_url: &str) -> Result<Self, ClientError> {
+		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
+		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
+		let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(rpc_url).await?;
+		Ok(MidnightNodeClient { rpc, api })
+	}
+
+	pub async fn get_network_id(&self) -> Result<NetworkId, ClientError> {
+		let storage_query = mn_meta::storage().midnight().network_id();
+		let network_id_vec = self.api.storage().at_latest().await?.fetch(&storage_query).await?;
+
+		let network_id = if let Some(val) = network_id_vec {
+			match val.0.as_slice() {
+				[0] => NetworkId::Undeployed,
+				[1] => NetworkId::DevNet,
+				[2] => NetworkId::TestNet,
+				[3] => NetworkId::MainNet,
+				_ => return Err(ClientError::UnsupportedNetworkId(val.0)),
+			}
+		} else {
+			NetworkId::Undeployed
+		};
+
+		Ok(network_id)
+	}
+}
+
+#[derive(Error, Debug)]
+pub enum ClientError {
+	#[error("subxt error: {0}")]
+	SubxtError(#[from] subxt::Error),
+	#[error("subxt_rpc error: {0}")]
+	RpcClientError(#[from] subxt::ext::subxt_rpcs::Error),
+	#[error("midnight node client received an unsupported network id")]
+	UnsupportedNetworkId(Vec<u8>),
+}

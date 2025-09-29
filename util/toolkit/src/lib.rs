@@ -13,6 +13,7 @@
 
 pub mod address;
 pub mod cli_parsers;
+pub mod client;
 pub mod genesis_generator;
 pub mod indexer;
 pub mod progress;
