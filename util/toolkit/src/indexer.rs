@@ -22,10 +22,9 @@ use std::{
 	time::Duration,
 };
 use subxt::{
-	blocks::Block,
-	config::{substrate::H256, HashFor},
-	events::Phase,
 	OnlineClient,
+	blocks::{Block, ExtrinsicEvents},
+	config::{HashFor, substrate::H256},
 };
 use thiserror::Error;
 use tokio::{
@@ -321,34 +320,21 @@ where
 						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
 					Some(SerdeTransaction::System(tx))
 				},
-				mn_meta::Call::NativeTokenObservation(
-					mn_meta::native_token_observation::Call::process_tokens { .. },
-				) => {
-					events
-						.iter()
-						.filter_map(Result::ok)
-						.find_map(|ev| {
-							// Only consider events emitted by this extrinsic
-							if !matches!(ev.phase(), Phase::ApplyExtrinsic(i) if i == ext.index()) {
-								return None;
-							}
-
-							// Try to decode the system event and deserialize its tx
-							ev.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>()
-								.ok()
-								.flatten()
-								.map(|system_event| {
-									let mut serialized =
-										system_event.0.serialized_system_transaction.as_slice();
-									let tx = tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
-										panic!("Error deserializing system tx from event: {}", err)
-									});
-									SerdeTransaction::System(tx)
-								})
-						})
-				}
-
-				_ => None,
+				_ => {
+                    let ext_hash = ext.hash();
+                    let ext_events = ExtrinsicEvents::new(ext_hash, ext.index(), events.clone());
+                    ext_events.iter().filter_map(Result::ok).filter_map(|ev|
+					    ev.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>().expect("Failed to decode event")
+                    ).map(|ev| {
+                        let mut serialized =
+                            ev.0.serialized_system_transaction.as_slice();
+                        let tx =
+                            tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
+                                panic!("Error deserializing system tx from event: {}", err)
+                            });
+                        SerdeTransaction::System(tx)
+                    }).next()
+                }
 			})
 			.collect();
 		Ok(SourceBlockTransactions { transactions, context })
@@ -357,7 +343,8 @@ where
 	async fn fetch_midnight_block(
 		self: Arc<Self>,
 		hash: H256,
-	) -> Result<Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>, subxt::Error> {
+	) -> Result<Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>, subxt::Error>
+	{
 		self.node_client.api.blocks().at(hash).await
 	}
 

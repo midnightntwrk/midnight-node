@@ -13,71 +13,65 @@
 
 use crate::mn_meta;
 use midnight_node_ledger_helpers::NetworkId;
-use subxt::{
-    backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
-    config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
-    Config, OnlineClient,
-};
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
+use subxt::{
+	Config, OnlineClient,
+	backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
+	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
+};
 use thiserror::Error;
 
 pub struct MidnightNodeClientConfig;
 
 impl Config for MidnightNodeClientConfig {
-    type AccountId = AccountId32;
-    type Address = MultiAddress<Self::AccountId, ()>;
-    type Signature = MultiSignature;
-    type Hasher = BlakeTwo256;
-    type Header = SubstrateHeader<u32, BlakeTwo256>;
-    type ExtrinsicParams = SubstrateExtrinsicParams<Self>;
-    type AssetId = u32;
+	type AccountId = AccountId32;
+	type Address = MultiAddress<Self::AccountId, ()>;
+	type Signature = MultiSignature;
+	type Hasher = BlakeTwo256;
+	type Header = SubstrateHeader<u32, BlakeTwo256>;
+	type ExtrinsicParams = SubstrateExtrinsicParams<Self>;
+	type AssetId = u32;
 }
 
 pub struct MidnightNodeClient {
-    pub api: OnlineClient<MidnightNodeClientConfig>,
-    pub rpc: LegacyRpcMethods<MidnightNodeClientConfig>,
+	pub api: OnlineClient<MidnightNodeClientConfig>,
+	pub rpc: LegacyRpcMethods<MidnightNodeClientConfig>,
 }
 
 impl MidnightNodeClient {
-    pub async fn new(rpc_url: &str) -> Result<Self, ClientError> {
-        let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
-        let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
-        let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(rpc_url).await?;
-        Ok(MidnightNodeClient { rpc, api })
-    }
+	pub async fn new(rpc_url: &str) -> Result<Self, ClientError> {
+		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
+		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
+		let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(rpc_url).await?;
+		Ok(MidnightNodeClient { rpc, api })
+	}
 
-    pub async fn get_network_id(&self) -> Result<NetworkId, ClientError> {
-        let storage_query = mn_meta::storage().midnight().network_id();
-        let network_id_vec = self
-            .api
-            .storage()
-            .at_latest()
-            .await?
-            .fetch(&storage_query)
-            .await?;
+	pub async fn get_network_id(&self) -> Result<NetworkId, ClientError> {
+		let storage_query = mn_meta::storage().midnight().network_id();
+		let network_id_vec = self.api.storage().at_latest().await?.fetch(&storage_query).await?;
 
-        let network_id = if let Some(val) = network_id_vec {
-            match val.0.as_slice() {
-                [0] => NetworkId::Undeployed,
-                [1] => NetworkId::DevNet,
-                [2] => NetworkId::TestNet,
-                [3] => NetworkId::MainNet,
-                _ => return Err(ClientError::UnsupportedNetworkId(val.0)),
-            }
-        } else {
-            NetworkId::Undeployed
-        };
+		let network_id = if let Some(val) = network_id_vec {
+			match val.0.as_slice() {
+				[0] => NetworkId::Undeployed,
+				[1] => NetworkId::DevNet,
+				[2] => NetworkId::TestNet,
+				[3] => NetworkId::MainNet,
+				_ => return Err(ClientError::UnsupportedNetworkId(val.0)),
+			}
+		} else {
+			NetworkId::Undeployed
+		};
 
-        Ok(network_id)
-    }
+		Ok(network_id)
+	}
 }
 
 #[derive(Error, Debug)]
 pub enum ClientError {
-    #[error("subxt error: {0}")]
-    SubxtError(#[from] subxt::Error),
-    #[error("subxt_rpc error: {0}")]
-    RpcClientError(#[from] subxt::ext::subxt_rpcs::Error),
-    #[error("midnight node client received an unsupported network id")]
-    UnsupportedNetworkId(Vec<u8>),
+	#[error("subxt error: {0}")]
+	SubxtError(#[from] subxt::Error),
+	#[error("subxt_rpc error: {0}")]
+	RpcClientError(#[from] subxt::ext::subxt_rpcs::Error),
+	#[error("midnight node client received an unsupported network id")]
+	UnsupportedNetworkId(Vec<u8>),
 }
