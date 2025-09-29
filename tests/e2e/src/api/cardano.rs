@@ -1,17 +1,9 @@
-#[path = "../../config/mod.rs"]
-mod config;
-use config::get_auth_token_policy_id;
-use config::get_local_env_cost_models;
-use config::get_mapping_validator_address;
-use config::load_cbor;
-use config::load_config;
-
+use crate::cfg::*;
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
 	transactions::*, types::OgmiosUtxo,
 };
-
 use std::fs;
 use std::time::Duration;
 use whisky::csl::*;

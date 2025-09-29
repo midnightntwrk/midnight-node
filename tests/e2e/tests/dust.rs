@@ -1,5 +1,3 @@
-#[path = "../config/mod.rs"]
-mod config;
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
 use midnight_node_metadata::midnight_metadata::native_token_observation;

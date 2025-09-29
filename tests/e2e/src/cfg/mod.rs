@@ -16,7 +16,7 @@ pub struct AppConfig {
 
 pub fn load_config() -> AppConfig {
 	let env = std::env::var("ENV").unwrap_or_else(|_| "local".to_string());
-	let config_path = format!("./config/{}/config.toml", env);
+	let config_path = format!("./src/cfg/{}/config.toml", env);
 	let settings = config_rs::Config::builder()
 		.add_source(config_rs::File::with_name(&config_path))
 		.build();
