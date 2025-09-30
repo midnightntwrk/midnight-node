@@ -135,7 +135,7 @@ impl<D: DB> Ledger<D> {
 		ctx: &TransactionContext<D>,
 	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
 		let tx_cost =
-			tx.0.cost(&sp.state.parameters)
+			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
 		let valid_tx =
 			tx.0.well_formed(
