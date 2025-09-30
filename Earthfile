@@ -265,6 +265,7 @@ rebuild-genesis-state:
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
+                --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
                 --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-files /res/test-data/contract/counter/deploy.bin \
