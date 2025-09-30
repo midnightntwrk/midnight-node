@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-metadata"
-version = "0.16.3"
+version = "0.16.4"
 edition = "2024"
 license-file.workspace = true
 

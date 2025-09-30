@@ -260,7 +260,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	fn compute_missing_dust(&self, tx: &FinalizedTransaction<D>) -> Result<Option<u128>> {
-		let fees = self.context.with_ledger_state(|s| tx.fees(&s.parameters))?;
+		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
 		let imbalances = tx.balance(Some(fees))?;
 		let dust_imbalance = imbalances
 			.get(&(TokenType::Dust, Segment::Guaranteed.into()))

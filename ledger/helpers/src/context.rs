@@ -140,8 +140,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
 					.expect("applying invalid transaction");
-				let cost =
-					tx.cost(&tx_context.ref_state.parameters).expect("error calculating fees");
+				let cost = tx
+					.cost(&tx_context.ref_state.parameters, false)
+					.expect("error calculating fees");
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				match result {
