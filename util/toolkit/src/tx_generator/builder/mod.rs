@@ -27,6 +27,7 @@ use crate::{
 		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
 		SourceTransactions,
 	},
+	tx_generator::builder::builders::RegisterDustAddressBuilder,
 };
 
 pub mod builders;
@@ -188,6 +189,23 @@ pub struct SingleTxArgs {
     )]
 	pub rng_seed: Option<[u8; 32]>,
 }
+#[derive(Args, Clone)]
+pub struct RegisterDustAddressArgs {
+	/// Seed for source wallet
+	#[arg(long)]
+	pub wallet_seed: String,
+	/// Seed for funding wallet
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum ContractCall {
@@ -204,6 +222,7 @@ pub enum Builder {
 	CustomContract(CustomContractArgs),
 	ClaimRewards(ClaimRewardsArgs),
 	SingleTx(SingleTxArgs),
+	RegisterDustAddress(RegisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
 	Migrate,
@@ -274,6 +293,7 @@ impl From<Builder> for Box<dyn BuildTxs<Error = DynamicError>> {
 			Builder::CustomContract(args) => to_builder(CustomContractBuilder::new(args)),
 			Builder::ClaimRewards(args) => to_builder(ClaimRewardsBuilder::new(args)),
 			Builder::SingleTx(args) => to_builder(SingleTxBuilder::new(args)),
+			Builder::RegisterDustAddress(args) => to_builder(RegisterDustAddressBuilder::new(args)),
 			Builder::Send => to_builder(DoNothingBuilder::new()),
 			Builder::Migrate => to_builder(ReplaceInitialTxBuilder::new()),
 		}
