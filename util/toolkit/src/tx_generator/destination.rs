@@ -12,7 +12,6 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use clap::Args;
 use midnight_node_ledger_helpers::*;
 use std::{fs::File, io::Write, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
@@ -22,11 +21,14 @@ use crate::{
 	serde_def::{DeserializedTransactionsWithContext, SerializedTransactionsWithContext},
 };
 
-#[derive(Args)]
+pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
+
+#[derive(clap::Args)]
 pub struct Destination {
-	/// RPC URL of node instance; Used to fetch existing transactions
-	#[arg(long, short = 'd', conflicts_with = "dest_file", default_value = "ws://127.0.0.1:9944")]
-	pub dest_url: Option<String>,
+	/// RPC URL of node instance. Used to fetch existing transactions.
+	/// Supports multiple urls; default is ws://127.0.0.1:9944
+	#[arg(long, short = 'd', conflicts_with = "dest_file", value_parser, num_args = 1.., value_delimiter =',')]
+	pub dest_url: Option<Vec<String>>,
 	/// The rate at which to send txs (per second)
 	#[arg(long, short, default_value = "1", conflicts_with = "dest_file")]
 	pub rate: f32,
