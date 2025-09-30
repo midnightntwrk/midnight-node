@@ -577,7 +577,7 @@ mod test {
 			"0000000000000000000000000000000000000000000000000000000000000003",
 			"0000000000000000000000000000000000000000000000000000000000000004",
 		]
-		.map(WalletSeed::from)
+		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
 		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds)
