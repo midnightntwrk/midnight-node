@@ -268,7 +268,7 @@ rebuild-genesis-state:
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
                 --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
-                --intent-files /res/test-data/contract/counter/deploy.bin \
+                --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
                 --to-bytes \
