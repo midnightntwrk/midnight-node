@@ -43,9 +43,9 @@ use std::{
 
 type UnprovenTransaction<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[cfg(not(feature = "erase-proof"))]
-type FullTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
+type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
 #[cfg(feature = "erase-proof")]
-type FullTransaction<D> = Transaction<Signature, (), Pedersen, D>;
+type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
@@ -136,7 +136,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		self.mock_proofs_for_fees = mock_proofs_for_fees;
 	}
 
-	async fn build(&mut self) -> Result<FullTransaction<D>> {
+	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.now;
 		// (10 min) max_ttl/6 - enough to produce 6 txs for a chain that starts
 		// with the `Timestamp` of the first tx to be sent
@@ -194,7 +194,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		network_id: String,
 		now: Timestamp,
 		ttl: Timestamp,
-	) -> Result<FullTransaction<D>> {
+	) -> Result<FinalizedTransaction<D>> {
 		let mut missing_dust = 0;
 
 		for _ in 0..10 {
@@ -227,7 +227,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	#[cfg(not(feature = "erase-proof"))]
-	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FullTransaction<D>> {
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		let resolver = self.context.resolver().await;
 		let parameters = self
 			.context
@@ -245,21 +245,21 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	#[cfg(feature = "erase-proof")]
-	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FullTransaction<D>> {
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		Ok(tx.erase_proofs())
 	}
 
 	#[cfg(not(feature = "erase-proof"))]
-	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FullTransaction<D>> {
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		Ok(tx.mock_prove()?)
 	}
 
 	#[cfg(feature = "erase-proof")]
-	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FullTransaction<D>> {
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		Ok(tx.erase_proofs())
 	}
 
-	fn compute_missing_dust(&self, tx: &FullTransaction<D>) -> Result<Option<u128>> {
+	fn compute_missing_dust(&self, tx: &FinalizedTransaction<D>) -> Result<Option<u128>> {
 		let fees = self.context.with_ledger_state(|s| tx.fees(&s.parameters))?;
 		let imbalances = tx.balance(Some(fees))?;
 		let dust_imbalance = imbalances
@@ -375,7 +375,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		Self::validate(self.context, self.now, tx_erased_proof.erase_signatures())
 	}
 
-	pub async fn prove(mut self) -> Result<FullTransaction<D>> {
+	pub async fn prove(mut self) -> Result<FinalizedTransaction<D>> {
 		let tx = self.build().await?;
 		Self::validate(self.context, self.now, tx)
 	}
@@ -461,7 +461,7 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	}
 
 	#[cfg(not(feature = "erase-proof"))]
-	pub async fn prove(mut self) -> FullTransaction<D> {
+	pub async fn prove(mut self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build();
 		let resolver = self.context.resolver().await;
 		let parameters = self
@@ -484,7 +484,7 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	}
 
 	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> FullTransaction<D> {
+	pub async fn prove(self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build();
 		tx_unproven.erase_proofs()
 	}
