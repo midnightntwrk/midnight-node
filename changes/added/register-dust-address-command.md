@@ -9,3 +9,4 @@ cargo run -p midnight-node-toolkit -- generate-txs --src-files res/genesis/genes
 
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/70
+JIRA: https://shielded.atlassian.net/browse/PM-19777
