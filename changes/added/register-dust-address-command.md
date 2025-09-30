@@ -8,4 +8,4 @@ cargo run -p midnight-node-toolkit -- generate-txs --src-files res/genesis/genes
 ```
 
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/69
+PR: https://github.com/midnightntwrk/midnight-node/pull/70
