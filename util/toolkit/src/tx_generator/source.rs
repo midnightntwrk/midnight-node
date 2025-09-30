@@ -18,6 +18,7 @@ use std::{fs::File, marker::PhantomData, sync::Arc};
 use thiserror::Error;
 
 use crate::{
+	client::ClientError,
 	indexer::Indexer,
 	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
 };
@@ -39,6 +40,8 @@ pub struct Source {
 pub enum SourceError {
 	#[error("failed to fetch transactions from indexer")]
 	TransactionFetchError(#[from] crate::indexer::IndexerError),
+	#[error("failed to initialize midnight node client")]
+	ClientInitializationError(#[from] ClientError),
 	#[error("failed to read genesis transaction file")]
 	TransactionReadIOError(#[from] std::io::Error),
 	#[error("failed to decode genesis transaction")]
