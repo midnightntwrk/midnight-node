@@ -1,5 +1,6 @@
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
+use midnight_node_e2e::cfg::*;
 use midnight_node_metadata::midnight_metadata::native_token_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use whisky::Asset;
@@ -66,4 +67,19 @@ async fn register_for_dust_production() {
 	if let Some(mapping) = mapping_added {
 		println!("Matching MappingAdded event found: {:?}", mapping);
 	}
+}
+
+#[tokio::test]
+async fn mint_cnight() {
+	let cardano_wallet = create_wallet();
+	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
+	println!("New Cardano wallet created: {:?}", bech32_address);
+
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
+	fund_wallet(&bech32_address, assets).await;
+
+	let minting_script = load_cbor(&load_config().cnight_token_policy_file);
+	let tx_hash =
+		mint_tokens(&cardano_wallet, &get_cnight_token_policy_id(), "100", &minting_script).await;
+	println!("Mint transaction submitted with hash: {:?}", tx_hash);
 }

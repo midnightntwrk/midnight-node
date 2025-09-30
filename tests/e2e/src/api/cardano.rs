@@ -179,3 +179,60 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 		None => panic!("Wallet UTXO not found after funding"),
 	}
 }
+
+pub async fn mint_tokens(wallet: &Wallet, policy_id: &str, amount: &str, minting_script: &str) -> [u8; 32] {
+	let network = Network::Custom(get_local_env_cost_models());
+	let payment_addr = get_cardano_address_as_bech32(wallet);
+
+	let client = get_ogmios_client().await;
+	let utxos = client.query_utxos(&[payment_addr.clone().into()]).await.unwrap();
+	assert!(!utxos.is_empty(), "No UTXOs found for payment address {}", payment_addr);
+	let utxo = utxos
+		.iter()
+		.max_by_key(|u| u.value.lovelace)
+		.expect("No UTXO with lovelace found");
+	let input_tx_hash = hex::encode(utxo.transaction.id);
+	let input_index = utxo.index;
+	let input_assets = build_asset_vector(&utxo);
+	let collateral_utxo = make_collateral(&payment_addr).await;
+
+	let assets = vec![
+		Asset::new_from_str("lovelace", "1500000"),
+		Asset::new_from_str(policy_id, amount),
+	];
+
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		.tx_in(
+			&input_tx_hash,
+			input_index.into(),
+			&input_assets,
+			&payment_addr,
+		)
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(&collateral_utxo),
+			&payment_addr,
+		)
+		.tx_out(&payment_addr, &assets)
+		.mint_plutus_script_v2()
+		.mint(amount.parse().unwrap(), &policy_id, "")
+		.minting_script(&minting_script)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			ex_units: Budget { mem: 376570, steps: 94156294 },
+		})
+		.change_address(&payment_addr)
+		.complete_sync(None)
+		.unwrap();
+
+	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let client = get_ogmios_client().await;
+	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	println!("Transaction submitted, response: {:?}", response);
+	response.transaction.id
+}

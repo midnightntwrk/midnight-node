@@ -13,6 +13,7 @@ pub struct AppConfig {
 	pub payment_skey_file: String,
 	pub mapping_validator_policy_file: String,
 	pub auth_token_policy_file: String,
+	pub cnight_token_policy_file: String,
 }
 
 pub fn load_config() -> AppConfig {
@@ -53,6 +54,13 @@ pub fn get_mapping_validator_address() -> String {
 pub fn get_auth_token_policy_id() -> String {
 	let cfg = load_config();
 	let cbor_hex = load_cbor(&cfg.auth_token_policy_file);
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
+	script_hash.unwrap()
+}
+
+pub fn get_cnight_token_policy_id() -> String {
+	let cfg = load_config();
+	let cbor_hex = load_cbor(&cfg.cnight_token_policy_file);
 	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
 	script_hash.unwrap()
 }
