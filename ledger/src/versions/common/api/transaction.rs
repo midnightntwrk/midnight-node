@@ -301,7 +301,7 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 
 	#[allow(dead_code)]
 	pub(crate) fn fee(&self, params: &LedgerParameters) -> Result<u128, LedgerApiError> {
-		self.0.fees(params).map_err(|e| {
+		self.0.fees(params, false).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error getting the transaction fee: {e:?}");
 			LedgerApiError::Transaction(TransactionError::Malformed(
 				MalformedTransaction::<D>::from(e).into(),
