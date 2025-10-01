@@ -41,6 +41,12 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
+type UnprovenTransaction<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+#[cfg(not(feature = "erase-proof"))]
+type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
+#[cfg(feature = "erase-proof")]
+type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
+
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
 pub trait FromContext<D: DB + Clone> {
@@ -132,9 +138,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		self.mock_proofs_for_fees = mock_proofs_for_fees;
 	}
 
-	pub async fn build(
-		&mut self,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
+	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.now;
 		// (10 min) max_ttl/6 - enough to produce 6 txs for a chain that starts
 		// with the `Timestamp` of the first tx to be sent
@@ -180,7 +184,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
-			return Ok(tx);
+			return self.prove_tx(tx).await;
 		};
 
 		self.pay_fees(tx, network_id, now, ttl).await
@@ -188,47 +192,44 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 	async fn pay_fees(
 		&mut self,
-		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		tx: UnprovenTransaction<D>,
 		network_id: String,
 		now: Timestamp,
 		ttl: Timestamp,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
-		let Some(mut missing_dust) = self.compute_missing_dust(&tx).await? else {
-			// we have enough dust after all I guess
-			return Ok(tx);
-		};
+	) -> Result<FinalizedTransaction<D>> {
+		let mut missing_dust = 0;
 
 		for _ in 0..10 {
-			let speculative_payment_tx = self.build_dust_spend_tx(
-				self.rng.clone().split(),
-				missing_dust,
-				&network_id,
-				now,
-				ttl,
-				true,
-			)?;
-			let paid_tx = tx.merge(&speculative_payment_tx)?;
+			let spends = self.gather_dust_spends(missing_dust, now)?;
+			let payment_tx =
+				self.build_spend_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
+			let paid_tx = tx.merge(&payment_tx)?;
 
-			let computed_missing_dust = self.compute_missing_dust(&paid_tx).await?;
-			if let Some(dust) = computed_missing_dust {
-				missing_dust += dust;
+			if self.mock_proofs_for_fees {
+				let mock_proven_tx = self.mock_prove_tx(&paid_tx)?;
+				let computed_missing_dust = self.compute_missing_dust(&mock_proven_tx)?;
+				if let Some(dust) = computed_missing_dust {
+					missing_dust += dust;
+				} else {
+					self.confirm_dust_spends(&spends)?;
+					return self.prove_tx(paid_tx).await;
+				}
 			} else {
-				// We know exactly how much dust is needed to balance the TX!
-				// So just balance it
-				let rng = self.rng.split();
-				let payment_tx =
-					self.build_dust_spend_tx(rng, missing_dust, &network_id, now, ttl, false)?;
-				return Ok(tx.merge(&payment_tx)?);
+				let proven_tx = self.prove_tx(paid_tx).await?;
+				let computed_missing_dust = self.compute_missing_dust(&proven_tx)?;
+				if let Some(dust) = computed_missing_dust {
+					missing_dust += dust;
+				} else {
+					self.confirm_dust_spends(&spends)?;
+					return Ok(proven_tx);
+				}
 			}
 		}
 		Err("Could not balance TX".into())
 	}
 
-	async fn prove_tx(
-		&self,
-		mut rng: StdRng,
-		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Result<Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>> {
+	#[cfg(not(feature = "erase-proof"))]
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		let resolver = self.context.resolver().await;
 		let parameters = self
 			.context
@@ -237,6 +238,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.map_err(|_| "ledger state lock was poisoned".to_string())?
 			.parameters
 			.clone();
+		let mut rng = self.rng.split();
 		Ok(self
 			.prover
 			.prove(tx, rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
@@ -244,19 +246,24 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.seal(rng))
 	}
 
-	async fn compute_missing_dust(
-		&self,
-		tx: &Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Result<Option<u128>> {
-		let proven_tx = if self.mock_proofs_for_fees {
-			tx.mock_prove()?
-		} else {
-			let mut rng = self.rng.clone();
-			self.prove_tx(rng.split(), tx.clone()).await?
-		};
+	#[cfg(feature = "erase-proof")]
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.erase_proofs())
+	}
 
-		let fees = self.context.with_ledger_state(|s| proven_tx.fees(&s.parameters))?;
-		let imbalances = proven_tx.balance(Some(fees))?;
+	#[cfg(not(feature = "erase-proof"))]
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.mock_prove()?)
+	}
+
+	#[cfg(feature = "erase-proof")]
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.erase_proofs())
+	}
+
+	fn compute_missing_dust(&self, tx: &FinalizedTransaction<D>) -> Result<Option<u128>> {
+		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+		let imbalances = tx.balance(Some(fees))?;
 		let dust_imbalance = imbalances
 			.get(&(TokenType::Dust, Segment::Guaranteed.into()))
 			.copied()
@@ -264,33 +271,28 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if dust_imbalance < 0 { Ok(Some(dust_imbalance.unsigned_abs())) } else { Ok(None) }
 	}
 
-	// Builds a transaction which spends exactly `required_amount` DUST from the configured funding seeds.
-	// Fails if the seeds do not have enough DUST available.
-	fn build_dust_spend_tx(
+	fn build_spend_tx(
 		&self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
 		mut rng: StdRng,
-		required_amount: u128,
 		network_id: &str,
 		now: Timestamp,
 		ttl: Timestamp,
-		speculative: bool,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
-		let spends = self.gather_dust_spends(required_amount, now, speculative)?;
+	) -> UnprovenTransaction<D> {
 		let mut intent = Intent::empty(&mut rng, ttl);
 		intent.dust_actions = Some(Sp::new(DustActions {
-			spends: spends.into(),
+			spends: spends.to_vec().into(),
 			registrations: vec![].into(),
 			ctime: now,
 		}));
 		let intents = HashMapStorage::new().insert(Segment::FeePayments.into(), intent);
-		Ok(Transaction::from_intents(network_id, intents))
+		Transaction::from_intents(network_id, intents)
 	}
 
 	fn gather_dust_spends(
 		&self,
 		required_amount: u128,
 		ctime: Timestamp,
-		speculative: bool,
 	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>> {
 		let mut spends = vec![];
 		let mut remaining = required_amount;
@@ -310,11 +312,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				return Ok(spends);
 			}
 			let wallet = wallets.get_mut(seed).ok_or("Unrecognized wallet seed")?;
-			let new_spends = if speculative {
-				wallet.dust.speculative_spend(remaining, ctime, params)?
-			} else {
-				wallet.dust.spend(remaining, ctime, params)?
-			};
+			let new_spends = wallet.dust.speculative_spend(remaining, ctime, params)?;
 			// We asked the wallet to spend `remaining` DUST,
 			// so the total amount spent will be <= `remaining`.
 			for spend in new_spends {
@@ -330,6 +328,18 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		} else {
 			Ok(spends)
 		}
+	}
+
+	fn confirm_dust_spends(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) -> Result<()> {
+		let mut wallets = self
+			.context
+			.wallets
+			.lock()
+			.map_err(|_| "wallet lock was poisoned".to_string())?;
+		for wallet in wallets.values_mut() {
+			wallet.dust.mark_spent(spends);
+		}
+		Ok(())
 	}
 
 	pub async fn save_intents_to_file(mut self, parent_dir: &str, file_name: &str) {
@@ -367,14 +377,9 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		Self::validate(self.context, self.now, tx_erased_proof.erase_signatures())
 	}
 
-	#[cfg(not(feature = "erase-proof"))]
-	pub async fn prove(
-		mut self,
-	) -> Result<Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>> {
-		let tx_unproven = self.build().await?;
-		let rng = self.rng.split();
-		let tx_proven = self.prove_tx(rng, tx_unproven).await?;
-		Self::validate(self.context, self.now, tx_proven)
+	pub async fn prove(mut self) -> Result<FinalizedTransaction<D>> {
+		let tx = self.build().await?;
+		Self::validate(self.context, self.now, tx)
 	}
 
 	fn validate<
@@ -393,11 +398,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.clone();
 		tx.well_formed(&ref_state, WellFormedStrictness::default(), now)?;
 		Ok(tx)
-	}
-
-	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> Result<Transaction<D>> {
-		Ok(self.erase_proof().await)
 	}
 }
 
@@ -432,7 +432,7 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 		self.coin = rewards;
 	}
 
-	pub fn build(&mut self) -> Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+	fn build(&mut self) -> UnprovenTransaction<D> {
 		let nonce = self.rng.r#gen();
 		self.context.with_ledger_state(|ledger_state| {
 			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
@@ -462,14 +462,8 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 		})
 	}
 
-	pub async fn erase_proof(mut self) -> Transaction<(), (), Pedersen, D> {
-		let tx_unproven = self.build();
-		let tx_erased_proof = tx_unproven.erase_proofs();
-		tx_erased_proof.erase_signatures()
-	}
-
 	#[cfg(not(feature = "erase-proof"))]
-	pub async fn prove(mut self) -> Transaction<Signature, ProofMarker, PureGeneratorPedersen, D> {
+	pub async fn prove(mut self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build();
 		let resolver = self.context.resolver().await;
 		let parameters = self
@@ -492,7 +486,8 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	}
 
 	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> Transaction<D> {
-		self.erase_proof().await
+	pub async fn prove(self) -> FinalizedTransaction<D> {
+		let tx_unproven = self.build();
+		tx_unproven.erase_proofs()
 	}
 }
