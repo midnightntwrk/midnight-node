@@ -134,7 +134,11 @@ impl SignedCommitment {
 						// Substrate adds an extra byte to these signatures. We'll remove this manually for compatibility
 						signature.pop();
 
-						Some(Vote { signature, authority_index: i, public_key: pk.clone().into_inner().to_vec() })
+						Some(Vote {
+							signature,
+							authority_index: i,
+							public_key: pk.clone().into_inner().to_vec(),
+						})
 					},
 					None => None,
 				}

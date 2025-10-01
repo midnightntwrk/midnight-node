@@ -1153,6 +1153,7 @@ name = "binary-merkle-tree"
 version = "16.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506#6fd693e6d9cfa46cd2acbcb41cd5b0451a62d67c"
 dependencies = [
+ "array-bytes",
  "hash-db",
  "log",
  "parity-scale-codec",
@@ -2668,7 +2669,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -6760,11 +6761,13 @@ dependencies = [
 name = "midnight-beefy-relay"
 version = "0.1.0"
 dependencies = [
+ "binary-merkle-tree",
  "clap",
  "hex",
  "midnight-node-metadata",
  "mmr-rpc",
  "pallas",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "sp-consensus-beefy",

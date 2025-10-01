@@ -1,26 +1,27 @@
 [
   {
     "suri": "//Alice",
-    "pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
+    "pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
+    "node_url": "ws://localhost:9933"
   },
   {
     "suri": "//Bob",
-    "pub_key": "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27"
+    "pub_key": "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27",
+    "node_url": "ws://localhost:9934"
   },
   {
     "suri": "//Charlie",
-    "pub_key": "0x0389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb"
+    "pub_key": "0x0389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb",
+    "node_url": "ws://localhost:9935"
   },
   {
     "suri": "//Dave",
-    "pub_key": "0x03bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c"
+    "pub_key": "0x03bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c",
+    "node_url": "ws://localhost:9936"
   },
   {
     "suri": "//Eve",
-    "pub_key": "0x031d10105e323c4afce225208f71a6441ee327a65b9e646e772500c74d31f669aa"
-  },
-  {
-    "suri": "//Ferdie",
-    "pub_key": "0x0291f1217d5a04cb83312ee3d88a6e6b33284e053e6ccfc3a90339a0299d12967c"
+    "pub_key": "0x031d10105e323c4afce225208f71a6441ee327a65b9e646e772500c74d31f669aa",
+    "node_url": "ws://localhost:9937"
   }
 ]

@@ -1,94 +1,57 @@
-use rs_merkle::{MerkleProof, MerkleTree};
-use serde::{Deserialize, Serialize};
-use sp_core::{H256};
-use std::{fmt::Display, fs::File, io::BufReader, path::Path};
+use sp_core::H256;
 
 use mmr_rpc::LeavesProof;
-use subxt::{
-	PolkadotConfig,
-	backend::rpc::RpcClient,
-	ext::{
-		codec::{Decode, Encode},
-		subxt_rpcs::{LegacyRpcMethods, rpc_params},
-	},
-};
+use subxt::ext::codec::{Decode, Encode};
 
-use sp_consensus_beefy::{ecdsa_crypto::Public, known_payloads::MMR_ROOT_ID, mmr::BeefyAuthoritySet, BeefySignatureHasher, ValidatorSet};
+use sp_consensus_beefy::{
+	ValidatorSet,
+	ecdsa_crypto::{Public, Signature},
+	known_payloads::MMR_ROOT_ID,
+	mmr::BeefyAuthoritySet,
+};
 use sp_mmr_primitives::{
-	EncodableOpaqueLeaf, LeafProof,
+	EncodableOpaqueLeaf, LeafIndex, LeafProof,
 	mmr_lib::{helper::get_peaks, leaf_index_to_mmr_size},
 	utils::NodesUtils,
 };
 
 use crate::{
-	cardano_encoding::SignedCommitment, helpers::{HexBeefyRelayChainProof, ToHex}, keccak::{authorities_merkle_tree, get_authorities_proof, KeccakHasher}, Block
+	cardano_encoding::SignedCommitment,
+	error::Error,
+	helpers::HexBeefyRelayChainProof,
+	keccak::{AuthoritiesProof, generate_authorities_proof},
+	types::{Block, ExtraData},
 };
 
-pub type BeefyKeys = Vec<BeefyKeyInfo>;
+pub type BeefySignedCommitment = sp_consensus_beefy::SignedCommitment<Block, Signature>;
 
-pub type BeefySignedCommitment =
-	sp_consensus_beefy::SignedCommitment<Block, sp_consensus_beefy::ecdsa_crypto::Signature>;
-
-pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<Block, H256, H256, Vec<u8>>;
-pub type LeafIndex = u64;
-pub type PeakNodes = Vec<(LeafIndex, Vec<u64>)>;
-
-/// Used for inserting keys to the keystore
-#[derive(Serialize, Deserialize)]
-pub struct BeefyKeyInfo {
-	/// Secret seed, for inserting beefy key
-	suri: String,
-
-	/// The public key of the secret seed (in ECDSA)
-	pub_key: String,
-}
-
-impl BeefyKeyInfo {
-	pub async fn insert_key(self, rpc: &RpcClient) {
-		let params = rpc_params!["beef".to_string(), self.suri, self.pub_key.clone()];
-
-		if let Err(e) = rpc.request::<()>("author_insertKey", params).await {
-			println!("Warning: failed to insert key({}): {e:?}", self.pub_key);
-			return;
-		}
-
-		println!("Added beefy key: {}", self.pub_key);
-	}
-}
-
-pub fn keys_from_file<T: AsRef<Path> + Display>(key_file: T) -> BeefyKeys {
-	let file_open_err = format!("failed to read from key_file {key_file}");
-	let file_read_err = format!("cannot read beefy keys in key_file {key_file}");
-
-	let key_file = File::open(key_file).expect(&file_open_err);
-	let reader = BufReader::new(key_file);
-
-	// Read the JSON contents of the file as an instance of `User`.
-	serde_json::from_reader(reader).expect(&file_read_err)
-}
+pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<Block, H256, H256, ExtraData>;
 
 pub struct BeefyRelayChainProof {
 	pub consensus_proof: LeavesProof<H256>,
 	//todo
-	pub merkle_authorities: MerkleTree<KeccakHasher>,
+	pub authorities_proof: AuthoritiesProof,
 	pub signed_commitment: BeefySignedCommitment,
-	pub validators: Vec<Public>
+	pub validators: Vec<Public>,
 }
 
 impl BeefyRelayChainProof {
 	pub fn create(
-		consensus_proof: LeavesProof<H256>, 
-		signed_commitment: BeefySignedCommitment, 
+		consensus_proof: LeavesProof<H256>,
+		signed_commitment: BeefySignedCommitment,
 		validator_set: ValidatorSet<Public>,
-		next_authorities: BeefyAuthoritySet<H256>
-	) -> Option<Self> {
-		if !verify_next_authority_set(next_authorities, &consensus_proof) {
-			return None;
-		}
+		next_authorities: BeefyAuthoritySet<H256>,
+	) -> Result<Self, Error> {
+		verify_next_authority_set(next_authorities, &consensus_proof)?;
 
-		let merkle_authorities = authorities_merkle_tree(&signed_commitment, &validator_set)?;
+		let authorities_proof = generate_authorities_proof(&signed_commitment, &validator_set)?;
 
-		Some(BeefyRelayChainProof { consensus_proof, merkle_authorities, signed_commitment, validators: validator_set.validators().to_vec() })
+		Ok(BeefyRelayChainProof {
+			consensus_proof,
+			authorities_proof,
+			signed_commitment,
+			validators: validator_set.validators().to_vec(),
+		})
 	}
 
 	pub fn print_as_hex(&self) {
@@ -125,14 +88,9 @@ impl BeefyRelayChainProof {
 		)
 	}
 
-	pub fn authorities_proof(&self) -> MerkleProof<KeccakHasher> {
-		get_authorities_proof(&self.merkle_authorities, &self.signed_commitment)
-	}
-
 	/// Returns a list of peaks per leaf index, taken from the LeafProof
-	pub fn peak_nodes(&self) -> PeakNodes {
+	pub fn peak_nodes(&self) -> Vec<PeakNode> {
 		let leaf_proof = self.leaf_proof();
-
 		leaf_proof
 			.leaf_indices
 			.iter()
@@ -141,25 +99,27 @@ impl BeefyRelayChainProof {
 				let peaks = get_peaks(mmr_size);
 
 				let utils = NodesUtils::new(*leaf_index);
-				let peak_len: u64 = utils.number_of_peaks();
-				println!(
-					"\nNumber of peaks {peak_len}: of leaf index({leaf_index}) with mmr size({mmr_size})"
-				);
+				let num_of_peaks: u64 = utils.number_of_peaks();
+				// println!(
+				// 	"\nNumber of peaks {num_of_peaks}: of leaf index({leaf_index}) with mmr size({mmr_size})"
+				// );
 
-				(*leaf_index, peaks)
+				PeakNode { leaf_index: *leaf_index, peaks, num_of_peaks, mmr_size }
 			})
 			.collect()
 	}
 
 	/// Returns the decoded leaves of `LeavesProof`
-	pub fn mmr_leaves(&self) -> Vec<MmrLeaf> {
+	pub fn mmr_leaves(&self) -> Result<Vec<MmrLeaf>, Error> {
 		get_mmr_leaves(&self.consensus_proof)
 	}
 
 	/// Returns all the node hashes of the peaks
 	pub fn node_hashes(&self) -> Vec<H256> {
 		let leaf_proof = self.leaf_proof();
-		leaf_proof.items
+		let result = leaf_proof.items;
+
+		result
 	}
 
 	/// Returns the decoded `LeafProof`, from `LeavesProof`
@@ -170,34 +130,45 @@ impl BeefyRelayChainProof {
 	}
 }
 
-fn verify_next_authority_set(next_auth_set:BeefyAuthoritySet<H256>,  consensus_proof:&LeavesProof<H256>) -> bool {
-	let mmr_leaves = get_mmr_leaves(consensus_proof);
+#[derive(Debug)]
+pub struct PeakNode {
+	pub leaf_index: LeafIndex,
+	pub peaks: Vec<u64>,
+	pub num_of_peaks: u64,
+	pub mmr_size: u64,
+}
+
+fn verify_next_authority_set(
+	next_auth_set: BeefyAuthoritySet<H256>,
+	consensus_proof: &LeavesProof<H256>,
+) -> Result<(), Error> {
+	let mmr_leaves = get_mmr_leaves(consensus_proof)?;
 
 	for leaf in mmr_leaves {
 		if leaf.beefy_next_authority_set != next_auth_set {
-			println!("WARNING: next authority sets are invalid: from proof: {:?}, from storage: {:?}",leaf.beefy_next_authority_set, next_auth_set);
-			return false
+			return Err(Error::InvalidNextAuthoritySet {
+				expected: leaf.beefy_next_authority_set,
+				actual: next_auth_set,
+			});
 		}
 	}
 
-	true
+	Ok(())
 }
 
-fn get_mmr_leaves(consensus_proof:&LeavesProof<H256>) -> Vec<MmrLeaf>  {
+fn get_mmr_leaves(consensus_proof: &LeavesProof<H256>) -> Result<Vec<MmrLeaf>, Error> {
 	let mut mmr_leaves = vec![];
 
-		let leaves = &consensus_proof.leaves.0;
-		let leaves: Vec<EncodableOpaqueLeaf> =
-			Decode::decode(&mut &leaves[..]).expect("failed to convert to mmrleaf");
+	let leaves = &consensus_proof.leaves.0;
+	let leaves: Vec<EncodableOpaqueLeaf> = Decode::decode(&mut &leaves[..])?;
 
-		for leaf in leaves {
-			let leaf_as_bytes = leaf.into_opaque_leaf().0;
+	for leaf in leaves {
+		let leaf_as_bytes = leaf.into_opaque_leaf().0;
 
-			let mmr_leaf: MmrLeaf =
-				Decode::decode(&mut &leaf_as_bytes[..]).expect("failed to decode to mmrleaf");
+		let mmr_leaf: MmrLeaf = Decode::decode(&mut &leaf_as_bytes[..])?;
 
-			mmr_leaves.push(mmr_leaf);
-		}
+		mmr_leaves.push(mmr_leaf);
+	}
 
-		mmr_leaves
+	Ok(mmr_leaves)
 }

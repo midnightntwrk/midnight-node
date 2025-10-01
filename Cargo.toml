@@ -212,6 +212,7 @@ sp-inherents = { default-features = false, git = "https://github.com/paritytech/
 sp-keystore = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
+binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
 parity-scale-codec = { version = "3.7.5", default-features = false }
 scale-info = { version = "2.1.1", default-features = false }

@@ -35,12 +35,13 @@ Make sure to have ready the following details:
         }'
    ```
 3. Via this relayer:  
-   1. Prepare json file of all the beefy keys.
+   1. Prepare json file of all the beefy keys and their corresponding urls
       * ```json
          [
           {
            "suri": "//Alice",
-           "pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
+           "pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
+           "node_url": "ws://localhost:9937"
           }
          ]
         ```
