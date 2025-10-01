@@ -33,6 +33,14 @@ lazy_static! {
 lazy_static! {
 	pub static ref RESOLVER: Resolver = Resolver::new(
 		crate::PUBLIC_PARAMS.clone(),
+		crate::DustResolver(
+			crate::MidnightDataProvider::new(
+				crate::FetchMode::OnDemand,
+				crate::OutputMode::Log,
+				crate::DUST_EXPECTED_FILES.to_owned(),
+			)
+			.unwrap()
+		),
 		Box::new(|_key_location| Box::pin(std::future::ready(Ok(None)))),
 	);
 }

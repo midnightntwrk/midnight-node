@@ -13,10 +13,10 @@
 
 use std::str::FromStr;
 
-use authority_selection_inherents::CommitteeMember;
 use clap::Parser;
-use midnight_node_runtime::{CrossChainPublic, opaque::SessionKeys};
+use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
+use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
 use sc_cli::{CliConfiguration, SharedParams};
 use sidechain_domain::McBlockHash;
@@ -99,12 +99,13 @@ pub enum Subcommand {
 #[derive(Clone, Debug)]
 pub struct MidnightRuntime;
 impl PartnerChainRuntime for MidnightRuntime {
-	type AuthorityId = CrossChainPublic;
-	type AuthorityKeys = SessionKeys;
-	type CommitteeMember = CommitteeMember<Self::AuthorityId, Self::AuthorityKeys>;
-
-	fn initial_member(id: Self::AuthorityId, keys: Self::AuthorityKeys) -> Self::CommitteeMember {
-		Self::CommitteeMember::from((id, keys))
+	type Keys = SessionKeys;
+	fn create_chain_spec(config: &CreateChainSpecConfig<Self::Keys>) -> serde_json::Value {
+		let _ = config;
+		todo!("implement create_chain_spec")
+	}
+	fn key_definitions() -> Vec<KeyDefinition<'static>> {
+		vec![AURA, GRANDPA, CROSS_CHAIN]
 	}
 }
 
@@ -120,7 +121,14 @@ impl FromStr for MidnightAddress {
 	}
 }
 
+#[derive(Debug)]
 pub struct NotImplementedError;
+impl std::fmt::Display for NotImplementedError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("not implemented")
+	}
+}
+impl core::error::Error for NotImplementedError {}
 
 // TODO: this is used to sign block producer metadata. Do we have a better type for that?
 #[derive(serde::Deserialize, Encode)]

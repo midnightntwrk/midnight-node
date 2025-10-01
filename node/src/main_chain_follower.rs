@@ -11,21 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionDataSource;
+use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CandidatesDataSourceImpl, DbSyncBlockDataSourceConfig,
 	GovernedMapDataSourceCachedImpl, McFollowerMetrics, McHashDataSourceImpl,
-	NativeTokenManagementDataSourceImpl, SidechainRpcDataSourceImpl,
+	SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
 	AuthoritySelectionDataSourceMock, BlockDataSourceMock, GovernedMapDataSourceMock,
-	McHashDataSourceMock, NativeTokenDataSourceMock, SidechainRpcDataSourceMock,
+	McHashDataSourceMock, SidechainRpcDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_governed_map::GovernedMapDataSource;
-use sp_native_token_management::NativeTokenManagementDataSource;
 
 use super::cfg::midnight_cfg::MidnightCfg;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
@@ -45,7 +44,6 @@ pub struct DataSources {
 	pub mc_hash: Arc<dyn McHashDataSource + Send + Sync>,
 	pub authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	pub native_token_observation: Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
-	pub native_token_management: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
 }
@@ -88,7 +86,6 @@ pub async fn create_mock_data_sources(
 		mc_hash: Arc::new(McHashDataSourceMock::new(block)),
 		authority_selection: Arc::new(authority_selection_data_source_mock),
 		native_token_observation: Arc::new(NativeTokenObservationDataSourceMock::new()),
-		native_token_management: Arc::new(NativeTokenDataSourceMock::new()),
 		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
 	})
 }
@@ -162,15 +159,6 @@ pub async fn create_cached_data_sources(
 			metrics_opt.clone(),
 			1000,
 		)),
-		native_token_management: Arc::new(
-			NativeTokenManagementDataSourceImpl::new(
-				pool.clone(),
-				metrics_opt.clone(),
-				cfg.cardano_security_parameter.ok_or(missing("cardano_security_parameter"))?,
-				1000,
-			)
-			.await?,
-		),
 		governed_map: Arc::new(
 			GovernedMapDataSourceCachedImpl::new(
 				pool,

@@ -11,10 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use authority_selection_inherents::CommitteeMember;
-use authority_selection_inherents::ariadne_inherent_data_provider::AriadneInherentDataProvider;
-use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionInputs;
-use authority_selection_inherents::filter_invalid_candidates::{
+use authority_selection_inherents::{
+	AriadneInherentDataProvider, AuthoritySelectionInputs, CommitteeMember, MaybeFromCandidateKeys,
 	RegisterValidatorSignedMessage, filter_trustless_candidates_registrations,
 };
 use frame_support::{
@@ -26,12 +24,12 @@ use frame_support::{
 use frame_system::EnsureRoot;
 use sidechain_domain::*;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::crypto::CryptoType;
 use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, MultiSigner, impl_opaque_keys,
+	key_types::{AURA, GRANDPA},
 	traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, OpaqueKeys},
 };
 use sp_std::vec::Vec;
@@ -43,35 +41,6 @@ pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
 pub const DUMMY_EPOCH_NONCE: &[u8] = &[1u8, 2u8, 3u8];
 
 type Block = frame_system::mocking::MockBlock<Test>;
-
-#[derive(
-	PartialOrd,
-	Ord,
-	PartialEq,
-	Eq,
-	Debug,
-	Clone,
-	MaxEncodedLen,
-	Encode,
-	Decode,
-	frame_support::Serialize,
-	frame_support::Deserialize,
-	TypeInfo,
-)]
-pub struct AccountKeys {
-	pub aura: [u8; 32],
-	pub grandpa: [u8; 32],
-}
-
-impl AccountKeys {
-	pub fn from_seed(seed: &str) -> AccountKeys {
-		let mut aura = format!("aura-{seed}").into_bytes();
-		aura.resize(32, 0);
-		let mut grandpa = format!("grandpa-{seed}").into_bytes();
-		grandpa.resize(32, 0);
-		AccountKeys { aura: aura.try_into().unwrap(), grandpa: grandpa.try_into().unwrap() }
-	}
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AccountId(ecdsa::Public);
@@ -138,11 +107,13 @@ impl_opaque_keys! {
 		pub grandpa: Grandpa,
 	}
 }
-impl From<(sr25519::Public, ed25519::Public)> for TestSessionKeys {
-	fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
-		let aura = AuraId::from(aura);
-		let grandpa = GrandpaId::from(grandpa);
-		Self { aura, grandpa }
+impl MaybeFromCandidateKeys for TestSessionKeys {
+	fn maybe_from(keys: &sidechain_domain::CandidateKeys) -> Option<Self> {
+		let aura = keys.find(AURA)?;
+		let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
+		let grandpa = keys.find(GRANDPA)?;
+		let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
+		Some(Self { aura: aura.into(), grandpa: grandpa.into() })
 	}
 }
 
@@ -359,10 +330,11 @@ pub fn create_inherent_data_struct(
 					validator.cross_chain.public().into_inner().0.to_vec(),
 				),
 				cross_chain_pub_key: CrossChainPublicKey(vec![]),
-				aura_pub_key: AuraPublicKey(validator.aura.public().as_slice().into()),
-				grandpa_pub_key: GrandpaPublicKey(validator.grandpa.public().as_slice().into()),
+				//aura_pub_key: AuraPublicKey(validator.aura.public().as_slice().into()),
+				//grandpa_pub_key: GrandpaPublicKey(validator.grandpa.public().as_slice().into()),
 				utxo_info: UtxoInfo::default(),
 				tx_inputs: vec![registration_utxo],
+				keys: CandidateKeys(vec![]),
 			};
 
 			CandidateRegistrations {
@@ -442,18 +414,6 @@ impl MockValidator {
 
 	pub fn sidechain_pub_key(&self) -> SidechainPublicKey {
 		SidechainPublicKey(self.account_id().0.0.to_vec())
-	}
-
-	pub fn session_keys(&self) -> AccountKeys {
-		AccountKeys::from_seed(self.seed)
-	}
-
-	pub fn aura_pub_key(&self) -> AuraPublicKey {
-		AuraPublicKey(self.session_keys().aura.to_vec())
-	}
-
-	pub fn grandpa_pub_key(&self) -> GrandpaPublicKey {
-		GrandpaPublicKey(self.session_keys().grandpa.to_vec())
 	}
 }
 
