@@ -11,7 +11,7 @@ use mn_meta::runtime_types::sp_consensus_beefy::{
 };
 
 use crate::{
-	beefy::{BeefyRelayChainProof, MmrLeaf, PeakNode},
+	beefy::{BeefyRelayChainProof, MmrLeaf, PeakNodes},
 	keccak::AuthoritiesProof,
 	mn_meta,
 	types::Block,
@@ -43,7 +43,7 @@ pub struct HexBeefyRelayChainProof {
 
 	scale_encoded_leaf_proof_hash: String,
 	leaf_proof: LeafProof<H256>,
-	peak_nodes: Vec<PeakNode>,
+	peak_nodes: PeakNodes,
 
 	scale_encoded_beefy_commitment: String,
 	beefy_commitment_root_hash: String,
@@ -51,9 +51,10 @@ pub struct HexBeefyRelayChainProof {
 	beefy_commitment_block_number: Block,
 	beefy_commitment_signatures: Vec<String>,
 
+	scale_encoded_authorities_proof: String,
 	authorities_proof: AuthoritiesProof,
 
-	validator_set: Vec<String>,
+	signers: Vec<String>,
 }
 
 impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
@@ -68,8 +69,7 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			})
 			.collect();
 
-		let validator_set =
-			value.validators.iter().into_iter().map(|v: &Public| format!("{v:?}")).collect();
+		let signers = value.signers.iter().into_iter().map(|v: &Public| format!("{v:?}")).collect();
 
 		let beefy_commitment_root_hash = value
 			.mmr_root_hash()
@@ -89,12 +89,15 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			.collect();
 
 		let peak_nodes = value.peak_nodes();
+		let authorities_proof = value.authorities_proof.clone();
+		let scale_encoded_authorities_proof = authorities_proof.encode();
+		let scale_encoded_authorities_proof = hex::encode(scale_encoded_authorities_proof);
 
 		HexBeefyRelayChainProof {
-			leaves_proof_block_hash: format!("{:#?}", value.consensus_proof.block_hash),
-			scale_encoded_leaves_hash: value.consensus_proof.leaves.as_hex(),
+			leaves_proof_block_hash: format!("{:#?}", value.mmr_proof.block_hash),
+			scale_encoded_leaves_hash: value.mmr_proof.leaves.as_hex(),
 			leaves,
-			scale_encoded_leaf_proof_hash: value.consensus_proof.proof.as_hex(),
+			scale_encoded_leaf_proof_hash: value.mmr_proof.proof.as_hex(),
 			leaf_proof: value.leaf_proof(),
 			peak_nodes,
 			scale_encoded_beefy_commitment: value.hex_scale_encoded_signed_commitment(),
@@ -103,9 +106,10 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			beefy_commitment_block_number: value.block_number(),
 			beefy_commitment_signatures,
 
-			authorities_proof: value.authorities_proof.clone(),
+			scale_encoded_authorities_proof,
+			authorities_proof,
 
-			validator_set,
+			signers,
 		}
 	}
 }

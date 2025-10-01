@@ -1,5 +1,5 @@
 use crate::{
-	beefy::{self, BeefyRelayChainProof, PeakNode},
+	beefy::{self, BeefyRelayChainProof, PeakNodes},
 	error::Error,
 	helpers::MnMetaConversion,
 	mn_meta,
@@ -7,6 +7,7 @@ use crate::{
 };
 
 use mmr_rpc::LeavesProof;
+use parity_scale_codec::Encode;
 use sp_consensus_beefy::{
 	SignedCommitment as BeefySignedCommitment, ValidatorSet as BeefyValidatorSet,
 	VersionedFinalityProof,
@@ -14,6 +15,7 @@ use sp_consensus_beefy::{
 	mmr::BeefyAuthoritySet,
 };
 use sp_core::{Bytes, H256};
+use sp_mmr_primitives::LeafProof;
 use subxt::{
 	OnlineClient, PolkadotConfig,
 	backend::rpc::RpcClient,
@@ -44,6 +46,7 @@ impl Relayer {
 		Ok(Relayer { rpc, api })
 	}
 
+	/// Listens and subscribes to the beefy justifications, printing out proofs per justification
 	pub async fn run_relay_by_subscription(&self) -> Result<(), Error> {
 		let mut sub: RpcSubscription<Bytes> = self
 			.rpc
@@ -59,11 +62,7 @@ impl Relayer {
 
 			match self.handle_justification_stream_data(justification.0).await {
 				Ok(proof) => {
-					let at_block_hash = proof.block_hash();
-					let peak_nodes = proof.peak_nodes();
-					let leaf_proof = proof.leaf_proof();
-
-					self.check_proof_items(at_block_hash, &leaf_proof.items, peak_nodes).await?;
+					self.check_proof_items(&proof).await?;
 
 					proof.print_as_hex();
 				},
@@ -83,7 +82,7 @@ impl Relayer {
 		let VersionedFinalityProof::<Block, ECDSASig>::V1(beef_signed_commitment) =
 			Decode::decode(&mut &justification[..])?;
 
-		let mmr_proof = self.get_consensus_proof(&beef_signed_commitment).await?;
+		let mmr_proof = self.get_mmr_proof(&beef_signed_commitment).await?;
 		let at_block_hash = mmr_proof.block_hash;
 
 		// TODO: get encodings for authority set, next authority set, and construct
@@ -97,8 +96,11 @@ impl Relayer {
 			next_authorities,
 		)
 	}
+}
 
-	pub async fn get_consensus_proof(
+// For Proof creation
+impl Relayer {
+	pub async fn get_mmr_proof(
 		&self,
 		beefy_signed_commitment: &BeefySignedCommitment<Block, ECDSASig>,
 	) -> Result<LeavesProof<H256>, Error> {
@@ -112,58 +114,65 @@ impl Relayer {
 		let at_block_hash = self.get_block_hash(commitment_block).await?;
 		println!("AT BLOCKHASH({:#?})", at_block_hash);
 
-		let root_hash = self.current_mmr_root(&at_block_hash).await?;
+		let root_hash = self.current_mmr_root(at_block_hash).await?;
 		println!("WITH ROOTHASH({root_hash})");
 
-		self.get_mmr_proof(vec![commitment_block], None, Some(at_block_hash)).await
+		self._get_mmr_proof(vec![commitment_block], None, Some(at_block_hash)).await
 	}
 
-	pub async fn verify_proof(
+	/// Direct checking of the mmr proof
+	pub async fn verify_mmr_proof(
 		&self,
 		root_hash: H256,
 		leaves_proof: LeavesProof<H256>,
 	) -> Result<bool, Error> {
-		let root_hash_as_hex = hex::encode(root_hash);
-
 		let mut rpc_params = RpcParams::new();
-		rpc_params.push(root_hash_as_hex)?;
+		rpc_params.push(root_hash)?;
 		rpc_params.push(leaves_proof)?;
 
 		let result =
 			self.rpc.request::<Option<bool>>("mmr_verifyProofStateless", rpc_params).await?;
 
-		result.ok_or(Error::ProofVerifyingFailed)
+		result.ok_or(Error::ProofVerificationFailed)
 	}
 
-	pub async fn check_proof_items(
-		&self,
-		at_block_hash: H256,
-		proof_items: &Vec<H256>,
-		peak_nodes: Vec<PeakNode>,
-	) -> Result<(), Error> {
-		for PeakNode { leaf_index, peaks, .. } in peak_nodes {
-			for peak in peaks {
-				let mmr_nodes_query = mn_meta::storage().mmr().nodes(peak);
-				let storage_fetcher = self.api.storage().at(at_block_hash);
+	/// Checks the items of the proof, whether these node hashes exists at a certain block on the chain
+	pub async fn check_proof_items(&self, proof: &BeefyRelayChainProof) -> Result<(), Error> {
+		let at_block_hash = proof.block_hash();
+		let PeakNodes { peaks, num_of_peaks, .. } = proof.peak_nodes();
+		let LeafProof { items, .. } = proof.leaf_proof();
 
-				let Some(node_hash) = storage_fetcher.fetch(&mmr_nodes_query).await? else {
-					println!("LeafIndex({leaf_index}): Node({peak}) not found");
-					return Ok(());
-				};
+		// loop through each peak, and ascertain if it exists on chain
+		for peak in &peaks[0..(num_of_peaks as usize)] {
+			let mmr_nodes_query = mn_meta::storage().mmr().nodes(*peak);
 
-				let result = proof_items.contains(&node_hash);
-				let hash_as_hex = hex::encode(node_hash);
+			let Some(node_hash) = self.storage_fetcher(at_block_hash, &mmr_nodes_query).await?
+			else {
+				return Err(Error::PeakNotFound { node_index: *peak, at_block_hash });
+			};
 
-				println!(
-					"LeafIndex({leaf_index}): Node Peak({peak})({hash_as_hex}) in proof: {result}"
-				);
+			if !items.contains(&node_hash) {
+				return Err(Error::InvalidPeak { node_index: *peak, at_block_hash });
 			}
 		}
 
 		Ok(())
 	}
 
-	async fn get_mmr_proof(
+	pub async fn verify_authorities_proof(
+		&self,
+		proof: &BeefyRelayChainProof,
+	) -> Result<(), Error> {
+		let at_block_hash = proof.block_hash();
+
+		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+
+		let validators = validator_set.validators();
+
+		Ok(())
+	}
+
+	async fn _get_mmr_proof(
 		&self,
 		// The block to query for
 		blocks: Vec<Block>,
@@ -182,9 +191,12 @@ impl Relayer {
 		serde_json::from_str(raw_proof_data)
 			.map_err(|_| Error::SerdeDecode(raw_proof_data.to_string()))
 	}
+}
 
+// Getting data from storage, or api
+impl Relayer {
 	// getting mmr root based on the block hash
-	async fn current_mmr_root(&self, block_hash: &BlockHash) -> Result<String, Error> {
+	async fn current_mmr_root(&self, block_hash: BlockHash) -> Result<String, Error> {
 		let params = rpc_params![block_hash];
 
 		self.rpc.request::<String>("mmr_root", params).await.map_err(|e| Error::Rpc(e))
