@@ -3,6 +3,7 @@ use crate::{
 	UnshieldedWallet, WalletSeed,
 };
 use clap::Args;
+use hex::ToHex;
 use midnight_node_ledger_helpers::serialize;
 use midnight_node_toolkit::cli_parsers::{self as cli};
 use serde::Serialize;
@@ -39,6 +40,7 @@ pub struct Addresses {
 	shielded: String,
 	unshielded: String,
 	coin_public: String,
+	unshielded_user_address: String,
 }
 
 #[derive(Debug)]
@@ -61,6 +63,7 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		coin_public: hex::encode(
 			serialize(&shielded_wallet.coin_public_key).expect("failed to serialize CoinPublicKey"),
 		),
+		unshielded_user_address: unshielded_wallet.user_address.0.0.encode_hex(),
 	};
 
 	if args.specific_address.shielded {

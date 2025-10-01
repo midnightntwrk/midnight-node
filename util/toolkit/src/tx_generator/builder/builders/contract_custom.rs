@@ -8,6 +8,10 @@ use crate::{
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
 };
 use async_trait::async_trait;
+use midnight_node_ledger_helpers::{
+	Array, ClaimedUnshieldedSpendsKey, PublicAddress, TokenType, UnshieldedOffer, UtxoOutput,
+	default_storage,
+};
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +24,8 @@ pub enum CustomContractBuilderError {
 	FailedProvingTx(Box<dyn std::error::Error + Send + Sync>),
 	#[error("failed to read intent file")]
 	FailedReadingIntent(std::io::Error),
+	#[error("ClaimedUnshieldedSpendsKey contains non-unshielded token type")]
+	ClaimedUnshieldedSpendTokenTypeError(TokenType),
 }
 
 pub struct CustomContractBuilder {
@@ -100,8 +106,33 @@ impl BuildTxs for CustomContractBuilder {
 		let contract_segment = 1;
 
 		// - Intents
-		let contract_intent = self.build_intent()?;
+		let mut contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
+
+		let (guaranteed_effects, _fallible_effects) = contract_intent.find_effects();
+
+		if let Some(effects) = guaranteed_effects {
+			let mut outputs = Array::<UtxoOutput>::new();
+			for (ClaimedUnshieldedSpendsKey(tt, dest), value) in effects.claimed_unshielded_spends {
+				let TokenType::Unshielded(tt) = tt else {
+					return Err(CustomContractBuilderError::ClaimedUnshieldedSpendTokenTypeError(
+						tt,
+					));
+				};
+
+				if let PublicAddress::User(addr) = dest {
+					outputs = outputs.push(UtxoOutput { value, owner: addr, type_: tt });
+				}
+			}
+
+			let unshielded_offer = default_storage().arena.alloc(UnshieldedOffer {
+				inputs: Default::default(),
+				outputs,
+				signatures: Default::default(),
+			});
+
+			contract_intent.intent.guaranteed_unshielded_offer = Some(unshielded_offer);
+		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
 		intents.insert(contract_segment, Box::new(contract_intent));

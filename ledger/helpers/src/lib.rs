@@ -22,7 +22,7 @@ pub use base_crypto::{
 };
 pub use coin_structure::{
 	coin::{
-		Info as CoinInfo, NIGHT, Nonce, PublicKey as CoinPublicKey, QualifiedInfo,
+		Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey, QualifiedInfo,
 		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
@@ -31,7 +31,7 @@ pub use coin_structure::{
 pub use midnight_serialize::{self as mn_ledger_serialize, Deserializable, Serializable, Tagged};
 pub use onchain_runtime::{
 	HistoricMerkleTree_check_root, HistoricMerkleTree_insert,
-	context::{BlockContext, Effects as ContractEffects, QueryContext},
+	context::{BlockContext, ClaimedUnshieldedSpendsKey, Effects as ContractEffects, QueryContext},
 	cost_model::CostModel,
 	error::TranscriptRejected,
 	ops::{Key, Op, key},

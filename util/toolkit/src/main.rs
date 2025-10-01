@@ -42,6 +42,7 @@ use midnight_node_toolkit::{
 use crate::commands::{
 	contract_state::{self, ContractStateArgs},
 	show_address::ShowAddress,
+	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 };
 
 mod commands;
@@ -85,6 +86,8 @@ enum Commands {
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
 	ShowViewingKey(ShowViewingKeyArgs),
+	/// Show the token type for a contract address + domain sep pair
+	ShowTokenType(ShowTokenTypeArgs),
 	/// Show the deserialized value of a serialized transaction
 	ShowTransaction(ShowTransactionArgs),
 	/// Show and save in a file the Contract Address included in a DeployContract tx
@@ -179,7 +182,6 @@ pub(crate) async fn run_command(
 			generate_intent::execute(args).await?;
 			Ok(())
 		},
-
 		Commands::GenerateSampleIntent(args) => {
 			generate_sample_intent::execute(args).await;
 			Ok(())
@@ -259,6 +261,17 @@ pub(crate) async fn run_command(
 				node_version, ledger_version, compactc_version
 			);
 			return Ok(());
+		},
+		Commands::ShowTokenType(args) => {
+			let token_type = show_token_type::execute(args);
+			match token_type {
+				ShowTokenType::TokenTypes(token_types) => {
+					println!("{}", serde_json::to_string_pretty(&token_types)?);
+				},
+				ShowTokenType::SingleTokenType(ttype) => println!("{ttype}"),
+			};
+
+			Ok(())
 		},
 	}
 }

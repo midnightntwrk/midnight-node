@@ -53,7 +53,7 @@ export default {
   // execution.
   contractExecutable: CompiledContract.make<CounterContract>('CounterContract', CounterContract).pipe(
     CompiledContract.withWitnesses(witnesses),
-    CompiledContract.withZKConfigFileAssets('./managed/counter'),
+    CompiledContract.withCompiledFileAssets('./managed/counter'),
     ContractExecutable.make
   ),
   createInitialPrivateState,
