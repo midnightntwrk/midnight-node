@@ -148,10 +148,10 @@ impl SubstrateCli for Cfg {
 						"council",
 					);
 
-				let technical_authority_membership =
+				let technical_committee_membership =
 					InitialFederedatedAuthority::load_from_federated_authority_config(
 						&federated_authority_config,
-						"technical_authority",
+						"technical_committee",
 					);
 
 				let network: CustomNetwork = CustomNetwork {
@@ -164,7 +164,7 @@ impl SubstrateCli for Cfg {
 					cngd_config,
 					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
 					council_membership,
-					technical_authority_membership,
+					technical_committee_membership,
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
 				};
