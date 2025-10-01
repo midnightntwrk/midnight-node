@@ -33,6 +33,7 @@ pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
 pallet-governed-map.workspace = true
+pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-arithmetic.workspace = true
 sp-block-builder.workspace = true
@@ -97,7 +98,8 @@ plutus.workspace = true
 serde.workspace = true
 
 [build-dependencies]
-substrate-wasm-builder = { workspace = true, optional = true }
+substrate-wasm-builder = { workspace = true, optional = true, default-features = true }
+frame-storage-access-test-runtime = { workspace = true, optional = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -131,6 +133,7 @@ std = [
     "pallet-membership/std",
     "pallet-collective/std",
     "pallet-governed-map/std",
+    "pallet-federated-authority/std",
     "sp-api/std",
     "sp-arithmetic/std",
     "sp-block-builder/std",
@@ -155,6 +158,7 @@ std = [
     "sp-genesis-builder/std",
     "sp-governed-map/std",
     "substrate-wasm-builder",
+    "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
@@ -187,6 +191,9 @@ runtime-benchmarks = [
     "sp-runtime/runtime-benchmarks",
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-upgrade/runtime-benchmarks",
+    "pallet-midnight/runtime-benchmarks",
+    "pallet-federated-authority/runtime-benchmarks",
+    "pallet-governed-map/runtime-benchmarks"
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",
@@ -212,4 +219,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec", "serde"]
+ignored = ["scale-info", "parity-scale-codec", "serde", "frame-storage-access-test-runtime"]
