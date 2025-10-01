@@ -24,7 +24,7 @@ use midnight_node_runtime::{
 	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
 	MidnightConfig, MidnightSystemCall, NativeTokenManagementConfig, RuntimeCall,
 	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	Signature, SudoConfig, TechnicalAuthorityConfig, TechnicalAuthorityMembershipConfig,
+	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
 use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, TimestampCall};
@@ -290,17 +290,17 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.expect("Too many members to initialize 'council_membership'"),
 			..Default::default()
 		},
-		technical_authority: TechnicalAuthorityConfig { ..Default::default() },
-		technical_authority_membership: TechnicalAuthorityMembershipConfig {
+		technical_committee: TechnicalCommitteeConfig { ..Default::default() },
+		technical_committee_membership: TechnicalCommitteeMembershipConfig {
 			members: genesis
-				.technical_authority()
+				.technical_committee()
 				.members
 				.iter()
 				.cloned()
 				.map(|key| key.into())
 				.collect::<Vec<AccountId>>()
 				.try_into()
-				.expect("Too many members to initialize 'technical_authority_membership'"),
+				.expect("Too many members to initialize 'technical_committee_membership'"),
 			..Default::default()
 		},
 	};

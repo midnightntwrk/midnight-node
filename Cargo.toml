@@ -79,6 +79,7 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
 pallet-upgrade = { path = "pallets/upgrade", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
+pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
 documented = { path = "util/documented", default-features = false }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
@@ -158,6 +159,7 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
+frame-storage-access-test-runtime  = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
@@ -241,6 +243,7 @@ sha2 = "0.10.8"
 toml = "0.9.0"
 bip32 = "0.5.3"
 derive-where = "1.5.0"
+impl-trait-for-tuples = "0.2.2"
 
 [profile.release]
 panic = "unwind"
@@ -310,3 +313,6 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
+
+[workspace.metadata.cargo-shear]
+ignored = ["frame-storage-access-test-runtime"]
