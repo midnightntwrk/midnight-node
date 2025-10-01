@@ -84,7 +84,6 @@ pub struct FederatedAuthorityOriginManager<Authorities>(pub PhantomData<Authorit
 
 impl<O, Authorities> EnsureOrigin<O> for FederatedAuthorityOriginManager<Authorities>
 where
-	// O: Clone + From<pallet_collective::RawOrigin<u64, pallet_collective::Instance1>> + From<pallet_collective::RawOrigin<u64, pallet_collective::Instance2>>,
 	O: Clone,
 	Authorities: EnsureFromIdentity<O>,
 {
