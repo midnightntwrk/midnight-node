@@ -49,7 +49,32 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
-pub fn hex_ledger_serialize_decode<T>(input: &str) -> Result<T, clap::error::Error>
+pub fn hex_ledger_untagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
+where
+	T: Deserializable,
+{
+	let bytes = hex::decode(input).map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+		);
+		err
+	})?;
+
+	let res = <T as Deserializable>::deserialize(&mut &bytes[..], 0).map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to deserialize arg: {e}")),
+		);
+		err
+	})?;
+
+	Ok(res)
+}
+
+pub fn hex_ledger_tagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
 where
 	T: Deserializable + Tagged,
 {

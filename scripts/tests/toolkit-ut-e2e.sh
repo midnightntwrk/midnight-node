@@ -31,13 +31,6 @@ docker run -d --rm \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
 
-cleanup() {
-    echo "🛑 Killing node container..."
-    docker container stop midnight-node-contracts
-}
-# Set up trap to cleanup on exit
-trap cleanup EXIT
-
 echo "⏳ Waiting for node to boot..."
 sleep 4
 
@@ -45,6 +38,16 @@ sleep 4
 echo "📦 Running toolkit contract tests..."
 
 tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
+
+cleanup() {
+    echo "🛑 Killing node container..."
+    docker container stop midnight-node-contracts
+    echo "🧹 Removing tempdir..."
+    rm -rf $tempdir
+}
+# Set up trap to cleanup on exit
+trap cleanup EXIT
+
 deploy_intent_filename="deploy.bin"
 deploy_tx_filename="deploy_tx.mn"
 deploy_zswap_filename="deploy_zswap.json"
@@ -61,11 +64,11 @@ mint_zswap_filename="mint_zswap.json"
 contract_dir="contract"
 
 # Compiled mint contract is included in the toolkit image
-# tmpid=$(docker create "$TOOLKIT_IMAGE")
-# docker cp "$tmpid:/toolkit-js/mint" "$tempdir/$contract_dir"
-# docker rm -v $tmpid
+tmpid=$(docker create "$TOOLKIT_IMAGE")
+docker cp "$tmpid:/toolkit-js/test/ut_contract" "$tempdir/$contract_dir"
+docker rm -v $tmpid
 
-cp -r ./util/toolkit-js/test/ut_contract/ $tempdir/$contract_dir
+# cp -r ./util/toolkit-js/test/ut_contract/ $tempdir/$contract_dir
 
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
@@ -108,6 +111,16 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     contract-state --contract-address $contract_address \
     --dest-file /out/$state_filename
 
+# Arbitrary value
+domain_sep=$(echo d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79)
+user_address=$( \
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --unshielded-user-address \
+)
+
 echo "Generate circuit call intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
@@ -120,8 +133,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --output-zswap-state "/out/$mint_zswap_filename" \
     --coin-public "6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98" \
     mintUnshieldedToUserTest \
-    d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79 \
-    bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b \
+    "$domain_sep" \
+    "$user_address" \
     1000
 
 echo "Generate and send mint tx"
@@ -130,16 +143,22 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$TOOLKIT_IMAGE" \
     send-intent --intent-file "/out/$mint_intent_filename" --zswap-state-file "/out/$mint_zswap_filename" --compiled-contract-dir /toolkit-js/contract/out
 
+token_type=$( \
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-token-type \
+    --contract-address "$contract_address" \
+    --domain-sep d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79 \
+    --unshielded \
+)
+
 show_wallet_output=$(docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts $TOOLKIT_IMAGE \
     show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001")
 
-if echo "$show_wallet_output" | grep -q "coins: {[[:space:]]*}"; then
-    echo "🕵️❌ Couldn't find shielded coins in wallet"
-    exit 1
+if echo "$show_wallet_output" | grep -q "$token_type"; then
+    echo "🕵️✅ Found matching unshielded output"
 else
-    echo "🕵️✅ Found shielded coins in wallet"
+    echo "🕵️❌ Couldn't find matching unshielded output"
+    exit 1
 fi
 
-# rm -rf $tempdir
-
-echo "✅ Toolkit Mint"
+echo "✅ Toolkit UT Mint"

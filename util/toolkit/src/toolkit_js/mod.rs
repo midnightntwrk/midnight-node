@@ -65,13 +65,13 @@ pub struct CircuitArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_serialize_decode::<ContractAddress>)]
+	#[arg(long, short = 'a', value_parser = cli::hex_ledger_tagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
 	network: NetworkId,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
-	#[arg(long, value_parser = cli::hex_ledger_serialize_decode::<CoinPublicKey>)]
+	#[arg(long, value_parser = cli::hex_ledger_tagged_decode::<CoinPublicKey>)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
@@ -103,7 +103,7 @@ pub struct DeployArgs {
 	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
 	network: NetworkId,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
-	#[arg(long, value_parser = cli::hex_ledger_serialize_decode::<CoinPublicKey>)]
+	#[arg(long, value_parser = cli::hex_ledger_tagged_decode::<CoinPublicKey>)]
 	pub coin_public: Option<CoinPublicKey>,
 	/// A public BIP-340 signing key, hex encoded.
 	#[arg(long)]

@@ -32,6 +32,9 @@ pub struct SpecificAddressTypeArgs {
 	/// CoinPublic only
 	#[arg(long)]
 	coin_public: bool,
+	/// Unshielded User Address only (use for contract interations)
+	#[arg(long)]
+	unshielded_user_address: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +75,8 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		ShowAddress::SingleAddress(all.unshielded)
 	} else if args.specific_address.coin_public {
 		ShowAddress::SingleAddress(all.coin_public)
+	} else if args.specific_address.unshielded_user_address {
+		ShowAddress::SingleAddress(all.unshielded_user_address)
 	} else {
 		ShowAddress::Addresses(all)
 	}
