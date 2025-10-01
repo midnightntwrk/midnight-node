@@ -47,27 +47,27 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 
 [workspace.dependencies]
 # Midnight dependencies
-mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-6.1.0-alpha.2" } # From feature/unshielded-ledger
-ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.2", features = ["parity-db"] }
-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.2" }
-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-6.1.0-alpha.2" }
-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-6.1.0-alpha.2" }
-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-6.1.0-alpha.2" }
-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.2" }
-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-6.1.0-alpha.2" }
+mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-6.1.0-alpha.3" } # From feature/unshielded-ledger
+ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.3", features = ["parity-db"] }
+coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.3" }
+onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-6.1.0-alpha.3" }
+base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-6.1.0-alpha.3" }
+transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-6.1.0-alpha.3" }
+zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.3" }
+zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-6.1.0-alpha.3" }
 
 # Hard-fork test dependencies
-# mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag", features = ["hard-fork-test", "dust"] }
-# ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag", features = ["parity-db"] }
-# coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
-# onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
-# base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
-# transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
-# zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
+# mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag", features = ["hard-fork-test", "dust"] }
+# ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag", features = ["parity-db"] }
+# coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
+# onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
+# base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
+# transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
+# zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.2" }
-# midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", branch = "hard-fork-test/ledger-6.1.0-alpha.2-feature-flag" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.3" }
+# midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", branch = "hard-fork-test/ledger-6.1.0-alpha.3-feature-flag" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
@@ -80,6 +80,7 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
 pallet-upgrade = { path = "pallets/upgrade", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
+pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
 documented = { path = "util/documented", default-features = false }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
@@ -159,6 +160,7 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
+frame-storage-access-test-runtime  = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
@@ -245,6 +247,7 @@ sha2 = "0.10.8"
 toml = "0.9.0"
 bip32 = "0.5.3"
 derive-where = "1.5.0"
+impl-trait-for-tuples = "0.2.2"
 
 [profile.release]
 panic = "unwind"
@@ -314,3 +317,6 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
+
+[workspace.metadata.cargo-shear]
+ignored = ["frame-storage-access-test-runtime"]
