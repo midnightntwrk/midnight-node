@@ -1,4 +1,6 @@
 use crate::cfg::load_config;
+use blake2::digest::{Update, VariableOutput};
+use blake2::Blake2bVar;
 use midnight_node_metadata::midnight_metadata::{
 	self as mn_meta,
 	native_token_observation::{self},
@@ -70,4 +72,17 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 		Ok(res) => res,
 		Err(_) => Err("Timeout waiting for registration event".into()),
 	}
+}
+
+pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> String {
+	let tx_index_bytes = tx_index.to_be_bytes();
+	let mut data = Vec::new();
+	data.extend_from_slice(&prefix);
+	data.extend_from_slice(&tx_hash);
+	data.extend_from_slice(&tx_index_bytes);
+
+	let mut hasher = Blake2bVar::new(32).unwrap();
+	hasher.update(&data);
+	let nonce = hasher.finalize_boxed();
+	hex::encode(&nonce)
 }

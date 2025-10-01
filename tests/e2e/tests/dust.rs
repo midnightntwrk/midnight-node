@@ -70,16 +70,41 @@ async fn register_for_dust_production() {
 }
 
 #[tokio::test]
-async fn mint_cnight() {
+async fn cnight_produces_dust() {
 	let cardano_wallet = create_wallet();
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-	fund_wallet(&bech32_address, assets).await;
+	let dust_hex = new_dust_hex(32);
+	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
+
+	let collateral_utxo = make_collateral(&bech32_address).await;
+	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let tx_in = fund_wallet(&bech32_address, assets).await;
+
+	let register_tx_id =
+		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let minting_script = load_cbor(&load_config().cnight_token_policy_file);
-	let tx_hash =
-		mint_tokens(&cardano_wallet, &get_cnight_token_policy_id(), "100", &minting_script).await;
-	println!("Mint transaction submitted with hash: {:?}", tx_hash);
+	let amount = 100;
+	let tx_id = mint_tokens(
+		&cardano_wallet,
+		&get_cnight_token_policy_id(),
+		&amount.to_string(),
+		&minting_script,
+	)
+	.await;
+	println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
+
+	// FIXME: it returns first utxo, find by native token or return all utxos
+	let cnight_utxo = match find_utxo_by_tx_id(&bech32_address, &hex::encode(&tx_id)).await {
+		Some(cnight_utxo) => cnight_utxo,
+		None => panic!("No cNIGHT UTXO found after minting"),
+	};
+
+	let prefix = b"asset_create";
+	let nonce = calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+	println!("Calculated nonce for cNIGHT minting: {}", nonce);
+	// TODO assert utxoOwners
 }

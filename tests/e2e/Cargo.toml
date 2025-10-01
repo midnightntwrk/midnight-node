@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 hex.workspace = true
+hex-literal.workspace = true
 cardano-serialization-lib.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 whisky = { git = "https://github.com/ozgb/whisky", rev = "9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a" }
@@ -22,3 +23,4 @@ rand = "0.9.2"
 uplc = "1.1.9"
 subxt.workspace = true
 midnight-node-metadata.workspace = true
+blake2 = "0.10.6"
