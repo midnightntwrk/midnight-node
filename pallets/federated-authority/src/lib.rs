@@ -41,6 +41,7 @@ pub mod pallet {
 	use crate::weights::WeightInfo;
 	use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*};
 	use frame_system::pallet_prelude::*;
+	use sp_runtime::DispatchError;
 
 	/// The in-code storage version.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
@@ -125,7 +126,10 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight(T::WeightInfo::motion_approve(T::MaxAuthorityBodies::get()))]
+		#[pallet::weight((
+            T::WeightInfo::motion_approve(T::MaxAuthorityBodies::get()),
+            DispatchClass::Operational
+        ))]
 		#[allow(clippy::useless_conversion)]
 		pub fn motion_approve(
 			origin: OriginFor<T>,
@@ -194,7 +198,10 @@ pub mod pallet {
 		}
 
 		#[pallet::call_index(1)]
-		#[pallet::weight(T::WeightInfo::motion_revoke(T::MaxAuthorityBodies::get()).max(T::WeightInfo::motion_revoke_remove()))]
+		#[pallet::weight((
+            T::WeightInfo::motion_revoke(T::MaxAuthorityBodies::get()).max(T::WeightInfo::motion_revoke_remove()),
+            DispatchClass::Operational
+        ))]
 		#[allow(clippy::useless_conversion)]
 		pub fn motion_revoke(
 			origin: OriginFor<T>,
@@ -250,7 +257,10 @@ pub mod pallet {
 		}
 
 		#[pallet::call_index(2)]
-		#[pallet::weight(T::WeightInfo::motion_close_approved().max(T::WeightInfo::motion_close_expired()))]
+		#[pallet::weight((
+            T::WeightInfo::motion_close_approved().saturating_add(Pallet::<T>::get_dispatch_weight(*motion_hash).unwrap_or_default()),
+            DispatchClass::Operational
+        ))]
 		#[allow(clippy::useless_conversion)]
 		pub fn motion_close(
 			origin: OriginFor<T>,
@@ -273,12 +283,16 @@ pub mod pallet {
 			if Self::is_motion_approved(total_approvals) {
 				// Dispatch motion
 				Self::motion_dispatch(motion_hash)?;
+				// Get dispatch weight
+				let dispatch_weight = Self::get_dispatch_weight(motion_hash)?;
 				// Remove after dispatch
 				Self::motion_remove(motion_hash);
 
 				// Return actual weight for approved motion
 				Ok(PostDispatchInfo {
-					actual_weight: Some(T::WeightInfo::motion_close_approved()),
+					actual_weight: Some(
+						T::WeightInfo::motion_close_approved().saturating_add(dispatch_weight),
+					),
 					pays_fee: Pays::No,
 				})
 			} else {
@@ -336,6 +350,11 @@ pub mod pallet {
 		/// Returns `true` if the motion has finished (expired).
 		fn has_ended(motion: &MotionInfo<T>) -> bool {
 			Self::block_number() >= motion.ends_block
+		}
+
+		fn get_dispatch_weight(motion_hash: T::Hash) -> Result<Weight, DispatchError> {
+			let motion = Motions::<T>::get(motion_hash).ok_or(Error::<T>::MotionNotFound)?;
+			Ok(motion.call.get_dispatch_info().call_weight)
 		}
 
 		#[cfg(feature = "runtime-benchmarks")]
