@@ -19,7 +19,7 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 				| RuntimeCall::Sudo(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
-				)
+				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
 		)
 	}
 }
