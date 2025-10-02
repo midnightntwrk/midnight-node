@@ -73,6 +73,17 @@ pub async fn execute_upgrade(
 
 	// Step 4: Council proposes to approve the federated motion
 	log::info!("Council proposing federated motion approval...");
+
+	// Compute the proposal hash ourselves (same way the collective pallet does)
+	// We need to encode the full call data including pallet and call indices
+	let fed_auth_tx =
+		dynamic::tx("FederatedAuthority", "motion_approve", vec![authorize_upgrade_call.clone()]);
+	let fed_auth_call_data = fed_auth_tx
+		.encode_call_data(&api.metadata())
+		.map_err(|e| UpgraderError::EncodingError(format!("Failed to encode call: {:?}", e)))?;
+	let council_proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
+	let council_proposal_hash = H256(council_proposal_hash);
+
 	let council_proposal = dynamic::tx(
 		"Council",
 		"propose",
@@ -86,8 +97,7 @@ pub async fn execute_upgrade(
 		.wait_for_finalized_success()
 		.await?;
 
-	// Extract proposal hash from the Proposed event
-	let council_proposal_hash = extract_proposal_hash(&council_propose_events, "Council")?;
+	// Extract proposal index from the Proposed event
 	let council_proposal_index = extract_proposal_index(&council_propose_events, "Council")?;
 	log::info!(
 		"Council proposal created with hash: 0x{} and index: {}",
@@ -109,6 +119,9 @@ pub async fn execute_upgrade(
 
 	// Step 7: Technical Committee proposes to approve the federated motion
 	log::info!("Technical Committee proposing federated motion approval...");
+
+	let tech_proposal_hash = council_proposal_hash;
+
 	let tech_proposal = dynamic::tx(
 		"TechnicalCommittee",
 		"propose",
@@ -122,7 +135,6 @@ pub async fn execute_upgrade(
 		.wait_for_finalized_success()
 		.await?;
 
-	let tech_proposal_hash = extract_proposal_hash(&tech_propose_events, "TechnicalCommittee")?;
 	let tech_proposal_index = extract_proposal_index(&tech_propose_events, "TechnicalCommittee")?;
 	log::info!(
 		"Technical Committee proposal created with hash: 0x{} and index: {}",
@@ -272,42 +284,6 @@ async fn close_proposal(
 		.await?;
 
 	Ok(())
-}
-
-fn extract_proposal_hash(
-	events: &subxt::blocks::ExtrinsicEvents<SubstrateConfig>,
-	pallet: &str,
-) -> Result<H256, UpgraderError> {
-	use parity_scale_codec::Decode;
-
-	for event in events.iter() {
-		let event = event?;
-		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
-			// Get the raw field bytes
-			let field_bytes = event.field_bytes();
-
-			// Parse the raw bytes manually
-			// The Proposed event has: (account_id: 32 bytes, proposal_index: compact u32, proposal_hash: 32 bytes, threshold: compact u32)
-			let mut cursor = field_bytes;
-
-			// Skip account_id (32 bytes)
-			if cursor.len() < 32 {
-				continue;
-			}
-			cursor = &cursor[32..];
-
-			// Skip proposal_index (compact encoded u32)
-			let _ = parity_scale_codec::Compact::<u32>::decode(&mut cursor);
-
-			// Read proposal_hash (32 bytes)
-			if cursor.len() >= 32 {
-				let mut hash = [0u8; 32];
-				hash.copy_from_slice(&cursor[0..32]);
-				return Ok(H256(hash));
-			}
-		}
-	}
-	Err(UpgraderError::ProposalHashNotFound)
 }
 
 fn extract_proposal_index(

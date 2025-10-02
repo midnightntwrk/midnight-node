@@ -30,8 +30,6 @@ pub enum UpgraderError {
 	DeserializationError(std::io::Error),
 	#[error("Code upgrade failed: Missing code updated event")]
 	CodeUpgradeFailed,
-	#[error("Proposal hash not found in events")]
-	ProposalHashNotFound,
 	#[error("Proposal index not found in events")]
 	ProposalIndexNotFound,
 	#[error("Encoding error: {0}")]
