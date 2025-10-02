@@ -1084,7 +1084,6 @@ mod tests {
 		});
 	}
 
-	#[track_caller]
 	pub fn set_committee_through_inherent_data(
 		expected_authorities: &[TestKeys],
 	) -> PostDispatchInfo {
