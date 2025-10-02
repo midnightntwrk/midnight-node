@@ -95,12 +95,12 @@ substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git
 pallet-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 
 pallet-sidechain-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
-sp-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
+#sp-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 
 pallet-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 pallet-session-validator-management-benchmarking = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
-pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
+#pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 pallet-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
 
 sp-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0" }
@@ -158,7 +158,6 @@ frame-benchmarking-cli = { default-features = false, git = "https://github.com/p
 frame-storage-access-test-runtime  = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
-sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-io = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-blockchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
@@ -190,7 +189,6 @@ sc-chain-spec = { default-features = false, git = "https://github.com/paritytech
 sc-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-network = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-executor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
-sc-executor-common = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sc-consensus-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }

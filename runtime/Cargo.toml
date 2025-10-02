@@ -43,7 +43,7 @@ sp-consensus-slots.workspace = true
 sp-core.workspace = true
 sp-genesis-builder.workspace = true
 sp-inherents.workspace = true
-sp-partner-chains-bridge.workspace = true
+#sp-partner-chains-bridge.workspace = true
 sp-offchain.workspace = true
 sp-runtime.workspace = true
 sp-session.workspace = true
@@ -70,7 +70,7 @@ authority-selection-inherents.workspace = true
 #pallet-block-rewards.workspace = true
 #sp-block-rewards.workspace = true
 pallet-partner-chains-session.workspace = true
-pallet-partner-chains-bridge.workspace = true
+#pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
@@ -115,7 +115,7 @@ std = [
     "pallet-grandpa/std",
     "pallet-midnight/std",
     "pallet-mmr/std",
-    "pallet-partner-chains-bridge/std",
+    #"pallet-partner-chains-bridge/std",
     "pallet-version/std",
     "pallet-native-token-observation/std",
     "pallet-preimage/std",
@@ -136,7 +136,7 @@ std = [
     "sp-consensus-slots/std",
     "sp-core/std",
     "sp-inherents/std",
-    "sp-partner-chains-bridge/std",
+    #"sp-partner-chains-bridge/std",
     "sp-offchain/std",
     "sp-runtime/std",
     "sp-session/std",
