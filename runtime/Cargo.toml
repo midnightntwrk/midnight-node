@@ -85,10 +85,8 @@ sidechain-slots.workspace = true
 midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
-pallet-upgrade.workspace = true
 pallet-version.workspace = true
 pallet-native-token-observation.workspace = true
-midnight-primitives-upgrade-api.workspace = true
 midnight-primitives-native-token-observation.workspace = true
 
 [dev-dependencies]
@@ -114,14 +112,12 @@ std = [
     "frame-system-rpc-runtime-api/std",
     "frame-system/std",
     "frame-try-runtime/std",
-    "midnight-primitives-upgrade-api/std",
     "pallet-aura/std",
     "pallet-beefy/std",
     "pallet-beefy-mmr/std",
     "pallet-grandpa/std",
     "pallet-midnight/std",
     "pallet-mmr/std",
-    "pallet-upgrade/std",
     "pallet-native-token-management/std",
     "pallet-version/std",
     "pallet-native-token-observation/std",
@@ -190,7 +186,6 @@ runtime-benchmarks = [
     "pallet-collective/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
-    "pallet-upgrade/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-governed-map/runtime-benchmarks"

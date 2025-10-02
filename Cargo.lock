@@ -6876,8 +6876,6 @@ dependencies = [
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade",
- "midnight-primitives-upgrade-api",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-governed-map",
@@ -7061,7 +7059,6 @@ dependencies = [
  "log",
  "midnight-node-ledger",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade-api",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
@@ -7086,7 +7083,6 @@ dependencies = [
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-tx-pause",
- "pallet-upgrade",
  "pallet-version",
  "parity-scale-codec",
  "plutus",
@@ -7275,30 +7271,6 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-api",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hex",
- "parity-scale-codec",
- "sc-executor",
- "sc-executor-common",
- "scale-info",
- "sp-core",
- "sp-inherents",
- "sp-partner-chains-consensus-aura",
- "sp-runtime",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade-api"
-version = "0.1.0"
-dependencies = [
- "sp-api",
- "sp-core",
 ]
 
 [[package]]
@@ -9079,33 +9051,6 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-sdk-frame",
  "scale-info",
-]
-
-[[package]]
-name = "pallet-upgrade"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex",
- "itertools 0.14.0",
- "midnight-primitives-upgrade",
- "pallet-partner-chains-session",
- "pallet-preimage",
- "pallet-scheduler",
- "parity-scale-codec",
- "scale-info",
- "sp-arithmetic",
- "sp-consensus-aura",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-staking",
- "sp-std",
- "sp-storage",
- "sp-version",
 ]
 
 [[package]]
@@ -16683,7 +16628,10 @@ dependencies = [
  "bip39",
  "clap",
  "env_logger 0.11.8",
+ "hex",
  "log",
+ "parity-scale-codec",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506)",
  "subxt 0.44.0",
  "subxt-signer 0.44.0",
  "thiserror 1.0.69",
