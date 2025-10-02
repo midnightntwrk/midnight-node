@@ -38,9 +38,12 @@ sleep 10
 
 echo "🔍 Fetching initial spec version..."
 RPC_PAYLOAD='{"jsonrpc": "2.0", "id": 1, "method": "chain_getHeader", "params": []}'
-SPEC_VERSION=$(curl -s -X POST http://localhost:9944 \
-  -H "Content-Type: application/json" \
-  -d "$RPC_PAYLOAD" | jq -r '.result.digest.logs[] | select(startswith("0x044d4e5356")) | .[14:]')
+SPEC_VERSION=$(
+  curl -s -H "Content-Type: application/json" \
+       -d '{"id":1,"jsonrpc":"2.0","method":"state_getRuntimeVersion","params":[]}' \
+       http://127.0.0.1:9944 \
+  | jq -r '.result.specVersion'
+)
 
 echo "Initial spec version: $SPEC_VERSION"
 
@@ -51,9 +54,12 @@ echo "⏳ Waiting post-upgrade..."
 sleep 10
 
 echo "🔍 Fetching new spec version..."
-NEW_SPEC_VERSION=$(curl -s -X POST http://localhost:9944 \
-  -H "Content-Type: application/json" \
-  -d "$RPC_PAYLOAD" | jq -r '.result.digest.logs[] | select(startswith("0x044d4e5356")) | .[14:]')
+NEW_SPEC_VERSION=$(
+  curl -s -H "Content-Type: application/json" \
+       -d '{"id":1,"jsonrpc":"2.0","method":"state_getRuntimeVersion","params":[]}' \
+       http://127.0.0.1:9944 \
+  | jq -r '.result.specVersion'
+)
 
 echo "New spec version: $NEW_SPEC_VERSION"
 
