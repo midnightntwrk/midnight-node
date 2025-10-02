@@ -32,7 +32,7 @@ docker run -d --rm \
   "$NODE_IMAGE"
 
 echo "⏳ Waiting for node to boot..."
-sleep 4
+sleep 5
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."
@@ -68,6 +68,14 @@ tmpid=$(docker create "$TOOLKIT_IMAGE")
 docker cp "$tmpid:/toolkit-js/test/ut_contract" "$tempdir/$contract_dir"
 docker rm -v $tmpid
 
+coin_public=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --coin-public-untagged
+)
+
 # cp -r ./util/toolkit-js/test/ut_contract/ $tempdir/$contract_dir
 
 echo "Generate deploy intent"
@@ -75,6 +83,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent deploy -c /toolkit-js/contract/ut.config.ts \
+    --coin-public "$coin_public" \
     --output-intent "/out/$deploy_intent_filename" \
     --output-private-state "/out/$private_state_filename" \
     --output-zswap-state "/out/$deploy_zswap_filename"
@@ -86,7 +95,9 @@ echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-file "/out/$deploy_intent_filename" --compiled-contract-dir contract/managed/counter \
+    send-intent \
+    --intent-file "/out/$deploy_intent_filename" \
+    --compiled-contract-dir contract/managed/counter \
     --to-bytes --dest-file "/out/$deploy_tx_filename"
 
 echo "Send deploy tx"
@@ -95,14 +106,15 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$TOOLKIT_IMAGE" \
     generate-txs --src-files /out/$deploy_tx_filename -r 1 send
 
-echo "Get contract address"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+contract_address=$(
+    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    contract-address --src-file /out/$deploy_tx_filename --network undeployed \
-    --dest-file /out/$address_filename
-
-contract_address=$(cat "$tempdir/$address_filename")
+    contract-address \
+    --src-file /out/$deploy_tx_filename \
+    --network undeployed \
+    --untagged
+)
 
 echo "Get contract state"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
@@ -118,7 +130,7 @@ user_address=$( \
     show-address \
     --network undeployed \
     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    --unshielded-user-address \
+    --unshielded-user-address-untagged \
 )
 
 echo "Generate circuit call intent"
@@ -131,7 +143,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --output-intent "/out/$mint_intent_filename" \
     --output-private-state "/out/tmp.json" \
     --output-zswap-state "/out/$mint_zswap_filename" \
-    --coin-public "6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98" \
+    --coin-public "$coin_public" \
     mintUnshieldedToUserTest \
     "$domain_sep" \
     "$user_address" \

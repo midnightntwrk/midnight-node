@@ -182,6 +182,9 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
+		println!("pre-proof tx: {tx:#?}");
+		println!("tx balance pre-fees: {:#?}", tx.balance(None));
+
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
 			return self.prove_tx(tx).await;

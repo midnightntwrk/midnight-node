@@ -9,8 +9,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	Array, ClaimedUnshieldedSpendsKey, PublicAddress, TokenType, UnshieldedOffer, UtxoOutput,
-	default_storage,
+	Array, ClaimedUnshieldedSpendsKey, PublicAddress, ShieldedWallet, TokenType, UnshieldedOffer,
+	UtxoOutput, WalletAddress, default_storage,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -34,6 +34,7 @@ pub struct CustomContractBuilder {
 	artifacts_dir: String,
 	intent_file: String,
 	zswap_state_file: Option<String>,
+	shielded_destinations: Vec<WalletAddress>,
 }
 
 impl CustomContractBuilder {
@@ -44,6 +45,7 @@ impl CustomContractBuilder {
 			artifacts_dir: args.compiled_contract_dir,
 			intent_file: args.intent_file,
 			zswap_state_file: args.zswap_state_file,
+			shielded_destinations: args.shielded_destinations,
 		}
 	}
 }
@@ -142,12 +144,21 @@ impl BuildTxs for CustomContractBuilder {
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
+		let shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = self
+			.shielded_destinations
+			.iter()
+			.filter_map(|addr| addr.try_into().ok())
+			.collect();
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = Vec::new();
 		if let Some(zswap_state) = zswap_state {
 			for encoded_output in zswap_state.outputs.into_iter() {
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
-				outputs_info.push(Box::new(EncodedOutputInfo { encoded_output, segment: 0 }));
+				outputs_info.push(Box::new(EncodedOutputInfo::new(
+					encoded_output,
+					0,
+					&shielded_wallets,
+				)));
 			}
 		}
 

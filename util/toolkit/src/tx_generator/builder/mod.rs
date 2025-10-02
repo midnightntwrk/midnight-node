@@ -19,7 +19,7 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
@@ -81,6 +81,9 @@ pub struct CustomContractArgs {
 	/// Zswap State file containing coin info
 	#[arg(long)]
 	pub zswap_state_file: Option<String>,
+	/// Shielded Destination addresses - used to find encryption keys
+	#[arg(long = "shielded-destination", value_parser = cli::wallet_address)]
+	pub shielded_destinations: Vec<WalletAddress>,
 }
 
 #[derive(Args, Clone)]
@@ -95,8 +98,8 @@ pub struct ContractCallArgs {
 	#[arg(long, default_value = "store")]
 	pub call_key: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	#[arg(
         short,
         long,
@@ -117,8 +120,8 @@ pub struct ContractMaintenanceArgs {
 	)]
 	pub funding_seed: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	/// Threshold for Maintenance ReplaceAthority
 	#[arg(long, short, default_value = "1")]
 	pub threshold: u32,
@@ -291,16 +294,6 @@ pub trait BuildTxs {
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
-
-	fn contract_address(&self, file: &String) -> ContractAddress {
-		let path = Path::new(file);
-		let hex_str = fs::read_to_string(path)
-			.expect("Error reading Contract Address file")
-			.trim()
-			.to_string();
-		let hex = hex::decode(hex_str).expect("Error hex decoding ContractAddress");
-		deserialize(&hex[..]).expect("Error deserializing ContractAddress")
-	}
 }
 
 /// An extension to help build transactions

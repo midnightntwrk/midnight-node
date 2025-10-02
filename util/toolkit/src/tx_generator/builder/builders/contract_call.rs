@@ -22,6 +22,7 @@ use crate::{
 	tx_generator::builder::{ContractCallArgs, CreateIntentInfo},
 };
 use async_trait::async_trait;
+use midnight_node_ledger_helpers::ContractAddress;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 const CONTRACT_INPUT: u32 = 12;
@@ -29,7 +30,7 @@ const CONTRACT_INPUT: u32 = 12;
 pub struct ContractCallBuilder {
 	call_key: &'static str,
 	funding_seed: String,
-	contract_address: String,
+	contract_address: ContractAddress,
 	rng_seed: Option<[u8; 32]>,
 }
 
@@ -64,11 +65,9 @@ impl CreateIntentInfo for ContractCallBuilder {
 		println!("Create intent info for contract call");
 
 		// - Contract Calls
-		let contract_address = self.contract_address(&self.contract_address);
-
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> = Box::new(CallInfo {
 			type_: MerkleTreeContract::new(),
-			address: contract_address,
+			address: self.contract_address,
 			key: self.call_key,
 			input: Box::new(CONTRACT_INPUT),
 			_marker: PhantomData,

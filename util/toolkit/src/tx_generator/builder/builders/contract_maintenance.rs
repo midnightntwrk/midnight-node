@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{BuildIntent, WalletSeed};
+use midnight_node_ledger_helpers::{BuildIntent, ContractAddress, WalletSeed};
 use std::{convert::Infallible, sync::Arc};
 
 use crate::{
@@ -32,7 +32,7 @@ pub struct ContractMaintenanceBuilder {
 	threshold: u32,
 	counter: u32,
 	funding_seed: String,
-	contract_address: String,
+	contract_address: ContractAddress,
 	rng_seed: Option<[u8; 32]>,
 }
 
@@ -65,7 +65,6 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 impl CreateIntentInfo for ContractMaintenanceBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for Maintenance");
-		let contract_address = self.contract_address(&self.contract_address);
 
 		// - Contract Calls
 		let update = UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
@@ -76,7 +75,7 @@ impl CreateIntentInfo for ContractMaintenanceBuilder {
 
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
-				address: contract_address,
+				address: self.contract_address,
 				updates: vec![update],
 				counter: self.counter,
 			});

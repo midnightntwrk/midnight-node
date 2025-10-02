@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use midnight_node_ledger_helpers::{
-	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, Deserializable, HashOutput,
-	LedgerContext, Nonce, Output, PERSISTENT_HASH_BYTES, ProofPreimage, Recipient, Serializable,
-	ShieldedTokenType, TokenInfo, WalletState,
+	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, Deserializable, EncryptionPublicKey,
+	HashOutput, LedgerContext, Nonce, Output, PERSISTENT_HASH_BYTES, ProofPreimage, Recipient,
+	Serializable, ShieldedTokenType, ShieldedWallet, TokenInfo, WalletState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +42,7 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 
 		match recipient {
 			Recipient::User(public_key) => {
-				Output::new(rng, &coin_info, self.segment, &public_key, None)
+				Output::new(rng, &coin_info, self.segment, &public_key, self.encryption_public_key)
 					.expect("failed to construct output")
 			},
 			Recipient::Contract(contract_address) => {
@@ -56,6 +56,29 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 pub struct EncodedOutputInfo {
 	pub encoded_output: EncodedOutput,
 	pub segment: u16,
+	pub encryption_public_key: Option<EncryptionPublicKey>,
+}
+
+impl EncodedOutputInfo {
+	/// Create a new EncodedOutputInfo, searching for a matching encryption public key from
+	/// possible destinations
+	pub fn new<D: DB + Clone>(
+		encoded_output: EncodedOutput,
+		segment: u16,
+		possible_destinations: &[ShieldedWallet<D>],
+	) -> Self {
+		let mut encryption_public_key = None;
+		let recipient: Recipient = encoded_output.recipient.clone().into();
+		if let Recipient::User(ref public_key) = recipient {
+			if let Some(wallet) =
+				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
+			{
+				encryption_public_key = Some(wallet.enc_public_key);
+			}
+		}
+
+		Self { encoded_output, segment, encryption_public_key }
+	}
 }
 
 impl TokenInfo for EncodedOutputInfo {

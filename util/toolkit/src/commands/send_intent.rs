@@ -112,6 +112,7 @@ mod test {
 			compiled_contract_dir: compiled_contract_dir.to_string(),
 			intent_file,
 			zswap_state_file: None,
+			shielded_destinations: vec![],
 		};
 
 		let args = SendIntentArgs { source, destination, proof_server: None, contract_args };

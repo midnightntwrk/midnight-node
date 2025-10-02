@@ -4,6 +4,7 @@ use clap::{
 	Args,
 	builder::{PathBufValueParser, TypedValueParser},
 };
+use hex::ToHex;
 use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
@@ -65,13 +66,13 @@ pub struct CircuitArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_tagged_decode::<ContractAddress>)]
+	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
 	network: NetworkId,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
-	#[arg(long, value_parser = cli::hex_ledger_tagged_decode::<CoinPublicKey>)]
+	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
@@ -103,8 +104,8 @@ pub struct DeployArgs {
 	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
 	network: NetworkId,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
-	#[arg(long, value_parser = cli::hex_ledger_tagged_decode::<CoinPublicKey>)]
-	pub coin_public: Option<CoinPublicKey>,
+	#[arg(long, value_parser = cli::coin_public_decode)]
+	pub coin_public: CoinPublicKey,
 	/// A public BIP-340 signing key, hex encoded.
 	#[arg(long)]
 	signing: Option<String>,
@@ -142,13 +143,15 @@ impl ToolkitJs {
 		let output_intent = args.output_intent.absolute();
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
-		let coin_public_key = args.coin_public.map(|c| hex::encode(c.0.0));
+		let coin_public_key: String = args.coin_public.0.0.encode_hex();
 		let mut cmd_args = vec![
 			"deploy",
 			"-c",
 			&config,
 			"--network",
 			network_id,
+			"--coin-public",
+			&coin_public_key,
 			"--output",
 			&output_intent,
 			"--output-ps",
@@ -156,9 +159,6 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		if let Some(ref coin_public) = coin_public_key {
-			cmd_args.extend_from_slice(&["--coin-public", coin_public]);
-		}
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}

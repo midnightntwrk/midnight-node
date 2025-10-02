@@ -40,6 +40,7 @@ use midnight_node_toolkit::{
 };
 
 use crate::commands::{
+	contract_address::ContractAddressValue,
 	contract_state::{self, ContractStateArgs},
 	show_address::ShowAddress,
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
@@ -236,7 +237,16 @@ pub(crate) async fn run_command(
 			println!("{transaction_information}");
 			Ok(())
 		},
-		Commands::ContractAddress(args) => contract_address::execute(args),
+		Commands::ContractAddress(args) => {
+			let res = contract_address::execute(args)?;
+			match res {
+				ContractAddressValue::Both(both) => {
+					println!("{}", serde_json::to_string_pretty(&both)?);
+				},
+				ContractAddressValue::Either(address) => println!("{address}"),
+			};
+			Ok(())
+		},
 		Commands::ContractState(args) => contract_state::execute(args).await,
 		Commands::GetTxFromContext(args) => {
 			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;

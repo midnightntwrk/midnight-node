@@ -32,9 +32,12 @@ pub struct SpecificAddressTypeArgs {
 	/// CoinPublic only
 	#[arg(long)]
 	coin_public: bool,
+	/// CoinPublic untagged only
+	#[arg(long)]
+	coin_public_untagged: bool,
 	/// Unshielded User Address only (use for contract interations)
 	#[arg(long)]
-	unshielded_user_address: bool,
+	unshielded_user_address_untagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,7 +46,8 @@ pub struct Addresses {
 	shielded: String,
 	unshielded: String,
 	coin_public: String,
-	unshielded_user_address: String,
+	coin_public_untagged: String,
+	unshielded_user_address_untagged: String,
 }
 
 #[derive(Debug)]
@@ -63,20 +67,24 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 	let all = Addresses {
 		shielded: shielded_wallet.address(args.network).to_bech32(),
 		unshielded: unshielded_wallet.address(args.network).to_bech32(),
-		coin_public: hex::encode(
-			serialize(&shielded_wallet.coin_public_key).expect("failed to serialize CoinPublicKey"),
-		),
-		unshielded_user_address: unshielded_wallet.user_address.0.0.encode_hex(),
+		coin_public: serialize(&shielded_wallet.coin_public_key)
+			.expect("failed to serialize CoinPublicKey")
+			.encode_hex(),
+		coin_public_untagged: shielded_wallet.coin_public_key.0.0.encode_hex(),
+		unshielded_user_address_untagged: unshielded_wallet.user_address.0.0.encode_hex(),
 	};
 
+	// https://github.com/clap-rs/clap/issues/2621
 	if args.specific_address.shielded {
 		ShowAddress::SingleAddress(all.shielded)
 	} else if args.specific_address.unshielded {
 		ShowAddress::SingleAddress(all.unshielded)
 	} else if args.specific_address.coin_public {
 		ShowAddress::SingleAddress(all.coin_public)
-	} else if args.specific_address.unshielded_user_address {
-		ShowAddress::SingleAddress(all.unshielded_user_address)
+	} else if args.specific_address.coin_public_untagged {
+		ShowAddress::SingleAddress(all.coin_public_untagged)
+	} else if args.specific_address.unshielded_user_address_untagged {
+		ShowAddress::SingleAddress(all.unshielded_user_address_untagged)
 	} else {
 		ShowAddress::Addresses(all)
 	}

@@ -183,8 +183,24 @@ impl Deserializable for NetworkId {
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes
-pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io::Error> {
+pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);
+	let mut bytes = Vec::with_capacity(size);
+	T::serialize(value, &mut bytes)?;
+	Ok(bytes)
+}
+
+/// Deserializes a mn_ledger::serialize-able type from bytes
+pub fn deserialize_untagged<T: Deserializable + Tagged>(
+	mut bytes: impl std::io::Read,
+) -> Result<T, std::io::Error> {
+	let val: T = T::deserialize(&mut bytes, 0)?;
+	Ok(val)
+}
+
+/// Serializes a mn_ledger::serialize-able type into bytes
+pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io::Error> {
+	let size = midnight_serialize::tagged_serialized_size(value);
 	let mut bytes = Vec::with_capacity(size);
 	midnight_serialize::tagged_serialize(value, &mut bytes)?;
 	Ok(bytes)

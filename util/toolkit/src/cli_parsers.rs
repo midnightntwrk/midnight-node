@@ -49,6 +49,22 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
+pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, clap::error::Error> {
+	if let Ok(addr) = hex_ledger_tagged_decode::<T>(input) {
+		Ok(addr)
+	} else {
+		hex_ledger_untagged_decode::<T>(input)
+	}
+}
+
+pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {
+	hex_ledger_decode(input)
+}
+
+pub fn contract_address_decode(input: &str) -> Result<ContractAddress, clap::error::Error> {
+	hex_ledger_decode(input)
+}
+
 pub fn hex_ledger_untagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
 where
 	T: Deserializable,
@@ -82,7 +98,7 @@ where
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
-			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+			clap::error::ContextValue::String(format!("failed to parse: {}", e)),
 		);
 		err
 	})?;

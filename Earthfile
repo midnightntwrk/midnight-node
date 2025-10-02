@@ -192,7 +192,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit contract-address \
                 --network ${NETWORK} \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --dest-file out/contract_address_${SUFFIX}.mn \
+                --tagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
             && /midnight-node-toolkit generate-txs \
                 --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
@@ -200,7 +200,7 @@ rebuild-genesis-state:
                 contract-calls call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
-                --contract-address out/contract_address_${SUFFIX}.mn \
+                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
                 --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn \
                 --dest-file out/contract_tx_3_check_${SUFFIX}.mn \
@@ -208,14 +208,14 @@ rebuild-genesis-state:
                 contract-calls call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
-                --contract-address out/contract_address_${SUFFIX}.mn \
+                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
                 --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn out/contract_tx_3_check_${SUFFIX}.mn \
                 --dest-file out/contract_tx_4_change_authority_${SUFFIX}.mn \
                 --to-bytes \
                 contract-calls maintenance \
                 --rng-seed "$RNG_SEED" \
-                --contract-address out/contract_address_${SUFFIX}.mn \
+                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && cp out/contract*.mn /res/test-contract \
         ; fi
 
@@ -276,7 +276,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --network $NETWORK \
-                --dest-file /res/test-data/contract/counter/contract_address.mn \
+                --tagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
                 --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \

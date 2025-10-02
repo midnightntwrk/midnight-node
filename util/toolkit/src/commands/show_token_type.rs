@@ -6,7 +6,7 @@ use serde::Serialize;
 #[derive(Args, Clone)]
 pub struct ShowTokenTypeArgs {
 	/// Address of contract
-	#[arg(long, value_parser = cli::hex_ledger_tagged_decode::<ContractAddress>)]
+	#[arg(long, value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Pre-image of coin token type (Domain Separator)
 	#[arg(long, value_parser = cli::hex_ledger_untagged_decode::<HashOutput>)]
@@ -85,9 +85,11 @@ mod test {
 
 		let address = super::execute(args);
 
+		println!("{:?}", address);
+
 		assert!(matches!(
 			address,
-			ShowTokenType::SingleTokenType(a) if a == "85e83e67740f35ae8abac0f11eaef02cd0a9b7adc73eb880d499c57ad67ee55c"
+			ShowTokenType::SingleTokenType(a) if a == "3761de9bcb58c3c3e548f67c6b860a42d086abfeeed07be6d64f4d2d135ae76d"
 		));
 	}
 
