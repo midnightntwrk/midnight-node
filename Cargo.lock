@@ -31,9 +31,9 @@ dependencies = [
 
 [[package]]
 name = "actix-http"
-version = "3.11.0"
+version = "3.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44dfe5c9e0004c623edc65391dfd51daa201e7e30ebd9c9bedf873048ec32bc2"
+checksum = "44cceded2fb55f3c4b67068fa64962e2ca59614edc5b03167de9ff82ae803da0"
 dependencies = [
  "actix-codec",
  "actix-rt",
@@ -90,9 +90,9 @@ dependencies = [
 
 [[package]]
 name = "actix-rt"
-version = "2.10.0"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24eda4e2a6e042aa4e55ac438a2ae052d3b5da0ecf83d7411e1a368946925208"
+checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
 dependencies = [
  "futures-core",
  "tokio",
@@ -1466,9 +1466,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "bytestring"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e465647ae23b2823b0753f50decb2d5a86d2bb2cac04788fafd1f80e45378e5f"
+checksum = "113b4343b5f6617e7ad401ced8de3cc8b012e73a594347c307b90db3e9271289"
 dependencies = [
  "bytes",
 ]
@@ -2667,7 +2667,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -6876,8 +6876,6 @@ dependencies = [
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade",
- "midnight-primitives-upgrade-api",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-governed-map",
@@ -6982,7 +6980,6 @@ dependencies = [
  "sp-runtime-interface",
  "sp-std",
  "sp-tracing",
- "tokio",
  "toml 0.9.5",
 ]
 
@@ -7052,20 +7049,20 @@ dependencies = [
  "authority-selection-inherents",
  "frame-benchmarking",
  "frame-executive",
+ "frame-storage-access-test-runtime",
  "frame-support",
  "frame-system",
  "frame-system-benchmarking",
  "frame-system-rpc-runtime-api",
  "frame-try-runtime",
- "hex",
  "log",
  "midnight-node-ledger",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade-api",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collective",
+ "pallet-federated-authority",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -7085,7 +7082,6 @@ dependencies = [
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-tx-pause",
- "pallet-upgrade",
  "pallet-version",
  "parity-scale-codec",
  "plutus",
@@ -7094,7 +7090,6 @@ dependencies = [
  "sidechain-domain",
  "sidechain-slots",
  "sp-api",
- "sp-arithmetic",
  "sp-block-builder",
  "sp-consensus-aura",
  "sp-consensus-beefy",
@@ -7275,30 +7270,6 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-api",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hex",
- "parity-scale-codec",
- "sc-executor",
- "sc-executor-common",
- "scale-info",
- "sp-core",
- "sp-inherents",
- "sp-partner-chains-consensus-aura",
- "sp-runtime",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade-api"
-version = "0.1.0"
-dependencies = [
- "sp-api",
- "sp-core",
 ]
 
 [[package]]
@@ -8612,6 +8583,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-federated-authority"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "impl-trait-for-tuples",
+ "log",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-governed-map"
 version = "1.7.1"
 source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.7.1#c0a6cda9c80c4674246db3e738c98f5327d374fb"
@@ -9060,33 +9050,6 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-sdk-frame",
  "scale-info",
-]
-
-[[package]]
-name = "pallet-upgrade"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex",
- "itertools 0.14.0",
- "midnight-primitives-upgrade",
- "pallet-partner-chains-session",
- "pallet-preimage",
- "pallet-scheduler",
- "parity-scale-codec",
- "scale-info",
- "sp-arithmetic",
- "sp-consensus-aura",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-staking",
- "sp-std",
- "sp-storage",
- "sp-version",
 ]
 
 [[package]]
@@ -10905,9 +10868,9 @@ dependencies = [
 
 [[package]]
 name = "regex-lite"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53a49587ad06b26609c52e423de037e7f57f20d53535d66e08c695f347df952a"
+checksum = "943f41321c63ef1c92fd763bfe054d2668f7f225a5c29f0105903dc2fc04ba30"
 
 [[package]]
 name = "regex-syntax"
@@ -16664,7 +16627,10 @@ dependencies = [
  "bip39",
  "clap",
  "env_logger 0.11.8",
+ "hex",
  "log",
+ "parity-scale-codec",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506)",
  "subxt 0.44.0",
  "subxt-signer 0.44.0",
  "thiserror 1.0.69",
