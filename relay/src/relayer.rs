@@ -87,6 +87,7 @@ impl Relayer {
 
 		// TODO: get encodings for authority set, next authority set, and construct
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+		println!("THE VALIDATOR SET: {validator_set:#?}");
 		let next_authorities = self.get_next_beefy_authority_set(at_block_hash).await?;
 
 		BeefyRelayChainProof::create(

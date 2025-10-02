@@ -54,7 +54,7 @@ pub struct HexBeefyRelayChainProof {
 	scale_encoded_authorities_proof: String,
 	authorities_proof: AuthoritiesProof,
 
-	signers: Vec<String>,
+	signers: Vec<Public>,
 }
 
 impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
@@ -69,7 +69,7 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			})
 			.collect();
 
-		let signers = value.signers.iter().into_iter().map(|v: &Public| format!("{v:?}")).collect();
+		let signers = value.validator_set.clone();
 
 		let beefy_commitment_root_hash = value
 			.mmr_root_hash()

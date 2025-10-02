@@ -32,7 +32,7 @@ pub struct BeefyRelayChainProof {
 	pub authorities_proof: AuthoritiesProof,
 	pub signed_commitment: BeefySignedCommitment,
 	/// list of signers from the commitment file
-	pub signers: Vec<Public>,
+	pub validator_set: Vec<Public>,
 }
 
 impl BeefyRelayChainProof {
@@ -53,14 +53,15 @@ impl BeefyRelayChainProof {
 		verify_next_authority_set(expected_next_authorities, &mmr_proof)?;
 
 		// generate proofs for each signer in the commitment, with the validator set as basis
-		let (authorities_proof, signers) =
+		let authorities_proof =
 			generate_authorities_proof(&beefy_signed_commitment, &validator_set)?;
 
+		let validators = validator_set.validators().to_vec();
 		Ok(BeefyRelayChainProof {
 			mmr_proof,
 			authorities_proof,
 			signed_commitment: beefy_signed_commitment,
-			signers,
+			validator_set: validators,
 		})
 	}
 
@@ -95,7 +96,7 @@ impl BeefyRelayChainProof {
 	pub fn signed_commitment_as_cardano(&self) -> SignedCommitment {
 		SignedCommitment::from_signed_commitment_and_validators(
 			self.signed_commitment.clone(),
-			&self.signers,
+			&self.validator_set,
 		)
 	}
 

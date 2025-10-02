@@ -1,11 +1,11 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, io::Read};
 
 use crate::{beefy::BeefySignedCommitment, error::Error, types::RootHash};
 
 use binary_merkle_tree::verify_proof;
 use parity_scale_codec::{Decode, Encode};
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public};
-use sp_core::{H256, KeccakHasher};
+use sp_core::{H256, KeccakHasher, keccak_256};
 
 pub type LeafIndex = u32;
 pub type ProofItems = Vec<(LeafIndex, Vec<H256>)>;
@@ -58,11 +58,7 @@ impl AuthoritiesProof {
 	}
 }
 
-/// Returns a tuple of
-/// (
-/// 	AuthoritiesProof, using Keccak256 hashing
-/// 	Signers in the commitment
-/// )
+/// Returns AuthoritiesProof, using Keccak256 hashing
 ///
 /// # Arguments
 /// * `beefy_signed_commitment` - the commitment file signed by majority of the authorities in beefy
@@ -70,7 +66,7 @@ impl AuthoritiesProof {
 pub fn generate_authorities_proof(
 	beefy_signed_commitment: &BeefySignedCommitment,
 	validator_set: &ValidatorSet<Public>,
-) -> Result<(AuthoritiesProof, Signers), Error> {
+) -> Result<AuthoritiesProof, Error> {
 	// checking of the block number is not important, when creating this proof
 	let block_number = beefy_signed_commitment.commitment.block_number;
 
@@ -93,16 +89,22 @@ pub fn generate_authorities_proof(
 	let root = binary_merkle_tree::merkle_root::<KeccakHasher, _>(validators);
 
 	let mut items = vec![];
-	let mut signers = vec![];
 
 	for sig in sig_indices {
+		let leaf = validators[sig].clone();
+		let x = leaf.into_inner();
+		let bytes = x.0;
+
+		let node_hash = keccak_256(&bytes);
+		let node_hash_hex = hex::encode(node_hash);
+		println!("VALIDATOR({sig}): {node_hash_hex}");
+
 		// create a proof for EACH signer in the commitment, using its index
 		let proof =
 			binary_merkle_tree::merkle_proof::<KeccakHasher, _, _>(validators, sig as LeafIndex);
 
 		items.push((proof.leaf_index, proof.proof));
-		signers.push(validators[sig].clone());
 	}
 
-	Ok((AuthoritiesProof { root, total_leaves: validators.len() as u32, items }, signers))
+	Ok(AuthoritiesProof { root, total_leaves: validators.len() as u32, items })
 }
