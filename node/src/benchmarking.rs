@@ -19,7 +19,7 @@
 use crate::service::FullClient;
 
 use midnight_node_runtime as runtime;
-use runtime::{AccountId, Balance, BalancesCall, SystemCall};
+use runtime::{SystemCall, check_call_filter::CheckCallFilter};
 use sc_cli::Result;
 use sc_client_api::BlockBackend;
 use sp_core::{Encode, Pair};
@@ -94,6 +94,7 @@ pub fn create_benchmark_extrinsic(
 		)),
 		frame_system::CheckNonce::<runtime::Runtime>::from(nonce),
 		frame_system::CheckWeight::<runtime::Runtime>::new(),
+		CheckCallFilter,
 	);
 
 	let raw_payload = runtime::SignedPayload::from_raw(
@@ -105,6 +106,7 @@ pub fn create_benchmark_extrinsic(
 			runtime::VERSION.transaction_version,
 			genesis_hash,
 			best_hash,
+			(),
 			(),
 			(),
 		),

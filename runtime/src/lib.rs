@@ -41,8 +41,9 @@ pub use frame_support::{
 	pallet_prelude::DispatchResult,
 	parameter_types, storage,
 	traits::{
-		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EqualPrivilegeOnly,
-		InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing, Randomness, StorageInfo,
+		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EitherOfDiverse,
+		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing,
+		Randomness, StorageInfo,
 	},
 	weights::{
 		IdentityFee, Weight,
@@ -117,7 +118,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 1200;
 
 pub mod authorship;
-mod check_call_filter;
+pub mod check_call_filter;
 mod constants;
 mod currency;
 mod governance;
@@ -126,6 +127,9 @@ mod session_manager;
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
 use governance::MembershipHandler;
+use pallet_federated_authority::{
+	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -432,6 +436,8 @@ impl pallet_mmr::Config for Runtime {
 	type OnNewRoot = pallet_beefy_mmr::DepositBeefyDigest<Runtime>;
 	type BlockHashProvider = pallet_mmr::DefaultBlockHashProvider<Runtime>;
 	type WeightInfo = ();
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 /// MMR helper types.
@@ -749,13 +755,14 @@ parameter_types! {
 }
 
 /// Council
-impl pallet_collective::Config<pallet_collective::Instance1> for Runtime {
+type CouncilCollective = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -778,14 +785,15 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
-/// Technical Authority
-impl pallet_collective::Config<pallet_collective::Instance2> for Runtime {
+/// Technical Committee
+type TechnicalCommitteeCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -802,10 +810,43 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
 	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type MembershipInitialized = MembershipHandler<Runtime, TechnicalAuthority>;
-	type MembershipChanged = MembershipHandler<Runtime, TechnicalAuthority>;
+	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
+	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
+}
+
+pub const MAX_NUM_BODIES: u32 = 2; // TechnicalCommittee + Council
+pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
+
+type CouncilApproval = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalCommitteeApproval = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+>;
+
+type CouncilRevoke = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalCommitteeRevoke = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+>;
+
+impl pallet_federated_authority::Config for Runtime {
+	type MotionCall = RuntimeCall;
+	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
+	type MotionDuration = ConstU32<MOTION_DURATION>;
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionApprovalOrigin =
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalCommitteeApproval)>;
+	type MotionRevokeOrigin =
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
+	type WeightInfo = ();
 }
 
 pub struct MidnightTokenTransferHandler;
@@ -899,9 +940,10 @@ construct_runtime!(
         Council: pallet_collective::<Instance1> = 40,
         CouncilMembership: pallet_membership::<Instance1> = 41,
 
-        TechnicalAuthority: pallet_collective::<Instance2> = 43,
-        TechnicalAuthorityMembership: pallet_membership::<Instance2> = 42,
+        TechnicalCommittee: pallet_collective::<Instance2> = 42,
+        TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
 
+        FederatedAuthority: pallet_federated_authority = 44,
 	}
 );
 
@@ -949,6 +991,7 @@ mod benches {
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
 		[pallet_upgrade, RuntimeUpgrade]
 		[pallet_midnight, Midnight]
+		[pallet_federated_authority, FederatedAuthority]
 	);
 }
 
@@ -1251,7 +1294,7 @@ impl_runtime_apis! {
 			Vec<frame_benchmarking::BenchmarkList>,
 			Vec<frame_support::traits::StorageInfo>,
 		) {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkList};
+			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
@@ -1265,10 +1308,11 @@ impl_runtime_apis! {
 			(list, storage_info)
 		}
 
+		#[allow(non_local_definitions)]
 		fn dispatch_benchmark(
 			config: frame_benchmarking::BenchmarkConfig
 		) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkBatch};
+			use frame_benchmarking::{baseline, BenchmarkBatch};
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;
