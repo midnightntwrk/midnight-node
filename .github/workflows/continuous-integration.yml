@@ -400,7 +400,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c  #v2.62.2
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
         with:
           tool: just
 
