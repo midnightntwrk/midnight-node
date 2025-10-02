@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "description": "Interface gateway between Rust `midnight-node-toolkit` and TS `@midnight-ntwrk` packages",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts", 
+  "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
     "midnight-node-toolkit-js": "dist/bin.js"
@@ -13,7 +13,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/bin.js",         
+    "build": "tsc && chmod +x dist/bin.js",
     "start": "dist/bin.js",
     "test": "npm run build-compact && vitest run",
     "build-compact": "(shx --negate test -d ./test/contract/managed && npm run compact || true)",
@@ -21,22 +21,22 @@
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
     "compact-mint": "run-compactc ./mint/mint.compact ./mint/out"
   },
-    "files": [
+  "files": [
     "dist"
   ],
   "dependencies": {
-    "effect": "^3.17.7",
     "@effect/cli": "^0.69.0",
-    "@midnight-ntwrk/compact-js": "2.0.0-rc.0",
-    "@midnight-ntwrk/compact-js-command": "2.0.0-rc.0",
-    "@midnight-ntwrk/compact-js-node": "2.0.0-rc.0"
+    "@midnight-ntwrk/compact-js": "2.2.0-rc.1",
+    "@midnight-ntwrk/compact-js-command": "2.2.0-rc.1",
+    "@midnight-ntwrk/compact-js-node": "2.2.0-rc.1",
+    "effect": "^3.17.7"
   },
-    "devDependencies": {
-    "@types/node": "^22.15.29",
-    "typescript": "^5.8.3",
-    "vitest": "^3.2.1",
-    "@tsconfig/node22": "^22.0.2",
+  "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "^2.0.2",
-    "shx": "^0.4.0"
+    "@tsconfig/node22": "^22.0.2",
+    "@types/node": "^22.15.29",
+    "shx": "^0.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
   }
 }
