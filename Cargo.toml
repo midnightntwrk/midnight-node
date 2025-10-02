@@ -7,7 +7,6 @@ members = [
     "node",
     "pallets/midnight",
     "pallets/midnight-system",
-    "pallets/version",
     "primitives/midnight",
     "primitives/ledger",
     "res",
@@ -75,7 +74,6 @@ pallet-midnight = { path = "pallets/midnight", default-features = false }
 pallet-midnight-system = { path = "pallets/midnight-system", default-features = false }
 pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false }
 pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
-pallet-version = { path = "pallets/version", default-features = false }
 pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
 documented = { path = "util/documented", default-features = false }
 

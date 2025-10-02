@@ -82,7 +82,6 @@ sidechain-slots.workspace = true
 midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
-pallet-version.workspace = true
 pallet-native-token-observation.workspace = true
 midnight-primitives-native-token-observation.workspace = true
 
@@ -116,7 +115,6 @@ std = [
     "pallet-midnight/std",
     "pallet-mmr/std",
     "pallet-native-token-management/std",
-    "pallet-version/std",
     "pallet-native-token-observation/std",
     "pallet-preimage/std",
     "pallet-sudo/std",

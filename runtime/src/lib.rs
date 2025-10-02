@@ -61,7 +61,6 @@ pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management;
 pub use pallet_timestamp::Call as TimestampCall;
-pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
@@ -678,12 +677,6 @@ impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
 	}
 }
 
-/// Configure the pallet-upgrade in pallets/upgrade.
-impl pallet_version::Config for Runtime {
-	type WeightInfo = pallet_version::VersionWeight<Runtime>;
-	type RuntimeVersion = Version;
-}
-
 impl pallet_preimage::Config for Runtime {
 	type WeightInfo = pallet_preimage::weights::SubstrateWeight<Runtime>;
 	type RuntimeEvent = RuntimeEvent;
@@ -863,8 +856,6 @@ construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management = 8,
 		//#[cfg(feature = "experimental")]
 		//BlockRewards: pallet_block_rewards = 9,
-
-		NodeVersion: pallet_version = 11,
 
 		NativeTokenManagement: pallet_native_token_management = 12,
 		NativeTokenObservation: pallet_native_token_observation = 13,

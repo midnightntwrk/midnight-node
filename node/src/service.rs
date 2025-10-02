@@ -51,8 +51,6 @@ use sp_runtime::{
 	BuildStorage,
 	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
 };
-#[cfg(feature = "experimental")]
-use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
 	sync::{Arc, Mutex},
@@ -142,15 +140,6 @@ pub fn construct_genesis_block<Block: BlockT>(
 			state_version,
 		);
 
-	#[cfg(feature = "experimental")]
-	let block_digest = Digest {
-		logs: vec![DigestItem::Consensus(
-			midnight_node_runtime::VERSION_ID,
-			midnight_node_runtime::VERSION.spec_version.encode(),
-		)],
-	};
-
-	#[cfg(not(feature = "experimental"))]
 	let block_digest = Default::default();
 
 	Block::new(

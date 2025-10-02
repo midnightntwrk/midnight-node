@@ -7082,7 +7082,6 @@ dependencies = [
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-tx-pause",
- "pallet-version",
  "parity-scale-codec",
  "plutus",
  "scale-info",
@@ -9049,20 +9048,6 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-sdk-frame",
  "scale-info",
-]
-
-[[package]]
-name = "pallet-version"
-version = "0.1.0"
-dependencies = [
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-api",
- "sp-io",
- "sp-runtime",
- "sp-version",
 ]
 
 [[package]]
