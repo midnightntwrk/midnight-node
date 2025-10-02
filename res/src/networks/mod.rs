@@ -208,7 +208,7 @@ pub trait MidnightNetwork {
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
 	fn cnight_generates_dust_config(&self) -> TokenObservationConfig;
 	fn council(&self) -> InitialFederedatedAuthority;
-	fn technical_authority(&self) -> InitialFederedatedAuthority;
+	fn technical_committee(&self) -> InitialFederedatedAuthority;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

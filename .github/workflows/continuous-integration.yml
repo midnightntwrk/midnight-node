@@ -57,7 +57,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -159,7 +159,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -298,7 +298,7 @@ jobs:
           use-cache: false
           allow-privileged: true
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -400,7 +400,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c  #v2.62.2
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
         with:
           tool: just
 

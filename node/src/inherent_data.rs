@@ -23,7 +23,6 @@ use midnight_node_runtime::{
 	opaque::{Block, SessionKeys},
 };
 use midnight_primitives_native_token_observation::NativeTokenObservationApi;
-use midnight_primitives_upgrade::UpgradeProposal;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
@@ -60,7 +59,6 @@ pub(crate) struct ProposalCIDP<T> {
 	client: Arc<T>,
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
-	runtime_upgrade_proposal: UpgradeProposal,
 	native_token_observation_data_source:
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
 	native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
@@ -88,7 +86,6 @@ where
 		McHashIDP,
 		AriadneIDP,
 		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
-		midnight_primitives_upgrade::InherentDataProvider,
 		MidnightNativeTokenObservationInherentDataProvider,
 		NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
@@ -104,7 +101,6 @@ where
 			client,
 			mc_hash_data_source,
 			authority_selection_data_source,
-			runtime_upgrade_proposal,
 			native_token_observation_data_source,
 			native_token_management_data_source,
 			governed_map_data_source,
@@ -122,10 +118,6 @@ where
 			sc_slot_config.slot_duration,
 		)
 		.await?;
-
-		let upgrade_data_provider = midnight_primitives_upgrade::InherentDataProvider::propose(
-			runtime_upgrade_proposal.clone(),
-		);
 
 		let ariadne_data_provider = AriadneIDP::new(
 			client.as_ref(),
@@ -177,7 +169,6 @@ where
 			ariadne_data_provider,
 			//#[cfg(feature = "experimental")]
 			//block_beneficiary_provider,
-			upgrade_data_provider,
 			native_token_observation,
 			native_token_management,
 			governed_map,

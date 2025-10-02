@@ -25,9 +25,6 @@ use sp_runtime_interface::pass_by::{
 use sp_runtime_interface::runtime_interface;
 use sp_std::vec::Vec;
 
-#[cfg(feature = "runtime-benchmarks")]
-use crate::types::{BenchmarkClaimMintTxBuilder, BenchmarkStandardTxBuilder};
-
 #[cfg(feature = "std")]
 type Database = ledger_storage::db::ParityDb;
 
@@ -252,58 +249,6 @@ pub trait LedgerBridge {
 		events: PassFatPointerAndDecode<Vec<Vec<u8>>>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
 		latest::Bridge::<Signature, Database>::construct_cnight_generates_dust_system_tx(events)
-	}
-
-	/*
-	 * Helper host_api method to generate Standard transactions:
-	 * Needed as `mn-ledger` does not support `no_std` and it'd leak into the becnchmarks otherwise
-	 */
-	// Current Enabled Version
-	#[cfg(feature = "runtime-benchmarks")]
-	fn build_standard_transactions(
-		ledger_state: PassFatPointerAndRead<&[u8]>,
-		args: BenchmarkStandardTxBuilder,
-	) -> Result<(Vec<u8>, Vec<u8>), latest::types::LedgerApiError> {
-		latest::Bridge::<Signature, Database>::build_standard_transactions(ledger_state, args)
-	}
-
-	/*
-	 * Helper host_api method to generate ClaimMint transactions:
-	 * Needed as `mn-ledger` does not support `no_std` and it'd leak into the becnchmarks otherwise
-	 */
-	// Current Enabled Version
-	#[cfg(feature = "runtime-benchmarks")]
-	fn build_claim_mint_transactions(
-		ledger_state: PassFatPointerAndRead<&[u8]>,
-		args: BenchmarkClaimMintTxBuilder,
-	) -> Result<Vec<u8>, latest::types::LedgerApiError> {
-		latest::Bridge::<Signature, Database>::build_claim_mint_transactions(ledger_state, args)
-	}
-
-	/*
-	 * Helper host_api method to execute a contract call for the purpose of
-	 * benchmarking its execution time in relation to its `gas_cost`
-	 * Needed as `mn-ledger` does not support `no_std` and it'd leak into the becnchmarks otherwise
-	 */
-	// Current Enabled Version
-	#[cfg(feature = "runtime-benchmarks")]
-	fn execute_contract_call(
-		ledger_state: PassFatPointerAndRead<&[u8]>,
-		tx: PassFatPointerAndRead<&[u8]>,
-	) -> Result<(), latest::types::LedgerApiError> {
-		latest::Bridge::<Signature, Database>::execute_contract_call(ledger_state, tx)
-	}
-
-	/*
-	 * Helper host_api method to benchmark transaction deserealization
-	 * Needed as `mn-ledger` does not support `no_std` and it'd leak into the becnchmarks otherwise
-	 */
-	// Current Enabled Version
-	#[cfg(feature = "runtime-benchmarks")]
-	fn deserialize_transaction(
-		tx: PassFatPointerAndRead<&[u8]>,
-	) -> Result<(), latest::types::LedgerApiError> {
-		latest::Bridge::<Signature, Database>::deserialize_transaction(tx)
 	}
 }
 
