@@ -526,7 +526,10 @@ construct_runtime!(
 		// Sidechain pallet must come after the Aura pallet, since it gets the slot number from it
 		Sidechain: pallet_sidechain,
 		SessionCommitteeManagement: pallet_session_validator_management,
-		// We exclude pallet's extrinsics to make them unavailable to users to submit
+		// We exclude pallet's extrinsics to make them unavailable to users to submit.
+		// This is to ensure that registrations on Cardano coming in throught the
+		// `SessionCommitteeManagement` pallet are the only source of truth about keys
+		// and accounts of block producers.
 		Session: pallet_session exclude_parts { Call },
 		Bridge: pallet_partner_chains_bridge,
 		TestHelperPallet: crate::test_helper_pallet,
