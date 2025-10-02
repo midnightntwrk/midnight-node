@@ -395,7 +395,7 @@ where
 		contract_address: &[u8],
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let addr = api.tagged_deserialize::<ContractAddress>(contract_address)?;
+		let addr = api.deserialize::<ContractAddress>(contract_address)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		api.tagged_serialize(&ledger.get_zswap_state(Some(addr)))
