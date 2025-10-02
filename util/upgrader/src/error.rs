@@ -30,6 +30,10 @@ pub enum UpgraderError {
 	DeserializationError(std::io::Error),
 	#[error("Code upgrade failed: Missing code updated event")]
 	CodeUpgradeFailed,
+	#[error("Proposal index not found in events")]
+	ProposalIndexNotFound,
+	#[error("Encoding error: {0}")]
+	EncodingError(String),
 }
 
 impl actix_web::ResponseError for UpgraderError {}

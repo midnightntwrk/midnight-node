@@ -51,11 +51,11 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 
 	fn council(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob"])
+		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob", "//Charlie"])
 	}
 
 	fn technical_committee(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Charlie", "//Dave"])
+		InitialFederedatedAuthority::new_from_uris(vec!["//Dave", "//Eve", "//Ferdie"])
 	}
 
 	fn genesis_utxo(&self) -> &str {
