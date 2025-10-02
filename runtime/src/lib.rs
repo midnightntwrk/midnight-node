@@ -1386,9 +1386,9 @@ mod tests {
 	};
 	use frame_system::RawOrigin;
 	use sidechain_domain::{
-		CandidateKeys, CandidateRegistrations, CrossChainPublicKey, CrossChainSignature,
-		DParameter, EpochNonce, MainchainSignature, PermissionedCandidateData, RegistrationData,
-		ScEpochNumber, SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
+		CandidateRegistrations, CrossChainPublicKey, CrossChainSignature, DParameter, EpochNonce,
+		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
+		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
 	};
 	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
@@ -1600,9 +1600,7 @@ mod tests {
 			.iter()
 			.map(|c| PermissionedCandidateData {
 				sidechain_public_key: c.sidechain_pub_key(),
-				//aura_public_key: c.aura_pub_key(),
-				//grandpa_public_key: c.grandpa_pub_key(),
-				keys: CandidateKeys(vec![]),
+				keys: c.session_keys(),
 			})
 			.collect();
 		AuthoritySelectionInputs {
@@ -1640,12 +1638,10 @@ mod tests {
 						sidechain_signature_bytes_no_recovery,
 					),
 					sidechain_pub_key: validator.sidechain_pub_key(),
-					//aura_pub_key: validator.aura_pub_key(),
-					//grandpa_pub_key: validator.grandpa_pub_key(),
+					keys: validator.session_keys(),
 					cross_chain_pub_key: CrossChainPublicKey(validator.sidechain_pub_key().0),
 					utxo_info: UtxoInfo::default(),
 					tx_inputs: vec![signed_message.registration_utxo],
-					keys: CandidateKeys(vec![]),
 				};
 
 				CandidateRegistrations {

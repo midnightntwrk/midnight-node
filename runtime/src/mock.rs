@@ -42,6 +42,35 @@ pub const DUMMY_EPOCH_NONCE: &[u8] = &[1u8, 2u8, 3u8];
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
+#[derive(
+	PartialOrd,
+	Ord,
+	PartialEq,
+	Eq,
+	Debug,
+	Clone,
+	MaxEncodedLen,
+	Encode,
+	Decode,
+	frame_support::Serialize,
+	frame_support::Deserialize,
+	TypeInfo,
+)]
+pub struct AccountKeys {
+	pub aura: [u8; 32],
+	pub grandpa: [u8; 32],
+}
+
+impl AccountKeys {
+	pub fn from_seed(seed: &str) -> AccountKeys {
+		let mut aura = format!("aura-{seed}").into_bytes();
+		aura.resize(32, 0);
+		let mut grandpa = format!("grandpa-{seed}").into_bytes();
+		grandpa.resize(32, 0);
+		AccountKeys { aura: aura.try_into().unwrap(), grandpa: grandpa.try_into().unwrap() }
+	}
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AccountId(ecdsa::Public);
 
@@ -330,11 +359,9 @@ pub fn create_inherent_data_struct(
 					validator.cross_chain.public().into_inner().0.to_vec(),
 				),
 				cross_chain_pub_key: CrossChainPublicKey(vec![]),
-				//aura_pub_key: AuraPublicKey(validator.aura.public().as_slice().into()),
-				//grandpa_pub_key: GrandpaPublicKey(validator.grandpa.public().as_slice().into()),
+				keys: validator.candidate_keys(),
 				utxo_info: UtxoInfo::default(),
 				tx_inputs: vec![registration_utxo],
-				keys: CandidateKeys(vec![]),
 			};
 
 			CandidateRegistrations {
@@ -380,6 +407,12 @@ impl TestKeys {
 	pub fn session(&self) -> TestSessionKeys {
 		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
 	}
+	pub fn candidate_keys(&self) -> CandidateKeys {
+		CandidateKeys(vec![
+			CandidateKey::new(AURA, self.aura.public().as_slice().into()),
+			CandidateKey::new(GRANDPA, self.grandpa.public().as_slice().into()),
+		])
+	}
 }
 
 pub fn pair_from_seed<P: Pair>(seed: &str) -> P {
@@ -414,6 +447,18 @@ impl MockValidator {
 
 	pub fn sidechain_pub_key(&self) -> SidechainPublicKey {
 		SidechainPublicKey(self.account_id().0.0.to_vec())
+	}
+
+	pub fn account_keys(&self) -> AccountKeys {
+		AccountKeys::from_seed(self.seed)
+	}
+
+	pub fn session_keys(&self) -> CandidateKeys {
+		let keys = self.account_keys();
+		CandidateKeys(vec![
+			CandidateKey::new(AURA, keys.aura.to_vec()),
+			CandidateKey::new(GRANDPA, keys.grandpa.to_vec()),
+		])
 	}
 }
 
