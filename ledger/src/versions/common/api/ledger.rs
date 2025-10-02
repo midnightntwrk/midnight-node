@@ -286,14 +286,11 @@ mod tests {
 	use super::*;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
-	use midnight_node_ledger_helpers::{
-		NetworkId, deserialize_untagged, extract_info_from_tx_with_context,
-	};
+	use midnight_node_ledger_helpers::{NetworkId, extract_info_from_tx_with_context};
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},
 	};
-	use midnight_serialize::Deserializable;
 	use midnight_serialize_local::tagged_deserialize;
 	use mn_ledger_local::structure::LedgerState;
 
