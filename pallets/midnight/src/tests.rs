@@ -32,10 +32,12 @@ use midnight_node_res::{
 		CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX, ZSWAP_TX,
 	},
 };
+use parity_scale_codec::Decode;
 use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
+use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
@@ -99,7 +101,7 @@ fn test_send_mn_transaction_invalid_tx() {
 		init_ledger_state(block_context.into());
 
 		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
-			TransactionError::Malformed(MalformedError::BalanceCheckOverspend),
+			TransactionError::Malformed(MalformedError::ContractNotPresent),
 		)
 		.into();
 		assert_err!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx), error);

@@ -43,6 +43,7 @@ assert_matches.workspace = true
 tempfile.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["test-utils"] }
 midnight-node-ledger = { workspace = true, features = ["test-utils"] }
+test-log.workspace = true
 
 [features]
 default = ["std"]
