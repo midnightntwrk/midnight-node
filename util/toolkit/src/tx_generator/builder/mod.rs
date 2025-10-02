@@ -319,7 +319,7 @@ pub trait BuildTxsExt {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context);
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
 
 		let context_arc = Arc::new(context);
