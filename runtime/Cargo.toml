@@ -35,7 +35,6 @@ pallet-collective.workspace = true
 pallet-governed-map.workspace = true
 pallet-federated-authority.workspace = true
 sp-api.workspace = true
-sp-arithmetic.workspace = true
 sp-block-builder.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-beefy.workspace = true
@@ -58,8 +57,6 @@ sp-governed-map.workspace = true
 # Sidechains primitives
 sp-session-validator-management = { workspace = true, features = ["serde"] }
 sp-sidechain.workspace = true
-
-hex.workspace = true
 
 # Used for the node template's RPCs
 frame-system-rpc-runtime-api.workspace = true
@@ -131,7 +128,6 @@ std = [
     "pallet-governed-map/std",
     "pallet-federated-authority/std",
     "sp-api/std",
-    "sp-arithmetic/std",
     "sp-block-builder/std",
     #"sp-block-rewards/std",
     "sp-consensus-aura/std",

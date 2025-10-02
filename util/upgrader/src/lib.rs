@@ -288,7 +288,7 @@ fn extract_proposal_hash(
 
 			// Parse the raw bytes manually
 			// The Proposed event has: (account_id: 32 bytes, proposal_index: compact u32, proposal_hash: 32 bytes, threshold: compact u32)
-			let mut cursor = &field_bytes[..];
+			let mut cursor = field_bytes;
 
 			// Skip account_id (32 bytes)
 			if cursor.len() < 32 {
@@ -324,7 +324,7 @@ fn extract_proposal_index(
 
 			// Parse the raw bytes manually
 			// The Proposed event has: (account_id: 32 bytes, proposal_index: compact u32, ...)
-			let mut cursor = &field_bytes[..];
+			let mut cursor = field_bytes;
 
 			// Skip account_id (32 bytes)
 			if cursor.len() < 32 {
