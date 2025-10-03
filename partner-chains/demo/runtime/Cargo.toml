@@ -31,9 +31,6 @@ pallet-aura = { workspace = true }
 pallet-balances = { workspace = true }
 frame-support = { workspace = true }
 pallet-grandpa = { workspace = true }
-pallet-partner-chains-session = { workspace = true, features = [
-	"pallet-session-compat",
-] }
 pallet-session = { workspace = true }
 pallet-sudo = { workspace = true }
 frame-system = { workspace = true }
@@ -116,7 +113,6 @@ std = [
 	"pallet-balances/std",
 	"pallet-grandpa/std",
 	"pallet-sudo/std",
-	"pallet-partner-chains-session/std",
 	"pallet-session-validator-management/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
