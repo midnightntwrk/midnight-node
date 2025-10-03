@@ -73,7 +73,7 @@ mod tests {
 	use std::str::FromStr;
 
 	use super::*;
-	use midnight_node_ledger_helpers::{ContractAddress, HashOutput, WalletAddress};
+	use midnight_node_ledger_helpers::WalletAddress;
 	use midnight_node_toolkit::{
 		cli_parsers::contract_address_decode,
 		tx_generator::builder::{

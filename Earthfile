@@ -192,7 +192,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit contract-address \
                 --network ${NETWORK} \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --tagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
+                --untagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
             && /midnight-node-toolkit generate-txs \
                 --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
@@ -262,6 +262,13 @@ rebuild-genesis-state:
     RUN mkdir -p /res/test-data/contract/counter \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public-untagged \
+                ) \
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
@@ -276,7 +283,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --network $NETWORK \
-                --tagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+                --untagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
                 --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \

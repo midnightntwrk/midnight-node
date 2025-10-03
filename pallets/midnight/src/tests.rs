@@ -32,7 +32,6 @@ use midnight_node_res::{
 		CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX, ZSWAP_TX,
 	},
 };
-use parity_scale_codec::Decode;
 use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
