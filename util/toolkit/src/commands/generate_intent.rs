@@ -191,9 +191,9 @@ pub fn execute(args: GenerateIntentArgs) {
 				&output_intent,
 				"--output-ps",
 				&output_private_state,
-				"--state-file-path",
+				"--input",
 				&input_onchain_state,
-				"--ps-state-file-path",
+				"--input-ps",
 				&input_private_state,
 			];
 			let coin_public = args.coin_public.map(|c| c.absolute());
