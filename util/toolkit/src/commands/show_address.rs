@@ -133,7 +133,7 @@ mod test {
 		let address = super::execute(args);
 		assert!(matches!(
 			address,
-			ShowAddress::SingleAddress(a) if a == "6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76315d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98"
+			ShowAddress::SingleAddress(a) if a == "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98"
 		));
 	}
 
