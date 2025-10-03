@@ -214,7 +214,7 @@ jobs:
 
           # Retag all indexer images
           echo "🏷️ Retagging images..."
-          INDEXER_IMAGE_TAG="node-${MAIN_COMMIT}"
+          INDEXER_IMAGE_TAG="via-node-${SUBMODULE_COMMIT}"
           docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
           docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
           docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
@@ -346,6 +346,7 @@ jobs:
           else
             echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
             export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+            export INDEXER_IMAGE_TAG="${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}"
             export NODE_DEV_01_TAG="${IMAGE_TAG}-node-dev-01"
 
             docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG} \
