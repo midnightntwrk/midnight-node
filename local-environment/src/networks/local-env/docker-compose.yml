@@ -280,6 +280,7 @@ services:
     container_name: midnight-node-1
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
+    user: "0:0"
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
@@ -315,6 +316,7 @@ services:
     container_name: midnight-node-2
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
+    user: "0:0"
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
@@ -349,6 +351,7 @@ services:
     container_name: midnight-node-3
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
+    user: "0:0"
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
@@ -383,6 +386,7 @@ services:
     container_name: midnight-node-4
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
+    user: "0:0"
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
@@ -419,6 +423,7 @@ services:
     container_name: midnight-node-5
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
+    user: "0:0"
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
