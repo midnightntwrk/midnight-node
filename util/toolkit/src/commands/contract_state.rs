@@ -32,7 +32,7 @@ pub async fn execute(
 
 	let context = LedgerContext::new(network_id);
 	for block in blocks.blocks {
-		context.update_from_block(block.transactions, block.context);
+		context.update_from_block(block.transactions, block.context, block.state_root.clone());
 	}
 
 	let state = context
