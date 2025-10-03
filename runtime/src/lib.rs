@@ -21,8 +21,6 @@
 #[macro_use]
 extern crate frame_benchmarking;
 
-use crate::authorship::current_block_author_aura_index;
-
 extern crate alloc;
 use alloc::{collections::BTreeMap, string::String};
 use authority_selection_inherents::{
@@ -63,7 +61,6 @@ pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management;
 pub use pallet_timestamp::Call as TimestampCall;
-pub use pallet_upgrade::pallet::Call as RuntimeUpgradeCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
@@ -99,7 +96,6 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use sp_std::prelude::*;
-use sp_storage::well_known_keys;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -682,45 +678,6 @@ impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
 	}
 }
 
-parameter_types! {
-	pub const MaxPreimageSize: u32 = pallet_upgrade::MAX_PREIMAGE_SIZE;
-	// Max runtimes which can be voted on at one time
-	pub const MaxVoteTargets: u8 = 5;
-	pub const PalletUpgradeId: PalletId = PalletId(*b"hardfork");
-	// TODO: Continue to adjust this value
-	pub const SessionsPerVotingPeriod: u32 = 26;
-	// Wait 5 blocks following a any check which certifies an upgrade, before performing the upgrade
-	pub const UpgradeDelay: BlockNumber = 5;
-	pub const UpgradeVoteThreshold: sp_arithmetic::Percent = sp_arithmetic::Percent::from_percent(50);
-}
-
-impl pallet_upgrade::Config for Runtime {
-	type AuthorityId = AuraId;
-	type SessionsPerVotingPeriod = SessionsPerVotingPeriod;
-	type MaxValidators = MaxAuthorities;
-	type MaxVoteTargets = MaxVoteTargets;
-	type PalletId = PalletUpgradeId;
-	type PalletsOrigin = OriginCaller;
-	type Scheduler = Scheduler;
-	type UpgradeDelay = UpgradeDelay;
-	type UpgradeVoteThreshold = UpgradeVoteThreshold;
-	type ValidatorSet = ValidatorSet;
-	type WeightInfo = ();
-
-	fn spec_version() -> RuntimeVersion {
-		System::runtime_version()
-	}
-
-	fn current_authority() -> Option<AuraId> {
-		let index = current_block_author_aura_index::<Runtime>()
-			.expect("Each aura block should have an author encoded in the digest");
-		pallet_aura::Authorities::<Runtime>::get().get(index).cloned()
-	}
-
-	type Preimage = Preimage;
-	type SetCode = ();
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
 	type WeightInfo = pallet_version::VersionWeight<Runtime>;
@@ -906,7 +863,7 @@ construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management = 8,
 		//#[cfg(feature = "experimental")]
 		//BlockRewards: pallet_block_rewards = 9,
-		RuntimeUpgrade: pallet_upgrade = 10,
+
 		NodeVersion: pallet_version = 11,
 
 		NativeTokenManagement: pallet_native_token_management = 12,
@@ -989,7 +946,6 @@ mod benches {
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
-		[pallet_upgrade, RuntimeUpgrade]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 	);
@@ -1060,16 +1016,6 @@ impl_runtime_apis! {
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
-		}
-	}
-
-	impl midnight_primitives_upgrade_api::UpgradeApi<Block> for Runtime {
-		fn get_current_version_info() -> (u32, Hash) {
-			use sp_core::Hasher;
-			let spec_version = System::runtime_version().spec_version;
-			let runtime_bytes = storage::unhashed::get_raw(well_known_keys::CODE).expect("Runtime code exists");
-			let runtime_hash = BlakeTwo256::hash(&runtime_bytes);
-			(spec_version, runtime_hash)
 		}
 	}
 

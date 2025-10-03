@@ -16,7 +16,6 @@ use super::{
 	onchain_runtime_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{hash::HashOutput as HashOutputLedger, time::Timestamp};
-use core::marker::PhantomData;
 use derive_where::derive_where;
 use ledger_storage_local as storage;
 use ledger_storage_local::db::DB;
@@ -26,7 +25,7 @@ use ledger_storage_local::{
 	storable::Loader,
 	storage::default_storage,
 };
-use midnight_node_ledger_helpers::{CostDuration, SyntheticCost};
+use midnight_node_ledger_helpers::{StorableSyntheticCost, SyntheticCost};
 use midnight_serialize_local as serialize;
 use midnight_serialize_local::Tagged;
 use mn_ledger_local::{
@@ -50,41 +49,6 @@ use crate::common::types::BlockContext;
 pub enum AppliedStage<D: DB> {
 	AllApplied,
 	PartialSuccess(HashMap<u16, Result<(), TransactionInvalid<D>>>),
-}
-
-#[derive(Debug, Storable)]
-#[derive_where(Clone)]
-#[storable(db = D)]
-struct StorableSyntheticCost<D: DB> {
-	pub read_time: u64,
-	pub compute_time: u64,
-	pub block_usage: u64,
-	pub bytes_written: u64,
-	pub bytes_churned: u64,
-	_d: PhantomData<D>,
-}
-impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
-	fn from(value: SyntheticCost) -> Self {
-		Self {
-			read_time: value.read_time.into_picoseconds(),
-			compute_time: value.compute_time.into_picoseconds(),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-			_d: PhantomData,
-		}
-	}
-}
-impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
-	fn from(value: StorableSyntheticCost<D>) -> Self {
-		Self {
-			read_time: CostDuration::from_picoseconds(value.read_time),
-			compute_time: CostDuration::from_picoseconds(value.compute_time),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-		}
-	}
 }
 
 #[derive(Debug, Storable)]
@@ -378,7 +342,7 @@ mod tests {
 
 		let a = CONTRACT_ADDR;
 		let addr = hex::decode(a).unwrap();
-		let addr = api.tagged_deserialize::<ContractAddress>(&addr).unwrap();
+		let addr = api.deserialize::<ContractAddress>(&addr).unwrap();
 		let state = ledger.get_contract_state(addr);
 		assert!(
 			state.is_some(),

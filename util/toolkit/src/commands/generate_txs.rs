@@ -74,9 +74,12 @@ mod tests {
 
 	use super::*;
 	use midnight_node_ledger_helpers::WalletAddress;
-	use midnight_node_toolkit::tx_generator::builder::{
-		BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
-		SingleTxArgs,
+	use midnight_node_toolkit::{
+		cli_parsers::contract_address_decode,
+		tx_generator::builder::{
+			BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
+			SingleTxArgs,
+		},
 	};
 	use test_case::test_case;
 
@@ -164,7 +167,7 @@ mod tests {
 	    ContractCall::Call(ContractCallArgs {
 					funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 					call_key:"store".to_string(),
-					contract_address: resource_file("test-contract/contract_address_undeployed.mn"),
+					contract_address: contract_address_decode(include_str!("../../../../res/test-contract/contract_address_undeployed.mn")).unwrap(),
 					rng_seed: None,
 					fee: 1_300_000,
 					})
