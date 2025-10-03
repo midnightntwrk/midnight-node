@@ -1,7 +1,7 @@
 use clap::Args;
-use midnight_node_ledger_helpers::{LedgerContext, deserialize, serialize};
+use midnight_node_ledger_helpers::{ContractAddress, LedgerContext, serialize};
 use midnight_node_toolkit::{
-	ProofType, SignatureType,
+	ProofType, SignatureType, cli_parsers as cli,
 	tx_generator::{TxGenerator, source::Source},
 };
 use std::{fs, path::Path};
@@ -11,8 +11,8 @@ pub struct ContractStateArgs {
 	#[command(flatten)]
 	source: Source,
 	/// Contract Address
-	#[arg(long)]
-	contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	contract_address: ContractAddress,
 	/// Destination file to save the state
 	#[arg(long, short)]
 	dest_file: String,
@@ -28,15 +28,13 @@ pub async fn execute(
 	let blocks = source.get_txs().await?;
 	let network_id = blocks.network();
 
-	let address = deserialize(&hex::decode(args.contract_address)?[..])?;
-
 	let context = LedgerContext::new(network_id);
 	for block in blocks.blocks {
 		context.update_from_block(block.transactions, block.context, block.state_root.clone());
 	}
 
 	let state = context
-		.with_ledger_state(|ledger_state| ledger_state.index(address))
+		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))
 		.expect("contract state for address does not exist");
 
 	let serialized_state = serialize(&state)?;

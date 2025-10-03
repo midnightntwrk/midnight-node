@@ -25,6 +25,10 @@ toolkit-mint-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-mint-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Mint E2E test completed successfully."
 
+toolkit-ut-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-ut-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit UnshieldedToken E2E test completed successfully."
+
 startup-dev-e2e NODE_IMAGE:
   @scripts/tests/startup-dev-e2e.sh {{NODE_IMAGE}}
   @echo "✅ Startup E2E test in dev mode completed successfully."
