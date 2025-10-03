@@ -32,9 +32,9 @@ rand = { version = "^0.8.4", features = ["std_rng"] }
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
-test-log = {version = "0.2"}
-midnight-node-ledger-helpers = { workspace = true}
-tempfile = "3.21"
+test-log.workspace = true
+midnight-node-ledger-helpers.workspace = true
+tempfile.workspace = true
 
 [features]
 default = ["std"]

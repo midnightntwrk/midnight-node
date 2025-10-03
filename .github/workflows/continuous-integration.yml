@@ -269,7 +269,6 @@ jobs:
     name: Toolkit Mint E2E
     needs: run
     runs-on: ubuntu-latest-8-core-x64
-    if: false # disabled while minting is not working
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
@@ -282,6 +281,26 @@ jobs:
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+  toolkit-ut-e2e:
+    name: Toolkit Unshielded Token E2E
+    needs: run
+    runs-on: ubuntu-latest-8-core-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-ut-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}

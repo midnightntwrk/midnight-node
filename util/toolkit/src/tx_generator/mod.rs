@@ -98,7 +98,7 @@ where
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
 			Ok(source)
 		} else {
-			unreachable!()
+			Err(SourceError::InvalidSourceArgs(src))
 		}
 	}
 
