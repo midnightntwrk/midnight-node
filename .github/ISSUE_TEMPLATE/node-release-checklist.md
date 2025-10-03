@@ -22,7 +22,7 @@ assignees: ''
   - [ ] Check runtimes are compatible
   - [ ] Bump [transaction version](https://github.com/input-output-hk/midnight-substrate-prototype/blob/c8861812ab5da19eb1a1253299e7b82919cc052c/runtime/src/lib.rs#L237) if needed
 - Release PR has indexer passing on local env test
- - Need to regenerate gensis?
+ - Need to regenerate genesis?
    - [ ] No
    - [ ] [Yes](https://shielded.atlassian.net/wiki/spaces/MN/pages/27992121/Runbook#Regenerate-Genesis)
 - The release includes a new Partner Chains version?
