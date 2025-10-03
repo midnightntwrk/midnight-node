@@ -267,7 +267,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public-untagged \
+                    --coin-public \
                 ) \
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \

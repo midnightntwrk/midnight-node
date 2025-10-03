@@ -154,21 +154,34 @@ The custom contract calls make use of **toolkit-js**. The nodejs `node` executab
 
 When compiling contracts, you **must** use the correct `compactc` version. To check compatibility, run `midnight-node-toolkit version`
 
+- Get `coin-public-key` for a seed. Toolkit commands will accept tagged or untagged
+```shell
+midnight-node-toolkit show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --coin-public
+```
+
 - Generate a deploy intent
 ```shell
 compactc counter.compact toolkit-js/contract/out # Compile your contract - compiled directory must be a child of $TOOLKIT_JS_PATH
 
-midnight-node-toolkit generate-intent deploy -c toolkit-js/contract/contract.config.ts --output-intent "/out/deploy.bin" --output-private-state "/out/initial_private_state.json
+midnight-node-toolkit generate-intent deploy \
+    -c toolkit-js/contract/contract.config.ts \
+    --coin-public <coin-public-key for caller> \
+    --output-intent "/out/deploy.bin" \
+    --output-private-state "/out/initial_private_state.json \
+    --output-zswap-state "/out/$deploy_zswap_filename" 
 ```
 
 - Generate a tx from an intent
 ```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
+midnight-node-toolkit send-intent --intent-file "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
 ```
 
 - Generate and send a tx from an intent
 ```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out
+midnight-node-toolkit send-intent --intent-file "/out/deploy.bin" --compiled-contract-dir contract/counter/out
 ```
 
 - Get the contract address
@@ -188,12 +201,43 @@ midnight-node-toolkit contract-state --contract-address <contract-address> --des
 
 - Generate a circuit call intent
 ```shell
-midnight-node-toolkit generate-intent circuit -c toolkit-js/contract/contract.config.ts \
-    --input-onchain-state <contract-onchain-state-file> --input-private-state <contract-private-state-json> \
-    --contract-address <contract-address> --circuit-id <name-of-circuit-to-call> \
-    --output-intent "/out/call.bin" --output-private-state "/out/new_state.json"
+midnight-node-toolkit generate-intent circuit \
+    -c toolkit-js/contract/contract.config.ts \
+    --coin-public <coin-public-key for caller> \
+    --input-onchain-state <contract-onchain-state-file> \
+    --input-private-state <contract-private-state-json> \
+    --contract-address <contract-address> \
+    --output-intent "/out/call.bin" \
+    --output-private-state "/out/new_state.json" \
+    --output-zswap-state "/out/zswap_state.json" \
+    <name-of-circuit-to-call>
+
 # To send it, see "Generate and send a tx from an intent" above
 ```
+
+#### Custom Contracts (Shielded Tokens)
+
+- Invoking a contract that mints shielded tokens requires destinations to be passed when sending the intent
+Example:
+```bash
+shielded_destination=$(
+    midnight-node-toolkit \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --shielded
+)
+
+echo "Generate and send mint tx"
+midnight-node-toolkit \
+    send-intent \
+    --intent-file "/out/mint.bin" \
+    --zswap-state-file "/out/zswap.json" \
+    --compiled-contract-dir /toolkit-js/contract/out \
+    --shielded-destination "$shielded_destination"
+```
+
+If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
 
 ---
 ### Send A Serialized Contract Intent (.mn) File:

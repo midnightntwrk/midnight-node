@@ -73,7 +73,7 @@ coin_public=$(
     show-address \
     --network undeployed \
     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    --coin-public-untagged
+    --coin-public
 )
 
 # cp -r ./util/toolkit-js/test/ut_contract/ $tempdir/$contract_dir

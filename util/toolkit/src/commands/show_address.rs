@@ -34,7 +34,7 @@ pub struct SpecificAddressTypeArgs {
 	coin_public: bool,
 	/// CoinPublic untagged only
 	#[arg(long)]
-	coin_public_untagged: bool,
+	coin_public_tagged: bool,
 	/// Unshielded User Address only (use for contract interations)
 	#[arg(long)]
 	unshielded_user_address_untagged: bool,
@@ -46,7 +46,7 @@ pub struct Addresses {
 	shielded: String,
 	unshielded: String,
 	coin_public: String,
-	coin_public_untagged: String,
+	coin_public_tagged: String,
 	unshielded_user_address_untagged: String,
 }
 
@@ -67,10 +67,10 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 	let all = Addresses {
 		shielded: shielded_wallet.address(args.network).to_bech32(),
 		unshielded: unshielded_wallet.address(args.network).to_bech32(),
-		coin_public: serialize(&shielded_wallet.coin_public_key)
+		coin_public: shielded_wallet.coin_public_key.0.0.encode_hex(),
+		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
 			.expect("failed to serialize CoinPublicKey")
 			.encode_hex(),
-		coin_public_untagged: shielded_wallet.coin_public_key.0.0.encode_hex(),
 		unshielded_user_address_untagged: unshielded_wallet.user_address.0.0.encode_hex(),
 	};
 
@@ -81,8 +81,8 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		ShowAddress::SingleAddress(all.unshielded)
 	} else if args.specific_address.coin_public {
 		ShowAddress::SingleAddress(all.coin_public)
-	} else if args.specific_address.coin_public_untagged {
-		ShowAddress::SingleAddress(all.coin_public_untagged)
+	} else if args.specific_address.coin_public_tagged {
+		ShowAddress::SingleAddress(all.coin_public_tagged)
 	} else if args.specific_address.unshielded_user_address_untagged {
 		ShowAddress::SingleAddress(all.unshielded_user_address_untagged)
 	} else {
