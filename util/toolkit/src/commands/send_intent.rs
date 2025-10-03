@@ -122,7 +122,6 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "due to ledger bug PM-19672, this doesn't work yet"]
 	async fn test_mint_tx() {
 		let out_dir = tempfile::tempdir().unwrap();
 
