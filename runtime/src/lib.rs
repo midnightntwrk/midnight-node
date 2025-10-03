@@ -122,7 +122,7 @@ mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::MembershipHandler;
+use governance::{AlwaysNo, MembershipHandler};
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
@@ -720,7 +720,7 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
-	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
+	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
@@ -751,7 +751,7 @@ impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
-	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
+	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;

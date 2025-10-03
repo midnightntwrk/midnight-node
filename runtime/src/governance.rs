@@ -1,4 +1,5 @@
 use frame_support::traits::{ChangeMembers, InitializeMembers};
+use pallet_collective::{DefaultVote, MemberCount};
 use sp_std::marker::PhantomData;
 
 /// Wrapper struct to handle frame_system sufficients and delegate
@@ -44,5 +45,18 @@ where
 		for who in outgoing {
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
+	}
+}
+
+/// Default votes will be always NO for abstentions
+pub struct AlwaysNo;
+impl DefaultVote for AlwaysNo {
+	fn default_vote(
+		_prime_vote: Option<bool>,
+		_yes_votes: MemberCount,
+		_no_votes: MemberCount,
+		_len: MemberCount,
+	) -> bool {
+		false
 	}
 }
