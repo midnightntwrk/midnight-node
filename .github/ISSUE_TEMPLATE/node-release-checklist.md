@@ -21,15 +21,9 @@ assignees: ''
 - Run [subwasm](https://github.com/chevdor/subwasm) diff testnet-runtime new-runtime
   - [ ] Check runtimes are compatible
   - [ ] Bump [transaction version](https://github.com/input-output-hk/midnight-substrate-prototype/blob/c8861812ab5da19eb1a1253299e7b82919cc052c/runtime/src/lib.rs#L237) if needed
+- Release PR has indexer passing on local env test
 - The release includes a new Ledger version?
-  - [ ] No
-  - [ ] Yes
-    - [ ] Generate [ledger hard-fork-test](https://shielded.atlassian.net/wiki/spaces/MN/pages/edit-v2/27992121#Create-Ledger-hard-fork-test-version) version
-    - [ ] [Update `Cargo.toml`](https://github.com/input-output-hk/midnight-substrate-prototype/blob/node-0.8.0-rc3/Cargo.toml#L46-L48) with the new version
-    - [ ] [Update `proof-server`](https://shielded.atlassian.net/wiki/spaces/MN/pages/edit-v2/27992121#Get-proof-server-dependencies)
-        - [ ] Update `Earthfile` with the new version
-        - [ ] Update Toolkit `Dockerfile` with the new version
- - Need to regenerate gensis?
+ - Need to regenerate genesis?
    - [ ] No
    - [ ] [Yes](https://shielded.atlassian.net/wiki/spaces/MN/pages/27992121/Runbook#Regenerate-Genesis)
 - The release includes a new Partner Chains version?
