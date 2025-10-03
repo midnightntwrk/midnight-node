@@ -38,6 +38,10 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
   - `--dest-file <file_path>` (use `--to-bytes` to specify whether to save in JSON or bytes)
   - `--dest-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
+    - Supports multiple urls:
+      - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
+      - `--dest-url=ws://127.0.0.1:9944 --dest-url=ws://127.0.0.1:9933 --dest-url="ws://127.0.0.1:9922"`
+      - `--dest-url="ws://127.0.0.1:9944, ws://127.0.0.1:9933, ws://127.0.0.1:9922"`
 
 - **`Prover`**: Chooses which proof server to use — either local (`LocalProofServer`) or remote (`RemoteProveServer`).
 
