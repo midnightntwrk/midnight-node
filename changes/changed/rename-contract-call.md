@@ -3,4 +3,4 @@
 
 This avoids confusion with the new custom contracts feature.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/85
