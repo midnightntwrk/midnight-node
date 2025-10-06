@@ -31,7 +31,8 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -60,7 +61,8 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c #v2.62.2
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
+
         with:
           tool: just
 
@@ -151,7 +153,8 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@cd39cb0572834c149bf3533a143f05e09def0f3c #v2.62.2
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
+
         with:
           tool: just
 
@@ -252,7 +255,8 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -286,7 +290,8 @@ jobs:
     needs: [publish-amd64, publish-arm64, build-indexer-images]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI

@@ -119,7 +119,6 @@ parameter_types! {
 }
 
 impl crate::pallet::Config for Test {
-	type MaxRegistrationsPerCardanoAddress = MaxRegistrationsPerCardanoAddress;
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 

@@ -38,6 +38,10 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
   - `--dest-file <file_path>` (use `--to-bytes` to specify whether to save in JSON or bytes)
   - `--dest-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
+    - Supports multiple urls:
+      - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
+      - `--dest-url=ws://127.0.0.1:9944 --dest-url=ws://127.0.0.1:9933 --dest-url="ws://127.0.0.1:9922"`
+      - `--dest-url="ws://127.0.0.1:9944, ws://127.0.0.1:9933, ws://127.0.0.1:9922"`
 
 - **`Prover`**: Chooses which proof server to use — either local (`LocalProofServer`) or remote (`RemoteProveServer`).
 
@@ -122,11 +126,11 @@ midnight-node-toolkit generate-intent  -c util/toolkit-js/test/contract/contract
 
 - Query from chain, generate, and send to chain:
 ```shell
-midnight-node-toolkit generate-txs contract-calls maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-txs contract-calls maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address>
 ```
 - Query fom chain, generate, and save as a serialized intent file:
 ```shell
-midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address>
 ```
 Rest of examples similar to Generate Deploy Contract
 
@@ -136,11 +140,11 @@ Rest of examples similar to Generate Deploy Contract
 
 - Query from chain, generate, and send to chain:
 ```shell
-midnight-node-toolkit generate-txs contract-calls call --call-key <call_key> --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-txs contract-calls call --call-key <call_key> --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address>
 ```
 - Query fom chain, generate, and save as a serialized intent file:
 ```shell
-midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" call --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" call --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address>
 ```
 Rest of examples similar to Generate Deploy Contract
 
@@ -150,41 +154,90 @@ The custom contract calls make use of **toolkit-js**. The nodejs `node` executab
 
 When compiling contracts, you **must** use the correct `compactc` version. To check compatibility, run `midnight-node-toolkit version`
 
+- Get `coin-public-key` for a seed. Toolkit commands will accept tagged or untagged
+```shell
+midnight-node-toolkit show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --coin-public
+```
+
 - Generate a deploy intent
 ```shell
 compactc counter.compact toolkit-js/contract/out # Compile your contract - compiled directory must be a child of $TOOLKIT_JS_PATH
 
-midnight-node-toolkit generate-intent deploy -c toolkit-js/contract/contract.config.ts --output-intent "/out/deploy.bin" --output-private-state "/out/initial_private_state.json
+midnight-node-toolkit generate-intent deploy \
+    -c toolkit-js/contract/contract.config.ts \
+    --coin-public <coin-public-key for caller> \
+    --output-intent "/out/deploy.bin" \
+    --output-private-state "/out/initial_private_state.json \
+    --output-zswap-state "/out/$deploy_zswap_filename" 
 ```
 
 - Generate a tx from an intent
 ```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
+midnight-node-toolkit send-intent --intent-file "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
 ```
 
 - Generate and send a tx from an intent
 ```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out
+midnight-node-toolkit send-intent --intent-file "/out/deploy.bin" --compiled-contract-dir contract/counter/out
 ```
 
 - Get the contract address
 ```shell
-midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed --dest-file /out/contract_address.mn
+midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed
+```
+
+- Get the contract address (untagged)
+```shell
+midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed --untagged
 ```
 
 - Get the contract on-chain state
 ```shell
-midnight-node-toolkit contract-state --contract-address <contract-address-file> --dest-file /out/contract_state.bin
+midnight-node-toolkit contract-state --contract-address <contract-address> --dest-file /out/contract_state.bin
 ```
 
 - Generate a circuit call intent
 ```shell
-midnight-node-toolkit generate-intent circuit -c toolkit-js/contract/contract.config.ts \
-    --input-onchain-state <contract-onchain-state-file> --input-private-state <contract-private-state-json> \
-    --contract-address <contract-address-file> --circuit-id <name-of-circuit-to-call> \
-    --output-intent "/out/call.bin" --output-private-state "/out/new_state.json"
+midnight-node-toolkit generate-intent circuit \
+    -c toolkit-js/contract/contract.config.ts \
+    --coin-public <coin-public-key for caller> \
+    --input-onchain-state <contract-onchain-state-file> \
+    --input-private-state <contract-private-state-json> \
+    --contract-address <contract-address> \
+    --output-intent "/out/call.bin" \
+    --output-private-state "/out/new_state.json" \
+    --output-zswap-state "/out/zswap_state.json" \
+    <name-of-circuit-to-call>
+
 # To send it, see "Generate and send a tx from an intent" above
 ```
+
+#### Custom Contracts (Shielded Tokens)
+
+- Invoking a contract that mints shielded tokens requires destinations to be passed when sending the intent
+Example:
+```bash
+shielded_destination=$(
+    midnight-node-toolkit \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --shielded
+)
+
+echo "Generate and send mint tx"
+midnight-node-toolkit \
+    send-intent \
+    --intent-file "/out/mint.bin" \
+    --zswap-state-file "/out/zswap.json" \
+    --compiled-contract-dir /toolkit-js/contract/out \
+    --shielded-destination "$shielded_destination"
+```
+
+If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
 
 ---
 ### Send A Serialized Contract Intent (.mn) File:

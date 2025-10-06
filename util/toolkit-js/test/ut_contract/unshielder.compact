@@ -1,0 +1,32 @@
+// This file is part of Compact.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// 	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import CompactStandardLibrary;
+
+witness something(): [];
+
+export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): [Bytes<32>, Uint<128>] {
+  something();
+  return mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
+}
+
+export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<64>): [Bytes<32>, Uint<128>] {
+  const address = UserAddress { bytes: address_bytes };
+  return mintUnshieldedToken(disclose(domainSep), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
+}
+
+export circuit receiveUnshieldedTest(color: Bytes<32>, amount: Uint<128>): [] {
+  receiveUnshielded(disclose(color), disclose(amount));
+}
