@@ -9,9 +9,11 @@ use crate::{
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	Array, ClaimedUnshieldedSpendsKey, PublicAddress, ShieldedWallet, TokenType, UnshieldedOffer,
-	UtxoOutput, WalletAddress, default_storage,
+	Array, ClaimedUnshieldedSpendsKey, ContractAction, ProofPreimage, ProofPreimageMarker,
+	PublicAddress, ShieldedWallet, StdRng, TokenType, UnshieldedOffer, UtxoOutput, WalletAddress,
+	default_storage,
 };
+use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
@@ -32,7 +34,7 @@ pub struct CustomContractBuilder {
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	artifacts_dir: String,
-	intent_file: String,
+	intent_files: Vec<String>,
 	zswap_state_file: Option<String>,
 	shielded_destinations: Vec<WalletAddress>,
 }
@@ -43,7 +45,7 @@ impl CustomContractBuilder {
 			funding_seed: args.info.funding_seed,
 			rng_seed: args.info.rng_seed,
 			artifacts_dir: args.compiled_contract_dir,
-			intent_file: args.intent_file,
+			intent_files: args.intent_files,
 			zswap_state_file: args.zswap_state_file,
 			shielded_destinations: args.shielded_destinations,
 		}
@@ -62,6 +64,7 @@ impl BuildTxsExt for CustomContractBuilder {
 
 impl CustomContractBuilder {
 	fn build_intent(&self) -> Result<IntentCustom<DefaultDB>, CustomContractBuilderError> {
+		let mut rng = self.rng_seed.map(StdRng::from_seed).unwrap_or(StdRng::from_entropy());
 		println!("Create intent info for contract custom");
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
@@ -69,8 +72,15 @@ impl CustomContractBuilder {
 			Box::new(IntentCustom::<DefaultDB>::get_resolver(self.artifacts_dir.clone()).unwrap());
 		let static_ref_resolver = Box::leak(boxed_resolver);
 
-		let custom_intent = IntentCustom::new_from_file(&self.intent_file, static_ref_resolver)
-			.map_err(CustomContractBuilderError::FailedReadingIntent)?;
+		let mut actions: Vec<ContractAction<ProofPreimageMarker, DefaultDB>> = vec![];
+		for intent in &self.intent_files {
+			let custom_intent = IntentCustom::new_from_file(intent, static_ref_resolver)
+				.map_err(CustomContractBuilderError::FailedReadingIntent)?;
+			actions.extend(custom_intent.intent.actions.iter().map(|c| (*c).clone()));
+		}
+
+		let custom_intent =
+			IntentCustom::new_from_actions(&mut rng, &actions[..], static_ref_resolver);
 
 		println!("custom_intent: {:?}", custom_intent.intent);
 		Ok(custom_intent)
