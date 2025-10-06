@@ -342,7 +342,7 @@ jobs:
 
           if [ -z "$INDEXER_BRANCH" ]; then
             echo "❌ Indexer submodule is not tracking origin/main."
-            echo "   Refusing to build/publish indexer images for node-dev-01."
+            echo "   Refusing to publish indexer and node images for node-dev-01."
             echo "result=notok" >> "$GITHUB_OUTPUT"
           else
             echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
@@ -367,6 +367,12 @@ jobs:
 
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
+
+          # Pull, re-tag, and push indexer images
+
+          docker pull ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
+          docker pull ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
+          docker pull ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
 
           docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
           docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
