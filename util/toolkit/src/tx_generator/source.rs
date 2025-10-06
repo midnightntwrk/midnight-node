@@ -25,14 +25,14 @@ use crate::{
 
 #[derive(Args, Debug)]
 pub struct Source {
-	/// RPC URL of node instance; Used to fetch existing transactions
+	/// Load input transactions/blocks from node instance using an RPC URL
 	#[arg(long, short = 's', conflicts_with = "src_files", default_value = "ws://127.0.0.1:9944")]
 	pub src_url: Option<String>,
 	/// Number of threads to use when fetching transactions from a live network
 	#[arg(long, conflicts_with = "src_files", default_value = "20")]
 	pub fetch_concurrency: usize,
-	/// Filename of genesis tx. Used as initial state for generated txs.
-	#[arg(long, value_delimiter = ' ', num_args = 1.., conflicts_with = "src_url")]
+	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
+	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url")]
 	pub src_files: Option<Vec<String>>,
 }
 
@@ -64,6 +64,19 @@ pub trait GetTxs<
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>>;
+}
+
+#[async_trait]
+impl<
+	S: SignatureKind<DefaultDB> + Tagged,
+	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
+> GetTxs<S, P> for ()
+{
+	async fn get_txs(
+		&self,
+	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+		Ok(SourceTransactions { blocks: vec![] })
+	}
 }
 
 pub struct GetTxsFromFile<S, P> {

@@ -1,5 +1,7 @@
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, LedgerContext, WalletSeed};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, DefaultDB, LedgerContext, WalletSeed, WalletState,
+};
 use midnight_node_toolkit::toolkit_js::{EncodedZswapLocalState, RelativePath};
 use midnight_node_toolkit::tx_generator::source::Source;
 use midnight_node_toolkit::{ProofType, SignatureType, toolkit_js};
@@ -11,7 +13,7 @@ pub enum JsCommand {
 	Circuit(CircuitCommandArgs),
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct SourceWallet {
 	#[command(flatten)]
 	source: Option<Source>,
@@ -20,7 +22,7 @@ pub struct SourceWallet {
 	wallet_seed: Option<WalletSeed>,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct CircuitCommandArgs {
 	#[command(flatten)]
 	source_wallet: SourceWallet,
@@ -30,15 +32,23 @@ pub struct CircuitCommandArgs {
 
 	#[command(flatten)]
 	circuit_call: toolkit_js::CircuitArgs,
+
+	/// Dry-run - don't generate intent, just print out settings
+	#[arg(long)]
+	dry_run: bool,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct DeployCommandArgs {
 	#[command(flatten)]
 	toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
 	deploy: toolkit_js::DeployArgs,
+
+	/// Dry-run - don't generate intent, just print out settings
+	#[arg(long)]
+	dry_run: bool,
 }
 
 #[derive(Args)]
@@ -52,8 +62,18 @@ pub async fn fetch_zswap_state(
 	source: Source,
 	wallet_seed: WalletSeed,
 	coin_public: CoinPublicKey,
+	dry_run: bool,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(source).await?;
+	let source = TxGenerator::<SignatureType, ProofType>::source(source, dry_run).await?;
+	if dry_run {
+		println!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
+		println!("Dry-run: attributing to coin-public {:?}", coin_public);
+		return Ok(EncodedZswapLocalState::from_zswap_state(
+			WalletState::<DefaultDB>::default(),
+			coin_public,
+		));
+	}
+
 	let received_tx = source.get_txs().await?;
 	let network_id = received_tx.network();
 	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
@@ -82,10 +102,19 @@ pub async fn execute(
 
 	match args.js_command {
 		JsCommand::Deploy(args) => {
+			if args.dry_run {
+				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				println!("Dry-run: generate deploy intent: {:?}", &args.deploy);
+				return Ok(());
+			}
 			let command = toolkit_js::Command::Deploy(args.deploy);
 			args.toolkit_js.execute(command)?;
 		},
 		JsCommand::Circuit(args) => {
+			if args.dry_run {
+				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
+			}
 			let input_zswap_state = if args.source_wallet.wallet_seed.is_some() {
 				let Some(source) = args.source_wallet.source else {
 					println!("wallet_seed is present, but source is missing!");
@@ -96,8 +125,12 @@ pub async fn execute(
 					source,
 					args.source_wallet.wallet_seed.unwrap(),
 					args.circuit_call.coin_public,
+					args.dry_run,
 				)
 				.await?;
+				if args.dry_run {
+					return Ok(());
+				}
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -105,6 +138,9 @@ pub async fn execute(
 			} else {
 				None
 			};
+			if args.dry_run {
+				return Ok(());
+			}
 			let command =
 				toolkit_js::Command::Circuit { args: args.circuit_call, input_zswap_state };
 			args.toolkit_js.execute(command)?;
