@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 x-common-variables: &common-variables
   CFG_PRESET: "qanet"
@@ -60,7 +60,7 @@ services:
       boot-node:
         condition: service_healthy
     ports:
-      - "9950:9944" 
+      - "9950:9944"
       - "30334:30334"
     volumes:
       - ./data/node-1:/data
@@ -335,4 +335,3 @@ volumes:
   node-data-5:
   node-data-6:
   node-data-7:
-

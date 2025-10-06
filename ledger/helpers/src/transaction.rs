@@ -23,12 +23,13 @@ use mn_ledger::{
 	structure::{BindingKind, PedersenDowngradeable, ProofKind, SignatureKind},
 	verify::WellFormedStrictness,
 };
+use rand::Rng as _;
 
 use crate::{
 	BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, HashMapStorage, Intent, LedgerContext,
-	Nonce, Offer, OfferInfo, Pedersen, PedersenRandomness, ProofMarker, ProofPreimage,
+	Offer, OfferInfo, Pedersen, PedersenRandomness, ProofMarker, ProofPreimage,
 	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
-	Signature, StdRng, Transaction, UnshieldedTokenType, WalletSeed, serialize,
+	Signature, StdRng, Transaction, WalletSeed, serialize,
 };
 use std::{
 	collections::HashMap,
@@ -39,6 +40,12 @@ use std::{
 	sync::Arc,
 	time::{SystemTime, UNIX_EPOCH},
 };
+
+type UnprovenTransaction<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+#[cfg(not(feature = "erase-proof"))]
+type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
+#[cfg(feature = "erase-proof")]
+type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
@@ -57,9 +64,9 @@ pub trait FromContext<D: DB + Clone> {
 
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
-	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D> + Send>>,
-	pub guaranteed_coins: Option<OfferInfo<D>>,
-	pub fallible_coins: HashMap<u16, OfferInfo<D>>,
+	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D>>>,
+	pub guaranteed_offer: Option<OfferInfo<D>>,
+	pub fallible_offers: HashMap<u16, OfferInfo<D>>,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 	pub funding_seeds: Vec<WalletSeed>,
@@ -87,8 +94,8 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 		Self {
 			context,
 			intents: HashMap::new(),
-			guaranteed_coins: None,
-			fallible_coins: HashMap::new(),
+			guaranteed_offer: None,
+			fallible_offers: HashMap::new(),
 			rng,
 			prover,
 			funding_seeds: vec![],
@@ -99,26 +106,28 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 }
 
 impl<D: DB + Clone> StandardTrasactionInfo<D> {
-	pub fn set_guaranteed_coins(&mut self, offer: OfferInfo<D>) {
-		self.guaranteed_coins = Some(offer);
+	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D>) {
+		self.guaranteed_offer = Some(offer);
 	}
 
-	pub fn set_fallible_coins(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
-		self.fallible_coins = offers;
+	pub fn set_fallible_offers(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
+		self.fallible_offers = offers;
 	}
 
-	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D> + Send>>) {
+	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D>>>) {
 		self.intents = intents;
 	}
 
-	pub fn add_intent(&mut self, segment_id: SegmentId, intent: Box<dyn BuildIntent<D> + Send>) {
+	pub fn add_intent(&mut self, segment_id: SegmentId, intent: Box<dyn BuildIntent<D>>) {
 		if self.intents.insert(segment_id, intent).is_some() {
 			println!("WARN: value of segment_id({segment_id}) has been replaced.");
 		};
 	}
 
 	pub fn is_empty(&self) -> bool {
-		self.intents.is_empty() && self.guaranteed_coins.is_none() && self.fallible_coins.is_empty()
+		self.intents.is_empty()
+			&& self.guaranteed_offer.is_none()
+			&& self.fallible_offers.is_empty()
 	}
 
 	pub fn set_wallet_seeds(&mut self, seeds: Vec<WalletSeed>) {
@@ -129,9 +138,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		self.mock_proofs_for_fees = mock_proofs_for_fees;
 	}
 
-	pub async fn build(
-		&mut self,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
+	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.now;
 		// (10 min) max_ttl/6 - enough to produce 6 txs for a chain that starts
 		// with the `Timestamp` of the first tx to be sent
@@ -139,13 +146,13 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let ttl = now + delay;
 
-		let guaranteed_coins = self
-			.guaranteed_coins
+		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
+			.guaranteed_offer
 			.as_mut()
 			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
 
-		let fallible_coins: HashMap<u16, Offer<ProofPreimage, D>> = self
-			.fallible_coins
+		let fallible_offer: HashMap<u16, Offer<ProofPreimage, D>> = self
+			.fallible_offers
 			.iter_mut()
 			.map(|(segment_id, offer_info)| {
 				(*segment_id, offer_info.build(&mut self.rng, self.context.clone()))
@@ -173,11 +180,14 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			guard.network_id.clone()
 		};
 
-		let tx = Transaction::new(network_id.clone(), intents, guaranteed_coins, fallible_coins);
+		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
+
+		println!("pre-proof tx: {tx:#?}");
+		println!("tx balance pre-fees: {:#?}", tx.balance(None));
 
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
-			return Ok(tx);
+			return self.prove_tx(tx).await;
 		};
 
 		self.pay_fees(tx, network_id, now, ttl).await
@@ -185,44 +195,44 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 	async fn pay_fees(
 		&mut self,
-		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		tx: UnprovenTransaction<D>,
 		network_id: String,
 		now: Timestamp,
 		ttl: Timestamp,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
-		let tx_sealed = tx.seal(self.rng.clone());
-		let Some(mut missing_dust) = self.compute_missing_dust(&tx_sealed)? else {
-			// we have enough dust after all I guess
-			return Ok(tx);
-		};
+	) -> Result<FinalizedTransaction<D>> {
+		let mut missing_dust = 0;
 
 		for _ in 0..10 {
-			let speculative_payment_tx =
-				self.build_dust_spend_tx(missing_dust, &network_id, now, ttl, true)?;
-			let paid_tx = tx.merge(&speculative_payment_tx)?;
-			let computed_missing_dust = if self.mock_proofs_for_fees {
-				self.compute_missing_dust(&paid_tx.mock_prove()?)?
+			let spends = self.gather_dust_spends(missing_dust, now)?;
+			let payment_tx =
+				self.build_spend_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
+			let paid_tx = tx.merge(&payment_tx)?;
+
+			if self.mock_proofs_for_fees {
+				let mock_proven_tx = self.mock_prove_tx(&paid_tx)?;
+				let computed_missing_dust = self.compute_missing_dust(&mock_proven_tx)?;
+				if let Some(dust) = computed_missing_dust {
+					missing_dust += dust;
+				} else {
+					self.confirm_dust_spends(&spends)?;
+					return self.prove_tx(paid_tx).await;
+				}
 			} else {
-				let proven_tx = self.prove_tx(paid_tx).await?.seal(self.rng.clone());
-				self.compute_missing_dust(&proven_tx)?
-			};
-			if let Some(dust) = computed_missing_dust {
-				missing_dust += dust;
-			} else {
-				// We know exactly how much dust is needed to balance the TX!
-				// So just balance it
-				let payment_tx =
-					self.build_dust_spend_tx(missing_dust, &network_id, now, ttl, false)?;
-				return Ok(tx.merge(&payment_tx)?);
+				let proven_tx = self.prove_tx(paid_tx).await?;
+				let computed_missing_dust = self.compute_missing_dust(&proven_tx)?;
+				if let Some(dust) = computed_missing_dust {
+					missing_dust += dust;
+				} else {
+					self.confirm_dust_spends(&spends)?;
+					return Ok(proven_tx);
+				}
 			}
 		}
 		Err("Could not balance TX".into())
 	}
 
-	async fn prove_tx(
-		&mut self,
-		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Result<Transaction<Signature, ProofMarker, PedersenRandomness, D>> {
+	#[cfg(not(feature = "erase-proof"))]
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		let resolver = self.context.resolver().await;
 		let parameters = self
 			.context
@@ -231,27 +241,31 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.map_err(|_| "ledger state lock was poisoned".to_string())?
 			.parameters
 			.clone();
+		let mut rng = self.rng.split();
 		Ok(self
 			.prover
-			.prove(tx, self.rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
-			.await)
+			.prove(tx, rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
+			.await
+			.seal(rng))
 	}
 
-	fn compute_missing_dust<
-		P: ProofKind<D>,
-		B: Storable<D> + PedersenDowngradeable<D> + Serializable,
-	>(
-		&self,
-		tx: &Transaction<Signature, P, B, D>,
-	) -> Result<Option<u128>> {
-		let fees = {
-			let ledger_state = self
-				.context
-				.ledger_state
-				.lock()
-				.map_err(|_| "ledger state lock was poisoned".to_string())?;
-			tx.fees(&ledger_state.parameters)?
-		};
+	#[cfg(feature = "erase-proof")]
+	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.erase_proofs())
+	}
+
+	#[cfg(not(feature = "erase-proof"))]
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.mock_prove()?)
+	}
+
+	#[cfg(feature = "erase-proof")]
+	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		Ok(tx.erase_proofs())
+	}
+
+	fn compute_missing_dust(&self, tx: &FinalizedTransaction<D>) -> Result<Option<u128>> {
+		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
 		let imbalances = tx.balance(Some(fees))?;
 		let dust_imbalance = imbalances
 			.get(&(TokenType::Dust, Segment::Guaranteed.into()))
@@ -260,32 +274,28 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if dust_imbalance < 0 { Ok(Some(dust_imbalance.unsigned_abs())) } else { Ok(None) }
 	}
 
-	// Builds a transaction which spends exactly `required_amount` DUST from the configured funding seeds.
-	// Fails if the seeds do not have enough DUST available.
-	fn build_dust_spend_tx(
-		&mut self,
-		required_amount: u128,
+	fn build_spend_tx(
+		&self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
+		mut rng: StdRng,
 		network_id: &str,
 		now: Timestamp,
 		ttl: Timestamp,
-		speculative: bool,
-	) -> Result<Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>> {
-		let spends = self.gather_dust_spends(required_amount, now, speculative)?;
-		let mut intent = Intent::empty(&mut self.rng, ttl);
+	) -> UnprovenTransaction<D> {
+		let mut intent = Intent::empty(&mut rng, ttl);
 		intent.dust_actions = Some(Sp::new(DustActions {
-			spends: spends.into(),
+			spends: spends.to_vec().into(),
 			registrations: vec![].into(),
 			ctime: now,
 		}));
 		let intents = HashMapStorage::new().insert(Segment::FeePayments.into(), intent);
-		Ok(Transaction::from_intents(network_id, intents))
+		Transaction::from_intents(network_id, intents)
 	}
 
 	fn gather_dust_spends(
 		&self,
 		required_amount: u128,
 		ctime: Timestamp,
-		speculative: bool,
 	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>> {
 		let mut spends = vec![];
 		let mut remaining = required_amount;
@@ -305,11 +315,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				return Ok(spends);
 			}
 			let wallet = wallets.get_mut(seed).ok_or("Unrecognized wallet seed")?;
-			let new_spends = if speculative {
-				wallet.dust.speculative_spend(remaining, ctime, params)?
-			} else {
-				wallet.dust.spend(remaining, ctime, params)?
-			};
+			let new_spends = wallet.dust.speculative_spend(remaining, ctime, params)?;
 			// We asked the wallet to spend `remaining` DUST,
 			// so the total amount spent will be <= `remaining`.
 			for spend in new_spends {
@@ -325,6 +331,18 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		} else {
 			Ok(spends)
 		}
+	}
+
+	fn confirm_dust_spends(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) -> Result<()> {
+		let mut wallets = self
+			.context
+			.wallets
+			.lock()
+			.map_err(|_| "wallet lock was poisoned".to_string())?;
+		for wallet in wallets.values_mut() {
+			wallet.dust.mark_spent(spends);
+		}
+		Ok(())
 	}
 
 	pub async fn save_intents_to_file(mut self, parent_dir: &str, file_name: &str) {
@@ -362,14 +380,9 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		Self::validate(self.context, self.now, tx_erased_proof.erase_signatures())
 	}
 
-	#[cfg(not(feature = "erase-proof"))]
-	pub async fn prove(
-		mut self,
-	) -> Result<Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>> {
-		let tx_unproven = self.build().await?;
-		let tx_proven = self.prove_tx(tx_unproven).await?;
-		let tx_sealed = tx_proven.seal(self.rng.clone());
-		Self::validate(self.context, self.now, tx_sealed)
+	pub async fn prove(mut self) -> Result<FinalizedTransaction<D>> {
+		let tx = self.build().await?;
+		Self::validate(self.context, self.now, tx)
 	}
 
 	fn validate<
@@ -389,24 +402,17 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		tx.well_formed(&ref_state, WellFormedStrictness::default(), now)?;
 		Ok(tx)
 	}
-
-	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> Result<Transaction<D>> {
-		Ok(self.erase_proof().await)
-	}
 }
 
 #[derive(Default)]
-pub struct MintCoinInfo {
-	pub origin: WalletSeed,
-	pub token_type: UnshieldedTokenType,
+pub struct RewardsInfo {
+	pub owner: WalletSeed,
 	pub value: u128,
-	pub nonce: Nonce,
 }
 
 pub struct ClaimMintInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
-	pub coin: MintCoinInfo,
+	pub coin: RewardsInfo,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 }
@@ -420,63 +426,47 @@ impl<D: DB + Clone> FromContext<D> for ClaimMintInfo<D> {
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
 
-		Self { context, coin: MintCoinInfo::default(), rng, prover }
+		Self { context, coin: RewardsInfo::default(), rng, prover }
 	}
 }
 
 impl<D: DB + Clone> ClaimMintInfo<D> {
-	pub fn set_coin(&mut self, mint_coin: MintCoinInfo) {
-		self.coin = mint_coin
+	pub fn set_rewards(&mut self, rewards: RewardsInfo) {
+		self.coin = rewards;
 	}
 
-	pub fn build(&mut self) -> Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+	fn build(&mut self) -> UnprovenTransaction<D> {
+		let nonce = self.rng.r#gen();
 		self.context.with_ledger_state(|ledger_state| {
-			let mut build_tx = |fees: u128| {
-				let amount = self.coin.value - fees;
+			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
+				let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
+					network_id: ledger_state.network_id.clone(),
+					value: self.coin.value,
+					owner: wallet.unshielded.signing_key().verifying_key(),
+					nonce,
+					signature: (),
+					kind: ClaimKind::Reward,
+				};
 
-				let claim_rewards =
-					self.context.with_wallet_from_seed(self.coin.origin, |wallet| {
-						let unsigend_claim_mint: ClaimRewardsTransaction<(), D> =
-							ClaimRewardsTransaction {
-								network_id: ledger_state.network_id.clone(),
-								value: amount,
-								owner: wallet.unshielded.signing_key().verifying_key(),
-								nonce: self.coin.nonce,
-								signature: (),
-								kind: ClaimKind::Reward,
-							};
+				let data_to_sign = unsigned_claim_mint.data_to_sign();
+				let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
 
-						let data_to_sign = unsigend_claim_mint.data_to_sign();
-						let signature =
-							wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
+				ClaimRewardsTransaction {
+					network_id: ledger_state.network_id.clone(),
+					value: self.coin.value,
+					owner: wallet.unshielded.signing_key().verifying_key(),
+					nonce,
+					signature,
+					kind: ClaimKind::Reward,
+				}
+			});
 
-						ClaimRewardsTransaction {
-							network_id: ledger_state.network_id.clone(),
-							value: amount,
-							owner: wallet.unshielded.signing_key().verifying_key(),
-							nonce: self.coin.nonce,
-							signature,
-							kind: ClaimKind::Reward,
-						}
-					});
-
-				Transaction::ClaimRewards(claim_rewards)
-			};
-
-			let tx = build_tx(0);
-			let fees = tx.fees(&ledger_state.parameters).expect("could not calculate fees");
-			build_tx(fees)
+			Transaction::ClaimRewards(claim_rewards)
 		})
 	}
 
-	pub async fn erase_proof(mut self) -> Transaction<(), (), Pedersen, D> {
-		let tx_unproven = self.build();
-		let tx_erased_proof = tx_unproven.erase_proofs();
-		tx_erased_proof.erase_signatures()
-	}
-
 	#[cfg(not(feature = "erase-proof"))]
-	pub async fn prove(mut self) -> Transaction<Signature, ProofMarker, PureGeneratorPedersen, D> {
+	pub async fn prove(mut self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build();
 		let resolver = self.context.resolver().await;
 		let parameters = self
@@ -499,7 +489,8 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	}
 
 	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> Transaction<D> {
-		self.erase_proof().await
+	pub async fn prove(self) -> FinalizedTransaction<D> {
+		let tx_unproven = self.build();
+		tx_unproven.erase_proofs()
 	}
 }

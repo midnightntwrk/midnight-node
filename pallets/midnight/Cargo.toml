@@ -6,7 +6,7 @@ description = "FRAME pallet defining Midnight custom runtime logic."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io"
 edition = "2024"
-license = "Unlicense"
+license-file.workspace = true
 publish = false
 repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
 
@@ -40,9 +40,10 @@ hex = {version = "0.4.3", features = ["alloc"] }
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 assert_matches.workspace = true
 #pallet-block-rewards.workspace = true
-tempfile = "3.12"
+tempfile.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["test-utils"] }
 midnight-node-ledger = { workspace = true, features = ["test-utils"] }
+test-log.workspace = true
 
 [features]
 default = ["std"]

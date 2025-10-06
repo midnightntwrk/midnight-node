@@ -2,6 +2,7 @@
 name = "midnight-node-ledger-helpers"
 version = "0.1.0"
 edition = "2024"
+license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
@@ -26,6 +27,7 @@ bip32.workspace = true
 derive-where.workspace = true
 serde = { workspace = true, features = ["derive"] }
 bech32 = "0.11.0"
+bip39 = "2.0.0"
 
 [features]
 default = ["std"]

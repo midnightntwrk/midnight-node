@@ -28,20 +28,20 @@ mod test {
 	#[test_case(
         NetworkId::Undeployed,
         "0000000000000000000000000000000000000000000000000000000000000001",
-        "mn_shield-esk_undeployed1d45kgmnfva58gwn9de3hy7tsw35k7m3dwdjkxun9wskkketetdmrzhf6dlyj7u8juj68fd4psnkqhjxh32sec0q480vzswg8kd485e2kljcsmxqc0u";
-        "test undeployed with all 0...01 seed"
+        "mn_shield-esk_undeployed1dlyj7u8juj68fd4psnkqhjxh32sec0q480vzswg8kd485e2kljcs9ete5h";
+        "test undeployed with 0...01 seed"
     )]
 	#[test_case(
         NetworkId::DevNet,
         "0000000000000000000000000000000000000000000000000000000000000002",
-        "mn_shield-esk_dev1d45kgmnfva58gwn9de3hy7tsw35k7m3dwdjkxun9wskkketetdmrzhf6w0dctw9zhe2ffqw4s5qks7rnl29wy5mhl957fv9nnhtxulent80q55zd0xr";
-        "test devnet with all 0...02 seed"
+        "mn_shield-esk_dev1w0dctw9zhe2ffqw4s5qks7rnl29wy5mhl957fv9nnhtxulent80q5r8sslj";
+        "test devnet with 0...02 seed"
     )]
 	#[test_case(
         NetworkId::TestNet,
         "0000000000000000000000000000000000000000000000000000000000000003",
-        "mn_shield-esk_test1d45kgmnfva58gwn9de3hy7tsw35k7m3dwdjkxun9wskkketetdmrzhf6wvd5v04ykt59gglxknsdxpwwkhhhj8d6h3ghpkgdhdsszap2p53qk8ln8nz";
-        "test testnet with all 0...03 seed"
+        "mn_shield-esk_test1wvd5v04ykt59gglxknsdxpwwkhhhj8d6h3ghpkgdhdsszap2p53qkpy8pqk";
+        "test testnet with 0...03 seed"
     )]
 	fn test_show_viewing_key(network: NetworkId, seed: &str, viewing_key: &str) {
 		let args = ShowViewingKeyArgs {

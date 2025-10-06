@@ -1,7 +1,8 @@
 [package]
 name = "midnight-node-metadata"
-version = "0.16.2"
+version = "0.17.0"
 edition = "2024"
+license-file.workspace = true
 
 [dependencies]
 subxt.workspace = true

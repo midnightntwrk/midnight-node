@@ -87,29 +87,7 @@ impl<D: DB> DustWallet<D> {
 		self.spent_utxos = HashSet::new()
 	}
 
-	pub fn spend(
-		&mut self,
-		amount: u128,
-		ctime: Timestamp,
-		params: &DustParameters,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendError> {
-		let spends = self.do_spend(amount, ctime, params)?;
-		for spend in &spends {
-			self.spent_utxos = self.spent_utxos.insert(spend.old_nullifier);
-		}
-		Ok(spends)
-	}
-
 	pub fn speculative_spend(
-		&self,
-		amount: u128,
-		ctime: Timestamp,
-		params: &DustParameters,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendError> {
-		self.do_spend(amount, ctime, params)
-	}
-
-	fn do_spend(
 		&self,
 		amount: u128,
 		ctime: Timestamp,
@@ -147,6 +125,12 @@ impl<D: DB> DustWallet<D> {
 			}
 		}
 		Ok(spends)
+	}
+
+	pub fn mark_spent(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) {
+		for spend in spends {
+			self.spent_utxos = self.spent_utxos.insert(spend.old_nullifier);
+		}
 	}
 }
 

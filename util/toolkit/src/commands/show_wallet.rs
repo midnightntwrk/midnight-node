@@ -43,7 +43,11 @@ pub async fn execute(
 			let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
 
 			for block in source_blocks.blocks {
-				context.update_from_block(block.transactions, block.context);
+				context.update_from_block(
+					block.transactions,
+					block.context,
+					block.state_root.clone(),
+				);
 			}
 
 			Ok(context.with_ledger_state(|ledger_state| {
@@ -61,7 +65,11 @@ pub async fn execute(
 
 				let context = LedgerContext::new(network_id);
 				for block in source_blocks.blocks {
-					context.update_from_block(block.transactions, block.context);
+					context.update_from_block(
+						block.transactions,
+						block.context,
+						block.state_root.clone(),
+					);
 				}
 
 				let utxos = context.utxos(address);
@@ -159,7 +167,7 @@ mod tests {
 	async fn test_from_seed(
 		(seed, src_files): (&str, Vec<String>),
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
-		let seed = WalletSeed::from(seed);
+		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = ShowWalletArgs {
 			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
 			seed: Some(seed),

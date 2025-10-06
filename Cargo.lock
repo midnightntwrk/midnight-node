@@ -31,9 +31,9 @@ dependencies = [
 
 [[package]]
 name = "actix-http"
-version = "3.11.0"
+version = "3.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44dfe5c9e0004c623edc65391dfd51daa201e7e30ebd9c9bedf873048ec32bc2"
+checksum = "44cceded2fb55f3c4b67068fa64962e2ca59614edc5b03167de9ff82ae803da0"
 dependencies = [
  "actix-codec",
  "actix-rt",
@@ -90,9 +90,9 @@ dependencies = [
 
 [[package]]
 name = "actix-rt"
-version = "2.10.0"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24eda4e2a6e042aa4e55ac438a2ae052d3b5da0ecf83d7411e1a368946925208"
+checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
 dependencies = [
  "futures-core",
  "tokio",
@@ -1466,9 +1466,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "bytestring"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e465647ae23b2823b0753f50decb2d5a86d2bb2cac04788fafd1f80e45378e5f"
+checksum = "113b4343b5f6617e7ad401ced8de3cc8b012e73a594347c307b90db3e9271289"
 dependencies = [
  "bytes",
 ]
@@ -4599,6 +4599,9 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hex-conservative"
@@ -6620,11 +6623,11 @@ dependencies = [
 
 [[package]]
 name = "matchers"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
+checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
- "regex-automata 0.1.10",
+ "regex-automata",
 ]
 
 [[package]]
@@ -6715,7 +6718,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto"
 version = "1.0.0-alpha.1"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "anyhow",
  "atomic-write-file",
@@ -6740,12 +6743,13 @@ dependencies = [
  "sha2 0.10.9",
  "signature",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "1.0.0-alpha.1"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -6780,8 +6784,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-coin-structure"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "fake",
  "lazy_static",
@@ -6791,6 +6795,7 @@ dependencies = [
  "midnight-transient-crypto",
  "rand 0.8.5",
  "serde",
+ "zeroize",
 ]
 
 [[package]]
@@ -6814,8 +6819,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-ledger"
-version = "6.1.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "6.1.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -6841,12 +6846,13 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
  "zkir",
 ]
 
 [[package]]
 name = "midnight-node"
-version = "0.16.2"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -6856,6 +6862,7 @@ dependencies = [
  "documented",
  "frame-benchmarking",
  "frame-benchmarking-cli",
+ "frame-support",
  "frame-system",
  "futures",
  "hex",
@@ -6869,13 +6876,12 @@ dependencies = [
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade",
- "midnight-primitives-upgrade-api",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-governed-map",
  "pallet-midnight",
  "pallet-midnight-rpc",
+ "pallet-native-token-observation",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "parity-scale-codec",
@@ -6974,7 +6980,6 @@ dependencies = [
  "sp-runtime-interface",
  "sp-std",
  "sp-tracing",
- "tokio",
  "toml 0.9.5",
 ]
 
@@ -6985,6 +6990,7 @@ dependencies = [
  "async-trait",
  "bech32 0.11.0",
  "bip32",
+ "bip39",
  "derive-where",
  "futures",
  "hex",
@@ -7008,7 +7014,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "0.16.2"
+version = "0.17.0"
 dependencies = [
  "subxt 0.44.0",
 ]
@@ -7021,6 +7027,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto",
  "midnight-ledger",
+ "midnight-primitives-native-token-observation",
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto",
@@ -7042,20 +7049,20 @@ dependencies = [
  "authority-selection-inherents",
  "frame-benchmarking",
  "frame-executive",
+ "frame-storage-access-test-runtime",
  "frame-support",
  "frame-system",
  "frame-system-benchmarking",
  "frame-system-rpc-runtime-api",
  "frame-try-runtime",
- "hex",
  "log",
  "midnight-node-ledger",
  "midnight-primitives-native-token-observation",
- "midnight-primitives-upgrade-api",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collective",
+ "pallet-federated-authority",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -7075,7 +7082,6 @@ dependencies = [
  "pallet-sudo",
  "pallet-timestamp",
  "pallet-tx-pause",
- "pallet-upgrade",
  "pallet-version",
  "parity-scale-codec",
  "plutus",
@@ -7084,7 +7090,6 @@ dependencies = [
  "sidechain-domain",
  "sidechain-slots",
  "sp-api",
- "sp-arithmetic",
  "sp-block-builder",
  "sp-consensus-aura",
  "sp-consensus-beefy",
@@ -7121,6 +7126,7 @@ dependencies = [
  "console",
  "futures",
  "hex",
+ "hex-literal 0.4.1",
  "indicatif",
  "itertools 0.14.0",
  "log",
@@ -7144,8 +7150,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-runtime"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "derive-where",
  "enum_index",
@@ -7169,8 +7175,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-state"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "derive-where",
  "fake",
@@ -7187,8 +7193,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-vm"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "derive-where",
  "fake",
@@ -7259,34 +7265,11 @@ dependencies = [
 name = "midnight-primitives-native-token-observation"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "parity-scale-codec",
  "scale-info",
  "serde",
  "sp-api",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "hex",
- "parity-scale-codec",
- "sc-executor",
- "sc-executor-common",
- "scale-info",
- "sp-core",
- "sp-inherents",
- "sp-partner-chains-consensus-aura",
- "sp-runtime",
-]
-
-[[package]]
-name = "midnight-primitives-upgrade-api"
-version = "0.1.0"
-dependencies = [
- "sp-api",
- "sp-core",
 ]
 
 [[package]]
@@ -7313,7 +7296,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize"
 version = "1.0.0-alpha.1"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "crypto",
  "konst",
@@ -7326,7 +7309,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize-macros"
 version = "1.0.0-alpha.1"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -7335,8 +7318,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-storage"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "archery",
  "crypto",
@@ -7360,8 +7343,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-storage-macros"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "midnight-serialize-macros",
  "proc-macro2",
@@ -7371,8 +7354,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-transient-crypto"
-version = "1.0.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "1.0.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -7401,12 +7384,13 @@ dependencies = [
  "sha2 0.10.9",
  "signature",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
 name = "midnight-zswap"
-version = "6.1.0-alpha.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+version = "6.1.0-alpha.3"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "derive-where",
  "fake",
@@ -7423,6 +7407,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -7977,12 +7962,11 @@ dependencies = [
 
 [[package]]
 name = "nu-ansi-term"
-version = "0.46.0"
+version = "0.50.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
+checksum = "d4a28e057d01f97e61255210fcff094d74ed0466038633e95017f5beb68e4399"
 dependencies = [
- "overload",
- "winapi",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8318,12 +8302,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "overload"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
-
-[[package]]
 name = "pairing"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8605,6 +8583,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-federated-authority"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "impl-trait-for-tuples",
+ "log",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-governed-map"
 version = "1.7.1"
 source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.7.1#c0a6cda9c80c4674246db3e738c98f5327d374fb"
@@ -8700,6 +8697,7 @@ dependencies = [
  "sp-std",
  "sp-tracing",
  "tempfile",
+ "test-log",
 ]
 
 [[package]]
@@ -8796,6 +8794,7 @@ dependencies = [
  "parity-scale-codec",
  "rand 0.8.5",
  "scale-info",
+ "serde",
  "sidechain-domain",
  "sp-core",
  "sp-io",
@@ -9052,33 +9051,6 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-sdk-frame",
  "scale-info",
-]
-
-[[package]]
-name = "pallet-upgrade"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex",
- "itertools 0.14.0",
- "midnight-primitives-upgrade",
- "pallet-partner-chains-session",
- "pallet-preimage",
- "pallet-scheduler",
- "parity-scale-codec",
- "scale-info",
- "sp-arithmetic",
- "sp-consensus-aura",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-staking",
- "sp-std",
- "sp-storage",
- "sp-version",
 ]
 
 [[package]]
@@ -10364,7 +10336,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "rand_xorshift 0.4.0",
- "regex-syntax 0.8.5",
+ "regex-syntax",
  "unarray",
 ]
 
@@ -10880,17 +10852,8 @@ checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.9",
- "regex-syntax 0.8.5",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
-dependencies = [
- "regex-syntax 0.6.29",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -10901,20 +10864,14 @@ checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.8.5",
+ "regex-syntax",
 ]
 
 [[package]]
 name = "regex-lite"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53a49587ad06b26609c52e423de037e7f57f20d53535d66e08c695f347df952a"
-
-[[package]]
-name = "regex-syntax"
-version = "0.6.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
+checksum = "943f41321c63ef1c92fd763bfe054d2668f7f225a5c29f0105903dc2fc04ba30"
 
 [[package]]
 name = "regex-syntax"
@@ -11237,9 +11194,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.30"
+version = "0.23.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "069a8df149a16b1a12dcc31497c3396a173844be3cac4bd40c9e7671fef96671"
+checksum = "c0ebcbd2f03de0fc1122ad9bb24b127a5a6cd51d72604a3f3c50ac459762b6cc"
 dependencies = [
  "log",
  "once_cell",
@@ -13444,9 +13401,9 @@ dependencies = [
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "slice-group-by"
@@ -15739,9 +15696,9 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
-version = "3.21.0"
+version = "3.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e"
+checksum = "84fa4d11fadde498443cca10fd3ac23c951f0dc59e080e9f4b93d4df4e4eea53"
 dependencies = [
  "fastrand",
  "getrandom 0.3.3",
@@ -16343,15 +16300,15 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.3.19"
+version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8189decb5ac0fa7bc8b96b7cb9b2701d60d48805aca84a238004d665fcc4008"
+checksum = "2054a14f5307d601f88daf0553e1cbf472acc4f2c51afab632431cdcd72124d5"
 dependencies = [
  "matchers",
  "nu-ansi-term",
  "once_cell",
  "parking_lot 0.12.4",
- "regex",
+ "regex-automata",
  "sharded-slab",
  "smallvec",
  "thread_local",
@@ -16671,7 +16628,10 @@ dependencies = [
  "bip39",
  "clap",
  "env_logger 0.11.8",
+ "hex",
  "log",
+ "parity-scale-codec",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506)",
  "subxt 0.44.0",
  "subxt-signer 0.44.0",
  "thiserror 1.0.69",
@@ -18288,7 +18248,7 @@ dependencies = [
 [[package]]
 name = "zkir"
 version = "2.0.0-alpha.4"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.2#47d3e2e73544a645bcda83d2e441d4e53947012e"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3#49f184adb870ff0231532e9bb2cf6e807d526e53"
 dependencies = [
  "anyhow",
  "const-hex",

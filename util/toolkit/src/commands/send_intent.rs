@@ -84,9 +84,10 @@ mod test {
 			run_command(cli.command).await.expect("should work");
 		}
 
-		let intent_files: Vec<String> = fs::read_dir(&out_dir)
+		let intent_file: String = fs::read_dir(&out_dir)
 			.expect("directory not found")
 			.map(|p| p.unwrap().path().to_string_lossy().to_string())
+			.take(1)
 			.collect();
 
 		let source = Source {
@@ -109,12 +110,46 @@ mod test {
 		let contract_args = CustomContractArgs {
 			info,
 			compiled_contract_dir: compiled_contract_dir.to_string(),
-			intent_files,
+			intent_file,
+			zswap_state_file: None,
+			shielded_destinations: vec![],
 		};
 
 		let args = SendIntentArgs { source, destination, proof_server: None, contract_args };
 
 		execute(args).await.expect("should work during sending");
 		assert!(fs::exists(output_file).expect("should_exist"));
+	}
+
+	#[tokio::test]
+	#[ignore = "due to ledger bug PM-19672, this doesn't work yet"]
+	async fn test_mint_tx() {
+		let out_dir = tempfile::tempdir().unwrap();
+
+		let toolkit_js_path = "../toolkit-js".to_string();
+		let compiled_contract_dir = format!("{toolkit_js_path}/mint/out");
+		let output_tx = out_dir.path().join("mint_tx.mn").to_string_lossy().to_string();
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"send-intent",
+			"--src-files",
+			"../../res/genesis/genesis_block_undeployed.mn",
+			"./test-data/contract/mint/deploy_tx.mn",
+			"--intent-file",
+			"./test-data/contract/mint/mint.bin",
+			"--zswap-state-file",
+			"./test-data/contract/mint/mint_zswap.json",
+			"--compiled-contract-dir",
+			&compiled_contract_dir,
+			"--to-bytes",
+			"--dest-file",
+			&output_tx,
+		];
+
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		assert!(fs::exists(&output_tx).unwrap());
 	}
 }

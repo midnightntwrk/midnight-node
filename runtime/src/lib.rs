@@ -21,8 +21,6 @@
 #[macro_use]
 extern crate frame_benchmarking;
 
-use crate::authorship::current_block_author_aura_index;
-
 extern crate alloc;
 use alloc::{collections::BTreeMap, string::String};
 use authority_selection_inherents::{
@@ -41,8 +39,9 @@ pub use frame_support::{
 	pallet_prelude::DispatchResult,
 	parameter_types, storage,
 	traits::{
-		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EqualPrivilegeOnly,
-		InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing, Randomness, StorageInfo,
+		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EitherOfDiverse,
+		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing,
+		Randomness, StorageInfo,
 	},
 	weights::{
 		IdentityFee, Weight,
@@ -62,7 +61,6 @@ pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management::{self, Config};
 pub use pallet_timestamp::Call as TimestampCall;
-pub use pallet_upgrade::pallet::Call as RuntimeUpgradeCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
@@ -99,7 +97,6 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use sp_std::prelude::*;
-use sp_storage::well_known_keys;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -118,7 +115,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 1200;
 
 pub mod authorship;
-mod check_call_filter;
+pub mod check_call_filter;
 mod constants;
 mod currency;
 mod governance;
@@ -127,6 +124,9 @@ mod session_manager;
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
 use governance::MembershipHandler;
+use pallet_federated_authority::{
+	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -254,7 +254,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_016_002,
+	spec_version: 000_017_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -273,7 +273,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 100_006_002,
+	spec_version: 100_006_004,
 
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
@@ -433,6 +433,8 @@ impl pallet_mmr::Config for Runtime {
 	type OnNewRoot = pallet_beefy_mmr::DepositBeefyDigest<Runtime>;
 	type BlockHashProvider = pallet_mmr::DefaultBlockHashProvider<Runtime>;
 	type WeightInfo = ();
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 /// MMR helper types.
@@ -825,45 +827,6 @@ impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
 	}
 }
 
-parameter_types! {
-	pub const MaxPreimageSize: u32 = pallet_upgrade::MAX_PREIMAGE_SIZE;
-	// Max runtimes which can be voted on at one time
-	pub const MaxVoteTargets: u8 = 5;
-	pub const PalletUpgradeId: PalletId = PalletId(*b"hardfork");
-	// TODO: Continue to adjust this value
-	pub const SessionsPerVotingPeriod: u32 = 26;
-	// Wait 5 blocks following a any check which certifies an upgrade, before performing the upgrade
-	pub const UpgradeDelay: BlockNumber = 5;
-	pub const UpgradeVoteThreshold: sp_arithmetic::Percent = sp_arithmetic::Percent::from_percent(50);
-}
-
-impl pallet_upgrade::Config for Runtime {
-	type AuthorityId = AuraId;
-	type SessionsPerVotingPeriod = SessionsPerVotingPeriod;
-	type MaxValidators = MaxAuthorities;
-	type MaxVoteTargets = MaxVoteTargets;
-	type PalletId = PalletUpgradeId;
-	type PalletsOrigin = OriginCaller;
-	type Scheduler = Scheduler;
-	type UpgradeDelay = UpgradeDelay;
-	type UpgradeVoteThreshold = UpgradeVoteThreshold;
-	type ValidatorSet = ValidatorSet;
-	type WeightInfo = ();
-
-	fn spec_version() -> RuntimeVersion {
-		System::runtime_version()
-	}
-
-	fn current_authority() -> Option<AuraId> {
-		let index = current_block_author_aura_index::<Runtime>()
-			.expect("Each aura block should have an author encoded in the digest");
-		pallet_aura::Authorities::<Runtime>::get().get(index).cloned()
-	}
-
-	type Preimage = Preimage;
-	type SetCode = ();
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
 	type WeightInfo = pallet_version::VersionWeight<Runtime>;
@@ -898,13 +861,14 @@ parameter_types! {
 }
 
 /// Council
-impl pallet_collective::Config<pallet_collective::Instance1> for Runtime {
+type CouncilCollective = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -927,14 +891,15 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
-/// Technical Authority
-impl pallet_collective::Config<pallet_collective::Instance2> for Runtime {
+/// Technical Committee
+type TechnicalCommitteeCollective = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
-	type MaxMembers = ConstU32<MAX_PROPOSALS>; // Should be same as `pallet_membership`
+	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
 	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
@@ -951,10 +916,43 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
 	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type MembershipInitialized = MembershipHandler<Runtime, TechnicalAuthority>;
-	type MembershipChanged = MembershipHandler<Runtime, TechnicalAuthority>;
+	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
+	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
+}
+
+pub const MAX_NUM_BODIES: u32 = 2; // TechnicalCommittee + Council
+pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
+
+type CouncilApproval = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalCommitteeApproval = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+>;
+
+type CouncilRevoke = AuthorityBody<
+	Council,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+>;
+type TechnicalCommitteeRevoke = AuthorityBody<
+	TechnicalCommittee,
+	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+>;
+
+impl pallet_federated_authority::Config for Runtime {
+	type MotionCall = RuntimeCall;
+	type MaxAuthorityBodies = ConstU32<MAX_NUM_BODIES>;
+	type MotionDuration = ConstU32<MOTION_DURATION>;
+	type MotionApprovalProportion = FederatedAuthorityEnsureProportionAtLeast<1, 1>;
+	type MotionApprovalOrigin =
+		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalCommitteeApproval)>;
+	type MotionRevokeOrigin =
+		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
+	type WeightInfo = ();
 }
 
 pub struct MidnightTokenTransferHandler;
@@ -974,12 +972,7 @@ impl pallet_native_token_management::Config for Runtime {
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 }
 
-parameter_types! {
-	pub const MaxRegistrationsPerCardanoAddress: u8 = 100;
-}
-
 impl pallet_native_token_observation::Config for Runtime {
-	type MaxRegistrationsPerCardanoAddress = MaxRegistrationsPerCardanoAddress;
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
@@ -1019,7 +1012,7 @@ construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management = 8,
 		//#[cfg(feature = "experimental")]
 		//BlockRewards: pallet_block_rewards = 9,
-		RuntimeUpgrade: pallet_upgrade = 10,
+
 		NodeVersion: pallet_version = 11,
 
 		NativeTokenManagement: pallet_native_token_management = 12,
@@ -1053,9 +1046,10 @@ construct_runtime!(
         Council: pallet_collective::<Instance1> = 40,
         CouncilMembership: pallet_membership::<Instance1> = 41,
 
-        TechnicalAuthority: pallet_collective::<Instance2> = 43,
-        TechnicalAuthorityMembership: pallet_membership::<Instance2> = 42,
+        TechnicalCommittee: pallet_collective::<Instance2> = 42,
+        TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
 
+        FederatedAuthority: pallet_federated_authority = 44,
 	}
 );
 
@@ -1101,8 +1095,8 @@ mod benches {
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
-		[pallet_upgrade, RuntimeUpgrade]
 		[pallet_midnight, Midnight]
+		[pallet_federated_authority, FederatedAuthority]
 	);
 }
 
@@ -1171,16 +1165,6 @@ impl_runtime_apis! {
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
-		}
-	}
-
-	impl midnight_primitives_upgrade_api::UpgradeApi<Block> for Runtime {
-		fn get_current_version_info() -> (u32, Hash) {
-			use sp_core::Hasher;
-			let spec_version = System::runtime_version().spec_version;
-			let runtime_bytes = storage::unhashed::get_raw(well_known_keys::CODE).expect("Runtime code exists");
-			let runtime_hash = BlakeTwo256::hash(&runtime_bytes);
-			(spec_version, runtime_hash)
 		}
 	}
 
@@ -1405,7 +1389,7 @@ impl_runtime_apis! {
 			Vec<frame_benchmarking::BenchmarkList>,
 			Vec<frame_support::traits::StorageInfo>,
 		) {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkList};
+			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
@@ -1419,10 +1403,11 @@ impl_runtime_apis! {
 			(list, storage_info)
 		}
 
+		#[allow(non_local_definitions)]
 		fn dispatch_benchmark(
 			config: frame_benchmarking::BenchmarkConfig
 		) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
-			use frame_benchmarking::{baseline, Benchmarking, BenchmarkBatch};
+			use frame_benchmarking::{baseline, BenchmarkBatch};
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;

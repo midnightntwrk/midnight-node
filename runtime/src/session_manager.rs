@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::Runtime;
 use core::marker::PhantomData;
 use frame_system::pallet_prelude::BlockNumberFor;
 use log::info;
@@ -70,7 +69,7 @@ impl<T: pallet_session_validator_management::Config + pallet_sidechain::Config>
 	}
 
 	fn end_session(end_index: SessionIndex) {
-		pallet_upgrade::Pallet::<Runtime>::on_session_end(end_index);
+		info!("End session {end_index}");
 	}
 
 	// Session is expected to be at least 1 block behind sidechain epoch.

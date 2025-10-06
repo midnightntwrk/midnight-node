@@ -17,14 +17,12 @@ use std::{convert::Infallible, sync::Arc};
 use crate::{
 	builder::{
 		BuildTxs, ClaimMintInfo, DefaultDB, DeserializedTransactionsWithContext, FromContext,
-		HashOutput, LedgerContext, MintCoinInfo, NIGHT, Nonce, ProofProvider, ProofType,
-		SignatureType, TransactionWithContext, Wallet,
+		LedgerContext, ProofProvider, ProofType, RewardsInfo, SignatureType,
+		TransactionWithContext, Wallet,
 	},
 	serde_def::SourceTransactions,
 	tx_generator::builder::ClaimRewardsArgs,
 };
-
-const NONCE: Nonce = Nonce(HashOutput([0u8; 32]));
 
 pub struct ClaimRewardsBuilder {
 	funding_seed: String,
@@ -56,7 +54,7 @@ impl BuildTxs for ClaimRewardsBuilder {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context);
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
 
 		let context_arc = Arc::new(context);
@@ -70,14 +68,9 @@ impl BuildTxs for ClaimRewardsBuilder {
 		);
 
 		// - Mint
-		let coin_info = MintCoinInfo {
-			origin: funding_seed,
-			token_type: NIGHT,
-			value: self.amount,
-			nonce: NONCE,
-		};
+		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };
 
-		tx_info.set_coin(coin_info);
+		tx_info.set_rewards(rewards);
 
 		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await;

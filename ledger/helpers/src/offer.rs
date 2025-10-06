@@ -26,9 +26,9 @@ pub type TokensBalance = HashMap<ShieldedTokenType, u128>;
 
 #[derive(Default)]
 pub struct OfferInfo<D: DB + Clone> {
-	pub inputs: Vec<Box<dyn BuildInput<D> + Send>>,
-	pub outputs: Vec<Box<dyn BuildOutput<D> + Send>>,
-	pub transients: Vec<Box<dyn BuildTransient<D> + Send>>,
+	pub inputs: Vec<Box<dyn BuildInput<D>>>,
+	pub outputs: Vec<Box<dyn BuildOutput<D>>>,
+	pub transients: Vec<Box<dyn BuildTransient<D>>>,
 }
 
 impl<D: DB + Clone> OfferInfo<D> {

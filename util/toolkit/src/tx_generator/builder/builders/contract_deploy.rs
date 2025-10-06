@@ -19,7 +19,7 @@ use crate::{
 		TransactionWithContext, Wallet, WalletSeed,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::ContractDeployArgs,
+	tx_generator::builder::{ContractDeployArgs, CreateIntentInfo},
 };
 use async_trait::async_trait;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
@@ -38,7 +38,7 @@ impl ContractDeployBuilder {
 #[async_trait]
 impl IntentToFile for ContractDeployBuilder {}
 
-impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractDeployBuilder {
+impl BuildTxsExt for ContractDeployBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -46,13 +46,15 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractDeployBuild
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
 	}
+}
 
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send> {
+impl CreateIntentInfo for ContractDeployBuilder {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for contract deploy");
-		let deploy_contract: Box<dyn BuildContractAction<DefaultDB> + Send> =
+		let deploy_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(ContractDeployInfo { type_: MerkleTreeContract::new(), _marker: PhantomData });
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send>> = vec![deploy_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![deploy_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -82,15 +84,15 @@ impl BuildTxs for ContractDeployBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };
 
-		tx_info.set_guaranteed_coins(offer_info);
+		tx_info.set_guaranteed_offer(offer_info);
 
 		tx_info.set_wallet_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(true);
