@@ -1,4 +1,4 @@
-use std::{fmt::Debug, io::Read};
+use std::fmt::Debug;
 
 use crate::{beefy::BeefySignedCommitment, error::Error, types::RootHash};
 

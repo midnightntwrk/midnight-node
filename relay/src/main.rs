@@ -1,8 +1,10 @@
+mod authorities;
 mod beefy;
 mod cardano_encoding;
 mod error;
 mod helpers;
-mod keccak;
+mod merkle;
+mod mmr;
 mod relayer;
 mod types;
 

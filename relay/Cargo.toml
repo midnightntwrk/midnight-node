@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-binary-merkle-tree = { workspace = true, default-features = true}
 mmr-rpc = { workspace = true, default-features = true }
 parity-scale-codec = { workspace = true, default-features = true, features = ["derive"]}
 sp-core = { workspace = true, default-features = true }
@@ -17,6 +16,7 @@ pallas = "0.33.0"
 
 clap = { workspace = true, default-features = true, features = ["derive", "env"] }
 rand = { workspace = true, default-features = true }
+rs_merkle = { version = "1.5.0" }
 hex = { workspace = true, default-features = true }
 serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }

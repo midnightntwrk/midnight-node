@@ -61,4 +61,7 @@ pub enum Error {
 
 	#[error("Wrong proof for {validator} at index({leaf_index}) in root({root})")]
 	MismatchAuthority { root: RootHash, leaf_index: u32, validator: ecdsa_crypto::Public },
+
+	#[error("Failed to create proof of authorities list")]
+	InvalidAuthoritiesProofCreation,
 }
