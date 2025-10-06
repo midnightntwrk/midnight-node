@@ -122,8 +122,11 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
+    LET NODE_VERSION = "$(cat node_version)"
     COPY +get-metadata/metadata.scale /metadata.scale
-    SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata.scale
+    SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata_${NODE_VERSION}.scale
 
 # rebuild-sqlx rebuilds the subxt offline data for compile-time query checking
 rebuild-sqlx:
