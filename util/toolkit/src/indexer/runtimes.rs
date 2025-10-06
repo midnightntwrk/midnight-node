@@ -14,13 +14,10 @@
 use crate::indexer::IndexerError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProtocolVersion {
+pub enum RuntimeVersion {
 	V0_17_0,
 }
-impl ProtocolVersion {
-	pub const GENESIS: Self = Self::V0_17_0;
-}
-impl TryFrom<u32> for ProtocolVersion {
+impl TryFrom<u32> for RuntimeVersion {
 	type Error = IndexerError;
 	fn try_from(value: u32) -> Result<Self, Self::Error> {
 		match value {
@@ -30,7 +27,7 @@ impl TryFrom<u32> for ProtocolVersion {
 	}
 }
 
-impl<'a> TryFrom<&'a [u8]> for ProtocolVersion {
+impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 	type Error = IndexerError;
 
 	fn try_from(mut value: &'a [u8]) -> Result<Self, Self::Error> {
@@ -42,7 +39,7 @@ impl<'a> TryFrom<&'a [u8]> for ProtocolVersion {
 	}
 }
 
-pub trait MidnightProtocol {
+pub trait MidnightMetadata {
 	type Call: subxt::ext::scale_decode::DecodeAsType;
 	type SystemTransactionAppliedEvent: subxt::ext::subxt_core::events::StaticEvent;
 
@@ -55,8 +52,8 @@ pub trait MidnightProtocol {
 
 use midnight_node_metadata::midnight_metadata_0_17_0 as mn_meta_0_17_0;
 
-pub struct MidnightProtocol0_17_0;
-impl MidnightProtocol for MidnightProtocol0_17_0 {
+pub struct MidnightMetadata0_17_0;
+impl MidnightMetadata for MidnightMetadata0_17_0 {
 	type Call = mn_meta_0_17_0::Call;
 	type SystemTransactionAppliedEvent =
 		mn_meta_0_17_0::midnight_system::events::SystemTransactionApplied;

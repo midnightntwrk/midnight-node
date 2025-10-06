@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod protocols;
+mod runtimes;
 
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
@@ -39,7 +39,7 @@ use tokio::{
 
 use crate::{
 	hash_to_str,
-	indexer::protocols::{MidnightProtocol, MidnightProtocol0_17_0, ProtocolVersion},
+	indexer::runtimes::{MidnightMetadata, MidnightMetadata0_17_0, RuntimeVersion},
 	serde_def::{self, SourceBlockTransactions},
 };
 
@@ -275,20 +275,20 @@ where
 			.find_map(|item| {
 				const VERSION_ID: ConsensusEngineId = *b"MNSV";
 				if let DigestItem::Consensus(VERSION_ID, data) = item {
-					Some(ProtocolVersion::try_from(data.as_slice()))
+					Some(RuntimeVersion::try_from(data.as_slice()))
 				} else {
 					None
 				}
 			})
-			.unwrap_or(Ok(ProtocolVersion::GENESIS))?;
+			.expect("no runtime version found")?;
 		match version_number {
-			ProtocolVersion::V0_17_0 => {
-				self.process_block_with_protocol::<MidnightProtocol0_17_0>(block).await
+			RuntimeVersion::V0_17_0 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_0>(block).await
 			},
 		}
 	}
 
-	async fn process_block_with_protocol<M: MidnightProtocol>(
+	async fn process_block_with_protocol<M: MidnightMetadata>(
 		self: Arc<Self>,
 		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
