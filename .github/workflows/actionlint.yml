@@ -24,4 +24,3 @@ jobs:
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
-          flags: '-ignore "is not defined.*object type" -ignore "property.*is not defined" -ignore "but.*also required" -ignore "SC2129" -ignore "SC2155" -ignore "SC2091" -ignore "SC2046" -ignore "SC2034" -ignore "SC1089" -ignore "receiver of object dereference"'
