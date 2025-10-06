@@ -7,6 +7,9 @@ This changelog is based on [Keep A Changelog](https://keepachangelog.com/en/1.1.
 ## Changed
 
 * Updated polkadot-sdk dependency to polkadot-stable2603.
+* Updated partner-chains-smart-contracts (raw-scripts) dependency to v8.2.0. Not breaking.
+* `SessionManager` and `ShouldEndSession` implementations of `pallet-session-validator-management` rotate one additional
+session in order to make `pallet_session` use authorities with less delay.
 
 ## Removed
 
