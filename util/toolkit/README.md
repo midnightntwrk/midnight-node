@@ -31,7 +31,9 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 ```
 
 - **`Source`**: Determines where the `NetworkId` is selected and queries existing transactions to be applied to the local `LedgerState` before generating new transactions. Sources can be either a JSON file or a chain, selected via the following flags:
-  - `--src-files <file_path>`
+  - `--src-file <file_path>`
+    - Supports multiple files:
+      - `--src-file /res/genesis/genesis_block_undeployed.mn --src-file /res/test-data/contract/counter/deploy_tx.mn`
   - `--src-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
 
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
@@ -40,7 +42,6 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
     - Supports multiple urls:
       - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
       - `--dest-url=ws://127.0.0.1:9944 --dest-url=ws://127.0.0.1:9933 --dest-url="ws://127.0.0.1:9922"`
-      - `--dest-url="ws://127.0.0.1:9944, ws://127.0.0.1:9933, ws://127.0.0.1:9922"`
 
 - **`Prover`**: Chooses which proof server to use — either local (`LocalProofServer`) or remote (`RemoteProveServer`).
 
