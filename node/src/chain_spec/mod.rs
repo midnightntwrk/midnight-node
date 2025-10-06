@@ -32,7 +32,6 @@ use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, Timestamp
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
-use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use sp_session_validator_management::MainChainScripts;
@@ -94,7 +93,6 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 		session: SessionKeys {
 			aura: get_from_seed::<AuraId>(s),
 			grandpa: get_from_seed::<GrandpaId>(s),
-			beefy: get_from_seed::<BeefyId>(s)
 		},
 		cross_chain: get_from_seed::<CrossChainPublic>(s),
 	}
@@ -214,7 +212,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			session: SessionKeys {
 				aura: keys.aura_pubkey.into(),
 				grandpa: keys.grandpa_pubkey.into(),
-				beefy: keys.beefy_pubkey.into()
 			},
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
@@ -223,7 +220,14 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 	let config = RuntimeGenesisConfig {
 		system: Default::default(),
 		aura: Default::default(),
-		beefy: Default::default(),
+		beefy: BeefyConfig {
+			authorities: genesis
+				.initial_authorities()
+				.iter()
+				.map(|v| v.beefy_pubkey.into())
+				.collect(),
+			genesis_block: Some(One::one()),
+		},
 		governed_map: pallet_governed_map::GenesisConfig {
 			main_chain_scripts: genesis.main_chain_scripts().into(),
 			_marker: std::marker::PhantomData,

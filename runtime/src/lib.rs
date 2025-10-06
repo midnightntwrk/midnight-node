@@ -151,9 +151,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ecdsa, ed25519, sr25519};
+	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, BEEFY, GRANDPA};
+	use sp_runtime::key_types::{AURA, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -205,7 +205,8 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
-			pub beefy: Beefy,
+			// todo: add the beefy
+			// pub beefy: Beefy,
 		}
 	}
 
@@ -215,9 +216,7 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			let beefy = keys.find(BEEFY)?;
-			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into(), beefy: beefy.into() })
+			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
 		}
 	}
 
