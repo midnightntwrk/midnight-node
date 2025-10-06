@@ -23,3 +23,5 @@ jobs:
         uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc # v2
         with:
           matcher: true # Enable GitHub annotations for errors
+          fail-on-error: true # Fail CI when errors are found
+          flags: '-ignore "is not defined.*object type" -ignore "property.*is not defined" -ignore "but.*also required" -ignore "SC2129" -ignore "SC2155" -ignore "SC2091" -ignore "SC2046" -ignore "SC2034" -ignore "SC1089" -ignore "receiver of object dereference"'

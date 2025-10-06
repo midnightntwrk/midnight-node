@@ -67,9 +67,9 @@ jobs:
       - name: Run build
         id: export
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
@@ -82,7 +82,7 @@ jobs:
 
           # Pass IMAGE_TAG to next step (must match definition in Earthfile):
           export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
-          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create or Update Draft Release
         env:
@@ -158,9 +158,9 @@ jobs:
       - name: Build indexer images
         id: build_indexer
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
@@ -214,17 +214,17 @@ jobs:
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           INDEXER_IMAGE_TAG="node-${MAIN_COMMIT}"
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
-          echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           echo "✅ Images retagged and pushed successfully!"
   publish-arm64:
@@ -260,9 +260,9 @@ jobs:
 
       - name: Run Node and toolkit builds
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Set NETRC env var for Earthly to use for private repos
           echo "machine github.com" >> ./netrc
@@ -358,11 +358,11 @@ jobs:
             docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
             docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
 
-            docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-            docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-            docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+            docker tag "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}"
+            docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}"
+            docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}"
 
-            docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-            docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-            docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+            docker push "ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}"
+            docker push "ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}"
+            docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}"
           fi

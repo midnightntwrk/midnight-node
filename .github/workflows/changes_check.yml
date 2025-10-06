@@ -45,7 +45,7 @@ jobs:
         run: |
           FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
           echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
-          if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" $FILENAME; fi
+          if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" "$FILENAME"; fi
 
       - name: Restore lychee cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 #v4.2.1

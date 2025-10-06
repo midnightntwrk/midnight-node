@@ -48,9 +48,9 @@ jobs:
       - name: Run Earthly build for ${{ matrix.platform }}
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Set NETRC env var for Earthly to use for private repos
           # Set NETRC env var for Earthly to use for private repos

@@ -47,7 +47,7 @@ jobs:
           # Create tar.gz
           tar -czf "$RELEASE_NAME" midnight-node res
 
-          echo "RELEASE_FILE=$RELEASE_NAME" >> $GITHUB_ENV
+          echo "RELEASE_FILE=$RELEASE_NAME" >> "$GITHUB_ENV"
 
       - name: Upload release asset
         env:

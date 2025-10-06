@@ -84,8 +84,8 @@ jobs:
         run: |
           RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
           WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
-          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
-          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+          echo "RPC_URL=$RPC_URL" >> "$GITHUB_ENV"
+          echo "WS_URL=$WS_URL" >> "$GITHUB_ENV"
 
       - name: Determine the latest successful run ID with appropriate artifact
         continue-on-error: true
@@ -94,7 +94,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LATEST_RUN_ID=$(./.github/scripts/find_run_id.sh ${{ github.repository }} "+node-e2e-test-remote (${{ env.TEST_ENV }})" ".sync_cache-${{ env.TEST_ENV }}")
-          echo "LATEST_RUN_ID=$LATEST_RUN_ID" >> $GITHUB_ENV
+          echo "LATEST_RUN_ID=$LATEST_RUN_ID" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v4
         continue-on-error: true
@@ -126,7 +126,7 @@ jobs:
           else
             IMAGE_TAG=$(./.github/scripts/get_node_version.sh "${{ env.RPC_URL }}")
           fi
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
 
       - name: Run txs generation for testnet-02
         if: ${{ env.TEST_ENV == 'testnet-02' }}
@@ -194,8 +194,8 @@ jobs:
         run: |
           RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
           WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
-          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
-          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+          echo "RPC_URL=$RPC_URL" >> "$GITHUB_ENV"
+          echo "WS_URL=$WS_URL" >> "$GITHUB_ENV"
 
       - name: Download sync cache
         continue-on-error: true
@@ -219,16 +219,16 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           echo "machine github.com" >> ./netrc
           echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
           echo "  password x-oauth-basic" >> ./netrc
           export NETRC="$(pwd)/netrc"
 
-          . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV=$TEST_ENV --build-arg WS_URL=$WS_URL +node-e2e-test-remote
+          . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV="$TEST_ENV" --build-arg WS_URL="$WS_URL" +node-e2e-test-remote
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

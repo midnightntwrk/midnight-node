@@ -15,12 +15,12 @@ jobs:
       - name: Check if node image tag was incremented
         run: |
           export NODE_CRATE_VERSION=$(cat ./node/Cargo.toml | grep version | head -1 | awk -F'"' '{print $2}')
-          echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> $GITHUB_ENV
+          echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> "$GITHUB_ENV"
           export GHCR_TOKEN=$(echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | base64)
           export TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
 
           # Check list of tags to see if any existing tags have the node crate version
-          if $(echo $TAGS_RESPONSE | jq --arg node_crate_version "$NODE_CRATE_VERSION"  '.tags | contains([$node_crate_version])'); then
+          if $(echo "$TAGS_RESPONSE" | jq --arg node_crate_version "$NODE_CRATE_VERSION"  '.tags | contains([$node_crate_version])'); then
               echo "VERSION_EXISTS=true"
           else
               echo "VERSION_EXISTS=false"
