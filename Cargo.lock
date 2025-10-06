@@ -6852,7 +6852,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "0.16.4"
+version = "0.17.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -7014,7 +7014,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "0.16.4"
+version = "0.17.0"
 dependencies = [
  "subxt 0.44.0",
 ]
@@ -7126,6 +7126,7 @@ dependencies = [
  "console",
  "futures",
  "hex",
+ "hex-literal 0.4.1",
  "indicatif",
  "itertools 0.14.0",
  "log",
@@ -8696,6 +8697,7 @@ dependencies = [
  "sp-std",
  "sp-tracing",
  "tempfile",
+ "test-log",
 ]
 
 [[package]]
@@ -15694,9 +15696,9 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
-version = "3.21.0"
+version = "3.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e"
+checksum = "84fa4d11fadde498443cca10fd3ac23c951f0dc59e080e9f4b93d4df4e4eea53"
 dependencies = [
  "fastrand",
  "getrandom 0.3.3",

@@ -258,6 +258,8 @@ where
 		self: Arc<Self>,
 		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let block_hash = block.hash();
+		let state_root = self.node_client.get_state_root_at(Some(block_hash)).await?;
 		let block_header = block.header();
 		let parent_block_hash = block_header.parent_hash;
 
@@ -337,7 +339,7 @@ where
                 }
 			})
 			.collect();
-		Ok(SourceBlockTransactions { transactions, context })
+		Ok(SourceBlockTransactions { transactions, context, state_root })
 	}
 
 	async fn fetch_midnight_block(

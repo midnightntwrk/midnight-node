@@ -19,7 +19,7 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
@@ -76,9 +76,15 @@ pub struct CustomContractArgs {
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
 	pub compiled_contract_dir: String,
-	/// List of intent files to include in the transaction
+	/// Intent file to include in the transaction
 	#[arg(short, long)]
-	pub intent_files: Vec<String>,
+	pub intent_file: String,
+	/// Zswap State file containing coin info
+	#[arg(long)]
+	pub zswap_state_file: Option<String>,
+	/// Shielded Destination addresses - used to find encryption keys
+	#[arg(long = "shielded-destination", value_parser = cli::wallet_address)]
+	pub shielded_destinations: Vec<WalletAddress>,
 }
 
 #[derive(Args, Clone)]
@@ -93,8 +99,8 @@ pub struct ContractCallArgs {
 	#[arg(long, default_value = "store")]
 	pub call_key: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	#[arg(
         short,
         long,
@@ -115,8 +121,8 @@ pub struct ContractMaintenanceArgs {
 	)]
 	pub funding_seed: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	/// Threshold for Maintenance ReplaceAthority
 	#[arg(long, short, default_value = "1")]
 	pub threshold: u32,
@@ -308,20 +314,10 @@ pub trait BuildTxs {
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
-
-	fn contract_address(&self, file: &String) -> ContractAddress {
-		let path = Path::new(file);
-		let hex_str = fs::read_to_string(path)
-			.expect("Error reading Contract Address file")
-			.trim()
-			.to_string();
-		let hex = hex::decode(hex_str).expect("Error hex decoding ContractAddress");
-		deserialize(&hex[..]).expect("Error deserializing ContractAddress")
-	}
 }
 
 /// An extension to help build transactions
-pub trait BuildTxsExt<R> {
+pub trait BuildTxsExt {
 	fn funding_seed(&self) -> WalletSeed;
 
 	fn rng_seed(&self) -> Option<[u8; 32]>;
@@ -343,7 +339,7 @@ pub trait BuildTxsExt<R> {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context);
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
 
 		let context_arc = Arc::new(context);
@@ -358,13 +354,16 @@ pub trait BuildTxsExt<R> {
 
 		(context_arc, tx_info)
 	}
+}
 
-	fn create_intent_info(&self) -> R;
+/// Create Intent Info
+pub trait CreateIntentInfo {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
 }
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file
 #[async_trait]
-pub trait IntentToFile: BuildTxsExt<Box<dyn BuildIntent<DefaultDB>>> {
+pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,

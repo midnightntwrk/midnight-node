@@ -39,7 +39,12 @@ use midnight_node_toolkit::{
 	tx_generator::{TxGenerator, source::Source},
 };
 
-use crate::commands::contract_state::{self, ContractStateArgs};
+use crate::commands::{
+	contract_address::ContractAddressValue,
+	contract_state::{self, ContractStateArgs},
+	show_address::ShowAddress,
+	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
+};
 
 mod commands;
 mod utils;
@@ -82,6 +87,8 @@ enum Commands {
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
 	ShowViewingKey(ShowViewingKeyArgs),
+	/// Show the token type for a contract address + domain sep pair
+	ShowTokenType(ShowTokenTypeArgs),
 	/// Show the deserialized value of a serialized transaction
 	ShowTransaction(ShowTransactionArgs),
 	/// Show and save in a file the Contract Address included in a DeployContract tx
@@ -173,10 +180,9 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::GenerateIntent(args) => {
-			generate_intent::execute(args);
+			generate_intent::execute(args).await?;
 			Ok(())
 		},
-
 		Commands::GenerateSampleIntent(args) => {
 			generate_sample_intent::execute(args).await;
 			Ok(())
@@ -206,7 +212,13 @@ pub(crate) async fn run_command(
 		},
 		Commands::ShowAddress(args) => {
 			let address = show_address::execute(args);
-			println!("{}", address.to_bech32());
+			match address {
+				ShowAddress::Addresses(addresses) => {
+					println!("{}", serde_json::to_string_pretty(&addresses)?);
+				},
+				ShowAddress::SingleAddress(address) => println!("{address}"),
+			};
+
 			Ok(())
 		},
 		Commands::ShowSeed(args) => {
@@ -225,7 +237,16 @@ pub(crate) async fn run_command(
 			println!("{transaction_information}");
 			Ok(())
 		},
-		Commands::ContractAddress(args) => contract_address::execute(args),
+		Commands::ContractAddress(args) => {
+			let res = contract_address::execute(args)?;
+			match res {
+				ContractAddressValue::Both(both) => {
+					println!("{}", serde_json::to_string_pretty(&both)?);
+				},
+				ContractAddressValue::Either(address) => println!("{address}"),
+			};
+			Ok(())
+		},
 		Commands::ContractState(args) => contract_state::execute(args).await,
 		Commands::GetTxFromContext(args) => {
 			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
@@ -250,6 +271,17 @@ pub(crate) async fn run_command(
 				node_version, ledger_version, compactc_version
 			);
 			return Ok(());
+		},
+		Commands::ShowTokenType(args) => {
+			let token_type = show_token_type::execute(args);
+			match token_type {
+				ShowTokenType::TokenTypes(token_types) => {
+					println!("{}", serde_json::to_string_pretty(&token_types)?);
+				},
+				ShowTokenType::SingleTokenType(ttype) => println!("{ttype}"),
+			};
+
+			Ok(())
 		},
 	}
 }
