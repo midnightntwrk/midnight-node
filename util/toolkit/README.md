@@ -19,19 +19,7 @@ Compactc: 0.25.103-rc.1-UT-ledger6
 
 ```
 
-## Commands
-
-- [`generate-txs`](#generate-txs) - Generate Transactions
-    - [`batches`](#generate-txs-batches)
-    - [`contract-simple`](#generate-txs-contract-simple)
-    - [`contract-custom`](#generate-txs-contract-custom)
-    - [`claim-rewards`](#generate-txs-claim-rewards)
-    - [`single-tx`](#generate-txs-single-tx)
-    - [`send`](#generate-txs-send)
-    - [`migrate`](#generate-txs-migrate)
-
-
-### `generate-txs`
+### Generate Transactions
 
 The `TxGenerator` is composed of four main components: `Source`, `Destination`, `Prover`, `Builder`.
 
