@@ -26,7 +26,6 @@ echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 echo "🚀 Starting node container..."
 docker run -d --rm \
   --name midnight-node-contracts \
-  -p 9944:9944 \
   -e CFG_PRESET=dev \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
@@ -104,16 +103,14 @@ echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    generate-txs --src-files /out/$deploy_tx_filename -r 1 send
+    generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
 contract_address=$(
     docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address \
-    --src-file /out/$deploy_tx_filename \
-    --network undeployed \
-    --untagged
+    --src-file /out/$deploy_tx_filename
 )
 
 echo "Get contract state"

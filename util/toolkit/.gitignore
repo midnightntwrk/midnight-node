@@ -1,3 +1,6 @@
 *.json
 !test-data/**/*.json
 .sync_cache
+
+# Test data ends up here
+out/
