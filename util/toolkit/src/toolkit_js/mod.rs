@@ -13,11 +13,11 @@ use crate::cli_parsers as cli;
 
 const BUILD_DIST: &str = "dist/bin.js";
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
-	path: String,
+	pub path: String,
 }
 
 fn encode_network_id(net_id: NetworkId) -> &'static str {
@@ -60,7 +60,7 @@ pub enum Command {
 	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
@@ -95,7 +95,7 @@ pub struct CircuitArgs {
 	call_args: Vec<String>,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 pub struct DeployArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]

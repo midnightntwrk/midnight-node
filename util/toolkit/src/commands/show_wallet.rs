@@ -15,6 +15,7 @@ pub struct WalletInfo<D: DB + Clone> {
 pub enum ShowWalletResult<D: DB + Clone> {
 	FromSeed(WalletInfo<D>),
 	FromAddress(Vec<Utxo>),
+	DryRun(()),
 }
 
 #[derive(Args)]
@@ -28,12 +29,24 @@ pub struct ShowWalletArgs {
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
 	address: Option<WalletAddress>,
+	/// Dry-run - don't fetch wallet state, just print out settings
+	#[arg(long)]
+	dry_run: bool,
 }
 
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
-	let src = TxGenerator::<SignatureType, ProofType>::source(args.source).await?;
+	let src = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run).await?;
+
+	if args.dry_run {
+		if let Some(seed) = args.seed {
+			println!("Dry-run: fetching wallet for seed {:?}", seed);
+		} else {
+			println!("Dry-run: fetching wallet for address {:?}", args.address.unwrap());
+		}
+		return Ok(ShowWalletResult::DryRun(()));
+	}
 
 	let source_blocks = src.get_txs().await?;
 	let network_id = source_blocks.network().to_string();
@@ -172,6 +185,7 @@ mod tests {
 			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
 			seed: Some(seed),
 			address: None,
+			dry_run: false,
 		};
 
 		super::execute(args).await
