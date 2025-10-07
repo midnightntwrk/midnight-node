@@ -195,7 +195,7 @@ pub struct SingleTxArgs {
     )]
 	pub rng_seed: Option<[u8; 32]>,
 }
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
 	/// Seed for source wallet
 	#[arg(long)]
