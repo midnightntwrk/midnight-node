@@ -19,6 +19,7 @@ use ledger_storage::arena::ArenaKey;
 use ledger_storage::storable::Loader;
 use ledger_storage::{self as storage, Storable};
 use midnight_serialize as serialize;
+use mn_ledger::structure::TransactionHash;
 use mn_ledger::{events::Event, structure::StandardTransaction, verify::WellFormedStrictness};
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
@@ -414,6 +415,13 @@ where
 		match &self {
 			Self::Midnight(tx) => crate::serialize(tx),
 			Self::System(tx) => crate::serialize(tx),
+		}
+	}
+
+	pub fn transaction_hash(&self) -> TransactionHash {
+		match self {
+			SerdeTransaction::Midnight(transaction) => transaction.transaction_hash(),
+			SerdeTransaction::System(system_transaction) => system_transaction.transaction_hash(),
 		}
 	}
 }
