@@ -41,6 +41,16 @@ services:
     ports:
       - "32000:32000"
 
+  cardano-node-socat:
+    image: alpine/socat
+    command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
+    depends_on:
+      - cardano-node-1
+    volumes:
+      - cardano-node-1-data:/data
+    ports:
+      - "30000:30000"
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
