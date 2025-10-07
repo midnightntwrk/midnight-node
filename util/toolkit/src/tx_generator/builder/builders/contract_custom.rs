@@ -9,9 +9,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	Array, ClaimedUnshieldedSpendsKey, ContractAction, ProofPreimage, ProofPreimageMarker,
-	PublicAddress, ShieldedWallet, StdRng, TokenType, UnshieldedOffer, UtxoOutput, WalletAddress,
-	default_storage,
+	Array, ClaimedUnshieldedSpendsKey, ContractAction, ProofPreimageMarker, PublicAddress,
+	ShieldedWallet, StdRng, TokenType, UnshieldedOffer, UtxoOutput, WalletAddress, default_storage,
 };
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};

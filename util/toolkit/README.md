@@ -281,6 +281,17 @@ $ midnight-node-toolkit send-intent --dry-run
 >   --compiled-contract-dir contract/counter/out
 ```
 
+- Generate and send a tx using multiple contract calls
+```console
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "out/mint_intent.bin" 
+>   --intent-file "out/recieveAndSend_intent.bin" 
+>   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --to-bytes 
+>   --dest-file "/out/mint_tx.mn"
+...
+```
+
 - Get the contract address
 ```console
 $ midnight-node-toolkit contract-address 

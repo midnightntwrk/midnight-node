@@ -18,7 +18,7 @@ use crate::{
 	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
-use ledger_storage::{arena::Sp, storage::Array};
+use ledger_storage::storage::Array;
 use mn_ledger::structure::ContractAction;
 use rand::{CryptoRng, Rng};
 use std::{

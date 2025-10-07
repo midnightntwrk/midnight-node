@@ -134,7 +134,7 @@ token_type=$( \
     docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
     show-token-type \
     --contract-address "$contract_address" \
-    --domain-sep d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79 \
+    --domain-sep "$domain_sep" \
     --unshielded \
 )
 
