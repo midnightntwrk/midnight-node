@@ -57,8 +57,9 @@ address_filename="contract_address.mn"
 state_filename="contract_state.mn"
 
 mint_intent_filename="mint.bin"
+send_intent_filename="send.bin"
+
 mint_tx_filename="mint_tx.mn"
-mint_zswap_filename="mint_zswap.json"
 
 contract_dir="contract"
 
@@ -129,8 +130,15 @@ user_address=$( \
     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
     --unshielded-user-address-untagged \
 )
+token_type=$( \
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-token-type \
+    --contract-address "$contract_address" \
+    --domain-sep d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79 \
+    --unshielded \
+)
 
-echo "Generate circuit call intent"
+echo "Generate mint intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
@@ -139,10 +147,25 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --contract-address $contract_address \
     --output-intent "/out/$mint_intent_filename" \
     --output-private-state "/out/tmp.json" \
-    --output-zswap-state "/out/$mint_zswap_filename" \
+    --output-zswap-state "/out/tmp_zswap.json" \
     --coin-public "$coin_public" \
-    mintUnshieldedToUserTest \
+    mintUnshieldedToSelfTest \
     "$domain_sep" \
+    1000
+
+echo "Generate send intent"
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    "$TOOLKIT_IMAGE" \
+    generate-intent circuit -c /toolkit-js/contract/ut.config.ts \
+    --input-onchain-state "/out/$state_filename" --input-private-state "/out/$private_state_filename" \
+    --contract-address $contract_address \
+    --output-intent "/out/$send_intent_filename" \
+    --output-private-state "/out/tmp.json" \
+    --output-zswap-state "/out/tmp_zswap.json" \
+    --coin-public "$coin_public" \
+    recieveAndSendUnshieldedToUser \
+    "$token_type" \
     "$user_address" \
     1000
 
@@ -150,15 +173,11 @@ echo "Generate and send mint tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-file "/out/$mint_intent_filename" --zswap-state-file "/out/$mint_zswap_filename" --compiled-contract-dir /toolkit-js/contract/out
-
-token_type=$( \
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
-    show-token-type \
-    --contract-address "$contract_address" \
-    --domain-sep d2dc8d175c0ef7d1f7e5b7f32bd9da5fcd4c60fa1b651f1d312986269c2d3c79 \
-    --unshielded \
-)
+    send-intent \
+    --intent-file "/out/$mint_intent_filename" \
+    --intent-file "/out/$send_intent_filename" \
+    --zswap-state-file "/out/tmp_zswap.json" \
+    --compiled-contract-dir /toolkit-js/contract/out
 
 show_wallet_output=$(docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts $TOOLKIT_IMAGE \
     show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001")
