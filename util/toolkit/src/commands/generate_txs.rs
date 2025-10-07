@@ -32,6 +32,9 @@ pub struct GenerateTxsArgs {
 	// Proof Server Host
 	#[arg(long, short)]
 	proof_server: Option<String>,
+	/// Dry-run - don't generate any txs, just print out the settings
+	#[arg(long)]
+	dry_run: bool,
 }
 
 pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
@@ -40,8 +43,14 @@ pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
 		args.destination,
 		args.builder,
 		args.proof_server,
+		args.dry_run,
 	)
 	.await?;
+
+	if args.dry_run {
+		return Ok(());
+	}
+
 	let received_txs =
 		generator.get_txs().await.map_err(|e| GenerateTxsError::GetTransactions(e))?;
 
@@ -101,12 +110,13 @@ mod tests {
 					src_files: Some($src_files.map(resource_file).to_vec()),
 				},
 				destination: Destination {
-					dest_url: None,
+					dest_urls: vec![],
 					rate: 1.0,
 					dest_file: Some("out.tx".to_string()),
 					to_bytes: true,
 				},
 				proof_server: None,
+				dry_run: false,
 			}
 		};
 	}
@@ -154,7 +164,7 @@ mod tests {
 	   matches Ok(..);
 		"batches-tx"
 	)]
-	#[test_case(test_fixture!(Builder::ContractCalls(
+	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Deploy(ContractDeployArgs {
 					funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 					rng_seed: None,
@@ -163,7 +173,7 @@ mod tests {
 	   matches Ok(..);
 		"contract-call-deploy-tx"
 	)]
-	#[test_case(test_fixture!(Builder::ContractCalls(
+	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Call(ContractCallArgs {
 					funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 					call_key:"store".to_string(),
@@ -184,6 +194,7 @@ mod tests {
 			args.destination,
 			args.builder,
 			args.proof_server,
+			args.dry_run,
 		)
 		.await?;
 		let received_txs =

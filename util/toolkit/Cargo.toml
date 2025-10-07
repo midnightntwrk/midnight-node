@@ -46,6 +46,7 @@ parity-scale-codec = { workspace = true }
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
+trycmd = "0.15.10"
 
 [lints]
 workspace = true

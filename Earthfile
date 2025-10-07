@@ -188,36 +188,41 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-contract \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls deploy \
+                contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
-                --network ${NETWORK} \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --untagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
+                | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --dest-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn out/contract_tx_3_check_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --dest-file out/contract_tx_4_change_authority_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls maintenance \
+                contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && cp out/contract*.mn /res/test-contract \
@@ -229,7 +234,7 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-zswap \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -247,7 +252,7 @@ rebuild-genesis-state:
                 --unshielded \
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -278,7 +283,7 @@ rebuild-genesis-state:
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -286,10 +291,10 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
-                --network $NETWORK \
-                --untagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+                | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
