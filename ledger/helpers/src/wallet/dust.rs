@@ -8,7 +8,6 @@ use mn_ledger::{
 	events::Event,
 	structure::{LedgerParameters, ProofPreimageMarker},
 };
-use rand::SeedableRng;
 use thiserror::Error;
 
 use crate::{
