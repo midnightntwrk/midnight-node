@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mn_meta;
 use midnight_node_ledger_helpers::*;
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use std::{marker::PhantomData, sync::Arc};
 use subxt::{
 	OnlineClient, PolkadotConfig,
