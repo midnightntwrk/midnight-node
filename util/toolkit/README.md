@@ -5,6 +5,30 @@ This toolkit works with or without transaction proofs:
 - `cargo build -r -p midnight-node-toolkit`
 - `cargo build -r -p midnight-node-toolkit --features erase-proof`
 
+## Implementation Status
+
+
+| Feature                                                              | Progress |
+|----------------------------------------------------------------------|----------|
+| Send Shielded + Unshielded tokens                                    | ✅       |
+| Sync with local and remote networks                                  | ✅       |
+| DUST fee calculation                                                 | ✅       |
+| Execute compiled contracts                                           | ✅       |
+| Pre-generate and send 100s of transactions (performance testing)     | ✅       |
+| Support for node runtime forks                                       | ✅       |
+| Fetch and print wallet state                                         | ✅       |
+| Builds Node genesis                                                  | ✅       |
+| Unit + integration tests                                             | ✅       |
+| DUST registration command                                            | 🚧       |
+| Shielded + Unshielded tokens sending between contract calls          | 🚧       |
+| Contract Maintenance - updating authority + verifier keys            | 🚧       |
+| Support for Ledger forks                                             | ⏳       |
+| Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
+| Fallible Contracts                                                   | ⏳       |
+| Composable Contracts                                                 | ⏳       |
+| Build cNight genesis                                                 | ⏳       |
+
+
 ## Usage
 
 ### Check Version information
