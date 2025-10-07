@@ -16,7 +16,6 @@ transient-crypto.workspace = true
 zkir.workspace = true
 zswap.workspace = true
 rand = { workspace = true, features = ["small_rng"] }
-rand_chacha.workspace = true
 lazy_static.workspace = true
 itertools = { workspace = true, features = ["use_alloc"] }
 thiserror.workspace = true
