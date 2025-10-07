@@ -7128,7 +7128,6 @@ dependencies = [
  "hex",
  "hex-literal 0.4.1",
  "indicatif",
- "itertools 0.14.0",
  "log",
  "midnight-ledger",
  "midnight-node-ledger-helpers",
