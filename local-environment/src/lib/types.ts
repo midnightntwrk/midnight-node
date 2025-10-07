@@ -36,3 +36,19 @@ export interface ImageUpgradeOptions extends RunOptions {
   /** if true, require container health=healthy; otherwise we only waitBetweenMs default true */
   requireHealthy?: boolean;
 }
+
+/**
+ * Options for runtimeUpgrade
+ */
+export interface RuntimeUpgradeOptions extends RunOptions {
+  /** absolute or relative path to the runtime wasm artifact */
+  wasmPath: string;
+  /** skip starting the network before applying the upgrade */
+  skipRun?: boolean;
+  /** websocket endpoint for the node RPC */
+  rpcUrl?: string;
+  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
+  sudoUri?: string;
+  /** how many blocks to wait before submitting the sudo upgrade */
+  delayBlocks?: number;
+}

@@ -27,9 +27,12 @@ interface PostgresSecret {
 }
 
 /** Secrets we collect per node */
+type NodeRole = "authority" | "boot" | "other";
+
 interface NodeSecrets {
   seed?: string;
   postgres?: PostgresSecret;
+  role: NodeRole;
 }
 
 type SecretsByNode = Record<string, NodeSecrets>;
@@ -39,8 +42,16 @@ const execJsonPath = (cmd: string) =>
 
 const formatNodeKey = (pod: string) => pod.replace(/-/g, "_").toUpperCase();
 
-const getPortFromMapping = (key: string, mapping: PortMapping) =>
-  Object.entries(mapping).find(([name]) => name.includes(key))?.[1];
+const getPortFromMapping = (host: string, mapping: PortMapping) => {
+  const clusterName = host.replace(/-primary$/, "");
+  const entry = Object.entries(mapping).find(([name]) =>
+    name.startsWith(clusterName),
+  );
+  if (!entry) {
+    return undefined;
+  }
+  return entry[1];
+};
 
 function convertSecretsToEnvObject(
   secrets: SecretsByNode,
@@ -49,19 +60,29 @@ function convertSecretsToEnvObject(
 
   for (const [nodeName, nodeSecrets] of Object.entries(secrets)) {
     const prefix = nodeName.toUpperCase();
-    const { seed, postgres } = nodeSecrets;
+    const { seed, postgres, role } = nodeSecrets;
 
     if (seed) {
       env[`${prefix}_SEED`] = seed;
     }
 
-    if (postgres?.connectionString) {
-      env[`DB_SYNC_POSTGRES_CONNECTION_STRING_${prefix}`] =
-        postgres.connectionString;
+    if (postgres && postgres.connectionString) {
+      let roleSegment = "";
+
+      if (role === "boot") {
+        roleSegment = "BOOT_";
+      } else if (role === "authority") {
+        roleSegment = "NODE_";
+      }
+
+      const key = `DB_SYNC_POSTGRES_CONNECTION_STRING_${roleSegment}${prefix}`;
+      env[key] = postgres.connectionString;
     }
   }
+
   return env;
 }
+
 
 export function getSecrets(namespace: string): Record<string, string> {
   const portMapping: Record<string, number> = JSON.parse(
@@ -70,7 +91,8 @@ export function getSecrets(namespace: string): Record<string, string> {
 
   const getPodsByLabel = (label: string): string[] => {
     const cmd = `kubectl get pods -n ${namespace} -l ${label} -o jsonpath='{.items[*].metadata.name}'`;
-    return execJsonPath(cmd);
+    const pods = execJsonPath(cmd);
+    return pods;
   };
 
   const execAndParseEnv = (pod: string, fields: string[]): string[] => {
@@ -96,9 +118,7 @@ export function getSecrets(namespace: string): Record<string, string> {
       ]);
 
       const nodeKey = formatNodeKey(pod);
-      const podIdx = pod.match(/node-(\d+)/)?.[1] ?? "X";
-      const dbKey = `psql-dbsync-cardano-${podIdx}-db-01`;
-      const mappedPort = getPortFromMapping(dbKey, portMapping);
+      const mappedPort = getPortFromMapping(host, portMapping);
 
       dbSecrets[nodeKey] = {
         seed,
@@ -112,6 +132,7 @@ export function getSecrets(namespace: string): Record<string, string> {
             ? `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`
             : undefined,
         },
+        role: "authority",
       };
     }
     // TODO: fix and write this method
@@ -130,9 +151,7 @@ export function getSecrets(namespace: string): Record<string, string> {
       ]);
 
       const nodeKey = formatNodeKey(pod);
-      const podIdx = pod.match(/boot-node-(\d+)/)?.[1] ?? "X";
-      const dbKey = `psql-dbsync-cardano-boot-node-${podIdx}-db-01`;
-      const mappedPort = getPortFromMapping(dbKey, portMapping);
+      const mappedPort = getPortFromMapping(host, portMapping);
 
       dbSecrets[nodeKey] = {
         postgres: {
@@ -145,6 +164,7 @@ export function getSecrets(namespace: string): Record<string, string> {
             ? `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`
             : undefined,
         },
+        role: "boot",
       };
     }
   };
@@ -152,5 +172,6 @@ export function getSecrets(namespace: string): Record<string, string> {
   processAuthorityPods();
   processBootPods();
 
-  return convertSecretsToEnvObject(dbSecrets);
+  const envObject = convertSecretsToEnvObject(dbSecrets);
+  return envObject;
 }
