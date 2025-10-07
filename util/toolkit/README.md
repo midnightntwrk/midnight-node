@@ -69,7 +69,7 @@ Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGene
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#) using as `--src-file` the previously generated `TransactionWithContext`.
 
-**NOTE 2**: `ClaimMintBuilder`, `ContractDeployBuilder`, `ContractMaintenanceBuilder`, and `ContractCallBuilder` will be replaced by `FromYamlBuilder` once [PM-10459](https://shielded.atlassian.net/browse/PM-10459) is implemented.
+**NOTE 2**: `ClaimMintBuilder`, `ContractDeployBuilder`, `ContractMaintenanceBuilder`, and `ContractCallBuilder` will be replaced by `FromYamlBuilder` onces [PM-10459](https://shielded.atlassian.net/browse/PM-10459) is implemented.
 
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
@@ -115,7 +115,7 @@ midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" depl
 - Using the [toolkit-js](../toolkit-js), generate the deploy intent file:
   * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
   * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
-    * export TOOLKIT_JS_PATH="util/toolkit-js" 
+    * export TOOLKIT_JS_PATH="util/toolkit-js"
 ```shell
 midnight-node-toolkit generate-intent  -c util/toolkit-js/test/contract/contract.config.ts -C util/toolkit-js/test/contract/managed deploy
 ```
@@ -171,7 +171,7 @@ midnight-node-toolkit generate-intent deploy \
     --coin-public <coin-public-key for caller> \
     --output-intent "/out/deploy.bin" \
     --output-private-state "/out/initial_private_state.json \
-    --output-zswap-state "/out/$deploy_zswap_filename" 
+    --output-zswap-state "/out/$deploy_zswap_filename"
 ```
 
 - Generate a tx from an intent
@@ -239,12 +239,27 @@ midnight-node-toolkit \
 
 If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
 
+### Register DUST Address
+
+- Register a seed's DUST address to start generating DUST based on owned NIGHT. This also spends all NIGHT UTxOs owned by the wallet and recreates them, allowing them to start generating DUST.
+
+```bash
+midnight-node-toolkit \
+    generate-txs \
+    --src-files "res/genesis/genesis_block_undeployed.mn" \
+    --dest-file "register.mn" \
+    --to-bytes \
+    register-dust-address \
+    --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
+```
+
 ---
 ### Send A Serialized Contract Intent (.mn) File:
 ```shell
 midnight-node-toolkit send-intent --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --artifacts-dir "artifacts"
 ```
-The intent file should be inside `intents` subdirectory of `--artifacts-dir`.  
+The intent file should be inside `intents` subdirectory of `--artifacts-dir`.
 For contracts needing the resolver, its files should be subdirectories of `--artifacts-dir`:
 ```
 artifacts
@@ -252,7 +267,7 @@ artifacts
  |    |-- 1_maintenance_intent.mn
  |-- keys
  |    |-- check.prover
- |    |-- .. 
+ |    |-- ..
  |-- zkir
       |-- check.bzkir
       |-- ..
