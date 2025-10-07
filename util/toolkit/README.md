@@ -19,8 +19,8 @@ This toolkit works with or without transaction proofs:
 | Fetch and print wallet state                                         | ✅       |
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
+| Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | DUST registration command                                            | 🚧       |
-| Shielded + Unshielded tokens sending between contract calls          | 🚧       |
 | Contract Maintenance - updating authority + verifier keys            | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
