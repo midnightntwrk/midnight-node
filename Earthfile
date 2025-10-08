@@ -337,7 +337,7 @@ rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-testnet-02
+    BUILD +rebuild-genesis-state-preview
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
