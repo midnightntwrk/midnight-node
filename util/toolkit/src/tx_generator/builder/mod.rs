@@ -33,7 +33,7 @@ pub mod builders;
 
 pub const FUNDING_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -51,7 +51,7 @@ pub struct ClaimRewardsArgs {
 	pub amount: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractDeployArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -66,7 +66,7 @@ pub struct ContractDeployArgs {
 	pub rng_seed: Option<[u8; 32]>,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct CustomContractArgs {
 	#[clap(flatten)]
 	pub info: ContractDeployArgs,
@@ -75,9 +75,9 @@ pub struct CustomContractArgs {
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
 	pub compiled_contract_dir: String,
-	/// Intent file to include in the transaction
-	#[arg(short, long)]
-	pub intent_file: String,
+	/// Intent file to include in the transaction. Accepts multiple
+	#[arg(long = "intent-file")]
+	pub intent_files: Vec<String>,
 	/// Zswap State file containing coin info
 	#[arg(long)]
 	pub zswap_state_file: Option<String>,
@@ -86,7 +86,7 @@ pub struct CustomContractArgs {
 	pub shielded_destinations: Vec<WalletAddress>,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractCallArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -111,7 +111,7 @@ pub struct ContractCallArgs {
 	pub fee: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractMaintenanceArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -139,7 +139,7 @@ pub struct ContractMaintenanceArgs {
 	pub fee: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct BatchesArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -174,7 +174,7 @@ pub struct BatchesArgs {
 }
 
 // TODO: TokenIDs for shielded and unshielded
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
 	/// Amount to send to each shielded wallet
 	#[arg(long)]
@@ -195,20 +195,25 @@ pub struct SingleTxArgs {
 	pub rng_seed: Option<[u8; 32]>,
 }
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum ContractCall {
 	Deploy(ContractDeployArgs),
 	Call(ContractCallArgs),
 	Maintenance(ContractMaintenanceArgs),
 }
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum Builder {
+	/// Construct batches of transactions
 	Batches(BatchesArgs),
+	/// Simple built-in contract
 	#[clap(subcommand)]
-	ContractCalls(ContractCall),
-	CustomContract(CustomContractArgs),
+	ContractSimple(ContractCall),
+	/// Construct txs from custom contract intents
+	ContractCustom(CustomContractArgs),
+	/// Claim rewards
 	ClaimRewards(ClaimRewardsArgs),
+	/// Send single transaction with one-or-many outputs
 	SingleTx(SingleTxArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
@@ -260,28 +265,30 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	}
 }
 
-impl From<Builder> for Box<dyn BuildTxs<Error = DynamicError>> {
-	fn from(value: Builder) -> Self {
-		fn to_builder<T: BuildTxs + Send + Sync + 'static>(
-			builder: T,
+impl Builder {
+	pub fn to_builder(self, dry_run: bool) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
-		match value {
-			Builder::Batches(args) => to_builder(BatchesBuilder::new(args)),
-			Builder::ContractCalls(call) => match call {
-				ContractCall::Deploy(args) => to_builder(ContractDeployBuilder::new(args)),
-				ContractCall::Call(args) => to_builder(ContractCallBuilder::new(args)),
-				ContractCall::Maintenance(args) => {
-					to_builder(ContractMaintenanceBuilder::new(args))
-				},
+		if dry_run {
+			println!("Dry-run: Builder type: {:?}", &self);
+		}
+
+		match self {
+			Builder::Batches(args) => constr(BatchesBuilder::new(args)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => constr(ContractDeployBuilder::new(args)),
+				ContractCall::Call(args) => constr(ContractCallBuilder::new(args)),
+				ContractCall::Maintenance(args) => constr(ContractMaintenanceBuilder::new(args)),
 			},
-			Builder::CustomContract(args) => to_builder(CustomContractBuilder::new(args)),
-			Builder::ClaimRewards(args) => to_builder(ClaimRewardsBuilder::new(args)),
-			Builder::SingleTx(args) => to_builder(SingleTxBuilder::new(args)),
-			Builder::Send => to_builder(DoNothingBuilder::new()),
-			Builder::Migrate => to_builder(ReplaceInitialTxBuilder::new()),
+			Builder::ContractCustom(args) => constr(CustomContractBuilder::new(args)),
+			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
+			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
+			Builder::Send => constr(DoNothingBuilder::new()),
+			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		}
 	}
 }
