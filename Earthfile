@@ -20,7 +20,9 @@ local-build-node-release:
 generate-seeds:
     ARG NETWORK
     ARG OUTPUT_FILE
-    FROM python:3.12
+    # renovate: datasource=docker packageName=python
+    ARG PYTHON_VERSION=3.12
+    FROM python:$PYTHON_VERSION
     RUN mkdir -p secrets
     COPY scripts/generate-genesis-seeds.py .
     # If a previous version of the file exists, bring it in.
@@ -145,8 +147,11 @@ rebuild-sqlx:
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
-    FROM node:22-bookworm
-    RUN npm install -g @aiken-lang/aiken
+    # aiken doesn't support arm yet.
+    FROM --platform=linux/amd64 node:22-bookworm
+    # renovate: datasource=npm packageName=aiken-lang/aiken
+    ENV aiken_version=1.1.19
+    RUN npm install -g @aiken-lang/aiken@${aiken_version}
     COPY tests/redemption-skeleton .
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
@@ -451,7 +456,9 @@ node-ci-image-single-platform:
     RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
 
     # subwasm can be used to diff between runtimes
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.21.3
+    # renovate: datasource=github-releases packageName=chevdor/subwasm
+    ARG SUBWASM_VERSION=0.21.3
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
