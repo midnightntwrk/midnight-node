@@ -28,21 +28,7 @@ generate-seeds:
     RUN python3 generate-genesis-seeds.py -c 4 -o secrets/${OUTPUT_FILE}
     SAVE ARTIFACT secrets/${OUTPUT_FILE} AS LOCAL secrets/${OUTPUT_FILE}
 
-# Network-specific targets using the common seed generator:
-generate-testnet-02-genesis-seeds:
-    BUILD +generate-seeds --NETWORK=testnet-02 --OUTPUT_FILE=testnet-02-genesis-seeds.json
 
-
-# generate-testnet-02-keys generates node keys and seeds and outputs a mock file + aws secret files
-generate-testnet-02-keys:
-    BUILD +generate-keys \
-        --NETWORK=testnet-02 \
-        --NUM_REGISTRATIONS=4 \
-        --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
-        --NUM_BOOT_NODES=3 \
-        --NUM_VALIDATOR_NODES=12
 
 # generate-qanet-keys generates node keys and seeds and outputs a mock file + aws secret files
 generate-qanet-keys:
@@ -55,6 +41,20 @@ generate-qanet-keys:
         --D_PERMISSIONED=1100 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
+
+generate-preview-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preview \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=100 \
+        --D_PERMISSIONED=1100 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preview-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
@@ -313,9 +313,10 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-devnet:
+rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
         --NETWORK=devnet \
+        --SUFFIX=node-dev-01 \
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
@@ -326,18 +327,18 @@ rebuild-genesis-state-qanet:
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-testnet-02:
+rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=testnet \
-        --SUFFIX=testnet-02 \
+        --NETWORK=devnet \
+        --SUFFIX=preview \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
-    BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-testnet-02
+    BUILD +rebuild-genesis-state-preview
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
@@ -358,9 +359,8 @@ rebuild-chainspec:
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=node-dev-01
-    BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=testnet-02
+    BUILD +rebuild-chainspec --NETWORK=preview
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
