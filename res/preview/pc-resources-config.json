@@ -6,5 +6,5 @@
     "port": 443,
     "request_timeout": 180
   },
-  "cardano_payment_signing_key_file": "res/devnet/governance.skey"
+  "cardano_payment_signing_key_file": "payment.skey"
 }
