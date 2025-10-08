@@ -31,7 +31,7 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -60,7 +60,7 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
         with:
           tool: just
 
@@ -152,7 +152,7 @@ jobs:
 
 
       - name: Install just
-        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d  #v2.62.14
         with:
           tool: just
 
@@ -214,7 +214,7 @@ jobs:
 
           # Retag all indexer images
           echo "🏷️ Retagging images..."
-          INDEXER_IMAGE_TAG="node-${MAIN_COMMIT}"
+          INDEXER_IMAGE_TAG="via-node-${MAIN_COMMIT}"
           docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
           docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
           docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
@@ -253,7 +253,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -287,7 +287,7 @@ jobs:
     needs: [publish-amd64, publish-arm64, build-indexer-images]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -330,7 +330,8 @@ jobs:
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
 
-      - name: Push NODE_DEV_01 images if indexer is on main
+      - name: Check if indexer is on main
+        id: indexer-check
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
           pushd indexer
@@ -341,29 +342,42 @@ jobs:
 
           if [ -z "$INDEXER_BRANCH" ]; then
             echo "❌ Indexer submodule is not tracking origin/main."
-            echo "   Refusing to build/publish indexer images for node-dev-01."
-            exit 1
+            echo "   Refusing to publish indexer and node images for node-dev-01."
+            echo "result=notok" >> "$GITHUB_OUTPUT"
           else
             echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
-            export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
-            export NODE_DEV_01_TAG="${IMAGE_TAG}-node-dev-01"
-
-            docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG} \
-              ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-              ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
-
-            docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG} \
-              ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
-              ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
-
-            docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
-            docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
-
-            docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-            docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-            docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
-
-            docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-            docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-            docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+            echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "result=ok" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Push NODE_DEV_01 images
+        if: ${{ steps.indexer-check.outputs.result == 'ok' }}
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+          export INDEXER_IMAGE_TAG="${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}"
+          export NODE_DEV_01_TAG="${IMAGE_TAG}-node-dev-01"
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG} \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
+
+          # Pull, re-tag, and push indexer images
+
+          docker pull ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
+          docker pull ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
+          docker pull ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+
+          docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
+          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
+          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+
+          docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
+          docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
+          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}

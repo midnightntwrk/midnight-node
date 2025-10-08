@@ -18,6 +18,7 @@ use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
+	client::MidnightNodeClient,
 	indexer::Indexer,
 	remote_prover::RemoteProofServer,
 	sender::Sender,
@@ -52,7 +53,7 @@ where
 	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
 {
 	pub source: Box<dyn GetTxs<S, P>>,
-	pub destination: Box<dyn SendTxs<S, P>>,
+	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
 	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
 	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
 }
@@ -72,57 +73,94 @@ where
 		dest: Destination,
 		builder: Builder,
 		proof_server: Option<String>,
+		dry_run: bool,
 	) -> Result<Self, TxGeneratorError> {
-		let source = Self::source(src).await?;
-		let destination = Self::destination(dest).await?;
-		let builder = builder.into();
-		let prover = Self::prover(proof_server);
+		let source = Self::source(src, dry_run).await?;
+		let destinations = Self::destinations(dest, dry_run).await?;
+		let builder = builder.to_builder(dry_run);
+		let prover = Self::prover(proof_server, dry_run);
 
-		Ok(Self { source, destination, builder, prover })
+		Ok(Self { source, destinations, builder, prover })
 	}
 
-	pub async fn source(src: Source) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
+	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
 		if let Some(ref src_files) = src.src_files {
+			if dry_run {
+				println!("Dry-run: Source transactions from file(s): {:?}", &src_files);
+				return Ok(Box::new(()));
+			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
 			let source: Box<dyn GetTxs<S, P>> =
 				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
-
 			Ok(source)
 		} else if let Some(url) = src.src_url {
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-
-			let indexer = Arc::new(Indexer::<S, P>::new(url, api, src.fetch_concurrency).await?);
+			if dry_run {
+				println!("Dry-run: Source transactions from url: {:?}", &url);
+				return Ok(Box::new(()));
+			}
+			let midnight_node_client = MidnightNodeClient::new(&url).await?;
+			let indexer =
+				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
-
 			Ok(source)
 		} else {
-			unreachable!()
+			Err(SourceError::InvalidSourceArgs(src))
 		}
 	}
 
-	async fn destination(dest: Destination) -> Result<Box<dyn SendTxs<S, P>>, DestinationError> {
+	async fn destinations(
+		dest: Destination,
+		dry_run: bool,
+	) -> Result<Vec<Box<dyn SendTxs<S, P>>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
+			if dry_run {
+				println!("Dry-run: Destination file: {:?}", &dest_file);
+				if dest.to_bytes {
+					println!("Dry-run: Destination file-format: bytes");
+				} else {
+					println!("Dry-run: Destination file-format: json");
+				}
+				return Ok(vec![Box::new(())]);
+			}
 			let destination: Box<dyn SendTxs<S, P>> =
 				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
 
-			Ok(destination)
-		} else if let Some(url) = dest.dest_url {
+			return Ok(vec![destination]);
+		}
+
+		// ------ accept multiple urls ------
+		let mut dests = vec![];
+		for url in dest.dest_urls {
+			if dry_run {
+				println!("Dry-run: Destination RPC: {:?}", &url);
+				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
+				continue;
+			}
 			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api));
+			let sender = Arc::new(Sender::<S, P>::new(api, url));
 			let destination: Box<dyn SendTxs<S, P>> =
 				Box::new(SendTxsToUrl::new(sender, dest.rate));
 
-			Ok(destination)
-		} else {
-			unreachable!()
+			dests.push(destination);
 		}
+
+		Ok(dests)
 	}
 
-	pub fn prover(proof_server: Option<String>) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn prover(
+		proof_server: Option<String>,
+		dry_run: bool,
+	) -> Arc<dyn ProofProvider<DefaultDB>> {
 		if let Some(url) = proof_server {
+			if dry_run {
+				println!("Dry-run: remove prover: {url}");
+			}
 			Arc::new(RemoteProofServer::new(url))
 		} else {
+			if dry_run {
+				println!("Dry-run: local prover (no proof server)");
+			}
 			Arc::new(LocalProofServer::new())
 		}
 	}
@@ -137,7 +175,19 @@ where
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		self.destination.send_txs(txs).await
+		let sends_txs_futs: Vec<_> =
+			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
+
+		// send transactions concurrently; no waiting needed for prev async calls
+		let results = futures::future::join_all(sends_txs_futs).await;
+
+		for result in results.iter() {
+			if let Err(e) = result {
+				println!("ERROR: {e}");
+			}
+		}
+
+		Ok(())
 	}
 
 	pub async fn build_txs(

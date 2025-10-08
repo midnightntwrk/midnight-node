@@ -11,11 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use base_crypto::cost_model::CostDuration;
+use derive_where::derive_where;
+use hex::encode as hex_encode;
 use lazy_static::lazy_static;
+use ledger_storage::arena::ArenaKey;
+use ledger_storage::storable::Loader;
+use ledger_storage::{self as storage, Storable};
+use midnight_serialize as serialize;
+use mn_ledger::structure::TransactionHash;
 use mn_ledger::{events::Event, structure::StandardTransaction, verify::WellFormedStrictness};
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
 	collections::HashMap,
+	marker::PhantomData,
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
@@ -26,7 +35,7 @@ use crate::{
 	LedgerState, MidnightDataProvider, OutputMode, PUBLIC_PARAMS, ProofKind, PureGeneratorPedersen,
 	Resolver, Serializable, SignatureKind, SyntheticCost, SystemTransaction, Tagged, Timestamp,
 	Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction, Wallet,
-	WalletAddress, WalletSeed, deserialize, serialize,
+	WalletAddress, WalletSeed, default_storage, deserialize,
 };
 
 lazy_static! {
@@ -48,6 +57,79 @@ pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<LedgerState<D>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
+}
+
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+struct StorableLedgerState<D: DB> {
+	state: LedgerState<D>,
+	block_fullness: StorableSyntheticCost<D>,
+}
+
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+pub struct StorableSyntheticCost<D: DB> {
+	read_time: u64,
+	compute_time: u64,
+	block_usage: u64,
+	bytes_written: u64,
+	bytes_churned: u64,
+	_marker: PhantomData<D>,
+}
+
+impl<D: DB> StorableSyntheticCost<D> {
+	fn zero() -> Self {
+		Self {
+			read_time: 0,
+			compute_time: 0,
+			block_usage: 0,
+			bytes_written: 0,
+			bytes_churned: 0,
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<D: DB> StorableLedgerState<D> {
+	fn new(state: LedgerState<D>) -> Self {
+		Self { state, block_fullness: StorableSyntheticCost::zero() }
+	}
+}
+
+impl<D: DB> Tagged for StorableLedgerState<D> {
+	fn tag() -> std::borrow::Cow<'static, str> {
+		<LedgerState<D> as Tagged>::tag()
+	}
+
+	fn tag_unique_factor() -> String {
+		<LedgerState<D> as Tagged>::tag_unique_factor()
+	}
+}
+
+impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
+	fn from(value: SyntheticCost) -> Self {
+		Self {
+			read_time: value.read_time.into_picoseconds(),
+			compute_time: value.compute_time.into_picoseconds(),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+			_marker: PhantomData,
+		}
+	}
+}
+impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
+	fn from(value: StorableSyntheticCost<D>) -> Self {
+		Self {
+			read_time: CostDuration::from_picoseconds(value.read_time),
+			compute_time: CostDuration::from_picoseconds(value.compute_time),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+		}
+	}
 }
 
 impl<D: DB + Clone> LedgerContext<D> {
@@ -84,6 +166,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		txs: Vec<SerdeTransaction<S, P, D>>,
 		block_context: BlockContext,
+		state_root: Option<Vec<u8>>,
 	) where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
@@ -107,12 +190,32 @@ impl<D: DB + Clone> LedgerContext<D> {
 		*latest_ledger_state = latest_ledger_state
 			.post_block_update(block_context.tblock, total_cost)
 			.expect("Error applying block updates");
+		if let Some(expected_root) = state_root {
+			match Self::compute_state_root(&*latest_ledger_state) {
+				Some(actual_root) if actual_root != expected_root => {
+					panic!(
+						"Ledger state root mismatch: expected {}, actual {}",
+						hex_encode(&expected_root),
+						hex_encode(&actual_root),
+					);
+				},
+				Some(_) => {},
+				None => println!("Failed to compute local ledger state root for comparison"),
+			}
+		}
 		// Update Local Wallets
 		for wallet in
 			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
 			wallet.update_dust_from_block(&block_context);
 		}
+	}
+
+	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
+		let storage = default_storage::<D>();
+		let ledger = StorableLedgerState::new(state.clone());
+		let sp = storage.arena.alloc(ledger);
+		crate::serialize(&sp.hash()).ok()
 	}
 
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -140,8 +243,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
 					.expect("applying invalid transaction");
-				let cost =
-					tx.cost(&tx_context.ref_state.parameters).expect("error calculating fees");
+				let cost = tx
+					.cost(&tx_context.ref_state.parameters, false)
+					.expect("error calculating fees");
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				match result {
@@ -309,8 +413,15 @@ where
 
 	pub fn serialize_inner(&self) -> Result<Vec<u8>, std::io::Error> {
 		match &self {
-			Self::Midnight(tx) => serialize(tx),
-			Self::System(tx) => serialize(tx),
+			Self::Midnight(tx) => crate::serialize(tx),
+			Self::System(tx) => crate::serialize(tx),
+		}
+	}
+
+	pub fn transaction_hash(&self) -> TransactionHash {
+		match self {
+			SerdeTransaction::Midnight(transaction) => transaction.transaction_hash(),
+			SerdeTransaction::System(system_transaction) => system_transaction.transaction_hash(),
 		}
 	}
 }
@@ -364,8 +475,8 @@ where
 {
 	fn serialize<SE: serde::Serializer>(&self, serializer: SE) -> Result<SE::Ok, SE::Error> {
 		let serialized_bytes = match self {
-			Self::Midnight(tx) => serialize(tx),
-			Self::System(tx) => serialize(tx),
+			Self::Midnight(tx) => crate::serialize(tx),
+			Self::System(tx) => crate::serialize(tx),
 		}
 		.map_err(serde::ser::Error::custom)?;
 

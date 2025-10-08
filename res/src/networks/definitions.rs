@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_native_token_observation::TokenObservationConfig;
+
 use super::{InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts, MidnightNetwork};
 
 pub struct UndeployedNetwork;
@@ -43,12 +45,17 @@ impl MidnightNetwork for UndeployedNetwork {
 		vec![InitialAuthorityData::new_from_uri("//Alice")]
 	}
 
-	fn council(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob"])
+	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cngd-config.json"));
+		serde_json::from_str(&config_str).unwrap()
 	}
 
-	fn technical_authority(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Charlie", "//Dave"])
+	fn council(&self) -> InitialFederedatedAuthority {
+		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob", "//Charlie"])
+	}
+
+	fn technical_committee(&self) -> InitialFederedatedAuthority {
+		InitialFederedatedAuthority::new_from_uris(vec!["//Dave", "//Eve", "//Ferdie"])
 	}
 
 	fn genesis_utxo(&self) -> &str {
@@ -74,8 +81,9 @@ pub struct CustomNetwork {
 	pub genesis_block: Vec<u8>,
 	pub chain_type: sc_service::ChainType,
 	pub initial_authorities: Vec<InitialAuthorityData>,
+	pub cngd_config: TokenObservationConfig,
 	pub council_membership: InitialFederedatedAuthority,
-	pub technical_authority_membership: InitialFederedatedAuthority,
+	pub technical_committee_membership: InitialFederedatedAuthority,
 	pub main_chain_scripts: MainChainScripts,
 	pub genesis_utxo: String,
 }
@@ -108,12 +116,16 @@ impl MidnightNetwork for CustomNetwork {
 		self.initial_authorities.clone()
 	}
 
+	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
+		self.cngd_config.clone()
+	}
+
 	fn council(&self) -> InitialFederedatedAuthority {
 		self.council_membership.clone()
 	}
 
-	fn technical_authority(&self) -> InitialFederedatedAuthority {
-		self.technical_authority_membership.clone()
+	fn technical_committee(&self) -> InitialFederedatedAuthority {
+		self.technical_committee_membership.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {

@@ -17,7 +17,7 @@ use scale_info::TypeInfo;
 use sidechain_domain::McTxHash;
 use sp_std::vec::Vec;
 
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, PartialEq, TypeInfo)]
 pub struct ObservedUtxo {
 	pub header: ObservedUtxoHeader,
@@ -39,7 +39,7 @@ impl Ord for ObservedUtxo {
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub enum ObservedUtxoData {
 	RedemptionCreate(RedemptionCreateData),
 	RedemptionSpend(RedemptionSpendData),
@@ -50,7 +50,7 @@ pub enum ObservedUtxoData {
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RedemptionCreateData {
 	pub owner: Vec<u8>,
 	pub value: u128,
@@ -59,7 +59,7 @@ pub struct RedemptionCreateData {
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RedemptionSpendData {
 	pub owner: Vec<u8>,
 	pub value: u128,
@@ -69,21 +69,21 @@ pub struct RedemptionSpendData {
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RegistrationData {
 	pub cardano_address: Vec<u8>,
 	pub dust_address: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeregistrationData {
 	pub cardano_address: Vec<u8>,
 	pub dust_address: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateData {
 	pub value: u128,
 	pub owner: Vec<u8>,
@@ -92,7 +92,7 @@ pub struct CreateData {
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpendData {
 	pub value: u128,
 	pub owner: Vec<u8>,
@@ -113,12 +113,25 @@ pub struct SpendData {
 	scale_info::TypeInfo,
 	PartialEq,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct ObservedUtxoHeader {
 	pub tx_position: CardanoPosition,
 	pub tx_hash: McTxHash,
 	pub utxo_tx_hash: McTxHash,
 	pub utxo_index: UtxoIndexInTx,
+}
+
+impl core::fmt::Display for ObservedUtxoHeader {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{{ tx_position: {}, tx_hash: {}, utxo: {}#{} }}",
+			self.tx_position,
+			hex::encode(self.tx_hash.0),
+			hex::encode(self.utxo_tx_hash.0),
+			self.utxo_index.0
+		)
+	}
 }
 
 #[derive(
@@ -132,7 +145,7 @@ pub struct ObservedUtxoHeader {
 	DecodeWithMemTracking,
 	scale_info::TypeInfo,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize))]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct UtxoIndexInTx(pub u16);
 
 impl PartialOrd for ObservedUtxoHeader {

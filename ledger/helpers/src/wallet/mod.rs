@@ -95,22 +95,7 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
-		let wallet_seed_bytes: [u8; 32] = Self::hex_str_decode(input);
-		WalletSeed::from(wallet_seed_bytes)
-	}
-
-	fn hex_str_decode<T>(input: &str) -> T
-	where
-		T: TryFrom<Vec<u8>, Error = Vec<u8>>,
-	{
-		let bytes =
-			hex::decode(input).unwrap_or_else(|_| panic!("failed to parse wallet seed: {input:?}"));
-
-		let res: T = bytes
-			.try_into()
-			.unwrap_or_else(|_| panic!("failed to parse wallet seed: {input:?}"));
-
-		res
+		input.parse().expect("failed to decode seed")
 	}
 }
 

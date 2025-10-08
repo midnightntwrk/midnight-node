@@ -13,10 +13,6 @@
 
 use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
-use midnight_node_res::native_token_observation_consts::{
-	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
-	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
-};
 use midnight_node_res::networks::MidnightNetwork;
 
 use midnight_node_ledger_helpers::{
@@ -28,7 +24,7 @@ use midnight_node_runtime::{
 	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
 	MidnightConfig, MidnightSystemCall, NativeTokenManagementConfig, RuntimeCall,
 	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	Signature, SudoConfig, TechnicalAuthorityConfig, TechnicalAuthorityMembershipConfig,
+	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
 use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, TimestampCall};
@@ -268,10 +264,17 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		pallet_session: Default::default(),
 		native_token_management: NativeTokenManagementConfig { ..Default::default() },
 		native_token_observation: NativeTokenObservationConfig {
-			redemption_validator_address: TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS.into(),
-			mapping_validator_address: TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS.into(),
-			token_policy_id: TEST_CNIGHT_CURRENCY_POLICY_ID.into(),
-			token_asset_name: TEST_CNIGHT_ASSET_NAME.into(),
+			redemption_validator_address: genesis
+				.cnight_generates_dust_config()
+				.redemption_validator_address
+				.into(),
+			mapping_validator_address: genesis
+				.cnight_generates_dust_config()
+				.mapping_validator_address
+				.into(),
+			token_policy_id: hex::decode(genesis.cnight_generates_dust_config().policy_id)
+				.expect("failed to decode policy id as hex"),
+			token_asset_name: genesis.cnight_generates_dust_config().asset_name.into(),
 			_marker: Default::default(),
 		},
 		council: CouncilConfig { ..Default::default() },
@@ -287,17 +290,17 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.expect("Too many members to initialize 'council_membership'"),
 			..Default::default()
 		},
-		technical_authority: TechnicalAuthorityConfig { ..Default::default() },
-		technical_authority_membership: TechnicalAuthorityMembershipConfig {
+		technical_committee: TechnicalCommitteeConfig { ..Default::default() },
+		technical_committee_membership: TechnicalCommitteeMembershipConfig {
 			members: genesis
-				.technical_authority()
+				.technical_committee()
 				.members
 				.iter()
 				.cloned()
 				.map(|key| key.into())
 				.collect::<Vec<AccountId>>()
 				.try_into()
-				.expect("Too many members to initialize 'technical_authority_membership'"),
+				.expect("Too many members to initialize 'technical_committee_membership'"),
 			..Default::default()
 		},
 	};

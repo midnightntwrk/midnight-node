@@ -23,7 +23,7 @@ pub struct UtxoSpendInfo<O> {
 	pub token_type: UnshieldedTokenType,
 }
 
-pub trait BuildUtxoSpend<D: DB + Clone> {
+pub trait BuildUtxoSpend<D: DB + Clone>: Send + Sync {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend;
 	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey;
 }

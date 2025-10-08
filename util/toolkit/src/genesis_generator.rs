@@ -507,7 +507,7 @@ impl GenesisGenerator {
 
 		let valid_tx =
 			tx.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)?;
-		self.fullness = self.fullness + tx.cost(&self.state.parameters)?;
+		self.fullness = self.fullness + tx.cost(&self.state.parameters, false)?;
 		let (state, result) = self.state.apply(&valid_tx, &tx_context);
 		match result {
 			TransactionResult::Success(_) => {
@@ -556,50 +556,52 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use std::{fs::File, io::Read, path::Path};
 
-	#[test]
-	#[ignore = "data is in wrong format"]
-	fn test_get_ledger_state() {
-		let network = "undeployed";
-		let expected_tx_path = format!("../../res/test-genesis-generator/genesis_tx_{network}.mn");
-		let expected_state_path =
-			format!("../../res/test-genesis-generator/genesis_state_{network}.mn");
+	#[tokio::test]
+	async fn test_genesis_state() {
+		let funding = FundingArgs {
+			shielded_mint_amount: 0,
+			shielded_num_funding_outputs: 0,
+			shielded_alt_token_types: vec![],
+			unshielded_mint_amount: MINT_AMOUNT,
+			unshielded_num_funding_outputs: 5,
+			unshielded_alt_token_types: vec![],
+		};
 
-		// Initial states
-		let ref_state: LedgerState<DefaultDB> = LedgerState::new(NetworkId::Undeployed);
-		let tx_context =
-			TransactionContext { ref_state, block_context: Default::default(), whitelist: None };
+		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
+		let network_id = NetworkId::Undeployed;
+		let proof_server = None;
+		let seeds = [
+			"0000000000000000000000000000000000000000000000000000000000000001",
+			"0000000000000000000000000000000000000000000000000000000000000002",
+			"0000000000000000000000000000000000000000000000000000000000000003",
+			"0000000000000000000000000000000000000000000000000000000000000004",
+		]
+		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
+		.to_vec();
 
-		let genesis_tx: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
-			read_and_deserialize(expected_tx_path);
-		let _genesis_tx = genesis_tx
-			.tx
-			.as_midnight()
-			.expect("genesis TX is not a midnight transaction")
-			.well_formed(&tx_context.ref_state, Default::default(), genesis_tx.block_context.tblock)
-			.expect("genesis TX is malformed");
+		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds)
+			.await
+			.unwrap();
 
-		let _expected_state: LedgerState<DefaultDB> = read_and_deserialize(expected_state_path);
+		let wallets = seeds
+			.iter()
+			.map(|seed| Wallet::default(*seed, &genesis.state))
+			.collect::<Vec<_>>();
 
-		/*
-		let ledger_state = GenesisGenerator::get_ledger_state(&tx_context, &genesis_tx)
-			.expect("failed to get ledger state");
+		let state = genesis.state;
+		let mut night_utxos: HashMap<UserAddress, Vec<u128>> = HashMap::new();
+		for utxo in state.utxo.utxos.iter() {
+			if utxo.0.type_ != NIGHT {
+				continue;
+			}
+			night_utxos.entry(utxo.0.owner).or_default().push(utxo.0.value);
+		}
 
-		assert_eq!(expected_state.reserve_pool, ledger_state.reserve_pool);
-		assert_eq!(expected_state.unclaimed_block_rewards, ledger_state.unclaimed_block_rewards);
-		assert_eq!(expected_state.treasury, ledger_state.treasury);
-		assert_eq!(expected_state.zswap, ledger_state.zswap);
-		assert_eq!(expected_state.contract, ledger_state.contract);
-		 */
-	}
-
-	fn read_and_deserialize<P: AsRef<Path>, T: Deserializable + Tagged>(file_path: P) -> T {
-		let mut file = File::open(file_path).expect("file not found");
-
-		let mut bytes = vec![];
-		file.read_to_end(&mut bytes).expect("failed to read at end");
-
-		deserialize(bytes.as_slice()).expect("failed to deserialize")
+		for wallet in wallets {
+			let address = wallet.unshielded.user_address;
+			let utxos = night_utxos.get(&address).expect("no UTXOs for wallet");
+			assert_eq!(utxos, &vec![MINT_AMOUNT; 5]);
+		}
 	}
 }

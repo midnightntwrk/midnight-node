@@ -2,6 +2,7 @@
 name = "midnight-node-ledger"
 version = "0.1.0"
 edition = "2024"
+license-file.workspace = true
 
 [dependencies]
 mn-ledger = { workspace = true, features = ["proving"], optional = true }
@@ -40,7 +41,6 @@ log = { workspace = true, optional = true }
 lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true}
@@ -64,7 +64,6 @@ std = [
     "scale-info/std",
     "frame-support/std",
     "serde/std",
-    "frame-support/std",
     "serde_json",
     "hex",
     "log",
@@ -88,7 +87,6 @@ std = [
     # "zswap-hf",
     "sha2",
     "toml",
-    "tokio",
     "derive-where",
     "rand"
 ]

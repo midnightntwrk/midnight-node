@@ -130,6 +130,7 @@ pub struct MidnightNativeTokenObservationDataSourceImpl {
 }
 
 /// A struct to contain all UTXOs in a given range
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct ObservedUtxos {
 	// Start position (inclusive)
 	pub start: CardanoPosition,
