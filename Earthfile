@@ -28,21 +28,7 @@ generate-seeds:
     RUN python3 generate-genesis-seeds.py -c 4 -o secrets/${OUTPUT_FILE}
     SAVE ARTIFACT secrets/${OUTPUT_FILE} AS LOCAL secrets/${OUTPUT_FILE}
 
-# Network-specific targets using the common seed generator:
-generate-testnet-02-genesis-seeds:
-    BUILD +generate-seeds --NETWORK=testnet-02 --OUTPUT_FILE=testnet-02-genesis-seeds.json
 
-
-# generate-testnet-02-keys generates node keys and seeds and outputs a mock file + aws secret files
-generate-testnet-02-keys:
-    BUILD +generate-keys \
-        --NETWORK=testnet-02 \
-        --NUM_REGISTRATIONS=4 \
-        --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
-        --NUM_BOOT_NODES=3 \
-        --NUM_VALIDATOR_NODES=12
 
 # generate-qanet-keys generates node keys and seeds and outputs a mock file + aws secret files
 generate-qanet-keys:
@@ -55,6 +41,20 @@ generate-qanet-keys:
         --D_PERMISSIONED=1100 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
+
+generate-preview-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preview \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=100 \
+        --D_PERMISSIONED=1100 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preview-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
