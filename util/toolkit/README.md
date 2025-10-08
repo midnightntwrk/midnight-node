@@ -19,8 +19,8 @@ This toolkit works with or without transaction proofs:
 | Fetch and print wallet state                                         | ✅       |
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
+| Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | DUST registration command                                            | 🚧       |
-| Shielded + Unshielded tokens sending between contract calls          | 🚧       |
 | Contract Maintenance - updating authority + verifier keys            | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
@@ -303,6 +303,17 @@ $ midnight-node-toolkit send-intent --dry-run
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "/out/deploy.bin" 
 >   --compiled-contract-dir contract/counter/out
+```
+
+- Generate and send a tx using multiple contract calls
+```console
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "out/mint_intent.bin" 
+>   --intent-file "out/recieveAndSend_intent.bin" 
+>   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --to-bytes 
+>   --dest-file "/out/mint_tx.mn"
+...
 ```
 
 - Get the contract address
