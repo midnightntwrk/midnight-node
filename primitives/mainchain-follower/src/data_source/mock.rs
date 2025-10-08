@@ -84,7 +84,6 @@ impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSour
 }
 
 /// TODO: federated-authority-observation
-/// Mock data source that returns empty authority list
 #[derive(Clone, Debug, Default)]
 pub struct FederatedAuthoritySelectionDataSourceMock;
 
@@ -103,14 +102,29 @@ impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSo
 		&self,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
-		// TODO: federated-authority-observation
-		// Return placeholder data with empty authorities list
+		// Council members
+		let dave_public: Public = Sr25519Keyring::Dave.public();
+		let dave = AuthorityMemberPublicKey(dave_public.0.to_vec());
+
+		let eve_public: Public = Sr25519Keyring::Eve.public();
+		let eve = AuthorityMemberPublicKey(eve_public.0.to_vec());
+
+		let ferdie_public: Public = Sr25519Keyring::Ferdie.public();
+		let ferdie = AuthorityMemberPublicKey(ferdie_public.0.to_vec());
+
+		// Technical committee members
 		let alice_public: Public = Sr25519Keyring::Alice.public();
 		let alice = AuthorityMemberPublicKey(alice_public.0.to_vec());
 
+		let bob_public: Public = Sr25519Keyring::Bob.public();
+		let bob = AuthorityMemberPublicKey(bob_public.0.to_vec());
+
+		let charlie_public: Public = Sr25519Keyring::Charlie.public();
+		let charlie = AuthorityMemberPublicKey(charlie_public.0.to_vec());
+
 		Ok(FederatedAuthorityData {
-			council_authorities: vec![alice],
-			technical_committee_authorities: vec![],
+			council_authorities: vec![dave, eve, ferdie],
+			technical_committee_authorities: vec![alice, bob, charlie],
 			mc_block_hash: mc_block_hash.clone(),
 		})
 	}
