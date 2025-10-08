@@ -30,3 +30,9 @@ export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Byt
 export circuit receiveUnshieldedTest(color: Bytes<32>, amount: Uint<128>): [] {
   receiveUnshielded(disclose(color), disclose(amount));
 }
+
+export circuit recieveAndSendUnshieldedToUser(color: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<128>): [] {
+  receiveUnshielded(disclose(color), disclose(amount));
+  const address = UserAddress { bytes: address_bytes };
+  sendUnshielded(disclose(color), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
+}

@@ -18,8 +18,15 @@ use crate::{
 	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
+use ledger_storage::storage::Array;
 use mn_ledger::structure::ContractAction;
-use std::{io, path::Path, sync::Arc};
+use rand::{CryptoRng, Rng};
+use std::{
+	io,
+	path::Path,
+	sync::Arc,
+	time::{SystemTime, UNIX_EPOCH},
+};
 use transient_crypto::proofs::ProvingKeyMaterial;
 
 pub type SegmentId = u16;
@@ -115,6 +122,28 @@ impl<D: DB + Clone> IntentCustom<D> {
 		let bytes = std::fs::read(path)?;
 		let intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
 		Ok(Self { intent, resolver })
+	}
+
+	pub fn new_from_actions<R: Rng + CryptoRng + ?Sized>(
+		rng: &mut R,
+		actions: &[ContractAction<ProofPreimageMarker, D>],
+		resolver: &'static Resolver,
+	) -> Self {
+		let now = Timestamp::from_secs(
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs(),
+		);
+		let intent = Intent {
+			guaranteed_unshielded_offer: None,
+			fallible_unshielded_offer: None,
+			actions: Array::new_from_slice(actions),
+			dust_actions: None,
+			ttl: now,
+			binding_commitment: rng.r#gen(),
+		};
+		Self { intent, resolver }
 	}
 
 	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
