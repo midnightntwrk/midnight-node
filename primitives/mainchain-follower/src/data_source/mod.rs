@@ -23,13 +23,14 @@ use crate::db::{
 	get_registrations,
 };
 use crate::{
-	CreateData, DeregistrationData, MidnightNativeTokenObservationDataSource, ObservedUtxo,
-	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
-	RegistrationData, SpendData, UtxoIndexInTx,
+	CreateData, DeregistrationData, FederatedAuthoritySelectionDataSource,
+	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
+	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
 };
 use derive_new::new;
 use figment::Figment;
 use figment::providers::Env;
+use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use secrecy::{ExposeSecret, SecretString};
@@ -670,6 +671,29 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 		}
 
 		Ok(utxos)
+	}
+}
+
+#[derive(new)]
+pub struct FederatedAuthoritySelectionDataSourceImpl {
+	pub pool: PgPool,
+	pub metrics_opt: Option<McFollowerMetrics>,
+	#[allow(dead_code)]
+	cache_size: u16,
+}
+
+#[async_trait::async_trait]
+impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSourceImpl {
+	async fn get_federated_authority_data(
+		&self,
+		mc_block_hash: &McBlockHash,
+	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+		// TODO: federated-authority-observation
+		Ok(FederatedAuthorityData {
+			council_authorities: vec![],
+			technical_committee_authorities: vec![],
+			mc_block_hash: mc_block_hash.clone(),
+		})
 	}
 }
 

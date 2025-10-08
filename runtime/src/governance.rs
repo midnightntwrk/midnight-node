@@ -15,7 +15,7 @@ where
 	P: InitializeMembers<T::AccountId> + ChangeMembers<T::AccountId>,
 {
 	fn initialize_members(members: &[T::AccountId]) {
-		// First, delegate to T's implementation
+		// First, delegate to P's implementation
 		<P as InitializeMembers<T::AccountId>>::initialize_members(members);
 
 		// Then, increase sufficients for all members
@@ -35,7 +35,7 @@ where
 		outgoing: &[T::AccountId],
 		new: &[T::AccountId],
 	) {
-		// First, delegate to T's implementation
+		// First, delegate to P's implementation
 		<P as ChangeMembers<T::AccountId>>::change_members_sorted(incoming, outgoing, new);
 
 		// Then, handle sufficients

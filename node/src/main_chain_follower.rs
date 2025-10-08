@@ -33,8 +33,9 @@ use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestam
 use std::{error::Error, str::FromStr as _, sync::Arc};
 
 use midnight_primitives_mainchain_follower::{
-	MidnightNativeTokenObservationDataSource, MidnightNativeTokenObservationDataSourceImpl,
-	NativeTokenObservationDataSourceMock,
+	FederatedAuthoritySelectionDataSource, FederatedAuthoritySelectionDataSourceImpl,
+	FederatedAuthoritySelectionDataSourceMock, MidnightNativeTokenObservationDataSource,
+	MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
 };
 
 // TODO: Decide if it should be experimental
@@ -48,6 +49,8 @@ pub struct DataSources {
 	pub native_token_management: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
+	// TODO: federated-authority-observation
+	pub federated_authority_selection: Arc<dyn FederatedAuthoritySelectionDataSource + Send + Sync>,
 }
 
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
@@ -90,6 +93,8 @@ pub async fn create_mock_data_sources(
 		native_token_observation: Arc::new(NativeTokenObservationDataSourceMock::new()),
 		native_token_management: Arc::new(NativeTokenDataSourceMock::new()),
 		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
+		// TODO: federated-authority-observation
+		federated_authority_selection: Arc::new(FederatedAuthoritySelectionDataSourceMock::new()),
 	})
 }
 
@@ -173,13 +178,19 @@ pub async fn create_cached_data_sources(
 		),
 		governed_map: Arc::new(
 			GovernedMapDataSourceCachedImpl::new(
-				pool,
+				pool.clone(),
 				metrics_opt.clone(),
 				GOVERNED_MAP_CACHE_SIZE,
 				block,
 			)
 			.await?,
 		),
+		// TODO: federated-authority-observation
+		federated_authority_selection: Arc::new(FederatedAuthoritySelectionDataSourceImpl::new(
+			pool,
+			metrics_opt.clone(),
+			1000,
+		)),
 	})
 }
 

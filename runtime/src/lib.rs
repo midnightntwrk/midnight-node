@@ -735,9 +735,9 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, Council>;
-	type MembershipChanged = MembershipHandler<Runtime, Council>;
+	type MembershipChanged = (); // Managed by `federated-authority-observation` pallet
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
@@ -766,9 +766,9 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
-	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
+	type MembershipChanged = (); // Managed by `federated-authority-observation` pallet
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
@@ -804,6 +804,13 @@ impl pallet_federated_authority::Config for Runtime {
 	type MotionRevokeOrigin =
 		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
 	type WeightInfo = ();
+}
+
+impl pallet_federated_authority_observation::Config for Runtime {
+	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+	type CouncilMembershipChanged = MembershipHandler<Runtime, Council>;
+	type TechnicalCommitteeMembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 }
 
 pub struct MidnightTokenTransferHandler;
@@ -868,6 +875,8 @@ construct_runtime!(
 
 		NativeTokenManagement: pallet_native_token_management = 12,
 		NativeTokenObservation: pallet_native_token_observation = 13,
+		// TODO: federated-authority-observation
+		FederatedAuthorityObservation: pallet_federated_authority_observation = 14,
 
 		// Utility
 		Preimage: pallet_preimage = 15,

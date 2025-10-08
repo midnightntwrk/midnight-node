@@ -27,7 +27,9 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		MidnightNativeTokenObservationDataSourceImpl, mock::NativeTokenObservationDataSourceMock,
+		FederatedAuthoritySelectionDataSourceImpl, MidnightNativeTokenObservationDataSourceImpl,
+		mock::FederatedAuthoritySelectionDataSourceMock,
+		mock::NativeTokenObservationDataSourceMock,
 	},
 	idp::MidnightObservationTokenMovement,
 	inherent_provider::*,
@@ -39,6 +41,7 @@ pub use {
 pub mod inherent_provider {
 	use super::*;
 	use crate::data_source::ObservedUtxos;
+	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
 	use sidechain_domain::McBlockHash;
 
@@ -52,6 +55,15 @@ pub mod inherent_provider {
 			current_tip: McBlockHash,
 			capacity: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
+	}
+
+	// TODO: federated-authority-observation
+	#[async_trait::async_trait]
+	pub trait FederatedAuthoritySelectionDataSource<FA = ()>: Send + Sync {
+		async fn get_federated_authority_data(
+			&self,
+			mc_block_hash: &McBlockHash,
+		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
 	#[derive(Clone, Debug)]

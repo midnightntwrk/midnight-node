@@ -57,6 +57,8 @@ impl sp_inherents::IsFatalError for InherentError {
 #[cfg(feature = "std")]
 pub mod inherent_provider {
 	use super::*;
+	use crate::FederatedAuthoritySelectionDataSource;
+	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use midnight_primitives_native_token_observation::TokenObservationConfig;
 	use sp_api::{ApiError, ApiExt as _, ProvideRuntimeApi};
 	use sp_blockchain::HeaderBackend;
@@ -201,6 +203,53 @@ pub mod inherent_provider {
 			let error = InherentError::decode(&mut error).ok()?;
 
 			Some(Err(sp_inherents::Error::Application(Box::from(error))))
+		}
+	}
+
+	// TODO: federated-authority-observation
+	pub struct FederatedAuthorityInherentDataProvider {
+		pub data: FederatedAuthorityData,
+	}
+
+	impl FederatedAuthorityInherentDataProvider {
+		pub async fn new<FA>(
+			data_source: &(dyn FederatedAuthoritySelectionDataSource<FA> + Send + Sync),
+			mc_block_hash: &sidechain_domain::McBlockHash,
+		) -> Result<Self, Box<dyn Error + Send + Sync>> {
+			let data = data_source.get_federated_authority_data(mc_block_hash).await?;
+			Ok(Self { data })
+		}
+	}
+
+	#[async_trait::async_trait]
+	impl sp_inherents::InherentDataProvider for FederatedAuthorityInherentDataProvider {
+		async fn provide_inherent_data(
+			&self,
+			inherent_data: &mut sp_inherents::InherentData,
+		) -> Result<(), sp_inherents::Error> {
+			// midnight_primitives_federated_authority_observation::put_federated_authority_data(
+			// 	inherent_data,
+			// 	&self.data,
+			// )
+			inherent_data.put_data(
+				midnight_primitives_federated_authority_observation::INHERENT_IDENTIFIER,
+				&FederatedAuthorityData {
+					council_authorities: self.data.council_authorities.clone(),
+					technical_committee_authorities: self
+						.data
+						.technical_committee_authorities
+						.clone(),
+					mc_block_hash: self.data.mc_block_hash.clone(),
+				},
+			)
+		}
+
+		async fn try_handle_error(
+			&self,
+			_identifier: &sp_inherents::InherentIdentifier,
+			_error: &[u8],
+		) -> Option<Result<(), sp_inherents::Error>> {
+			None
 		}
 	}
 

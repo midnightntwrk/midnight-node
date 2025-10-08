@@ -77,6 +77,7 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
+pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
 documented = { path = "util/documented", default-features = false }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
@@ -84,6 +85,7 @@ midnight-primitives = { path = "primitives/midnight", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-native-token-observation = { path = "primitives/native-token-observation", default-features = false }
+midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 
 # Partnerchains dependencies
 partner-chains-db-sync-data-sources = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.7.1", features = ["block-source", "candidate-source"] }
@@ -218,7 +220,7 @@ jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"]
 async-trait = { default-features = false, version = "0.1.87" }
 futures = { default-features = false, version = "0.3.29" }
 log = { default-features = false, version = "0.4.17" }
-tokio = { default-features = false, version = "1.33.0" }
+tokio = { default-features = false, version = "1.33.0", features = ["net"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3" }
 hex-literal = { default-features = false, version = "0.4.1" }

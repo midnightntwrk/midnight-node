@@ -1,0 +1,42 @@
+[package]
+name = "pallet-federated-authority-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Pallet responsible for observing federated authority changes from main chain."
+license-file.workspace = true
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+pallet-timestamp.workspace = true
+sidechain-domain.workspace = true
+midnight-primitives-federated-authority-observation = { default-features = false, workspace = true }
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+log.workspace = true
+sp-core.workspace = true
+sp-consensus-aura.workspace = true
+sp-inherents.workspace = true
+sp-std.workspace = true
+derive-new.workspace = true
+
+[dev-dependencies]
+sp-io.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "sp-core/std",
+    "sp-std/std",
+    "sp-consensus-aura/std",
+    "sp-inherents/std",
+    "parity-scale-codec/std",
+    "midnight-primitives-federated-authority-observation/std",
+    "derive-new/std"
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec"]

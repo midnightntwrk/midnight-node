@@ -10,13 +10,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use midnight_primitives_federated_authority_observation::{
+	AuthorityMemberPublicKey, FederatedAuthorityData,
+};
 use midnight_primitives_native_token_observation::TokenObservationConfig;
 
 use super::{ObservedUtxoData, ObservedUtxos, RegistrationData};
 use crate::data_source::UtxoIndexInTx;
 #[cfg(feature = "std")]
 use crate::{
-	MidnightNativeTokenObservationDataSource,
+	FederatedAuthoritySelectionDataSource, MidnightNativeTokenObservationDataSource,
 	data_source::{ObservedUtxo, ObservedUtxoHeader},
 };
 #[cfg(feature = "std")]
@@ -77,5 +80,38 @@ impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSour
 			if start.block_number.is_multiple_of(5) { mock_utxos(&start) } else { Vec::new() };
 
 		Ok(ObservedUtxos { start, end, utxos })
+	}
+}
+
+/// TODO: federated-authority-observation
+/// Mock data source that returns empty authority list
+#[derive(Clone, Debug, Default)]
+pub struct FederatedAuthoritySelectionDataSourceMock;
+
+impl FederatedAuthoritySelectionDataSourceMock {
+	pub fn new() -> Self {
+		Self
+	}
+}
+
+use sp_core::sr25519::Public;
+use sp_keyring::Sr25519Keyring;
+
+#[async_trait::async_trait]
+impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSourceMock {
+	async fn get_federated_authority_data(
+		&self,
+		mc_block_hash: &McBlockHash,
+	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+		// TODO: federated-authority-observation
+		// Return placeholder data with empty authorities list
+		let alice_public: Public = Sr25519Keyring::Alice.public();
+		let alice = AuthorityMemberPublicKey(alice_public.0.to_vec());
+
+		Ok(FederatedAuthorityData {
+			council_authorities: vec![alice],
+			technical_committee_authorities: vec![],
+			mc_block_hash: mc_block_hash.clone(),
+		})
 	}
 }

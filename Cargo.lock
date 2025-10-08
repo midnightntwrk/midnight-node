@@ -6873,6 +6873,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-native-token-observation",
@@ -7057,12 +7058,14 @@ dependencies = [
  "frame-try-runtime",
  "log",
  "midnight-node-ledger",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-native-token-observation",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-collective",
  "pallet-federated-authority",
+ "pallet-federated-authority-observation",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -7224,6 +7227,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-federated-authority-observation"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-inherents",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "midnight-primitives-ledger"
 version = "0.1.0"
 dependencies = [
@@ -7242,6 +7260,7 @@ dependencies = [
  "figment",
  "hex",
  "log",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-native-token-observation",
  "parity-scale-codec",
  "partner-chains-db-sync-data-sources",
@@ -7252,7 +7271,9 @@ dependencies = [
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",
+ "sp-core",
  "sp-inherents",
+ "sp-keyring",
  "sp-runtime",
  "sp-std",
  "sqlx",
@@ -8597,6 +8618,26 @@ dependencies = [
  "sp-core",
  "sp-io",
  "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-federated-authority-observation"
+version = "0.1.0"
+dependencies = [
+ "derive-new",
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-federated-authority-observation",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-inherents",
+ "sp-io",
  "sp-std",
 ]
 
