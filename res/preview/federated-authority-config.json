@@ -1,0 +1,16 @@
+{
+    "council": {
+        "members": [
+            "0x8e2135d1086b6b26143e600986e64b5f5d38a67ebedccbe24c5471cd2755e35f",
+            "0xc403a1c5671ea079a27daf8f4a92ff9c1d36b425232d6f82ef5788fd7fdaae05",
+            "0x3a8a798e373ddba8eba14982f90008768a4ecdc4b9ab1cfaae9d421129a9cd10"
+        ]  
+    },
+    "technical_committee": {
+        "members": [
+            "0xd6bbb84dd94522a105270aaad3a01547cbadb8722041add1a62fc7e43a00262e",
+            "0x1ee8b39debb5ff5fa436bf6b9b63154777e21c70e58c139a222d476794af331f",
+            "0x643db0035965b76ebb999f1e1d2634ede0679d92b6fdad9f2d1ba9acee47bc4c"
+        ]
+    }
+}
