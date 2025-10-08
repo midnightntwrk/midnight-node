@@ -20,7 +20,9 @@ local-build-node-release:
 generate-seeds:
     ARG NETWORK
     ARG OUTPUT_FILE
-    FROM python:3.12
+    # renovate: datasource=docker packageName=python
+    ARG PYTHON_VERSION=3.12
+    FROM python:$PYTHON_VERSION
     RUN mkdir -p secrets
     COPY scripts/generate-genesis-seeds.py .
     # If a previous version of the file exists, bring it in.
@@ -28,21 +30,7 @@ generate-seeds:
     RUN python3 generate-genesis-seeds.py -c 4 -o secrets/${OUTPUT_FILE}
     SAVE ARTIFACT secrets/${OUTPUT_FILE} AS LOCAL secrets/${OUTPUT_FILE}
 
-# Network-specific targets using the common seed generator:
-generate-testnet-02-genesis-seeds:
-    BUILD +generate-seeds --NETWORK=testnet-02 --OUTPUT_FILE=testnet-02-genesis-seeds.json
 
-
-# generate-testnet-02-keys generates node keys and seeds and outputs a mock file + aws secret files
-generate-testnet-02-keys:
-    BUILD +generate-keys \
-        --NETWORK=testnet-02 \
-        --NUM_REGISTRATIONS=4 \
-        --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
-        --NUM_BOOT_NODES=3 \
-        --NUM_VALIDATOR_NODES=12
 
 # generate-qanet-keys generates node keys and seeds and outputs a mock file + aws secret files
 generate-qanet-keys:
@@ -55,6 +43,20 @@ generate-qanet-keys:
         --D_PERMISSIONED=1100 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
+
+generate-preview-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preview \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=100 \
+        --D_PERMISSIONED=1100 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preview-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
@@ -122,8 +124,12 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
+    LET NODE_VERSION = "$(cat node_version)"
     COPY +get-metadata/metadata.scale /metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata.scale
+    SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata_${NODE_VERSION}.scale
 
 # rebuild-sqlx rebuilds the subxt offline data for compile-time query checking
 rebuild-sqlx:
@@ -141,8 +147,11 @@ rebuild-sqlx:
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
-    FROM node:22-bookworm
-    RUN npm install -g @aiken-lang/aiken
+    # aiken doesn't support arm yet.
+    FROM --platform=linux/amd64 node:22-bookworm
+    # renovate: datasource=npm packageName=aiken-lang/aiken
+    ENV aiken_version=1.1.19
+    RUN npm install -g @aiken-lang/aiken@${aiken_version}
     COPY tests/redemption-skeleton .
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
@@ -184,36 +193,41 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-contract \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls deploy \
+                contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
-                --network ${NETWORK} \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --untagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
+                | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --dest-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn out/contract_tx_3_check_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --dest-file out/contract_tx_4_change_authority_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls maintenance \
+                contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && cp out/contract*.mn /res/test-contract \
@@ -225,7 +239,7 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-zswap \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -243,7 +257,7 @@ rebuild-genesis-state:
                 --unshielded \
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -274,7 +288,7 @@ rebuild-genesis-state:
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -282,10 +296,10 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
-                --network $NETWORK \
-                --untagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+                | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
@@ -304,9 +318,10 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-devnet:
+rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
         --NETWORK=devnet \
+        --SUFFIX=node-dev-01 \
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
@@ -317,18 +332,18 @@ rebuild-genesis-state-qanet:
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-testnet-02:
+rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=testnet \
-        --SUFFIX=testnet-02 \
+        --NETWORK=devnet \
+        --SUFFIX=preview \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
-    BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-testnet-02
+    BUILD +rebuild-genesis-state-preview
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
@@ -349,9 +364,8 @@ rebuild-chainspec:
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=node-dev-01
-    BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=testnet-02
+    BUILD +rebuild-chainspec --NETWORK=preview
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -442,7 +456,9 @@ node-ci-image-single-platform:
     RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
 
     # subwasm can be used to diff between runtimes
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.21.3
+    # renovate: datasource=github-releases packageName=chevdor/subwasm
+    ARG SUBWASM_VERSION=0.21.3
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
