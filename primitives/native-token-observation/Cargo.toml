@@ -7,10 +7,12 @@ license-file.workspace = true
 
 [dependencies]
 sp-api.workspace = true
+sp-inherents.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 serde = { workspace = true , optional = true }
 hex = { workspace = true }
+thiserror = { workspace = true, optional = true }
 
 [features]
 default = ["std"]
@@ -18,7 +20,9 @@ std = [
     "hex/serde",
     "hex/std",
     "sp-api/std",
+    "sp-inherents/std",
     "parity-scale-codec/std",
     "scale-info/std",
-    "serde"
+    "serde",
+    "thiserror"
 ]

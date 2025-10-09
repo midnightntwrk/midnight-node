@@ -44,7 +44,7 @@ use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
 	FederatedAuthorityObservationDataSource, MidnightNativeTokenObservationDataSource,
-	idp::inherent_provider::{
+	idp::{
 		FederatedAuthorityInherentDataProvider, MidnightNativeTokenObservationInherentDataProvider,
 	},
 };

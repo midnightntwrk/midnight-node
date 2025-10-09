@@ -30,7 +30,6 @@ pub use {
 		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 		MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
 	},
-	idp::MidnightObservationTokenMovement,
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
 	sp_std::boxed::Box,

@@ -17,6 +17,12 @@ use scale_info::TypeInfo;
 use sidechain_domain::McTxHash;
 use sp_std::vec::Vec;
 
+#[derive(Decode, DecodeWithMemTracking, Debug, Encode, Clone)]
+pub struct MidnightObservationTokenMovement {
+	pub utxos: Vec<ObservedUtxo>,
+	pub next_cardano_position: CardanoPosition,
+}
+
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, PartialEq, TypeInfo)]
 pub struct ObservedUtxo {

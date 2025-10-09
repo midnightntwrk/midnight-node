@@ -7290,6 +7290,8 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-api",
+ "sp-inherents",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

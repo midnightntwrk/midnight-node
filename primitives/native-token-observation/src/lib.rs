@@ -13,11 +13,11 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use sp_api::decl_runtime_apis;
 extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use sp_api::decl_runtime_apis;
 
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
@@ -90,6 +90,25 @@ impl PartialOrd for CardanoPosition {
 			ord => return ord,
 		}
 		self.tx_index_in_block.partial_cmp(&other.tx_index_in_block)
+	}
+}
+
+pub const INHERENT_IDENTIFIER: sp_inherents::InherentIdentifier = *b"ntobsrve";
+
+#[derive(Encode, Debug, PartialEq)]
+#[cfg_attr(feature = "std", derive(Decode, DecodeWithMemTracking, thiserror::Error))]
+pub enum InherentError {
+	#[cfg_attr(feature = "std", error("Unexpected error"))]
+	UnexpectedTokenObserveInherent(Option<Vec<Vec<u8>>>, Option<Vec<Vec<u8>>>),
+	#[cfg_attr(feature = "std", error("Inherent data missing"))]
+	Missing,
+	#[cfg_attr(feature = "std", error("Other unexpected inherent error"))]
+	Other,
+}
+
+impl sp_inherents::IsFatalError for InherentError {
+	fn is_fatal_error(&self) -> bool {
+		true
 	}
 }
 
