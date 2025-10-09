@@ -49,10 +49,11 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Federated authority data updated
-		FederatedAuthorityMembersReset {
-			council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers>,
-			technical_committee_members: BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>,
+		/// Council members reset
+		CouncilMembersReset { members: BoundedVec<T::AccountId, T::CouncilMaxMembers> },
+		/// Technical Committee members reset
+		TechnicalCommitteeMembersReset {
+			members: BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>,
 		},
 	}
 
@@ -74,40 +75,49 @@ pub mod pallet {
 		))]
 		pub fn reset_members(
 			origin: OriginFor<T>,
-			council_authorities: Vec<T::AccountId>,
-			technical_committee_authorities: Vec<T::AccountId>,
+			council_authorities: Option<Vec<T::AccountId>>,
+			technical_committee_authorities: Option<Vec<T::AccountId>>,
 		) -> DispatchResult {
 			ensure_none(origin)?;
 
-			// Reset Council members
-			let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
-				BoundedVec::try_from(council_authorities)
+			// Reset Council members if provided
+			if let Some(council_authorities) = council_authorities {
+				let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
+					BoundedVec::try_from(council_authorities)
+						.map_err(|_| Error::<T>::TooManyMembers)?;
+
+				council_members.sort();
+
+				CouncilAuthorities::<T>::mutate(|m| {
+					T::CouncilMembershipChanged::set_members_sorted(&council_members[..], m);
+					*m = council_members.clone();
+				});
+
+				Self::deposit_event(Event::<T>::CouncilMembersReset { members: council_members });
+			}
+
+			// Reset Technical Committee members if provided
+			if let Some(technical_committee_authorities) = technical_committee_authorities {
+				let mut technical_committee_members: BoundedVec<
+					T::AccountId,
+					T::TechnicalCommitteeMaxMembers,
+				> = BoundedVec::try_from(technical_committee_authorities)
 					.map_err(|_| Error::<T>::TooManyMembers)?;
-			council_members.sort();
-			CouncilAuthorities::<T>::mutate(|m| {
-				T::CouncilMembershipChanged::set_members_sorted(&council_members[..], m);
-				*m = council_members.clone();
-			});
 
-			// Reset Technical Committee members
-			let mut technical_committee_members: BoundedVec<
-				T::AccountId,
-				T::TechnicalCommitteeMaxMembers,
-			> = BoundedVec::try_from(technical_committee_authorities)
-				.map_err(|_| Error::<T>::TooManyMembers)?;
-			technical_committee_members.sort();
-			TechnicalCommitteeAuthorities::<T>::mutate(|m| {
-				T::TechnicalCommitteeMembershipChanged::set_members_sorted(
-					&technical_committee_members[..],
-					m,
-				);
-				*m = technical_committee_members.clone();
-			});
+				technical_committee_members.sort();
 
-			Self::deposit_event(Event::<T>::FederatedAuthorityMembersReset {
-				council_members,
-				technical_committee_members,
-			});
+				TechnicalCommitteeAuthorities::<T>::mutate(|m| {
+					T::TechnicalCommitteeMembershipChanged::set_members_sorted(
+						&technical_committee_members[..],
+						m,
+					);
+					*m = technical_committee_members.clone();
+				});
+
+				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
+					members: technical_committee_members,
+				});
+			}
 
 			Ok(())
 		}
@@ -123,15 +133,40 @@ pub mod pallet {
 			// Extract and validate the federated authority data from inherent
 			let fed_auth_data = Self::get_data_from_inherent_data(data).unwrap_or_default()?;
 
-			let council_authorities =
+			let mut council_authorities =
 				Self::decode_auth_accounts(fed_auth_data.council_authorities, "council").ok()?;
-			let technical_committee_authorities = Self::decode_auth_accounts(
+
+			let mut technical_committee_authorities = Self::decode_auth_accounts(
 				fed_auth_data.technical_committee_authorities,
 				"technical committee",
 			)
 			.ok()?;
 
-			Some(Call::reset_members { council_authorities, technical_committee_authorities })
+			// Sort for comparison
+			council_authorities.sort();
+			technical_committee_authorities.sort();
+
+			// Check if either has changed
+			let council_changed = {
+				let current = CouncilAuthorities::<T>::get();
+				current.as_slice() != council_authorities.as_slice()
+			};
+
+			let technical_committee_changed = {
+				let current = TechnicalCommitteeAuthorities::<T>::get();
+				current.as_slice() != technical_committee_authorities.as_slice()
+			};
+
+			// Only create inherent if at least one has changed
+			if council_changed || technical_committee_changed {
+				Some(Call::reset_members {
+					council_authorities: council_changed.then_some(council_authorities),
+					technical_committee_authorities: technical_committee_changed
+						.then_some(technical_committee_authorities),
+				})
+			} else {
+				None
+			}
 		}
 
 		fn is_inherent(call: &Self::Call) -> bool {
@@ -163,7 +198,7 @@ pub mod pallet {
 				.map_err(|_| InherentError::DecodeFailed)
 		}
 
-		/// Transform AuthorityMemberPublicKey into T::AccountId here
+		/// Transform `AuthorityMemberPublicKey`` into `T::AccountId`
 		fn decode_auth_accounts(
 			auth_data: Vec<AuthorityMemberPublicKey>,
 			body: &'static str,
