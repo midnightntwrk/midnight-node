@@ -7289,6 +7289,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+ "sidechain-domain",
  "sp-api",
  "sp-inherents",
  "thiserror 1.0.69",

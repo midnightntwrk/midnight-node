@@ -14,9 +14,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod idp;
-pub mod types;
 
-pub use types::*;
+// Re-export types from native-token-observation for backward compatibility
+pub use midnight_primitives_native_token_observation::{
+	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
+	RegistrationData, SpendData, UtxoIndexInTx,
+};
 
 #[cfg(feature = "std")]
 pub mod db;
