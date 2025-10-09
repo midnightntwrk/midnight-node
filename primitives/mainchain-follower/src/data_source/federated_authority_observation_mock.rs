@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::FederatedAuthoritySelectionDataSource;
+use crate::FederatedAuthorityObservationDataSource;
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData,
 };
@@ -21,16 +21,16 @@ use sp_keyring::Sr25519Keyring;
 
 /// TODO: federated-authority-observation
 #[derive(Clone, Debug, Default)]
-pub struct FederatedAuthoritySelectionDataSourceMock;
+pub struct FederatedAuthorityObservationDataSourceMock;
 
-impl FederatedAuthoritySelectionDataSourceMock {
+impl FederatedAuthorityObservationDataSourceMock {
 	pub fn new() -> Self {
 		Self
 	}
 }
 
 #[async_trait::async_trait]
-impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSourceMock {
+impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceMock {
 	async fn get_federated_authority_data(
 		&self,
 		mc_block_hash: &McBlockHash,

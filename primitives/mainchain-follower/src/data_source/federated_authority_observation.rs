@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::FederatedAuthoritySelectionDataSource;
+use crate::FederatedAuthorityObservationDataSource;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
@@ -19,7 +19,7 @@ use sidechain_domain::McBlockHash;
 pub use sqlx::PgPool;
 
 #[derive(new)]
-pub struct FederatedAuthoritySelectionDataSourceImpl {
+pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<McFollowerMetrics>,
 	#[allow(dead_code)]
@@ -27,7 +27,7 @@ pub struct FederatedAuthoritySelectionDataSourceImpl {
 }
 
 #[async_trait::async_trait]
-impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSourceImpl {
+impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
 	async fn get_federated_authority_data(
 		&self,
 		mc_block_hash: &McBlockHash,
@@ -39,4 +39,8 @@ impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSo
 			mc_block_hash: mc_block_hash.clone(),
 		})
 	}
+}
+
+impl FederatedAuthorityObservationDataSourceImpl {
+	// TODO: federated-authority-observation
 }

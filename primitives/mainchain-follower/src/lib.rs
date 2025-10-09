@@ -27,7 +27,7 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		FederatedAuthoritySelectionDataSourceImpl, FederatedAuthoritySelectionDataSourceMock,
+		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 		MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
 	},
 	idp::MidnightObservationTokenMovement,
@@ -58,7 +58,7 @@ pub mod inherent_provider {
 
 	// TODO: federated-authority-observation
 	#[async_trait::async_trait]
-	pub trait FederatedAuthoritySelectionDataSource<FA = ()>: Send + Sync {
+	pub trait FederatedAuthorityObservationDataSource<FA = ()>: Send + Sync {
 		async fn get_federated_authority_data(
 			&self,
 			mc_block_hash: &McBlockHash,

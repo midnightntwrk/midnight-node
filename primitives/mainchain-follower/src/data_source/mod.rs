@@ -16,13 +16,13 @@
 //! This module uses the types and functions provided by the `db` module
 // TODO: Remove figment
 
-pub mod federated_authority_selection;
-pub mod federated_authority_selection_mock;
+pub mod federated_authority_observation;
+pub mod federated_authority_observation_mock;
 pub mod native_token_observation;
 pub mod native_token_observation_mock;
 
-pub use federated_authority_selection::FederatedAuthoritySelectionDataSourceImpl;
-pub use federated_authority_selection_mock::FederatedAuthoritySelectionDataSourceMock;
+pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;
+pub use federated_authority_observation_mock::FederatedAuthorityObservationDataSourceMock;
 pub use native_token_observation::{
 	MidnightNativeTokenObservationDataSourceError, MidnightNativeTokenObservationDataSourceImpl,
 	ObservedUtxos, TxHash, TxPosition,

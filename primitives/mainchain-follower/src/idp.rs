@@ -57,7 +57,7 @@ impl sp_inherents::IsFatalError for InherentError {
 #[cfg(feature = "std")]
 pub mod inherent_provider {
 	use super::*;
-	use crate::FederatedAuthoritySelectionDataSource;
+	use crate::FederatedAuthorityObservationDataSource;
 	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use midnight_primitives_native_token_observation::TokenObservationConfig;
 	use sp_api::{ApiError, ApiExt as _, ProvideRuntimeApi};
@@ -213,7 +213,7 @@ pub mod inherent_provider {
 
 	impl FederatedAuthorityInherentDataProvider {
 		pub async fn new<FA>(
-			data_source: &(dyn FederatedAuthoritySelectionDataSource<FA> + Send + Sync),
+			data_source: &(dyn FederatedAuthorityObservationDataSource<FA> + Send + Sync),
 			mc_block_hash: &sidechain_domain::McBlockHash,
 		) -> Result<Self, Box<dyn Error + Send + Sync>> {
 			let data = data_source.get_federated_authority_data(mc_block_hash).await?;
