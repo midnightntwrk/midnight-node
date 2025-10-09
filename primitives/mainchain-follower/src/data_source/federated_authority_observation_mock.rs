@@ -19,7 +19,6 @@ use sidechain_domain::McBlockHash;
 use sp_core::sr25519::Public;
 use sp_keyring::Sr25519Keyring;
 
-/// TODO: federated-authority-observation
 #[derive(Clone, Debug, Default)]
 pub struct FederatedAuthorityObservationDataSourceMock;
 

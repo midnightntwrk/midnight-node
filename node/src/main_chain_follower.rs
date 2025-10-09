@@ -49,7 +49,6 @@ pub struct DataSources {
 	pub native_token_management: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
-	// TODO: federated-authority-observation
 	pub federated_authority_observation:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
@@ -94,7 +93,6 @@ pub async fn create_mock_data_sources(
 		native_token_observation: Arc::new(NativeTokenObservationDataSourceMock::new()),
 		native_token_management: Arc::new(NativeTokenDataSourceMock::new()),
 		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
-		// TODO: federated-authority-observation
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
 		),
@@ -188,7 +186,6 @@ pub async fn create_cached_data_sources(
 			)
 			.await?,
 		),
-		// TODO: federated-authority-observation
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000),
 		),

@@ -24,7 +24,6 @@ pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"fedauth ";
 #[derive(Eq, Debug, Clone, PartialEq, TypeInfo, Default, Encode, Decode, PartialOrd, Ord)]
 pub struct AuthorityMemberPublicKey(pub Vec<u8>);
 
-/// TODO: federated-authority-observation
 /// Placeholder structure for federated authority data from main chain
 /// This will contain Aura public keys for federated authorities
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]

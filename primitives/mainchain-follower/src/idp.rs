@@ -206,7 +206,6 @@ pub mod inherent_provider {
 		}
 	}
 
-	// TODO: federated-authority-observation
 	pub struct FederatedAuthorityInherentDataProvider {
 		pub data: FederatedAuthorityData,
 	}

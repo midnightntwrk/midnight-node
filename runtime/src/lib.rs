@@ -875,8 +875,6 @@ construct_runtime!(
 
 		NativeTokenManagement: pallet_native_token_management = 12,
 		NativeTokenObservation: pallet_native_token_observation = 13,
-		// TODO: federated-authority-observation
-		FederatedAuthorityObservation: pallet_federated_authority_observation = 14,
 
 		// Utility
 		Preimage: pallet_preimage = 15,
@@ -910,6 +908,7 @@ construct_runtime!(
         TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
 
         FederatedAuthority: pallet_federated_authority = 44,
+        FederatedAuthorityObservation: pallet_federated_authority_observation = 45,
 	}
 );
 

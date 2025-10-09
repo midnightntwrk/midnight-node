@@ -66,7 +66,6 @@ pub(crate) struct ProposalCIDP<T> {
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
 	native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
-	// TODO: federated-authority-observation
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
@@ -95,7 +94,6 @@ where
 		MidnightNativeTokenObservationInherentDataProvider,
 		NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
-		// TODO: federated-authority-observation
 		FederatedAuthorityInherentDataProvider,
 	);
 
@@ -171,7 +169,6 @@ where
 		)
 		.await?;
 
-		// TODO: federated-authority-observation
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			federated_authority_observation_data_source.as_ref(),
 			&mc_hash.mc_hash(),
@@ -203,7 +200,6 @@ pub struct VerifierCIDP<T> {
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
 	native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
-	// TODO: federated-authority-observation
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
@@ -234,7 +230,6 @@ where
 		MidnightNativeTokenObservationInherentDataProvider,
 		NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
-		// TODO: federated-authority-observation
 		FederatedAuthorityInherentDataProvider,
 	);
 
@@ -308,7 +303,6 @@ where
 		)
 		.await?;
 
-		// TODO: federated-authority-observation
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			federated_authority_observation_data_source.as_ref(),
 			&mc_hash,

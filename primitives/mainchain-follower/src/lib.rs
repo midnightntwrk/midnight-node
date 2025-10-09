@@ -56,7 +56,6 @@ pub mod inherent_provider {
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
-	// TODO: federated-authority-observation
 	#[async_trait::async_trait]
 	pub trait FederatedAuthorityObservationDataSource<FA = ()>: Send + Sync {
 		async fn get_federated_authority_data(
