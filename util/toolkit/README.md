@@ -1,9 +1,18 @@
 # Toolkit
 
-This toolkit works with or without transaction proofs:
+---
 
-- `cargo build -r -p midnight-node-toolkit`
-- `cargo build -r -p midnight-node-toolkit --features erase-proof`
+## 🚀 **IMPORTANT: See Usage Examples**
+
+**The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
+
+### 👉 Check out the `toolkit-*.sh` files here:
+**https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
+
+These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
+
+---
+
 
 ## Implementation Status
 
