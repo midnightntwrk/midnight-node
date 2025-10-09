@@ -320,7 +320,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address 
 >   --src-file ./test-data/contract/counter/deploy_tx.mn 
-3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
 
 ```
 
@@ -329,7 +329,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state 
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --contract-address 72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
 >   --dest-file out/contract_state.bin
 ```
 
