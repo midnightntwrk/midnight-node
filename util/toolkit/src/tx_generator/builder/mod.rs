@@ -179,9 +179,21 @@ pub struct SingleTxArgs {
 	/// Amount to send to each shielded wallet
 	#[arg(long)]
 	pub shielded_amount: Option<u128>,
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<ShieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub shielded_token_type: ShieldedTokenType,
 	/// Amount to send to each unshielded wallet
 	#[arg(long)]
 	pub unshielded_amount: Option<u128>,
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<UnshieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub unshielded_token_type: UnshieldedTokenType,
 	/// Seed for source wallet
 	#[arg(long)]
 	pub source_seed: String,

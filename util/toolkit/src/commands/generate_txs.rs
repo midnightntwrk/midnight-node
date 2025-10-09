@@ -82,7 +82,7 @@ mod tests {
 	use std::str::FromStr;
 
 	use super::*;
-	use midnight_node_ledger_helpers::WalletAddress;
+	use midnight_node_ledger_helpers::{WalletAddress, NIGHT};
 	use midnight_node_toolkit::{
 		cli_parsers::contract_address_decode,
 		tx_generator::builder::{
@@ -125,7 +125,9 @@ mod tests {
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
 		shielded_amount: Some(0),
+		shielded_token_type: Default::default(),
 		unshielded_amount: Some(100),
+		unshielded_token_type: NIGHT,
 		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
 			.to_string(),
 		destination_address: vec![
