@@ -10,78 +10,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+use crate::FederatedAuthoritySelectionDataSource;
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData,
 };
-use midnight_primitives_native_token_observation::TokenObservationConfig;
-
-use super::{ObservedUtxoData, ObservedUtxos, RegistrationData};
-use crate::data_source::UtxoIndexInTx;
-#[cfg(feature = "std")]
-use crate::{
-	FederatedAuthoritySelectionDataSource, MidnightNativeTokenObservationDataSource,
-	data_source::{ObservedUtxo, ObservedUtxoHeader},
-};
-#[cfg(feature = "std")]
-use {
-	async_trait::async_trait,
-	midnight_primitives_native_token_observation::CardanoPosition,
-	sidechain_domain::{McBlockHash, McTxHash},
-};
-
-pub struct NativeTokenObservationDataSourceMock;
-
-impl Default for NativeTokenObservationDataSourceMock {
-	fn default() -> Self {
-		Self::new()
-	}
-}
-
-impl NativeTokenObservationDataSourceMock {
-	pub fn new() -> Self {
-		Self
-	}
-}
-
-// Mock datum of expected registered user json datum
-pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
-	vec![ObservedUtxo {
-		header: ObservedUtxoHeader {
-			tx_position: CardanoPosition {
-				block_number: start.block_number,
-				block_hash: start.block_hash,
-				tx_index_in_block: 1,
-			},
-			tx_hash: McTxHash(rand::random()),
-			utxo_tx_hash: McTxHash(rand::random()),
-			utxo_index: UtxoIndexInTx(1),
-		},
-		data: ObservedUtxoData::Registration(RegistrationData {
-			cardano_address: rand::random::<[u8; 32]>().to_vec(),
-			dust_address: rand::random::<[u8; 32]>().to_vec(),
-		}),
-	}]
-}
-
-#[async_trait]
-impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSourceMock {
-	async fn get_utxos_up_to_capacity(
-		&self,
-		_config: &TokenObservationConfig,
-		start: CardanoPosition,
-		_current_tip: McBlockHash,
-		_capacity: usize,
-	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
-		let mut end = start;
-		end.block_number += 1;
-		end.block_hash = rand::random();
-
-		let utxos =
-			if start.block_number.is_multiple_of(5) { mock_utxos(&start) } else { Vec::new() };
-
-		Ok(ObservedUtxos { start, end, utxos })
-	}
-}
+use sidechain_domain::McBlockHash;
+use sp_core::sr25519::Public;
+use sp_keyring::Sr25519Keyring;
 
 /// TODO: federated-authority-observation
 #[derive(Clone, Debug, Default)]
@@ -92,9 +28,6 @@ impl FederatedAuthoritySelectionDataSourceMock {
 		Self
 	}
 }
-
-use sp_core::sr25519::Public;
-use sp_keyring::Sr25519Keyring;
 
 #[async_trait::async_trait]
 impl FederatedAuthoritySelectionDataSource for FederatedAuthoritySelectionDataSourceMock {

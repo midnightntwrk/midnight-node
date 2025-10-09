@@ -27,9 +27,8 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		FederatedAuthoritySelectionDataSourceImpl, MidnightNativeTokenObservationDataSourceImpl,
-		mock::FederatedAuthoritySelectionDataSourceMock,
-		mock::NativeTokenObservationDataSourceMock,
+		FederatedAuthoritySelectionDataSourceImpl, FederatedAuthoritySelectionDataSourceMock,
+		MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
 	},
 	idp::MidnightObservationTokenMovement,
 	inherent_provider::*,
