@@ -19,8 +19,8 @@ This toolkit works with or without transaction proofs:
 | Fetch and print wallet state                                         | ✅       |
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
+| Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | DUST registration command                                            | 🚧       |
-| Shielded + Unshielded tokens sending between contract calls          | 🚧       |
 | Contract Maintenance - updating authority + verifier keys            | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
@@ -215,7 +215,7 @@ written: out/intent.bin, out/private_state.json, out/zswap.json
 $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple maintenance 
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 - Query fom chain, generate, and save as a serialized intent file:
@@ -224,7 +224,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
 >   --dest-dir "artifacts/intents" 
 >   maintenance 
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 Rest of examples similar to Generate Deploy Contract
@@ -239,7 +239,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple call 
 >   --call-key store
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 - Query fom chain, generate, and save as a serialized intent file:
@@ -248,7 +248,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
 >   --dest-dir "artifacts/intents" 
 >   call 
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 Rest of examples similar to Generate Deploy Contract
@@ -305,11 +305,22 @@ $ midnight-node-toolkit send-intent --dry-run
 >   --compiled-contract-dir contract/counter/out
 ```
 
+- Generate and send a tx using multiple contract calls
+```console
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "out/mint_intent.bin" 
+>   --intent-file "out/recieveAndSend_intent.bin" 
+>   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --to-bytes 
+>   --dest-file "/out/mint_tx.mn"
+...
+```
+
 - Get the contract address
 ```console
 $ midnight-node-toolkit contract-address 
 >   --src-file ./test-data/contract/counter/deploy_tx.mn 
-1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
 
 ```
 
@@ -318,7 +329,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state 
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
 >   --dest-file out/contract_state.bin
 ```
 
@@ -330,14 +341,14 @@ $ midnight-node-toolkit generate-intent circuit
 >   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
 >   --input-onchain-state ./test-data/contract/counter/initial_state.json
 >   --input-private-state ./test-data/contract/counter/initial_zswap_state.json
->   --contract-address 1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
 >   --output-private-state out/ps_state.json
 >   --output-zswap-state out/zswap_state.json
 >   increment
 Executing generate-intent
 Executing circuit command
-Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "1deaa33aa8239e6a5e8fbc255a7b0d11860b590fb6f50c7066fbde51b54026a5", "increment"]...
+Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 stdout: , stderr: 
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
