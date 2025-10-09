@@ -136,7 +136,6 @@ program
     const opts: RuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
       skipRun: cliOpts.skipRun === true,
-      rpcUrl: cliOpts.rpcUrl,
       sudoUri: cliOpts.sudoUri,
       delayBlocks: cliOpts.delayBlocks,
       profiles,

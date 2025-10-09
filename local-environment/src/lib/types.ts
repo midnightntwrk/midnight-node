@@ -45,8 +45,6 @@ export interface RuntimeUpgradeOptions extends RunOptions {
   wasmPath: string;
   /** skip starting the network before applying the upgrade */
   skipRun?: boolean;
-  /** websocket endpoint for the node RPC */
-  rpcUrl?: string;
   /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
   sudoUri?: string;
   /** how many blocks to wait before submitting the sudo upgrade */

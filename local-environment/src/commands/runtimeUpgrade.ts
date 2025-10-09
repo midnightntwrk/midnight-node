@@ -59,8 +59,8 @@ export async function runtimeUpgrade(
     });
   }
 
-  const rpcUrl = opts.rpcUrl ?? "ws://localhost:9944";
-  console.log(`🔌 Connecting to node at ${rpcUrl}`);
+  const rpcUrl = "ws://localhost:9944";
+  console.log(`Connecting to node at ${rpcUrl}`);
   const provider = new WsProvider(rpcUrl);
   let api: ApiPromise | undefined;
 

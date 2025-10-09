@@ -133,6 +133,7 @@ function extractNodeSeeds(env: Record<string, string>): NodeSeedSet[] {
     AURA: "aura",
     GRANDPA: "grandpa",
     CROSS_CHAIN: "crossChain",
+    // BEEFY: "beefy",
   };
 
   for (const [key, value] of Object.entries(env)) {

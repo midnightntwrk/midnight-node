@@ -26,8 +26,8 @@ interface PostgresSecret {
   connectionString?: string;
 }
 
-/** Secrets we collect per node */
-type NodeRole = "authority" | "boot" | "other";
+// Roles according to the running networks
+type PodNodeRole = "authority" | "boot";
 
 interface NodeSecrets {
   // legacy single seed
@@ -36,7 +36,7 @@ interface NodeSecrets {
   grandpaSeed?: string;
   crossChainSeed?: string;
   postgres?: PostgresSecret;
-  role: NodeRole;
+  role: PodNodeRole;
 }
 
 type SecretsByNode = Record<string, NodeSecrets>;
