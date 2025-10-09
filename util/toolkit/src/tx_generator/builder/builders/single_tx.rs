@@ -15,7 +15,11 @@ use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
+	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
+	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
+	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo,
+	Wallet, WalletAddress, WalletSeed,
 };
 
 use crate::{
@@ -46,7 +50,15 @@ impl SingleTxBuilder {
 			destination_address,
 			rng_seed,
 		} = args;
-		Self { shielded_amount, shielded_token_type, unshielded_amount, unshielded_token_type, source_seed, destination_address, rng_seed }
+		Self {
+			shielded_amount,
+			shielded_token_type,
+			unshielded_amount,
+			unshielded_token_type,
+			source_seed,
+			destination_address,
+			rng_seed,
+		}
 	}
 
 	pub fn build() {}
@@ -150,8 +162,11 @@ impl SingleTxBuilder {
 	) -> OfferInfo<DefaultDB> {
 		let total_required = amount * output_wallets.len() as u128;
 
-		let input_info =
-			InputInfo { origin: funding_seed, token_type: self.shielded_token_type, value: total_required };
+		let input_info = InputInfo {
+			origin: funding_seed,
+			token_type: self.shielded_token_type,
+			value: total_required,
+		};
 
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
 
@@ -195,8 +210,11 @@ impl SingleTxBuilder {
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let total_required = amount_to_send_per_output * output_wallets.len() as u128;
 
-		let utxo_spend_info =
-			UtxoSpendInfo { value: total_required, owner: source_seed, token_type: self.unshielded_token_type };
+		let utxo_spend_info = UtxoSpendInfo {
+			value: total_required,
+			owner: source_seed,
+			token_type: self.unshielded_token_type,
+		};
 
 		let funding_wallet = context.clone().wallet_from_seed(source_seed);
 		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);
