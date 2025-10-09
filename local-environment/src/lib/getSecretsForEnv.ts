@@ -14,13 +14,13 @@
 import { execSync } from "child_process";
 import { readFileSync } from "fs";
 
-/** Port map e.g. { "psql-dbsync-cardano-0-db-01": 54321 } */
+/** Pod port map e.g. { "psql-dbsync-cardano-0-db-01": 54321 } */
 type PortMapping = Record<string, number>;
 
 interface PostgresSecret {
   host: string;
   password: string;
-  port: string; // note: env vars are strings; keep as string here
+  port: string;
   user: string;
   db: string;
   connectionString?: string;
@@ -30,15 +30,30 @@ interface PostgresSecret {
 type NodeRole = "authority" | "boot" | "other";
 
 interface NodeSecrets {
+  // legacy single seed
   seed?: string;
+  auraSeed?: string;
+  grandpaSeed?: string;
+  crossChainSeed?: string;
   postgres?: PostgresSecret;
   role: NodeRole;
 }
 
 type SecretsByNode = Record<string, NodeSecrets>;
 
-const execJsonPath = (cmd: string) =>
-  execSync(cmd, { encoding: "utf-8" }).trim().split(/\s+/).filter(Boolean);
+const execJsonPath = (cmd: string, context: string) => {
+  const raw = execSync(cmd, { encoding: "utf-8" }).trim();
+  if (!raw) {
+    return [];
+  }
+  const values = raw.split(/\s+/).filter(Boolean);
+  return values;
+};
+
+const execString = (cmd: string, context: string): string => {
+  const raw = execSync(cmd, { encoding: "utf-8" }).trim();
+  return raw;
+};
 
 const formatNodeKey = (pod: string) => pod.replace(/-/g, "_").toUpperCase();
 
@@ -60,10 +75,23 @@ function convertSecretsToEnvObject(
 
   for (const [nodeName, nodeSecrets] of Object.entries(secrets)) {
     const prefix = nodeName.toUpperCase();
-    const { seed, postgres, role } = nodeSecrets;
+    const { seed, auraSeed, grandpaSeed, crossChainSeed, postgres, role } =
+      nodeSecrets;
 
     if (seed) {
       env[`${prefix}_SEED`] = seed;
+    }
+
+    if (auraSeed) {
+      env[`${prefix}_AURA_SEED`] = auraSeed;
+    }
+
+    if (grandpaSeed) {
+      env[`${prefix}_GRANDPA_SEED`] = grandpaSeed;
+    }
+
+    if (crossChainSeed) {
+      env[`${prefix}_CROSS_CHAIN_SEED`] = crossChainSeed;
     }
 
     if (postgres && postgres.connectionString) {
@@ -83,15 +111,19 @@ function convertSecretsToEnvObject(
   return env;
 }
 
-
+// TODO: Change this to use AWS SSM
 export function getSecrets(namespace: string): Record<string, string> {
-  const portMapping: Record<string, number> = JSON.parse(
-    readFileSync("port-mapping.json", "utf-8"),
+  console.log(`loading port mapping from port-mapping.json`);
+  const portMappingRaw = readFileSync("port-mapping.json", "utf-8");
+  const portMapping: Record<string, number> = JSON.parse(portMappingRaw);
+  console.log(
+    `loaded ${Object.keys(portMapping).length} port mapping entries`,
   );
 
   const getPodsByLabel = (label: string): string[] => {
+    // TODO: consider kubernetes library instead of manual calls
     const cmd = `kubectl get pods -n ${namespace} -l ${label} -o jsonpath='{.items[*].metadata.name}'`;
-    const pods = execJsonPath(cmd);
+    const pods = execJsonPath(cmd, `pods with label ${label}`);
     return pods;
   };
 
@@ -99,17 +131,62 @@ export function getSecrets(namespace: string): Record<string, string> {
     const echoExpr = fields.map((f) => `$${f}`).join("|");
     const cmd = `kubectl exec -n ${namespace} ${pod} -- sh -c 'echo "${echoExpr}"'`;
     const raw = execSync(cmd, { encoding: "utf-8" }).trim();
+    if (!raw) {
+      console.warn(
+        `pod '${pod}' returned empty env payload for fields [${fields.join(", ")}]
+Generated command: ${cmd}`,
+      );
+      return new Array(fields.length).fill("");
+    }
     return raw.split("|").map((f) => f.trim());
+  };
+
+  const readSeedFile = (
+    pod: string,
+    filePath: string | undefined,
+    label: string,
+  ): string | undefined => {
+    const trimmed = filePath?.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+
+    try {
+      const cmd = `kubectl exec -n ${namespace} ${pod} -- sh -c 'cat "${trimmed}"'`;
+      const seed = execString(cmd, `seed ${label} ${pod}:${trimmed}`);
+      if (seed) {
+        return seed;
+      }
+    } catch (error) {
+      console.warn(
+        `failed to read ${label} seed file '${trimmed}' on pod '${pod}': ${error}`,
+      );
+    }
+    return undefined;
   };
 
   const dbSecrets: SecretsByNode = {};
 
   const processAuthorityPods = () => {
     const pods = getPodsByLabel("midnight.tech/node-type=authority");
+    console.log(`processing ${pods.length} authority pod(s)`);
 
     for (const pod of pods) {
-      const [seed, host, password, port, user, db] = execAndParseEnv(pod, [
+      const [
+        inlineSeed,
+        auraSeedFile,
+        grandpaSeedFile,
+        crossChainSeedFile,
+        host,
+        password,
+        port,
+        user,
+        db,
+      ] = execAndParseEnv(pod, [
         "SEED_PHRASE",
+        "AURA_SEED_FILE",
+        "GRANDPA_SEED_FILE",
+        "CROSS_CHAIN_SEED_FILE",
         "POSTGRES_HOST",
         "POSTGRES_PASSWORD",
         "POSTGRES_PORT",
@@ -117,11 +194,28 @@ export function getSecrets(namespace: string): Record<string, string> {
         "POSTGRES_DB",
       ]);
 
+      // Support legacy single seed, if received
+      const seed: string | undefined = inlineSeed || undefined;
+
+      // Support any seed files, if received
+      const auraSeed = readSeedFile(pod, auraSeedFile, "aura") || undefined;
+      const grandpaSeed =
+        readSeedFile(pod, grandpaSeedFile, "grandpa") || undefined;
+      const crossChainSeed =
+        readSeedFile(pod, crossChainSeedFile, "cross-chain") || undefined;
+
       const nodeKey = formatNodeKey(pod);
       const mappedPort = getPortFromMapping(host, portMapping);
 
+      if (!seed) {
+        console.warn(`pod '${pod}' reported empty SEED_PHRASE`);
+      }
+
       dbSecrets[nodeKey] = {
         seed,
+        auraSeed,
+        grandpaSeed,
+        crossChainSeed,
         postgres: {
           host,
           password,
@@ -135,12 +229,12 @@ export function getSecrets(namespace: string): Record<string, string> {
         role: "authority",
       };
     }
-    // TODO: fix and write this method
-    // writeKeysForAllNodes(dbSecrets, namespace)
+
   };
 
   const processBootPods = () => {
     const pods = getPodsByLabel("midnight.tech/node-type=boot");
+    console.log(`processing ${pods.length} boot pod(s)`);
     for (const pod of pods) {
       const [host, password, port, user, db] = execAndParseEnv(pod, [
         "POSTGRES_HOST",
@@ -173,5 +267,8 @@ export function getSecrets(namespace: string): Record<string, string> {
   processBootPods();
 
   const envObject = convertSecretsToEnvObject(dbSecrets);
+  console.log(
+    `prepared env keys: ${Object.keys(envObject).sort().join(", ")}`,
+  );
   return envObject;
 }
