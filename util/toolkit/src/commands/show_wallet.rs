@@ -1,9 +1,14 @@
+use std::collections::HashMap;
+
 use crate::{
 	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, Source,
 	TxGenerator, Utxo, Wallet, WalletAddress, WalletSeed,
 };
 use clap::Args;
+use hex::ToHex;
+use midnight_node_ledger_helpers::{QualifiedInfo, Timestamp, serialize_untagged};
 use midnight_node_toolkit::cli_parsers::{self as cli};
+use mn_ledger::dust::QualifiedDustOutput;
 
 #[derive(Debug)]
 pub struct WalletInfo<D: DB + Clone> {
@@ -11,10 +16,82 @@ pub struct WalletInfo<D: DB + Clone> {
 	pub utxos: Vec<Utxo>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct UtxoSer {
+	pub value: u128,
+	pub user_address: String,
+	pub token_type: String,
+	pub intent_hash: String,
+	pub output_no: u32,
+}
+
+impl From<Utxo> for UtxoSer {
+	fn from(utxo: Utxo) -> Self {
+		Self {
+			value: utxo.value,
+			user_address: utxo.owner.0.0.encode_hex(),
+			token_type: utxo.type_.0.0.encode_hex(),
+			intent_hash: utxo.intent_hash.0.0.encode_hex(),
+			output_no: utxo.output_no,
+		}
+	}
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct QualifiedDustOutputSer {
+	pub initial_value: u128,
+	pub dust_public: String,
+	pub nonce: String,
+	pub seq: u32,
+	pub ctime: Timestamp,
+	pub backing_night: String,
+	pub mt_index: u64,
+}
+
+impl From<QualifiedDustOutput> for QualifiedDustOutputSer {
+	fn from(output: QualifiedDustOutput) -> Self {
+		Self {
+			initial_value: output.initial_value,
+			dust_public: serialize_untagged(&output.owner).unwrap().encode_hex(),
+			nonce: serialize_untagged(&output.nonce).unwrap().encode_hex(),
+			seq: output.seq,
+			ctime: output.ctime,
+			backing_night: serialize_untagged(&output.backing_night).unwrap().encode_hex(),
+			mt_index: output.mt_index,
+		}
+	}
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct QualifiedInfoSer {
+	pub nonce: String,
+	pub token_type: String,
+	pub value: u128,
+	pub mt_index: u64,
+}
+
+impl From<QualifiedInfo> for QualifiedInfoSer {
+	fn from(info: QualifiedInfo) -> Self {
+		Self {
+			nonce: serialize_untagged(&info.nonce).unwrap().encode_hex(),
+			token_type: serialize_untagged(&info.type_).unwrap().encode_hex(),
+			value: info.value,
+			mt_index: info.mt_index,
+		}
+	}
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct WalletInfoJson {
+	pub coins: HashMap<String, QualifiedInfoSer>,
+	pub utxos: Vec<UtxoSer>,
+	pub dust_utxos: Vec<QualifiedDustOutputSer>,
+}
+
 #[derive(Debug)]
 pub enum ShowWalletResult<D: DB + Clone> {
-	FromSeed(WalletInfo<D>),
-	FromAddress(Vec<Utxo>),
+	Debug(WalletInfo<D>),
+	Json(WalletInfoJson),
 	DryRun(()),
 }
 
@@ -29,6 +106,9 @@ pub struct ShowWalletArgs {
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
 	address: Option<WalletAddress>,
+	/// Output the full wallet state using a debug print
+	#[arg(long)]
+	debug: bool,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	dry_run: bool,
@@ -51,45 +131,57 @@ pub async fn execute(
 	let source_blocks = src.get_txs().await?;
 	let network_id = source_blocks.network().to_string();
 
-	match args.seed {
-		Some(seed) => {
-			let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
+	if let Some(seed) = args.seed {
+		let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
 
-			for block in source_blocks.blocks {
-				context.update_from_block(
-					block.transactions,
-					block.context,
-					block.state_root.clone(),
-				);
-			}
+		for block in source_blocks.blocks {
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		}
 
-			Ok(context.with_ledger_state(|ledger_state| {
-				context.with_wallet_from_seed(seed, |wallet| {
+		Ok(context.with_ledger_state(|ledger_state| {
+			context.with_wallet_from_seed(seed, |wallet| {
+				if args.debug {
 					let utxos = wallet.unshielded_utxos(ledger_state);
-					ShowWalletResult::FromSeed(WalletInfo { wallet: wallet.clone(), utxos })
-				})
-			}))
-		},
-		None => match args.address {
-			Some(address) => {
-				if address.human_readable_part().contains(HRP_CREDENTIAL_SHIELDED) {
-					return Err("unavailable information - secret key needed".into());
+					ShowWalletResult::Debug(WalletInfo { wallet: wallet.clone(), utxos })
+				} else {
+					let utxos = wallet
+						.unshielded_utxos(ledger_state)
+						.into_iter()
+						.map(|u| u.into())
+						.collect();
+					let coins = wallet
+						.shielded
+						.state
+						.coins
+						.iter()
+						.map(|(k, v)| (serialize_untagged(&k).unwrap().encode_hex(), (*v).into()))
+						.collect();
+					let dust_utxos = wallet
+						.dust
+						.dust_local_state
+						.as_ref()
+						.map_or(vec![], |s| s.utxos().map(|s| s.into()).collect());
+					ShowWalletResult::Json(WalletInfoJson { coins, dust_utxos, utxos })
 				}
+			})
+		}))
+	} else {
+		let address = args.address.expect("parsing error; address not given");
+		if address.human_readable_part().contains(HRP_CREDENTIAL_SHIELDED) {
+			return Err("unavailable information - secret key needed".into());
+		}
 
-				let context = LedgerContext::new(network_id);
-				for block in source_blocks.blocks {
-					context.update_from_block(
-						block.transactions,
-						block.context,
-						block.state_root.clone(),
-					);
-				}
+		let context = LedgerContext::new(network_id);
+		for block in source_blocks.blocks {
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		}
 
-				let utxos = context.utxos(address);
-				Ok(ShowWalletResult::FromAddress(utxos))
-			},
-			None => unreachable!(),
-		},
+		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();
+		Ok(ShowWalletResult::Json(WalletInfoJson {
+			coins: Default::default(),
+			utxos,
+			dust_utxos: Default::default(),
+		}))
 	}
 }
 
@@ -106,33 +198,17 @@ mod tests {
 		};
 	}
 
-	/*
-	#[test_case(test_fixture!("mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj", "genesis/genesis_tx_undeployed.mn") =>
-		matches Ok(ShowWalletResult::FromAddress(utxos))
+	#[test_case(test_fixture!("mn_addr_undeployed1h3ssm5ru2t6eqy4g3she78zlxn96e36ms6pq996aduvmateh9p9sk96u7s", "genesis/genesis_block_undeployed.mn") =>
+		matches Ok(ShowWalletResult::Json(WalletInfoJson{ utxos, ..}))
 			if !utxos.is_empty();
 		"funded-unshielded-address-0"
 	)]
-	#[test_case(test_fixture!("mn_addr_undeployed1h3ssm5ru2t6eqy4g3she78zlxn96e36ms6pq996aduvmateh9p9sk96u7s", "genesis/genesis_tx_undeployed.mn") =>
-		matches Ok(ShowWalletResult::FromAddress(utxos))
-			if !utxos.is_empty();
-		"funded-unshielded-address-1"
-	)]
-	#[test_case(test_fixture!("mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r", "genesis/genesis_tx_undeployed.mn") =>
-		matches Ok(ShowWalletResult::FromAddress(utxos))
-			if !utxos.is_empty();
-		"funded-unshielded-address-2"
-	)]
-	#[test_case(test_fixture!("mn_addr_undeployed1g9nr3mvjcey7ca8shcs5d4yjndcnmczf90rhv4nju7qqqlfg4ygs0t4ngm", "genesis/genesis_tx_undeployed.mn") =>
-		matches Ok(ShowWalletResult::FromAddress(utxos))
-			if !utxos.is_empty();
-		"funded-unshielded-address-3"
-	)]
-	#[test_case(test_fixture!("mn_addr_undeployed1em04acpr67j9jr4ffvgjmmvux40497ddmvpgpw2ezmpa2rj0tlaqhgqswk", "genesis/genesis_tx_undeployed.mn") =>
-		matches Ok(ShowWalletResult::FromAddress(utxos))
+	#[test_case(test_fixture!("mn_addr_undeployed1em04acpr67j9jr4ffvgjmmvux40497ddmvpgpw2ezmpa2rj0tlaqhgqswk", "genesis/genesis_block_undeployed.mn") =>
+		matches Ok(ShowWalletResult::Json(WalletInfoJson{ utxos, ..}))
 			if utxos.is_empty();
 		"unfunded-unshielded-address"
 	)]
-	#[test_case(test_fixture!("mn_shield-addr_undeployed12p0cn6f9dtlw74r44pg8mwwjwkr74nuekt4xx560764703qeeuvqxqqgft8uzya2rud445nach4lk74s7upjwydl8s0nejeg6hh5vck0vueqyws5", "genesis/genesis_tx_undeployed.mn") =>
+	#[test_case(test_fixture!("mn_shield-addr_undeployed12p0cn6f9dtlw74r44pg8mwwjwkr74nuekt4xx560764703qeeuvqxqqgft8uzya2rud445nach4lk74s7upjwydl8s0nejeg6hh5vck0vueqyws5", "genesis/genesis_block_undeployed.mn") =>
 		matches Err(error)
 			if error.to_string() == "unavailable information - secret key needed";
 		"illegal-shielded-address"
@@ -144,36 +220,37 @@ mod tests {
 		let args = ShowWalletArgs {
 			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
 			seed: None,
-			address: Some(WalletAddress::from_str(addr).unwrap()),
+			address: Some(cli::wallet_address(addr).unwrap()),
+			debug: false,
+			dry_run: false,
 		};
 
 		super::execute(args).await
 	}
-	*/
 
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::FromSeed(WalletInfo {utxos, ..}))
-			if !utxos.is_empty();
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-1"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000002", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::FromSeed(WalletInfo {utxos, ..}))
-			if !utxos.is_empty();
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-2"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000003", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::FromSeed(WalletInfo {utxos, ..}))
-			if !utxos.is_empty();
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000004", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::FromSeed(WalletInfo {utxos, ..}))
-			if !utxos.is_empty();
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000005", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::FromSeed(WalletInfo {utxos, ..}))
-			if utxos.is_empty();
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+			if utxos.is_empty() && coins.is_empty() && dust_utxos.is_empty();
 		"unfunded-unshielded-seed"
 	)]
 	#[tokio::test]
@@ -185,6 +262,7 @@ mod tests {
 			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
 			seed: Some(seed),
 			address: None,
+			debug: false,
 			dry_run: false,
 		};
 
