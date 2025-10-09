@@ -23,18 +23,23 @@ echo "🎯 Running Toolkit E2E test"
 echo "🧱 NODE_IMAGE: $NODE_IMAGE"
 echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 
-# Ensure Docker network exists
-docker network create midnight-net-tx || true
-
 # Start node in background
 echo "🚀 Starting node container..."
 docker run -d --rm \
   --name midnight-node-tx \
-  --network midnight-net-tx \
-  -p 9944:9944 \
   -e CFG_PRESET=dev \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
+
+tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
+cleanup() {
+    echo "🛑 Killing node container..."
+    docker container stop midnight-node-tx
+    echo "🧹 Removing tempdir..."
+    rm -rf $tempdir
+}
+# --- Always-cleanup: runs on success, error, or interrupt ---
+trap cleanup EXIT
 
 echo "⏳ Waiting for node to boot..."
 sleep 10
@@ -45,29 +50,45 @@ echo "📦 Running toolkit tests..."
 echo "Get version for toolkit"
 docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
 
-tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
 deploy_filename="contract_deploy.mn"
-address_filename="contract_address.mn"
 
-docker run --rm -e RUST_BACKTRACE=1 --network host "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs \
+docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
     --dest-file "/out/$deploy_filename" --to-bytes \
-    contract-calls deploy --rng-seed "$RNG_SEED"
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" contract-address --network undeployed --src-file "/out/$deploy_filename" --dest-file "/out/$address_filename"
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs \
-    --src-files="/out/$deploy_filename" send
+    contract-simple deploy \
+    --rng-seed "$RNG_SEED"
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs contract-calls maintenance --rng-seed "$RNG_SEED" --contract-address "/out/$address_filename"
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs contract-calls call --call-key store --rng-seed "$RNG_SEED" --contract-address "/out/$address_filename"
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network host "$TOOLKIT_IMAGE" generate-txs contract-calls call --call-key check --rng-seed "$RNG_SEED" --contract-address "/out/$address_filename"
+contract_address=$(
+    docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out "$TOOLKIT_IMAGE" \
+        contract-address --src-file "/out/$deploy_filename" --tagged
+)
+
+docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
+    --src-file="/out/$deploy_filename" send
+
+docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+    generate-txs contract-simple maintenance \
+    --rng-seed "$RNG_SEED" \
+    --contract-address "$contract_address"
+
+docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+    generate-txs contract-simple call \
+    --call-key store \
+    --rng-seed "$RNG_SEED" \
+    --contract-address "$contract_address"
+
+docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+    generate-txs contract-simple call \
+    --call-key check \
+    --rng-seed "$RNG_SEED" \
+    --contract-address "$contract_address"
 
 # Send just unshielded
-docker run --rm -e RUST_BACKTRACE=1 --network host "$TOOLKIT_IMAGE" generate-txs single-tx --source-seed "0000000000000000000000000000000000000000000000000000000000000001" --unshielded-amount 10 --destination-address mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804
-
-rm -rf $tempdir
-
-echo "🛑 Killing node container..."
-docker kill midnight-node-tx
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+    generate-txs single-tx \
+    --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --unshielded-amount 10 \
+    --destination-address mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804
 
 echo "✅ Toolkit E2E"

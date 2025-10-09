@@ -29,9 +29,9 @@ struct Cli {
 	#[arg(long, value_name = "FILE", env)]
 	runtime_path: PathBuf,
 
-	/// Seed for executing the upgrade
+	/// Seed for applying the authorized upgrade (can be any authority member)
 	#[arg(short, long, env, default_value = "//Alice")]
-	sudo_key: String,
+	signer_key: String,
 
 	/// Activate upgrade after a timeout (seconds)
 	#[arg(short, long, env)]
@@ -78,7 +78,7 @@ async fn main() -> std::io::Result<()> {
 
 	env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
-	let signer = get_signer(&cli.sudo_key).expect("failed to get signer");
+	let signer = get_signer(&cli.signer_key).expect("failed to get signer");
 	let code = std::fs::read(&cli.runtime_path)?;
 
 	log::info!("Loaded new runtime code from path: {}", cli.runtime_path.display());

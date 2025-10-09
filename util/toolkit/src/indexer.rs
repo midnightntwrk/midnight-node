@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod runtimes;
+
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeMap, VecDeque},
@@ -24,7 +25,10 @@ use std::{
 use subxt::{
 	OnlineClient,
 	blocks::{Block, ExtrinsicEvents},
-	config::{HashFor, substrate::H256},
+	config::{
+		HashFor,
+		substrate::{ConsensusEngineId, DigestItem, H256},
+	},
 };
 use thiserror::Error;
 use tokio::{
@@ -34,7 +38,8 @@ use tokio::{
 };
 
 use crate::{
-	hash_to_str, mn_meta,
+	hash_to_str,
+	indexer::runtimes::{MidnightMetadata, MidnightMetadata0_17_0, RuntimeVersion},
 	serde_def::{self, SourceBlockTransactions},
 };
 
@@ -70,6 +75,10 @@ pub enum IndexerError {
 	StopFailed(#[from] JoinError),
 	#[error("indexer received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
+	#[error("indexer received a block with invalid node version: {0}")]
+	InvalidProtocolVersion(parity_scale_codec::Error),
+	#[error("indexer received a block made with unsupported node version {0}")]
+	UnsupportedBlockVersion(u32),
 }
 
 struct InternalState<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send>
@@ -258,6 +267,33 @@ where
 		self: Arc<Self>,
 		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let version_number = block
+			.header()
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| {
+				const VERSION_ID: ConsensusEngineId = *b"MNSV";
+				if let DigestItem::Consensus(VERSION_ID, data) = item {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				} else {
+					None
+				}
+			})
+			.expect("no runtime version found")?;
+		match version_number {
+			RuntimeVersion::V0_17_0 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_0>(block).await
+			},
+		}
+	}
+
+	async fn process_block_with_protocol<M: MidnightMetadata>(
+		self: Arc<Self>,
+		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let block_hash = block.hash();
+		let state_root = self.node_client.get_state_root_at(Some(block_hash)).await?;
 		let block_header = block.header();
 		let parent_block_hash = block_header.parent_hash;
 
@@ -265,79 +301,51 @@ where
 			.extrinsics()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the transactions: {}", err));
-
-		let calls = extrinsics
-			.iter()
-			.map(|extrinsic| {
-				let call = extrinsic.as_root_extrinsic::<mn_meta::Call>()?;
-				Ok((call, extrinsic))
-			})
-			.filter_ok(|(call, _)| {
-				matches!(
-					call,
-					mn_meta::Call::Midnight(_)
-						| mn_meta::Call::MidnightSystem(_)
-						| mn_meta::Call::NativeTokenObservation(_)
-						| mn_meta::Call::Timestamp(_)
-				)
-			})
-			.collect::<Result<Vec<_>, subxt::Error>>()?;
-
-		let timestamp_ms = *calls
-			.iter()
-			.find_map(|(call, _)| match call {
-				mn_meta::Call::Timestamp(mn_meta::timestamp::Call::set { now }) => Some(now),
-				_ => None,
-			})
-			.expect("failed to find a timestamp extrinsic in block");
-		let context = BlockContext {
-			tblock: Timestamp::from_secs(timestamp_ms / 1000),
-			tblock_err: 30,
-			parent_block_hash: HashOutput(parent_block_hash.0),
-		};
-
 		let events = block
 			.events()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
-		let transactions: Vec<_> = calls
-			.into_iter()
-			.filter_map(|(call, ext)| match call {
-				mn_meta::Call::Midnight(mn_meta::midnight::Call::send_mn_transaction {
-					midnight_tx,
-				}) => {
-					let tx = tagged_deserialize(&mut midnight_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing tx: {}", err));
-					Some(SerdeTransaction::Midnight(tx))
-				},
-				mn_meta::Call::MidnightSystem(
-					mn_meta::midnight_system::Call::send_mn_system_transaction {
-						midnight_system_tx,
-					},
-				) => {
-					let tx = tagged_deserialize(&mut midnight_system_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
-					Some(SerdeTransaction::System(tx))
-				},
-				_ => {
-                    let ext_hash = ext.hash();
-                    let ext_events = ExtrinsicEvents::new(ext_hash, ext.index(), events.clone());
-                    ext_events.iter().filter_map(Result::ok).filter_map(|ev|
-					    ev.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>().expect("Failed to decode event")
-                    ).map(|ev| {
-                        let mut serialized =
-                            ev.0.serialized_system_transaction.as_slice();
-                        let tx =
-                            tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
-                                panic!("Error deserializing system tx from event: {}", err)
-                            });
-                        SerdeTransaction::System(tx)
-                    }).next()
-                }
-			})
-			.collect();
-		Ok(SourceBlockTransactions { transactions, context })
+		let mut timestamp_ms = None;
+		let mut transactions = vec![];
+		for ext in extrinsics.iter() {
+			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
+				continue;
+			};
+			if let Some(ts) = M::timestamp_set(&call) {
+				if timestamp_ms.is_some() {
+					panic!("this block has two timestamps");
+				}
+				timestamp_ms = Some(ts);
+			} else if let Some(bytes) = M::send_mn_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::Midnight(tx));
+			} else if let Some(bytes) = M::send_mn_system_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::System(tx));
+			} else if M::check_for_events(&call) {
+				let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
+				for ev in ext_events.iter().filter_map(Result::ok) {
+					if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
+						let bytes = M::system_transaction_applied(event);
+						let tx = tagged_deserialize(&mut bytes.as_slice()).map_err(|err| {
+							IndexerError::TransactionDeserializeError(err.to_string())
+						})?;
+						transactions.push(SerdeTransaction::System(tx));
+					}
+				}
+			}
+		}
+
+		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
+		let context = BlockContext {
+			tblock: Timestamp::from_secs(timestamp_ms / 1000),
+			tblock_err: 30,
+			parent_block_hash: HashOutput(parent_block_hash.0),
+		};
+		Ok(SourceBlockTransactions { transactions, context, state_root })
 	}
 
 	async fn fetch_midnight_block(

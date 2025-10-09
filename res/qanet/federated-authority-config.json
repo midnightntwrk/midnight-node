@@ -2,13 +2,15 @@
     "council": {
         "members": [
             "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-            "0x7c24a8cb088769cb57462594c0012a335f6b938454b5853aee48b139ae4fac0a"
+            "0x7c24a8cb088769cb57462594c0012a335f6b938454b5853aee48b139ae4fac0a",
+            "0xfea7b7383a91972818f4a507071b58e299518a6041d703dcdfaa3b44f50e7a5d"
         ]  
     },
     "technical_committee": {
         "members": [
             "0x7c45fee2baacf39999113ef0d9cb35144f17dae6a51ab0e8211853162d3d6840",
-            "0x52f3c5ec2fe34821a0c1d38ab8750f6644a8f23fdf2b1c3688a12a695f7de158"
+            "0x52f3c5ec2fe34821a0c1d38ab8750f6644a8f23fdf2b1c3688a12a695f7de158",
+            "0xce7b43e2c20c0800553d7829eaebe948cd8900e6e6ed92b610f169c1f135fa28"
         ]
     }
 }

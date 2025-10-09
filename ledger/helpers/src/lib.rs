@@ -22,15 +22,16 @@ pub use base_crypto::{
 };
 pub use coin_structure::{
 	coin::{
-		Info as CoinInfo, NIGHT, Nonce, PublicKey as CoinPublicKey, QualifiedInfo,
+		Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey, QualifiedInfo,
 		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
+	transfer::Recipient,
 };
 pub use midnight_serialize::{self as mn_ledger_serialize, Deserializable, Serializable, Tagged};
 pub use onchain_runtime::{
 	HistoricMerkleTree_check_root, HistoricMerkleTree_insert,
-	context::{BlockContext, QueryContext},
+	context::{BlockContext, ClaimedUnshieldedSpendsKey, Effects as ContractEffects, QueryContext},
 	cost_model::CostModel,
 	error::TranscriptRejected,
 	ops::{Key, Op, key},
@@ -91,7 +92,6 @@ pub use rand::{
 	Rng, SeedableRng,
 	rngs::{OsRng, StdRng},
 };
-pub use rand_chacha::ChaCha20Rng;
 pub use zswap::{
 	Delta, Input, Offer, Output, Transient, ZSWAP_EXPECTED_FILES,
 	error::OfferCreationFailed,
@@ -182,8 +182,24 @@ impl Deserializable for NetworkId {
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes
-pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io::Error> {
+pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);
+	let mut bytes = Vec::with_capacity(size);
+	T::serialize(value, &mut bytes)?;
+	Ok(bytes)
+}
+
+/// Deserializes a mn_ledger::serialize-able type from bytes
+pub fn deserialize_untagged<T: Deserializable + Tagged>(
+	mut bytes: impl std::io::Read,
+) -> Result<T, std::io::Error> {
+	let val: T = T::deserialize(&mut bytes, 0)?;
+	Ok(val)
+}
+
+/// Serializes a mn_ledger::serialize-able type into bytes
+pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io::Error> {
+	let size = midnight_serialize::tagged_serialized_size(value);
 	let mut bytes = Vec::with_capacity(size);
 	midnight_serialize::tagged_serialize(value, &mut bytes)?;
 	Ok(bytes)

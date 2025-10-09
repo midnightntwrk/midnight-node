@@ -6,9 +6,9 @@ export ledger round: Counter;
 
 witness something(): [];
 
-export circuit mint(): [] {
-    const coin = ShieldedCoinInfo { nonce:  pad(32, "37"), color: tokenType(pad(32, "tDust"), kernel.self()), value: 500000000000000 as Uint<64> };
-    kernel.mintShielded(pad(32, "tDust"), 500000000000000 as Uint<64>);
+export circuit mint(nonce: Bytes<32>, domainSep: Bytes<32>, amount: Uint<64>): [] {
+    const coin = ShieldedCoinInfo { nonce:  disclose(nonce), color: tokenType(disclose(domainSep), kernel.self()), value: disclose(amount) };
+    kernel.mintShielded(disclose(domainSep), disclose(amount));
     createZswapOutput(coin, left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()));
     something();
 }

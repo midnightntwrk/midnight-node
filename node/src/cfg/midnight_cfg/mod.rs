@@ -77,12 +77,6 @@ pub struct MidnightCfg {
 	/// see partner-chains DbSyncBlockDataSourceConfig
 	pub block_stability_margin: Option<u32>,
 
-	/// An optional proposal of a new runtime file for the Midnight runtime.
-	/// The spec version and code hash will be extracted from this file, otherwise, the default path will be used.
-	/// If not in the default path, the node will not vote in favor of a WASM to promote for a runtime upgrade
-	#[validate(custom = |s| maybe(s, path_exists))]
-	pub proposed_wasm_file: Option<String>,
-
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 }
