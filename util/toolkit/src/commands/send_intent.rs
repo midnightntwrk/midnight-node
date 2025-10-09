@@ -112,7 +112,7 @@ mod test {
 		let contract_args = CustomContractArgs {
 			info,
 			compiled_contract_dir: compiled_contract_dir.to_string(),
-			intent_file,
+			intent_files: vec![intent_file],
 			zswap_state_file: None,
 			shielded_destinations: vec![],
 		};
