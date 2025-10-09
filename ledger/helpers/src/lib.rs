@@ -92,7 +92,6 @@ pub use rand::{
 	Rng, SeedableRng,
 	rngs::{OsRng, StdRng},
 };
-pub use rand_chacha::ChaCha20Rng;
 pub use zswap::{
 	Delta, Input, Offer, Output, Transient, ZSWAP_EXPECTED_FILES,
 	error::OfferCreationFailed,

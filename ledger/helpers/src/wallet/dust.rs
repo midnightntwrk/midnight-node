@@ -8,7 +8,6 @@ use mn_ledger::{
 	events::Event,
 	structure::{LedgerParameters, ProofPreimageMarker},
 };
-use rand::SeedableRng;
 use thiserror::Error;
 
 use crate::{
@@ -45,8 +44,7 @@ impl<D: DB> IntoWalletAddress for DustWallet<D> {
 
 impl<D: DB> DustWallet<D> {
 	fn from_seed(derived_seed: [u8; 32], params: Option<&LedgerParameters>) -> Self {
-		let mut rng = rand_chacha::ChaCha12Rng::from_seed(derived_seed);
-		let secret_key = DustSecretKey::sample(&mut rng);
+		let secret_key = DustSecretKey::derive_secret_key(&derived_seed);
 		let public_key = secret_key.clone().into();
 		let dust_local_state = params.map(|p| DustLocalState::new(p.dust));
 		let spent_utxos = HashSet::new();
