@@ -38,7 +38,6 @@ interface ImageUpgradeCliOpts {
 
 interface RuntimeUpgradeCliOpts {
   wasm: string;
-  skipRun?: boolean;
   rpcUrl?: string;
   sudoUri?: string;
   delayBlocks?: number;
@@ -135,7 +134,6 @@ program
 
     const opts: RuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
-      skipRun: cliOpts.skipRun === true,
       sudoUri: cliOpts.sudoUri,
       delayBlocks: cliOpts.delayBlocks,
       profiles,

@@ -51,13 +51,11 @@ export async function runtimeUpgrade(
   console.log(`Loaded runtime wasm (${wasm.length} bytes)`);
   console.log(`Runtime code hash: ${u8aToHex(codeHash)}`);
 
-  if (!opts.skipRun) {
-    console.log("🚀 Ensuring network is running before applying upgrade...");
-    await run(namespace, {
-      profiles: opts.profiles,
-      envFile: opts.envFile,
-    });
-  }
+  console.log("🚀 Ensuring network is running before applying upgrade...");
+  await run(namespace, {
+    profiles: opts.profiles,
+    envFile: opts.envFile,
+  });
 
   const rpcUrl = "ws://localhost:9944";
   console.log(`Connecting to node at ${rpcUrl}`);
@@ -68,7 +66,7 @@ export async function runtimeUpgrade(
     api = await ApiPromise.create({ provider });
 
     const keyring = new Keyring({ type: "sr25519" });
-    const envSudoUri = process.env.RUNTIME_UPGRADE_SUDO_URI;
+    const envSudoUri = process.env.SUDO_URI;
     // TODO: should never default
     const sudoUri = opts.sudoUri ?? envSudoUri ?? "//Alice";
     console.log(`Using sudo key URI '${sudoUri}'`);
