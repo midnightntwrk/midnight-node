@@ -4,7 +4,7 @@
 
 use crate as pallet_federated_authority_observation;
 use frame_support::{derive_impl, parameter_types, traits::NeverEnsureOrigin};
-use runtime_common::governance::{AlwaysNo, MembershipHandler};
+use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 use sp_runtime::{BuildStorage, traits::IdentityLookup};
 
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -62,7 +62,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type ResetOrigin = NeverEnsureOrigin<()>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, Council>;
-	type MembershipChanged = ();
+	type MembershipChanged = MembershipHandler<Test, Council>;
 	type MaxMembers = CouncilMaxMembers;
 	type WeightInfo = ();
 }
@@ -93,7 +93,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type ResetOrigin = NeverEnsureOrigin<()>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, TechnicalCommittee>;
-	type MembershipChanged = ();
+	type MembershipChanged = MembershipHandler<Test, TechnicalCommittee>;
 	type MaxMembers = TechnicalCommitteeMaxMembers;
 	type WeightInfo = ();
 }
@@ -101,8 +101,10 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 impl pallet_federated_authority_observation::Config for Test {
 	type CouncilMaxMembers = CouncilMaxMembers;
 	type TechnicalCommitteeMaxMembers = TechnicalCommitteeMaxMembers;
-	type CouncilMembershipChanged = MembershipHandler<Test, Council>;
-	type TechnicalCommitteeMembershipChanged = MembershipHandler<Test, TechnicalCommittee>;
+	type CouncilMembershipChanged =
+		MembershipObservationHandler<Test, pallet_membership::Instance1>;
+	type TechnicalCommitteeMembershipChanged =
+		MembershipObservationHandler<Test, pallet_membership::Instance2>;
 }
 
 // Build genesis storage according to the mock runtime.

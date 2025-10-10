@@ -1,5 +1,6 @@
-use frame_support::traits::{ChangeMembers, InitializeMembers};
+use frame_support::traits::{ChangeMembers, InitializeMembers, UnfilteredDispatchable};
 use pallet_collective::{DefaultVote, MemberCount};
+use sp_runtime::traits::Dispatchable;
 use sp_std::marker::PhantomData;
 
 /// Wrapper struct to handle frame_system sufficients and delegate
@@ -58,5 +59,26 @@ impl DefaultVote for AlwaysNo {
 		_len: MemberCount,
 	) -> bool {
 		false
+	}
+}
+
+/// Generic handler for membership observation that dispatches reset_members to a pallet_membership instance
+/// The `I` parameter should be the pallet_membership instance (e.g., pallet_membership::Instance1)
+pub struct MembershipObservationHandler<T, I>(PhantomData<(T, I)>);
+
+impl<T, I> ChangeMembers<T::AccountId> for MembershipObservationHandler<T, I>
+where
+	T: frame_system::Config + pallet_membership::Config<I>,
+	I: 'static,
+	T::RuntimeCall: From<pallet_membership::Call<T, I>> + Dispatchable,
+{
+	fn change_members_sorted(
+		_incoming: &[T::AccountId],
+		_outgoing: &[T::AccountId],
+		sorted_new: &[T::AccountId],
+	) {
+		let call = pallet_membership::Call::<T, I>::reset_members { members: sorted_new.to_vec() };
+
+		let _ = call.dispatch_bypass_filter(frame_system::RawOrigin::None.into());
 	}
 }

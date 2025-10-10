@@ -124,7 +124,7 @@ use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
-use runtime_common::governance::{AlwaysNo, MembershipHandler};
+use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -711,8 +711,8 @@ parameter_types! {
 }
 
 /// Council
-type CouncilCollective = pallet_collective::Instance1;
-impl pallet_collective::Config<CouncilCollective> for Runtime {
+type CouncilCollectiveInstance = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollectiveInstance> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -728,7 +728,8 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
-impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
+type CouncilMembershipInstance = pallet_membership::Instance1;
+impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
@@ -736,14 +737,14 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
 	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, Council>;
-	type MembershipChanged = (); // Managed by `federated-authority-observation` pallet
+	type MembershipChanged = MembershipHandler<Runtime, Council>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
 
 /// Technical Committee
-type TechnicalCommitteeCollective = pallet_collective::Instance2;
-impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
+type TechnicalCommitteeCollectiveInstance = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollectiveInstance> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
@@ -759,7 +760,8 @@ impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
-impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
+type TechnicalCommitteeMembershipInstance = pallet_membership::Instance2;
+impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
@@ -767,7 +769,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
 	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
-	type MembershipChanged = (); // Managed by `federated-authority-observation` pallet
+	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
 	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
 }
@@ -777,20 +779,30 @@ pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
 
 type CouncilApproval = AuthorityBody<
 	Council,
-	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollectiveInstance, 2, 3>,
 >;
 type TechnicalCommitteeApproval = AuthorityBody<
 	TechnicalCommittee,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<
+		AccountId,
+		TechnicalCommitteeCollectiveInstance,
+		2,
+		3,
+	>,
 >;
 
 type CouncilRevoke = AuthorityBody<
 	Council,
-	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollectiveInstance, 2, 3>,
 >;
 type TechnicalCommitteeRevoke = AuthorityBody<
 	TechnicalCommittee,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<
+		AccountId,
+		TechnicalCommitteeCollectiveInstance,
+		2,
+		3,
+	>,
 >;
 
 impl pallet_federated_authority::Config for Runtime {
@@ -808,8 +820,10 @@ impl pallet_federated_authority::Config for Runtime {
 impl pallet_federated_authority_observation::Config for Runtime {
 	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
 	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
-	type CouncilMembershipChanged = MembershipHandler<Runtime, Council>;
-	type TechnicalCommitteeMembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
+	type CouncilMembershipChanged =
+		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
+	type TechnicalCommitteeMembershipChanged =
+		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
 }
 
 pub struct MidnightTokenTransferHandler;

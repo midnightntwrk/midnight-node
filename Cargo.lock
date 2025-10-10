@@ -11154,6 +11154,9 @@ dependencies = [
  "frame-support",
  "frame-system",
  "pallet-collective",
+ "pallet-federated-authority-observation",
+ "pallet-membership",
+ "sp-runtime",
  "sp-std",
 ]
 
