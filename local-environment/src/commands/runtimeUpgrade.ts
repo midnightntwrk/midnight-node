@@ -25,39 +25,36 @@ import { blake2AsU8a } from "@polkadot/util-crypto";
 import { run } from "./run";
 import { RuntimeUpgradeOptions } from "../lib/types";
 
-type PromiseExtrinsic = SubmittableExtrinsic;
+const DEFAULT_RUNTIME_UPGRADE_DELAY = 15;
+const DEFAULT_RPC_URL = "ws://localhost:9944";
 
-const DEFAULT_RUNTIME_UPGRADE_DELAY = 30;
+interface WasmArtifact {
+  path: string;
+  hex: string;
+  hash: string;
+  length: number;
+}
 
 export async function runtimeUpgrade(
   namespace: string,
   opts: RuntimeUpgradeOptions,
 ) {
-  const wasmPath = path.resolve(opts.wasmPath);
-  if (!fs.existsSync(wasmPath)) {
-    throw new Error(`Unable to find runtime wasm at ${wasmPath}`);
+  const wasm = loadRuntimeWasm(opts.wasmPath);
+
+  console.log(`Loaded runtime wasm from ${wasm.path} (${wasm.length} bytes)`);
+  console.log(`Runtime code hash: ${wasm.hash}`);
+
+  if (opts.skipRun) {
+    console.log("Skipping docker-compose bring-up (--skip-run)");
+  } else {
+    console.log("Ensuring network is running before applying upgrade...");
+    await run(namespace, {
+      profiles: opts.profiles,
+      envFile: opts.envFile,
+    });
   }
 
-  // const wasm = fs.readFileSync(wasmPath);
-
-    // Retrieve the runtime to upgrade
-  const wasm = fs.readFileSync(wasmPath).toString('hex');
-
-  if (!wasm.length) {
-    throw new Error(`Runtime wasm at ${wasmPath} is empty`);
-  }
-
-  const codeHash = blake2AsU8a(wasm);
-  console.log(`Loaded runtime wasm (${wasm.length} bytes)`);
-  console.log(`Runtime code hash: ${u8aToHex(codeHash)}`);
-
-  console.log("🚀 Ensuring network is running before applying upgrade...");
-  await run(namespace, {
-    profiles: opts.profiles,
-    envFile: opts.envFile,
-  });
-
-  const rpcUrl = "ws://localhost:9944";
+  const rpcUrl = resolveRpcUrl(opts.rpcUrl);
   console.log(`Connecting to node at ${rpcUrl}`);
   const provider = new WsProvider(rpcUrl);
   let api: ApiPromise | undefined;
@@ -65,48 +62,27 @@ export async function runtimeUpgrade(
   try {
     api = await ApiPromise.create({ provider });
 
-    const keyring = new Keyring({ type: "sr25519" });
-    const envSudoUri = process.env.SUDO_URI;
-    // TODO: should never default
-    const sudoUri = opts.sudoUri ?? envSudoUri ?? "//Alice";
-    console.log(`Using sudo key URI '${sudoUri}'`);
-    const sudoPair = keyring.addFromUri(sudoUri, { name: "Sudo" });
+    const sudoPair = createSudoPair(opts.sudoUri);
+    const delayBlocks = resolveDelayBlocks(opts.delayBlocks);
 
-    const delayBlocks = opts.delayBlocks ?? DEFAULT_RUNTIME_UPGRADE_DELAY;
-    if (delayBlocks < 0) {
-      throw new Error("delayBlocks cannot be negative");
-    }
-
-    const currentHeader = await api.rpc.chain.getHeader();
-    const currentNumber = currentHeader.number.toBn();
-    const targetNumber = currentNumber.add(new BN(delayBlocks));
-
-    if (delayBlocks > 0) {
-      console.log(
-        `Waiting for block #${targetNumber.toString()} (current #${currentNumber.toString()}, delay ${delayBlocks}) before submitting upgrade`,
-      );
-      await waitForTargetBlock(api, targetNumber);
-    } else {
-      console.log("No block delay requested; submitting upgrade immediately");
-    }
+    await waitForDelayBlocks(api, delayBlocks);
 
     console.log("Submitting sudo runtime upgrade extrinsic...");
 
-    const sudoCall = api.tx.system.setCode(`0x${wasm}`);
-    const applyResult = await signAndWait(
+    const sudoCall = api.tx.system.setCode(wasm.hex);
+    const result = await signAndWait(
       api.tx.sudo.sudo(sudoCall),
       sudoPair,
       "sudo.system.setCode",
     );
 
-    if (!hasEvent(applyResult, "system", "CodeUpdated")) {
+    if (!hasEvent(result, "system", "CodeUpdated")) {
       throw new Error(
         "Runtime upgrade executed but System.CodeUpdated event not found.",
       );
     }
 
     console.log("Runtime upgrade completed successfully.");
-
   } finally {
     if (api) {
       await api.disconnect();
@@ -116,49 +92,111 @@ export async function runtimeUpgrade(
   }
 }
 
-async function waitForTargetBlock(api: ApiPromise, target: BN) {
+function loadRuntimeWasm(wasmPath: string): WasmArtifact {
+  const resolvedPath = path.resolve(wasmPath);
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(`Unable to find runtime wasm at ${resolvedPath}`);
+  }
+
+  const bytes = fs.readFileSync(resolvedPath);
+  if (bytes.length === 0) {
+    throw new Error(`Runtime wasm at ${resolvedPath} is empty`);
+  }
+
+  return {
+    path: resolvedPath,
+    length: bytes.length,
+    hex: u8aToHex(bytes),
+    hash: u8aToHex(blake2AsU8a(bytes)),
+  };
+}
+
+function resolveDelayBlocks(candidate?: number): number {
+  if (candidate === undefined) {
+    return DEFAULT_RUNTIME_UPGRADE_DELAY;
+  }
+
+  if (!Number.isInteger(candidate)) {
+    throw new Error("delayBlocks must be an integer");
+  }
+
+  if (candidate < 0) {
+    throw new Error("delayBlocks cannot be negative");
+  }
+
+  return candidate;
+}
+
+async function waitForDelayBlocks(api: ApiPromise, delayBlocks: number) {
+  const currentHeader = await api.rpc.chain.getHeader();
+  const currentNumber = currentHeader.number.toBn();
+
+  if (delayBlocks === 0) {
+    console.log("No block delay requested; submitting upgrade immediately");
+    return;
+  }
+
+  const targetNumber = currentNumber.add(new BN(delayBlocks));
+  console.log(
+    `Waiting for block #${targetNumber.toString()} (current #${currentNumber.toString()}, delay ${delayBlocks}) before submitting upgrade`,
+  );
+  await waitForTargetBlock(api, targetNumber);
+}
+
+function waitForTargetBlock(api: ApiPromise, target: BN) {
   return new Promise<void>((resolve, reject) => {
     let unsub: (() => void) | undefined;
 
-    const handleError = (error: unknown) => {
-      unsub?.();
-      reject(error);
+    const cleanup = () => {
+      if (unsub) {
+        unsub();
+        unsub = undefined;
+      }
     };
 
-    (async () => {
-      try {
-        unsub = await api.rpc.chain.subscribeNewHeads((header) => {
-          const number = header.number.toBn();
-          if (number.gte(target)) {
-            console.log(
-              `[runtimeUpgrade] Reached block #${number.toString()} (target #${target.toString()})`,
-            );
-            unsub?.();
-            resolve();
-          }
-        });
-      } catch (error) {
-        handleError(error);
-      }
-    })();
+    api.rpc.chain
+      .subscribeNewHeads((header) => {
+        const number = header.number.toBn();
+        if (number.gte(target)) {
+          console.log(
+            `Reached block: ${number.toString()} (target: ${target.toString()})`,
+          );
+          cleanup();
+          resolve();
+        }
+      })
+      .then((subscription) => {
+        unsub = subscription;
+      })
+      .catch((error) => {
+        cleanup();
+        reject(error);
+      });
   });
 }
 
 async function signAndWait(
-  extrinsic: PromiseExtrinsic,
+  extrinsic: SubmittableExtrinsic,
   signer: KeyringPair,
   label: string,
 ): Promise<ISubmittableResult> {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let unsub: (() => void) | undefined;
 
-    const handleError = (err: unknown) => {
-      unsub?.();
-      reject(err);
+    const cleanup = () => {
+      if (unsub) {
+        unsub();
+        unsub = undefined;
+      }
     };
 
-    try {
-      unsub = await extrinsic.signAndSend(signer, { nonce: -1 }, (result: ISubmittableResult) => {
+    const fail = (error: unknown) => {
+      cleanup();
+      reject(error);
+    };
+
+    extrinsic
+      .signAndSend(signer, { nonce: -1 }, (result: ISubmittableResult) => {
         if (result.dispatchError) {
           let message = result.dispatchError.toString();
           if (result.dispatchError.isModule) {
@@ -167,7 +205,7 @@ async function signAndWait(
             );
             message = `${meta.section}.${meta.name}: ${meta.docs.join(" ")}`;
           }
-          handleError(new Error(`${label} failed: ${message}`));
+          fail(new Error(`${label} failed: ${message}`));
           return;
         }
 
@@ -181,13 +219,14 @@ async function signAndWait(
           console.log(
             `${label} finalized in block ${result.status.asFinalized.toHex()}`,
           );
-          unsub?.();
+          cleanup();
           resolve(result);
         }
-      });
-    } catch (error) {
-      handleError(error);
-    }
+      })
+      .then((subscription) => {
+        unsub = subscription;
+      })
+      .catch(fail);
   });
 }
 
@@ -202,4 +241,26 @@ function hasEvent(
       evt.event.section.toLowerCase() === targetSection &&
       evt.event.method === method,
   );
+}
+
+function createSudoPair(sudoUriOverride?: string): KeyringPair {
+  const keyring = new Keyring({ type: "sr25519" });
+  const envSudoUri = process.env.SUDO_URI;
+  // TODO: remove default seed
+  const resolved = (sudoUriOverride ?? envSudoUri ?? "//Alice").trim();
+
+  if (!resolved) {
+    throw new Error("Resolved sudo URI is empty");
+  }
+
+  console.log(`Using sudo key URI '${resolved}'`);
+  return keyring.addFromUri(resolved, { name: "Sudo" });
+}
+
+function resolveRpcUrl(candidate?: string): string {
+  const trimmed = candidate?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return DEFAULT_RPC_URL;
 }

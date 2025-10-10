@@ -17,9 +17,6 @@ export interface RunOptions {
   envFile?: string[];
 }
 
-/**
- * Options for imageUpgrade
- */
 export interface ImageUpgradeOptions extends RunOptions {
   /** which env var controls the node image tag in your compose files default: MN_IMAGE_TAG */
   imageEnvVar?: string;
@@ -37,9 +34,6 @@ export interface ImageUpgradeOptions extends RunOptions {
   requireHealthy?: boolean;
 }
 
-/**
- * Options for runtimeUpgrade
- */
 export interface RuntimeUpgradeOptions extends RunOptions {
   /** absolute or relative path to the runtime wasm artifact */
   wasmPath: string;
@@ -47,4 +41,8 @@ export interface RuntimeUpgradeOptions extends RunOptions {
   sudoUri?: string;
   /** how many blocks to wait before submitting the sudo upgrade */
   delayBlocks?: number;
+  /** skip bringing up docker-compose before submitting the upgrade */
+  skipRun?: boolean;
+  /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
+  rpcUrl?: string;
 }

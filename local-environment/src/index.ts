@@ -43,6 +43,7 @@ interface RuntimeUpgradeCliOpts {
   delayBlocks?: number;
   profiles?: string[];
   envFile?: string[];
+  skipRun?: boolean;
 }
 
 program
@@ -113,8 +114,14 @@ program
 program
   .command("runtime-upgrade <network>")
   .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
-  .option("--skip-run", "Do not ensure docker-compose is running before upgrading")
-  .option("--rpc-url <url>", "WebSocket RPC endpoint (default ws://localhost:9944)")
+  .option(
+    "--skip-run",
+    "Do not ensure docker-compose is running before upgrading",
+  )
+  .option(
+    "--rpc-url <url>",
+    "WebSocket RPC endpoint (default ws://localhost:9944)",
+  )
   .option(
     "--sudo-uri <uri>",
     "Keyring URI used to submit the sudo upgrade (default env or //Alice)",
@@ -138,6 +145,8 @@ program
       delayBlocks: cliOpts.delayBlocks,
       profiles,
       envFile: cliOpts.envFile,
+      rpcUrl: cliOpts.rpcUrl,
+      skipRun: cliOpts.skipRun,
     };
 
     await runtimeUpgrade(network, opts);
