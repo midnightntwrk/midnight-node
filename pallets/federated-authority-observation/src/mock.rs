@@ -4,6 +4,7 @@
 
 use crate as pallet_federated_authority_observation;
 use frame_support::{derive_impl, parameter_types, traits::NeverEnsureOrigin};
+use frame_system::{EnsureNone, EnsureRoot};
 use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 use sp_runtime::{BuildStorage, traits::IdentityLookup};
 
@@ -37,7 +38,7 @@ parameter_types! {
 }
 
 /// Council
-type CouncilCollective = pallet_collective::Instance1;
+pub type CouncilCollective = pallet_collective::Instance1;
 impl pallet_collective::Config<CouncilCollective> for Test {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
@@ -48,8 +49,8 @@ impl pallet_collective::Config<CouncilCollective> for Test {
 	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>;
 	type MaxProposalWeight = ();
-	type DisapproveOrigin = frame_system::EnsureRoot<Self::AccountId>;
-	type KillOrigin = frame_system::EnsureRoot<Self::AccountId>;
+	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
+	type KillOrigin = EnsureRoot<Self::AccountId>;
 	type Consideration = ();
 	type WeightInfo = ();
 }
@@ -59,7 +60,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, Council>;
 	type MembershipChanged = MembershipHandler<Test, Council>;
@@ -68,7 +69,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 }
 
 /// Technical Committee
-type TechnicalCommitteeCollective = pallet_collective::Instance2;
+pub type TechnicalCommitteeCollective = pallet_collective::Instance2;
 impl pallet_collective::Config<TechnicalCommitteeCollective> for Test {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
@@ -79,8 +80,8 @@ impl pallet_collective::Config<TechnicalCommitteeCollective> for Test {
 	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>;
 	type MaxProposalWeight = ();
-	type DisapproveOrigin = frame_system::EnsureRoot<Self::AccountId>;
-	type KillOrigin = frame_system::EnsureRoot<Self::AccountId>;
+	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
+	type KillOrigin = EnsureRoot<Self::AccountId>;
 	type Consideration = ();
 	type WeightInfo = ();
 }
@@ -90,7 +91,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, TechnicalCommittee>;
 	type MembershipChanged = MembershipHandler<Test, TechnicalCommittee>;

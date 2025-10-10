@@ -111,7 +111,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = Council;
 	type MembershipChanged = Council;
@@ -142,7 +142,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = NeverEnsureOrigin<()>;
+	type ResetOrigin = EnsureNone<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = TechnicalCommittee;
 	type MembershipChanged = TechnicalCommittee;

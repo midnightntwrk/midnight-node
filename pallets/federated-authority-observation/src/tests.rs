@@ -331,9 +331,14 @@ fn membership_changed_callbacks_are_called() {
 		));
 
 		// Verify that the pallet_membership instances were updated via MembershipHandler
-		// The MembershipHandler should have updated the membership pallets
+		// The MembershipHandler should have updated the membership pallets and the collective pallets
 		assert_eq!(CouncilMembership::members().to_vec(), vec![1, 2, 3]);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), vec![4, 5, 6]);
+		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), vec![1, 2, 3]);
+		assert_eq!(
+			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
+			vec![4, 5, 6]
+		);
 
 		// Verify that sufficients were incremented for all members
 		// This is done by MembershipHandler via frame_system::inc_sufficients
@@ -463,9 +468,14 @@ fn membership_handler_integration_test() {
 			Some(initial_tc.clone()),
 		));
 
-		// Verify membership pallets were updated
+		// Verify membership & collective pallets were updated
 		assert_eq!(CouncilMembership::members().to_vec(), vec![1, 2, 3]);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), vec![4, 5, 6]);
+		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), vec![1, 2, 3]);
+		assert_eq!(
+			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
+			vec![4, 5, 6]
+		);
 
 		// Verify sufficients were incremented for initial members
 		for member in &initial_council {
@@ -487,9 +497,14 @@ fn membership_handler_integration_test() {
 			Some(new_tc.clone()),
 		));
 
-		// Verify membership pallets were updated
+		// Verify membership & collective pallets were updated
 		assert_eq!(CouncilMembership::members().to_vec(), vec![2, 3, 7]);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), vec![5, 8]);
+		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), vec![2, 3, 7]);
+		assert_eq!(
+			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
+			vec![5, 8]
+		);
 
 		// Verify sufficients for outgoing members were decremented
 		let account_1 = frame_system::Pallet::<Test>::account(&1);
