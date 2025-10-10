@@ -17,191 +17,133 @@
 
 use super::*;
 
-#[allow(unused)]
 use crate::Pallet as FederatedAuthorityObservation;
-use frame_benchmarking::v2::*;
+use frame_benchmarking::{account, v2::*};
 use frame_system::RawOrigin;
 
 /// Helper function to generate a list of accounts
-fn generate_accounts<T: Config>(count: u32) -> Vec<T::AccountId>
-where
-	T::AccountId: From<u64>,
-{
-	(0..count).map(|i| (i as u64).into()).collect()
+fn generate_accounts<T: Config>(count: u32) -> Vec<T::AccountId> {
+	(0..count).map(|i| account("member", i, 0)).collect()
 }
 
-/// Helper function to set up initial members for both committees
-fn setup_initial_members<T: Config>(council_count: u32, tc_count: u32)
-where
-	T::AccountId: From<u64>,
-{
-	let council_members = generate_accounts::<T>(council_count);
-	let tc_members = generate_accounts::<T>(tc_count + 1000); // Offset to avoid overlap
-
-	let _ = FederatedAuthorityObservation::<T>::reset_members(
-		RawOrigin::None.into(),
-		Some(council_members),
-		Some(tc_members),
-	);
-}
-
-#[benchmarks(
-	where
-		T::AccountId: From<u64>,
-)]
+#[benchmarks]
 mod benchmarks {
 	use super::*;
 
 	/// Benchmark resetting only Council members
-	/// Variable `n`: Number of council members to reset
+	/// Variable `a`: Number of council members to reset
+	/// Variable `b`: Number of technical committee members (unchanged from existing)
 	#[benchmark]
-	fn reset_council_members(n: Linear<1, 100>) {
+	fn reset_members_only_council(
+		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
+		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
+	) {
 		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
+		let initial_council = generate_accounts::<T>(a + 1);
+		let initial_tc = generate_accounts::<T>(b);
 
-		let new_council_members = generate_accounts::<T>(n);
+		let _ = FederatedAuthorityObservation::<T>::reset_members(
+			RawOrigin::None.into(),
+			initial_council,
+			initial_tc.clone(),
+		);
+
+		// Create new council members
+		let new_council_members = generate_accounts::<T>(a);
 
 		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), None);
+		reset_members(RawOrigin::None, new_council_members, initial_tc);
 
-		// Verify the members were set correctly
-		let current_members = T::CouncilMembershipHandler::sorted_members();
-		assert_eq!(current_members.len(), n as usize);
+		// Verify the council members were changed
+		let current_council = T::CouncilMembershipHandler::sorted_members();
+		assert_eq!(current_council.len(), a as usize);
 	}
 
 	/// Benchmark resetting only Technical Committee members
-	/// Variable `n`: Number of technical committee members to reset
+	/// Variable `a`: Number of council members (unchanged from existing)
+	/// Variable `b`: Number of technical committee members to reset
 	#[benchmark]
-	fn reset_technical_committee_members(n: Linear<1, 100>) {
+	fn reset_members_only_technical_committee(
+		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
+		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
+	) {
 		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
+		let initial_council = generate_accounts::<T>(a);
+		let initial_tc = generate_accounts::<T>(b + 1);
 
-		let new_tc_members = generate_accounts::<T>(n + 1000); // Offset to avoid overlap
+		let _ = FederatedAuthorityObservation::<T>::reset_members(
+			RawOrigin::None.into(),
+			initial_council.clone(),
+			initial_tc,
+		);
+
+		// Create new TC members
+		let new_tc_members = generate_accounts::<T>(b);
 
 		#[extrinsic_call]
-		reset_members(RawOrigin::None, None, Some(new_tc_members));
+		reset_members(RawOrigin::None, initial_council, new_tc_members);
 
-		// Verify the members were set correctly
-		let current_members = T::TechnicalCommitteeMembershipHandler::sorted_members();
-		assert_eq!(current_members.len(), n as usize);
+		// Verify the TC members were changed
+		let current_tc = T::TechnicalCommitteeMembershipHandler::sorted_members();
+		assert_eq!(current_tc.len(), b as usize);
 	}
 
 	/// Benchmark resetting both Council and Technical Committee members
-	/// Variable `n`: Number of members for each committee
+	/// Variable `a`: Number of council members to reset
+	/// Variable `b`: Number of technical committee members to reset
 	#[benchmark]
-	fn reset_both_committees(n: Linear<1, 100>) {
+	fn reset_members(
+		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
+		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
+	) {
 		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
+		let initial_council = generate_accounts::<T>(a + 1);
+		let initial_tc = generate_accounts::<T>(b + 1);
 
-		let new_council_members = generate_accounts::<T>(n);
-		let new_tc_members = generate_accounts::<T>(n + 1000); // Offset to avoid overlap
+		let _ = FederatedAuthorityObservation::<T>::reset_members(
+			RawOrigin::None.into(),
+			initial_council,
+			initial_tc,
+		);
+
+		// Create new members for both committees
+		let new_council_members = generate_accounts::<T>(a);
+		let new_tc_members = generate_accounts::<T>(b);
 
 		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), Some(new_tc_members));
+		reset_members(RawOrigin::None, new_council_members, new_tc_members);
 
-		// Verify both were set correctly
+		// Verify both were changed
 		let council_current = T::CouncilMembershipHandler::sorted_members();
 		let tc_current = T::TechnicalCommitteeMembershipHandler::sorted_members();
-		assert_eq!(council_current.len(), n as usize);
-		assert_eq!(tc_current.len(), n as usize);
+		assert_eq!(council_current.len(), a as usize);
+		assert_eq!(tc_current.len(), b as usize);
 	}
 
-	/// Benchmark the worst case: Maximum members for both committees
+	/// Benchmark no-op call (no changes for either committee)
 	#[benchmark]
-	fn reset_both_committees_max() {
+	fn reset_members_none(
+		a: Linear<1, { T::CouncilMaxMembers::get() }>,
+		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() }>,
+	) {
 		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
+		let council_members = generate_accounts::<T>(a);
+		let tc_members = generate_accounts::<T>(b);
 
-		let max_council = T::CouncilMaxMembers::get();
-		let max_tc = T::TechnicalCommitteeMaxMembers::get();
-
-		let new_council_members = generate_accounts::<T>(max_council);
-		let new_tc_members = generate_accounts::<T>(max_tc + 1000); // Offset to avoid overlap
+		let _ = FederatedAuthorityObservation::<T>::reset_members(
+			RawOrigin::None.into(),
+			council_members.clone(),
+			tc_members.clone(),
+		);
 
 		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), Some(new_tc_members));
-
-		// Verify both were set correctly
-		let council_current = T::CouncilMembershipHandler::sorted_members();
-		let tc_current = T::TechnicalCommitteeMembershipHandler::sorted_members();
-		assert_eq!(council_current.len(), max_council as usize);
-		assert_eq!(tc_current.len(), max_tc as usize);
-	}
-
-	/// Benchmark resetting with unsorted input (worst case for sorting)
-	/// Variable `n`: Number of council members (will be in reverse order)
-	#[benchmark]
-	fn reset_unsorted_members(n: Linear<1, 100>) {
-		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
-
-		// Create members in reverse order to test worst-case sorting
-		let mut new_council_members = generate_accounts::<T>(n);
-		new_council_members.reverse();
-
-		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), None);
-
-		// Verify the members were set and sorted correctly
-		let current_members = T::CouncilMembershipHandler::sorted_members();
-		assert_eq!(current_members.len(), n as usize);
-
-		// Verify they are sorted
-		for i in 1..current_members.len() {
-			assert!(current_members[i - 1] <= current_members[i]);
-		}
-	}
-
-	/// Benchmark no-op call (both None parameters)
-	#[benchmark]
-	fn reset_none() {
-		// Setup: Create initial state with some members
-		setup_initial_members::<T>(10, 10);
-
-		#[extrinsic_call]
-		reset_members(RawOrigin::None, None, None);
+		reset_members(RawOrigin::None, council_members.clone(), tc_members.clone());
 
 		// Verify nothing changed
 		let council_current = T::CouncilMembershipHandler::sorted_members();
 		let tc_current = T::TechnicalCommitteeMembershipHandler::sorted_members();
-		assert_eq!(council_current.len(), 10);
-		assert_eq!(tc_current.len(), 10);
-	}
-
-	/// Benchmark transition from small to large membership
-	/// This tests the membership change callbacks with many incoming members
-	#[benchmark]
-	fn reset_small_to_large() {
-		// Setup: Create initial state with minimal members
-		setup_initial_members::<T>(1, 1);
-
-		let max_council = T::CouncilMaxMembers::get();
-		let new_council_members = generate_accounts::<T>(max_council);
-
-		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), None);
-
-		// Verify the transition happened
-		let current_members = T::CouncilMembershipHandler::sorted_members();
-		assert_eq!(current_members.len(), max_council as usize);
-	}
-
-	/// Benchmark transition from large to small membership
-	/// This tests the membership change callbacks with many outgoing members
-	#[benchmark]
-	fn reset_large_to_small() {
-		// Setup: Create initial state with maximum members
-		let max_council = T::CouncilMaxMembers::get();
-		setup_initial_members::<T>(max_council, 10);
-
-		let new_council_members = generate_accounts::<T>(1);
-
-		#[extrinsic_call]
-		reset_members(RawOrigin::None, Some(new_council_members), None);
-
-		// Verify the transition happened
-		let current_members = T::CouncilMembershipHandler::sorted_members();
-		assert_eq!(current_members.len(), 1);
+		assert_eq!(council_current.len(), a as usize);
+		assert_eq!(tc_current.len(), b as usize);
 	}
 
 	impl_benchmark_test_suite!(

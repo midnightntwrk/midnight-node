@@ -190,6 +190,7 @@ runtime-benchmarks = [
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
+    "pallet-federated-authority-observation/runtime-benchmarks",
     "pallet-governed-map/runtime-benchmarks"
 ]
 try-runtime = [

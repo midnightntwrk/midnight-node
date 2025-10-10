@@ -18,6 +18,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use frame_support::{
+	dispatch::{Pays, PostDispatchInfo},
 	pallet_prelude::*,
 	traits::{ChangeMembers, SortedMembers},
 };
@@ -37,9 +38,15 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+pub mod weights;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
+	use crate::weights::WeightInfo;
+
+	/// The in-code storage version.
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -55,23 +62,14 @@ pub mod pallet {
 		/// The receiver of the signal for when the Technical Committee membership has changed.
 		type TechnicalCommitteeMembershipHandler: ChangeMembers<Self::AccountId>
 			+ SortedMembers<Self::AccountId>;
+		/// Weight information for extrinsics in this pallet.
+		type WeightInfo: WeightInfo;
 	}
 
 	#[pallet::pallet]
+	#[pallet::storage_version(STORAGE_VERSION)]
+	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
-	// /// Storage for the list of council authority public keys
-	// #[pallet::storage]
-	// #[pallet::getter(fn council_authorities)]
-	// #[pallet::unbounded]
-	// pub type CouncilAuthorities<T: Config> =
-	// 	StorageValue<_, BoundedVec<T::AccountId, T::CouncilMaxMembers>, ValueQuery>;
-
-	// /// Storage for the list of technical committee authority public keys
-	// #[pallet::storage]
-	// #[pallet::getter(fn technical_committee_authorities)]
-	// #[pallet::unbounded]
-	// pub type TechnicalCommitteeAuthorities<T: Config> =
-	// 	StorageValue<_, BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -99,55 +97,68 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight((
-		0,
+		T::WeightInfo::reset_members(T::CouncilMaxMembers::get(), T::TechnicalCommitteeMaxMembers::get()),
 		DispatchClass::Mandatory
 		))]
+		#[allow(clippy::useless_conversion)]
 		pub fn reset_members(
 			origin: OriginFor<T>,
 			council_authorities: Vec<T::AccountId>,
 			technical_committee_authorities: Vec<T::AccountId>,
-		) -> DispatchResult {
+		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
 
 			// Reset Council members if provided
 			let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
-				BoundedVec::try_from(council_authorities)
+				BoundedVec::try_from(council_authorities.clone())
 					.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
-			ensure!(council_members.len() != 0, Error::<T>::EmptyMembers);
+			ensure!(council_members.is_empty(), Error::<T>::EmptyMembers);
 			council_members.sort();
 
 			let council_current_members = T::CouncilMembershipHandler::sorted_members();
 
+			let mut actual_weight = Weight::zero();
+
+			let council_members_have_changed =
+				council_current_members.as_slice() != council_members.as_slice();
+
 			// Only if Council membership has changed
-			if council_current_members.as_slice() != council_members.as_slice() {
+			if council_members_have_changed {
 				T::CouncilMembershipHandler::set_members_sorted(
 					&council_members[..],
 					&council_current_members,
 				);
 
 				Self::deposit_event(Event::<T>::CouncilMembersReset { members: council_members });
+
+				actual_weight =
+					actual_weight.saturating_add(T::WeightInfo::reset_members_only_council(
+						council_authorities.len() as u32,
+						technical_committee_authorities.len() as u32,
+					));
 			}
 
 			// Reset Technical Committee members if provided
 			let mut technical_committee_members: BoundedVec<
 				T::AccountId,
 				T::TechnicalCommitteeMaxMembers,
-			> = BoundedVec::try_from(technical_committee_authorities)
+			> = BoundedVec::try_from(technical_committee_authorities.clone())
 				.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
-			ensure!(technical_committee_members.len() != 0, Error::<T>::EmptyMembers);
+			ensure!(technical_committee_members.is_empty(), Error::<T>::EmptyMembers);
 			technical_committee_members.sort();
 
 			let technical_committee_current_members =
 				T::TechnicalCommitteeMembershipHandler::sorted_members();
 
+			let technical_committee_have_changed = technical_committee_current_members.as_slice()
+				!= technical_committee_members.as_slice();
+
 			// Only if Technical Committee membership has changed
-			if technical_committee_current_members.as_slice()
-				!= technical_committee_members.as_slice()
-			{
+			if technical_committee_have_changed {
 				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
 					&technical_committee_members[..],
 					&technical_committee_current_members,
@@ -156,9 +167,24 @@ pub mod pallet {
 				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
 					members: technical_committee_members,
 				});
+
+				actual_weight = actual_weight.saturating_add(
+					T::WeightInfo::reset_members_only_technical_committee(
+						council_authorities.len() as u32,
+						technical_committee_authorities.len() as u32,
+					),
+				);
 			}
 
-			Ok(())
+			// If nothing changed, return correct weight
+			if !council_members_have_changed && !technical_committee_have_changed {
+				actual_weight = T::WeightInfo::reset_members_none(
+					council_authorities.len() as u32,
+					technical_committee_authorities.len() as u32,
+				);
+			}
+
+			Ok(PostDispatchInfo { actual_weight: Some(actual_weight), pays_fee: Pays::No })
 		}
 	}
 

@@ -824,6 +824,7 @@ impl pallet_federated_authority_observation::Config for Runtime {
 		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
 	type TechnicalCommitteeMembershipHandler =
 		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
+	type WeightInfo = ();
 }
 
 pub struct MidnightTokenTransferHandler;
@@ -969,6 +970,7 @@ mod benches {
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
+		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 	);
 }
 

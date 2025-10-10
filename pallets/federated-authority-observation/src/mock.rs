@@ -40,8 +40,8 @@ impl frame_system::Config for Test {
 }
 
 parameter_types! {
-	pub const CouncilMaxMembers: u32 = 10;
-	pub const TechnicalCommitteeMaxMembers: u32 = 10;
+	pub const CouncilMaxMembers: u32 = 1000; // Higher number for more accurate benchmarks
+	pub const TechnicalCommitteeMaxMembers: u32 = 1000; // Higher number for more accurate benchmarks
 	pub const MotionDuration: u64 = 100;
 	pub const MaxProposals: u32 = 100;
 }
@@ -115,6 +115,7 @@ impl pallet_federated_authority_observation::Config for Test {
 		MembershipObservationHandler<Test, pallet_membership::Instance1>;
 	type TechnicalCommitteeMembershipHandler =
 		MembershipObservationHandler<Test, pallet_membership::Instance2>;
+	type WeightInfo = ();
 }
 
 // Build genesis storage according to the mock runtime.

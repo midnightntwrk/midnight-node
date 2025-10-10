@@ -190,6 +190,7 @@ where
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 #[derive(new)]
 pub struct VerifierCIDP<T> {
 	config: CreateInherentDataConfig,
