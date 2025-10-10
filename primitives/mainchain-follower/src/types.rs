@@ -34,7 +34,11 @@ impl Eq for ObservedUtxo {}
 
 impl Ord for ObservedUtxo {
 	fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-		self.header.tx_position.partial_cmp(&other.header.tx_position).unwrap()
+		self.header
+			.tx_position
+			.partial_cmp(&other.header.tx_position)
+			.unwrap()
+			.then(self.header.utxo_index.partial_cmp(&other.header.utxo_index).unwrap())
 	}
 }
 
