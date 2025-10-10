@@ -189,7 +189,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
 - Using the [toolkit-js](../toolkit-js), generate the deploy intent file:
   * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
   * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
-  * export TOOLKIT_JS_PATH="util/toolkit-js"
+    * export TOOLKIT_JS_PATH="util/toolkit-js"
 ```console
 $ midnight-node-toolkit generate-intent deploy
 >   -c ../toolkit-js/test/contract/contract.config.ts \
@@ -203,6 +203,7 @@ Executing deploy command
 Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json"]...
 stdout: , stderr:
 written: out/intent.bin, out/private_state.json, out/zswap.json
+
 ```
 
 #### Generate Maintenance Update (Built-in)
