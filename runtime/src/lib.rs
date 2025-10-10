@@ -117,15 +117,14 @@ pub mod authorship;
 pub mod check_call_filter;
 mod constants;
 mod currency;
-mod governance;
 mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::{AlwaysNo, MembershipHandler};
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
+use runtime_common::governance::{AlwaysNo, MembershipHandler};
 
 /// An index to a block.
 pub type BlockNumber = u32;

@@ -38,7 +38,7 @@ pub struct FederatedAuthorityData {
 }
 
 /// Error type for federated authority observation inherents
-#[derive(Encode)]
+#[derive(Encode, Debug)]
 #[cfg_attr(feature = "std", derive(Decode))]
 pub enum InherentError {
 	/// The inherent data could not be decoded

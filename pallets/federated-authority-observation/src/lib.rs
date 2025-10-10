@@ -12,6 +12,12 @@ use midnight_primitives_federated_authority_observation::{
 pub use pallet::*;
 use sp_std::vec::Vec;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;

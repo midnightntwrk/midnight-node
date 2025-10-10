@@ -22,6 +22,10 @@ derive-new.workspace = true
 
 [dev-dependencies]
 sp-io.workspace = true
+sp-runtime.workspace = true
+pallet-collective.workspace = true
+pallet-membership.workspace = true
+runtime-common.workspace = true
 
 [features]
 default = ["std"]
@@ -33,6 +37,9 @@ std = [
     "sp-std/std",
     "sp-consensus-aura/std",
     "sp-inherents/std",
+    "pallet-collective/std",
+    "pallet-membership/std",
+    "runtime-common/std",
     "parity-scale-codec/std",
     "midnight-primitives-federated-authority-observation/std",
     "derive-new/std"
