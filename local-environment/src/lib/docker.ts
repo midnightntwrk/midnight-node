@@ -23,7 +23,14 @@ export interface DockerComposeOptions {
 }
 
 export function stopDockerCompose(options: DockerComposeOptions) {
-  const args = ["-f", options.composeFile, "down", "--volumes", "--timeout", "0"];
+  const args = [
+    "-f",
+    options.composeFile,
+    "down",
+    "--volumes",
+    "--timeout",
+    "0",
+  ];
 
   if (options.profiles) {
     for (const profile of options.profiles) {
