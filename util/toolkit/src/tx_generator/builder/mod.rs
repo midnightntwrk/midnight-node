@@ -76,9 +76,9 @@ pub struct CustomContractArgs {
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
 	pub compiled_contract_dir: String,
-	/// Intent file to include in the transaction
-	#[arg(short, long)]
-	pub intent_file: String,
+	/// Intent file to include in the transaction. Accepts multiple
+	#[arg(long = "intent-file")]
+	pub intent_files: Vec<String>,
 	/// Zswap State file containing coin info
 	#[arg(long)]
 	pub zswap_state_file: Option<String>,
