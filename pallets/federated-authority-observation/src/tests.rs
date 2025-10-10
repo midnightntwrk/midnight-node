@@ -1,6 +1,15 @@
 // This file is part of midnight-node.
 // Copyright (C) 2025 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use crate::{Error, Event, mock::*};
 use frame_support::inherent::ProvideInherent;
@@ -39,66 +48,15 @@ fn create_inherent_data(council: Vec<u64>, technical_committee: Vec<u64>) -> Inh
 }
 
 #[test]
-fn reset_council_members_works() {
-	new_test_ext().execute_with(|| {
-		let new_members = vec![1, 2, 3];
-
-		assert_ok!(FederatedAuthorityObservation::reset_members(
-			frame_system::RawOrigin::None.into(),
-			Some(new_members.clone()),
-			None,
-		));
-
-		// Verify members were set via MembershipHandler in both the membership and collective pallets
-		assert_eq!(CouncilMembership::members().to_vec(), new_members);
-		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), new_members);
-
-		// Verify event was emitted
-		System::assert_has_event(
-			Event::CouncilMembersReset { members: BoundedVec::try_from(new_members).unwrap() }
-				.into(),
-		);
-	});
-}
-
-#[test]
-fn reset_technical_committee_members_works() {
-	new_test_ext().execute_with(|| {
-		let new_members = vec![4, 5, 6];
-
-		assert_ok!(FederatedAuthorityObservation::reset_members(
-			frame_system::RawOrigin::None.into(),
-			None,
-			Some(new_members.clone()),
-		));
-
-		// Verify members were set via MembershipHandler in both the membership and collective pallets
-		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), new_members);
-		assert_eq!(
-			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
-			new_members
-		);
-
-		// Verify event was emitted
-		System::assert_has_event(
-			Event::TechnicalCommitteeMembersReset {
-				members: BoundedVec::try_from(new_members).unwrap(),
-			}
-			.into(),
-		);
-	});
-}
-
-#[test]
-fn reset_both_committees_works() {
+fn reset_council_and_tc_members_works() {
 	new_test_ext().execute_with(|| {
 		let council_members = vec![1, 2, 3];
 		let tc_members = vec![4, 5, 6];
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(council_members.clone()),
-			Some(tc_members.clone()),
+			council_members.clone(),
+			tc_members.clone(),
 		));
 
 		// Verify members were set via MembershipHandler in both the membership and collective pallets
@@ -109,20 +67,33 @@ fn reset_both_committees_works() {
 			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
 			tc_members
 		);
+
+		// Verify events were emitted
+		System::assert_has_event(
+			Event::CouncilMembersReset { members: BoundedVec::try_from(council_members).unwrap() }
+				.into(),
+		);
+		System::assert_has_event(
+			Event::TechnicalCommitteeMembersReset {
+				members: BoundedVec::try_from(tc_members).unwrap(),
+			}
+			.into(),
+		);
 	});
 }
 
 #[test]
 fn reset_members_requires_none_origin() {
 	new_test_ext().execute_with(|| {
-		let members = vec![1, 2, 3];
+		let council_members = vec![1, 2, 3];
+		let tc_members = vec![4, 5, 6];
 
 		// Should fail with signed origin
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::Signed(1).into(),
-				Some(members.clone()),
-				None,
+				council_members.clone(),
+				tc_members.clone(),
 			),
 			sp_runtime::DispatchError::BadOrigin
 		);
@@ -131,8 +102,8 @@ fn reset_members_requires_none_origin() {
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::Root.into(),
-				Some(members),
-				None,
+				council_members,
+				tc_members,
 			),
 			sp_runtime::DispatchError::BadOrigin
 		);
@@ -145,12 +116,13 @@ fn reset_members_fails_with_too_many_council_members() {
 		// Create more members than the max
 		let max_members = CouncilMaxMembers::get() as u64;
 		let too_many_members: Vec<u64> = (0..max_members + 1).collect();
+		let tc_members = vec![4, 5, 6];
 
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::None.into(),
-				Some(too_many_members),
-				None,
+				too_many_members,
+				tc_members,
 			),
 			Error::<Test>::TooManyMembers
 		);
@@ -161,14 +133,15 @@ fn reset_members_fails_with_too_many_council_members() {
 fn reset_members_fails_with_too_many_technical_committee_members() {
 	new_test_ext().execute_with(|| {
 		// Create more members than the max
+		let council_members = vec![1, 2, 3];
 		let max_members = TechnicalCommitteeMaxMembers::get() as u64;
 		let too_many_members: Vec<u64> = (0..max_members + 1).collect();
 
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::None.into(),
-				None,
-				Some(too_many_members),
+				council_members,
+				too_many_members,
 			),
 			Error::<Test>::TooManyMembers
 		);
@@ -185,8 +158,8 @@ fn reset_members_sorts_members() {
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(unsorted_council),
-			Some(unsorted_tc),
+			unsorted_council,
+			unsorted_tc,
 		));
 
 		// Verify members are sorted
@@ -201,7 +174,7 @@ fn reset_members_sorts_members() {
 }
 
 #[test]
-fn reset_with_both_none_does_nothing() {
+fn no_event_when_same_members() {
 	new_test_ext().execute_with(|| {
 		let council_members = vec![1, 2, 3];
 		let tc_members = vec![4, 5, 6];
@@ -209,18 +182,18 @@ fn reset_with_both_none_does_nothing() {
 		// Set initial members
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(council_members.clone()),
-			Some(tc_members.clone()),
+			council_members.clone(),
+			tc_members.clone(),
 		));
 
 		// Reset events
 		System::reset_events();
 
-		// Call with both None
+		// Call with same members
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			None,
-			None,
+			council_members.clone(),
+			tc_members.clone(),
 		));
 
 		// Members should remain unchanged
@@ -232,7 +205,7 @@ fn reset_with_both_none_does_nothing() {
 			tc_members
 		);
 
-		// No events should be emitted
+		// No events should be emitted since members didn't change
 		assert_eq!(System::events().len(), 0);
 	});
 }
@@ -248,8 +221,8 @@ fn create_inherent_works_when_council_changes() {
 		// Initialize with some members first
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(initial_council),
-			Some(initial_tc),
+			initial_council,
+			initial_tc,
 		));
 
 		// Now create inherent with different members
@@ -272,7 +245,7 @@ fn create_inherent_works_when_council_changes() {
 }
 
 #[test]
-fn create_inherent_returns_none_when_no_changes() {
+fn create_inherent_with_same_members_emits_no_events() {
 	new_test_ext().execute_with(|| {
 		let council_members = vec![1, 2, 3];
 		let tc_members = vec![4, 5, 6];
@@ -280,15 +253,27 @@ fn create_inherent_returns_none_when_no_changes() {
 		// Initialize with some members first
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(council_members.clone()),
-			Some(tc_members.clone()),
+			council_members.clone(),
+			tc_members.clone(),
 		));
+
+		// Reset events
+		System::reset_events();
 
 		// Create inherent data with same members
 		let inherent_data = create_inherent_data(council_members, tc_members);
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 
-		assert!(call.is_none(), "Should not create inherent when nothing changes");
+		// Call is created but should not emit events when dispatched since members are the same
+		assert!(call.is_some(), "Inherent call should be created");
+
+		if let Some(call) = call {
+			let runtime_call = RuntimeCall::FederatedAuthorityObservation(call);
+			assert_ok!(runtime_call.dispatch(frame_system::RawOrigin::None.into()));
+		}
+
+		// No events should be emitted since members didn't change
+		assert_eq!(System::events().len(), 0);
 	});
 }
 
@@ -302,8 +287,8 @@ fn create_inherent_works_when_only_council_changes() {
 		// Set initial state
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(initial_council),
-			Some(tc_members.clone()),
+			initial_council,
+			tc_members.clone(),
 		));
 
 		// Create inherent with changed council but same TC
@@ -338,8 +323,8 @@ fn create_inherent_works_when_only_technical_committee_changes() {
 		// Set initial state
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(council_members.clone()),
-			Some(initial_tc),
+			council_members.clone(),
+			initial_tc,
 		));
 
 		// Create inherent with same council but changed TC
@@ -369,8 +354,8 @@ fn membership_changed_callbacks_are_called() {
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(council_members.clone()),
-			Some(tc_members.clone()),
+			council_members.clone(),
+			tc_members.clone(),
 		));
 
 		// Verify members were set via MembershipHandler in both the membership and collective pallets
@@ -387,7 +372,7 @@ fn membership_changed_callbacks_are_called() {
 		for member in &council_members {
 			let account = frame_system::Pallet::<Test>::account(member);
 			assert!(
-				account.sufficients > 0,
+				account.sufficients == 1,
 				"Council member {} should have sufficients > 0",
 				member
 			);
@@ -395,41 +380,41 @@ fn membership_changed_callbacks_are_called() {
 
 		for member in &tc_members {
 			let account = frame_system::Pallet::<Test>::account(member);
-			assert!(account.sufficients > 0, "TC member {} should have sufficients > 0", member);
+			assert!(account.sufficients == 1, "TC member {} should have sufficients > 0", member);
 		}
 	});
 }
 
 #[test]
-fn empty_members_list_fails() {
+fn empty_council_members_list_fails() {
 	new_test_ext().execute_with(|| {
-		let council_members = vec![1, 2, 3];
 		let tc_members = vec![4, 5, 6];
 
-		// Set initial members
-		assert_ok!(FederatedAuthorityObservation::reset_members(
-			frame_system::RawOrigin::None.into(),
-			Some(council_members),
-			Some(tc_members),
-		));
-
-		// Attempting to reset to empty lists should fail with TooFewMembers
+		// Attempting to reset with empty council list should fail with EmptyMembers
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::None.into(),
-				Some(vec![]),
-				None,
+				vec![],
+				tc_members,
 			),
-			Error::<Test>::TooFewMembers
+			Error::<Test>::EmptyMembers
 		);
+	});
+}
 
+#[test]
+fn empty_tc_members_list_fails() {
+	new_test_ext().execute_with(|| {
+		let council_members = vec![1, 2, 3];
+
+		// Attempting to reset with empty TC list should fail with EmptyMembers
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::None.into(),
-				None,
-				Some(vec![]),
+				council_members,
+				vec![],
 			),
-			Error::<Test>::TooFewMembers
+			Error::<Test>::EmptyMembers
 		);
 	});
 }
@@ -441,11 +426,12 @@ fn duplicate_members_are_allowed() {
 		// But the pallet itself doesn't prevent them
 		let members_with_duplicates = vec![1, 2, 2, 3];
 		let sorted_members_with_duplicates = vec![1, 2, 2, 3];
+		let tc_members = vec![4, 5, 6];
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(members_with_duplicates),
-			None,
+			members_with_duplicates,
+			tc_members,
 		));
 
 		// After sorting, duplicates remain
@@ -464,8 +450,8 @@ fn inherent_check_validates_data() {
 		// Initialize with some members first
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(initial_council),
-			Some(initial_tc),
+			initial_council,
+			initial_tc,
 		));
 
 		// Create inherent data with different members
@@ -488,8 +474,8 @@ fn is_inherent_identifies_reset_members_call() {
 		let tc_members = vec![4, 5, 6];
 
 		let call = crate::Call::<Test>::reset_members {
-			council_authorities: Some(council_members),
-			technical_committee_authorities: Some(tc_members),
+			council_authorities: council_members,
+			technical_committee_authorities: tc_members,
 		};
 
 		assert!(FederatedAuthorityObservation::is_inherent(&call));
@@ -507,16 +493,25 @@ fn multiple_consecutive_resets_work() {
 		// First reset
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(first_council),
-			Some(first_tc),
+			first_council,
+			first_tc,
 		));
 
 		// Second reset
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(second_council),
-			Some(second_tc),
+			second_council.clone(),
+			second_tc.clone(),
 		));
+
+		// Verify the second set of members is active
+		assert_eq!(CouncilMembership::members().to_vec(), second_council);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), second_tc);
+		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), second_council);
+		assert_eq!(
+			pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(),
+			second_tc
+		);
 	});
 }
 
@@ -533,8 +528,8 @@ fn membership_handler_integration_test() {
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(initial_council.clone()),
-			Some(initial_tc.clone()),
+			initial_council.clone(),
+			initial_tc.clone(),
 		));
 
 		// Verify members were set via MembershipHandler in both the membership and collective pallets
@@ -562,8 +557,8 @@ fn membership_handler_integration_test() {
 
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			Some(new_council.clone()),
-			Some(new_tc.clone()),
+			new_council.clone(),
+			new_tc.clone(),
 		));
 
 		// Verify members were set via MembershipHandler in both the membership and collective pallets

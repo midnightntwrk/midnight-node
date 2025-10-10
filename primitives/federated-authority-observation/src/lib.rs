@@ -15,9 +15,6 @@ use sp_runtime::Vec;
 #[cfg(feature = "std")]
 use std::borrow::Cow;
 
-#[cfg(not(feature = "std"))]
-use alloc::boxed::Box;
-
 /// The inherent identifier for federated authority observation
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"fedauth ";
 

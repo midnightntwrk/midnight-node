@@ -8630,6 +8630,7 @@ name = "pallet-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
  "derive-new",
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",

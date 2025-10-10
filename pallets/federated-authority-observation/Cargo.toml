@@ -19,6 +19,7 @@ sp-consensus-aura.workspace = true
 sp-inherents.workspace = true
 sp-std.workspace = true
 derive-new.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
@@ -42,7 +43,16 @@ std = [
     "runtime-common/std",
     "parity-scale-codec/std",
     "midnight-primitives-federated-authority-observation/std",
-    "derive-new/std"
+    "derive-new/std",
+    "frame-benchmarking?/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "pallet-collective/runtime-benchmarks",
+    "pallet-membership/runtime-benchmarks",
+    "sp-runtime/runtime-benchmarks",
 ]
 
 [package.metadata.cargo-shear]

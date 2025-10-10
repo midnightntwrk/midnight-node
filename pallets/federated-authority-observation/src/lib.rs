@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! # Federated Authority Observation Pallet
 //!
 //! This pallet provides mechanisms for observing federated authority changes from the main chain.
@@ -20,6 +33,9 @@ mod mock;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -72,8 +88,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// Too many members.
 		TooManyMembers,
-		/// Too few members
-		TooFewMembers,
+		/// Membership set is empty
+		EmptyMembers,
 	}
 
 	#[pallet::hooks]
@@ -88,48 +104,53 @@ pub mod pallet {
 		))]
 		pub fn reset_members(
 			origin: OriginFor<T>,
-			council_authorities: Option<Vec<T::AccountId>>,
-			technical_committee_authorities: Option<Vec<T::AccountId>>,
+			council_authorities: Vec<T::AccountId>,
+			technical_committee_authorities: Vec<T::AccountId>,
 		) -> DispatchResult {
 			ensure_none(origin)?;
 
 			// Reset Council members if provided
-			if let Some(council_authorities) = council_authorities {
-				let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
-					BoundedVec::try_from(council_authorities)
-						.map_err(|_| Error::<T>::TooManyMembers)?;
+			let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
+				BoundedVec::try_from(council_authorities)
+					.map_err(|_| Error::<T>::TooManyMembers)?;
 
-				// Make sure again an empty set of members is not allowed
-				ensure!(council_members.len() != 0, Error::<T>::TooFewMembers);
-				council_members.sort();
+			// Make sure an empty set of members is not allowed
+			ensure!(council_members.len() != 0, Error::<T>::EmptyMembers);
+			council_members.sort();
 
-				let current_members = T::CouncilMembershipHandler::sorted_members();
+			let council_current_members = T::CouncilMembershipHandler::sorted_members();
 
+			// Only if Council membership has changed
+			if council_current_members.as_slice() != council_members.as_slice() {
 				T::CouncilMembershipHandler::set_members_sorted(
 					&council_members[..],
-					&current_members,
+					&council_current_members,
 				);
 
 				Self::deposit_event(Event::<T>::CouncilMembersReset { members: council_members });
 			}
 
 			// Reset Technical Committee members if provided
-			if let Some(technical_committee_authorities) = technical_committee_authorities {
-				let mut technical_committee_members: BoundedVec<
-					T::AccountId,
-					T::TechnicalCommitteeMaxMembers,
-				> = BoundedVec::try_from(technical_committee_authorities)
-					.map_err(|_| Error::<T>::TooManyMembers)?;
+			let mut technical_committee_members: BoundedVec<
+				T::AccountId,
+				T::TechnicalCommitteeMaxMembers,
+			> = BoundedVec::try_from(technical_committee_authorities)
+				.map_err(|_| Error::<T>::TooManyMembers)?;
 
-				// Make sure again an empty set of members is not allowed
-				ensure!(technical_committee_members.len() != 0, Error::<T>::TooFewMembers);
-				technical_committee_members.sort();
+			// Make sure an empty set of members is not allowed
+			ensure!(technical_committee_members.len() != 0, Error::<T>::EmptyMembers);
+			technical_committee_members.sort();
 
-				let current_members = T::TechnicalCommitteeMembershipHandler::sorted_members();
+			let technical_committee_current_members =
+				T::TechnicalCommitteeMembershipHandler::sorted_members();
 
+			// Only if Technical Committee membership has changed
+			if technical_committee_current_members.as_slice()
+				!= technical_committee_members.as_slice()
+			{
 				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
 					&technical_committee_members[..],
-					&current_members,
+					&technical_committee_current_members,
 				);
 
 				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
@@ -151,42 +172,16 @@ pub mod pallet {
 			// Extract and validate the federated authority data from inherent
 			let fed_auth_data = Self::get_data_from_inherent_data(data).unwrap_or_default()?;
 
-			let mut council_authorities =
+			let council_authorities =
 				Self::decode_auth_accounts(fed_auth_data.council_authorities, "council").ok()?;
 
-			let mut technical_committee_authorities = Self::decode_auth_accounts(
+			let technical_committee_authorities = Self::decode_auth_accounts(
 				fed_auth_data.technical_committee_authorities,
 				"technical committee",
 			)
 			.ok()?;
 
-			// Sort for comparison
-			council_authorities.sort();
-			technical_committee_authorities.sort();
-
-			// Check if either has changed and is not empty
-			let council_changed_and_not_empty = {
-				let current = T::CouncilMembershipHandler::sorted_members();
-				current.as_slice() != council_authorities.as_slice() && current.len() != 0
-			};
-
-			let technical_committee_changed_and_not_empty = {
-				let current = T::TechnicalCommitteeMembershipHandler::sorted_members();
-				current.as_slice() != technical_committee_authorities.as_slice()
-					&& current.len() != 0
-			};
-
-			// Only create inherent if at least one has changed and is not empty
-			if council_changed_and_not_empty || technical_committee_changed_and_not_empty {
-				Some(Call::reset_members {
-					council_authorities: council_changed_and_not_empty
-						.then_some(council_authorities),
-					technical_committee_authorities: technical_committee_changed_and_not_empty
-						.then_some(technical_committee_authorities),
-				})
-			} else {
-				None
-			}
+			Some(Call::reset_members { council_authorities, technical_committee_authorities })
 		}
 
 		fn is_inherent(call: &Self::Call) -> bool {
