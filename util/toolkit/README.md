@@ -210,7 +210,7 @@ $ midnight-node-toolkit generate-intent deploy
 Executing generate-intent
 Executing deploy command
 Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json"]...
-stdout: , stderr:
+stdout: , stderr: 
 written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
@@ -358,7 +358,7 @@ $ midnight-node-toolkit generate-intent circuit
 Executing generate-intent
 Executing circuit command
 Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
-stdout: , stderr:
+stdout: , stderr: 
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```
