@@ -7270,13 +7270,9 @@ version = "0.1.0"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
- "serde",
  "sidechain-domain",
- "sp-consensus-aura",
- "sp-core",
  "sp-inherents",
  "sp-runtime",
- "sp-std",
 ]
 
 [[package]]
@@ -8682,7 +8678,6 @@ dependencies = [
 name = "pallet-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
- "derive-new",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
@@ -8690,13 +8685,10 @@ dependencies = [
  "midnight-primitives-federated-authority-observation",
  "pallet-collective",
  "pallet-membership",
- "pallet-timestamp",
  "parity-scale-codec",
  "runtime-common",
  "scale-info",
  "sidechain-domain",
- "sp-consensus-aura",
- "sp-core",
  "sp-inherents",
  "sp-io",
  "sp-runtime",
@@ -11209,7 +11201,6 @@ dependencies = [
  "frame-support",
  "frame-system",
  "pallet-collective",
- "pallet-federated-authority-observation",
  "pallet-membership",
  "sp-runtime",
  "sp-std",
