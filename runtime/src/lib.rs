@@ -820,9 +820,9 @@ impl pallet_federated_authority::Config for Runtime {
 impl pallet_federated_authority_observation::Config for Runtime {
 	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
 	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
-	type CouncilMembershipChanged =
+	type CouncilMembershipHandler =
 		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
-	type TechnicalCommitteeMembershipChanged =
+	type TechnicalCommitteeMembershipHandler =
 		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
 }
 

@@ -1,7 +1,9 @@
-use frame_support::traits::{ChangeMembers, InitializeMembers, UnfilteredDispatchable};
+use frame_support::traits::{
+	ChangeMembers, InitializeMembers, SortedMembers, UnfilteredDispatchable,
+};
 use pallet_collective::{DefaultVote, MemberCount};
 use sp_runtime::traits::Dispatchable;
-use sp_std::marker::PhantomData;
+use sp_std::{marker::PhantomData, vec::Vec};
 
 /// Wrapper struct to handle frame_system sufficients and delegate
 /// `InitializeMembers` and `ChangeMembers` calls to `P`.
@@ -80,5 +82,19 @@ where
 		let call = pallet_membership::Call::<T, I>::reset_members { members: sorted_new.to_vec() };
 
 		let _ = call.dispatch_bypass_filter(frame_system::RawOrigin::None.into());
+	}
+}
+
+impl<T, I> SortedMembers<T::AccountId> for MembershipObservationHandler<T, I>
+where
+	T: frame_system::Config + pallet_membership::Config<I>,
+	I: 'static,
+{
+	fn sorted_members() -> Vec<T::AccountId> {
+		pallet_membership::Members::<T, I>::get().to_vec()
+	}
+
+	fn count() -> usize {
+		pallet_membership::Members::<T, I>::decode_len().unwrap_or(0)
 	}
 }

@@ -102,9 +102,9 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 impl pallet_federated_authority_observation::Config for Test {
 	type CouncilMaxMembers = CouncilMaxMembers;
 	type TechnicalCommitteeMaxMembers = TechnicalCommitteeMaxMembers;
-	type CouncilMembershipChanged =
+	type CouncilMembershipHandler =
 		MembershipObservationHandler<Test, pallet_membership::Instance1>;
-	type TechnicalCommitteeMembershipChanged =
+	type TechnicalCommitteeMembershipHandler =
 		MembershipObservationHandler<Test, pallet_membership::Instance2>;
 }
 

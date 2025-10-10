@@ -4,7 +4,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use frame_support::{pallet_prelude::*, traits::ChangeMembers};
+use frame_support::{
+	pallet_prelude::*,
+	traits::{ChangeMembers, SortedMembers},
+};
 use frame_system::pallet_prelude::*;
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER, InherentError,
@@ -31,26 +34,28 @@ pub mod pallet {
 		#[pallet::constant]
 		type TechnicalCommitteeMaxMembers: Get<u32>;
 		/// The receiver of the signal for when the Council membership has changed.
-		type CouncilMembershipChanged: ChangeMembers<Self::AccountId>;
+		type CouncilMembershipHandler: ChangeMembers<Self::AccountId>
+			+ SortedMembers<Self::AccountId>;
 		/// The receiver of the signal for when the Technical Committee membership has changed.
-		type TechnicalCommitteeMembershipChanged: ChangeMembers<Self::AccountId>;
+		type TechnicalCommitteeMembershipHandler: ChangeMembers<Self::AccountId>
+			+ SortedMembers<Self::AccountId>;
 	}
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
-	/// Storage for the list of council authority public keys
-	#[pallet::storage]
-	#[pallet::getter(fn council_authorities)]
-	#[pallet::unbounded]
-	pub type CouncilAuthorities<T: Config> =
-		StorageValue<_, BoundedVec<T::AccountId, T::CouncilMaxMembers>, ValueQuery>;
+	// /// Storage for the list of council authority public keys
+	// #[pallet::storage]
+	// #[pallet::getter(fn council_authorities)]
+	// #[pallet::unbounded]
+	// pub type CouncilAuthorities<T: Config> =
+	// 	StorageValue<_, BoundedVec<T::AccountId, T::CouncilMaxMembers>, ValueQuery>;
 
-	/// Storage for the list of technical committee authority public keys
-	#[pallet::storage]
-	#[pallet::getter(fn technical_committee_authorities)]
-	#[pallet::unbounded]
-	pub type TechnicalCommitteeAuthorities<T: Config> =
-		StorageValue<_, BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
+	// /// Storage for the list of technical committee authority public keys
+	// #[pallet::storage]
+	// #[pallet::getter(fn technical_committee_authorities)]
+	// #[pallet::unbounded]
+	// pub type TechnicalCommitteeAuthorities<T: Config> =
+	// 	StorageValue<_, BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -67,6 +72,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// Too many members.
 		TooManyMembers,
+		/// Too few members
+		TooFewMembers,
 	}
 
 	#[pallet::hooks]
@@ -92,12 +99,16 @@ pub mod pallet {
 					BoundedVec::try_from(council_authorities)
 						.map_err(|_| Error::<T>::TooManyMembers)?;
 
+				// Make sure again an empty set of members is not allowed
+				ensure!(council_members.len() != 0, Error::<T>::TooFewMembers);
 				council_members.sort();
 
-				CouncilAuthorities::<T>::mutate(|m| {
-					T::CouncilMembershipChanged::set_members_sorted(&council_members[..], m);
-					*m = council_members.clone();
-				});
+				let current_members = T::CouncilMembershipHandler::sorted_members();
+
+				T::CouncilMembershipHandler::set_members_sorted(
+					&council_members[..],
+					&current_members,
+				);
 
 				Self::deposit_event(Event::<T>::CouncilMembersReset { members: council_members });
 			}
@@ -110,15 +121,16 @@ pub mod pallet {
 				> = BoundedVec::try_from(technical_committee_authorities)
 					.map_err(|_| Error::<T>::TooManyMembers)?;
 
+				// Make sure again an empty set of members is not allowed
+				ensure!(technical_committee_members.len() != 0, Error::<T>::TooFewMembers);
 				technical_committee_members.sort();
 
-				TechnicalCommitteeAuthorities::<T>::mutate(|m| {
-					T::TechnicalCommitteeMembershipChanged::set_members_sorted(
-						&technical_committee_members[..],
-						m,
-					);
-					*m = technical_committee_members.clone();
-				});
+				let current_members = T::TechnicalCommitteeMembershipHandler::sorted_members();
+
+				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
+					&technical_committee_members[..],
+					&current_members,
+				);
 
 				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
 					members: technical_committee_members,
@@ -152,22 +164,24 @@ pub mod pallet {
 			council_authorities.sort();
 			technical_committee_authorities.sort();
 
-			// Check if either has changed
-			let council_changed = {
-				let current = CouncilAuthorities::<T>::get();
-				current.as_slice() != council_authorities.as_slice()
+			// Check if either has changed and is not empty
+			let council_changed_and_not_empty = {
+				let current = T::CouncilMembershipHandler::sorted_members();
+				current.as_slice() != council_authorities.as_slice() && current.len() != 0
 			};
 
-			let technical_committee_changed = {
-				let current = TechnicalCommitteeAuthorities::<T>::get();
+			let technical_committee_changed_and_not_empty = {
+				let current = T::TechnicalCommitteeMembershipHandler::sorted_members();
 				current.as_slice() != technical_committee_authorities.as_slice()
+					&& current.len() != 0
 			};
 
-			// Only create inherent if at least one has changed
-			if council_changed || technical_committee_changed {
+			// Only create inherent if at least one has changed and is not empty
+			if council_changed_and_not_empty || technical_committee_changed_and_not_empty {
 				Some(Call::reset_members {
-					council_authorities: council_changed.then_some(council_authorities),
-					technical_committee_authorities: technical_committee_changed
+					council_authorities: council_changed_and_not_empty
+						.then_some(council_authorities),
+					technical_committee_authorities: technical_committee_changed_and_not_empty
 						.then_some(technical_committee_authorities),
 				})
 			} else {
