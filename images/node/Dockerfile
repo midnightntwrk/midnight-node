@@ -26,7 +26,7 @@ RUN apt-get update -qq && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY .envrc ./bin/.envrc
-COPY res/ ./res/
+COPY res/ /res/
 
 EXPOSE 30333 9933 9944 9615
-ENTRYPOINT ["./midnight-node"]
+ENTRYPOINT ["/app/midnight-node"]

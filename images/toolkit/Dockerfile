@@ -18,7 +18,6 @@ ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
-RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-RUN rm -rf /node
+RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /app/node_version && rm -rf /node
 
-ENTRYPOINT ["/midnight-node-toolkit"]
+ENTRYPOINT ["/app/midnight-node-toolkit"]

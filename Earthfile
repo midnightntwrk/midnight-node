@@ -125,8 +125,8 @@ get-metadata:
 rebuild-metadata:
     FROM +subxt
     COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-    LET NODE_VERSION = "$(cat node_version)"
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /app/node_version
+    LET NODE_VERSION = "$(cat /app/node_version)"
     COPY +get-metadata/metadata.scale /metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata_${NODE_VERSION}.scale
@@ -179,7 +179,7 @@ rebuild-genesis-state:
 
     RUN mkdir -p /res/genesis
     IF [ -f /secrets/genesis-seeds.json ]
-        RUN /midnight-node-toolkit generate-genesis \
+        RUN /app/midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
             --suffix ${SUFFIX} \
             --seeds-file /secrets/genesis-seeds.json
@@ -192,16 +192,16 @@ rebuild-genesis-state:
     RUN mkdir -p /res/test-contract
     RUN mkdir -p out /res/test-contract \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit generate-txs \
+            /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --to-bytes \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
-            && /midnight-node-toolkit contract-address \
+            && /app/midnight-node-toolkit contract-address \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
-            && /midnight-node-toolkit generate-txs \
+            && /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
@@ -210,7 +210,7 @@ rebuild-genesis-state:
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
-            && /midnight-node-toolkit generate-txs \
+            && /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --src-file out/contract_tx_2_store_${SUFFIX}.mn \
@@ -220,7 +220,7 @@ rebuild-genesis-state:
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
-            && /midnight-node-toolkit generate-txs \
+            && /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --src-file out/contract_tx_2_store_${SUFFIX}.mn \
@@ -238,7 +238,7 @@ rebuild-genesis-state:
     RUN mkdir -p /res/test-zswap
     RUN mkdir -p out /res/test-zswap \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit generate-txs \
+            /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
@@ -251,12 +251,12 @@ rebuild-genesis-state:
     RUN mkdir -p /res/test-tx-deserialize
     RUN mkdir -p out /res/test-tx-deserialize \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit show-address \
+            /app/midnight-node-toolkit show-address \
                 --network $NETWORK \
                 --seed "0000000000000000000000000000000000000000000000000000000000000002" \
                 --unshielded \
                 > out/dest_addr.mn \
-            && /midnight-node-toolkit generate-txs \
+            && /app/midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
@@ -265,7 +265,7 @@ rebuild-genesis-state:
                 --rng-seed "$RNG_SEED" \
                 --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
                 --destination-address $(cat out/dest_addr.mn) \
-            && /midnight-node-toolkit get-tx-from-context \
+            && /app/midnight-node-toolkit get-tx-from-context \
                 --network $NETWORK \
                 --src-file out/serialized_tx_with_context.mn \
                 --dest-file out/serialized_tx_no_context.mn \
@@ -275,9 +275,9 @@ rebuild-genesis-state:
 
     RUN mkdir -p /res/test-data/contract/counter \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit generate-intent deploy \
+            /app/midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
-                    /midnight-node-toolkit \
+                    /app/midnight-node-toolkit \
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
@@ -287,17 +287,17 @@ rebuild-genesis-state:
                 --output-intent /res/test-data/contract/counter/deploy.bin \
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
-            && /midnight-node-toolkit send-intent \
+            && /app/midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
                 --to-bytes \
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address \
+            && /app/midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
-            && /midnight-node-toolkit contract-state \
+            && /app/midnight-node-toolkit contract-state \
                 --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
@@ -351,13 +351,13 @@ rebuild-chainspec:
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
 
-    RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+    RUN CFG_PRESET=$NETWORK /app/midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
 
     # create abridge chain-spec that is diff tools and github friendly:
     RUN cat res/$NETWORK/chain-spec.json | \
       jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
-    RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
+    RUN /app/midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
 
@@ -751,16 +751,16 @@ node-image:
 
     RUN mkdir -p /artifacts-$NATIVEARCH
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /app/
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+    RUN /app/midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /app/version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /app/version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV IMAGE_TAG_DEV="$(cat /app/version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /app/version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     SAVE IMAGE --push \
@@ -793,7 +793,7 @@ toolkit-image:
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
 
-    LET NODE_VERSION="$(cat node_version)"
+    LET NODE_VERSION="$(cat /app/node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
@@ -813,7 +813,7 @@ hardfork-test-upgrader-image:
     COPY +build/artifacts-$NATIVEARCH/test/* /
     COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    LET NODE_VERSION = "$(cat /app/node_version)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
@@ -895,7 +895,7 @@ partnerchains-dev:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     RUN rm -rf /node
-    LET NODE_VERSION = "$(cat node_version)"
+    LET NODE_VERSION = "$(cat /app/node_version)"
     LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
     # Install necessary packages
     RUN apt-get update -qq && apt-get install -y \
@@ -918,7 +918,7 @@ partnerchains-dev:
     RUN curl -L https://github.com/input-output-hk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
         chmod +x partner-chains-node
 
-    COPY +node-image/midnight-node /midnight-node
+    COPY +node-image/midnight-node /app/midnight-node
     COPY scripts/partnerchains-dev/* /
 
     ENV CARDANO_NODE_SOCKET_PATH=/node.socket
@@ -935,7 +935,7 @@ partnerchains-dev:
 run-node-mocked:
     FROM +node-image
     ENV SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"
-    RUN CFG_PRESET=dev /midnight-node
+    RUN CFG_PRESET=dev /app/midnight-node
 
 # testnet-sync-e2e tries to sync the node with the first 7000 blocks of testnet
 testnet-sync-e2e:
