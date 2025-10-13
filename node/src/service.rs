@@ -22,14 +22,10 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
+use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
-
-use midnight_node_runtime::WASM_BINARY;
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
-use midnight_primitives_upgrade::UpgradeProposal;
-use midnight_primitives_upgrade_api::UpgradeApi;
-use parity_scale_codec::{Decode, Encode};
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
@@ -44,8 +40,6 @@ use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
@@ -57,10 +51,8 @@ use sp_runtime::{
 	BuildStorage,
 	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
 };
-#[cfg(feature = "experimental")]
 use sp_runtime::{Digest, DigestItem};
 use std::{
-	fs,
 	marker::PhantomData,
 	sync::{Arc, Mutex},
 	time::Duration,
@@ -149,16 +141,12 @@ pub fn construct_genesis_block<Block: BlockT>(
 			state_version,
 		);
 
-	#[cfg(feature = "experimental")]
 	let block_digest = Digest {
 		logs: vec![DigestItem::Consensus(
 			midnight_node_runtime::VERSION_ID,
 			midnight_node_runtime::VERSION.spec_version.encode(),
 		)],
 	};
-
-	#[cfg(not(feature = "experimental"))]
-	let block_digest = Default::default();
 
 	Block::new(
 		<<Block as BlockT>::Header as HeaderT>::new(
@@ -170,11 +158,6 @@ pub fn construct_genesis_block<Block: BlockT>(
 		),
 		extrinsics,
 	)
-}
-
-/// Partial service components specific to Midnight
-pub struct MidnightPartialComponents {
-	runtime_upgrade_proposal: UpgradeProposal,
 }
 
 /// Only enable the benchmarking host functions when we actually want to benchmark.
@@ -205,37 +188,28 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
-type MidnightService = (
-	sc_service::PartialComponents<
-		FullClient,
-		FullBackend,
-		FullSelectChain,
-		sc_consensus::DefaultImportQueue<Block>,
-		sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
-		(
-			sc_consensus_grandpa::GrandpaBlockImport<
-				FullBackend,
-				Block,
-				FullClient,
-				FullSelectChain,
-			>,
-			sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
-			sc_consensus_beefy::BeefyVoterLinks<Block, BeefyId>,
-			sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
-			Option<Telemetry>,
-			DataSources,
-			Option<McFollowerMetrics>,
-		),
-	>,
-	MidnightPartialComponents,
-);
+type MidnightService = sc_service::PartialComponents<
+	FullClient,
+	FullBackend,
+	FullSelectChain,
+	sc_consensus::DefaultImportQueue<Block>,
+	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
+	(
+		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+		sc_consensus_beefy::BeefyVoterLinks<Block, BeefyId>,
+		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
+		Option<Telemetry>,
+		DataSources,
+		Option<McFollowerMetrics>,
+	),
+>;
 
 #[allow(clippy::result_large_err)]
 pub fn new_partial(
 	config: &Configuration,
 	epoch_config: MainchainEpochConfig,
 	data_sources: DataSources,
-	proposed_wasm_file: &Option<String>,
 	storage_config: StorageInit,
 ) -> Result<MidnightService, ServiceError> {
 	let _mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
@@ -334,27 +308,6 @@ pub fn new_partial(
 			ledger_storage,
 		));
 
-	// Get new runtime proposal by checking for manually provided wasm, falling back to embedded wasm, or getting existing values(noop)
-	let potential_runtime_proposal = if let Some(wasm_file) = proposed_wasm_file {
-		let wasm = fs::read(wasm_file)?;
-		UpgradeProposal::from_embedded_runtime(&wasm)
-			.map_err(|e| ServiceError::Application(Box::new(e)))?
-	} else {
-		match WASM_BINARY {
-			Some(wasm) => UpgradeProposal::from_embedded_runtime(wasm)
-				.map_err(|e| sc_cli::Error::Application(Box::new(e)))
-				.map_err(|e| ServiceError::Application(Box::new(e)))?,
-			None => {
-				let api = client.runtime_api();
-				let best_hash = client.info().best_hash;
-				let (spec_version, runtime_hash) = api
-					.get_current_version_info(best_hash)
-					.map_err(|e| ServiceError::Application(Box::new(e)))?;
-				UpgradeProposal::new(spec_version, runtime_hash)
-			},
-		}
-	};
-
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
@@ -441,10 +394,7 @@ pub fn new_partial(
 		),
 	};
 
-	let midnight_service_partial_components =
-		MidnightPartialComponents { runtime_upgrade_proposal: potential_runtime_proposal };
-
-	Ok((partial_components, midnight_service_partial_components))
+	Ok(partial_components)
 }
 
 /// Builds a new service for a full client.
@@ -453,40 +403,31 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	epoch_config: MainchainEpochConfig,
 	data_sources: DataSources,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
-	potential_runtime_upgrade_proposal: &Option<String>,
 	storage_config: StorageInit,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
-	let new_partial_components = new_partial(
-		&config,
-		epoch_config.clone(),
-		data_sources.clone(),
-		potential_runtime_upgrade_proposal,
-		storage_config,
-	)?;
+	let new_partial_components =
+		new_partial(&config, epoch_config.clone(), data_sources.clone(), storage_config)?;
 
-	let (
-		sc_service::PartialComponents {
-			client,
-			backend,
-			mut task_manager,
-			import_queue,
-			keystore_container,
-			select_chain,
-			transaction_pool,
-			other:
-				(
-					block_import,
-					grandpa_link,
-					beefy_voter_links,
-					beefy_rpc_links,
-					mut telemetry,
-					data_sources,
-					_mc_follower_metrics_opt,
-				),
-		},
-		MidnightPartialComponents { runtime_upgrade_proposal },
-	) = new_partial_components;
+	let sc_service::PartialComponents {
+		client,
+		backend,
+		mut task_manager,
+		import_queue,
+		keystore_container,
+		select_chain,
+		transaction_pool,
+		other:
+			(
+				block_import,
+				grandpa_link,
+				beefy_voter_links,
+				beefy_rpc_links,
+				mut telemetry,
+				data_sources,
+				_mc_follower_metrics_opt,
+			),
+	} = new_partial_components;
 
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<_, _, Network>::new(
 		&config.network,
@@ -684,7 +625,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				client.clone(),
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
-				runtime_upgrade_proposal,
 				data_sources.native_token_observation.clone(),
 				data_sources.native_token_management.clone(),
 				data_sources.governed_map.clone(),

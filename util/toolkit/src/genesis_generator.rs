@@ -507,7 +507,7 @@ impl GenesisGenerator {
 
 		let valid_tx =
 			tx.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)?;
-		self.fullness = self.fullness + tx.cost(&self.state.parameters)?;
+		self.fullness = self.fullness + tx.cost(&self.state.parameters, false)?;
 		let (state, result) = self.state.apply(&valid_tx, &tx_context);
 		match result {
 			TransactionResult::Success(_) => {
@@ -577,7 +577,7 @@ mod test {
 			"0000000000000000000000000000000000000000000000000000000000000003",
 			"0000000000000000000000000000000000000000000000000000000000000004",
 		]
-		.map(WalletSeed::from)
+		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
 		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds)

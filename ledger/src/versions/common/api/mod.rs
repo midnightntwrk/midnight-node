@@ -148,6 +148,19 @@ impl Api {
 		})
 	}
 
+	pub fn deserialize<T>(&self, mut bytes: &[u8]) -> Result<T, LedgerApiError>
+	where
+		T: Deserializable + DeserializableError + 'static,
+	{
+		let kind = core::any::type_name::<T>();
+		let error = LedgerApiError::Deserialization(<T as DeserializableError>::error());
+
+		<T as Deserializable>::deserialize(&mut bytes, 0).map_err(|e| {
+			log::error!(target: LOG_TARGET, "Error deserializing: {kind:?}: {e:?}");
+			error
+		})
+	}
+
 	pub fn tagged_serialize<T>(&self, value: &T) -> Result<Vec<u8>, LedgerApiError>
 	where
 		T: midnight_serialize_local::Serializable + SerializableError + Tagged + 'static,

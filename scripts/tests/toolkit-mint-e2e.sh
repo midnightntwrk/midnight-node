@@ -31,22 +31,25 @@ docker run -d --rm \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
 
+tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
 cleanup() {
     echo "🛑 Killing node container..."
     docker container stop midnight-node-contracts
+    echo "🧹 Removing tempdir..."
+    rm -rf $tempdir
 }
-# Set up trap to cleanup on exit
+# --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
 echo "⏳ Waiting for node to boot..."
-sleep 10
+sleep 5
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."
 
-tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
 deploy_intent_filename="deploy.bin"
 deploy_tx_filename="deploy_tx.mn"
+deploy_zswap_filename="deploy_zswap.json"
 
 private_state_filename="state.json"
 
@@ -55,6 +58,7 @@ state_filename="contract_state.mn"
 
 mint_intent_filename="mint.bin"
 mint_tx_filename="mint_tx.mn"
+mint_zswap_filename="mint_zswap.json"
 
 contract_dir="contract"
 
@@ -63,12 +67,24 @@ tmpid=$(docker create "$TOOLKIT_IMAGE")
 docker cp "$tmpid:/toolkit-js/mint" "$tempdir/$contract_dir"
 docker rm -v $tmpid
 
+coin_public=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --coin-public
+)
+
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    generate-intent deploy -c /toolkit-js/contract/mint.config.ts \
-    --output-intent "/out/$deploy_intent_filename" --output-private-state "/out/$private_state_filename"
+    generate-intent deploy \
+    -c /toolkit-js/contract/mint.config.ts \
+    --output-intent "/out/$deploy_intent_filename" \
+    --output-private-state "/out/$private_state_filename" \
+    --output-zswap-state "/out/$deploy_zswap_filename" \
+    --coin-public "$coin_public"
 
 test -f "$tempdir/$deploy_intent_filename"
 test -f "$tempdir/$private_state_filename"
@@ -77,23 +93,23 @@ echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-files "/out/$deploy_intent_filename" --compiled-contract-dir contract/managed/counter \
+    send-intent --intent-file "/out/$deploy_intent_filename" \
+    --compiled-contract-dir contract/managed/counter \
     --to-bytes --dest-file "/out/$deploy_tx_filename"
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    generate-txs --src-files /out/$deploy_tx_filename -r 1 send
+    generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
-echo "Get contract address"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+contract_address=$(
+    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    contract-address --src-file /out/$deploy_tx_filename --network undeployed \
-    --dest-file /out/$address_filename
-
-contract_address=$(cat "$tempdir/$address_filename")
+    contract-address \
+    --src-file /out/$deploy_tx_filename
+)
 
 echo "Get contract state"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
@@ -102,33 +118,61 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     contract-state --contract-address $contract_address \
     --dest-file /out/$state_filename
 
+nonce=$(echo "3337000000000000000000000000000000000000000000000000000000000000")
+domain_sep=$(echo "feeb000000000000000000000000000000000000000000000000000000000000")
+
 echo "Generate circuit call intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c /toolkit-js/contract/mint.config.ts \
     --input-onchain-state "/out/$state_filename" --input-private-state "/out/$private_state_filename" \
-    --contract-address $contract_address --circuit-id mint \
-    --output-intent "/out/$mint_intent_filename" --output-private-state "/out/tmp.json"
+    --contract-address $contract_address \
+    --output-intent "/out/$mint_intent_filename" \
+    --output-private-state "/out/tmp.json" \
+    --output-zswap-state "/out/$mint_zswap_filename" \
+    --coin-public "$coin_public" \
+    mint \
+    "$nonce" \
+    "$domain_sep" \
+    1000
+
+shielded_destination=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --shielded
+)
 
 echo "Generate and send mint tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    send-intent --intent-files "/out/$mint_intent_filename" --compiled-contract-dir /toolkit-js/contract/out
+    send-intent \
+    --intent-file "/out/$mint_intent_filename" \
+    --zswap-state-file "/out/$mint_zswap_filename" \
+    --compiled-contract-dir /toolkit-js/contract/out \
+    --shielded-destination "$shielded_destination"
+
+token_type=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-token-type \
+    --contract-address "$contract_address" \
+    --domain-sep "$domain_sep" \
+    --unshielded
+)
 
 show_wallet_output=$(docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts $TOOLKIT_IMAGE \
     show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001")
 
-if echo "$show_wallet_output" | grep -q "coins: {[[:space:]]*}"; then
-    echo "🕵️❌ Couldn't find shielded coins in wallet"
-    exit 1
+if echo "$show_wallet_output" | grep -q "$token_type"; then
+    echo "🕵️✅ Found matching shielded coin"
 else
-    echo "🕵️✅ Found shielded coins in wallet"
+    echo "🕵️❌ Couldn't find matching shielded coin"
+    exit 1
 fi
 
-rm -rf $tempdir
-
-cleanup
+# rm -rf $tempdir
 
 echo "✅ Toolkit Mint"

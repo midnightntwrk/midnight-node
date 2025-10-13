@@ -219,7 +219,7 @@ impl UnshieldedUtxos {
 }
 
 impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
-	#[cfg(not(feature = "runtime-benchmarks"))]
+	// #[cfg(not(feature = "runtime-benchmarks"))]
 	pub(crate) fn validate(
 		&self,
 		ledger: &Ledger<D>,
@@ -242,15 +242,6 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 			hex::encode(self.hash())
 		);
 
-		Ok(())
-	}
-
-	#[cfg(feature = "runtime-benchmarks")]
-	pub(crate) fn validate(
-		&self,
-		_ledger: &Ledger<D>,
-		_block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
 		Ok(())
 	}
 
@@ -310,7 +301,7 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 
 	#[allow(dead_code)]
 	pub(crate) fn fee(&self, params: &LedgerParameters) -> Result<u128, LedgerApiError> {
-		self.0.fees(params).map_err(|e| {
+		self.0.fees(params, false).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error getting the transaction fee: {e:?}");
 			LedgerApiError::Transaction(TransactionError::Malformed(
 				MalformedTransaction::<D>::from(e).into(),

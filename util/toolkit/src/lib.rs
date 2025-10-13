@@ -13,12 +13,14 @@
 
 pub mod address;
 pub mod cli_parsers;
+pub mod client;
 pub mod genesis_generator;
 pub mod indexer;
 pub mod progress;
 pub mod remote_prover;
 pub mod sender;
 pub mod serde_def;
+pub mod toolkit_js;
 pub mod tx_generator;
 
 use progress::{Progress, Spin};
@@ -27,7 +29,6 @@ use subxt::utils::H256;
 use tx_generator::*;
 
 use midnight_node_ledger_helpers::*;
-use midnight_node_metadata::midnight_metadata as mn_meta;
 
 // Conditionally define the type alias `ProofType` and `SignatureType`
 #[cfg(not(feature = "erase-proof"))]

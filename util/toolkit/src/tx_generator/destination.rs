@@ -12,7 +12,6 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use clap::Args;
 use midnight_node_ledger_helpers::*;
 use std::{fs::File, io::Write, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
@@ -22,19 +21,21 @@ use crate::{
 	serde_def::{DeserializedTransactionsWithContext, SerializedTransactionsWithContext},
 };
 
-#[derive(Args)]
+pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
+
+#[derive(clap::Args)]
 pub struct Destination {
-	/// RPC URL of node instance; Used to fetch existing transactions
-	#[arg(long, short = 'd', conflicts_with = "dest_file", default_value = "ws://127.0.0.1:9944")]
-	pub dest_url: Option<String>,
+	/// RPC URL(s) of node instance(s) used to send generated transactions. Can set multiple.
+	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()])]
+	pub dest_urls: Vec<String>,
 	/// The rate at which to send txs (per second)
 	#[arg(long, short, default_value = "1", conflicts_with = "dest_file")]
 	pub rate: f32,
-	/// Filename of genesis tx. Used as initial state for generated txs.
-	#[arg(long, conflicts_with = "dest_url")]
+	/// Output filename to write generated transaction.
+	#[arg(long, conflicts_with = "dest_urls")]
 	pub dest_file: Option<String>,
-	/// Select if the transactions should be saved in JSON format or bytes
-	#[arg(long, default_value = "false", conflicts_with = "dest_url")]
+	/// Save generated tx file as bytes rather than JSON.
+	#[arg(long, default_value = "false", conflicts_with = "dest_urls")]
 	pub to_bytes: bool,
 }
 
@@ -98,6 +99,20 @@ pub trait SendTxs<
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+#[async_trait]
+impl<
+	S: SignatureKind<DefaultDB> + Tagged + Send + 'static,
+	P: ProofKind<DefaultDB> + Send + 'static,
+> SendTxs<S, P> for ()
+{
+	async fn send_txs(
+		&self,
+		_txs: &DeserializedTransactionsWithContext<S, P>,
+	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		Ok(())
+	}
 }
 
 #[async_trait]

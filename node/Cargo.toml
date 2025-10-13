@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "0.16.3"
+version = "0.17.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -69,15 +69,13 @@ substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
-frame-benchmarking-cli = {workspace = true, optional = true}
+frame-benchmarking-cli = {workspace = true, optional = true, default-features = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
 midnight-node-ledger-helpers = {workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
-midnight-primitives-upgrade = { workspace = true, default-features = true }
-midnight-primitives-upgrade-api = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-native-token-observation  = { workspace = true, default-features = true }
