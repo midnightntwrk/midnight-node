@@ -13,6 +13,8 @@
 
 import { spawn } from "child_process";
 
+// TODO: Replace with docker library
+
 export interface DockerComposeOptions {
   composeFile: string;
   env: Record<string, string>;
@@ -21,7 +23,14 @@ export interface DockerComposeOptions {
 }
 
 export function stopDockerCompose(options: DockerComposeOptions) {
-  const args = ["-f", options.composeFile, "down", "--volumes", "--timeout", "0"];
+  const args = [
+    "-f",
+    options.composeFile,
+    "down",
+    "--volumes",
+    "--timeout",
+    "0",
+  ];
 
   if (options.profiles) {
     for (const profile of options.profiles) {

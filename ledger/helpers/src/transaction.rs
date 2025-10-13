@@ -13,13 +13,14 @@
 
 use base_crypto::{
 	rng::SplittableRng,
+	signatures::SigningKey,
 	time::{Duration, Timestamp},
 };
 use coin_structure::coin::TokenType;
 use ledger_storage::{Storable, arena::Sp};
 use midnight_serialize::Serializable;
 use mn_ledger::{
-	dust::{DustActions, DustSpend},
+	dust::{DustActions, DustPublicKey, DustRegistration, DustSpend},
 	structure::{BindingKind, PedersenDowngradeable, ProofKind, SignatureKind},
 	verify::WellFormedStrictness,
 };
@@ -62,6 +63,35 @@ pub trait FromContext<D: DB + Clone> {
 	}
 }
 
+pub struct DustRegistrationBuilder {
+	pub signing_key: SigningKey,
+	pub dust_address: Option<DustPublicKey>,
+}
+
+impl DustRegistrationBuilder {
+	pub fn build<
+		D: DB + Clone,
+		P: ProofKind<D>,
+		B: Storable<D> + PedersenDowngradeable<D> + Serializable,
+	>(
+		&self,
+		intent: &Intent<Signature, P, B, D>,
+		rng: &mut StdRng,
+		segment_id: u16,
+	) -> DustRegistration<Signature, D> {
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let signature = self.signing_key.sign(rng, &data_to_sign);
+		let night_key = self.signing_key.verifying_key();
+
+		DustRegistration {
+			night_key,
+			dust_address: self.dust_address.map(|address| Sp::new(address)),
+			allow_fee_payment: 0,
+			signature: Some(Sp::new(signature)),
+		}
+	}
+}
+
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D>>>,
@@ -72,6 +102,7 @@ pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub funding_seeds: Vec<WalletSeed>,
 	pub mock_proofs_for_fees: bool,
 	pub now: Timestamp,
+	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
 impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
@@ -101,6 +132,7 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 			funding_seeds: vec![],
 			mock_proofs_for_fees: false,
 			now,
+			dust_registrations: vec![],
 		}
 	}
 }
@@ -122,6 +154,10 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if self.intents.insert(segment_id, intent).is_some() {
 			println!("WARN: value of segment_id({segment_id}) has been replaced.");
 		};
+	}
+
+	pub fn add_dust_registration(&mut self, dust_registration: DustRegistrationBuilder) {
+		self.dust_registrations.push(dust_registration);
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -205,7 +241,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		for _ in 0..10 {
 			let spends = self.gather_dust_spends(missing_dust, now)?;
 			let payment_tx =
-				self.build_spend_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
+				self.build_dust_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
 			let paid_tx = tx.merge(&payment_tx)?;
 
 			if self.mock_proofs_for_fees {
@@ -274,7 +310,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if dust_imbalance < 0 { Ok(Some(dust_imbalance.unsigned_abs())) } else { Ok(None) }
 	}
 
-	fn build_spend_tx(
+	fn build_dust_tx(
 		&self,
 		spends: &[DustSpend<ProofPreimageMarker, D>],
 		mut rng: StdRng,
@@ -283,12 +319,20 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		ttl: Timestamp,
 	) -> UnprovenTransaction<D> {
 		let mut intent = Intent::empty(&mut rng, ttl);
+		let segment_id = Segment::FeePayments.into();
+		let registrations = self
+			.dust_registrations
+			.iter()
+			.map(|registration| registration.build(&intent, &mut rng, segment_id))
+			.collect::<Vec<_>>()
+			.into();
+
 		intent.dust_actions = Some(Sp::new(DustActions {
 			spends: spends.to_vec().into(),
-			registrations: vec![].into(),
+			registrations,
 			ctime: now,
 		}));
-		let intents = HashMapStorage::new().insert(Segment::FeePayments.into(), intent);
+		let intents = HashMapStorage::new().insert(segment_id, intent);
 		Transaction::from_intents(network_id, intents)
 	}
 
