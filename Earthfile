@@ -791,7 +791,7 @@ toolkit-image:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /app/
 
     LET NODE_VERSION="$(cat /app/node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
@@ -809,9 +809,9 @@ hardfork-test-upgrader-image:
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
 
-    COPY +build/artifacts-$NATIVEARCH/upgrader /
-    COPY +build/artifacts-$NATIVEARCH/test/* /
-    COPY +build/artifacts-$NATIVEARCH/rollback/* /
+    COPY +build/artifacts-$NATIVEARCH/upgrader /app/
+    COPY +build/artifacts-$NATIVEARCH/test/* /app/
+    COPY +build/artifacts-$NATIVEARCH/rollback/* /app/
 
     LET NODE_VERSION = "$(cat /app/node_version)"
 
