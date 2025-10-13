@@ -2544,12 +2544,12 @@ __metadata:
   linkType: hard
 
 "brace-expansion@npm:^1.1.7":
-  version: 1.1.11
-  resolution: "brace-expansion@npm:1.1.11"
+  version: 1.1.12
+  resolution: "brace-expansion@npm:1.1.12"
   dependencies:
     balanced-match: "npm:^1.0.0"
     concat-map: "npm:0.0.1"
-  checksum: 10/faf34a7bb0c3fcf4b59c7808bc5d2a96a40988addf2e7e09dfbb67a2251800e0d14cd2bfc1aa79174f2f5095c54ff27f46fb1289fe2d77dac755b5eb3434cc07
+  checksum: 10/12cb6d6310629e3048cadb003e1aca4d8c9bb5c67c3c321bafdd7e7a50155de081f78ea3e0ed92ecc75a9015e784f301efc8132383132f4f7904ad1ac529c562
   languageName: node
   linkType: hard
 
@@ -5752,7 +5752,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:^8.5.3, postcss@npm:^8.5.6":
+"postcss@npm:^8.5.6":
   version: 8.5.6
   resolution: "postcss@npm:8.5.6"
   dependencies:
@@ -6138,7 +6138,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rollup@npm:^4.34.9, rollup@npm:^4.43.0":
+"rollup@npm:^4.43.0":
   version: 4.50.2
   resolution: "rollup@npm:4.50.2"
   dependencies:
@@ -6857,7 +6857,7 @@ __metadata:
     semantic-ui-react: "npm:^2.1.5"
     stream-browserify: "npm:^3.0.0"
     typescript: "npm:^4.0.0"
-    vite: "npm:^6.3.6"
+    vite: "npm:^7.1.6"
     vitest: "npm:^3.2.4"
     webpack: "npm:^5.101.0"
   languageName: unknown
@@ -6985,7 +6985,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinyglobby@npm:^0.2.13, tinyglobby@npm:^0.2.14, tinyglobby@npm:^0.2.15":
+"tinyglobby@npm:^0.2.14, tinyglobby@npm:^0.2.15":
   version: 0.2.15
   resolution: "tinyglobby@npm:0.2.15"
   dependencies:
@@ -7358,26 +7358,26 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vite@npm:^6.3.6":
-  version: 6.3.6
-  resolution: "vite@npm:6.3.6"
+"vite@npm:^7.1.6":
+  version: 7.1.6
+  resolution: "vite@npm:7.1.6"
   dependencies:
     esbuild: "npm:^0.25.0"
-    fdir: "npm:^6.4.4"
+    fdir: "npm:^6.5.0"
     fsevents: "npm:~2.3.3"
-    picomatch: "npm:^4.0.2"
-    postcss: "npm:^8.5.3"
-    rollup: "npm:^4.34.9"
-    tinyglobby: "npm:^0.2.13"
+    picomatch: "npm:^4.0.3"
+    postcss: "npm:^8.5.6"
+    rollup: "npm:^4.43.0"
+    tinyglobby: "npm:^0.2.15"
   peerDependencies:
-    "@types/node": ^18.0.0 || ^20.0.0 || >=22.0.0
+    "@types/node": ^20.19.0 || >=22.12.0
     jiti: ">=1.21.0"
-    less: "*"
+    less: ^4.0.0
     lightningcss: ^1.21.0
-    sass: "*"
-    sass-embedded: "*"
-    stylus: "*"
-    sugarss: "*"
+    sass: ^1.70.0
+    sass-embedded: ^1.70.0
+    stylus: ">=0.54.8"
+    sugarss: ^5.0.0
     terser: ^5.16.0
     tsx: ^4.8.1
     yaml: ^2.4.2
@@ -7409,7 +7409,7 @@ __metadata:
       optional: true
   bin:
     vite: bin/vite.js
-  checksum: 10/8b8b6fe12318ca457396bf2053df7056cf4810f1d4a43b36b6afe59860e32b749c0685a290fe8a973b0d3da179ceec4c30cebbd3c91d0c47fbcf6436b17bdeef
+  checksum: 10/b0bb7c5b4d3fbaf7e34f17e9103bac7a380d9de076343ba9b81f5fafc07982aef19d7d5a701faf8c8571c75a7ab2920bfeb41cc70b84ae22dd6db79f92ad6d1b
   languageName: node
   linkType: hard
 
