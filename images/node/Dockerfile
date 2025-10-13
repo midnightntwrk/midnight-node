@@ -28,5 +28,8 @@ RUN apt-get update -qq && \
 COPY .envrc ./bin/.envrc
 COPY res/ ./res/
 
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+USER appuser
+
 EXPOSE 30333 9933 9944 9615
 ENTRYPOINT ["./midnight-node"]
