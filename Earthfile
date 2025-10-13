@@ -125,8 +125,8 @@ get-metadata:
 rebuild-metadata:
     FROM +subxt
     COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /app/node_version
-    LET NODE_VERSION = "$(cat /app/node_version)"
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /node/node_version
+    LET NODE_VERSION = "$(cat /node/node_version)"
     COPY +get-metadata/metadata.scale /metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata_${NODE_VERSION}.scale
@@ -895,7 +895,7 @@ partnerchains-dev:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     RUN rm -rf /node
-    LET NODE_VERSION = "$(cat /app/node_version)"
+    LET NODE_VERSION = "$(cat /node_version)"
     LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
     # Install necessary packages
     RUN apt-get update -qq && apt-get install -y \

@@ -16,6 +16,8 @@ COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
+RUN mkdir -p /app
+
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
 RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /app/node_version && rm -rf /node

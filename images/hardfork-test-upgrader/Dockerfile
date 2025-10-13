@@ -8,6 +8,8 @@ RUN apt-get update -qq \
 
 ENV RUNTIME_PATH=/midnight_node_runtime.compact.compressed.wasm
 
+RUN mkdir -p /app
+
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
 RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /app/node_version
