@@ -114,7 +114,7 @@ pub mod pallet {
 					.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
-			ensure!(council_members.is_empty(), Error::<T>::EmptyMembers);
+			ensure!(!council_members.is_empty(), Error::<T>::EmptyMembers);
 			council_members.sort();
 
 			let council_current_members = T::CouncilMembershipHandler::sorted_members();
@@ -148,7 +148,7 @@ pub mod pallet {
 				.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
-			ensure!(technical_committee_members.is_empty(), Error::<T>::EmptyMembers);
+			ensure!(!technical_committee_members.is_empty(), Error::<T>::EmptyMembers);
 			technical_committee_members.sort();
 
 			let technical_committee_current_members =

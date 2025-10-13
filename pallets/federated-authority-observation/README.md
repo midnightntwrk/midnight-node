@@ -14,8 +14,6 @@ This pallet provides mechanisms for observing federated authority membership cha
 - **Validation**: Ensures member lists meet size constraints and are non-empty
 - **Change Detection**: Only creates inherents when actual membership changes occur
 
-## Architecture
-
 ### Components
 
 1. **Inherent Provider**: Extracts federated authority data from block inherents

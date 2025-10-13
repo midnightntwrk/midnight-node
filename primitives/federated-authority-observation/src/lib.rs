@@ -16,19 +16,19 @@ use sp_runtime::Vec;
 use std::borrow::Cow;
 
 /// The inherent identifier for federated authority observation
-pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"fedauth ";
+pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"faobsrve";
 
 #[derive(Eq, Debug, Clone, PartialEq, TypeInfo, Default, Encode, Decode, PartialOrd, Ord)]
 pub struct AuthorityMemberPublicKey(pub Vec<u8>);
 
 /// Placeholder structure for federated authority data from main chain
-/// This will contain Aura public keys for federated authorities
+/// This will contain sr25519 public keys for federated authorities
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]
 // #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct FederatedAuthorityData {
-	/// List of Aura authority public keys
+	/// List of sr25519 authority public keys
 	pub council_authorities: Vec<AuthorityMemberPublicKey>,
-	/// List of Aura authority public keys
+	/// List of sr25519 authority public keys
 	pub technical_committee_authorities: Vec<AuthorityMemberPublicKey>,
 	/// Main chain block hash this data was observed at
 	pub mc_block_hash: McBlockHash,

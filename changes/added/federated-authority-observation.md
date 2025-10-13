@@ -1,4 +1,3 @@
-#toolkit
 # Federated Authority Observation pallet
 
 A pallet responsible for observing and propagating federated authority changes from the main chain to governance bodies (Council and Technical Committee).

@@ -15,7 +15,6 @@
 
 pub mod idp;
 
-// Re-export types from native-token-observation for backward compatibility
 pub use midnight_primitives_native_token_observation::{
 	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,

@@ -576,7 +576,7 @@ fn membership_handler_integration_test() {
 		let continuing_tc_member = 5;
 
 		// Verify sufficients for outgoing members were decremented
-		let account_1 = frame_system::Pallet::<Test>::account(&removed_council_member);
+		let account_1 = frame_system::Pallet::<Test>::account(removed_council_member);
 		assert_eq!(
 			account_1.sufficients, 0,
 			"Removed council member {} should have 0 sufficients",
@@ -593,14 +593,14 @@ fn membership_handler_integration_test() {
 		}
 
 		// Verify sufficients for new members were incremented
-		let account_7 = frame_system::Pallet::<Test>::account(&added_council_member);
+		let account_7 = frame_system::Pallet::<Test>::account(added_council_member);
 		assert_eq!(
 			account_7.sufficients, 1,
 			"New council member {} should have 1 sufficient",
 			added_council_member
 		);
 
-		let account_8 = frame_system::Pallet::<Test>::account(&added_tc_member);
+		let account_8 = frame_system::Pallet::<Test>::account(added_tc_member);
 		assert_eq!(
 			account_8.sufficients, 1,
 			"New TC member {} should have 1 sufficient",
@@ -608,14 +608,14 @@ fn membership_handler_integration_test() {
 		);
 
 		// Verify sufficients for continuing members remain at 1
-		let account_2 = frame_system::Pallet::<Test>::account(&continuing_council_member);
+		let account_2 = frame_system::Pallet::<Test>::account(continuing_council_member);
 		assert_eq!(
 			account_2.sufficients, 1,
 			"Continuing council member {} should still have 1 sufficient",
 			continuing_council_member
 		);
 
-		let account_5 = frame_system::Pallet::<Test>::account(&continuing_tc_member);
+		let account_5 = frame_system::Pallet::<Test>::account(continuing_tc_member);
 		assert_eq!(
 			account_5.sufficients, 1,
 			"Continuing TC member {} should still have 1 sufficient",
