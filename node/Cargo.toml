@@ -79,7 +79,6 @@ midnight-node-res = { workspace = true, features = ["chain-spec"], default-featu
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-native-token-observation  = { workspace = true, default-features = true }
-midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-native-token-observation = { workspace = true, default-features = true, features = ["mock"] }
