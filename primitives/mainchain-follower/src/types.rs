@@ -34,11 +34,7 @@ impl Eq for ObservedUtxo {}
 
 impl Ord for ObservedUtxo {
 	fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-		self.header
-			.tx_position
-			.partial_cmp(&other.header.tx_position)
-			.unwrap()
-			.then(self.header.utxo_index.partial_cmp(&other.header.utxo_index).unwrap())
+		self.header.partial_cmp(&other.header).unwrap()
 	}
 }
 
@@ -155,14 +151,6 @@ pub struct UtxoIndexInTx(pub u16);
 impl PartialOrd for ObservedUtxoHeader {
 	fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
 		match self.tx_position.partial_cmp(&other.tx_position) {
-			Some(core::cmp::Ordering::Equal) => {},
-			ord => return ord,
-		}
-		match self.tx_hash.0.partial_cmp(&other.tx_hash.0) {
-			Some(core::cmp::Ordering::Equal) => {},
-			ord => return ord,
-		}
-		match self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0) {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
