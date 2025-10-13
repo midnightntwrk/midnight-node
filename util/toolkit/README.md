@@ -109,7 +109,7 @@ $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
 Dry-run: Destination RPC: "ws://127.0.0.1:9944"
 Dry-run: Destination rate: 1.0 TPS
-Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, initial_unshielded_intent_value: 10000, enable_shielded: false })
+Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
 Dry-run: local prover (no proof server)
 
 ```

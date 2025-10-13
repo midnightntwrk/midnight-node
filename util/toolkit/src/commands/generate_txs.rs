@@ -82,9 +82,10 @@ mod tests {
 	use std::str::FromStr;
 
 	use super::*;
-	use midnight_node_ledger_helpers::WalletAddress;
+	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
 	use midnight_node_toolkit::{
 		cli_parsers::contract_address_decode,
+		t_token,
 		tx_generator::builder::{
 			BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
 			SingleTxArgs,
@@ -125,7 +126,9 @@ mod tests {
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
 		shielded_amount: Some(0),
+		shielded_token_type: t_token(),
 		unshielded_amount: Some(100),
+		unshielded_token_type: NIGHT,
 		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
 			.to_string(),
 		destination_address: vec![
@@ -157,8 +160,10 @@ mod tests {
 		num_batches: 1,
 		concurrency: None,
 		rng_seed: None,
+		shielded_token_type: t_token(),
 		coin_amount: 100,
 		initial_unshielded_intent_value: 500_000_000_000_000,
+		unshielded_token_type: NIGHT,
 		enable_shielded: false,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);

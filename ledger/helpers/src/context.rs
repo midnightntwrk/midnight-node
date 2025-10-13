@@ -262,7 +262,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						println!(
 							"Failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
 						);
-						(new_ledger_state, offers, vec![], cost)
+						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
 				}
 			},
