@@ -1,27 +1,35 @@
 use clap::Args;
+use hex::ToHex;
 use midnight_node_ledger_helpers::{
-	DefaultDB, NetworkId, TransactionWithContext, mn_ledger_serialize, serialize,
+	DefaultDB, TransactionWithContext, mn_ledger_serialize, serialize, serialize_untagged,
 };
-use midnight_node_toolkit::{
-	ProofType, SignatureType,
-	cli_parsers::{self as cli},
-};
-use std::{fs, path::Path};
+use midnight_node_toolkit::{ProofType, SignatureType};
+use serde::Serialize;
+use std::fs;
 
 #[derive(Args, Clone)]
 pub struct ContractAddressArgs {
-	/// Target network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	/// Serialize Tagged
+	#[arg(long)]
+	tagged: bool,
+	/// Serialize Untagged
+	#[arg(long)]
+	untagged: bool,
 	/// Serialized Transaction
 	#[arg(long, short)]
 	src_file: String,
-	/// Destination file to save the address
-	#[arg(long, short)]
-	dest_file: String,
 }
 
-pub fn execute(args: ContractAddressArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractAddressBoth {
+	tagged: String,
+	untagged: String,
+}
+
+pub fn execute(
+	args: ContractAddressArgs,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
 	let bytes = fs::read(&args.src_file).expect("failed to read file");
 	let tx_with_context: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
 		mn_ledger_serialize::tagged_deserialize(bytes.as_slice())?;
@@ -34,57 +42,38 @@ pub fn execute(args: ContractAddressArgs) -> Result<(), Box<dyn std::error::Erro
 		.next()
 		.expect("There is not any `ContractDeploy` in the tx");
 
-	let deserialized_address = deploy.address();
-	let address = hex::encode(serialize(&deserialized_address)?);
+	let both = ContractAddressBoth {
+		tagged: serialize(&deploy.address())?.encode_hex(),
+		untagged: serialize_untagged(&deploy.address())?.encode_hex(),
+	};
 
-	println!("\nDeserialized Address {:?}", deserialized_address.0);
-	println!("\nSerialized Address {:?}", address);
-
-	let full_path = Path::new(&args.dest_file);
-	if let Some(directory) = full_path.parent() {
-		fs::create_dir_all(directory).expect("failed to create directories");
+	if args.untagged {
+		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
 	}
 
-	fs::write(full_path, address.as_bytes()).expect("failed to create file");
-
-	Ok(())
+	if args.tagged { Ok(both.tagged) } else { Ok(both.untagged) }
 }
 
 #[cfg(test)]
 mod test {
-	use super::{ContractAddressArgs, NetworkId, execute};
-	use std::{
-		env::temp_dir,
-		fs::{self, remove_file},
-	};
+	use super::{ContractAddressArgs, execute};
 
 	// todo: need more samples
 	#[test_case::test_case(
-        NetworkId::Undeployed,
         "../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
-        "6d69646e696768743a636f6e74726163742d616464726573735b76325d3a67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870" ;
+"6d69646e696768743a636f6e74726163742d616464726573735b76325d3a67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870",
+        "67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870" ;
         "undeployed case"
     )]
-	fn test_contract_address(network: NetworkId, src_file: &str, hex_addr: &str) {
-		let path = temp_dir().join("example.mn");
-		let path_str = path.as_os_str().to_str().expect("failed to convert to path");
+	fn test_contract_address(src_file: &str, tagged: &str, untagged: &str) {
+		let args =
+			ContractAddressArgs { src_file: src_file.to_string(), tagged: false, untagged: false };
+		let res = execute(args).expect("execution failed");
+		assert_eq!(res, untagged);
 
-		let args = ContractAddressArgs {
-			network,
-			src_file: src_file.to_string(),
-			dest_file: path_str.to_string(),
-		};
-
-		let _ = execute(args).expect("execution failed");
-
-		// check if file exists
-		let file_exist = fs::exists(&path).expect("should return ok");
-		assert!(file_exist);
-
-		let bytes = fs::read(&path).expect("failed to return address");
-		let bytes_to_string = String::from_utf8(bytes).expect("failed to convert to string");
-		assert_eq!(bytes_to_string, hex_addr);
-
-		remove_file(path).expect("It should be removed");
+		let args =
+			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: true };
+		let res = execute(args).expect("execution failed");
+		assert_eq!(res, tagged);
 	}
 }

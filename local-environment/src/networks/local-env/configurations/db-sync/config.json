@@ -53,10 +53,7 @@
   "TurnOnLogMetrics": true,
   "TurnOnLogging": true,
   "hasEKG": 32006,
-  "hasPrometheus": [
-    "127.0.0.1",
-    32007
-  ],
+  "hasPrometheus": ["127.0.0.1", 32007],
   "TestShelleyHardForkAtEpoch": 0,
   "TestAllegraHardForkAtEpoch": 0,
   "TestMaryHardForkAtEpoch": 0,
@@ -70,15 +67,8 @@
   "Protocol": "Cardano",
   "PrometheusPort": 8080,
   "RequiresNetworkMagic": "RequiresMagic",
-  "defaultBackends": [
-    "KatipBK"
-  ],
-  "defaultScribes": [
-    [
-      "StdoutSK",
-      "stdout"
-    ]
-  ],
+  "defaultBackends": ["KatipBK"],
+  "defaultScribes": [["StdoutSK", "stdout"]],
   "minSeverity": "Info",
   "options": {
     "cfokey": {
@@ -148,10 +138,7 @@
         "subtrace": "NoTrace"
       },
       "benchmark": {
-        "contents": [
-          "GhcRtsStats",
-          "MonotonicClock"
-        ],
+        "contents": ["GhcRtsStats", "MonotonicClock"],
         "subtrace": "ObservableTrace"
       },
       "cardano.epoch-validation.utxo-stats": {
@@ -164,10 +151,7 @@
     "rpLogLimitBytes": 5000000,
     "rpMaxAgeHours": 24
   },
-  "setupBackends": [
-    "AggregationBK",
-    "KatipBK"
-  ],
+  "setupBackends": ["AggregationBK", "KatipBK"],
   "setupScribes": [
     {
       "scFormat": "ScText",

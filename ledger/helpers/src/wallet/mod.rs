@@ -11,10 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-	DB, LedgerState, ProofKind, PureGeneratorPedersen, SerdeTransaction, SignatureKind,
-	StandardTransaction, Transaction, Utxo, WalletSeed,
-};
+use crate::{DB, LedgerState, Utxo, WalletSeed};
 
 mod dust;
 mod hd;
@@ -24,11 +21,12 @@ mod unshielded;
 use crate::NetworkId;
 pub use dust::*;
 pub use hd::*;
-use midnight_serialize::Tagged;
+use ledger_storage::Storable;
 use mn_ledger::{error::EventReplayError, events::Event};
 use onchain_runtime::context::BlockContext;
 pub use shielded::*;
 pub use unshielded::*;
+use zswap::Offer;
 
 #[derive(Clone, Debug)]
 pub struct Wallet<D: DB + Clone> {
@@ -47,19 +45,10 @@ impl<D: DB + Clone> Wallet<D> {
 		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
 	}
 
-	pub fn update_state_from_tx<S: SignatureKind<D>, P: ProofKind<D>>(
-		&mut self,
-		tx: &SerdeTransaction<S, P, D>,
-	) where
-		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-	{
-		if let SerdeTransaction::Midnight(Transaction::Standard(StandardTransaction {
-			guaranteed_coins: Some(guaranteed_coins),
-			..
-		})) = tx
-		{
-			self.shielded.state =
-				self.shielded.state.apply(self.shielded.secret_keys(), guaranteed_coins);
+	pub fn update_state_from_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
+		let secret_keys = self.shielded.secret_keys().clone();
+		for offer in offers {
+			self.shielded.state = self.shielded.state.apply(&secret_keys, offer);
 		}
 
 		// // TODO UNSHIELDED
@@ -95,22 +84,7 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
-		let wallet_seed_bytes: [u8; 32] = Self::hex_str_decode(input);
-		WalletSeed::from(wallet_seed_bytes)
-	}
-
-	fn hex_str_decode<T>(input: &str) -> T
-	where
-		T: TryFrom<Vec<u8>, Error = Vec<u8>>,
-	{
-		let bytes =
-			hex::decode(input).unwrap_or_else(|_| panic!("failed to parse wallet seed: {input:?}"));
-
-		let res: T = bytes
-			.try_into()
-			.unwrap_or_else(|_| panic!("failed to parse wallet seed: {input:?}"));
-
-		res
+		input.parse().expect("failed to decode seed")
 	}
 }
 

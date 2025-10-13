@@ -36,6 +36,7 @@ use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
+use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
@@ -99,7 +100,7 @@ fn test_send_mn_transaction_invalid_tx() {
 		init_ledger_state(block_context.into());
 
 		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
-			TransactionError::Malformed(MalformedError::BalanceCheckOverspend),
+			TransactionError::Malformed(MalformedError::ContractNotPresent),
 		)
 		.into();
 		assert_err!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx), error);

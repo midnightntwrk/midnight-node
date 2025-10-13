@@ -7,3 +7,5 @@ test/**/output-ps.json
 test/**/contract.config.js
 mint/mint.config.js
 mint/out
+test/ut_contract/ut.config.js
+test/ut_contract/out

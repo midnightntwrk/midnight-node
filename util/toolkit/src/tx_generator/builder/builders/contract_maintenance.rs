@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{BuildIntent, WalletSeed};
+use midnight_node_ledger_helpers::{BuildIntent, ContractAddress, WalletSeed};
 use std::{convert::Infallible, sync::Arc};
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
 		VerifyingKey, Wallet,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, IntentToFile},
+	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, CreateIntentInfo, IntentToFile},
 };
 
 #[allow(dead_code)]
@@ -32,7 +32,7 @@ pub struct ContractMaintenanceBuilder {
 	threshold: u32,
 	counter: u32,
 	funding_seed: String,
-	contract_address: String,
+	contract_address: ContractAddress,
 	rng_seed: Option<[u8; 32]>,
 }
 
@@ -52,7 +52,7 @@ impl ContractMaintenanceBuilder {
 #[async_trait]
 impl IntentToFile for ContractMaintenanceBuilder {}
 
-impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractMaintenanceBuilder {
+impl BuildTxsExt for ContractMaintenanceBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -60,10 +60,11 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractMaintenance
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
 	}
+}
 
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB> + Send> {
+impl CreateIntentInfo for ContractMaintenanceBuilder {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for Maintenance");
-		let contract_address = self.contract_address(&self.contract_address);
 
 		// - Contract Calls
 		let update = UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
@@ -72,14 +73,14 @@ impl BuildTxsExt<Box<dyn BuildIntent<DefaultDB> + Send>> for ContractMaintenance
 			counter: self.counter + 1,
 		});
 
-		let call_contract: Box<dyn BuildContractAction<DefaultDB> + Send> =
+		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
-				address: contract_address,
+				address: self.contract_address,
 				updates: vec![update],
 				counter: self.counter,
 			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB> + Send>> = vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -109,15 +110,15 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB> + Send>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB> + Send>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };
 
-		tx_info.set_guaranteed_coins(offer_info);
+		tx_info.set_guaranteed_offer(offer_info);
 
 		tx_info.set_wallet_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(true);

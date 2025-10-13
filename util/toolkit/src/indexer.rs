@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod runtimes;
+
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeMap, VecDeque},
@@ -22,10 +23,12 @@ use std::{
 	time::Duration,
 };
 use subxt::{
-	OnlineClient, PolkadotConfig, SubstrateConfig,
-	backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
-	blocks::Block,
-	config::{HashFor, substrate::H256},
+	OnlineClient,
+	blocks::{Block, ExtrinsicEvents},
+	config::{
+		HashFor,
+		substrate::{ConsensusEngineId, DigestItem, H256},
+	},
 };
 use thiserror::Error;
 use tokio::{
@@ -35,37 +38,19 @@ use tokio::{
 };
 
 use crate::{
-	hash_to_str, mn_meta,
+	hash_to_str,
+	indexer::runtimes::{MidnightMetadata, MidnightMetadata0_17_0, RuntimeVersion},
 	serde_def::{self, SourceBlockTransactions},
 };
 
 use midnight_node_ledger_helpers::{mn_ledger_serialize::tagged_deserialize, *};
 
+use crate::client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig};
+
 fn fatal(msg: String) {
 	eprintln!("{}", msg);
 	eprintln!("exiting...");
 	std::process::exit(1);
-}
-
-pub async fn get_network_id(rpc_url: &str) -> Result<NetworkId, IndexerError> {
-	let api = OnlineClient::<PolkadotConfig>::from_insecure_url(rpc_url).await?;
-	let storage_query = mn_meta::storage().midnight().network_id();
-	let network_id_vec = api.storage().at_latest().await?.fetch(&storage_query).await?;
-
-	// TODO: Update this when we launch testnet/mainnet
-	let network_id = if let Some(val) = network_id_vec {
-		match val.0.as_slice() {
-			[0] => NetworkId::Undeployed,
-			[1] => NetworkId::DevNet,
-			[2] => NetworkId::TestNet,
-			[3] => NetworkId::MainNet,
-			_ => return Err(IndexerError::UnsupportedNetworkId(val.0).into()),
-		}
-	} else {
-		NetworkId::Undeployed
-	};
-
-	Ok(network_id)
 }
 
 #[derive(Error, Debug)]
@@ -90,6 +75,10 @@ pub enum IndexerError {
 	StopFailed(#[from] JoinError),
 	#[error("indexer received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
+	#[error("indexer received a block with invalid node version: {0}")]
+	InvalidProtocolVersion(parity_scale_codec::Error),
+	#[error("indexer received a block made with unsupported node version {0}")]
+	UnsupportedBlockVersion(u32),
 }
 
 struct InternalState<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send>
@@ -124,14 +113,24 @@ impl IndexerHandle {
 	}
 }
 
+impl From<ClientError> for IndexerError {
+	fn from(err: ClientError) -> Self {
+		match err {
+			ClientError::SubxtError(err) => Self::SubxtError(err),
+			ClientError::RpcClientError(err) => Self::RpcClientError(err),
+			ClientError::UnsupportedNetworkId(bytes) => Self::UnsupportedNetworkId(bytes),
+		}
+	}
+}
+
 #[derive(Serialize, Deserialize)]
 struct SyncCache<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB>>
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	genesis: HashFor<SubstrateConfig>,
+	genesis: HashFor<MidnightNodeClientConfig>,
 	/// Block hash and number
-	until: Option<(HashFor<SubstrateConfig>, u64)>,
+	until: Option<(HashFor<MidnightNodeClientConfig>, u64)>,
 	#[serde(with = "serde_def::block_vec")]
 	blocks: Vec<SourceBlockTransactions<S, P>>,
 }
@@ -144,11 +143,11 @@ where
 		std::env::var("MN_SYNC_CACHE").unwrap_or(".sync_cache".to_string())
 	}
 
-	fn filename(genesis: HashFor<SubstrateConfig>) -> PathBuf {
+	fn filename(genesis: HashFor<MidnightNodeClientConfig>) -> PathBuf {
 		Path::new(&Self::dir()).join(format!("{}.bin", hash_to_str(genesis)))
 	}
 
-	pub fn load(genesis: HashFor<SubstrateConfig>) -> Result<Self, IndexerError> {
+	pub fn load(genesis: HashFor<MidnightNodeClientConfig>) -> Result<Self, IndexerError> {
 		let default = SyncCache { genesis, until: None, blocks: Vec::new() };
 
 		let dir = Self::dir();
@@ -187,7 +186,7 @@ where
 
 	pub fn save(
 		&mut self,
-		hash: HashFor<SubstrateConfig>,
+		hash: HashFor<MidnightNodeClientConfig>,
 		number: u64,
 		blocks: &[SourceBlockTransactions<S, P>],
 	) {
@@ -212,10 +211,9 @@ where
 {
 	state: Mutex<InternalState<S, P>>,
 	looping: AtomicBool,
-	rpc_url: String,
 	fetch_concurrency: usize,
 	notify_sync: Notify,
-	api: OnlineClient<PolkadotConfig>,
+	node_client: MidnightNodeClient,
 }
 
 impl<
@@ -229,17 +227,15 @@ where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
 	pub async fn new(
-		rpc_url: String,
-		api: OnlineClient<PolkadotConfig>,
+		node_client: MidnightNodeClient,
 		fetch_concurrency: usize,
 	) -> Result<Self, IndexerError> {
 		Ok(Indexer {
 			state: Mutex::new(InternalState::new()),
 			looping: AtomicBool::new(false),
-			rpc_url,
 			fetch_concurrency,
 			notify_sync: Notify::new(),
-			api,
+			node_client,
 		})
 	}
 
@@ -269,8 +265,35 @@ where
 
 	async fn process_block(
 		self: Arc<Self>,
-		block: &Block<PolkadotConfig, OnlineClient<PolkadotConfig>>,
+		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let version_number = block
+			.header()
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| {
+				const VERSION_ID: ConsensusEngineId = *b"MNSV";
+				if let DigestItem::Consensus(VERSION_ID, data) = item {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				} else {
+					None
+				}
+			})
+			.expect("no runtime version found")?;
+		match version_number {
+			RuntimeVersion::V0_17_0 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_0>(block).await
+			},
+		}
+	}
+
+	async fn process_block_with_protocol<M: MidnightMetadata>(
+		self: Arc<Self>,
+		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let block_hash = block.hash();
+		let state_root = self.node_client.get_state_root_at(Some(block_hash)).await?;
 		let block_header = block.header();
 		let parent_block_hash = block_header.parent_hash;
 
@@ -278,73 +301,66 @@ where
 			.extrinsics()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the transactions: {}", err));
+		let events = block
+			.events()
+			.await
+			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
-		let calls = extrinsics
-			.iter()
-			.map(|extrinsic| {
-				let call = extrinsic.as_root_extrinsic::<mn_meta::Call>()?;
-				Ok(call)
-			})
-			.filter_ok(|call| {
-				matches!(
-					call,
-					mn_meta::Call::Midnight(_)
-						| mn_meta::Call::MidnightSystem(_)
-						| mn_meta::Call::Timestamp(_)
-				)
-			})
-			.collect::<Result<Vec<_>, subxt::Error>>()?;
+		let mut timestamp_ms = None;
+		let mut transactions = vec![];
+		for ext in extrinsics.iter() {
+			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
+				continue;
+			};
+			if let Some(ts) = M::timestamp_set(&call) {
+				if timestamp_ms.is_some() {
+					panic!("this block has two timestamps");
+				}
+				timestamp_ms = Some(ts);
+			} else if let Some(bytes) = M::send_mn_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::Midnight(tx));
+			} else if let Some(bytes) = M::send_mn_system_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::System(tx));
+			} else if M::check_for_events(&call) {
+				let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
+				for ev in ext_events.iter().filter_map(Result::ok) {
+					if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
+						let bytes = M::system_transaction_applied(event);
+						let tx = tagged_deserialize(&mut bytes.as_slice()).map_err(|err| {
+							IndexerError::TransactionDeserializeError(err.to_string())
+						})?;
+						transactions.push(SerdeTransaction::System(tx));
+					}
+				}
+			}
+		}
 
-		let timestamp_ms = *calls
-			.iter()
-			.find_map(|call| match call {
-				mn_meta::Call::Timestamp(mn_meta::timestamp::Call::set { now }) => Some(now),
-				_ => None,
-			})
-			.expect("failed to find a timestamp extrinsic in block");
+		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
 		let context = BlockContext {
 			tblock: Timestamp::from_secs(timestamp_ms / 1000),
 			tblock_err: 30,
 			parent_block_hash: HashOutput(parent_block_hash.0),
 		};
-
-		let transactions = calls
-			.into_iter()
-			.filter_map(|call| match call {
-				mn_meta::Call::Midnight(mn_meta::midnight::Call::send_mn_transaction {
-					midnight_tx,
-				}) => {
-					let tx = tagged_deserialize(&mut midnight_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing tx: {}", err));
-					Some(SerdeTransaction::Midnight(tx))
-				},
-				mn_meta::Call::MidnightSystem(
-					mn_meta::midnight_system::Call::send_mn_system_transaction {
-						midnight_system_tx,
-					},
-				) => {
-					let tx = tagged_deserialize(&mut midnight_system_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
-					Some(SerdeTransaction::System(tx))
-				},
-				_ => None,
-			})
-			.collect();
-		Ok(SourceBlockTransactions { transactions, context })
+		Ok(SourceBlockTransactions { transactions, context, state_root })
 	}
 
 	async fn fetch_midnight_block(
 		self: Arc<Self>,
 		hash: H256,
-	) -> Result<Block<PolkadotConfig, OnlineClient<PolkadotConfig>>, subxt::Error> {
-		self.api.blocks().at(hash).await
+	) -> Result<Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>, subxt::Error>
+	{
+		self.node_client.api.blocks().at(hash).await
 	}
 
 	async fn fetch_until(
 		self: Arc<Self>,
 		tx_prog: Option<tokio::sync::mpsc::Sender<u32>>,
-		start_hash: HashFor<SubstrateConfig>,
-		end_hash: Option<HashFor<SubstrateConfig>>,
+		start_hash: HashFor<MidnightNodeClientConfig>,
+		end_hash: Option<HashFor<MidnightNodeClientConfig>>,
 	) -> Result<VecDeque<SourceBlockTransactions<S, P>>, IndexerError> {
 		if start_hash == end_hash.unwrap_or(H256::default()) {
 			return Ok(VecDeque::new());
@@ -396,12 +412,9 @@ where
 
 	async fn fetch_all_blocks(
 		self: Arc<Self>,
-		from: (HashFor<SubstrateConfig>, u64),
-		to: Option<(HashFor<SubstrateConfig>, u64)>,
+		from: (HashFor<MidnightNodeClientConfig>, u64),
+		to: Option<(HashFor<MidnightNodeClientConfig>, u64)>,
 	) -> Result<VecDeque<SourceBlockTransactions<S, P>>, IndexerError> {
-		let rpc_client = RpcClient::from_insecure_url(&self.rpc_url).await?;
-		let rpc = LegacyRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
-
 		let mut prev_block_hash = Some(from.0);
 
 		let num_blocks = from.1 as f32 - to.map(|to| to.1).unwrap_or(0) as f32;
@@ -412,12 +425,14 @@ where
 		let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
 		for i in 0..self.fetch_concurrency {
-			let mut block_hash: Option<HashFor<SubstrateConfig>> =
+			let mut block_hash: Option<HashFor<MidnightNodeClientConfig>> =
 				to.map(|to| Some(to.0)).unwrap_or(None);
 
 			if i < self.fetch_concurrency - 1 {
 				let block_number = (from.1 as f32 - (block_div * (i + 1) as f32)) as u64;
-				let block = rpc
+				let block = self
+					.node_client
+					.rpc
 					.chain_get_block_hash(Some(
 						subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
 					))
@@ -495,20 +510,17 @@ where
 		tx_start: oneshot::Sender<usize>,
 		mut rx_stop: oneshot::Receiver<bool>,
 	) -> Result<(), IndexerError> {
-		let rpc_client = RpcClient::from_insecure_url(&self.rpc_url).await?;
-
 		let start = std::time::Instant::now();
 
 		// Subscribe to all finalized blocks:
-		let mut blocks_sub = self.api.blocks().subscribe_finalized().await?;
+		let mut blocks_sub = self.node_client.api.blocks().subscribe_finalized().await?;
 
 		// Load sync cache
-		let rpc = LegacyRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
-		let genesis_hash = rpc.genesis_hash().await?;
+		let genesis_hash = self.node_client.rpc.genesis_hash().await?;
 		let mut cache = SyncCache::load(genesis_hash)?;
 
 		// First, index everything from current block to genesis i.e. sync
-		let latest_block = self.api.blocks().at_latest().await?;
+		let latest_block = self.node_client.api.blocks().at_latest().await?;
 
 		let num_blocks_to_fetch =
 			u64::from(latest_block.number()) - cache.until.map(|u| u.1).unwrap_or(0);
@@ -568,11 +580,9 @@ where
 					let block = block?;
 					// Get midnight transactions
 					let mn_block = self.clone().fetch_midnight_block(block.hash()).await?;
-
 					let block = self.clone().process_block(&mn_block).await?;
 					let mut s = self.state.lock().await;
 					s.blocks.push_back(block);
-
 					self.notify_sync.notify_waiters();
 				},
 				// Check for stop signal

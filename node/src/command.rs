@@ -31,10 +31,8 @@ use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
 use {
-	crate::benchmarking::{RemarkBuilder, TransferKeepAliveBuilder, inherent_benchmark_data},
+	crate::benchmarking::{RemarkBuilder, inherent_benchmark_data},
 	frame_benchmarking_cli::*,
-	midnight_node_runtime::EXISTENTIAL_DEPOSIT,
-	sp_keyring::Sr25519Keyring,
 	sp_runtime::traits::HashingFor,
 };
 
@@ -194,13 +192,12 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				None,
 			)
 			.await?;
-		//For libp2p use `sc_network::NetworkWorker<_, _>``
-		service::new_full::<sc_network::Litep2pNetworkBackend>(
+		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
+		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
 			data_sources,
 			cfg.storage_monitor_params_cfg.into(),
-			&cfg.midnight_cfg.proposed_wasm_file,
 			storage_config,
 		)
 		.await
@@ -227,14 +224,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, other, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, other, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
@@ -257,14 +248,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, import_queue, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, import_queue, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -277,13 +262,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, .. }, _) = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					&cfg.midnight_cfg.proposed_wasm_file,
-					storage_config,
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
 		},
@@ -296,13 +276,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, .. }, _) = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					&cfg.midnight_cfg.proposed_wasm_file,
-					storage_config,
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
 		},
@@ -315,14 +290,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, import_queue, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, import_queue, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -339,14 +308,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, backend, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, backend, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
@@ -386,7 +349,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 
@@ -411,13 +373,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
 
-						cmd.run(config, partial.client, db, storage)
+						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
                         let data_sources = config.tokio_handle.block_on(
@@ -427,11 +388,10 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             ),
                         )?;
 						// ensure that we keep the task manager alive
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
@@ -453,21 +413,15 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                                 None,
                             ),
                         )?;
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						// Register the *Remark* and *TKA* builders.
 						let ext_factory = ExtrinsicFactory(vec![
 							Box::new(RemarkBuilder::new(partial.client.clone())),
-							Box::new(TransferKeepAliveBuilder::new(
-								partial.client.clone(),
-								Sr25519Keyring::Alice.to_account_id(),
-								EXISTENTIAL_DEPOSIT,
-							)),
 						]);
 
 						cmd.run(

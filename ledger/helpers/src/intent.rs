@@ -12,15 +12,20 @@
 // limitations under the License.
 
 use crate::{
-	BuildContractAction, DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation,
-	LedgerContext, MidnightDataProvider, NetworkId, OutputMode, PUBLIC_PARAMS, PedersenRandomness,
-	ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	BuildContractAction, ContractEffects, DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent,
+	KeyLocation, LedgerContext, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
+	PedersenRandomness, ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp,
+	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
+use ledger_storage::storage::Array;
+use mn_ledger::structure::ContractAction;
+use rand::{CryptoRng, Rng};
 use std::{
-	fs::File,
-	io::{self, Read},
+	io,
+	path::Path,
 	sync::Arc,
+	time::{SystemTime, UNIX_EPOCH},
 };
 use transient_crypto::proofs::ProvingKeyMaterial;
 
@@ -28,7 +33,7 @@ pub type SegmentId = u16;
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[async_trait]
-pub trait BuildIntent<D: DB + Clone> {
+pub trait BuildIntent<D: DB + Clone>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
@@ -41,7 +46,7 @@ pub trait BuildIntent<D: DB + Clone> {
 pub struct IntentInfo<D: DB + Clone> {
 	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub actions: Vec<Box<dyn BuildContractAction<D> + Send>>,
+	pub actions: Vec<Box<dyn BuildContractAction<D>>>,
 	// TODO: Add TTL Option here
 }
 
@@ -104,13 +109,59 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 	}
 }
 
-pub struct IntentCustom {
-	pub intent_path: String,
-	pub network: NetworkId,
+pub struct IntentCustom<D: DB + Clone> {
+	pub intent: IntentOf<D>,
 	pub resolver: &'static Resolver,
 }
 
-impl IntentCustom {
+impl<D: DB + Clone> IntentCustom<D> {
+	pub fn new_from_file(
+		path: impl AsRef<Path>,
+		resolver: &'static Resolver,
+	) -> Result<Self, std::io::Error> {
+		let bytes = std::fs::read(path)?;
+		let intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		Ok(Self { intent, resolver })
+	}
+
+	pub fn new_from_actions<R: Rng + CryptoRng + ?Sized>(
+		rng: &mut R,
+		actions: &[ContractAction<ProofPreimageMarker, D>],
+		resolver: &'static Resolver,
+	) -> Self {
+		let now = Timestamp::from_secs(
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs(),
+		);
+		let intent = Intent {
+			guaranteed_unshielded_offer: None,
+			fallible_unshielded_offer: None,
+			actions: Array::new_from_slice(actions),
+			dust_actions: None,
+			ttl: now,
+			binding_commitment: rng.r#gen(),
+		};
+		Self { intent, resolver }
+	}
+
+	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
+		let mut guaranteed_effects: Option<ContractEffects<D>> = None;
+		let mut fallible_effects: Option<ContractEffects<D>> = None;
+		for action in self.intent.actions.iter() {
+			if let ContractAction::Call(ref c) = *action.clone() {
+				if let Some(ref t) = c.guaranteed_transcript {
+					guaranteed_effects = Some(t.effects.clone());
+				}
+				if let Some(ref t) = c.fallible_transcript {
+					fallible_effects = Some(t.effects.clone());
+				}
+			}
+		}
+		(guaranteed_effects, fallible_effects)
+	}
+
 	pub fn get_resolver(parent_dir: String) -> Result<Resolver, std::io::Error> {
 		Ok(Resolver::new(
 			PUBLIC_PARAMS.clone(),
@@ -163,7 +214,7 @@ impl IntentCustom {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
+impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
@@ -173,15 +224,9 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom {
 	) -> IntentOf<D> {
 		println!("Updating the resolver...");
 		context.update_resolver(self.resolver).await;
-
-		let mut bytes = vec![];
-
-		let mut file = File::open(&self.intent_path).expect("Could not open file");
-		file.read_to_end(&mut bytes).expect("Failed to read file");
-
-		let mut intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		let mut intent = self.intent.clone();
 		intent.ttl = ttl;
-
+		println!("custom intent: {intent:#?}");
 		intent
 	}
 }

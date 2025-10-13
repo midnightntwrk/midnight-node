@@ -61,20 +61,12 @@ pub fn execute(args: ShowTransactionArgs) -> InnerReturnType {
 }
 
 fn tx_from_bytes(src_file: String, with_context: bool, _network: NetworkId) -> InnerReturnType {
-	let file_content = std::fs::read(&src_file)?;
-	// Some IDEs auto-add an extra empty line at the end of the file
-	let tx_hex: String = String::from_utf8_lossy(&file_content)
-		.chars()
-		.filter(|c| c.is_ascii_hexdigit())
-		.collect();
-
-	let tx_bytes = hex::decode(&tx_hex)?;
-	let tx_bytes = tx_bytes.as_slice();
+	let tx_bytes = std::fs::read(&src_file)?;
 	Ok(ShowTransactionResult {
 		transaction: if with_context {
-			TransactionInfo::TransactionWithContext(deserialize(tx_bytes)?)
+			TransactionInfo::TransactionWithContext(deserialize(tx_bytes.as_slice())?)
 		} else {
-			TransactionInfo::Transaction(deserialize(tx_bytes)?)
+			TransactionInfo::Transaction(deserialize(tx_bytes.as_slice())?)
 		},
 		size: tx_bytes.len(),
 	})

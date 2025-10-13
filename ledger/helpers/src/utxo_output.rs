@@ -20,7 +20,7 @@ pub struct UtxoOutputInfo<O> {
 	pub token_type: UnshieldedTokenType,
 }
 
-pub trait BuildUtxoOutput<D: DB + Clone> {
+pub trait BuildUtxoOutput<D: DB + Clone>: Send + Sync {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoOutput;
 }
 

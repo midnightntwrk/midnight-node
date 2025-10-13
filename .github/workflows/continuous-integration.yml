@@ -1,6 +1,6 @@
 name: CI + E2E
 
-env: 
+env:
   # Define environment variables for AWS credentials and region
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -57,7 +57,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -159,7 +159,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -186,7 +186,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -198,7 +198,7 @@ jobs:
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-  
+
   ledger-rollback-e2e:
     name: Ledger Rollback E2E
     needs: run
@@ -206,7 +206,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -229,7 +229,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      # - name: Get Version and git commit 
+      # - name: Get Version and git commit
       #   id: meta
       #   run: |
       #     echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -252,7 +252,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -269,11 +269,10 @@ jobs:
     name: Toolkit Mint E2E
     needs: run
     runs-on: ubuntu-latest-8-core-x64
-    if: false # disabled while minting is not working
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -282,6 +281,26 @@ jobs:
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+  toolkit-ut-e2e:
+    name: Toolkit Unshielded Token E2E
+    needs: run
+    runs-on: ubuntu-latest-8-core-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-ut-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
@@ -298,7 +317,7 @@ jobs:
           use-cache: false
           allow-privileged: true
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -306,7 +325,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
 
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -330,7 +349,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # 5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -350,12 +369,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT           
+          echo "version=$version" >> $GITHUB_OUTPUT
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: startup-dev-e2e
@@ -369,12 +388,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT   
+          echo "version=$version" >> $GITHUB_OUTPUT
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: genesis-wallets-undeployed-e2e
@@ -400,7 +419,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+        uses: taiki-e/install-action@eba4035583f0f9b001a27be2cce0a136d05d05e3  #v2.62.23
         with:
           tool: just
 
@@ -415,64 +434,64 @@ jobs:
           echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
           echo "  password x-oauth-basic" >> ./netrc
           export NETRC="$(pwd)/netrc"
-          
+
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
           export DOCKER_BUILDKIT=1
           export BUILDX_PLATFORM=linux/amd64
-          
+
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
           echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | docker login ghcr.io -u MidnightCI --password-stdin
-          
+
           pwd
           ls
           cd indexer
           ls
           . .envrc
-          
+
           # Check available docker builders and platforms
           echo "Available docker builders:"
           docker buildx ls
           echo "Current platform: $(uname -m)"
           echo "DOCKER_DEFAULT_PLATFORM: $DOCKER_DEFAULT_PLATFORM"
-          
+
           # Build with explicit AMD64 platform
           echo "🔧 Building indexer-api with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image indexer-api
-          
+
           echo "🔧 Building chain-indexer with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
-          
+
           echo "🔧 Building wallet-indexer with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
-          
+
           # Retag images with main repo's commit hash (not submodule's)
           echo "🏷️ Retagging images with main repo commit hash..."
-          
+
           # Get commit hashes before changing directories
           cd ..  # Go back to main repo directory
           MAIN_COMMIT=$(git rev-parse --short=8 HEAD)
           echo "Main repo commit: $MAIN_COMMIT"
-          
+
           cd indexer
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
           echo "Submodule commit: $SUBMODULE_COMMIT"
-          
+
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
           docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
           docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
-          
+
           # Push the new tags
           echo "📤 Pushing retagged images..."
           docker push ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
           docker push ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
           docker push ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
-          
+
           echo "✅ Images retagged and pushed successfully!"
-          
+
       - name: Expose image refs as outputs
         id: image_meta
         run: |
@@ -482,7 +501,7 @@ jobs:
           echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
           echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
 
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  #v2.8.0
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1  #v2.8.1
 
       - name: Configure git for private repos
         run: |
@@ -495,16 +514,13 @@ jobs:
           cargo install cargo-nextest --locked
 
       - name: just test
+        env:
+          APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
           . ./.envrc
           git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
           cd indexer
-          just feature=cloud test
-        env:
-          APP__INFRA__STORAGE__PASSWORD: ${{ secrets.APP__INFRA__STORAGE__PASSWORD }}
-          APP__INFRA__PUB_SUB__PASSWORD: ${{ secrets.APP__INFRA__PUB_SUB__PASSWORD }}
-          APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: ${{ secrets.APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD }}
-          APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
+          just feature=standalone test
 
   local-environment-tests:
     name: Local Environment Tests
@@ -578,7 +594,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
 
-      - name: Get Version and git commit 
+      - name: Get Version and git commit
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
@@ -588,7 +604,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df  # v4.2.1
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8  # v5.1.0
         with:
           role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
           aws-region: eu-west-1
@@ -601,7 +617,7 @@ jobs:
             --name k0-eks-platform-dev-eu-01 \
             --region eu-west-1 \
         shell: bash
-        
+
       # - name: Deploy and test ephemeral environment
       #   uses: ./.github/actions/ephemeral-environment-tests
       #   with:
