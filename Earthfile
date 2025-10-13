@@ -736,6 +736,22 @@ build-undo:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
+build-benchmarks:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util .
+
+    ARG NATIVEARCH
+
+    # Build with runtime-benchmarks feature
+    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+        cargo build --workspace --locked --release --features runtime-benchmarks
+
+    RUN mkdir -p /artifacts-$NATIVEARCH \
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
+
 subwasm:
     ARG NATIVEARCH
     FROM +build-normal
@@ -772,6 +788,34 @@ node-image:
     # Re-export build artifacts which contain wasm
     COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
+
+# node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
+node-benchmarks-image:
+    ARG NATIVEARCH
+    ARG EARTHLY_GIT_SHORT_HASH
+    FROM DOCKERFILE -f ./images/node/Dockerfile .
+
+    RUN mkdir -p /artifacts-$NATIVEARCH
+
+    COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /midnight-node
+
+    # TODO if git source version is picked up by substrate then we can just split by space and take second.
+    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+
+    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
+
+    RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
+    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.title=midnight-node-benchmarks
+    LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
+    SAVE IMAGE --push \
+        $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG \
+        $GHCR_REGISTRY/midnight-node-benchmarks:$NODE_DEV_01_TAG
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
 
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
@@ -1091,5 +1135,6 @@ node-e2e-test:
 images:
     FROM scratch
     BUILD +node-image
+    BUILD +node-benchmarks-image
     BUILD +hardfork-test-upgrader-image
     BUILD +toolkit-image
