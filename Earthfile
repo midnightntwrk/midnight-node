@@ -579,6 +579,13 @@ check-nodejs:
     COPY tests/ ./
     RUN yarn lint
 
+# check-benchmarks verifies that runtime-benchmarks feature compiles
+check-benchmarks:
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo check --locked --features runtime-benchmarks
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -1135,6 +1142,5 @@ node-e2e-test:
 images:
     FROM scratch
     BUILD +node-image
-    BUILD +node-benchmarks-image
     BUILD +hardfork-test-upgrader-image
     BUILD +toolkit-image
