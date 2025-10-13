@@ -17,6 +17,7 @@ import fs, { existsSync } from "fs";
 import { parse } from "dotenv";
 import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
+import { prepareNamespaceKeystore } from "../lib/keystore";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -64,6 +65,12 @@ async function runEphemeralEnvironment(
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
   }
+
+  // Setup keystore on nodes
+  await prepareNamespaceKeystore({
+    namespace,
+    env,
+  });
 
   const searchPath = path.resolve(
     __dirname,
