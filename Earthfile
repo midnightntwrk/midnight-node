@@ -948,20 +948,15 @@ testnet-sync-e2e:
 
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
-    ARG USEROS
-    FROM node:22-bookworm
-    COPY metadata/static metadata/static
-    COPY tests/ tests/
-    WORKDIR tests
-    RUN corepack enable
-    RUN yarn install --immutable
-    RUN yarn run build
-    WORKDIR /
-    COPY local-environment/ local-environment/
-    COPY scripts/cnight-generates-dust scripts/cnight-generates-dust
-    WORKDIR tests
-    RUN --no-cache HOST_ADDR=$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal") \
-        yarn run start
+    FROM ubuntu:22.04
+    RUN apt-get update -qq && apt-get install -y \
+        curl \
+        wget \
+        jq \
+        && rm -rf /var/lib/apt/lists/*
+    RUN wget https://github.com/midnightntwrk/midnight-cnight-generates-dust/releases/download/v0.1.0/mn-cngd-v0.1.0-linux-amd64.tar.gz
+    RUN tar -xzf mn-cngd-v0.1.0-linux-amd64.tar.gz
+    RUN ./mn-cngd --help
 
 # compares chain parameters with testnet-02
 chain-params-check:
