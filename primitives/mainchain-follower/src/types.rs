@@ -120,6 +120,11 @@ pub struct ObservedUtxoHeader {
 	pub utxo_tx_hash: McTxHash,
 	pub utxo_index: UtxoIndexInTx,
 }
+impl ObservedUtxoHeader {
+	fn is_spend(&self) -> bool {
+		self.tx_hash == self.utxo_tx_hash
+	}
+}
 
 impl core::fmt::Display for ObservedUtxoHeader {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -154,6 +159,12 @@ impl PartialOrd for ObservedUtxoHeader {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
-		self.utxo_index.partial_cmp(&other.utxo_index)
+		if self.is_spend() && !other.is_spend() {
+			Some(core::cmp::Ordering::Less)
+		} else if !self.is_spend() && other.is_spend() {
+			Some(core::cmp::Ordering::Greater)
+		} else {
+			self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0)
+		}
 	}
 }
