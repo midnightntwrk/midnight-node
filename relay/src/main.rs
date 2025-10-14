@@ -1,3 +1,6 @@
+// set for the recursive plutus data call of ProofNodes, see authorities.rs
+#![recursion_limit = "128"]
+
 mod authorities;
 mod beefy;
 mod cardano_encoding;

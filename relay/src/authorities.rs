@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug};
+use std::fmt::Debug;
 
 use crate::{
 	beefy::BeefySignedCommitment,
@@ -8,10 +8,9 @@ use crate::{
 };
 
 use pallas::{
-	codec::{minicbor::encode, utils::MaybeIndefArray},
-	ledger::primitives::{BigInt, Constr, PlutusData},
+	codec::utils::MaybeIndefArray,
+	ledger::primitives::{BigInt, BoundedBytes, Constr, PlutusData},
 };
-use parity_scale_codec::Encode;
 use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public};
 use sp_core::{H256, keccak_256};
@@ -51,7 +50,7 @@ impl ToPlutusData for AuthoritiesProof {
 			fields: MaybeIndefArray::Indef(vec![
 				PlutusData::BoundedBytes(self.root.as_bytes().to_vec().into()),
 				PlutusData::BigInt(BigInt::Int((self.total_leaves as i64).into())),
-				self.proof.as_plutus_data(),
+				proof_node_to_plutus_data(&self.proof),
 			]),
 		})
 	}
@@ -98,15 +97,24 @@ pub fn generate_authorities_proof(
 	Ok(AuthoritiesProof { root, total_leaves: validators.len() as u32, proof })
 }
 
+// convert the ProofNode to plutusdata
+fn proof_node_to_plutus_data<T: Clone + Into<Vec<u8>>>(proof: &ProofNode<T>) -> PlutusData {
+	match proof {
+		ProofNode::Leaf(hash) => PlutusData::BoundedBytes(BoundedBytes::from(hash.clone().into())),
+		ProofNode::Node(nodes) => PlutusData::Array(MaybeIndefArray::Indef(
+			// Node
+			nodes
+				.iter()
+				.map(|node: &Box<ProofNode<T>>| proof_node_to_plutus_data(node))
+				.collect(),
+		)),
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use std::collections::HashSet;
-
-	use parity_scale_codec::Encode;
 	use sp_consensus_beefy::ecdsa_crypto::Public;
-
-	use crate::authorities::encode_leaf;
-	use sp_core::{H256, crypto::Ss58Codec, keccak_256};
+	use sp_core::{crypto::Ss58Codec, keccak_256};
 
 	use super::KeccakHasher;
 
