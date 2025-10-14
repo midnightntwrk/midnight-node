@@ -1,3 +1,3 @@
 #!/bin/bash
 
-runuser -u appuser /upgrader "$@"
+runuser -u appuser /upgrader -- "$@"

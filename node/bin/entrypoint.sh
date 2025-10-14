@@ -1,3 +1,3 @@
 #!/bin/bash
 
-runuser -u appuser /midnight-node "$@"
+runuser -u appuser /midnight-node -- "$@"
