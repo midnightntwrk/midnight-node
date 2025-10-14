@@ -17,8 +17,9 @@
     "start": "dist/bin.js",
     "test": "npm run build-compact && vitest run",
     "build-compact": "(shx --negate test -d ./test/contract/managed && npm run compact || true)",
-    "compact": "fetch-compactc && npm run compact-counter && npm run compact-mint",
+    "compact": "fetch-compactc && npm run compact-counter && npm run compact-ut && npm run compact-mint",
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
+    "compact-ut": "run-compactc ./test/ut_contract/unshielder.compact ./test/ut_contract/out",
     "compact-mint": "run-compactc ./mint/mint.compact ./mint/out"
   },
   "files": [

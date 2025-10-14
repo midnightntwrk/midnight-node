@@ -345,7 +345,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             ),
                         )?;
 						// ensure that we keep the task manager alive
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,
@@ -369,7 +369,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             ),
                         )?;
 						// ensure that we keep the task manager alive
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,

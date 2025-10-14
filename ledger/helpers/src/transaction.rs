@@ -13,13 +13,14 @@
 
 use base_crypto::{
 	rng::SplittableRng,
+	signatures::SigningKey,
 	time::{Duration, Timestamp},
 };
 use coin_structure::coin::TokenType;
 use ledger_storage::{Storable, arena::Sp};
 use midnight_serialize::Serializable;
 use mn_ledger::{
-	dust::{DustActions, DustSpend},
+	dust::{DustActions, DustPublicKey, DustRegistration, DustSpend},
 	structure::{BindingKind, PedersenDowngradeable, ProofKind, SignatureKind},
 	verify::WellFormedStrictness,
 };
@@ -62,16 +63,46 @@ pub trait FromContext<D: DB + Clone> {
 	}
 }
 
+pub struct DustRegistrationBuilder {
+	pub signing_key: SigningKey,
+	pub dust_address: Option<DustPublicKey>,
+}
+
+impl DustRegistrationBuilder {
+	pub fn build<
+		D: DB + Clone,
+		P: ProofKind<D>,
+		B: Storable<D> + PedersenDowngradeable<D> + Serializable,
+	>(
+		&self,
+		intent: &Intent<Signature, P, B, D>,
+		rng: &mut StdRng,
+		segment_id: u16,
+	) -> DustRegistration<Signature, D> {
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let signature = self.signing_key.sign(rng, &data_to_sign);
+		let night_key = self.signing_key.verifying_key();
+
+		DustRegistration {
+			night_key,
+			dust_address: self.dust_address.map(|address| Sp::new(address)),
+			allow_fee_payment: 0,
+			signature: Some(Sp::new(signature)),
+		}
+	}
+}
+
 pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub context: Arc<LedgerContext<D>>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D>>>,
-	pub guaranteed_coins: Option<OfferInfo<D>>,
-	pub fallible_coins: HashMap<u16, OfferInfo<D>>,
+	pub guaranteed_offer: Option<OfferInfo<D>>,
+	pub fallible_offers: HashMap<u16, OfferInfo<D>>,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 	pub funding_seeds: Vec<WalletSeed>,
 	pub mock_proofs_for_fees: bool,
 	pub now: Timestamp,
+	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
 impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
@@ -94,24 +125,25 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 		Self {
 			context,
 			intents: HashMap::new(),
-			guaranteed_coins: None,
-			fallible_coins: HashMap::new(),
+			guaranteed_offer: None,
+			fallible_offers: HashMap::new(),
 			rng,
 			prover,
 			funding_seeds: vec![],
 			mock_proofs_for_fees: false,
 			now,
+			dust_registrations: vec![],
 		}
 	}
 }
 
 impl<D: DB + Clone> StandardTrasactionInfo<D> {
-	pub fn set_guaranteed_coins(&mut self, offer: OfferInfo<D>) {
-		self.guaranteed_coins = Some(offer);
+	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D>) {
+		self.guaranteed_offer = Some(offer);
 	}
 
-	pub fn set_fallible_coins(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
-		self.fallible_coins = offers;
+	pub fn set_fallible_offers(&mut self, offers: HashMap<u16, OfferInfo<D>>) {
+		self.fallible_offers = offers;
 	}
 
 	pub fn set_intents(&mut self, intents: HashMap<u16, Box<dyn BuildIntent<D>>>) {
@@ -124,8 +156,14 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		};
 	}
 
+	pub fn add_dust_registration(&mut self, dust_registration: DustRegistrationBuilder) {
+		self.dust_registrations.push(dust_registration);
+	}
+
 	pub fn is_empty(&self) -> bool {
-		self.intents.is_empty() && self.guaranteed_coins.is_none() && self.fallible_coins.is_empty()
+		self.intents.is_empty()
+			&& self.guaranteed_offer.is_none()
+			&& self.fallible_offers.is_empty()
 	}
 
 	pub fn set_wallet_seeds(&mut self, seeds: Vec<WalletSeed>) {
@@ -144,13 +182,13 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let ttl = now + delay;
 
-		let guaranteed_coins = self
-			.guaranteed_coins
+		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
+			.guaranteed_offer
 			.as_mut()
 			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
 
-		let fallible_coins: HashMap<u16, Offer<ProofPreimage, D>> = self
-			.fallible_coins
+		let fallible_offer: HashMap<u16, Offer<ProofPreimage, D>> = self
+			.fallible_offers
 			.iter_mut()
 			.map(|(segment_id, offer_info)| {
 				(*segment_id, offer_info.build(&mut self.rng, self.context.clone()))
@@ -178,7 +216,10 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			guard.network_id.clone()
 		};
 
-		let tx = Transaction::new(network_id.clone(), intents, guaranteed_coins, fallible_coins);
+		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
+
+		println!("pre-proof tx: {tx:#?}");
+		println!("tx balance pre-fees: {:#?}", tx.balance(None));
 
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
@@ -200,7 +241,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		for _ in 0..10 {
 			let spends = self.gather_dust_spends(missing_dust, now)?;
 			let payment_tx =
-				self.build_spend_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
+				self.build_dust_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
 			let paid_tx = tx.merge(&payment_tx)?;
 
 			if self.mock_proofs_for_fees {
@@ -269,7 +310,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if dust_imbalance < 0 { Ok(Some(dust_imbalance.unsigned_abs())) } else { Ok(None) }
 	}
 
-	fn build_spend_tx(
+	fn build_dust_tx(
 		&self,
 		spends: &[DustSpend<ProofPreimageMarker, D>],
 		mut rng: StdRng,
@@ -278,12 +319,20 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		ttl: Timestamp,
 	) -> UnprovenTransaction<D> {
 		let mut intent = Intent::empty(&mut rng, ttl);
+		let segment_id = Segment::FeePayments.into();
+		let registrations = self
+			.dust_registrations
+			.iter()
+			.map(|registration| registration.build(&intent, &mut rng, segment_id))
+			.collect::<Vec<_>>()
+			.into();
+
 		intent.dust_actions = Some(Sp::new(DustActions {
 			spends: spends.to_vec().into(),
-			registrations: vec![].into(),
+			registrations,
 			ctime: now,
 		}));
-		let intents = HashMapStorage::new().insert(Segment::FeePayments.into(), intent);
+		let intents = HashMapStorage::new().insert(segment_id, intent);
 		Transaction::from_intents(network_id, intents)
 	}
 

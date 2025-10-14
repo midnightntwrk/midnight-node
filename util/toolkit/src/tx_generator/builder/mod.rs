@@ -19,7 +19,7 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
@@ -27,13 +27,14 @@ use crate::{
 		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
 		SourceTransactions,
 	},
+	tx_generator::builder::builders::RegisterDustAddressBuilder,
 };
 
 pub mod builders;
 
 pub const FUNDING_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -51,7 +52,7 @@ pub struct ClaimRewardsArgs {
 	pub amount: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractDeployArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -66,7 +67,7 @@ pub struct ContractDeployArgs {
 	pub rng_seed: Option<[u8; 32]>,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct CustomContractArgs {
 	#[clap(flatten)]
 	pub info: ContractDeployArgs,
@@ -75,12 +76,18 @@ pub struct CustomContractArgs {
 	///  * directories with files for the Resolver
 	#[arg(short, long)]
 	pub compiled_contract_dir: String,
-	/// List of intent files to include in the transaction
-	#[arg(short, long)]
+	/// Intent file to include in the transaction. Accepts multiple
+	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,
+	/// Zswap State file containing coin info
+	#[arg(long)]
+	pub zswap_state_file: Option<String>,
+	/// Shielded Destination addresses - used to find encryption keys
+	#[arg(long = "shielded-destination", value_parser = cli::wallet_address)]
+	pub shielded_destinations: Vec<WalletAddress>,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractCallArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -92,8 +99,8 @@ pub struct ContractCallArgs {
 	#[arg(long, default_value = "store")]
 	pub call_key: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	#[arg(
         short,
         long,
@@ -105,7 +112,7 @@ pub struct ContractCallArgs {
 	pub fee: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct ContractMaintenanceArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -114,8 +121,8 @@ pub struct ContractMaintenanceArgs {
 	)]
 	pub funding_seed: String,
 	/// File to read the contract address from
-	#[arg(long, default_value = "./res/test-contract/contract_address_undeployed.mn")]
-	pub contract_address: String,
+	#[arg(long, value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	/// Threshold for Maintenance ReplaceAthority
 	#[arg(long, short, default_value = "1")]
 	pub threshold: u32,
@@ -133,7 +140,7 @@ pub struct ContractMaintenanceArgs {
 	pub fee: u128,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct BatchesArgs {
 	/// Seed for funding the transactions
 	#[arg(
@@ -159,23 +166,51 @@ pub struct BatchesArgs {
 	/// Coin amount per transaction
 	#[arg(short, long, default_value_t = 100)]
 	pub coin_amount: u128,
+	/// Type of shielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<ShieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub shielded_token_type: ShieldedTokenType,
 	/// Initial unshielded offer amount
 	#[arg(short, long, default_value_t = 10_000)]
 	pub initial_unshielded_intent_value: u128,
+	/// Type of unshielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<UnshieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub unshielded_token_type: UnshieldedTokenType,
 	/// Enable Shielded transfers in batches
 	#[arg(long)]
 	pub enable_shielded: bool,
 }
 
 // TODO: TokenIDs for shielded and unshielded
-#[derive(Args, Clone)]
+#[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
 	/// Amount to send to each shielded wallet
 	#[arg(long)]
 	pub shielded_amount: Option<u128>,
+	/// Type of shielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<ShieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub shielded_token_type: ShieldedTokenType,
 	/// Amount to send to each unshielded wallet
 	#[arg(long)]
 	pub unshielded_amount: Option<u128>,
+	/// Type of unshielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<UnshieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub unshielded_token_type: UnshieldedTokenType,
 	/// Seed for source wallet
 	#[arg(long)]
 	pub source_seed: String,
@@ -188,22 +223,45 @@ pub struct SingleTxArgs {
     )]
 	pub rng_seed: Option<[u8; 32]>,
 }
+#[derive(Args, Clone, Debug)]
+pub struct RegisterDustAddressArgs {
+	/// Seed for source wallet
+	#[arg(long)]
+	pub wallet_seed: String,
+	/// Seed for funding wallet
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+}
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum ContractCall {
 	Deploy(ContractDeployArgs),
 	Call(ContractCallArgs),
 	Maintenance(ContractMaintenanceArgs),
 }
 
-#[derive(Subcommand, Clone)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum Builder {
+	/// Construct batches of transactions
 	Batches(BatchesArgs),
+	/// Simple built-in contract
 	#[clap(subcommand)]
-	ContractCalls(ContractCall),
-	CustomContract(CustomContractArgs),
+	ContractSimple(ContractCall),
+	/// Construct txs from custom contract intents
+	ContractCustom(CustomContractArgs),
+	/// Claim rewards
 	ClaimRewards(ClaimRewardsArgs),
+	/// Send single transaction with one-or-many outputs
 	SingleTx(SingleTxArgs),
+	RegisterDustAddress(RegisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
 	Migrate,
@@ -254,28 +312,31 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	}
 }
 
-impl From<Builder> for Box<dyn BuildTxs<Error = DynamicError>> {
-	fn from(value: Builder) -> Self {
-		fn to_builder<T: BuildTxs + Send + Sync + 'static>(
-			builder: T,
+impl Builder {
+	pub fn to_builder(self, dry_run: bool) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
-		match value {
-			Builder::Batches(args) => to_builder(BatchesBuilder::new(args)),
-			Builder::ContractCalls(call) => match call {
-				ContractCall::Deploy(args) => to_builder(ContractDeployBuilder::new(args)),
-				ContractCall::Call(args) => to_builder(ContractCallBuilder::new(args)),
-				ContractCall::Maintenance(args) => {
-					to_builder(ContractMaintenanceBuilder::new(args))
-				},
+		if dry_run {
+			println!("Dry-run: Builder type: {:?}", &self);
+		}
+
+		match self {
+			Builder::Batches(args) => constr(BatchesBuilder::new(args)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => constr(ContractDeployBuilder::new(args)),
+				ContractCall::Call(args) => constr(ContractCallBuilder::new(args)),
+				ContractCall::Maintenance(args) => constr(ContractMaintenanceBuilder::new(args)),
 			},
-			Builder::CustomContract(args) => to_builder(CustomContractBuilder::new(args)),
-			Builder::ClaimRewards(args) => to_builder(ClaimRewardsBuilder::new(args)),
-			Builder::SingleTx(args) => to_builder(SingleTxBuilder::new(args)),
-			Builder::Send => to_builder(DoNothingBuilder::new()),
-			Builder::Migrate => to_builder(ReplaceInitialTxBuilder::new()),
+			Builder::ContractCustom(args) => constr(CustomContractBuilder::new(args)),
+			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
+			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
+			Builder::RegisterDustAddress(args) => constr(RegisterDustAddressBuilder::new(args)),
+			Builder::Send => constr(DoNothingBuilder::new()),
+			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		}
 	}
 }
@@ -288,20 +349,10 @@ pub trait BuildTxs {
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
-
-	fn contract_address(&self, file: &String) -> ContractAddress {
-		let path = Path::new(file);
-		let hex_str = fs::read_to_string(path)
-			.expect("Error reading Contract Address file")
-			.trim()
-			.to_string();
-		let hex = hex::decode(hex_str).expect("Error hex decoding ContractAddress");
-		deserialize(&hex[..]).expect("Error deserializing ContractAddress")
-	}
 }
 
 /// An extension to help build transactions
-pub trait BuildTxsExt<R> {
+pub trait BuildTxsExt {
 	fn funding_seed(&self) -> WalletSeed;
 
 	fn rng_seed(&self) -> Option<[u8; 32]>;
@@ -338,13 +389,16 @@ pub trait BuildTxsExt<R> {
 
 		(context_arc, tx_info)
 	}
+}
 
-	fn create_intent_info(&self) -> R;
+/// Create Intent Info
+pub trait CreateIntentInfo {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
 }
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file
 #[async_trait]
-pub trait IntentToFile: BuildTxsExt<Box<dyn BuildIntent<DefaultDB>>> {
+pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,

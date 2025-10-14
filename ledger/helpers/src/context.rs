@@ -19,15 +19,17 @@ use ledger_storage::arena::ArenaKey;
 use ledger_storage::storable::Loader;
 use ledger_storage::{self as storage, Storable};
 use midnight_serialize as serialize;
+use mn_ledger::structure::TransactionHash;
 use mn_ledger::{events::Event, structure::StandardTransaction, verify::WellFormedStrictness};
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	marker::PhantomData,
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex as MutexTokio;
+use zswap::Offer;
 
 use crate::{
 	BlockContext, DB, DUST_EXPECTED_FILES, Deserializable, DustResolver, FetchMode, HashOutput,
@@ -237,7 +239,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			};
 
 		// Update Ledger State
-		let (new_ledger_state, events, cost) = match &tx {
+		let (new_ledger_state, offers, events, cost) = match &tx {
 			SerdeTransaction::Midnight(tx) => {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
@@ -247,31 +249,32 @@ impl<D: DB + Clone> LedgerContext<D> {
 					.expect("error calculating fees");
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
+				let offers = Self::successful_shielded_offers(tx, &result);
 				match result {
-					TransactionResult::Success(events) => (new_ledger_state, events, cost),
+					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
 						println!(
 							"Partially failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
 						);
-						(new_ledger_state, events, cost)
+						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
 						println!(
 							"Failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
 						);
-						(new_ledger_state, vec![], cost)
+						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
 				}
 			},
 			SerdeTransaction::System(tx) => {
 				let cost = tx.cost(&tx_context.ref_state.parameters);
 				match tx_context.ref_state.apply_system_tx(tx, block_context.tblock) {
-					Ok((new_state, events)) => (new_state, events, cost),
+					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
 						println!(
 							"Failing result {err:#?}\nof applying system tx {tx:#?}\nto update Local Ledger State for tx_context {tx_context:#?}\n"
 						);
-						(tx_context.ref_state.clone(), vec![], cost)
+						(tx_context.ref_state.clone(), vec![], vec![], cost)
 					},
 				}
 			},
@@ -281,12 +284,46 @@ impl<D: DB + Clone> LedgerContext<D> {
 		for wallet in
 			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
-			wallet.update_state_from_tx(tx);
+			wallet.update_state_from_offers(&offers);
 		}
 
 		*self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state") =
 			new_ledger_state;
 		(events, cost)
+	}
+
+	fn successful_shielded_offers<S: SignatureKind<D>, P: ProofKind<D>>(
+		tx: &Transaction<S, P, PureGeneratorPedersen, D>,
+		result: &TransactionResult<D>,
+	) -> Vec<Offer<P::LatestProof, D>> {
+		let failed_segments = match result {
+			TransactionResult::Success(_) => HashSet::new(),
+			TransactionResult::Failure(_) => return vec![],
+			TransactionResult::PartialSuccess(results, _) => {
+				let mut failures = HashSet::new();
+				for (segment, result) in results {
+					if result.is_err() {
+						failures.insert(segment);
+					}
+				}
+				failures
+			},
+		};
+		let Transaction::Standard(stx) = tx else {
+			return vec![];
+		};
+		let mut offers = vec![];
+		if let Some(guaranteed) = &stx.guaranteed_coins {
+			offers.push((**guaranteed).clone());
+		}
+		for entry in stx.fallible_coins.iter() {
+			let segment = *entry.0;
+			let fallible = &entry.1;
+			if !failed_segments.contains(&segment) {
+				offers.push((**fallible).clone());
+			}
+		}
+		offers
 	}
 
 	pub fn utxos(&self, address: WalletAddress) -> Vec<Utxo> {
@@ -414,6 +451,13 @@ where
 		match &self {
 			Self::Midnight(tx) => crate::serialize(tx),
 			Self::System(tx) => crate::serialize(tx),
+		}
+	}
+
+	pub fn transaction_hash(&self) -> TransactionHash {
+		match self {
+			SerdeTransaction::Midnight(transaction) => transaction.transaction_hash(),
+			SerdeTransaction::System(system_transaction) => system_transaction.transaction_hash(),
 		}
 	}
 }

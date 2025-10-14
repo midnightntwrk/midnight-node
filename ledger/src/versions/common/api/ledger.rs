@@ -342,7 +342,7 @@ mod tests {
 
 		let a = CONTRACT_ADDR;
 		let addr = hex::decode(a).unwrap();
-		let addr = api.tagged_deserialize::<ContractAddress>(&addr).unwrap();
+		let addr = api.deserialize::<ContractAddress>(&addr).unwrap();
 		let state = ledger.get_contract_state(addr);
 		assert!(
 			state.is_some(),
