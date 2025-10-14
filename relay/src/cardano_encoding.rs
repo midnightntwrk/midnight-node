@@ -10,8 +10,10 @@ use pallas::{
 use sp_consensus_beefy::ecdsa_crypto::Public;
 use sp_consensus_beefy::{SignedCommitment as BeefySignedCommitment, known_payloads::MMR_ROOT_ID};
 
+use crate::authorities::AuthoritiesProof;
+
 // Known encoding tag
-const TAG: u64 = 121;
+pub const TAG: u64 = 121;
 
 pub trait ToPlutusData {
 	fn to_plutus_data(&self) -> PlutusData;
@@ -52,7 +54,7 @@ impl ToPlutusData for Payload {
 			any_constructor: None,
 			// List order must match field order of struct
 			fields: MaybeIndefArray::Indef(vec![
-				PlutusData::BoundedBytes(self.id.clone().into()),
+				PlutusData::BoundedBytes(self.id.clone().into()), // Hash
 				PlutusData::BoundedBytes(self.data.clone().into()),
 			]),
 		})
@@ -74,6 +76,7 @@ impl ToPlutusData for Commitment {
 			// List order must match field order of struct
 			fields: MaybeIndefArray::Indef(vec![
 				PlutusData::Array(MaybeIndefArray::Indef(
+					// Node
 					self.payloads.iter().map(|i| i.to_plutus_data()).collect(),
 				)),
 				PlutusData::BigInt(BigInt::Int((self.block_number as i64).into())),
@@ -149,17 +152,11 @@ impl SignedCommitment {
 	}
 }
 
-// TODO: implement
-pub struct Node {
-	pub k_index: usize,
-	pub hash: Vec<u8>,
-}
-
 pub struct RelayChainProof {
 	pub signed_commitment: SignedCommitment,
 	// latest_mmr_leaf: BeefyMmrLeaf,
 	pub mmr_proof: Vec<u8>,
-	// TODO: complete
+	pub authorities_proof: AuthoritiesProof,
 }
 
 impl ToPlutusData for RelayChainProof {

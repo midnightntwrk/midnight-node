@@ -11,7 +11,6 @@ use sp_mmr_primitives::{
 
 use crate::{
 	error::Error,
-	helpers::ProofExt,
 	types::{Block, ExtraData},
 };
 

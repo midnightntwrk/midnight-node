@@ -59,10 +59,9 @@ pub struct HexBeefyRelayChainProof {
 	beefy_commitment_block_number: Block,
 	beefy_commitment_signatures: Vec<String>,
 
-	scale_encoded_authorities_proof: String,
 	authorities_proof: AuthoritiesProof,
 
-	signers: Vec<Public>,
+	validators: Vec<Public>,
 }
 
 impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
@@ -79,7 +78,7 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			})
 			.collect();
 
-		let signers = validator_set.clone();
+		let validators = validator_set.clone();
 
 		let beefy_commitment_root_hash = signed_commitment
 			.mmr_root_hash()
@@ -99,9 +98,7 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			.collect();
 
 		let peak_nodes = mmr_proof.peak_nodes();
-		let authorities_proof = authorities_proof.clone();
-		let scale_encoded_authorities_proof = authorities_proof.encode();
-		let scale_encoded_authorities_proof = hex::encode(scale_encoded_authorities_proof);
+		// let authorities_proof = authorities_proof.clone()
 
 		HexBeefyRelayChainProof {
 			leaves_proof_block_hash: format!("{:#?}", mmr_proof.block_hash),
@@ -112,14 +109,16 @@ impl From<&BeefyRelayChainProof> for HexBeefyRelayChainProof {
 			peak_nodes,
 			scale_encoded_beefy_commitment: signed_commitment.hex_scale_encoded(),
 			beefy_commitment_root_hash,
-			beefy_commitment_block_hash: format!("{:#?}", signed_commitment.mmr_root_hash()),
+			beefy_commitment_block_hash: format!(
+				"{:#?}",
+				signed_commitment.mmr_root_hash().unwrap()
+			),
 			beefy_commitment_block_number: signed_commitment.block_number(),
 			beefy_commitment_signatures,
 
-			scale_encoded_authorities_proof,
-			authorities_proof,
+			authorities_proof: value.authorities_proof.clone(),
 
-			signers,
+			validators,
 		}
 	}
 }

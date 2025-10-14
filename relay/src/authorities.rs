@@ -1,8 +1,18 @@
 use std::{collections::HashSet, fmt::Debug};
 
-use crate::{beefy::BeefySignedCommitment, error::Error, types::RootHash};
+use crate::{
+	beefy::BeefySignedCommitment,
+	cardano_encoding::{TAG, ToPlutusData},
+	error::Error,
+	types::RootHash,
+};
 
-use parity_scale_codec::{Decode, Encode};
+use pallas::{
+	codec::{minicbor::encode, utils::MaybeIndefArray},
+	ledger::primitives::{BigInt, Constr, PlutusData},
+};
+use parity_scale_codec::Encode;
+use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public};
 use sp_core::{H256, keccak_256};
 
@@ -22,50 +32,30 @@ impl rs_merkle::Hasher for KeccakHasher {
 
 /// Contains the merkle root hash of all authorities,
 /// And the proof for a few chosen authorities
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone)]
 pub struct AuthoritiesProof {
 	pub root: RootHash,
 
 	/// the total number of validators
 	pub total_leaves: u32,
 
-	/// list of (<index of a signer in the commitment file>, <its proof in the validator set>)
-	pub items: ProofItems,
+	/// a proof tree containing
+	pub proof: ProofNode<[u8; 32]>,
 }
 
-impl AuthoritiesProof {
-	pub fn verify_proof(&self, validators: &[Public]) -> Result<(), Error> {
-		// if (self.total_leaves as usize) != validators.len() {
-		// 	return Err(Error::MismatchTotalAuthorities {
-		// 		proof_size: self.total_leaves,
-		// 		validators_size: validators.len(),
-		// 	});
-		// };
-
-		// for (leaf_index, proof) in &self.items {
-		// 	// access the validator
-		// 	let leaf = &validators[*leaf_index as usize];
-
-		// 	// verify
-		// 	if !verify_proof::<KeccakHasher, _, _>(
-		// 		&self.root,
-		// 		proof.clone(),
-		// 		self.total_leaves,
-		// 		*leaf_index,
-		// 		leaf,
-		// 	) {
-		// 		return Err(Error::MismatchAuthority {
-		// 			root: self.root,
-		// 			leaf_index: *leaf_index,
-		// 			validator: leaf.clone(),
-		// 		});
-		// 	}
-		// }
-
-		Ok(())
+impl ToPlutusData for AuthoritiesProof {
+	fn to_plutus_data(&self) -> PlutusData {
+		PlutusData::Constr(Constr {
+			tag: TAG,
+			any_constructor: None,
+			fields: MaybeIndefArray::Indef(vec![
+				PlutusData::BoundedBytes(self.root.as_bytes().to_vec().into()),
+				PlutusData::BigInt(BigInt::Int((self.total_leaves as i64).into())),
+				self.proof.as_plutus_data(),
+			]),
+		})
 	}
 }
-
 /// Returns AuthoritiesProof, using Keccak256 hashing
 ///
 /// # Arguments
@@ -103,19 +93,11 @@ pub fn generate_authorities_proof(
 	let root = tree.root().ok_or(Error::InvalidAuthoritiesProofCreation)?;
 	let root = H256::from_slice(&root);
 
-	let result = tree.proof(&sig_indices);
+	let proof = tree.ordered_proof_tree(&sig_indices);
 
-	let items = result
-		.proof_hashes()
-		.iter()
-		.enumerate()
-		.map(|(i, h)| (i as u32, H256::from_slice(h)))
-		.collect();
-
-	Ok(AuthoritiesProof { root, total_leaves: validators.len() as u32, items })
+	Ok(AuthoritiesProof { root, total_leaves: validators.len() as u32, proof })
 }
 
-/*
 #[cfg(test)]
 mod tests {
 	use std::collections::HashSet;
@@ -123,18 +105,19 @@ mod tests {
 	use parity_scale_codec::Encode;
 	use sp_consensus_beefy::ecdsa_crypto::Public;
 
-	use sp_core::{crypto::Ss58Codec, keccak_256, KeccakHasher, H256};
+	use crate::authorities::encode_leaf;
+	use sp_core::{H256, crypto::Ss58Codec, keccak_256};
 
-
+	use super::KeccakHasher;
 
 	// ECDSA Keys
-	const ALICE:&str = "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1";
-	const BOB:&str = "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27";
-	const CHARLIE:&str = "0x0389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb";
-	const DAVE:&str = "0x03bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c";
-	const EVE:&str = "0x031d10105e323c4afce225208f71a6441ee327a65b9e646e772500c74d31f669aa";
-	const FERDIE:&str = "0x0291f1217d5a04cb83312ee3d88a6e6b33284e053e6ccfc3a90339a0299d12967c";
-	const GEORGE:&str = "0x032fd22c2a15d1d45395db478f8a21c6a386a1370a9a4f9007ceb7c518ab8ed3b5";
+	const ALICE: &str = "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1";
+	const BOB: &str = "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27";
+	const CHARLIE: &str = "0x0389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb";
+	const DAVE: &str = "0x03bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c";
+	const EVE: &str = "0x031d10105e323c4afce225208f71a6441ee327a65b9e646e772500c74d31f669aa";
+	const FERDIE: &str = "0x0291f1217d5a04cb83312ee3d88a6e6b33284e053e6ccfc3a90339a0299d12967c";
+	const GEORGE: &str = "0x032fd22c2a15d1d45395db478f8a21c6a386a1370a9a4f9007ceb7c518ab8ed3b5";
 	const HELEN: &str = "0x0218651a8672108c0ddc7f89861155362ec9644c17a0349d1963df2fa8cac99db4";
 	const IAN: &str = "0x0366ba055f22be271e382cecb8c040d3a8d28dd93139ef71d35886290b3f5f853d";
 	const JASON: &str = "0x03bafd6bdaa7de4e0866d124f36a45d8dff1f2729a0cbdceeb545887b8ec9f8bf1";
@@ -155,22 +138,22 @@ mod tests {
 	const YURI: &str = "0x0248cba650b828994cd0629b4502d045a01b2e99a40a7c6c163efae8020bc72ee1";
 	const ZELDA: &str = "0x02896a2ead73860a453e60aa0d3b59ce06a4f180d8ef937f3b3ef96ea6a10c7073";
 
-
 	fn validators() -> Vec<Public> {
 		let data = [
-			ALICE, BOB, CHARLIE, DAVE, EVE, FERDIE,
-			 GEORGE, HELEN, IAN, JASON, KATE, LEE, MARY,
-			//  NEIL, OSCAR, PAUL, QUEEN, RAY, SALLY, TRAVIS, UNA, VIVIAN, WILL, XAVIER, YURI, ZELDA
+			ALICE, BOB, CHARLIE,
+			DAVE, //EVE, FERDIE,
+			     //GEORGE, HELEN, IAN, JASON, // KATE, LEE, MARY,
+			     //  NEIL, OSCAR, PAUL, QUEEN, RAY, SALLY, TRAVIS, UNA, VIVIAN, WILL, XAVIER, YURI, ZELDA
 		];
 
-		data.iter().map(|data| Public::from_string(data).expect("failed to convert to ecdsa"))
-		.collect()
+		data.iter()
+			.map(|data| Public::from_string(data).expect("failed to convert to ecdsa"))
+			.collect()
 	}
-
 
 	#[test]
 	fn test_rs_merkle() {
-		use rs_merkle::{MerkleTree, MerkleProof};
+		use rs_merkle::{MerkleProof, MerkleTree};
 
 		let validators = validators();
 
@@ -182,9 +165,8 @@ mod tests {
 		}
 		println!("\n");
 
-		let v:Vec<[u8;32]> = validators.iter().map(|v| {
-			keccak_256(&v.clone().into_inner().0)
-		}).collect();
+		let v: Vec<[u8; 32]> =
+			validators.iter().map(|v| keccak_256(&v.clone().into_inner().0)).collect();
 
 		// for (idx,h) in v.iter().enumerate() {
 		// 	let hash_again = keccak_256(h);
@@ -195,20 +177,23 @@ mod tests {
 
 		let x = MerkleTree::<KeccakHasher>::from_leaves(&v);
 
-		let g = x.proof(&[0,7,9]);
-		println!("G: {:#?}",g.proof_hashes_hex());
-
+		// let g = x.proof(&[0,7,9]);
+		// println!("G: {:#?}",g.proof_hashes_hex());
 		// let g = x.proof_2d(&[0,7,9]);
 
-		//  for x in g {
-		// 	println!("Item: ");
-		// 	for (one, id) in x {
-		// 		println!("  {one}: {}\n", hex::encode(&id));
+		// for (g_idx, elems) in g.iter().enumerate() {
+
+		// 	for (elem_idx, elem) in elems {
+		// 		println!("({g_idx}, {elem_idx}, {})", hex::encode(elem));
 		// 	}
-		//  }
+		// }
 
+		let chosen_indices = [0, 1, 2];
+		let result = x.ordered_proof_tree(&chosen_indices);
+		println!("{result:#?}");
 
+		let result = x.proof(&chosen_indices);
+		let proof = result.proof_hashes_hex();
+		println!("\nproof: {proof:#?}");
 	}
-
 }
-*/
