@@ -42,6 +42,7 @@ cleanup() {
     echo "🛑 Killing node container..."
     docker container stop midnight-node-contracts
     echo "🧹 Removing tempdir..."
+    chown -R $(id -un):$(id -gn) $tempdir
     rm -rf $tempdir
 }
 # Set up trap to cleanup on exit
