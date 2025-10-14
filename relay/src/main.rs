@@ -13,7 +13,7 @@ mod types;
 use clap::Parser;
 use tokio::time::{Duration, sleep};
 
-pub use midnight_node_metadata::midnight_metadata as mn_meta;
+pub use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 
 use subxt::{backend::rpc::RpcClient, ext::subxt_rpcs::rpc_params};
 

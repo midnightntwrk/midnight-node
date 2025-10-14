@@ -113,95 +113,73 @@ fn proof_node_to_plutus_data<T: Clone + Into<Vec<u8>>>(proof: &ProofNode<T>) -> 
 
 #[cfg(test)]
 mod tests {
-	use sp_consensus_beefy::ecdsa_crypto::Public;
-	use sp_core::{crypto::Ss58Codec, keccak_256};
+	use crate::authorities::proof_node_to_plutus_data;
+	use pallas::codec::minicbor::to_vec;
+	use rs_merkle::{Hasher, MerkleTree, algorithms::Sha256};
 
-	use super::KeccakHasher;
+	// aura keys
+	const ALICE: &str = "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
+	const BOB: &str = "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48";
+	const CHARLIE: &str = "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22";
+	const DAVE: &str = "0x306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20";
+	const EVE: &str = "0xe659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e";
+	const FERDIE: &str = "0x1cbd2d43530a44705ad088af313e18f80b53ef16b36177cd4b77b846f2a5f07c";
+	const GEORGE: &str = "0x4603307f855321776922daeea21ee31720388d097cdaac66f05a6f8462b31757";
+	const HELEN: &str = "0x6a59f7fc9be2dbb25f4657c5595066847f49ef28ea5b1608de85f2a8889f161b";
+	const IAN: &str = "0x1206960f920a23f7f4c43cc9081ec2ed0721f31a9bef2c10fd7602e16e08a32c";
+	const JASON: &str = "0xea7fd19a248dcb4df01ddb3eb8b5182ac4e746c30eaff6ac8037eff5f5f62b79";
+	const KATE: &str = "0x065c1bec3ac7d3ea775d2f67ad7fc1af31eeb7a597c5e69586329077f7b3c91b";
+	const LEE: &str = "0xf8df1d2141c540964438e216c68f983d4ab7e6c404dc0a4129f34b2c7e8e1e78";
+	const MARY: &str = "0x449d48b26d27c3749d18f0c222118a8a56f89082f4c274c7efe6a3c5796ea116";
+	const NEIL: &str = "0x465a0ea4af3a0602b316adb99135d709d61197f773214441142cd7f345800324";
+	const OLLY: &str = "0x62438644119f708a0bdbdf023408f510d06f12b0071d24e24cf6e5b0eebb955f";
+	const PAUL: &str = "0x88c0baf245f96a3e413e1d0caf26a2385545498411974111d3b83bdc92d3f37f";
+	const QUEEN: &str = "0xe6f1747cf558b97a3c304241e989967e2eb7e3b22aa40da0c7b06d42e7e0c710";
+	const RAY: &str = "0xd42831d4464ee5274a6dc766702f4dd23900e785021fe70c2705a45c6e70204f";
+	const SALLY: &str = "0xb82a2b215c1822e62d58deac13fc923cacaf3f1cc6c87d22d9f30a3f5897e504";
+	const TRAVIS: &str = "0x6420e16c5bc3447093208106ac06eeee732205231ecaf6d76ae4a20718553367";
+	const UNA: &str = "0xa612a23c6d125798859b53de6da9f94da9959677baea6af2393d77f34fb3851e";
+	const VIVIAN: &str = "0x98caac7fc712d1f6671eda36ca6bf495c9014200d50e4e4ec89a4e6936e08f3f";
+	const WALTER: &str = "0x2e0884eda15ebe70e6f65fecb952b4c80f0dd45ad255abf5d97aced8c0822410";
+	const XAVIER: &str = "0xa413ba4813feeedec4c761f0244f2fb1e5f08e00469df33450a800f707a34b74";
+	const YURI: &str = "0x2c1d0a5982e73053480ab86462baf6d415858eca5ed27f3f1973db5f1b21ce20";
+	const ZELDA: &str = "0x9a5867e72be0dc48bec83f58d1d31cff36e617dc90a36974b22dbe81ecec4911";
 
-	// ECDSA Keys
-	const ALICE: &str = "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1";
-	const BOB: &str = "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27";
-	const CHARLIE: &str = "0x0389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb";
-	const DAVE: &str = "0x03bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c";
-	const EVE: &str = "0x031d10105e323c4afce225208f71a6441ee327a65b9e646e772500c74d31f669aa";
-	const FERDIE: &str = "0x0291f1217d5a04cb83312ee3d88a6e6b33284e053e6ccfc3a90339a0299d12967c";
-	const GEORGE: &str = "0x032fd22c2a15d1d45395db478f8a21c6a386a1370a9a4f9007ceb7c518ab8ed3b5";
-	const HELEN: &str = "0x0218651a8672108c0ddc7f89861155362ec9644c17a0349d1963df2fa8cac99db4";
-	const IAN: &str = "0x0366ba055f22be271e382cecb8c040d3a8d28dd93139ef71d35886290b3f5f853d";
-	const JASON: &str = "0x03bafd6bdaa7de4e0866d124f36a45d8dff1f2729a0cbdceeb545887b8ec9f8bf1";
-	const KATE: &str = "0x0329a36b4032e289b139dcce82d6a26ee390502eea596b71eac53449491b1072b2";
-	const LEE: &str = "0x031b0e3acea7c21c161fe56c4430c051544701897a4a5e4f675db200d36f80d339";
-	const MARY: &str = "0x02fde7f65c7297a525b436f086c456775c75e5d694f6cb0247609f72cd5b05b0c5";
-	const NEIL: &str = "0x0342a70472b9a5ebae8a62297426bdef31efb38115976152b19df206749d38a254";
-	const OSCAR: &str = "0x02f7b57a536759f4103a689e3c70063badb6e343b3f17f312599c750835cde7d2d";
-	const PAUL: &str = "0x03cb3d1122b035a4f7a024ba14717206db1af7f8e93c9ca50604f2ab0abfb71b4a";
-	const QUEEN: &str = "0x0209493bc9f358eb9550b0caf835de24a18c8b61dea93e782dc101f5b236711387";
-	const RAY: &str = "0x03b3455feb7dfa426ec764c91c90200fa47a5a99dac4050a16c3c9507e37c0a28e";
-	const SALLY: &str = "0x03f39efa906e1a1aa881e69fbe9f8b00c89c9514d2863c77bc1b03da9f4e7af458";
-	const TRAVIS: &str = "0x03b2b93c48ad101362e7a0870838dcbf1bd623b62c992c20ca65251a6161f3595c";
-	const UNA: &str = "0x034e33866019a1969056e561f2c59167a817f5bf17aa5b40f5849830d50580dec0";
-	const VIVIAN: &str = "0x02bed57f739247d0c94b9b3a9b88fe090aa4dd5c31e9407cbadd11758cc53f4e22";
-	const WILL: &str = "0x036f1977a04a395f2d2db23373e6da456a8a865bf15bda3a539f890ebb5b6f9015";
-	const XAVIER: &str = "0x0329e43c00d6c79174a1f74e2c9271e4ad664fe005cb6f77f2e73a9d4e1d05bcc5";
-	const YURI: &str = "0x0248cba650b828994cd0629b4502d045a01b2e99a40a7c6c163efae8020bc72ee1";
-	const ZELDA: &str = "0x02896a2ead73860a453e60aa0d3b59ce06a4f180d8ef937f3b3ef96ea6a10c7073";
-
-	fn validators() -> Vec<Public> {
+	fn validators() -> Vec<[u8; 32]> {
 		let data = [
-			ALICE, BOB, CHARLIE,
-			DAVE, //EVE, FERDIE,
-			     //GEORGE, HELEN, IAN, JASON, // KATE, LEE, MARY,
-			     //  NEIL, OSCAR, PAUL, QUEEN, RAY, SALLY, TRAVIS, UNA, VIVIAN, WILL, XAVIER, YURI, ZELDA
+			ALICE, BOB, CHARLIE, DAVE, EVE, FERDIE, GEORGE, HELEN, IAN, JASON, KATE, LEE, MARY,
+			NEIL, OLLY, PAUL, QUEEN, RAY, SALLY, TRAVIS, UNA, VIVIAN, WALTER, XAVIER, YURI, ZELDA,
 		];
 
 		data.iter()
-			.map(|data| Public::from_string(data).expect("failed to convert to ecdsa"))
+			.enumerate()
+			.map(|(idx, d)| {
+				let bytes = d.as_bytes();
+
+				let hash_bytes = Sha256::hash(bytes);
+				let bytes_hex = hex::encode(&hash_bytes);
+				println!("V({idx}): {bytes_hex}");
+
+				hash_bytes
+			})
 			.collect()
 	}
 
 	#[test]
-	fn test_rs_merkle() {
-		use rs_merkle::{MerkleProof, MerkleTree};
+	fn test_ordered_proof_tree() {
+		let leaves = validators()[..10].to_vec();
 
-		let validators = validators();
+		let chosen = vec![0, 7, 9];
 
-		for (idx, validator) in validators.clone().iter().enumerate() {
-			let validator = validator.clone();
-			let x = keccak_256(&validator.into_inner());
+		let tree = MerkleTree::<Sha256>::from_leaves(&leaves);
 
-			println!("V{idx}: {}", hex::encode(&x));
-		}
-		println!("\n");
+		let proof = tree.ordered_proof_tree(&chosen);
+		let proof_to_plutus = proof_node_to_plutus_data(&proof);
+		let plutus_to_vec = to_vec(proof_to_plutus).expect("should return a vec");
+		let actual_plutus_hex = hex::encode(&plutus_to_vec);
 
-		let v: Vec<[u8; 32]> =
-			validators.iter().map(|v| keccak_256(&v.clone().into_inner().0)).collect();
+		let expected_plutus_hex = "9f9f9f9f5820cadd8a0f816db29c89dda607a3665b3fd26416c60c9580386a681e8215cbc1765820fbf1f275d3f00db5c92788433e89084528314599aefc29572a92acff507fddcaff5820d59baecc4c589f7f51d3f6f99fc683afe506970f76d6860a29900a97b604bf30ff9f5820c66a47df434a6cfe8f1624365f768596210dae7e7941012e06b659cb8f9d99979f582058e86be9514e9fc51737ff3def8204ea6586c170d9219820c2bcbfe8c6dcc3685820d07bb8191891e5c6d110dfd2f09bdf9059260d1c2624081d266ef6c87e41c971ffffff9f5820644ea9de200aacff70588f72790f7c214c3b22c5b158dcf89c452dac1da383645820fb34e5d1e29695e563670c4b411d5d8019045416733e80d358cf082d23259fc2ffff";
 
-		// for (idx,h) in v.iter().enumerate() {
-		// 	let hash_again = keccak_256(h);
-
-		// 	println!("V({idx}): {}", hex::encode(&hash_again));
-
-		// }
-
-		let x = MerkleTree::<KeccakHasher>::from_leaves(&v);
-
-		// let g = x.proof(&[0,7,9]);
-		// println!("G: {:#?}",g.proof_hashes_hex());
-		// let g = x.proof_2d(&[0,7,9]);
-
-		// for (g_idx, elems) in g.iter().enumerate() {
-
-		// 	for (elem_idx, elem) in elems {
-		// 		println!("({g_idx}, {elem_idx}, {})", hex::encode(elem));
-		// 	}
-		// }
-
-		let chosen_indices = [0, 1, 2];
-		let result = x.ordered_proof_tree(&chosen_indices);
-		println!("{result:#?}");
-
-		let result = x.proof(&chosen_indices);
-		let proof = result.proof_hashes_hex();
-		println!("\nproof: {proof:#?}");
+		assert_eq!(actual_plutus_hex, expected_plutus_hex.to_string());
 	}
 }
