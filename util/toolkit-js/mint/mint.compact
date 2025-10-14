@@ -4,11 +4,8 @@ import CompactStandardLibrary;
 
 export ledger round: Counter;
 
-witness something(): [];
-
 export circuit mint(nonce: Bytes<32>, domainSep: Bytes<32>, amount: Uint<64>): [] {
     const coin = ShieldedCoinInfo { nonce:  disclose(nonce), color: tokenType(disclose(domainSep), kernel.self()), value: disclose(amount) };
     kernel.mintShielded(disclose(domainSep), disclose(amount));
     createZswapOutput(coin, left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()));
-    something();
 }
