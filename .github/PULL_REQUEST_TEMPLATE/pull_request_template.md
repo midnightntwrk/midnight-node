@@ -2,7 +2,12 @@
 
 <!-- Describe your changes briefly here, with some context as to why this is needed. -->
 
-## Submission Checklist
+## 🗹 TODO before merging
+
+<!-- Add anything here that needs to be completed before the PR can be merged. -->
+- [ ] Ready
+
+## 📌 Submission Checklist
 
 <!-- Please check all the boxes that apply to your pull request. -->
 
@@ -14,8 +19,6 @@
 - [ ] Update documentation (if relevant)
 - [ ] No new todos introduced
 
-<!-- Add anything here that needs to be completed before the PR can be merged. -->
-
 ## 🧪 Testing Evidence
 
 <!-- Describe how this was tested. Include commands, logs, test outputs or paste in screen clips where useful. -->
@@ -23,6 +26,15 @@
 Please describe any additional testing aside from CI:
 
 - [ ] Additional tests are provided (if possible)
+
+## 🔱 Fork Strategy
+
+<!-- How can we update to these changes without disrupting the network? Is it an update to the Node runtime, client, etc. -->
+
+- [ ] Node Runtime Update
+- [ ] Node Client Update
+- [ ] Other: <!-- Please give details. -->
+- [ ] N/A
 
 ## Links
 

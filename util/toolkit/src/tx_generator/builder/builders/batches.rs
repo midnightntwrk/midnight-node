@@ -12,7 +12,9 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{BlockContext, SerdeTransaction, Timestamp};
+use midnight_node_ledger_helpers::{
+	BlockContext, SerdeTransaction, ShieldedTokenType, Timestamp, UnshieldedTokenType,
+};
 use std::{
 	collections::HashMap,
 	sync::Arc,
@@ -25,12 +27,11 @@ use crate::{
 	builder::{
 		BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildUtxoOutput, DefaultDB,
 		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch, FromContext,
-		InputInfo, IntentInfo, LedgerContext, NIGHT, OfferInfo, OutputInfo, ProofProvider,
-		ProofType, Segment, SignatureType, StandardTrasactionInfo, TransactionWithContext,
+		InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, ProofType,
+		Segment, SignatureType, StandardTrasactionInfo, TransactionWithContext,
 		UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 	},
 	serde_def::SourceTransactions,
-	t_token,
 	tx_generator::builder::BatchesArgs,
 };
 
@@ -44,7 +45,9 @@ pub struct BatchesBuilder {
 	concurrency: Option<usize>,
 	rng_seed: Option<[u8; 32]>,
 	coin_amount: u128,
+	shielded_token_type: ShieldedTokenType,
 	initial_unshielded_intent_value: u128,
+	unshielded_token_type: UnshieldedTokenType,
 	enable_shielded: bool,
 }
 
@@ -57,7 +60,9 @@ impl BatchesBuilder {
 			concurrency: args.concurrency,
 			rng_seed: args.rng_seed,
 			coin_amount: args.coin_amount,
+			shielded_token_type: args.shielded_token_type,
 			initial_unshielded_intent_value: args.initial_unshielded_intent_value,
+			unshielded_token_type: args.unshielded_token_type,
 			enable_shielded: args.enable_shielded,
 		}
 	}
@@ -69,8 +74,11 @@ impl BatchesBuilder {
 		output_wallets: Vec<WalletSeed>,
 	) -> OfferInfo<DefaultDB> {
 		// Input info
-		let input_info =
-			InputInfo { origin: funding_seed, token_type: t_token(), value: 1_000_000_000_000_000 };
+		let input_info = InputInfo {
+			origin: funding_seed,
+			token_type: self.shielded_token_type,
+			value: 1_000_000_000_000_000,
+		};
 
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
 
@@ -80,7 +88,7 @@ impl BatchesBuilder {
 			.map(|wallet_seed| {
 				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
 					destination: *wallet_seed,
-					token_type: t_token(),
+					token_type: self.shielded_token_type,
 					value: self.coin_amount,
 				});
 				output
@@ -97,7 +105,7 @@ impl BatchesBuilder {
 		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
 		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
 			destination: funding_seed,
-			token_type: t_token(),
+			token_type: self.shielded_token_type,
 			value: remaining_coins,
 		});
 
@@ -117,7 +125,7 @@ impl BatchesBuilder {
 		let utxo_spend_info = UtxoSpendInfo {
 			value: self.initial_unshielded_intent_value,
 			owner: funding_seed,
-			token_type: NIGHT,
+			token_type: self.unshielded_token_type,
 			intent_hash: None,
 			output_no: None,
 		};
@@ -134,7 +142,7 @@ impl BatchesBuilder {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 					value: amount_to_send_per_output,
 					owner: *wallet_seed,
-					token_type: NIGHT,
+					token_type: self.unshielded_token_type,
 				});
 				output
 			})
@@ -148,7 +156,7 @@ impl BatchesBuilder {
 		let output_info_refund = Box::new(UtxoOutputInfo {
 			value: remaining_nights,
 			owner: funding_seed,
-			token_type: NIGHT,
+			token_type: self.unshielded_token_type,
 		});
 
 		if remaining_nights > 0 {
@@ -361,7 +369,7 @@ impl BuildTxs for BatchesBuilder {
 						// Input info
 						let input_info = InputInfo {
 							origin: input_seed,
-							token_type: t_token(),
+							token_type: self.shielded_token_type,
 							// All funds that where intially received
 							value: self.coin_amount,
 						};
@@ -371,7 +379,7 @@ impl BuildTxs for BatchesBuilder {
 						// Output info
 						let output_info = OutputInfo {
 							destination: output_seed,
-							token_type: t_token(),
+							token_type: self.shielded_token_type,
 							value: self.coin_amount,
 						};
 						let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> =
@@ -394,7 +402,7 @@ impl BuildTxs for BatchesBuilder {
 					let input_info = Box::new(UtxoSpendInfo {
 						value: amount_to_send_per_output,
 						owner: input_seed,
-						token_type: NIGHT,
+						token_type: self.unshielded_token_type,
 						intent_hash: None,
 						output_no: None,
 					});
@@ -403,7 +411,7 @@ impl BuildTxs for BatchesBuilder {
 					let output_info = Box::new(UtxoOutputInfo {
 						value: amount_to_send_per_output,
 						owner: output_seed,
-						token_type: NIGHT,
+						token_type: self.unshielded_token_type,
 					});
 
 					let guaranteed_unshielded_offer_info = UnshieldedOfferInfo {

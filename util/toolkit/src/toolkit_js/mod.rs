@@ -193,9 +193,9 @@ impl ToolkitJs {
 			network_id,
 			"--coin-public",
 			&coin_public_key,
-			"--state-file-path",
+			"--input",
 			&input_onchain_state,
-			"--ps-state-file-path",
+			"--input-ps",
 			&input_private_state,
 			"--output",
 			&output_intent,
@@ -206,7 +206,7 @@ impl ToolkitJs {
 		];
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
-			cmd_args.extend_from_slice(&["--zswap-state-file-path", &input_zswap_state]);
+			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
 		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
