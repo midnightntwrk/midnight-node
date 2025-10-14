@@ -67,7 +67,7 @@ impl BuildTxs for SingleTxBuilder {
 		let network_id = received_tx.network();
 		let context = LedgerContext::new_from_wallet_seeds(network_id, &[funding_seed]);
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context);
+			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
 
 		let context = Arc::new(context);
@@ -109,7 +109,7 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
-			tx_info.set_guaranteed_coins(offer);
+			tx_info.set_guaranteed_offer(offer);
 		}
 
 		if !unshielded_wallets.is_empty() {

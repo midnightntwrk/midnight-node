@@ -198,7 +198,6 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			epoch_config,
 			data_sources,
 			cfg.storage_monitor_params_cfg.into(),
-			&cfg.midnight_cfg.proposed_wasm_file,
 			storage_config,
 		)
 		.await
@@ -225,14 +224,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, other, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, other, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
@@ -255,14 +248,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, import_queue, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, import_queue, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -275,13 +262,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, .. }, _) = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					&cfg.midnight_cfg.proposed_wasm_file,
-					storage_config,
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
 		},
@@ -294,13 +276,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, .. }, _) = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					&cfg.midnight_cfg.proposed_wasm_file,
-					storage_config,
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
 		},
@@ -313,14 +290,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, import_queue, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, import_queue, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -337,14 +308,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let (PartialComponents { client, task_manager, backend, .. }, _) =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						&cfg.midnight_cfg.proposed_wasm_file,
-						storage_config,
-					)?;
+				let PartialComponents { client, task_manager, backend, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
@@ -384,7 +349,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 
@@ -409,7 +373,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						let db = partial.backend.expose_db();
@@ -425,11 +388,10 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             ),
                         )?;
 						// ensure that we keep the task manager alive
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
@@ -451,11 +413,10 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                                 None,
                             ),
                         )?;
-						let (partial, _) = service::new_partial(
+						let partial = service::new_partial(
                             &config,
                             epoch_config,
                             data_sources,
-                            &cfg.midnight_cfg.proposed_wasm_file,
                             storage_config,
                         )?;
 						// Register the *Remark* and *TKA* builders.

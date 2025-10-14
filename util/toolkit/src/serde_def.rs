@@ -39,13 +39,18 @@ where
 				blocks.push(SourceBlockTransactions {
 					transactions: std::mem::take(&mut current_batch),
 					context: last_context.unwrap(),
+					state_root: None,
 				});
 			}
 			current_batch.push(tx.tx);
 			last_context = Some(tx.block_context);
 		}
 		if let Some(context) = last_context {
-			blocks.push(SourceBlockTransactions { transactions: current_batch, context });
+			blocks.push(SourceBlockTransactions {
+				transactions: current_batch,
+				context,
+				state_root: None,
+			});
 		}
 		Self { blocks }
 	}
@@ -66,6 +71,8 @@ where
 	#[serde(bound = "")]
 	pub transactions: Vec<SerdeTransaction<S, P, DefaultDB>>,
 	pub context: BlockContext,
+	#[serde(default)]
+	pub state_root: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]

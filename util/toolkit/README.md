@@ -1,9 +1,42 @@
 # Toolkit
 
-This toolkit works with or without transaction proofs:
+---
 
-- `cargo build -r -p midnight-node-toolkit`
-- `cargo build -r -p midnight-node-toolkit --features erase-proof`
+## 🚀 **IMPORTANT: See Usage Examples**
+
+**The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
+
+### 👉 Check out the `toolkit-*.sh` files here:
+**https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
+
+These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
+
+---
+
+
+## Implementation Status
+
+
+| Feature                                                              | Progress |
+|----------------------------------------------------------------------|----------|
+| Send Shielded + Unshielded tokens                                    | ✅       |
+| Sync with local and remote networks                                  | ✅       |
+| DUST fee calculation                                                 | ✅       |
+| Execute compiled contracts                                           | ✅       |
+| Pre-generate and send 100s of transactions (performance testing)     | ✅       |
+| Support for node runtime forks                                       | ✅       |
+| Fetch and print wallet state                                         | ✅       |
+| Builds Node genesis                                                  | ✅       |
+| Unit + integration tests                                             | ✅       |
+| Shielded + Unshielded tokens sending between contract calls          | ✅       |
+| DUST registration command                                            | 🚧       |
+| Contract Maintenance - updating authority + verifier keys            | 🚧       |
+| Support for Ledger forks                                             | ⏳       |
+| Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
+| Fallible Contracts                                                   | ⏳       |
+| Composable Contracts                                                 | ⏳       |
+| Build cNight genesis                                                 | ⏳       |
+
 
 ## Usage
 
@@ -11,28 +44,29 @@ This toolkit works with or without transaction proofs:
 
 To see compatibility with Node, Ledger, and Compactc versions, use the `version` command:
 
-```shell
+```console
 $ midnight-node-toolkit version
-Node: 0.16.2
-Ledger: ledger-6.1.0-alpha.2
+Node: 0.17.0
+Ledger: ledger-6.1.0-alpha.3
 Compactc: 0.25.103-rc.1-UT-ledger6
+
 ```
 
 ### Generate Transactions
-
-Since the introduction of
 
 The `TxGenerator` is composed of four main components: `Source`, `Destination`, `Prover`, `Builder`.
 
 The order the arguments are declared when building the command matters. `Builder`'s specific ones should go at the end, after its subcommand.
 
 Example:
-```
+```shell
 midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <BUILDER_ARGS>
 ```
 
 - **`Source`**: Determines where the `NetworkId` is selected and queries existing transactions to be applied to the local `LedgerState` before generating new transactions. Sources can be either a JSON file or a chain, selected via the following flags:
-  - `--src-files <file_path>`
+  - `--src-file <file_path>`
+    - Supports multiple files:
+      - `--src-file /res/genesis/genesis_block_undeployed.mn --src-file /res/test-data/contract/counter/deploy_tx.mn`
   - `--src-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
 
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
@@ -41,7 +75,6 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
     - Supports multiple urls:
       - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
       - `--dest-url=ws://127.0.0.1:9944 --dest-url=ws://127.0.0.1:9933 --dest-url="ws://127.0.0.1:9922"`
-      - `--dest-url="ws://127.0.0.1:9944, ws://127.0.0.1:9933, ws://127.0.0.1:9922"`
 
 - **`Prover`**: Chooses which proof server to use — either local (`LocalProofServer`) or remote (`RemoteProveServer`).
 
@@ -51,9 +84,9 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
   - `migrate`: Migrates transactions between chains (`ReplaceInitialTxBuilder`)
   - `batches`: Generates ZSwap & Unshielded Utxos transaction batches (`BatcherBuilder`)
   - `claim-mint`: Builds claim mint transactions (`ClaimMintBuilder`)
-  - `contract-calls deploy`: Builds contract deployment transactions (`ContractDeployBuilder`)
-  - `contract-calls maintenance`: Builds contract maintenance transactions (`ContractMaintenanceBuilder`)
-  - `contract-calls call`: Builds general contract call transactions (`ContractCallBuilder`)
+  - `contract-simple deploy`: Builds contract deployment transactions (`ContractDeployBuilder`)
+  - `contract-simple maintenance`: Builds contract maintenance transactions (`ContractMaintenanceBuilder`)
+  - `contract-simple call`: Builds general contract call transactions (`ContractCallBuilder`)
 
 This enables four combinations of querying and sending transactions:
 
@@ -69,27 +102,44 @@ Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGene
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#) using as `--src-file` the previously generated `TransactionWithContext`.
 
-**NOTE 2**: `ClaimMintBuilder`, `ContractDeployBuilder`, `ContractMaintenanceBuilder`, and `ContractCallBuilder` will be replaced by `FromYamlBuilder` once [PM-10459](https://shielded.atlassian.net/browse/PM-10459) is implemented.
-
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
-```shell
-midnight-node-toolkit generate-txs batches -n <num_txs_per_batch> -b <num_batches>
+```console
+$ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
+Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination rate: 1.0 TPS
+Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, initial_unshielded_intent_value: 10000, enable_shielded: false })
+Dry-run: local prover (no proof server)
+
 ```
 - Query from file, generate, and send to file:
-```shell
-midnight-node-toolkit generate-txs --dest-file txs.json batches -n <num_txs_per_batch> -b <num_batches>
+```console
+$ midnight-node-toolkit generate-txs --dry-run --dest-file txs.json batches -n 5 -b 1
+...
 ```
 - Query from file and send to chain with rate control:
-```shell
-midnight-node-toolkit generate-txs -r <tps> --src-files txs.json --dest-url ws://127.0.0.1:9944 send
+```console
+$ midnight-node-toolkit generate-txs --dry-run -r 2 --src-file txs.json --dest-url ws://127.0.0.1:9944 send
+...
+Dry-run: Destination rate: 2.0 TPS
+Dry-run: Builder type: Send
+...
 ```
 
 #### Send a single transaction
 
 - Query from local chain, generate with two unshielded outputs and one shielded output, send to local chain
-```
-midnight-node-toolkit generate-txs single-tx --shielded-amount 100 --unshielded-amount 5 --source-seed "0000000000000000000000000000000000000000000000000000000000000001" --destination-address mn_shield-addr_undeployed14gxh... --destination-address mn_addr_undeployed1g9nr3... --destination-address mn_addr_undeployed12vv6y...
+```console
+$ midnight-node-toolkit generate-txs --dry-run 
+>   single-tx
+>   --shielded-amount 100 
+>   --unshielded-amount 5 
+>   --source-seed "0000000000000000000000000000000000000000000000000000000000000001" 
+>   --destination-address mn_shield-addr_undeployed12p0cn6f9dtlw74r44pg8mwwjwkr74nuekt4xx560764703qeeuvqxqqgft8uzya2rud445nach4lk74s7upjwydl8s0nejeg6hh5vck0vueqyws5 
+>   --destination-address mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj 
+>   --destination-address mn_addr_undeployed1h3ssm5ru2t6eqy4g3she78zlxn96e36ms6pq996aduvmateh9p9sk96u7s
+...
 ```
 
 #### Generate Deploy Contract (Built-in)
@@ -97,27 +147,72 @@ midnight-node-toolkit generate-txs single-tx --shielded-amount 100 --unshielded-
 **Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
 
 - Query from chain, generate, and send to chain:
-```shell
-midnight-node-toolkit generate-txs contract-calls deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+```console
+$ midnight-node-toolkit generate-txs --dry-run
+>   contract-simple deploy 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination rate: 1.0 TPS
+Dry-run: Builder type: ContractSimple(Deploy[..]
+Dry-run: local prover (no proof server)
+
 ```
 - Query from chain, generate, and send to bytes file:
-```shell
-midnight-node-toolkit generate-txs --src-files res/genesis/genesis_tx_undeployed.mn --dest-file deploy.mn --to-bytes contract-calls deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+```console
+$ midnight-node-toolkit generate-txs --dry-run 
+>   --src-file res/genesis/genesis_tx_undeployed.mn 
+>   --dest-file deploy.mn 
+>   --to-bytes 
+>   contract-simple deploy 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"]
+Dry-run: Destination file: "deploy.mn"
+Dry-run: Destination file-format: bytes
+Dry-run: Builder type: ContractSimple(Deploy[..]
+Dry-run: local prover (no proof server)
+
 ```
 - Query from file, generate, and send to bytes file:
-```shell
-midnight-node-toolkit generate-txs --dest-file deploy.mn --to-bytes contract-calls deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+```console
+$ midnight-node-toolkit generate-txs --dry-run
+>   --dest-file deploy.mn 
+>   --to-bytes 
+>   contract-simple deploy 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
+Dry-run: Destination file: "deploy.mn"
+Dry-run: Destination file-format: bytes
+Dry-run: Builder type: ContractSimple(Deploy[..]
+Dry-run: local prover (no proof server)
+
 ```
 - Query fom chain, generate, and save as a serialized intent file:
-```shell
-midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" deploy --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+```console
+$ midnight-node-toolkit generate-sample-intent --dry-run
+>   --dest-dir "artifacts/intents" 
+>   deploy 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+...
 ```
 - Using the [toolkit-js](../toolkit-js), generate the deploy intent file:
   * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
   * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
     * export TOOLKIT_JS_PATH="util/toolkit-js" 
-```shell
-midnight-node-toolkit generate-intent  -c util/toolkit-js/test/contract/contract.config.ts -C util/toolkit-js/test/contract/managed deploy
+```console
+$ midnight-node-toolkit generate-intent deploy
+>   -c ../toolkit-js/test/contract/contract.config.ts \
+>    --toolkit-js-path ../toolkit-js/
+>    --output-intent out/intent.bin \
+>    --output-private-state out/private_state.json \
+>    --output-zswap-state out/zswap.json \
+>    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+Executing generate-intent
+Executing deploy command
+Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json"]...
+stdout: , stderr: 
+written: out/intent.bin, out/private_state.json, out/zswap.json
+
 ```
 
 #### Generate Maintenance Update (Built-in)
@@ -125,12 +220,21 @@ midnight-node-toolkit generate-intent  -c util/toolkit-js/test/contract/contract
 **Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
 
 - Query from chain, generate, and send to chain:
-```shell
-midnight-node-toolkit generate-txs contract-calls maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+```console
+$ midnight-node-toolkit generate-txs --dry-run
+>   contract-simple maintenance 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+...
 ```
 - Query fom chain, generate, and save as a serialized intent file:
-```shell
-midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" maintenance --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+```console
+$ midnight-node-toolkit generate-sample-intent --dry-run
+>   --dest-dir "artifacts/intents" 
+>   maintenance 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+...
 ```
 Rest of examples similar to Generate Deploy Contract
 
@@ -139,12 +243,22 @@ Rest of examples similar to Generate Deploy Contract
 **Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
 
 - Query from chain, generate, and send to chain:
-```shell
-midnight-node-toolkit generate-txs contract-calls call --call-key <call_key> --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+```console
+$ midnight-node-toolkit generate-txs --dry-run
+>   contract-simple call 
+>   --call-key store
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+...
 ```
 - Query fom chain, generate, and save as a serialized intent file:
-```shell
-midnight-node-toolkit generate-sample-intent --dest-dir "artifacts/intents" call --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --contract-address <contract_address_file>
+```console
+$ midnight-node-toolkit generate-sample-intent --dry-run
+>   --dest-dir "artifacts/intents" 
+>   call 
+>   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' 
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+...
 ```
 Rest of examples similar to Generate Deploy Contract
 
@@ -154,74 +268,136 @@ The custom contract calls make use of **toolkit-js**. The nodejs `node` executab
 
 When compiling contracts, you **must** use the correct `compactc` version. To check compatibility, run `midnight-node-toolkit version`
 
+- Get `coin-public-key` for a seed. In this context, the `coin-public` value is used to set the Shielded coin-public key for the contract caller
+```console
+$ midnight-node-toolkit show-address
+>    --network undeployed
+>    --seed 0000000000000000000000000000000000000000000000000000000000000001
+>    --coin-public
+aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+
+```
+
 - Generate a deploy intent
 ```shell
 compactc counter.compact toolkit-js/contract/out # Compile your contract - compiled directory must be a child of $TOOLKIT_JS_PATH
+```
 
-midnight-node-toolkit generate-intent deploy -c toolkit-js/contract/contract.config.ts --output-intent "/out/deploy.bin" --output-private-state "/out/initial_private_state.json
+```console
+$ midnight-node-toolkit generate-intent deploy --dry-run
+>    -c toolkit-js/contract/contract.config.ts
+>    --toolkit-js-path ../toolkit-js/
+>    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>    --output-intent "/out/deploy.bin"
+>    --output-private-state "/out/initial_private_state.json"
+>    --output-zswap-state "/out/out.json"
+Executing generate-intent
+Dry-run: toolkit-js path: "../toolkit-js/"
+Dry-run: generate deploy intent: DeployArgs[..]
+...
 ```
 
 - Generate a tx from an intent
-```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out --to-bytes --dest-file "/out/deploy_tx.mn"
+```console
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "/out/deploy.bin" 
+>   --compiled-contract-dir contract/counter/out 
+>   --to-bytes 
+>   --dest-file "/out/deploy_tx.mn"
+...
 ```
 
 - Generate and send a tx from an intent
 ```shell
-midnight-node-toolkit send-intent --intent-files "/out/deploy.bin" --compiled-contract-dir contract/counter/out
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "/out/deploy.bin" 
+>   --compiled-contract-dir contract/counter/out
+```
+
+- Generate and send a tx using multiple contract calls
+```console
+$ midnight-node-toolkit send-intent --dry-run
+>   --intent-file "out/mint_intent.bin" 
+>   --intent-file "out/recieveAndSend_intent.bin" 
+>   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --to-bytes 
+>   --dest-file "/out/mint_tx.mn"
+...
 ```
 
 - Get the contract address
-```shell
-midnight-node-toolkit contract-address --src-file /out/deploy_tx.mn --network undeployed --dest-file /out/contract_address.mn
+```console
+$ midnight-node-toolkit contract-address 
+>   --src-file ./test-data/contract/counter/deploy_tx.mn 
+72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
+
 ```
 
 - Get the contract on-chain state
-```shell
-midnight-node-toolkit contract-state --contract-address <contract-address-file> --dest-file /out/contract_state.bin
+```console
+$ midnight-node-toolkit contract-state 
+>   --src-file ../../res/genesis/genesis_block_undeployed.mn
+>   --src-file ./test-data/contract/counter/deploy_tx.mn
+>   --contract-address 72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
+>   --dest-file out/contract_state.bin
 ```
 
 - Generate a circuit call intent
-```shell
-midnight-node-toolkit generate-intent circuit -c toolkit-js/contract/contract.config.ts \
-    --input-onchain-state <contract-onchain-state-file> --input-private-state <contract-private-state-json> \
-    --contract-address <contract-address-file> --circuit-id <name-of-circuit-to-call> \
-    --output-intent "/out/call.bin" --output-private-state "/out/new_state.json"
-# To send it, see "Generate and send a tx from an intent" above
+```console
+$ midnight-node-toolkit generate-intent circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./test-data/contract/counter/initial_state.json
+>   --input-private-state ./test-data/contract/counter/initial_zswap_state.json
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --output-intent out/intent.bin
+>   --output-private-state out/ps_state.json
+>   --output-zswap-state out/zswap_state.json
+>   increment
+Executing generate-intent
+Executing circuit command
+Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+stdout: , stderr: 
+written: out/intent.bin, out/ps_state.json, out/zswap_state.json
+
 ```
 
----
-### Send A Serialized Contract Intent (.mn) File:
-```shell
-midnight-node-toolkit send-intent --rng-seed '0000000000000000000000000000000000000000000000000000000000000037' --artifacts-dir "artifacts"
-```
-The intent file should be inside `intents` subdirectory of `--artifacts-dir`.  
-For contracts needing the resolver, its files should be subdirectories of `--artifacts-dir`:
-```
-artifacts
- |-- intents
- |    |-- 1_maintenance_intent.mn
- |-- keys
- |    |-- check.prover
- |    |-- .. 
- |-- zkir
-      |-- check.bzkir
-      |-- ..
+To send it, see "Generate and send a tx from an intent" above
+
+#### Custom Contracts (Shielded Tokens)
+
+- Invoking a contract that mints shielded tokens requires destinations to be passed when sending the intent
+Example:
+```bash
+shielded_destination=$(
+    midnight-node-toolkit \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --shielded
+)
+
+echo "Generate and send mint tx"
+midnight-node-toolkit \
+    send-intent \
+    --intent-file "out/mint.bin" \
+    --zswap-state-file "out/zswap.json" \
+    --compiled-contract-dir /toolkit-js/contract/out \
+    --shielded-destination "$shielded_destination"
 ```
 
----
-### Generate Contract Address
-Shows and saves in a `--dest-file` the contract address found in a provided tx in `--src-file`
-```shell
-midnight-node-toolkit contract-address --network undeployed --src-file ./res/test-contract/contract_tx_1_deploy_undeployed.mn --dest-file /out/contract_adress_undeployed.mn
-```
+If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
 
 ---
 
 ### Get a serialized `Transaction` form a serialized `TransactionWithContext`
-Extracts a `Transaction` from a `--src-file` which containes a serialized `TransactionWithContext`, serializes it, saves it in `--dest-file`, and return its `BlocContext` tiemstamp in seconds as output.
-```shell
-midnight-node-toolkit get-tx-from-context --src-file deploy_undeployed.mn --dest-file deploy_no_context_undeployed.mn --network undeployed --from-bytes > timestamp.txt
+Extracts a `Transaction` from a `--src-file` which contains a serialized `TransactionWithContext`, serializes it, saves it in `--dest-file`, and return its `BlockContext` timestamp in seconds as output.
+```ignore
+$ midnight-node-toolkit get-tx-from-context 
+>   --src-file deploy_undeployed.mn 
+>   --dest-file deploy_no_context_undeployed.mn 
+>   --network undeployed --from-bytes > timestamp.txt
 ```
 ---
 
@@ -236,8 +412,13 @@ midnight-node-toolkit generate-genesis --network <network_name>
 Show deserialized result of a single transaction. Two options:
 - Tx saved as hex string
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
-```shell
-midnight-node-toolkit show-transaction --network undeployed --src-file ./res/test-tx-deserialize/hex_serialized_tx_no_context.mn
+```console
+$ midnight-node-toolkit show-transaction 
+>   --network undeployed 
+>   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
+
+Tx StandardTransaction {
+...
 ```
 
 ---
@@ -246,22 +427,36 @@ midnight-node-toolkit show-transaction --network undeployed --src-file ./res/tes
 Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as hex string
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
-```shell
-midnight-node-toolkit show-transaction --with-context --network undeployed --src-file ./res/test-tx-deserialize/hex_serialized_tx_with_context.mn
+```console
+$ midnight-node-toolkit show-transaction --with-context 
+>   --network undeployed 
+>   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
+
+Tx TransactionWithContext {
+...
 ```
 
 ---
 
 ### Show Wallet
-```shell
-midnight-node-toolkit show-wallet --seed 0000000000000000000000000000000000000000000000000000000000000001
+```console
+$ midnight-node-toolkit show-wallet 
+>   --src-file ../../res/genesis/genesis_block_undeployed.mn 
+>   --seed 0000000000000000000000000000000000000000000000000000000000000001
+Wallet {
+...
 ```
 
 ---
 
 ### Show Address
-```shell
-midnight-node-toolkit show-address --network undeployed --shielded --seed 0000000000000000000000000000000000000000000000000000000000000001
+```console
+$ midnight-node-toolkit show-address 
+>   --network undeployed 
+>   --shielded 
+>   --seed 0000000000000000000000000000000000000000000000000000000000000001
+mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqxr6r2x
+
 ```
 
 ---
@@ -271,8 +466,10 @@ Generate and print a random unshielded or shielded address. Parameters:
 - `--shielded`: Generate a random shielded address when present, or a random unshielded address when not present.
 - `--network`: Specify which network to generate the address for
 - `--randomness-seed`: Specify a seed for the RNG (distinct from the wallet seed) for repeatable executions
-```shell
-midnight-node-toolkit random-address --network undeployed --shielded --randomness-seed 0000000000000000000000000000000000000000000000000000000000000001
+```console
+$ midnight-node-toolkit random-address --network undeployed --shielded --randomness-seed 0000000000000000000000000000000000000000000000000000000000000001
+mn_shield-addr_undeployed1[..]
+
 ```
 
 ---
@@ -302,7 +499,7 @@ To access a node running on localhost, use the `--network option`. To write outp
 use `-v /host/path:/container/path`. Example:
 
 ```shell
-docker run --network host -v $(pwd):/out mn-generator2 generate-zswap -n 1 -f /out/tx.json
+docker run --network host -v $(pwd):/out midnight-node-toolkit:latest ... --dest-file /out/tx.json ...
 ```
 
 **NOTE:** if you're running through Docker and want to access a node on localhost, use: `docker run --network host ...`

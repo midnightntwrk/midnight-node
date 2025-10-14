@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mn_meta;
 use midnight_node_ledger_helpers::NetworkId;
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
 	Config, OnlineClient,
@@ -63,6 +64,19 @@ impl MidnightNodeClient {
 		};
 
 		Ok(network_id)
+	}
+
+	pub async fn get_state_root_at(
+		&self,
+		at: Option<HashFor<MidnightNodeClientConfig>>,
+	) -> Result<Option<Vec<u8>>, ClientError> {
+		let storage_query = mn_meta::storage().midnight().state_key();
+		let storage = match at {
+			Some(hash) => self.api.storage().at(hash),
+			None => self.api.storage().at_latest().await?,
+		};
+		let state_key = storage.fetch(&storage_query).await?;
+		Ok(state_key.map(|bounded| bounded.0))
 	}
 }
 

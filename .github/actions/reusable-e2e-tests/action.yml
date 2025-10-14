@@ -46,7 +46,7 @@ runs:
           startup-dev-e2e | startup-qanet-e2e)
             just ${{ inputs.just-command }} "${{ inputs.node-image }}"
             ;;
-          node-e2e | toolkit-e2e | toolkit-mint-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
+          node-e2e | toolkit-e2e | toolkit-mint-e2e | toolkit-ut-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
             just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
             ;;
           *)

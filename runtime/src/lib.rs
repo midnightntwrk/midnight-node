@@ -21,8 +21,6 @@
 #[macro_use]
 extern crate frame_benchmarking;
 
-use crate::authorship::current_block_author_aura_index;
-
 extern crate alloc;
 use alloc::{collections::BTreeMap, string::String};
 use authority_selection_inherents::{
@@ -61,14 +59,14 @@ use opaque::{CrossChainKey, SessionKeys};
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
-pub use pallet_session_validator_management;
+pub use pallet_session_validator_management::{self, Config};
 pub use pallet_timestamp::Call as TimestampCall;
-pub use pallet_upgrade::pallet::Call as RuntimeUpgradeCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	NativeTokenAmount, PermissionedCandidateData, RegistrationData, ScEpochNumber, ScSlotNumber,
+	AuraPublicKey, DParameter, EpochNonce, GrandpaPublicKey, NativeTokenAmount,
+	PermissionedCandidateData, RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey,
 	StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
@@ -76,7 +74,7 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_beefy::{
 	OpaqueKeyOwnershipProof,
 	ecdsa_crypto::{AuthorityId as BeefyId, Signature as BeefySignature},
-	mmr::MmrLeafVersion,
+	mmr::{BeefyDataProvider, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_governed_map::MainChainScriptsV1;
@@ -99,7 +97,6 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use sp_std::prelude::*;
-use sp_storage::well_known_keys;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -257,7 +254,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_016_004,
+	spec_version: 000_017_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -473,11 +470,159 @@ impl Convert<BeefyId, Vec<u8>> for RawBeefyId {
 		beefy_id.to_raw_vec()
 	}
 }
+
+pub struct KeyAndStakeDataProvider;
+
+impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
+	/// Returns an encoded Vec<(BeefyId, StakeDelegation)>
+	fn extra_data() -> Vec<u8> {
+		// list of all validators
+		let validators = Session::validators_and_keys();
+
+		// list of all validators (in beefy)
+		let Some(beefy_validators) = Beefy::validator_set() else {
+			log::warn!(
+				target: "runtime:beefy_mmr",
+				"Beefy Validators is empty",
+			);
+
+			return vec![];
+		};
+		// Only concerned about the beefy validators
+		let beefy_ids = beefy_validators.validators();
+
+		// make sure beefy validators have the same number as the validators set in the session pallet
+		if validators.len() != beefy_ids.len() {
+			log::warn!(
+				target: "runtime:beefy_mmr",
+				"Not the same number of validators for  session({}) and beefy({})",
+				validators.len(),
+				beefy_ids.len()
+			);
+			return vec![];
+		}
+
+		// With the given validators, recreate a list of permissioned candidates
+		let mut permissioned_candidates = vec![];
+
+		for (idx, (_, session_keys)) in validators.iter().enumerate() {
+			// the SideChainPublicKey is ecdsa, same as beefy. For mocking purposes, we use the same value
+			let beefy = &beefy_ids[idx];
+			let Some(sidechain_public_key) =
+				convert_to_key::<sp_core::ecdsa::Public, SidechainPublicKey, _>(beefy)
+			else {
+				return vec![];
+			};
+
+			let Some(aura_public_key) =
+				convert_to_key::<sp_core::sr25519::Public, AuraPublicKey, _>(&session_keys.aura)
+			else {
+				return vec![];
+			};
+
+			let Some(grandpa_public_key) =
+				convert_to_key::<sp_core::ed25519::Public, GrandpaPublicKey, _>(&session_keys.aura)
+			else {
+				return vec![];
+			};
+
+			let candidate = PermissionedCandidateData {
+				sidechain_public_key,
+				aura_public_key,
+				grandpa_public_key,
+			};
+
+			permissioned_candidates.push(candidate);
+		}
+
+		// todo: default value, taken from `fn select_authorities_optionally_overriding`
+		let d_parameter = DParameter::new(6, 0);
+
+		// todo: default value, taken from `fn select_authorities_optionally_overriding`
+		let sample_epoch: u16 = 0x1234;
+		let sample_epoch = sample_epoch.to_be_bytes();
+		let sample_epoch = sample_epoch.to_vec();
+
+		let epoch_nonce = EpochNonce(sample_epoch);
+
+		// mock an input
+		let input = AuthoritySelectionInputs {
+			d_parameter,
+			permissioned_candidates,
+			registered_candidates: vec![],
+			epoch_nonce,
+		};
+
+		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys>(
+			Sidechain::genesis_utxo(),
+			input,
+			Runtime::current_epoch_number(),
+		) else {
+			return vec![];
+		};
+
+		let result = candidates
+			.into_iter()
+			.filter_map(|member| match member {
+				Candidate::Permissioned(permissioned_candidate) =>
+				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
+				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
+				{
+					Some((
+						xchain_public_to_beefy(permissioned_candidate.account_id),
+						// set to 0 for unfound stake delegation
+						StakeDelegation(1),
+					))
+				},
+				Candidate::Registered(candidate_with_stake) => {
+					// For mocking purposes, CrosschainPublicKey is converted to BeefyId
+					// BeefyId can be derived from a value provided by the CrosschainPublicKey.
+					let beefy_id = xchain_public_to_beefy(candidate_with_stake.account_id);
+
+					// check if this beefy_id exists in the list of validators
+					if beefy_ids.iter().any(|id| id == &beefy_id) {
+						Some((beefy_id, candidate_with_stake.stake_delegation))
+					} else {
+						log::warn!(
+							target: "runtime:beefy_mmr",
+							"Candidate Public Key not part of the beefy validator set {:#?}",
+							candidate_with_stake.account_keys
+						);
+						None
+					}
+				},
+			})
+			.collect::<Vec<(BeefyId, StakeDelegation)>>();
+
+		log::info!(
+			target: "runtime::beefy_mmr",
+			"Extra Data found of size {}",
+			result.len()
+		);
+
+		result.encode()
+	}
+}
+
+fn xchain_public_to_beefy(xchain_pub_key: CrossChainPublic) -> BeefyId {
+	let xchain_pub_key = xchain_pub_key.into_inner();
+	BeefyId::from(xchain_pub_key)
+}
+
+fn convert_to_key<KeyType: ByteArray, Out: From<KeyType>, T: ByteArray>(
+	pub_key: &T,
+) -> Option<Out> {
+	let pub_key_as_slice = pub_key.as_slice();
+	let new_key = KeyType::from_slice(pub_key_as_slice).ok()?;
+
+	Some(Out::from(new_key))
+}
+
 impl pallet_beefy_mmr::Config for Runtime {
 	type LeafVersion = LeafVersion;
 	type BeefyAuthorityToMerkleLeaf = RawBeefyId;
 	type LeafExtra = Vec<u8>; // default
-	type BeefyDataProvider = ();
+	type BeefyDataProvider = KeyAndStakeDataProvider;
 	type WeightInfo = ();
 }
 
@@ -682,45 +827,6 @@ impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
 	}
 }
 
-parameter_types! {
-	pub const MaxPreimageSize: u32 = pallet_upgrade::MAX_PREIMAGE_SIZE;
-	// Max runtimes which can be voted on at one time
-	pub const MaxVoteTargets: u8 = 5;
-	pub const PalletUpgradeId: PalletId = PalletId(*b"hardfork");
-	// TODO: Continue to adjust this value
-	pub const SessionsPerVotingPeriod: u32 = 26;
-	// Wait 5 blocks following a any check which certifies an upgrade, before performing the upgrade
-	pub const UpgradeDelay: BlockNumber = 5;
-	pub const UpgradeVoteThreshold: sp_arithmetic::Percent = sp_arithmetic::Percent::from_percent(50);
-}
-
-impl pallet_upgrade::Config for Runtime {
-	type AuthorityId = AuraId;
-	type SessionsPerVotingPeriod = SessionsPerVotingPeriod;
-	type MaxValidators = MaxAuthorities;
-	type MaxVoteTargets = MaxVoteTargets;
-	type PalletId = PalletUpgradeId;
-	type PalletsOrigin = OriginCaller;
-	type Scheduler = Scheduler;
-	type UpgradeDelay = UpgradeDelay;
-	type UpgradeVoteThreshold = UpgradeVoteThreshold;
-	type ValidatorSet = ValidatorSet;
-	type WeightInfo = ();
-
-	fn spec_version() -> RuntimeVersion {
-		System::runtime_version()
-	}
-
-	fn current_authority() -> Option<AuraId> {
-		let index = current_block_author_aura_index::<Runtime>()
-			.expect("Each aura block should have an author encoded in the digest");
-		pallet_aura::Authorities::<Runtime>::get().get(index).cloned()
-	}
-
-	type Preimage = Preimage;
-	type SetCode = ();
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
 	type WeightInfo = pallet_version::VersionWeight<Runtime>;
@@ -906,7 +1012,7 @@ construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management = 8,
 		//#[cfg(feature = "experimental")]
 		//BlockRewards: pallet_block_rewards = 9,
-		RuntimeUpgrade: pallet_upgrade = 10,
+
 		NodeVersion: pallet_version = 11,
 
 		NativeTokenManagement: pallet_native_token_management = 12,
@@ -989,7 +1095,6 @@ mod benches {
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
-		[pallet_upgrade, RuntimeUpgrade]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 	);
@@ -1060,16 +1165,6 @@ impl_runtime_apis! {
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
-		}
-	}
-
-	impl midnight_primitives_upgrade_api::UpgradeApi<Block> for Runtime {
-		fn get_current_version_info() -> (u32, Hash) {
-			use sp_core::Hasher;
-			let spec_version = System::runtime_version().spec_version;
-			let runtime_bytes = storage::unhashed::get_raw(well_known_keys::CODE).expect("Runtime code exists");
-			let runtime_hash = BlakeTwo256::hash(&runtime_bytes);
-			(spec_version, runtime_hash)
 		}
 	}
 
