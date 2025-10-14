@@ -78,6 +78,10 @@ pub struct CustomContractArgs {
 	/// Intent file to include in the transaction. Accepts multiple
 	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,
+	/// Input Unshielded UTXOs to include in the transaction. Accepts multiple. UTXOs must be
+	/// present in wallet of funding-seed.
+	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
+	pub utxo_inputs: Vec<UtxoId>,
 	/// Zswap State file containing coin info
 	#[arg(long)]
 	pub zswap_state_file: Option<String>,

@@ -18,6 +18,7 @@ pub struct WalletInfo<D: DB + Clone> {
 
 #[derive(Debug, serde::Serialize)]
 pub struct UtxoSer {
+	pub id: String,
 	pub value: u128,
 	pub user_address: String,
 	pub token_type: String,
@@ -27,12 +28,16 @@ pub struct UtxoSer {
 
 impl From<Utxo> for UtxoSer {
 	fn from(utxo: Utxo) -> Self {
+		let intent_hash = utxo.intent_hash.0.0.encode_hex();
+		let output_no = utxo.output_no;
+		let id = format!("{intent_hash}#{output_no}");
 		Self {
+			id,
 			value: utxo.value,
 			user_address: utxo.owner.0.0.encode_hex(),
 			token_type: utxo.type_.0.0.encode_hex(),
-			intent_hash: utxo.intent_hash.0.0.encode_hex(),
-			output_no: utxo.output_no,
+			intent_hash,
+			output_no,
 		}
 	}
 }

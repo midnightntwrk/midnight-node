@@ -196,8 +196,13 @@ impl SingleTxBuilder {
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let total_required = amount_to_send_per_output * output_wallets.len() as u128;
 
-		let utxo_spend_info =
-			UtxoSpendInfo { value: total_required, owner: source_seed, token_type: NIGHT };
+		let utxo_spend_info = UtxoSpendInfo {
+			value: total_required,
+			owner: source_seed,
+			token_type: NIGHT,
+			intent_hash: None,
+			output_no: None,
+		};
 
 		let funding_wallet = context.clone().wallet_from_seed(source_seed);
 		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);

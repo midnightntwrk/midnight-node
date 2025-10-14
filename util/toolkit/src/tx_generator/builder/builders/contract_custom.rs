@@ -6,11 +6,13 @@ use crate::{
 	},
 	serde_def::SourceTransactions,
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
+	tx_generator::builder::ContractDeployArgs,
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	Array, ClaimedUnshieldedSpendsKey, ContractAction, ProofPreimageMarker, PublicAddress,
-	ShieldedWallet, StdRng, TokenType, UnshieldedOffer, UtxoOutput, WalletAddress, default_storage,
+	BuildUtxoOutput, BuildUtxoSpend, ClaimedUnshieldedSpendsKey, ContractAction, IntentInfo,
+	ProofPreimageMarker, PublicAddress, ShieldedWallet, StdRng, TokenType, UnshieldedOfferInfo,
+	UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, WalletAddress,
 };
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
@@ -25,6 +27,8 @@ pub enum CustomContractBuilderError {
 	FailedProvingTx(Box<dyn std::error::Error + Send + Sync>),
 	#[error("failed to read intent file")]
 	FailedReadingIntent(std::io::Error),
+	#[error("failed to find matching UTXO in wallet")]
+	FailedToFindMatchingUtxo(UtxoId),
 	#[error("ClaimedUnshieldedSpendsKey contains non-unshielded token type")]
 	ClaimedUnshieldedSpendTokenTypeError(TokenType),
 }
@@ -34,19 +38,29 @@ pub struct CustomContractBuilder {
 	rng_seed: Option<[u8; 32]>,
 	artifacts_dir: String,
 	intent_files: Vec<String>,
+	utxo_inputs: Vec<UtxoId>,
 	zswap_state_file: Option<String>,
 	shielded_destinations: Vec<WalletAddress>,
 }
 
 impl CustomContractBuilder {
 	pub fn new(args: CustomContractArgs) -> Self {
+		let CustomContractArgs {
+			info: ContractDeployArgs { funding_seed, rng_seed },
+			compiled_contract_dir,
+			intent_files,
+			utxo_inputs,
+			zswap_state_file,
+			shielded_destinations,
+		} = args;
 		Self {
-			funding_seed: args.info.funding_seed,
-			rng_seed: args.info.rng_seed,
-			artifacts_dir: args.compiled_contract_dir,
-			intent_files: args.intent_files,
-			zswap_state_file: args.zswap_state_file,
-			shielded_destinations: args.shielded_destinations,
+			funding_seed,
+			rng_seed,
+			artifacts_dir: compiled_contract_dir,
+			intent_files,
+			utxo_inputs,
+			zswap_state_file,
+			shielded_destinations,
 		}
 	}
 }
@@ -111,19 +125,44 @@ impl BuildTxs for CustomContractBuilder {
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		println!("Building Txs for CustomContract");
 		// - LedgerContext and TransactionInfo
-		let (_context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+
+		let funding_utxos = context.with_ledger_state(|state| {
+			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
+		});
+		dbg!(&funding_utxos);
+		dbg!(&self.utxo_inputs);
+
+		let mut input_utxos = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
+		for input_utxo in &self.utxo_inputs {
+			let funding_match = funding_utxos
+				.iter()
+				.find(|u| {
+					u.intent_hash == input_utxo.intent_hash && u.output_no == input_utxo.output_no
+				})
+				.ok_or(CustomContractBuilderError::FailedToFindMatchingUtxo(*input_utxo))?;
+
+			input_utxos.push(Box::new(UtxoSpendInfo {
+				value: funding_match.value,
+				owner: self.funding_seed(),
+				token_type: funding_match.type_,
+				intent_hash: Some(funding_match.intent_hash),
+				output_no: Some(funding_match.output_no),
+			}));
+		}
 
 		// Use segment 1 for the custom contract
 		let contract_segment = 1;
 
 		// - Intents
-		let mut contract_intent = self.build_intent()?;
+		let contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
 
 		let (guaranteed_effects, _fallible_effects) = contract_intent.find_effects();
 
+		let mut unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
 		if let Some(effects) = guaranteed_effects {
-			let mut outputs = Array::<UtxoOutput>::new();
+			let mut outputs = Vec::<Box<dyn BuildUtxoOutput<DefaultDB>>>::new();
 			for (ClaimedUnshieldedSpendsKey(tt, dest), value) in effects.claimed_unshielded_spends {
 				let TokenType::Unshielded(tt) = tt else {
 					return Err(CustomContractBuilderError::ClaimedUnshieldedSpendTokenTypeError(
@@ -132,21 +171,25 @@ impl BuildTxs for CustomContractBuilder {
 				};
 
 				if let PublicAddress::User(addr) = dest {
-					outputs = outputs.push(UtxoOutput { value, owner: addr, type_: tt });
+					let owner: UnshieldedWallet = addr.into();
+					outputs.push(Box::new(UtxoOutputInfo { value, owner, token_type: tt }));
 				}
 			}
 
-			let unshielded_offer = default_storage().arena.alloc(UnshieldedOffer {
-				inputs: Default::default(),
-				outputs,
-				signatures: Default::default(),
-			});
-
-			contract_intent.intent.guaranteed_unshielded_offer = Some(unshielded_offer);
+			unshielded_offer_info = Some(UnshieldedOfferInfo { inputs: input_utxos, outputs });
 		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
-		intents.insert(contract_segment, Box::new(contract_intent));
+
+		intents.insert(
+			contract_segment,
+			Box::new(IntentInfo {
+				guaranteed_unshielded_offer: unshielded_offer_info,
+				fallible_unshielded_offer: None,
+				actions: vec![Box::new(contract_intent)],
+			}),
+		);
+
 		tx_info.set_intents(intents);
 
 		//   - Input
