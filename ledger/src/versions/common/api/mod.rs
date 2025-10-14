@@ -21,10 +21,8 @@ pub use super::types::{self, DeserializationError, LedgerApiError, Serialization
 
 use base_crypto_local::hash::HashOutput;
 use coin_structure_local::coin::UserAddress as UserAddressLedger;
-use ledger_storage::arena::TypedArenaKey;
-use ledger_storage_local::{WellBehavedHasher, db::DB};
-use midnight_serialize::Tagged;
-use midnight_serialize_local::Deserializable;
+use ledger_storage_local::{WellBehavedHasher, arena::TypedArenaKey, db::DB};
+use midnight_serialize_local::{Deserializable, Tagged};
 
 pub mod ledger;
 mod transaction;
