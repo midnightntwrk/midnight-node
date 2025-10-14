@@ -1,3 +1,3 @@
 #!/bin/bash
 
-su appuser /midnight-node -- "$@"
+run -u appuser /midnight-node "$@"
