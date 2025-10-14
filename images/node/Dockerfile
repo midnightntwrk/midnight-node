@@ -30,6 +30,7 @@ COPY res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+RUN chown appuser /entrypoint.sh
 USER appuser
 
 EXPOSE 30333 9933 9944 9615

@@ -23,5 +23,6 @@ RUN rm -rf /node
 COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+RUN chown appuser /entrypoint.sh
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]

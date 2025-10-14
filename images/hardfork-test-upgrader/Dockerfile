@@ -16,4 +16,5 @@ COPY util/upgrader/bin/entrypoint.sh /entrypoint.sh
 
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
 USER appuser
+RUN chown appuser /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
