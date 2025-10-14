@@ -46,7 +46,7 @@ jobs:
           ldd mn-cngd || echo "ldd failed"
           patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 mn-cngd
           sudo apt update
-          sudo apt-get install -y liblmdb0 libsodium23 libblst0 libsecp256k1-0
+          sudo apt-get install -y liblmdb0 libsodium23
           file mn-cngd
           ldd mn-cngd || echo "ldd failed"
           ./mn-cngd --help
