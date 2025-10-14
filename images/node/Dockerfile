@@ -29,8 +29,7 @@ COPY .envrc ./bin/.envrc
 COPY res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
-RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser \
-    && chown appuser:appuser /entrypoint.sh
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
 USER appuser
 
 EXPOSE 30333 9933 9944 9615

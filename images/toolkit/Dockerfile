@@ -24,7 +24,6 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
 RUN rm -rf /node
 COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
-RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser \
-    && chown appuser:appuser /entrypoint.sh
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]
