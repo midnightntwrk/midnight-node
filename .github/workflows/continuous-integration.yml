@@ -47,6 +47,13 @@ jobs:
           patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 mn-cngd
           sudo apt update
           sudo apt-get install -y liblmdb0 libsodium23
+          mkdir -p deps/lib
+          cd deps/lib
+          curl -L -o libblst.so https://github.com/supranational/blst/releases/download/v0.3.16/libblst.so
+          curl -L -o libsecp256k1.so.5 https://github.com/bitcoin-core/secp256k1/releases/download/v0.7.0/libsecp256k1.so.5
+          curl -L -o libsodium.so.26 https://github.com/jedisct1/libsodium/releases/download/1.0.20/libsodium.so.26
+          cd ../..
+          export LD_LIBRARY_PATH=$PWD/deps/lib:$LD_LIBRARY_PATH
           file mn-cngd
           ldd mn-cngd || echo "ldd failed"
           ./mn-cngd --help
