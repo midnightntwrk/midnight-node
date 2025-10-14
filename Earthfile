@@ -791,7 +791,6 @@ node-image:
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
-    USER appuser
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -821,7 +820,6 @@ node-benchmarks-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
-    USER appuser
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
@@ -860,7 +858,6 @@ toolkit-image:
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
-    USER appuser
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
@@ -885,7 +882,6 @@ hardfork-test-upgrader-image:
 
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
-    USER appuser
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     SAVE IMAGE --push \
         $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \
