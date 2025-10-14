@@ -16,6 +16,7 @@ members = [
     "util/documented",
     "util/upgrader",
     "docs",
+    "relay"
 ]
 package = { license-file = "LICENSE" }
 
@@ -182,6 +183,8 @@ sc-rpc-api = { default-features = false, git = "https://github.com/paritytech/po
 sc-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-storage-monitor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
+substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
+
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-runtime-interface = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sc-chain-spec = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
@@ -205,6 +208,7 @@ sp-keystore = { default-features = false, git = "https://github.com/paritytech/p
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 sp-crypto-hashing = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
+binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506" }
 
 parity-scale-codec = { version = "3.7.5", default-features = false }
 scale-info = { version = "2.1.1", default-features = false }
