@@ -999,7 +999,7 @@ partnerchains-dev:
 run-node-mocked:
     FROM +node-image
     ENV SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"
-    RUN CFG_PRESET=dev entrypoint.sh
+    RUN CFG_PRESET=dev /entrypoint.sh
 
 # testnet-sync-e2e tries to sync the node with the first 7000 blocks of testnet
 testnet-sync-e2e:

@@ -20,8 +20,8 @@ ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 COPY node/Cargo.toml /node/
 RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
 RUN rm -rf /node
-COPY util/toolkit/bin/entrypoint.sh .
+COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
 USER appuser
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
