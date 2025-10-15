@@ -23,21 +23,21 @@ pub struct UtxoSer {
 	pub user_address: String,
 	pub token_type: String,
 	pub intent_hash: String,
-	pub output_no: u32,
+	pub output_number: u32,
 }
 
 impl From<Utxo> for UtxoSer {
 	fn from(utxo: Utxo) -> Self {
 		let intent_hash = utxo.intent_hash.0.0.encode_hex();
-		let output_no = utxo.output_no;
-		let id = format!("{intent_hash}#{output_no}");
+		let output_number = utxo.output_no;
+		let id = format!("{intent_hash}#{output_number}");
 		Self {
 			id,
 			value: utxo.value,
 			user_address: utxo.owner.0.0.encode_hex(),
 			token_type: utxo.type_.0.0.encode_hex(),
 			intent_hash,
-			output_no,
+			output_number,
 		}
 	}
 }

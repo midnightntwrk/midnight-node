@@ -60,9 +60,9 @@ impl std::str::FromStr for UtxoId {
 			hex::decode(intent_hash_hex).map_err(UtxoIdParseError::HexDecodeError)?;
 		let intent_hash = deserialize_untagged(&mut intent_hash_bytes.as_slice())
 			.map_err(UtxoIdParseError::DeserializationError)?;
-		let output_no = output_number_str.parse().map_err(UtxoIdParseError::ParseIntError)?;
+		let output_number = output_number_str.parse().map_err(UtxoIdParseError::ParseIntError)?;
 
-		Ok(Self { intent_hash, output_number: output_no })
+		Ok(Self { intent_hash, output_number })
 	}
 }
 
