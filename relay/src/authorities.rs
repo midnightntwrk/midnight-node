@@ -102,7 +102,6 @@ fn proof_node_to_plutus_data<T: Clone + Into<Vec<u8>>>(proof: &ProofNode<T>) -> 
 	match proof {
 		ProofNode::Leaf(hash) => PlutusData::BoundedBytes(BoundedBytes::from(hash.clone().into())),
 		ProofNode::Node(nodes) => PlutusData::Array(MaybeIndefArray::Indef(
-			// Node
 			nodes
 				.iter()
 				.map(|node: &Box<ProofNode<T>>| proof_node_to_plutus_data(node))
