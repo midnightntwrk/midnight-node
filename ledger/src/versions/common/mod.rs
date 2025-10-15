@@ -668,7 +668,7 @@ where
 fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce {
 	let concatenated = [block_hash, separator, &[output_number]].concat();
 
-	let h256 = sp_core::H256::from_slice(&concatenated);
+	let h256 = sp_runtime::testing::H256::from_slice(&concatenated);
 
 	let hash_output = HashOutput(h256.0);
 
