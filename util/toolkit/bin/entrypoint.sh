@@ -5,7 +5,7 @@ mkdir -p ${MOUNTED_DIRS[@]}
 chown -R appuser:appuser ${MOUNTED_DIRS[@]}
 
 function cleanup() {
-    chown -R root:root ${MOUNTED_DIRS[@]}
+    chown -R 1000:1000 ${MOUNTED_DIRS[@]}
 }
 trap cleanup EXIT
 

@@ -36,7 +36,6 @@ cleanup() {
     echo "🛑 Killing node container..."
     docker container stop midnight-node-contracts
     echo "🧹 Removing tempdir..."
-    chown -R $(id -un):$(id -gn) $tempdir
     rm -rf $tempdir
 }
 # --- Always-cleanup: runs on success, error, or interrupt ---
