@@ -63,7 +63,13 @@ impl BuildTxs for RegisterDustAddressBuilder {
 					.unshielded_utxos(ledger_state)
 					.iter()
 					.filter(|utxo| utxo.type_ == NIGHT)
-					.map(|utxo| UtxoSpendInfo { value: utxo.value, owner: seed, token_type: NIGHT })
+					.map(|utxo| UtxoSpendInfo {
+						value: utxo.value,
+						owner: seed,
+						token_type: NIGHT,
+						intent_hash: None,
+						output_number: None,
+					})
 					.collect::<Vec<_>>()
 			})
 		});
