@@ -142,7 +142,6 @@ pub enum LedgerApiError {
 	BlockLimitExceededError,
 	FeeCalculationError,
 	HostApiError,
-	NonceCreationError,
 }
 
 impl core::fmt::Display for LedgerApiError {
@@ -224,12 +223,6 @@ impl core::fmt::Display for LedgerApiError {
 			},
 			LedgerApiError::HostApiError => {
 				write!(f, "Error while processing the transaction in the host API")
-			},
-			LedgerApiError::NonceCreationError => {
-				write!(
-					f,
-					"Error creating a nonce value for OutputInstructionUnshielded, from the provided data"
-				)
 			},
 		}
 	}
@@ -334,7 +327,6 @@ impl From<LedgerApiError> for u8 {
 			LedgerApiError::ContractCallCostError => 153,
 			LedgerApiError::BlockLimitExceededError => 154,
 			LedgerApiError::FeeCalculationError => 155,
-			LedgerApiError::NonceCreationError => 156,
 			// Error in the Host API, not coming from Ledger
 			LedgerApiError::HostApiError => 255,
 		}

@@ -43,6 +43,7 @@ use {
 	},
 	base_crypto_local::{hash::HashOutput, time::Timestamp},
 	coin_structure_local::coin::Commitment,
+	coin_structure_local::coin::Nonce,
 	coin_structure_local::coin::UnshieldedTokenType,
 	ledger_storage_local::{
 		Storage,
@@ -416,8 +417,7 @@ where
 		let api = api::new();
 		let target_address = api.night_address(receiver)?;
 
-		let nonce =
-			create_sha256_nonce(MINT_COINS_DOMAIN_SEPARATOR, &block_context.parent_block_hash, 0)?;
+		let nonce = create_nonce(MINT_COINS_DOMAIN_SEPARATOR, &block_context.parent_block_hash, 0);
 
 		let sys_tx = api::SystemTransaction::PayFromTreasuryUnshielded {
 			outputs: vec![api::OutputInstructionUnshielded { amount, target_address, nonce }],
@@ -658,34 +658,19 @@ where
 	}
 }
 
-/// Creates a Nonce using Sha256
+/// Creates a Nonce using H256
 ///
 /// # Arguments
 /// * `separator` - an indicator from which this nonce belongs to.
 /// * `block_hash`
 /// * `output_number` - its position in the list
 #[cfg(feature = "std")]
-fn create_sha256_nonce(
-	separator: &[u8],
-	block_hash: &[u8],
-	output_number: u8,
-) -> Result<midnight_node_ledger_helpers::Nonce, LedgerApiError> {
-	use sha2::{Digest, Sha256};
-	use std::io::Write;
-
+fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce {
 	let concatenated = [block_hash, separator, &[output_number]].concat();
 
-	let mut hasher = Sha256::new();
-	let _ = hasher.write(&concatenated).map_err(|e| {
-		log::warn!(
-			target: LOG_TARGET,
-			"Failed to create nonce hash: {e:?}"
-		);
+	let h256 = sp_core::H256::from_slice(&concatenated);
 
-		LedgerApiError::NonceCreationError
-	})?;
+	let hash_output = HashOutput(h256.0);
 
-	let hash_output = HashOutput(hasher.finalize().into());
-
-	Ok(midnight_node_ledger_helpers::Nonce(hash_output))
+	Nonce(hash_output)
 }
