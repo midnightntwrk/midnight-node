@@ -11,8 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod queries;
-mod types;
+//! Inherent Data Provider
+//!
+//! This module contains all the methods and types for the inherent data interface.
+//! Anything that is called from or passed to the pallet goes here.
 
-pub use queries::native_token_observation::*;
-pub use types::*;
+#[cfg(feature = "std")]
+pub mod federated_authority_observation;
+#[cfg(feature = "std")]
+pub mod native_token_observation;
+
+#[cfg(feature = "std")]
+pub use federated_authority_observation::FederatedAuthorityInherentDataProvider;
+#[cfg(feature = "std")]
+pub use native_token_observation::{
+	DEFAULT_CARDANO_BLOCK_WINDOW_SIZE, IDPCreationError,
+	MidnightNativeTokenObservationInherentDataProvider,
+};

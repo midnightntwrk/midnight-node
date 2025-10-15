@@ -1837,7 +1837,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -2687,7 +2687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.104",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -4974,7 +4974,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -5410,7 +5410,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7098,6 +7098,7 @@ dependencies = [
  "pallet-beefy-mmr",
  "pallet-collective",
  "pallet-federated-authority",
+ "pallet-federated-authority-observation",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -7120,6 +7121,7 @@ dependencies = [
  "pallet-version",
  "parity-scale-codec",
  "plutus",
+ "runtime-common",
  "scale-info",
  "serde",
  "sidechain-domain",
@@ -7261,6 +7263,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-federated-authority-observation"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-inherents",
+ "sp-runtime",
+]
+
+[[package]]
 name = "midnight-primitives-ledger"
 version = "0.1.0"
 dependencies = [
@@ -7279,6 +7292,7 @@ dependencies = [
  "figment",
  "hex",
  "log",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-native-token-observation",
  "parity-scale-codec",
  "partner-chains-db-sync-data-sources",
@@ -7289,7 +7303,9 @@ dependencies = [
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",
+ "sp-core",
  "sp-inherents",
+ "sp-keyring",
  "sp-runtime",
  "sp-std",
  "sqlx",
@@ -7305,7 +7321,10 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+ "sidechain-domain",
  "sp-api",
+ "sp-inherents",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -8648,6 +8667,27 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-federated-authority-observation"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-federated-authority-observation",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "runtime-common",
+ "scale-info",
+ "sidechain-domain",
+ "sp-inherents",
  "sp-io",
  "sp-runtime",
  "sp-std",
@@ -10593,7 +10633,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11153,6 +11193,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime-common"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-collective",
+ "pallet-membership",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "rust-ini"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11228,7 +11280,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11308,7 +11360,7 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16053,9 +16105,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.47.0"
+version = "1.47.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
+checksum = "89e49afdadebb872d3145a5638b59eb0691ea23e46ca484037cfab3b76b95038"
 dependencies = [
  "backtrace",
  "bytes",
@@ -17591,7 +17643,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

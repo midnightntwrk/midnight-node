@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod queries;
-mod types;
+//! Database Queries for Federated Authority Observation
+//!
+//! This module provides database queries used for federated authority observation
 
-pub use queries::native_token_observation::*;
-pub use types::*;
+// TODO: federated-authority-observation
+// Add queries here when defined

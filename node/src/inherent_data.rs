@@ -43,13 +43,16 @@ use std::error::Error;
 use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
-	MidnightNativeTokenObservationDataSource,
-	idp::inherent_provider::MidnightNativeTokenObservationInherentDataProvider,
+	FederatedAuthorityObservationDataSource, MidnightNativeTokenObservationDataSource,
+	idp::{
+		FederatedAuthorityInherentDataProvider, MidnightNativeTokenObservationInherentDataProvider,
+	},
 };
 use sp_native_token_management::{
 	NativeTokenManagementApi, NativeTokenManagementDataSource,
 	NativeTokenManagementInherentDataProvider,
 };
+
 //#[cfg(feature = "experimental")]
 //use {midnight_node_runtime::BeneficiaryId, sp_block_rewards::BlockBeneficiaryInherentProvider};
 #[allow(clippy::too_many_arguments)]
@@ -63,6 +66,8 @@ pub(crate) struct ProposalCIDP<T> {
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
 	native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
+	federated_authority_observation_data_source:
+		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
 
 #[async_trait]
@@ -89,6 +94,7 @@ where
 		MidnightNativeTokenObservationInherentDataProvider,
 		NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
+		FederatedAuthorityInherentDataProvider,
 	);
 
 	async fn create_inherent_data_providers(
@@ -104,6 +110,7 @@ where
 			native_token_observation_data_source,
 			native_token_management_data_source,
 			governed_map_data_source,
+			federated_authority_observation_data_source,
 		} = self;
 
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source } = config;
@@ -162,6 +169,12 @@ where
 		)
 		.await?;
 
+		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			federated_authority_observation_data_source.as_ref(),
+			&mc_hash.mc_hash(),
+		)
+		.await?;
+
 		Ok((
 			slot,
 			timestamp,
@@ -172,10 +185,12 @@ where
 			native_token_observation,
 			native_token_management,
 			governed_map,
+			federated_authority,
 		))
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 #[derive(new)]
 pub struct VerifierCIDP<T> {
 	config: CreateInherentDataConfig,
@@ -186,6 +201,8 @@ pub struct VerifierCIDP<T> {
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
 	native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
+	federated_authority_observation_data_source:
+		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
 
 impl<T: Send + Sync> CurrentSlotProvider for VerifierCIDP<T> {
@@ -214,6 +231,7 @@ where
 		MidnightNativeTokenObservationInherentDataProvider,
 		NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
+		FederatedAuthorityInherentDataProvider,
 	);
 
 	async fn create_inherent_data_providers(
@@ -229,7 +247,7 @@ where
 			native_token_observation_data_source,
 			native_token_management_data_source,
 			governed_map_data_source,
-			..
+			federated_authority_observation_data_source,
 		} = self;
 
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source, .. } = config;
@@ -280,9 +298,15 @@ where
 		let governed_map = GovernedMapInherentDataProvider::new(
 			client.as_ref(),
 			parent_hash,
-			mc_hash,
+			mc_hash.clone(),
 			mc_state_reference.previous_mc_hash(),
 			governed_map_data_source.as_ref(),
+		)
+		.await?;
+
+		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			federated_authority_observation_data_source.as_ref(),
+			&mc_hash,
 		)
 		.await?;
 
@@ -292,6 +316,7 @@ where
 			native_token_observation,
 			native_token_management,
 			governed_map,
+			federated_authority,
 		))
 	}
 }
