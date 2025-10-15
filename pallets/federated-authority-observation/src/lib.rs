@@ -154,11 +154,11 @@ pub mod pallet {
 			let technical_committee_current_members =
 				T::TechnicalCommitteeMembershipHandler::sorted_members();
 
-			let technical_committee_have_changed = technical_committee_current_members.as_slice()
+			let technical_committee_has_changed = technical_committee_current_members.as_slice()
 				!= technical_committee_members.as_slice();
 
 			// Only if Technical Committee membership has changed
-			if technical_committee_have_changed {
+			if technical_committee_has_changed {
 				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
 					&technical_committee_members[..],
 					&technical_committee_current_members,
@@ -177,7 +177,7 @@ pub mod pallet {
 			}
 
 			// If nothing changed, return correct weight
-			if !council_members_have_changed && !technical_committee_have_changed {
+			if !council_members_have_changed && !technical_committee_has_changed {
 				actual_weight = T::WeightInfo::reset_members_none(
 					council_authorities.len() as u32,
 					technical_committee_authorities.len() as u32,

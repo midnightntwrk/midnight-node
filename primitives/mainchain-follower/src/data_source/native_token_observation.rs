@@ -85,7 +85,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 		config: &TokenObservationConfig,
 		start_position: CardanoPosition,
 		current_tip: McBlockHash,
-		capacity: usize,
+		tx_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
@@ -97,6 +97,11 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
 
+		// The "capacity" argument is capacity in terms of TRANSACTIONS,
+		// but the various sql queries below want a capacity in terms of UTXOs.
+		// Use a generous overestimate of how many UTXOs each TX _may_ have.
+		let utxo_capacity = tx_capacity * 64;
+
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
 		// ^ We may not have to do the above if the queries are fast enough
@@ -105,7 +110,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.mapping_validator_address,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -113,7 +118,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.mapping_validator_address,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -122,7 +127,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.asset_name,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -131,7 +136,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.asset_name,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -141,7 +146,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.asset_name,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -151,7 +156,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 				&config.asset_name,
 				start_position,
 				end,
-				capacity,
+				utxo_capacity,
 				0,
 			)
 			.await?,
@@ -161,21 +166,21 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 		utxos.sort();
 
 		// Truncate UTXOs but include full transactions
-		let mut truncated_utxos = Vec::with_capacity(capacity);
+		let mut truncated_utxos = Vec::with_capacity(utxo_capacity);
 		let mut num_txs = 0;
 		let mut cur_tx: Option<CardanoPosition> = None;
 		for utxo in utxos {
-			if cur_tx.is_some() && cur_tx.unwrap() < utxo.header.tx_position {
+			if cur_tx.is_none_or(|tx| tx < utxo.header.tx_position) {
 				num_txs += 1;
 				cur_tx = Some(utxo.header.tx_position);
 			}
-			if num_txs == capacity {
+			if num_txs == tx_capacity {
 				break;
 			}
 			truncated_utxos.push(utxo);
 		}
 
-		if num_txs < capacity {
+		if num_txs < tx_capacity {
 			// We couldn't find enough UTXOs in the range, which means we're up-to-date with the
 			// current_tip
 			Ok(ObservedUtxos { start: start_position, end, utxos: truncated_utxos })
