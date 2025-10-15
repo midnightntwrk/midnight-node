@@ -1,0 +1,52 @@
+[package]
+name = "pallet-federated-authority-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Pallet responsible for observing federated authority changes from main chain."
+license-file.workspace = true
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+sidechain-domain.workspace = true
+midnight-primitives-federated-authority-observation = { default-features = false, workspace = true }
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+log.workspace = true
+sp-inherents.workspace = true
+sp-std.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
+
+[dev-dependencies]
+sp-io.workspace = true
+sp-runtime.workspace = true
+pallet-collective.workspace = true
+pallet-membership.workspace = true
+runtime-common.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "sp-std/std",
+    "sp-inherents/std",
+    "pallet-collective/std",
+    "pallet-membership/std",
+    "runtime-common/std",
+    "parity-scale-codec/std",
+    "midnight-primitives-federated-authority-observation/std",
+    "frame-benchmarking?/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "pallet-collective/runtime-benchmarks",
+    "pallet-membership/runtime-benchmarks",
+    "sp-runtime/runtime-benchmarks",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec"]

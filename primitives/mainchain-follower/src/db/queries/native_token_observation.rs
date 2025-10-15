@@ -16,7 +16,7 @@
 //! This module provides database queries used for cNight token observation
 //! To get a better understanding of how these queries are working, see the schema documentation for db-sync:
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
-use super::{
+use crate::db::{
 	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, RedemptionCreateRow,
 	RedemptionSpendRow, RegistrationRow,
 };

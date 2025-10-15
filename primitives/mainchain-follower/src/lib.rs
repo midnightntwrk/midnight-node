@@ -14,9 +14,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod idp;
-pub mod types;
 
-pub use types::*;
+pub use midnight_primitives_native_token_observation::{
+	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
+	RegistrationData, SpendData, UtxoIndexInTx,
+};
 
 #[cfg(feature = "std")]
 pub mod db;
@@ -27,9 +30,9 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		MidnightNativeTokenObservationDataSourceImpl, mock::NativeTokenObservationDataSourceMock,
+		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+		MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
 	},
-	idp::MidnightObservationTokenMovement,
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
 	sp_std::boxed::Box,
@@ -39,6 +42,7 @@ pub use {
 pub mod inherent_provider {
 	use super::*;
 	use crate::data_source::ObservedUtxos;
+	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
 	use sidechain_domain::McBlockHash;
 
@@ -52,6 +56,14 @@ pub mod inherent_provider {
 			current_tip: McBlockHash,
 			capacity: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
+	}
+
+	#[async_trait::async_trait]
+	pub trait FederatedAuthorityObservationDataSource<FA = ()>: Send + Sync {
+		async fn get_federated_authority_data(
+			&self,
+			mc_block_hash: &McBlockHash,
+		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
 	#[derive(Clone, Debug)]

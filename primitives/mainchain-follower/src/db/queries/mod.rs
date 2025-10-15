@@ -11,8 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod queries;
-mod types;
+pub mod federated_authority_observation;
+pub mod native_token_observation;
 
-pub use queries::native_token_observation::*;
-pub use types::*;
+pub use native_token_observation::*;
