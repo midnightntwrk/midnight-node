@@ -23,7 +23,7 @@ pub struct UtxoSpendInfo<O> {
 	pub owner: O,
 	pub token_type: UnshieldedTokenType,
 	pub intent_hash: Option<IntentHash>,
-	pub output_no: Option<u32>,
+	pub output_number: Option<u32>,
 }
 
 pub trait BuildUtxoSpend<D: DB + Clone>: Send + Sync {
@@ -49,7 +49,7 @@ impl UtxoSpendInfo<WalletSeed> {
 						&& utxo.0.value >= self.value
 						&& utxo.0.owner == owner.clone().into()
 						&& self.intent_hash.is_none_or(|h| utxo.0.intent_hash == h)
-						&& self.output_no.is_none_or(|o| utxo.0.output_no == o)
+						&& self.output_number.is_none_or(|o| utxo.0.output_no == o)
 				})
 				.sorted_by_key(|utxo| utxo.0.value)
 				.next()

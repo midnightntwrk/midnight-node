@@ -215,7 +215,7 @@ impl SingleTxBuilder {
 			owner: source_seed,
 			token_type: self.unshielded_token_type,
 			intent_hash: None,
-			output_no: None,
+			output_number: None,
 		};
 
 		let funding_wallet = context.clone().wallet_from_seed(source_seed);

@@ -127,7 +127,7 @@ impl BatchesBuilder {
 			owner: funding_seed,
 			token_type: self.unshielded_token_type,
 			intent_hash: None,
-			output_no: None,
+			output_number: None,
 		};
 
 		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
@@ -404,7 +404,7 @@ impl BuildTxs for BatchesBuilder {
 						owner: input_seed,
 						token_type: self.unshielded_token_type,
 						intent_hash: None,
-						output_no: None,
+						output_number: None,
 					});
 
 					// Utxo Output info

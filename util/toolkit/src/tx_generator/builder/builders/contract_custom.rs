@@ -147,7 +147,7 @@ impl BuildTxs for CustomContractBuilder {
 				owner: self.funding_seed(),
 				token_type: funding_match.type_,
 				intent_hash: Some(funding_match.intent_hash),
-				output_no: Some(funding_match.output_no),
+				output_number: Some(funding_match.output_no),
 			}));
 		}
 
