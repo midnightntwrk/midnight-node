@@ -40,8 +40,8 @@ impl core::fmt::Display for UtxoId {
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoIdParseError {
-	#[error("wrong number of parts")]
-	WrongNumberOfParts(usize),
+	#[error("wrong number of parts (!= 2)")]
+	WrongNumberOfParts,
 	#[error("hex decode error")]
 	HexDecodeError(FromHexError),
 	#[error("deserialization error")]
@@ -54,14 +54,13 @@ impl std::str::FromStr for UtxoId {
 	type Err = UtxoIdParseError;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
-		let parts: Vec<&str> = s.split('#').collect();
-		if parts.len() != 2 {
-			return Err(UtxoIdParseError::WrongNumberOfParts(parts.len()));
-		}
-		let intent_hash_bytes = hex::decode(parts[0]).map_err(UtxoIdParseError::HexDecodeError)?;
+		let (intent_hash_hex, output_number_str) =
+			s.split_once('#').ok_or(UtxoIdParseError::WrongNumberOfParts)?;
+		let intent_hash_bytes =
+			hex::decode(intent_hash_hex).map_err(UtxoIdParseError::HexDecodeError)?;
 		let intent_hash = deserialize_untagged(&mut intent_hash_bytes.as_slice())
 			.map_err(UtxoIdParseError::DeserializationError)?;
-		let output_no = parts[1].parse().map_err(UtxoIdParseError::ParseIntError)?;
+		let output_no = output_number_str.parse().map_err(UtxoIdParseError::ParseIntError)?;
 
 		Ok(Self { intent_hash, output_no })
 	}
