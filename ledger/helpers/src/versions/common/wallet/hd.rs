@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{NetworkId, WalletSeed};
+use super::super::{Deserializable, NetworkId, Serializable, Tagged, WalletSeed};
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};
-use midnight_serialize::{Deserializable, Serializable, Tagged};
 use std::str::FromStr;
 
 pub const HRP_CONSTANT: &str = "mn";

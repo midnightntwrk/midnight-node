@@ -1,20 +1,12 @@
-use base_crypto::time::Timestamp;
-use ledger_storage::{db::DB, storage::HashSet};
-use mn_ledger::{
-	dust::{
-		DustLocalState, DustNullifier, DustOutput, DustParameters, DustSpend, QualifiedDustOutput,
-	},
-	error::EventReplayError,
-	events::Event,
-	structure::{LedgerParameters, ProofPreimageMarker},
-};
 use thiserror::Error;
 
-use crate::{
-	DerivationPath, DeriveSeed, Deserializable, DustPublicKey, DustSecretKey, HRP_CONSTANT,
-	HRP_CREDENTIAL_DUST, IntoWalletAddress, NetworkId, Role, Serializable,
-	ShortTaggedDeserializeError, Tagged, WalletAddress, WalletSeed, short_tagged_deserialize,
-	short_tagged_serialize,
+use super::super::{
+	DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier, DustOutput,
+	DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError, HRP_CONSTANT,
+	HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, MnLedgerDustSpendError,
+	NetworkId, ProofPreimageMarker, QualifiedDustOutput, Role, Serializable,
+	ShortTaggedDeserializeError, Tagged, Timestamp, WalletAddress, WalletSeed,
+	short_tagged_deserialize, short_tagged_serialize,
 };
 
 #[derive(Debug, Clone)]
@@ -187,5 +179,5 @@ pub enum DustSpendError {
 	#[error("Unrecognized dust output {0:?}")]
 	UnrecognizedDustOutput(Box<QualifiedDustOutput>),
 	#[error("{0}")]
-	Internal(Box<mn_ledger::dust::DustSpendError>),
+	Internal(Box<MnLedgerDustSpendError>),
 }

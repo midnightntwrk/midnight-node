@@ -11,22 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{DB, LedgerState, Utxo, WalletSeed};
+use super::super::{DB, LedgerState, Utxo, WalletSeed};
 
 mod dust;
 mod hd;
 mod shielded;
 mod unshielded;
 
-use crate::NetworkId;
+use super::super::NetworkId;
+use super::super::ledger_storage::Storable;
+use super::super::mn_ledger::{error::EventReplayError, events::Event};
+use super::super::onchain_runtime::context::BlockContext;
+use super::super::zswap::Offer;
 pub use dust::*;
 pub use hd::*;
-use ledger_storage::Storable;
-use mn_ledger::{error::EventReplayError, events::Event};
-use onchain_runtime::context::BlockContext;
 pub use shielded::*;
 pub use unshielded::*;
-use zswap::Offer;
 
 #[derive(Clone, Debug)]
 pub struct Wallet<D: DB + Clone> {

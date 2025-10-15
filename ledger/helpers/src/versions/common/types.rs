@@ -11,9 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::super::{ContractAddress, Transcript};
 use bip39::Mnemonic;
-use coin_structure::contract::ContractAddress;
-use onchain_runtime::transcript::Transcript;
 use std::{collections::HashMap, str::FromStr};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

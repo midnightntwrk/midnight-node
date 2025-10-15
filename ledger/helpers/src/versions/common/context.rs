@@ -11,16 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use base_crypto::cost_model::CostDuration;
+use super::{
+	ArenaKey, BlockContext, CostDuration, DB, DUST_EXPECTED_FILES, Deserializable, DustResolver,
+	Event, FetchMode, HashOutput, LedgerState, Loader, MidnightDataProvider, Offer, OutputMode,
+	PUBLIC_PARAMS, ProofKind, PureGeneratorPedersen, Resolver, Serializable, SignatureKind,
+	StandardTransaction, Storable, SyntheticCost, SystemTransaction, Tagged, Timestamp,
+	Transaction, TransactionContext, TransactionHash, TransactionResult, Utxo, VerifiedTransaction,
+	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, default_storage, deserialize,
+	mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+};
 use derive_where::derive_where;
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
-use ledger_storage::arena::ArenaKey;
-use ledger_storage::storable::Loader;
-use ledger_storage::{self as storage, Storable};
-use midnight_serialize as serialize;
-use mn_ledger::structure::TransactionHash;
-use mn_ledger::{events::Event, structure::StandardTransaction, verify::WellFormedStrictness};
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
 	collections::{HashMap, HashSet},
@@ -29,15 +31,6 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex as MutexTokio;
-use zswap::Offer;
-
-use crate::{
-	BlockContext, DB, DUST_EXPECTED_FILES, Deserializable, DustResolver, FetchMode, HashOutput,
-	LedgerState, MidnightDataProvider, OutputMode, PUBLIC_PARAMS, ProofKind, PureGeneratorPedersen,
-	Resolver, Serializable, SignatureKind, SyntheticCost, SystemTransaction, Tagged, Timestamp,
-	Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction, Wallet,
-	WalletAddress, WalletSeed, default_storage, deserialize,
-};
 
 lazy_static! {
 	pub static ref DEFAULT_RESOLVER: Resolver = Resolver::new(
@@ -216,7 +209,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let storage = default_storage::<D>();
 		let ledger = StorableLedgerState::new(state.clone());
 		let sp = storage.arena.alloc(ledger);
-		crate::serialize(&sp.hash()).ok()
+		super::serialize(&sp.hash()).ok()
 	}
 
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -449,8 +442,8 @@ where
 
 	pub fn serialize_inner(&self) -> Result<Vec<u8>, std::io::Error> {
 		match &self {
-			Self::Midnight(tx) => crate::serialize(tx),
-			Self::System(tx) => crate::serialize(tx),
+			Self::Midnight(tx) => super::serialize(tx),
+			Self::System(tx) => super::serialize(tx),
 		}
 	}
 
@@ -511,8 +504,8 @@ where
 {
 	fn serialize<SE: serde::Serializer>(&self, serializer: SE) -> Result<SE::Ok, SE::Error> {
 		let serialized_bytes = match self {
-			Self::Midnight(tx) => crate::serialize(tx),
-			Self::System(tx) => crate::serialize(tx),
+			Self::Midnight(tx) => super::serialize(tx),
+			Self::System(tx) => super::serialize(tx),
 		}
 		.map_err(serde::ser::Error::custom)?;
 
@@ -527,13 +520,13 @@ where
 {
 	fn deserialize<DE: serde::Deserializer<'a>>(deserializer: DE) -> Result<Self, DE::Error> {
 		let bytes = <Vec<u8> as serde::Deserialize>::deserialize(deserializer)?;
-		if !bytes.starts_with(midnight_serialize::GLOBAL_TAG.as_bytes()) {
+		if !bytes.starts_with(serialize::GLOBAL_TAG.as_bytes()) {
 			return Err(serde::de::Error::custom("missing global tag"));
 		}
 
 		macro_rules! try_deserialize_as {
 			($ty:ident, $ctor:ident) => {
-				if bytes[midnight_serialize::GLOBAL_TAG.as_bytes().len()..]
+				if bytes[serialize::GLOBAL_TAG.as_bytes().len()..]
 					.starts_with($ty::tag().as_bytes())
 				{
 					return Ok(Self::$ctor(

@@ -11,11 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, IntoWalletAddress,
-	NetworkId, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress, WalletSeed, network,
+use super::super::{
+	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput,
+	IntoWalletAddress, NetworkId, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress,
+	WalletSeed, network,
 };
-use base_crypto::hash::HashOutput;
 
 #[derive(Clone, Debug)]
 pub struct UnshieldedWallet {

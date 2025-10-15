@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{DB, LedgerContext, UnshieldedTokenType, UnshieldedWallet, UtxoOutput, WalletSeed};
+use super::{DB, LedgerContext, UnshieldedTokenType, UnshieldedWallet, UtxoOutput, WalletSeed};
 use std::sync::Arc;
 
 pub struct UtxoOutputInfo<O> {

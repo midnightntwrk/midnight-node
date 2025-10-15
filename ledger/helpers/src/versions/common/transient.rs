@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
+use super::{
 	BuildOutput, CoinInfo, DB, InputInfo, LedgerContext, OfferInfo, OutputInfo, ProofPreimage,
 	Segment, StdRng, Transient, WalletSeed,
 };
