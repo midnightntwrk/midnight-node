@@ -163,7 +163,7 @@ impl Api {
 	where
 		T: midnight_serialize_local::Serializable + SerializableError + Tagged + 'static,
 	{
-		let size = midnight_serialize_local::Serializable::serialized_size(value);
+		let size = midnight_serialize_local::tagged_serialized_size(value);
 		let mut bytes = Vec::with_capacity(size);
 		let error = LedgerApiError::Serialization(<T as SerializableError>::error());
 
