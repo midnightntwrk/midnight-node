@@ -120,8 +120,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
 contract_address=$(
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address \
