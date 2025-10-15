@@ -10,21 +10,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use midnight_primitives_native_token_observation::TokenObservationConfig;
 
-use super::{ObservedUtxoData, ObservedUtxos, RegistrationData};
-use crate::data_source::UtxoIndexInTx;
-#[cfg(feature = "std")]
+use crate::data_source::ObservedUtxos;
 use crate::{
-	MidnightNativeTokenObservationDataSource,
-	data_source::{ObservedUtxo, ObservedUtxoHeader},
+	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
+	RegistrationData, UtxoIndexInTx,
 };
-#[cfg(feature = "std")]
-use {
-	async_trait::async_trait,
-	midnight_primitives_native_token_observation::CardanoPosition,
-	sidechain_domain::{McBlockHash, McTxHash},
-};
+use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct NativeTokenObservationDataSourceMock;
 
@@ -60,7 +53,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 	}]
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSourceMock {
 	async fn get_utxos_up_to_capacity(
 		&self,

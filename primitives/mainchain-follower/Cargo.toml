@@ -10,12 +10,15 @@ hex = { workspace = true, default-features = false }
 sp-std.workspace = true
 parity-scale-codec.workspace = true
 midnight-primitives-native-token-observation.workspace = true
+midnight-primitives-federated-authority-observation.workspace = true
 async-trait = { workspace = true, optional = true }
 sidechain-domain.workspace = true
 sp-api.workspace = true
 sp-blockchain = { workspace = true, optional = true }
 sp-runtime.workspace = true
 sp-inherents.workspace = true
+sp-core.workspace = true
+sp-keyring.workspace = true
 thiserror = { workspace = true, optional = true }
 cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
@@ -38,11 +41,14 @@ std = [
     "sp-std/std",
     "sp-runtime/std",
     "sidechain-domain/std",
+    "midnight-primitives-federated-authority-observation/std",
     "async-trait",
     "sp-inherents/std",
     "scale-info/std",
     "sp-api/std",
     "sp-blockchain",
+    "sp-core/std",
+    "sp-keyring/std",
     "thiserror",
     "cardano-serialization-lib",
     "sqlx",
