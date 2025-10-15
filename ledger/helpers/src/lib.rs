@@ -22,8 +22,9 @@ pub use base_crypto::{
 };
 pub use coin_structure::{
 	coin::{
-		Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey, QualifiedInfo,
-		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
+		Info as CoinInfo, NIGHT, Nonce, Nullifier as ShieldedNullifier, PublicAddress,
+		PublicKey as CoinPublicKey, QualifiedInfo, ShieldedTokenType, TokenType,
+		UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
 	transfer::Recipient,

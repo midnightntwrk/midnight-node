@@ -58,6 +58,7 @@ state_filename="contract_state.mn"
 
 mint_intent_filename="mint.bin"
 send_intent_filename="send.bin"
+recv_intent_filename="recv.bin"
 
 mint_tx_filename="mint_tx.mn"
 
@@ -196,5 +197,35 @@ else
     echo "🕵️❌ Couldn't find matching unshielded output"
     exit 1
 fi
+
+# Note: Receive Test disabled until https://github.com/midnightntwrk/midnight-ledger/pull/68 is released
+
+# utxo_id=$(echo $show_wallet_output | jq -r --arg token "$token_type" '.utxos[] | select(.token_type == $token) | .id')
+# 
+# echo "Generate recieve intent"
+# docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+#     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+#     "$TOOLKIT_IMAGE" \
+#     generate-intent circuit -c /toolkit-js/contract/ut.config.ts \
+#     --input-onchain-state "/out/$state_filename" --input-private-state "/out/$private_state_filename" \
+#     --contract-address $contract_address \
+#     --output-intent "/out/$recv_intent_filename" \
+#     --output-private-state "/out/tmp.json" \
+#     --output-zswap-state "/out/tmp_zswap.json" \
+#     --coin-public "$coin_public" \
+#     receiveUnshieldedTest \
+#     "$token_type" \
+#     1000
+# 
+# echo "Generate and send recv tx"
+# docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+#     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+#     "$TOOLKIT_IMAGE" \
+#     send-intent \
+#     --intent-file "/out/$recv_intent_filename" \
+#     --input-utxo "$utxo_id" \
+#     --zswap-state-file "/out/tmp_zswap.json" \
+#     --compiled-contract-dir /toolkit-js/contract/out
+
 
 echo "✅ Toolkit UT Mint"
