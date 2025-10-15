@@ -290,6 +290,8 @@ pub mod pallet {
 		FeeCalculationError,
 		#[codec(index = 10)]
 		HostApiError,
+		#[codec(index = 11)]
+		NonceCreationError,
 	}
 	// grcov-excl-stop
 
@@ -308,6 +310,7 @@ pub mod pallet {
 				LedgerApiError::BlockLimitExceededError => Error::<T>::BlockLimitExceededError,
 				LedgerApiError::FeeCalculationError => Error::<T>::FeeCalculationError,
 				LedgerApiError::HostApiError => Error::<T>::HostApiError,
+				LedgerApiError::NonceCreationError => Error::<T>::NonceCreationError,
 			}
 		}
 	}
