@@ -21,7 +21,7 @@ use crate::{
 pub struct DustWallet<D: DB> {
 	pub public_key: DustPublicKey,
 	secret_key: Option<DustSecretKey>,
-	dust_local_state: Option<DustLocalState<D>>,
+	pub dust_local_state: Option<DustLocalState<D>>,
 	// We track the UTXOs we spent, to avoid spending the same UTXO twice in one batch of TXs.
 	// This set is cleared in `process_ttls`, because that is called when a new block is produced.
 	spent_utxos: HashSet<DustNullifier>,

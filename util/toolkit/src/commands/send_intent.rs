@@ -113,6 +113,7 @@ mod test {
 			info,
 			compiled_contract_dir: compiled_contract_dir.to_string(),
 			intent_files: vec![intent_file],
+			utxo_inputs: vec![],
 			zswap_state_file: None,
 			shielded_destinations: vec![],
 		};
