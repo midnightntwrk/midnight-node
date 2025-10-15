@@ -59,8 +59,10 @@ export default {
   // that binds the output from `compactc` to the physical and logical assets that are required for its
   // execution.
   contractExecutable: CompiledContract.make<CounterContract>('CounterContract', CounterContract).pipe(
+    // If the contract has no witnesses, then the `witnesses` const can be removed, and use
+    // CompiledContract.withVacantWitnesses instead:
     CompiledContract.withWitnesses(witnesses),
-    CompiledContract.withZKConfigFileAssets('./managed/counter'),
+    CompiledContract.withCompiledFileAssets('./managed/counter'),
     ContractExecutable.make
   ),
   createInitialPrivateState,
@@ -136,13 +138,13 @@ Arguments are forwarded to the contract constructor in the order in which they a
 
 #### Circuit Invocation
 ```bash
-midnight-node-toolkit-js circuit [...global_options] --state-file-path <file> <address> <circuit_id> <arg>...
+midnight-node-toolkit-js circuit [...global_options] --input <file> <address> <circuit_id> <arg>...
 ```
 
 #### Options
 The `circuit` command accepts the following options via the command line:
 
-- `--state-file-path <file>`  
+- `-i | --input <file>`  
 A path to a file containing the serialized onchain (or Ledger) state that represents the _current_ state of
 the contract. The executing circuit will apply to this given state.
 
@@ -150,10 +152,65 @@ the contract. The executing circuit will apply to this given state.
 The `circuit` command requires the following arguments:
 
 - `address`  
-The contract address (which will have been returned in the ContractDeploy as part of its deployment).
+The contract address.
 
 - `circuit_id`  
 The name of the circuit that is to be invoked.
 
 Any remaining arguments are forwarded to the contract circuit in the order in which they are received on the
 command line.
+
+#### Contract Maintenance
+```bash
+midnight-node-toolkit-js maintain contract [...global_options] --input <file> <address> <circuit_id> <arg>...
+```
+
+#### Options
+The `maintain contract` command accepts the following options via the command line:
+
+- `-i | --input <file>`  
+A path to a file containing the serialized onchain (or Ledger) state that represents the _current_ state of
+the contract.
+
+- `-s | --signing <key>` (`KEYS_SIGNING=<key>`)  
+**Optional** A BIP-340 signing key, in hex format.  
+The signing key to use when signing the maintenance update data.
+
+#### Arguments
+The `maintain contract` command requires the following arguments:
+
+- `address`  
+The contract address.
+
+- `new_signing_key`  
+The new signing key to use in future maintenance operations. Note: This should not be the same as the key
+specified with the `-s | --signing` option.
+
+#### Circuit Maintenance
+```bash
+midnight-node-toolkit-js maintain circuit [...global_options] --input <file> <address> <circuit_id> <arg>...
+```
+
+#### Options
+The `maintain contract` command accepts the following options via the command line:
+
+- `-i | --input <file>`  
+A path to a file containing the serialized onchain (or Ledger) state that represents the _current_ state of
+the contract.
+
+- `-s | --signing <key>` (`KEYS_SIGNING=<key>`)  
+**Optional** A BIP-340 signing key, in hex format.  
+The signing key to use when signing the maintenance update data.
+
+#### Arguments
+The `maintain contract` command requires the following arguments:
+
+- `address`  
+The contract address.
+
+- `circuit_id`  
+The name of the circuit to maintain.
+
+- `verifier_key_path`  
+**Optional** A path to the verifier key to insert or update for the circuit identified by `circuit_id`. If not
+present, the `circuit_id` is removed from the contract state.

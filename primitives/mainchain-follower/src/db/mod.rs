@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod queries;
+pub mod queries;
 mod types;
 
-pub use queries::*;
+pub use queries::native_token_observation::*;
 pub use types::*;

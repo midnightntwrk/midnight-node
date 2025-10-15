@@ -18,7 +18,7 @@ use super::{
 };
 
 #[cfg(feature = "std")]
-use midnight_serialize::Tagged;
+use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
 use transient_crypto::commitment::PureGeneratorPedersen;
 

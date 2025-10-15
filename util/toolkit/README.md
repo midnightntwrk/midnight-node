@@ -348,8 +348,8 @@ $ midnight-node-toolkit generate-intent circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
 >   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
->   --input-onchain-state ./test-data/contract/counter/initial_state.json
->   --input-private-state ./test-data/contract/counter/initial_zswap_state.json
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --input-private-state ./test-data/contract/counter/initial_state.json
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
 >   --output-private-state out/ps_state.json
@@ -357,7 +357,7 @@ $ midnight-node-toolkit generate-intent circuit
 >   increment
 Executing generate-intent
 Executing circuit command
-Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 stdout: , stderr: 
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
