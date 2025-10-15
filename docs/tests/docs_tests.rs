@@ -23,6 +23,20 @@ struct Package {
 	version: String,
 }
 
+fn get_runtime_spec_version() -> String {
+	let runtime_lib_str = std::fs::read_to_string("../runtime/src/lib.rs").unwrap();
+	for line in runtime_lib_str.lines() {
+		if line.trim_start().starts_with("spec_version") {
+			let v_end = line.chars().take_while(|c| *c != ',').count();
+			let v_rev: String =
+				line[..v_end].chars().rev().take_while(|c| *c != ' ').collect::<String>();
+			let v: String = v_rev.chars().rev().collect();
+			return v;
+		}
+	}
+	panic!("runtime spec version not found (runtime/src/lib.rs)");
+}
+
 #[test]
 fn check_doc_files_are_linked_in_readme() {
 	let readme_str = std::fs::read_to_string("../README.md").unwrap();
@@ -62,25 +76,22 @@ fn check_spec_version_matches_node_version() {
 	let node_manifest: Manifest =
 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
 
-	let mut found = false;
-	let runtime_lib_str = std::fs::read_to_string("../runtime/src/lib.rs").unwrap();
-	for line in runtime_lib_str.lines() {
-		if line.trim_start().starts_with("spec_version") {
-			let v_end = line.chars().take_while(|c| *c != ',').count();
-			let v_rev: String =
-				line[..v_end].chars().rev().take_while(|c| *c != ' ').collect::<String>();
-			let v: String = v_rev.chars().rev().collect();
-			let v: Vec<u32> = v.split('_').map(|s| s.parse().unwrap()).collect();
-			let v = format!("{}.{}.{}", v[0], v[1], v[2]);
+	let runtime_spec_version = get_runtime_spec_version();
 
-			assert_eq!(
-				node_manifest.package.version, v,
-				"Spec version does not match node version"
-			);
-			found = true;
-			break;
-		}
-	}
+	// Parse each part, separate with '.'
+	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
+	let v = format!("{}.{}.{}", v[0], v[1], v[2]);
 
-	assert!(found, "Spec version not found in runtime/src/lib.rs");
+	assert_eq!(node_manifest.package.version, v, "Spec version does not match node version");
+}
+
+#[test]
+fn check_toolkit_supports_new_node_version() {
+	let toolkit_runtimes_src =
+		std::fs::read_to_string("../util/toolkit/src/indexer/runtimes.rs").unwrap();
+
+	assert!(
+		toolkit_runtimes_src.contains(&get_runtime_spec_version()),
+		"Failed to find spec_version in toolkit runtimes.rs",
+	);
 }
