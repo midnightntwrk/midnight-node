@@ -14,8 +14,7 @@
 use crate::{NetworkId, WalletSeed};
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};
-use midnight_serialize::Tagged;
-use midnight_serialize::{Deserializable, Serializable};
+use midnight_serialize::{Deserializable, Serializable, Tagged};
 use std::str::FromStr;
 
 pub const HRP_CONSTANT: &str = "mn";
