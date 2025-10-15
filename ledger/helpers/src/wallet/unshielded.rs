@@ -24,7 +24,7 @@ use hex::FromHexError;
 #[derive(Copy, Clone, Debug)]
 pub struct UtxoId {
 	pub intent_hash: IntentHash,
-	pub output_no: u32,
+	pub output_number: u32,
 }
 
 impl core::fmt::Display for UtxoId {
@@ -33,7 +33,7 @@ impl core::fmt::Display for UtxoId {
 			f,
 			"{}#{}",
 			hex::encode(serialize_untagged(&self.intent_hash).unwrap()),
-			self.output_no
+			self.output_number
 		)
 	}
 }
@@ -62,7 +62,7 @@ impl std::str::FromStr for UtxoId {
 			.map_err(UtxoIdParseError::DeserializationError)?;
 		let output_no = output_number_str.parse().map_err(UtxoIdParseError::ParseIntError)?;
 
-		Ok(Self { intent_hash, output_no })
+		Ok(Self { intent_hash, output_number: output_no })
 	}
 }
 

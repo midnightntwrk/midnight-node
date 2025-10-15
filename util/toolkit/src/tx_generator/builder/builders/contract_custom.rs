@@ -138,7 +138,8 @@ impl BuildTxs for CustomContractBuilder {
 			let funding_match = funding_utxos
 				.iter()
 				.find(|u| {
-					u.intent_hash == input_utxo.intent_hash && u.output_no == input_utxo.output_no
+					u.intent_hash == input_utxo.intent_hash
+						&& u.output_no == input_utxo.output_number
 				})
 				.ok_or(CustomContractBuilderError::FailedToFindMatchingUtxo(*input_utxo))?;
 
