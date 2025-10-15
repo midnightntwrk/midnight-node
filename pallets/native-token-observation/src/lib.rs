@@ -21,9 +21,10 @@
 use derive_new::new;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
-use midnight_primitives_mainchain_follower::idp::MidnightObservationTokenMovement;
-use midnight_primitives_mainchain_follower::idp::{INHERENT_IDENTIFIER, InherentError};
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
+use midnight_primitives_native_token_observation::{
+	CardanoPosition, INHERENT_IDENTIFIER, InherentError,
+};
 pub use pallet::*;
 use pallet_timestamp::{self as timestamp};
 
