@@ -1035,7 +1035,7 @@ mod runtime {
 		RuntimeViewFunction
 	)]
 	pub struct Runtime;
-	
+
 	#[runtime::pallet_index(0)]
 	pub type System = frame_system::Pallet<Runtime>;
 	#[runtime::pallet_index(1)]
@@ -1116,7 +1116,8 @@ mod runtime {
 	#[runtime::pallet_index(44)]
 	pub type FederatedAuthority = pallet_federated_authority::Pallet<Runtime>;
 	#[runtime::pallet_index(45)]
-	pub type FederatedAuthorityObservation = pallet_federated_authority_observation::Pallet<Runtime>;
+	pub type FederatedAuthorityObservation =
+		pallet_federated_authority_observation::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
