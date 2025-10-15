@@ -20,7 +20,7 @@ use super::{
 #[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
-use transient_crypto::commitment::PureGeneratorPedersen;
+use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use frame_support::{StorageHasher, Twox128};
 use sp_externalities::{Externalities, ExternalitiesExt};
@@ -88,6 +88,7 @@ lazy_static! {
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
 }
+
 #[cfg(feature = "std")]
 impl<S: SignatureKind<D> + std::fmt::Debug, D: DB> Bridge<S, D>
 where
@@ -658,7 +659,7 @@ where
 	}
 }
 
-/// Creates a Nonce using H256
+/// Creates a Nonce using BlakeTwo256; similar Hashing type set in the Runtime.
 ///
 /// # Arguments
 /// * `separator` - an indicator from which this nonce belongs to.
@@ -666,11 +667,11 @@ where
 /// * `output_number` - its position in the list
 #[cfg(feature = "std")]
 fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce {
+	use sp_runtime::traits::{BlakeTwo256, Hash};
+
 	let concatenated = [block_hash, separator, &[output_number]].concat();
 
-	let h256 = sp_runtime::testing::H256::from_slice(&concatenated);
+	let h256 = BlakeTwo256::hash(&concatenated);
 
-	let hash_output = HashOutput(h256.0);
-
-	Nonce(hash_output)
+	Nonce(HashOutput(h256.0))
 }
