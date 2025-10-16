@@ -39,8 +39,8 @@ generate-qanet-keys:
         --NETWORK=qanet \
         --NUM_REGISTRATIONS=4 \
         --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
 
@@ -50,8 +50,8 @@ generate-preview-keys:
         --NETWORK=preview \
         --NUM_REGISTRATIONS=4 \
         --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
 
