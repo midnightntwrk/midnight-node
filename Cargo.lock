@@ -7273,7 +7273,6 @@ dependencies = [
  "hex-literal 0.4.1",
  "indicatif",
  "log",
- "midnight-ledger 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3)",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "parity-scale-codec",

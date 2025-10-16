@@ -16,7 +16,6 @@ hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 
 [dependencies]
-mn-ledger = { workspace = true, features = [ "proving" ] }
 midnight-node-ledger-helpers = { workspace = true, features = [ "unsafe" ] }
 midnight-node-metadata.workspace = true
 subxt.workspace = true
