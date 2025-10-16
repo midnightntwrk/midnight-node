@@ -64,7 +64,7 @@ export async function restoreSnapshotFromS3(
     const targetDirs = discoverDataMounts(resolvedCompose, dataRoot);
     if (targetDirs.length === 0) {
       console.warn(
-        `⚠️  No data directories discovered in compose file ${resolvedCompose}; skipping snapshot restore`,
+        `No data directories discovered in compose file ${resolvedCompose}; skipping snapshot restore`,
       );
       return;
     }
@@ -116,14 +116,25 @@ function downloadSnapshot(
 ) {
   console.log(`Downloading snapshot archive to ${destination}`);
   // const result = spawnSync("aws", ["s3", "cp", snapshotUri, destination], {
-  const result = spawnSync("aws", ["s3", "cp", "--endpoint-url", "https://cet-percentage-integrate-membrane.trycloudflare.com", snapshotUri, destination], {
-    stdio: "inherit",
-    env: {
-      ...env, 
-      AWS_ACCESS_KEY_ID: "minioadmin",
-      AWS_SECRET_ACCESS_KEY: "minioadmin"
-     },
-  });
+  const result = spawnSync(
+    "aws",
+    [
+      "s3",
+      "cp",
+      "--endpoint-url",
+      "https://cet-percentage-integrate-membrane.trycloudflare.com",
+      snapshotUri,
+      destination,
+    ],
+    {
+      stdio: "inherit",
+      env: {
+        ...env,
+        AWS_ACCESS_KEY_ID: "minioadmin",
+        AWS_SECRET_ACCESS_KEY: "minioadmin",
+      },
+    },
+  );
 
   if (result.status !== 0) {
     throw new Error(`Failed to download snapshot from ${snapshotUri}`);
@@ -250,7 +261,6 @@ function isUnderDataRoot(candidate: string, dataRoot: string): boolean {
 }
 
 function replicateSnapshot(sourceDir: string, targets: string[]): void {
-
   const entries = fs.readdirSync(sourceDir);
   for (const target of targets) {
     fs.rmSync(target, { recursive: true, force: true });
@@ -259,7 +269,7 @@ function replicateSnapshot(sourceDir: string, targets: string[]): void {
     for (const entry of entries) {
       const src = path.join(sourceDir, entry);
       const destBase = path.join(target, entry);
-      
+
       // Hack for networks with unexpected names due to misconfiguration(ie devnet/qanet)
       if (entry === "chains") {
         const chainChildren = fs.readdirSync(src);
@@ -269,7 +279,6 @@ function replicateSnapshot(sourceDir: string, targets: string[]): void {
             const qanetDest = path.join(destBase, "qanet");
             fs.cpSync(srcChild, qanetDest, { recursive: true });
           }
-
         }
       }
 

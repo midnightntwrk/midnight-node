@@ -20,8 +20,7 @@ import { DEFAULT_S3_ROOT } from "../lib/resources";
 
 const DEFAULT_SNAPSHOT_IMAGE =
   process.env.MN_SNAPSHOT_IMAGE ?? "amazon/aws-cli:2.17.16";
-const DEFAULT_S3_URI =
-  process.env.MN_SNAPSHOT_S3_URI ?? DEFAULT_S3_ROOT;
+const DEFAULT_S3_URI = process.env.MN_SNAPSHOT_S3_URI ?? DEFAULT_S3_ROOT;
 const DEFAULT_TIMEOUT_MINUTES = 30;
 
 interface KubernetesMetadata {
@@ -45,7 +44,12 @@ interface KubernetesPersistentVolumeClaimList {
 }
 
 const SNAPSHOT_SCRIPT = (() => {
-  const snapshot_script_path = path.resolve(__dirname, "..", "scripts", "snapshot.sh");
+  const snapshot_script_path = path.resolve(
+    __dirname,
+    "..",
+    "scripts",
+    "snapshot.sh",
+  );
   if (existsSync(snapshot_script_path)) {
     return readFileSync(snapshot_script_path, "utf-8");
   }
@@ -366,7 +370,7 @@ function waitForStatefulSetReady(
     );
   } catch (error) {
     console.warn(
-      `⚠️  Timed out waiting for statefulset ${name} to be ready: ${(error as Error).message}`,
+      `Timed out waiting for statefulset ${name} to be ready: ${(error as Error).message}`,
     );
   }
 }

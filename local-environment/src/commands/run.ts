@@ -158,9 +158,7 @@ function resolveComposeFile(namespace: string): string {
   const candidates = globSync(searchPath);
 
   if (candidates.length === 0) {
-    console.error(
-      `No .network.yaml file found for namespace '${namespace}'`,
-    );
+    console.error(`No .network.yaml file found for namespace '${namespace}'`);
     process.exit(1);
   }
 
