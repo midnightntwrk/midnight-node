@@ -112,7 +112,7 @@ mod mock;
 /// With committee size 5 we would like any validator to have two slots for signing certificates.
 /// 5 * 2 * 6 = 60
 /// (Needs to multiply cleanly into 24h)
-pub const SLOTS_PER_EPOCH: u32 = 1200;
+pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod check_call_filter;
