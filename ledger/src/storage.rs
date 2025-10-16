@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "std")]
 use ledger_storage::db::DB;
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "std")]
 use mn_ledger::structure::SignatureKind;
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "std")]
 use midnight_node_ledger_helpers::{
 	ProofMarker, PureGeneratorPedersen, Tagged, Transaction, deserialize,
 };
@@ -36,7 +36,7 @@ pub fn get_root(state: &[u8]) -> Vec<u8> {
 	bytes
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "std")]
 pub fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
@@ -56,7 +56,7 @@ where
 	bytes
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "std")]
 pub fn init_storage_paritydb(
 	dir: &std::path::Path,
 	genesis_state: &[u8],

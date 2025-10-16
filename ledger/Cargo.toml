@@ -88,10 +88,11 @@ std = [
     "sha2",
     "toml",
     "derive-where",
-    "rand"
+    "rand",
+    "midnight-node-ledger-helpers"
 ]
 runtime-benchmarks = []
-test-utils = ["midnight-node-ledger-helpers"]
+test-utils = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_runtime)'] }
