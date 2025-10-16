@@ -22,7 +22,7 @@
     "allure-playwright": "^3.0.8",
     "cross-env": "^7.0.3",
     "expect-playwright": "^0.8.0",
-    "testcontainers": "^10.3.2",
+    "testcontainers": "^11.7.1",
     "ts-node": "^10.9.1",
     "typescript": "^5.2.2",
     "winston": "^3.11.0",

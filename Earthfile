@@ -39,8 +39,8 @@ generate-qanet-keys:
         --NETWORK=qanet \
         --NUM_REGISTRATIONS=4 \
         --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
 
@@ -50,8 +50,8 @@ generate-preview-keys:
         --NETWORK=preview \
         --NUM_REGISTRATIONS=4 \
         --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
 
@@ -163,6 +163,7 @@ rebuild-genesis-state:
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
+    USER root
     ENV RUST_BACKTRACE=1
     COPY --if-exists res/genesis/genesis_funding_wallets_${SUFFIX}.txt funding_wallets.txt
     COPY --if-exists secrets/${SUFFIX}-genesis-seeds.json /secrets/genesis-seeds.json
@@ -350,6 +351,7 @@ rebuild-chainspec:
     ARG NETWORK
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
+    USER root
 
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
 
@@ -771,8 +773,10 @@ node-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
 
     RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN mkdir -p node
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
@@ -786,6 +790,7 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -801,6 +806,7 @@ node-benchmarks-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
 
     RUN mkdir -p /artifacts-$NATIVEARCH
 
@@ -830,6 +836,7 @@ toolkit-image:
     ARG EARTHLY_GIT_SHORT_HASH
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
+    USER root
 
     RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
 
@@ -843,12 +850,14 @@ toolkit-image:
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
@@ -859,6 +868,7 @@ hardfork-test-upgrader-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
+    USER root
 
     COPY +build/artifacts-$NATIVEARCH/upgrader /
     COPY +build/artifacts-$NATIVEARCH/test/* /
@@ -986,7 +996,7 @@ partnerchains-dev:
 run-node-mocked:
     FROM +node-image
     ENV SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"
-    RUN CFG_PRESET=dev /midnight-node
+    RUN CFG_PRESET=dev /entrypoint.sh
 
 # testnet-sync-e2e tries to sync the node with the first 7000 blocks of testnet
 testnet-sync-e2e:

@@ -217,7 +217,10 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			return self.prove_tx(tx).await;
 		};
 
-		self.pay_fees(tx, network_id, now, ttl).await
+		let tx = self.pay_fees(tx, network_id, now, ttl).await?;
+		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
+		Ok(tx)
 	}
 
 	async fn pay_fees(

@@ -25,7 +25,7 @@
         },
         "sidechain": {
           "genesisUtxo": "c79a414c8d8cf691caa654861cfb0555c6a7f2016d0b2ae79cc4fc4377372e74#1",
-          "slotsPerEpoch": 1200
+          "slotsPerEpoch": 300
         },
         "midnight": {
           "networkId": 1,

@@ -12,10 +12,57 @@
 // limitations under the License.
 
 use super::super::{
-	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput,
+	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash,
 	IntoWalletAddress, NetworkId, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress,
-	WalletSeed, network,
+	WalletSeed, deserialize_untagged, network, serialize_untagged,
 };
+use hex::FromHexError;
+use std::num::ParseIntError;
+
+#[derive(Copy, Clone, Debug)]
+pub struct UtxoId {
+	pub intent_hash: IntentHash,
+	pub output_number: u32,
+}
+
+impl core::fmt::Display for UtxoId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"{}#{}",
+			hex::encode(serialize_untagged(&self.intent_hash).unwrap()),
+			self.output_number
+		)
+	}
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UtxoIdParseError {
+	#[error("wrong number of parts (!= 2)")]
+	WrongNumberOfParts,
+	#[error("hex decode error")]
+	HexDecodeError(FromHexError),
+	#[error("deserialization error")]
+	DeserializationError(std::io::Error),
+	#[error("parse int error")]
+	ParseIntError(ParseIntError),
+}
+
+impl std::str::FromStr for UtxoId {
+	type Err = UtxoIdParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (intent_hash_hex, output_number_str) =
+			s.split_once('#').ok_or(UtxoIdParseError::WrongNumberOfParts)?;
+		let intent_hash_bytes =
+			hex::decode(intent_hash_hex).map_err(UtxoIdParseError::HexDecodeError)?;
+		let intent_hash = deserialize_untagged(&mut intent_hash_bytes.as_slice())
+			.map_err(UtxoIdParseError::DeserializationError)?;
+		let output_number = output_number_str.parse().map_err(UtxoIdParseError::ParseIntError)?;
+
+		Ok(Self { intent_hash, output_number })
+	}
+}
 
 #[derive(Clone, Debug)]
 pub struct UnshieldedWallet {
@@ -113,5 +160,11 @@ impl TryFrom<&WalletAddress> for UnshieldedWallet {
 			verifying_key: None,
 			signing_key: None,
 		})
+	}
+}
+
+impl From<UserAddress> for UnshieldedWallet {
+	fn from(user_address: UserAddress) -> Self {
+		Self { user_address, verifying_key: None, signing_key: None }
 	}
 }

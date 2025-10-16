@@ -6978,7 +6978,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -7103,7 +7103,6 @@ dependencies = [
  "midnight-zswap 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3)",
  "moka 0.11.3",
  "parity-scale-codec",
- "rand 0.8.5",
  "scale-info",
  "scale-info-derive",
  "serde",
@@ -7157,7 +7156,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "subxt 0.44.0",
 ]

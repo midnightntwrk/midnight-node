@@ -42,7 +42,6 @@ lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
@@ -87,9 +86,8 @@ std = [
     "zswap-hf",
     "sha2",
     "toml",
-    "derive-where",
-    "rand",
-    "midnight-node-ledger-helpers"
+    "midnight-node-ledger-helpers",
+    "derive-where"
 ]
 runtime-benchmarks = []
 test-utils = []
