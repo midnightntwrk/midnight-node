@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-common-variables: &common-variables
   CFG_PRESET: "devnet"
 

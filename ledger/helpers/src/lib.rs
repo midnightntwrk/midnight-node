@@ -22,8 +22,9 @@ pub use base_crypto::{
 };
 pub use coin_structure::{
 	coin::{
-		Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey, QualifiedInfo,
-		ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
+		Info as CoinInfo, NIGHT, Nonce, Nullifier as ShieldedNullifier, PublicAddress,
+		PublicKey as CoinPublicKey, QualifiedInfo, ShieldedTokenType, TokenType,
+		UnshieldedTokenType, UserAddress,
 	},
 	contract::ContractAddress,
 	transfer::Recipient,
@@ -92,7 +93,6 @@ pub use rand::{
 	Rng, SeedableRng,
 	rngs::{OsRng, StdRng},
 };
-pub use rand_chacha::ChaCha20Rng;
 pub use zswap::{
 	Delta, Input, Offer, Output, Transient, ZSWAP_EXPECTED_FILES,
 	error::OfferCreationFailed,

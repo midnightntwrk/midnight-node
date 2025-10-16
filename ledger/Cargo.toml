@@ -14,14 +14,14 @@ ledger-storage = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
 zswap = { workspace = true, optional = true }
 
-# mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
-# base-crypto-hf = { workspace = true, optional = true }
-# coin-structure-hf = { workspace = true, optional = true }
-# onchain-runtime-hf = { workspace = true, optional = true }
-# midnight-serialize-hf = { workspace = true, optional = true }
-# ledger-storage-hf = { workspace = true, optional = true }
-# transient-crypto-hf = { workspace = true, optional = true }
-# zswap-hf = { workspace = true, optional = true }
+mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
+base-crypto-hf = { workspace = true, optional = true }
+coin-structure-hf = { workspace = true, optional = true }
+onchain-runtime-hf = { workspace = true, optional = true }
+midnight-serialize-hf = { workspace = true, optional = true }
+ledger-storage-hf = { workspace = true, optional = true }
+transient-crypto-hf = { workspace = true, optional = true }
+zswap-hf = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
@@ -42,7 +42,6 @@ lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true}
 scale-info.workspace = true
 
@@ -77,18 +76,17 @@ std = [
     "ledger-storage",
     "transient-crypto",
     "zswap",
-    # "mn-ledger-hf",
-    # "base-crypto-hf",
-    # "coin-structure-hf",
-    # "onchain-runtime-hf",
-    # "midnight-serialize-hf",
-    # "ledger-storage-hf",
-    # "transient-crypto-hf",
-    # "zswap-hf",
+    "mn-ledger-hf",
+    "base-crypto-hf",
+    "coin-structure-hf",
+    "onchain-runtime-hf",
+    "midnight-serialize-hf",
+    "ledger-storage-hf",
+    "transient-crypto-hf",
+    "zswap-hf",
     "sha2",
     "toml",
-    "derive-where",
-    "rand"
+    "derive-where"
 ]
 runtime-benchmarks = []
 test-utils = ["midnight-node-ledger-helpers"]

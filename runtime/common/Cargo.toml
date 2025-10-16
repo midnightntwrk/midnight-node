@@ -1,0 +1,23 @@
+[package]
+name = "runtime-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+pallet-collective = { workspace = true }
+pallet-membership = { workspace = true }
+sp-runtime = { workspace = true }
+sp-std = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"frame-support/std",
+	"frame-system/std",
+	"pallet-collective/std",
+	"pallet-membership/std",
+	"sp-runtime/std",
+	"sp-std/std",
+]

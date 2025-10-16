@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod runtimes;
+
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{BTreeMap, VecDeque},
@@ -24,7 +25,10 @@ use std::{
 use subxt::{
 	OnlineClient,
 	blocks::{Block, ExtrinsicEvents},
-	config::{HashFor, substrate::H256},
+	config::{
+		HashFor,
+		substrate::{ConsensusEngineId, DigestItem, H256},
+	},
 };
 use thiserror::Error;
 use tokio::{
@@ -34,7 +38,10 @@ use tokio::{
 };
 
 use crate::{
-	hash_to_str, mn_meta,
+	hash_to_str,
+	indexer::runtimes::{
+		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, RuntimeVersion,
+	},
 	serde_def::{self, SourceBlockTransactions},
 };
 
@@ -70,6 +77,10 @@ pub enum IndexerError {
 	StopFailed(#[from] JoinError),
 	#[error("indexer received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
+	#[error("indexer received a block with invalid node version: {0}")]
+	InvalidProtocolVersion(parity_scale_codec::Error),
+	#[error("indexer received a block made with unsupported node version {0}")]
+	UnsupportedBlockVersion(u32),
 }
 
 struct InternalState<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send>
@@ -98,7 +109,7 @@ impl IndexerHandle {
 		let _ = self
 			.stop_chan
 			.send(true)
-			.inspect_err(|e| println!("failed to send stop signal: {e}"));
+			.inspect_err(|e| eprintln!("failed to send stop signal: {e}"));
 		self.task_handle.await??;
 		Ok(())
 	}
@@ -143,7 +154,7 @@ where
 
 		let dir = Self::dir();
 		if std::fs::create_dir_all(&dir).is_err() {
-			println!("Failed to create sync cache dir {}", dir);
+			eprintln!("Failed to create sync cache dir {}", dir);
 			return Ok(default);
 		}
 
@@ -151,12 +162,12 @@ where
 
 		let data: Option<SyncCache<S, P>> = std::fs::File::open(&cache_filename)
 			.map(|f| {
-				println!("sync cache detected, loading...");
+				eprintln!("sync cache detected, loading...");
 				match bincode::deserialize_from(&f) {
 					Ok(cache) => Some(cache),
 					Err(e) => {
-						println!("error reading sync file: {:?}", e);
-						println!("will attempt to delete");
+						eprintln!("error reading sync file: {:?}", e);
+						eprintln!("will attempt to delete");
 						None
 					},
 				}
@@ -191,7 +202,7 @@ where
 		let s = bincode::serialize(self).unwrap();
 		match std::fs::write(Self::filename(self.genesis), s) {
 			Ok(_) => (),
-			Err(e) => println!("failed to write sync cache: {}", e),
+			Err(e) => eprintln!("failed to write sync cache: {}", e),
 		}
 	}
 }
@@ -245,7 +256,7 @@ where
 			match rx_start.await {
 				Ok(_) => Ok(IndexerHandle { task_handle: handle, stop_chan: tx_stop }),
 				Err(e) => {
-					println!("{:?}", handle.await);
+					eprintln!("{:?}", handle.await);
 					Err(IndexerError::StartFailed(e.to_string()))
 				},
 			}
@@ -258,6 +269,34 @@ where
 		self: Arc<Self>,
 		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
+		let version_number = block
+			.header()
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| {
+				const VERSION_ID: ConsensusEngineId = *b"MNSV";
+				if let DigestItem::Consensus(VERSION_ID, data) = item {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				} else {
+					None
+				}
+			})
+			.expect("no runtime version found")?;
+		match version_number {
+			RuntimeVersion::V0_17_0 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_0>(block).await
+			},
+			RuntimeVersion::V0_17_1 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_1>(block).await
+			},
+		}
+	}
+
+	async fn process_block_with_protocol<M: MidnightMetadata>(
+		self: Arc<Self>,
+		block: &Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+	) -> Result<SourceBlockTransactions<S, P>, IndexerError> {
 		let block_hash = block.hash();
 		let state_root = self.node_client.get_state_root_at(Some(block_hash)).await?;
 		let block_header = block.header();
@@ -267,78 +306,50 @@ where
 			.extrinsics()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the transactions: {}", err));
-
-		let calls = extrinsics
-			.iter()
-			.map(|extrinsic| {
-				let call = extrinsic.as_root_extrinsic::<mn_meta::Call>()?;
-				Ok((call, extrinsic))
-			})
-			.filter_ok(|(call, _)| {
-				matches!(
-					call,
-					mn_meta::Call::Midnight(_)
-						| mn_meta::Call::MidnightSystem(_)
-						| mn_meta::Call::NativeTokenObservation(_)
-						| mn_meta::Call::Timestamp(_)
-				)
-			})
-			.collect::<Result<Vec<_>, subxt::Error>>()?;
-
-		let timestamp_ms = *calls
-			.iter()
-			.find_map(|(call, _)| match call {
-				mn_meta::Call::Timestamp(mn_meta::timestamp::Call::set { now }) => Some(now),
-				_ => None,
-			})
-			.expect("failed to find a timestamp extrinsic in block");
-		let context = BlockContext {
-			tblock: Timestamp::from_secs(timestamp_ms / 1000),
-			tblock_err: 30,
-			parent_block_hash: HashOutput(parent_block_hash.0),
-		};
-
 		let events = block
 			.events()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
-		let transactions: Vec<_> = calls
-			.into_iter()
-			.filter_map(|(call, ext)| match call {
-				mn_meta::Call::Midnight(mn_meta::midnight::Call::send_mn_transaction {
-					midnight_tx,
-				}) => {
-					let tx = tagged_deserialize(&mut midnight_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing tx: {}", err));
-					Some(SerdeTransaction::Midnight(tx))
-				},
-				mn_meta::Call::MidnightSystem(
-					mn_meta::midnight_system::Call::send_mn_system_transaction {
-						midnight_system_tx,
-					},
-				) => {
-					let tx = tagged_deserialize(&mut midnight_system_tx.as_slice())
-						.unwrap_or_else(|err| panic!("Error deserializing system tx: {}", err));
-					Some(SerdeTransaction::System(tx))
-				},
-				_ => {
-                    let ext_hash = ext.hash();
-                    let ext_events = ExtrinsicEvents::new(ext_hash, ext.index(), events.clone());
-                    ext_events.iter().filter_map(Result::ok).filter_map(|ev|
-					    ev.as_event::<mn_meta::midnight_system::events::SystemTransactionApplied>().expect("Failed to decode event")
-                    ).map(|ev| {
-                        let mut serialized =
-                            ev.0.serialized_system_transaction.as_slice();
-                        let tx =
-                            tagged_deserialize(&mut serialized).unwrap_or_else(|err| {
-                                panic!("Error deserializing system tx from event: {}", err)
-                            });
-                        SerdeTransaction::System(tx)
-                    }).next()
-                }
-			})
-			.collect();
+		let mut timestamp_ms = None;
+		let mut transactions = vec![];
+		for ext in extrinsics.iter() {
+			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
+				continue;
+			};
+			if let Some(ts) = M::timestamp_set(&call) {
+				if timestamp_ms.is_some() {
+					panic!("this block has two timestamps");
+				}
+				timestamp_ms = Some(ts);
+			} else if let Some(bytes) = M::send_mn_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::Midnight(tx));
+			} else if let Some(bytes) = M::send_mn_system_transaction(&call) {
+				let tx = tagged_deserialize(&mut bytes.as_slice())
+					.map_err(|err| IndexerError::TransactionDeserializeError(err.to_string()))?;
+				transactions.push(SerdeTransaction::System(tx));
+			} else if M::check_for_events(&call) {
+				let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
+				for ev in ext_events.iter().filter_map(Result::ok) {
+					if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
+						let bytes = M::system_transaction_applied(event);
+						let tx = tagged_deserialize(&mut bytes.as_slice()).map_err(|err| {
+							IndexerError::TransactionDeserializeError(err.to_string())
+						})?;
+						transactions.push(SerdeTransaction::System(tx));
+					}
+				}
+			}
+		}
+
+		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
+		let context = BlockContext {
+			tblock: Timestamp::from_secs(timestamp_ms / 1000),
+			tblock_err: 30,
+			parent_block_hash: HashOutput(parent_block_hash.0),
+		};
 		Ok(SourceBlockTransactions { transactions, context, state_root })
 	}
 
@@ -364,7 +375,7 @@ where
 
 		let mut mn_block = retry(ExponentialBackoff::default(), || async {
 			self.clone().fetch_midnight_block(start_hash).await.map_err(|e| {
-				println!("rpc fetch failed, retrying: {e}");
+				eprintln!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})
 		})
@@ -394,7 +405,7 @@ where
 
 			mn_block = retry(ExponentialBackoff::default(), || async {
 				self.clone().fetch_midnight_block(parent_block_hash).await.map_err(|e| {
-					println!("rpc fetch failed, retrying: {e}");
+					eprintln!("rpc fetch failed, retrying: {e}");
 					backoff::Error::transient(e)
 				})
 			})
@@ -488,7 +499,7 @@ where
 			let _b = rx.recv().await.unwrap();
 			processed += 1;
 			if start.elapsed() > Duration::from_secs(1) {
-				println!("speed: {processed} per sec ({r}/{total})");
+				eprintln!("speed: {processed} per sec ({r}/{total})");
 				start = std::time::Instant::now();
 				processed = 0;
 			}
@@ -519,7 +530,7 @@ where
 		let num_blocks_to_fetch =
 			u64::from(latest_block.number()) - cache.until.map(|u| u.1).unwrap_or(0);
 
-		println!(
+		eprintln!(
 			"fetching {} -> {}",
 			hash_to_str(latest_block.hash()),
 			cache.until.map(|u| hash_to_str(u.0)).unwrap_or("genesis".to_string())
@@ -549,7 +560,7 @@ where
 			num_txs = s.blocks.iter().map(|b| b.transactions.len()).sum::<usize>();
 		}
 
-		println!(
+		eprintln!(
 			"finished syncing {} transactions from {} blocks in {:.2}s. New blocks: {}, New txs: {}, Cached blocks: {}",
 			num_txs,
 			latest_block.number(),
@@ -564,7 +575,7 @@ where
 			let num_blocks_synced = self.state.lock().await.blocks.len();
 			let _ = tx_start
 				.send(num_blocks_synced)
-				.inspect_err(|e| println!("Sender dropped: {e}"));
+				.inspect_err(|e| eprintln!("Sender dropped: {e}"));
 		}
 
 		loop {

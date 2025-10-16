@@ -40,7 +40,6 @@ use midnight_node_toolkit::{
 };
 
 use crate::commands::{
-	contract_address::ContractAddressValue,
 	contract_state::{self, ContractStateArgs},
 	show_address::ShowAddress,
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
@@ -199,13 +198,14 @@ pub(crate) async fn run_command(
 		Commands::ShowWallet(args) => {
 			let result = show_wallet::execute(args).await?;
 			match result {
-				ShowWalletResult::FromSeed(result) => {
+				ShowWalletResult::Debug(result) => {
 					println!("{:#?}", result.wallet);
 					println!("Unshielded UTXOs: {:#?}", result.utxos)
 				},
-				ShowWalletResult::FromAddress(utxos) => {
-					println!("Unshielded UTXOS: {:#?}", utxos)
+				ShowWalletResult::Json(json) => {
+					println!("{}", serde_json::to_string_pretty(&json)?);
 				},
+				ShowWalletResult::DryRun(()) => (),
 			}
 
 			Ok(())
@@ -238,13 +238,8 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::ContractAddress(args) => {
-			let res = contract_address::execute(args)?;
-			match res {
-				ContractAddressValue::Both(both) => {
-					println!("{}", serde_json::to_string_pretty(&both)?);
-				},
-				ContractAddressValue::Either(address) => println!("{address}"),
-			};
+			let address = contract_address::execute(args)?;
+			println!("{address}");
 			Ok(())
 		},
 		Commands::ContractState(args) => contract_state::execute(args).await,

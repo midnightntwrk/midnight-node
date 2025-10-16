@@ -20,8 +20,7 @@ use super::{
 
 use base_crypto_local::{hash::HashOutput, time::Timestamp};
 use ledger_storage_local::db::DB;
-use midnight_serialize::Tagged;
-use midnight_serialize_local::Deserializable;
+use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use coin_structure_local::coin::{UnshieldedTokenType, UserAddress};

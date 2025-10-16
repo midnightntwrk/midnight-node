@@ -249,7 +249,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		sidechain: SidechainConfig {
 			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo())
 				.expect("failed to convert genesis_utxo"),
-			slots_per_epoch: sidechain_slots::SlotsPerEpoch(1200),
+			slots_per_epoch: sidechain_slots::SlotsPerEpoch(300),
 			..Default::default()
 		},
 		session_committee_management: SessionCommitteeManagementConfig {

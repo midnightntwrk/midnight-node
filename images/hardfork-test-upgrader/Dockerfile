@@ -12,5 +12,8 @@ ENV RUNTIME_PATH=/midnight_node_runtime.compact.compressed.wasm
 COPY node/Cargo.toml /node/
 RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
 RUN rm -rf /node
+COPY util/upgrader/bin/entrypoint.sh /entrypoint.sh
 
-ENTRYPOINT ["/upgrader"]
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+USER appuser
+ENTRYPOINT ["/entrypoint.sh"]

@@ -24,6 +24,9 @@ pub struct GenerateSampleIntentArgs {
 	// Directory to where the intent file will be saved
 	#[arg(long)]
 	pub dest_dir: String,
+	/// Dry-run - don't generate any intents, just print out the settings
+	#[arg(long)]
+	pub dry_run: bool,
 }
 
 pub async fn execute(args: GenerateSampleIntentArgs) {
@@ -40,8 +43,17 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let mut builder = builder_and_contract_type.0;
 	let partial_file_name = builder_and_contract_type.1;
 
-	let source = TxGenerator::source(args.source).await.expect("failed to init tx source");
-	let prover = TxGenerator::<SignatureType, ProofType>::prover(args.proof_server);
+	let source = TxGenerator::source(args.source, args.dry_run)
+		.await
+		.expect("failed to init tx source");
+	let prover = TxGenerator::<SignatureType, ProofType>::prover(args.proof_server, args.dry_run);
+
+	if args.dry_run {
+		println!("Dry-run: generate intent for contract call {:?}", args.contract_call);
+		println!("Dry-run: write files to directory {:?}", args.dest_dir);
+		return ();
+	}
+
 	let received_txs = source.get_txs().await.expect("should receive txs");
 
 	builder
@@ -87,6 +99,7 @@ mod test {
 			source,
 			proof_server: None,
 			dest_dir: ".".to_string(),
+			dry_run: false,
 		};
 
 		execute(args).await;

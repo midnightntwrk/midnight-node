@@ -48,11 +48,11 @@ pub async fn execute_upgrade(
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
 
 	// Authority member keypairs
-	// Council members: Alice, Bob, Charlie
+	// Technical Committee members: Alice, Bob, Charlie
 	let alice = Keypair::from_uri(&SecretUri::from_str("//Alice")?)?;
 	let bob = Keypair::from_uri(&SecretUri::from_str("//Bob")?)?;
 	let _charlie = Keypair::from_uri(&SecretUri::from_str("//Charlie")?)?; // Reserved for optional 3rd vote
-	// Technical Committee members: Dave, Eve, Ferdie
+	// Council members: Dave, Eve, Ferdie
 	let dave = Keypair::from_uri(&SecretUri::from_str("//Dave")?)?;
 	let eve = Keypair::from_uri(&SecretUri::from_str("//Eve")?)?;
 	let _ferdie = Keypair::from_uri(&SecretUri::from_str("//Ferdie")?)?; // Reserved for optional 3rd vote
@@ -92,7 +92,7 @@ pub async fn execute_upgrade(
 
 	let council_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&council_proposal, &alice)
+		.sign_and_submit_then_watch_default(&council_proposal, &dave)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -107,15 +107,15 @@ pub async fn execute_upgrade(
 
 	// Step 5: Council members vote (need 2 out of 3: Alice and Bob)
 	log::info!("Council members voting...");
-	vote_on_proposal(&api, &alice, "Council", council_proposal_hash, council_proposal_index, true)
+	vote_on_proposal(&api, &dave, "Council", council_proposal_hash, council_proposal_index, true)
 		.await?;
-	vote_on_proposal(&api, &bob, "Council", council_proposal_hash, council_proposal_index, true)
+	vote_on_proposal(&api, &eve, "Council", council_proposal_hash, council_proposal_index, true)
 		.await?;
 	// Charlie doesn't need to vote since we already have 2/3
 
 	// Step 6: Close Council proposal
 	log::info!("Closing Council proposal...");
-	close_proposal(&api, &alice, "Council", council_proposal_hash, council_proposal_index).await?;
+	close_proposal(&api, &dave, "Council", council_proposal_hash, council_proposal_index).await?;
 
 	// Step 7: Technical Committee proposes to approve the federated motion
 	log::info!("Technical Committee proposing federated motion approval...");
@@ -130,7 +130,7 @@ pub async fn execute_upgrade(
 
 	let tech_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&tech_proposal, &dave)
+		.sign_and_submit_then_watch_default(&tech_proposal, &alice)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -146,7 +146,7 @@ pub async fn execute_upgrade(
 	log::info!("Technical Committee members voting...");
 	vote_on_proposal(
 		&api,
-		&dave,
+		&alice,
 		"TechnicalCommittee",
 		tech_proposal_hash,
 		tech_proposal_index,
@@ -155,7 +155,7 @@ pub async fn execute_upgrade(
 	.await?;
 	vote_on_proposal(
 		&api,
-		&eve,
+		&bob,
 		"TechnicalCommittee",
 		tech_proposal_hash,
 		tech_proposal_index,
@@ -166,7 +166,7 @@ pub async fn execute_upgrade(
 
 	// Step 9: Close Technical Committee proposal
 	log::info!("Closing Technical Committee proposal...");
-	close_proposal(&api, &dave, "TechnicalCommittee", tech_proposal_hash, tech_proposal_index)
+	close_proposal(&api, &alice, "TechnicalCommittee", tech_proposal_hash, tech_proposal_index)
 		.await?;
 
 	log::info!("Federated authority motion approved by both councils!");

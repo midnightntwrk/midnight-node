@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-common-variables: &common-variables
   CFG_PRESET: "qanet"
   CARDANO_SECURITY_PARAMETER: 432
@@ -66,8 +64,8 @@ services:
       - ./data/node-1:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_01_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_03_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000002
         --validator
@@ -75,6 +73,7 @@ services:
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --rpc-cors=all
         --public-addr /dns4/node1/tcp/30334
@@ -100,8 +99,8 @@ services:
       - ./data/node-2:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_02_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_04_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000003
         --validator
@@ -110,6 +109,7 @@ services:
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
         --public-addr /dns4/node2/tcp/30335
 
@@ -134,8 +134,8 @@ services:
       - ./data/node-3:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_03_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_05_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000004
         --validator
@@ -145,6 +145,7 @@ services:
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
         --public-addr /dns4/node3/tcp/30336
 
@@ -169,8 +170,8 @@ services:
       - ./data/node-4:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_04_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_06_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000005
         --validator
@@ -180,6 +181,7 @@ services:
         --public-addr /dns4/node4/tcp/30337
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -202,8 +204,8 @@ services:
       - ./data/node-5:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_05_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_07_0}
 
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000006
@@ -213,6 +215,7 @@ services:
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
         --public-addr /dns4/node5/tcp/30338
     healthcheck:
@@ -231,13 +234,13 @@ services:
         condition: service_healthy
     ports:
       - "9955:9944"
-      - "30339:30333"
+      - "30339:30339"
     volumes:
-      - ./data/node-5:/data
+      - ./data/node-6:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_06_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_08_0}
 
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000007
@@ -249,6 +252,7 @@ services:
         --public-addr /dns4/node6/tcp/30339
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -266,13 +270,13 @@ services:
         condition: service_healthy
     ports:
       - "9956:9944"
-      - "30340:30333"
+      - "30340:30340"
     volumes:
       - ./data/node-7:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_07_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_09_0}
 
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000008
@@ -284,6 +288,7 @@ services:
         --public-addr /dns4/node7/tcp/30340
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -301,23 +306,164 @@ services:
         condition: service_healthy
     ports:
       - "9957:9944"
-      - "30341:30333"
+      - "30341:30341"
     volumes:
       - ./data/node-8:/data
     environment:
       <<: *common-variables
-      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_08_0}
+      SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_10_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000009
         --validator
         --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
         --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --port 30340
+        --port 30341
         --rpc-port 9944
         --public-addr /dns4/node8/tcp/30341
         --base-path=/data
         --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node9:
+    <<: *node-common
+    hostname: node9
+    container_name: node9
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9958:9944"
+      - "30342:30342"
+    volumes:
+      - ./data/node-9:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_11_0}
+      ARGS: >
+        --node-key=000000000000000000000000000000000000000000000000000000000000000a
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30342
+        --rpc-port 9944
+        --public-addr /dns4/node9/tcp/30342
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node10:
+    <<: *node-common
+    hostname: node10
+    container_name: node10
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9959:9944"
+      - "30343:30343"
+    volumes:
+      - ./data/node-10:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_12_0}
+      ARGS: >
+        --node-key=000000000000000000000000000000000000000000000000000000000000000b
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30343
+        --rpc-port 9944
+        --public-addr /dns4/node10/tcp/30343
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node11:
+    <<: *node-common
+    hostname: node11
+    container_name: node11
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9960:9944"
+      - "30344:30344"
+    volumes:
+      - ./data/node-11:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_13_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_13_0}
+      ARGS: >
+        --node-key=000000000000000000000000000000000000000000000000000000000000000c
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30344
+        --rpc-port 9944
+        --public-addr /dns4/node11/tcp/30344
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node12:
+    <<: *node-common
+    hostname: node12
+    container_name: node12
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9961:9944"
+      - "30345:30345"
+    volumes:
+      - ./data/node-12:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_14_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_14_0}
+      ARGS: >
+        --node-key=000000000000000000000000000000000000000000000000000000000000000d
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30345
+        --rpc-port 9944
+        --public-addr /dns4/node12/tcp/30345
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -335,3 +481,8 @@ volumes:
   node-data-5:
   node-data-6:
   node-data-7:
+  node-data-8:
+  node-data-9:
+  node-data-10:
+  node-data-11:
+  node-data-12:

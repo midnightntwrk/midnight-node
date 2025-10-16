@@ -15,25 +15,29 @@ use super::{
 	base_crypto_local, ledger_storage_local, midnight_serialize_local, mn_ledger_local,
 	onchain_runtime_local, transient_crypto_local, zswap_local,
 };
-use base_crypto_local::{hash::HashOutput as HashOutputLedger, time::Timestamp};
+use base_crypto_local::{
+	cost_model::{CostDuration, SyntheticCost},
+	hash::HashOutput as HashOutputLedger,
+	time::Timestamp,
+};
 use derive_where::derive_where;
-use ledger_storage_local as storage;
-use ledger_storage_local::db::DB;
 use ledger_storage_local::{
-	Storable,
+	self as storage, Storable,
 	arena::{ArenaKey, Sp},
+	db::DB,
 	storable::Loader,
 	storage::default_storage,
 };
-use midnight_node_ledger_helpers::{StorableSyntheticCost, SyntheticCost};
-use midnight_serialize_local as serialize;
-use midnight_serialize_local::Tagged;
+
+// TODO: Uncomment when toolkit implements hard-fork and nom-hard-fork Ledger versions
+// use midnight_node_ledger_helpers::StorableSyntheticCost;
+use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
 use onchain_runtime_local::context::BlockContext as LedgerBlockContext;
-use std::{borrow::Borrow, collections::HashMap};
+use std::{borrow::Borrow, collections::HashMap, marker::PhantomData};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
@@ -44,6 +48,63 @@ use super::{
 };
 
 use crate::common::types::BlockContext;
+
+// TODO: Remove when toolkit implements hard-fork and nom-hard-fork Ledger versions
+// ---------------------------------------------------------------------------------
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+struct StorableLedgerState<D: DB> {
+	state: LedgerState<D>,
+	block_fullness: StorableSyntheticCost<D>,
+}
+
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+pub struct StorableSyntheticCost<D: DB> {
+	read_time: u64,
+	compute_time: u64,
+	block_usage: u64,
+	bytes_written: u64,
+	bytes_churned: u64,
+	_marker: PhantomData<D>,
+}
+
+impl<D: DB> Tagged for StorableLedgerState<D> {
+	fn tag() -> std::borrow::Cow<'static, str> {
+		<LedgerState<D> as Tagged>::tag()
+	}
+
+	fn tag_unique_factor() -> String {
+		<LedgerState<D> as Tagged>::tag_unique_factor()
+	}
+}
+
+impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
+	fn from(value: SyntheticCost) -> Self {
+		Self {
+			read_time: value.read_time.into_picoseconds(),
+			compute_time: value.compute_time.into_picoseconds(),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+			_marker: PhantomData,
+		}
+	}
+}
+impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
+	fn from(value: StorableSyntheticCost<D>) -> Self {
+		Self {
+			read_time: CostDuration::from_picoseconds(value.read_time),
+			compute_time: CostDuration::from_picoseconds(value.compute_time),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+		}
+	}
+}
+// ---------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
@@ -140,7 +201,7 @@ impl<D: DB> Ledger<D> {
 		let valid_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
-				mn_ledger::verify::WellFormedStrictness::default(),
+				mn_ledger_local::verify::WellFormedStrictness::default(),
 				ctx.block_context.tblock,
 			)
 			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;

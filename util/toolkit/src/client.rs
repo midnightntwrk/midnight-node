@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mn_meta;
 use midnight_node_ledger_helpers::NetworkId;
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
