@@ -491,7 +491,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util .
+    	metadata rustfmt.toml util relay .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -678,7 +678,7 @@ build-normal:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util .
+    ledger node pallets primitives metadata res runtime util relay .
 
     ARG NATIVEARCH
 
@@ -709,7 +709,7 @@ build-fork:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives res metadata runtime util .
+    ledger node pallets primitives res metadata runtime util relay .
 
     ARG NATIVEARCH
 
