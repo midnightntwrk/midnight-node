@@ -154,7 +154,7 @@ test.describe('Substrate-powered Midnight Node basic tests', async () => {
 
     const ledgerVersion = await api.rpc.midnight.ledgerVersion()
 
-    test.expect(ledgerVersion.toHuman()).toEqual('ledger-6.0.0-alpha.3')
+    test.expect(ledgerVersion.toHuman()).toEqual('ledger-6.1.0-alpha.3')
   })
 
   test('midnight_apiVersions works correctly', async () => {
