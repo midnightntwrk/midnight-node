@@ -741,12 +741,14 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		);
 	}
 
-	sc_storage_monitor::StorageMonitorService::try_spawn(
-		storage_monitor_params,
-		database_source.path().expect("db path available").into(),
-		&task_manager.spawn_essential_handle(),
-	)
-	.map_err(|e| sc_service::Error::Other(e.to_string()))?;
+	if let Some(database_path) = database_source.path() {
+		sc_storage_monitor::StorageMonitorService::try_spawn(
+			storage_monitor_params,
+			database_path.to_path_buf(),
+			&task_manager.spawn_essential_handle(),
+		)
+		.map_err(|e| ServiceError::Application(e.into()))?;
+	}
 
 	Ok(task_manager)
 }
