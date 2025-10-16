@@ -11,7 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{super::common::BlockContext, ledger_storage_local, mn_ledger_local, types::{InvalidError, MalformedError, SystemTransactionError}};
+use super::{
+	super::common::BlockContext,
+	ledger_storage_local, mn_ledger_local,
+	types::{InvalidError, MalformedError, SystemTransactionError},
+};
 use ledger_storage_local::db::DB;
 use mn_ledger_local::error::{
 	MalformedTransaction, SystemTransactionError as LedgerSystemTransactionError,
