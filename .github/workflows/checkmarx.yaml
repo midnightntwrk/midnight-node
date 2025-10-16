@@ -38,4 +38,4 @@ jobs:
           cx-tenant: ${{ secrets.CX_TENANT }}
           scs-repo-token: ${{ secrets.MIDNIGHTCI_REPO }}
           upload-to-github: 'true'
-          file-filter: '!res/*,!local-environment/src/networks/*,'
+          file-filter: '!res/*,!local-environment/src/networks/*'
