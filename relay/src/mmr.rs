@@ -1,5 +1,9 @@
-use mmr_rpc::LeavesProof;
+use crate::{
+	error::Error,
+	types::{Block, ExtraData, Hash},
+};
 
+use mmr_rpc::LeavesProof;
 use parity_scale_codec::Decode;
 use sp_consensus_beefy::mmr::BeefyAuthoritySet;
 use sp_core::H256;
@@ -7,11 +11,6 @@ use sp_mmr_primitives::{
 	EncodableOpaqueLeaf, LeafProof, NodeIndex,
 	mmr_lib::{helper::get_peaks, leaf_index_to_mmr_size},
 	utils::NodesUtils,
-};
-
-use crate::{
-	error::Error,
-	types::{Block, ExtraData, Hash},
 };
 
 pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<Block, H256, H256, ExtraData>;

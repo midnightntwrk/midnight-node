@@ -12,14 +12,11 @@ mod relayer;
 mod types;
 
 use clap::Parser;
-
-pub use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-
+use error::Error;
+use std::{fs::File, io::BufReader};
 use subxt::{backend::rpc::RpcClient, ext::subxt_rpcs::rpc_params};
 
-use std::{fs::File, io::BufReader};
-
-use error::Error;
+pub use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 
 /// Used for inserting keys to the keystore
 #[derive(serde::Serialize, serde::Deserialize)]

@@ -1,22 +1,23 @@
 //! Encodings for representing BEEFY commitments and related
 //! data structures as Cardano PlutusData.
-use mmr_rpc::LeavesProof;
-use pallas::ledger::primitives::BigInt;
-use pallas::{
-	codec::utils::MaybeIndefArray,
-	ledger::primitives::{BoundedBytes, Constr, PlutusData},
-};
-
-use sp_consensus_beefy::known_payloads::MMR_ROOT_ID;
-use sp_consensus_beefy::mmr::BeefyAuthoritySet;
-use sp_core::H256;
-
 use std::fmt::Debug;
 
-use crate::authorities::AuthoritiesProof;
-use crate::helpers::ToHex;
-use crate::mmr::LeavesProofExt;
-use crate::types::{BeefySignedCommitment, BeefyValidatorSet, Block, Hashes};
+use crate::{
+	authorities::AuthoritiesProof,
+	helpers::ToHex,
+	mmr::LeavesProofExt,
+	types::{BeefySignedCommitment, BeefyValidatorSet, Block, Hashes},
+};
+
+use mmr_rpc::LeavesProof;
+
+use pallas::{
+	codec::utils::MaybeIndefArray,
+	ledger::primitives::{BigInt, BoundedBytes, Constr, PlutusData},
+};
+
+use sp_consensus_beefy::{known_payloads::MMR_ROOT_ID, mmr::BeefyAuthoritySet};
+use sp_core::H256;
 
 // Known encoding tag
 pub const TAG: u64 = 121;

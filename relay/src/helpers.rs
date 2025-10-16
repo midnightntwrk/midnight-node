@@ -1,15 +1,16 @@
-use pallas::codec::minicbor::to_vec;
 use std::fmt::Debug;
 
-use sp_consensus_beefy::{ValidatorSet, ecdsa_crypto::Public, mmr::BeefyAuthoritySet};
-use sp_core::{ByteArray, Bytes};
+use crate::{mmr::MmrLeaf, mn_meta};
 
 use mn_meta::runtime_types::sp_consensus_beefy::{
 	ValidatorSet as MidnBeefyValidatorSet, ecdsa_crypto::Public as MidnBeefyPublic,
 	mmr::BeefyAuthoritySet as MidnBeefyAuthSet,
 };
 
-use crate::{mmr::MmrLeaf, mn_meta};
+use pallas::codec::minicbor::to_vec;
+
+use sp_consensus_beefy::{ValidatorSet, ecdsa_crypto::Public, mmr::BeefyAuthoritySet};
+use sp_core::{ByteArray, Bytes};
 
 pub trait ToHex {
 	fn as_hex(&self) -> String;

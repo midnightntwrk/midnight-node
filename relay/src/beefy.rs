@@ -1,13 +1,3 @@
-use pallas::{
-	codec::utils::MaybeIndefArray,
-	ledger::primitives::{BigInt, Constr, PlutusData},
-};
-use sp_core::H256;
-
-use mmr_rpc::LeavesProof;
-
-use sp_consensus_beefy::mmr::BeefyAuthoritySet;
-
 use crate::{
 	cardano_encoding::{AuthoritySetCommitment, TAG, ToPlutusData},
 	error::Error,
@@ -15,6 +5,14 @@ use crate::{
 	types::Block,
 };
 
+use mmr_rpc::LeavesProof;
+
+use pallas::{
+	codec::utils::MaybeIndefArray,
+	ledger::primitives::{BigInt, Constr, PlutusData},
+};
+use sp_consensus_beefy::mmr::BeefyAuthoritySet;
+use sp_core::H256;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BeefyConsensusState {
 	pub latest_height: u64,

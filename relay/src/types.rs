@@ -1,6 +1,5 @@
-use sp_core::H256;
-
 use sp_consensus_beefy::ecdsa_crypto::Signature;
+use sp_core::H256;
 
 pub type Block = u32;
 pub type BlockHash = H256;
