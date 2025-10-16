@@ -22,9 +22,6 @@
     "noEmit": false,
     "noFallthroughCasesInSwitch": true,
     "strictPropertyInitialization": false,
-    "types": [
-      "expect-playwright"
-    ],
     "baseUrl": ".",
     "rootDirs": [
       "./utils",
