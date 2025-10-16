@@ -1,7 +1,6 @@
 use clap::Args;
 use midnight_node_toolkit::{
 	ProofType, SignatureType,
-	serde_def::DeserializedTransactionsWithContext,
 	tx_generator::{
 		TxGenerator,
 		builder::{Builder, CustomContractArgs},
@@ -21,29 +20,32 @@ pub struct SendIntentArgs {
 	proof_server: Option<String>,
 	#[command(flatten)]
 	contract_args: CustomContractArgs,
+	/// Dry-run - don't generate any txs, just print out the settings
+	#[arg(long)]
+	dry_run: bool,
 }
 
-pub async fn execute(
-	args: SendIntentArgs,
-) -> Result<
-	DeserializedTransactionsWithContext<SignatureType, ProofType>,
-	Box<dyn std::error::Error + Send + Sync>,
-> {
-	let builder = Builder::CustomContract(args.contract_args);
+pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let builder = Builder::ContractCustom(args.contract_args);
 
 	let generator = TxGenerator::<SignatureType, ProofType>::new(
 		args.source,
 		args.destination,
 		builder,
 		args.proof_server,
+		args.dry_run,
 	)
 	.await?;
+
+	if args.dry_run {
+		return Ok(());
+	}
 
 	let received_txs = generator.get_txs().await?;
 	let generated_txs = generator.build_txs(&received_txs).await?;
 	generator.send_txs(&generated_txs).await?;
 
-	Ok(generated_txs)
+	Ok(())
 }
 
 #[cfg(test)]
@@ -71,7 +73,7 @@ mod test {
 			let args = vec![
 				"midnight-node-toolkit",
 				"generate-sample-intent",
-				"--src-files",
+				"--src-file",
 				src_files,
 				"--dest-dir",
 				&out_dir_str,
@@ -97,7 +99,7 @@ mod test {
 		};
 
 		let destination = Destination {
-			dest_url: None,
+			dest_urls: vec![],
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
 			to_bytes: false,
@@ -110,12 +112,19 @@ mod test {
 		let contract_args = CustomContractArgs {
 			info,
 			compiled_contract_dir: compiled_contract_dir.to_string(),
-			intent_file,
+			intent_files: vec![intent_file],
+			utxo_inputs: vec![],
 			zswap_state_file: None,
 			shielded_destinations: vec![],
 		};
 
-		let args = SendIntentArgs { source, destination, proof_server: None, contract_args };
+		let args = SendIntentArgs {
+			source,
+			destination,
+			proof_server: None,
+			contract_args,
+			dry_run: false,
+		};
 
 		execute(args).await.expect("should work during sending");
 		assert!(fs::exists(output_file).expect("should_exist"));
@@ -133,7 +142,7 @@ mod test {
 		let args = vec![
 			"midnight-node-toolkit",
 			"send-intent",
-			"--src-files",
+			"--src-file",
 			"../../res/genesis/genesis_block_undeployed.mn",
 			"./test-data/contract/mint/deploy_tx.mn",
 			"--intent-file",

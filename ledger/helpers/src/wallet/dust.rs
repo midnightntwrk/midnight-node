@@ -8,7 +8,6 @@ use mn_ledger::{
 	events::Event,
 	structure::{LedgerParameters, ProofPreimageMarker},
 };
-use rand::SeedableRng;
 use thiserror::Error;
 
 use crate::{
@@ -22,7 +21,7 @@ use crate::{
 pub struct DustWallet<D: DB> {
 	pub public_key: DustPublicKey,
 	secret_key: Option<DustSecretKey>,
-	dust_local_state: Option<DustLocalState<D>>,
+	pub dust_local_state: Option<DustLocalState<D>>,
 	// We track the UTXOs we spent, to avoid spending the same UTXO twice in one batch of TXs.
 	// This set is cleared in `process_ttls`, because that is called when a new block is produced.
 	spent_utxos: HashSet<DustNullifier>,
@@ -45,8 +44,7 @@ impl<D: DB> IntoWalletAddress for DustWallet<D> {
 
 impl<D: DB> DustWallet<D> {
 	fn from_seed(derived_seed: [u8; 32], params: Option<&LedgerParameters>) -> Self {
-		let mut rng = rand_chacha::ChaCha12Rng::from_seed(derived_seed);
-		let secret_key = DustSecretKey::sample(&mut rng);
+		let secret_key = DustSecretKey::derive_secret_key(&derived_seed);
 		let public_key = secret_key.clone().into();
 		let dust_local_state = params.map(|p| DustLocalState::new(p.dust));
 		let spent_utxos = HashSet::new();

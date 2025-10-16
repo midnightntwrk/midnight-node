@@ -77,9 +77,11 @@ coin_public=$(
 
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    generate-intent deploy -c /toolkit-js/contract/mint.config.ts \
+    generate-intent deploy \
+    -c /toolkit-js/contract/mint.config.ts \
     --output-intent "/out/$deploy_intent_filename" \
     --output-private-state "/out/$private_state_filename" \
     --output-zswap-state "/out/$deploy_zswap_filename" \
@@ -90,6 +92,7 @@ test -f "$tempdir/$private_state_filename"
 
 echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent --intent-file "/out/$deploy_intent_filename" \
@@ -98,22 +101,23 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    generate-txs --src-files /out/$deploy_tx_filename -r 1 send
+    generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
 contract_address=$(
     docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address \
-    --src-file /out/$deploy_tx_filename \
-    --network undeployed \
-    --untagged
+    --src-file /out/$deploy_tx_filename
 )
 
 echo "Get contract state"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-state --contract-address $contract_address \
@@ -124,6 +128,7 @@ domain_sep=$(echo "feeb000000000000000000000000000000000000000000000000000000000
 
 echo "Generate circuit call intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c /toolkit-js/contract/mint.config.ts \
@@ -148,6 +153,7 @@ shielded_destination=$(
 
 echo "Generate and send mint tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent \

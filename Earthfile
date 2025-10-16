@@ -20,7 +20,9 @@ local-build-node-release:
 generate-seeds:
     ARG NETWORK
     ARG OUTPUT_FILE
-    FROM python:3.12
+    # renovate: datasource=docker packageName=python
+    ARG PYTHON_VERSION=3.12
+    FROM python:$PYTHON_VERSION
     RUN mkdir -p secrets
     COPY scripts/generate-genesis-seeds.py .
     # If a previous version of the file exists, bring it in.
@@ -28,21 +30,7 @@ generate-seeds:
     RUN python3 generate-genesis-seeds.py -c 4 -o secrets/${OUTPUT_FILE}
     SAVE ARTIFACT secrets/${OUTPUT_FILE} AS LOCAL secrets/${OUTPUT_FILE}
 
-# Network-specific targets using the common seed generator:
-generate-testnet-02-genesis-seeds:
-    BUILD +generate-seeds --NETWORK=testnet-02 --OUTPUT_FILE=testnet-02-genesis-seeds.json
 
-
-# generate-testnet-02-keys generates node keys and seeds and outputs a mock file + aws secret files
-generate-testnet-02-keys:
-    BUILD +generate-keys \
-        --NETWORK=testnet-02 \
-        --NUM_REGISTRATIONS=4 \
-        --NUM_PERMISSIONED=12 \
-        --D_REGISTERED=100 \
-        --D_PERMISSIONED=1100 \
-        --NUM_BOOT_NODES=3 \
-        --NUM_VALIDATOR_NODES=12
 
 # generate-qanet-keys generates node keys and seeds and outputs a mock file + aws secret files
 generate-qanet-keys:
@@ -55,6 +43,20 @@ generate-qanet-keys:
         --D_PERMISSIONED=1100 \
         --NUM_BOOT_NODES=3 \
         --NUM_VALIDATOR_NODES=12
+
+generate-preview-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preview \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=100 \
+        --D_PERMISSIONED=1100 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preview-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
@@ -122,8 +124,12 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
+    LET NODE_VERSION = "$(cat node_version)"
     COPY +get-metadata/metadata.scale /metadata.scale
     SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata.scale
+    SAVE ARTIFACT /metadata.scale AS LOCAL metadata/static/midnight_metadata_${NODE_VERSION}.scale
 
 # rebuild-sqlx rebuilds the subxt offline data for compile-time query checking
 rebuild-sqlx:
@@ -141,8 +147,11 @@ rebuild-sqlx:
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
-    FROM node:22-bookworm
-    RUN npm install -g @aiken-lang/aiken
+    # aiken doesn't support arm yet.
+    FROM --platform=linux/amd64 node:22-bookworm
+    # renovate: datasource=npm packageName=aiken-lang/aiken
+    ENV aiken_version=1.1.19
+    RUN npm install -g @aiken-lang/aiken@${aiken_version}
     COPY tests/redemption-skeleton .
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
@@ -154,6 +163,7 @@ rebuild-genesis-state:
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
+    USER root
     ENV RUST_BACKTRACE=1
     COPY --if-exists res/genesis/genesis_funding_wallets_${SUFFIX}.txt funding_wallets.txt
     COPY --if-exists secrets/${SUFFIX}-genesis-seeds.json /secrets/genesis-seeds.json
@@ -184,36 +194,41 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-contract \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls deploy \
+                contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
-                --network ${NETWORK} \
                 --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --untagged | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
+                | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
                 --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
                 --dest-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls call \
+                contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn out/contract_tx_1_deploy_${SUFFIX}.mn out/contract_tx_2_store_${SUFFIX}.mn out/contract_tx_3_check_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/contract_tx_3_check_${SUFFIX}.mn \
                 --dest-file out/contract_tx_4_change_authority_${SUFFIX}.mn \
                 --to-bytes \
-                contract-calls maintenance \
+                contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
             && cp out/contract*.mn /res/test-contract \
@@ -225,7 +240,7 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-zswap \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -243,7 +258,7 @@ rebuild-genesis-state:
                 --unshielded \
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-files out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${SUFFIX}.mn \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -274,7 +289,7 @@ rebuild-genesis-state:
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -282,10 +297,10 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
-                --network $NETWORK \
-                --untagged | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+                | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
-                --src-files /res/genesis/genesis_block_${SUFFIX}.mn /res/test-data/contract/counter/deploy_tx.mn \
+                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
@@ -304,9 +319,10 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-devnet:
+rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
         --NETWORK=devnet \
+        --SUFFIX=node-dev-01 \
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
@@ -317,24 +333,25 @@ rebuild-genesis-state-qanet:
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-testnet-02:
+rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=testnet \
-        --SUFFIX=testnet-02 \
+        --NETWORK=devnet \
+        --SUFFIX=preview \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
-    BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-testnet-02
+    BUILD +rebuild-genesis-state-preview
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
     ARG NETWORK
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
+    USER root
 
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
 
@@ -349,9 +366,8 @@ rebuild-chainspec:
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=node-dev-01
-    BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=testnet-02
+    BUILD +rebuild-chainspec --NETWORK=preview
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -442,7 +458,9 @@ node-ci-image-single-platform:
     RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
 
     # subwasm can be used to diff between runtimes
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v0.21.3
+    # renovate: datasource=github-releases packageName=chevdor/subwasm
+    ARG SUBWASM_VERSION=0.21.3
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -563,6 +581,13 @@ check-nodejs:
     COPY tests/ ./
     RUN yarn lint
 
+# check-benchmarks verifies that runtime-benchmarks feature compiles
+check-benchmarks:
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo check --locked --features runtime-benchmarks
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -720,6 +745,22 @@ build-undo:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
+build-benchmarks:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util .
+
+    ARG NATIVEARCH
+
+    # Build with runtime-benchmarks feature
+    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+        cargo build --workspace --locked --release --features runtime-benchmarks
+
+    RUN mkdir -p /artifacts-$NATIVEARCH \
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
+
 subwasm:
     ARG NATIVEARCH
     FROM +build-normal
@@ -732,8 +773,10 @@ node-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
 
     RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN mkdir -p node
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
@@ -747,6 +790,7 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -757,12 +801,42 @@ node-image:
     COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
+# node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
+node-benchmarks-image:
+    ARG NATIVEARCH
+    ARG EARTHLY_GIT_SHORT_HASH
+    FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
+
+    RUN mkdir -p /artifacts-$NATIVEARCH
+
+    COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /midnight-node
+
+    # TODO if git source version is picked up by substrate then we can just split by space and take second.
+    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+
+    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
+
+    RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
+    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.title=midnight-node-benchmarks
+    LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
+    SAVE IMAGE --push \
+        $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG \
+        $GHCR_REGISTRY/midnight-node-benchmarks:$NODE_DEV_01_TAG
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
+
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
+    USER root
 
     RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
 
@@ -776,12 +850,14 @@ toolkit-image:
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
@@ -792,6 +868,7 @@ hardfork-test-upgrader-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
+    USER root
 
     COPY +build/artifacts-$NATIVEARCH/upgrader /
     COPY +build/artifacts-$NATIVEARCH/test/* /
@@ -919,7 +996,7 @@ partnerchains-dev:
 run-node-mocked:
     FROM +node-image
     ENV SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"
-    RUN CFG_PRESET=dev /midnight-node
+    RUN CFG_PRESET=dev /entrypoint.sh
 
 # testnet-sync-e2e tries to sync the node with the first 7000 blocks of testnet
 testnet-sync-e2e:

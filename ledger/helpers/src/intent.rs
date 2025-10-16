@@ -18,8 +18,15 @@ use crate::{
 	UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
+use ledger_storage::storage::Array;
 use mn_ledger::structure::ContractAction;
-use std::{io, path::Path, sync::Arc};
+use rand::{CryptoRng, Rng};
+use std::{
+	io,
+	path::Path,
+	sync::Arc,
+	time::{SystemTime, UNIX_EPOCH},
+};
 use transient_crypto::proofs::ProvingKeyMaterial;
 
 pub type SegmentId = u16;
@@ -117,6 +124,28 @@ impl<D: DB + Clone> IntentCustom<D> {
 		Ok(Self { intent, resolver })
 	}
 
+	pub fn new_from_actions<R: Rng + CryptoRng + ?Sized>(
+		rng: &mut R,
+		actions: &[ContractAction<ProofPreimageMarker, D>],
+		resolver: &'static Resolver,
+	) -> Self {
+		let now = Timestamp::from_secs(
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs(),
+		);
+		let intent = Intent {
+			guaranteed_unshielded_offer: None,
+			fallible_unshielded_offer: None,
+			actions: Array::new_from_slice(actions),
+			dust_actions: None,
+			ttl: now,
+			binding_commitment: rng.r#gen(),
+		};
+		Self { intent, resolver }
+	}
+
 	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
 		let mut guaranteed_effects: Option<ContractEffects<D>> = None;
 		let mut fallible_effects: Option<ContractEffects<D>> = None;
@@ -199,5 +228,32 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 		intent.ttl = ttl;
 		println!("custom intent: {intent:#?}");
 		intent
+	}
+}
+
+#[async_trait]
+impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
+	async fn build(
+		&mut self,
+		_rng: &mut StdRng,
+		context: Arc<LedgerContext<D>>,
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let mut actions = intent.actions.clone();
+
+		for action in self.intent.actions.iter() {
+			actions = actions.push((*action).clone());
+		}
+
+		context.update_resolver(self.resolver).await;
+
+		IntentOf::<D> {
+			guaranteed_unshielded_offer: intent.guaranteed_unshielded_offer.clone(),
+			fallible_unshielded_offer: intent.fallible_unshielded_offer.clone(),
+			actions,
+			dust_actions: intent.dust_actions.clone(),
+			ttl: intent.ttl,
+			binding_commitment: intent.binding_commitment,
+		}
 	}
 }

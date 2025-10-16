@@ -15,10 +15,15 @@ COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+ENV MIDNIGHT_PP=/.cache/midnight/zk-params
+ENV MN_SYNC_CACHE=/.cache/sync
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
 RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
 RUN rm -rf /node
+COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
-ENTRYPOINT ["/midnight-node-toolkit"]
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+USER appuser
+ENTRYPOINT ["/entrypoint.sh"]
