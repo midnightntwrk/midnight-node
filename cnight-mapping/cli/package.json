@@ -1,0 +1,25 @@
+{
+  "name": "cnight-mapping-cli",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "description": "CLI for Registering, Deregistering, and Updating a cNight mapping",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "cnight-mapping-cli": "dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin.js",
+    "start": "dist/bin.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@lucid-evolution/lucid": "^0.4.29",
+    "@tsconfig/node22": "^22.0.2",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.0"
+  }
+}
