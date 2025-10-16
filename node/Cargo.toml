@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "0.17.0"
+version = "0.17.1"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
