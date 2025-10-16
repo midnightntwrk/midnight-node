@@ -19,7 +19,6 @@ This guide explains how to use actionlint for validating GitHub Actions workflow
 - Workflow syntax and structure
 - Expression syntax (e.g., `${{ }}`)
 - Shell script syntax (via shellcheck)
-- Python script syntax (via pyflakes)
 - Action inputs and outputs
 - Job dependencies
 - Reusable workflow inputs
