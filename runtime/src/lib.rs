@@ -223,8 +223,14 @@ pub mod opaque {
 	impl From<SessionKeys> for sidechain_domain::CandidateKeys {
 		fn from(value: SessionKeys) -> Self {
 			Self(vec![
-				sidechain_domain::CandidateKey::new(AURA, value.aura.into_inner().to_raw().to_vec()),
-				sidechain_domain::CandidateKey::new(GRANDPA, value.grandpa.into_inner().to_raw().to_vec()),
+				sidechain_domain::CandidateKey::new(
+					AURA,
+					value.aura.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
+					GRANDPA,
+					value.grandpa.into_inner().to_raw().to_vec(),
+				),
 			])
 		}
 	}
@@ -520,7 +526,10 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 				return vec![];
 			};
 
-			let candidate = PermissionedCandidateData { sidechain_public_key, keys: session_keys.clone().into() };
+			let candidate = PermissionedCandidateData {
+				sidechain_public_key,
+				keys: session_keys.clone().into(),
+			};
 
 			permissioned_candidates.push(candidate);
 		}
