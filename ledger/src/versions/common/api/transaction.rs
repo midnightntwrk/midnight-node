@@ -404,11 +404,11 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::super::super::super::CRATE_NAME;
+	use super::super::super::super::helpers_local::extract_info_from_tx_with_context;
 	use super::super::super::api;
 	use super::*;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
-	use midnight_node_ledger_helpers::extract_info_from_tx_with_context;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
 

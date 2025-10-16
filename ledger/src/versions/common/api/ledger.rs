@@ -16,9 +16,7 @@ use super::{
 	onchain_runtime_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{
-	cost_model::{CostDuration, SyntheticCost},
-	hash::HashOutput as HashOutputLedger,
-	time::Timestamp,
+	cost_model::SyntheticCost, hash::HashOutput as HashOutputLedger, time::Timestamp,
 };
 use derive_where::derive_where;
 use ledger_storage_local::{
@@ -29,15 +27,14 @@ use ledger_storage_local::{
 	storage::default_storage,
 };
 
-// TODO: Uncomment when toolkit implements hard-fork and nom-hard-fork Ledger versions
-// use midnight_node_ledger_helpers::StorableSyntheticCost;
+use super::super::super::helpers_local::StorableSyntheticCost;
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
 use onchain_runtime_local::context::BlockContext as LedgerBlockContext;
-use std::{borrow::Borrow, collections::HashMap, marker::PhantomData};
+use std::{borrow::Borrow, collections::HashMap};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
@@ -48,63 +45,6 @@ use super::{
 };
 
 use crate::common::types::BlockContext;
-
-// TODO: Remove when toolkit implements hard-fork and nom-hard-fork Ledger versions
-// ---------------------------------------------------------------------------------
-#[derive(Debug, Storable)]
-#[derive_where(Clone)]
-#[storable(db = D)]
-struct StorableLedgerState<D: DB> {
-	state: LedgerState<D>,
-	block_fullness: StorableSyntheticCost<D>,
-}
-
-#[derive(Debug, Storable)]
-#[derive_where(Clone)]
-#[storable(db = D)]
-pub struct StorableSyntheticCost<D: DB> {
-	read_time: u64,
-	compute_time: u64,
-	block_usage: u64,
-	bytes_written: u64,
-	bytes_churned: u64,
-	_marker: PhantomData<D>,
-}
-
-impl<D: DB> Tagged for StorableLedgerState<D> {
-	fn tag() -> std::borrow::Cow<'static, str> {
-		<LedgerState<D> as Tagged>::tag()
-	}
-
-	fn tag_unique_factor() -> String {
-		<LedgerState<D> as Tagged>::tag_unique_factor()
-	}
-}
-
-impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
-	fn from(value: SyntheticCost) -> Self {
-		Self {
-			read_time: value.read_time.into_picoseconds(),
-			compute_time: value.compute_time.into_picoseconds(),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-			_marker: PhantomData,
-		}
-	}
-}
-impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
-	fn from(value: StorableSyntheticCost<D>) -> Self {
-		Self {
-			read_time: CostDuration::from_picoseconds(value.read_time),
-			compute_time: CostDuration::from_picoseconds(value.compute_time),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-		}
-	}
-}
-// ---------------------------------------------------------------------------------
 
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
@@ -307,11 +247,11 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 #[cfg(test)]
 mod tests {
 	use super::super::super::super::CRATE_NAME;
+	use super::super::super::super::helpers_local::{NetworkId, extract_info_from_tx_with_context};
 	use super::super::Api;
 	use super::*;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
-	use midnight_node_ledger_helpers::{NetworkId, extract_info_from_tx_with_context};
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},

@@ -30,7 +30,9 @@ lazy_static! {
 }
 
 #[cfg(not(feature = "test-utils"))]
-use super::super::{DUST_EXPECTED_FILES, FetchMode, MidnightDataProvider, OutputMode};
+use super::super::{
+	DUST_EXPECTED_FILES, DustResolver, FetchMode, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
+};
 
 #[cfg(not(feature = "test-utils"))]
 lazy_static! {
