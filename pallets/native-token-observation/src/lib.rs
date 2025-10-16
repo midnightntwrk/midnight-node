@@ -610,7 +610,8 @@ pub mod pallet {
 		) -> DispatchResult {
 			ensure_none(origin)?;
 
-			let now = timestamp::Pallet::<T>::get();
+			let now_ms = timestamp::Pallet::<T>::get();
+			let now = now_ms / 1000;
 
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 
