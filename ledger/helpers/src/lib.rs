@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod utils;
+
+pub use utils::find_dependency_version;
+
 #[path = "versions"]
 pub mod hard_fork_test {
 	#[cfg(feature = "std")]

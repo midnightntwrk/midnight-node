@@ -12,14 +12,11 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
-use ledger_storage::db::DB;
-
-#[cfg(feature = "std")]
-use mn_ledger::structure::SignatureKind;
-
-#[cfg(feature = "std")]
-use midnight_node_ledger_helpers::{
-	ProofMarker, PureGeneratorPedersen, Tagged, Transaction, deserialize,
+use {
+	ledger_storage::db::DB,
+	midnight_serialize::{self, Tagged},
+	mn_ledger::structure::{ProofMarker, SignatureKind, Transaction},
+	transient_crypto::commitment::PureGeneratorPedersen,
 };
 
 pub fn get_root(state: &[u8]) -> Vec<u8> {
@@ -37,7 +34,7 @@ pub fn get_root(state: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(feature = "std")]
-pub fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
+fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
 {
@@ -45,7 +42,8 @@ where
 	use ledger_storage::storage::default_storage;
 
 	let state: mn_ledger::structure::LedgerState<D> =
-		deserialize(&mut &initial_state[..]).expect("failed to deserialize ledger genesis state");
+		midnight_serialize::tagged_deserialize(&mut &initial_state[..])
+			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
 	let state = default_storage::<D>().arena.alloc(state);

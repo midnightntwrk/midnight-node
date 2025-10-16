@@ -62,7 +62,7 @@ pub use super::{
 			StandardTransaction, SystemTransaction, Transaction, TransactionCostModel,
 			TransactionHash, UnshieldedOffer, Utxo, UtxoOutput, UtxoSpend, VerifiedTransaction,
 		},
-		test_utilities::{PUBLIC_PARAMS, Pk, test_resolver, verifier_key},
+		test_utilities::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 		verify::WellFormedStrictness,
 	},
 	onchain_runtime::{
