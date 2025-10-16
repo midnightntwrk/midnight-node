@@ -7,7 +7,9 @@ use midnight_primitives_mainchain_follower::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 	data_source::ObservedUtxos,
 };
-use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+use midnight_primitives_native_token_observation::{
+	CardanoPosition, INHERENT_IDENTIFIER, TokenObservationConfig,
+};
 use pallet_native_token_observation::{MappingEntry, Mappings, mock};
 use serde::{Deserialize, Serialize};
 use sidechain_domain::McBlockHash;
@@ -46,7 +48,7 @@ fn create_inherent(
 	let mut inherent_data = InherentData::new();
 	inherent_data
 		.put_data(
-			midnight_primitives_mainchain_follower::idp::INHERENT_IDENTIFIER,
+			INHERENT_IDENTIFIER,
 			&MidnightObservationTokenMovement { utxos, next_cardano_position },
 		)
 		.expect("inherent data insertion should not fail");

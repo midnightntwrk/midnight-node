@@ -230,3 +230,30 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 		intent
 	}
 }
+
+#[async_trait]
+impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
+	async fn build(
+		&mut self,
+		_rng: &mut StdRng,
+		context: Arc<LedgerContext<D>>,
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let mut actions = intent.actions.clone();
+
+		for action in self.intent.actions.iter() {
+			actions = actions.push((*action).clone());
+		}
+
+		context.update_resolver(self.resolver).await;
+
+		IntentOf::<D> {
+			guaranteed_unshielded_offer: intent.guaranteed_unshielded_offer.clone(),
+			fallible_unshielded_offer: intent.fallible_unshielded_offer.clone(),
+			actions,
+			dust_actions: intent.dust_actions.clone(),
+			ttl: intent.ttl,
+			binding_commitment: intent.binding_commitment,
+		}
+	}
+}
