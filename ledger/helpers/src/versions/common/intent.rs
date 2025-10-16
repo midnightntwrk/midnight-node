@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![cfg(feature = "unsafe")]
+
 use super::{
 	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,
 	DustResolver, FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode,

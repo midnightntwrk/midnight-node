@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![cfg(feature = "unsafe")]
+
 use super::{
 	ArenaKey, BlockContext, CostDuration, DB, DUST_EXPECTED_FILES, Deserializable, DustResolver,
 	Event, FetchMode, HashOutput, LedgerState, Loader, MidnightDataProvider, Offer, OutputMode,

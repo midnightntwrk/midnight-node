@@ -41,6 +41,7 @@ bip39 = "2.0.0"
 
 [features]
 default = ["std"]
+unsafe = [] # usafe here means the API can panic
 std = [
 	"mn-ledger",
 	"base-crypto",

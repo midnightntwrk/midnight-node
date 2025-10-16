@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![cfg(feature = "unsafe")]
+
 use super::{
 	DB, Input, LedgerContext, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType, Sp, StdRng,
 	TokenInfo, WalletSeed, WalletState,

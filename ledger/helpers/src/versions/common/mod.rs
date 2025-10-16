@@ -221,7 +221,7 @@ pub fn deserialize<T: Deserializable + Tagged, H: std::io::Read>(
 	Ok(val)
 }
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "unsafe"))]
 pub fn token_type_decode(input: &str) -> TokenType {
 	let bytes = hex::decode(input).expect("Token value should be an hex");
 
@@ -230,7 +230,7 @@ pub fn token_type_decode(input: &str) -> TokenType {
 	TokenType::Shielded(ShieldedTokenType(HashOutput(tt_bytes)))
 }
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "unsafe"))]
 pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext) {
 	let tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB> =
 		deserialize(bytes)

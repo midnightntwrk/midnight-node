@@ -43,7 +43,7 @@ moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-midnight-node-ledger-helpers = { workspace = true, optional = true}
+midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
 [dev-dependencies]

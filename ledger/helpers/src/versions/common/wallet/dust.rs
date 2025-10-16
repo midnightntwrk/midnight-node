@@ -21,6 +21,7 @@ pub struct DustWallet<D: DB> {
 
 impl<D: DB> DeriveSeed for DustWallet<D> {}
 
+#[cfg(feature = "unsafe")]
 impl<D: DB> IntoWalletAddress for DustWallet<D> {
 	fn address(&self, network_id: NetworkId) -> WalletAddress {
 		let hrp_string =

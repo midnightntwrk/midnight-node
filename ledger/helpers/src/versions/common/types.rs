@@ -39,6 +39,7 @@ pub enum WalletSeedError {
 }
 
 impl WalletSeed {
+	#[cfg(feature = "unsafe")]
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
 		match bytes.len() {
