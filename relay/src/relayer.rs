@@ -62,14 +62,14 @@ impl Relayer {
 			match self.handle_justification_stream_data(justification.0).await {
 				Ok((consensus_state, relay_chain_proof)) => {
 					println!("{consensus_state:#?}");
-					println!("{relay_chain_proof:#?}");
+					println!("\n{relay_chain_proof:#?}");
 
 					println!(
 						"Plutus Beefy Consensus State: {:?}",
 						consensus_state.to_plutus_data().as_hex()
 					);
 					println!(
-						"Plutus Relay Chain Proof: {:?}",
+						"\nPlutus Relay Chain Proof: {:?}\n",
 						relay_chain_proof.to_plutus_data().as_hex()
 					);
 				},

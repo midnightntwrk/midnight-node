@@ -82,8 +82,15 @@ impl AuthoritiesProof {
 
 		let validators = validator_set.validators();
 
-		let v: Vec<Hash> =
-			validators.iter().map(|v| keccak_256(&v.clone().into_inner().0)).collect();
+		let v: Vec<Hash> = validators
+			.iter()
+			.enumerate()
+			.map(|(idx, v)| {
+				let keccak = keccak_256(&v.clone().into_inner().0);
+				println!("V({idx}): ecdsa: {:?} keccak: {}", v, hex::encode(keccak));
+				keccak
+			})
+			.collect();
 
 		let tree = rs_merkle::MerkleTree::<KeccakHasher>::from_leaves(&v);
 
