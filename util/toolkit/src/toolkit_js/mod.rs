@@ -118,6 +118,8 @@ pub struct DeployArgs {
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
+	/// Arguments to pass to the contract constructor
+	constructor_args: Vec<String>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -162,6 +164,8 @@ impl ToolkitJs {
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}
+		// Add positional args
+		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
 		println!(
 			"written: {}, {}, {}",
