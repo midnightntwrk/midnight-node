@@ -15,14 +15,11 @@
 
 import CompactStandardLibrary;
 
-witness something(): [];
-
-export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): [Bytes<32>, Uint<128>] {
-  something();
+export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): Bytes<32> {
   return mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
 }
 
-export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<64>): [Bytes<32>, Uint<128>] {
+export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<64>): Bytes<32> {
   const address = UserAddress { bytes: address_bytes };
   return mintUnshieldedToken(disclose(domainSep), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
 }
