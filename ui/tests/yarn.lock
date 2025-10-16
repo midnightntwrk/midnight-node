@@ -1718,13 +1718,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"expect-playwright@npm:^0.8.0":
-  version: 0.8.0
-  resolution: "expect-playwright@npm:0.8.0"
-  checksum: 10/cf8f7f1db819debfb1457b2e56509f838ac4e29c832790f665cf8db7baf21af8271e0ca97849b3998040780c6848533be2afcd262c75edf1ca98805bc2b51b35
-  languageName: node
-  linkType: hard
-
 "exponential-backoff@npm:^3.1.1":
   version: 3.1.2
   resolution: "exponential-backoff@npm:3.1.2"
@@ -2301,7 +2294,6 @@ __metadata:
     "@types/node": "npm:^22.13.14"
     allure-playwright: "npm:^3.0.8"
     cross-env: "npm:^7.0.3"
-    expect-playwright: "npm:^0.8.0"
     testcontainers: "npm:^11.7.1"
     ts-node: "npm:^10.9.1"
     typescript: "npm:^5.2.2"
