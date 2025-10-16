@@ -561,7 +561,7 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util .
+    	metadata rustfmt.toml util relay .
 
     RUN cargo fmt --all -- --check
 
