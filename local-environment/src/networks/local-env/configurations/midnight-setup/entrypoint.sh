@@ -193,7 +193,7 @@ fi
 
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:2]' > /tmp/pc-chain-config-qanet.json
+cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
 
 jq 'env as $env | . + {
   "chain_parameters": {

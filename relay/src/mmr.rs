@@ -11,7 +11,7 @@ use sp_mmr_primitives::{
 
 use crate::{
 	error::Error,
-	types::{Block, ExtraData},
+	types::{Block, ExtraData, Hash},
 };
 
 pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<Block, H256, H256, ExtraData>;
@@ -25,6 +25,7 @@ pub struct PeakNodes {
 	/// the total number of peaks in the `mmr_proof`
 	pub num_of_peaks: u64,
 
+	#[allow(dead_code)]
 	/// the number of nodes in this mmr
 	pub mmr_size: u64,
 }
@@ -39,10 +40,12 @@ pub trait LeavesProofExt {
 	/// Returns only 1
 	fn mmr_leaves(&self) -> Result<Vec<MmrLeaf>, Error>;
 
+	fn proof_items(&self) -> Vec<Hash>;
+
 	/// Verifies the proof's next authority set is the same as the provided one
 	fn verify_next_authority_set(
 		&self,
-		expected_next_auth_set: BeefyAuthoritySet<H256>,
+		expected_next_auth_set: &BeefyAuthoritySet<H256>,
 	) -> Result<(), Error>;
 }
 
@@ -51,6 +54,12 @@ impl LeavesProofExt for LeavesProof<H256> {
 		let leaf_proof_as_bytes = &self.proof;
 
 		Decode::decode(&mut &leaf_proof_as_bytes.0[..]).expect("Failed to decode to LeafProof")
+	}
+
+	fn proof_items(&self) -> Vec<Hash> {
+		let leaf_proof = self.leaf_proof();
+
+		leaf_proof.items.iter().map(|item| item.0).collect()
 	}
 
 	fn peak_nodes(&self) -> PeakNodes {
@@ -89,19 +98,45 @@ impl LeavesProofExt for LeavesProof<H256> {
 
 	fn verify_next_authority_set(
 		&self,
-		expected_next_auth_set: BeefyAuthoritySet<H256>,
+		expected_next_auth_set: &BeefyAuthoritySet<H256>,
 	) -> Result<(), Error> {
 		let mmr_leaves = self.mmr_leaves()?;
 
 		for leaf in mmr_leaves {
-			if leaf.beefy_next_authority_set != expected_next_auth_set {
+			if &leaf.beefy_next_authority_set != expected_next_auth_set {
 				return Err(Error::InvalidNextAuthoritySet {
-					expected: expected_next_auth_set,
+					expected: expected_next_auth_set.clone(),
 					actual: leaf.beefy_next_authority_set,
 				});
 			}
 		}
 
 		Ok(())
+	}
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<crate::cardano_encoding::BeefyMmrLeaf> for LeavesProof<H256> {
+	fn into(self) -> crate::cardano_encoding::BeefyMmrLeaf {
+		let proof = self.leaf_proof();
+
+		// We are only proving one leaf at a time.
+		let mut mmr_leaf = self.mmr_leaves().expect("LeavesProof missing leaves");
+		// size of the mmr_leaves is always 1.
+		let mmr_leaf = mmr_leaf.pop().unwrap();
+
+		// combine the major and minor version
+		let (major, minor) = mmr_leaf.version.split();
+		let version = (major << 5) + minor;
+
+		crate::cardano_encoding::BeefyMmrLeaf {
+			version,
+			parent_number: mmr_leaf.parent_number_and_hash.0,
+			parent_hash: mmr_leaf.parent_number_and_hash.1.0.to_vec(),
+			next_authority_set: mmr_leaf.beefy_next_authority_set.into(),
+			extra: mmr_leaf.leaf_extra,
+			k_index: 0,
+			leaf_index: proof.leaf_indices[0],
+		}
 	}
 }

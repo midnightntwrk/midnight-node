@@ -1,5 +1,6 @@
 // set for the recursive plutus data call of ProofNodes, see authorities.rs
 #![recursion_limit = "128"]
+#![allow(clippy::result_large_err)]
 
 mod authorities;
 mod beefy;
@@ -11,7 +12,6 @@ mod relayer;
 mod types;
 
 use clap::Parser;
-use tokio::time::{Duration, sleep};
 
 pub use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 
@@ -51,10 +51,10 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let cli = Cli::parse();
 
-	if let Some(keys_path) = &cli.keys_path {
-		if let Err(e) = insert_keys_to_chain(keys_path).await {
-			println!("{e}");
-		}
+	if let Some(keys_path) = &cli.keys_path
+		&& let Err(e) = insert_keys_to_chain(keys_path).await
+	{
+		println!("{e}");
 	};
 
 	loop {
