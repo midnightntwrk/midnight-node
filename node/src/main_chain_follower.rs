@@ -110,16 +110,6 @@ pub async fn create_cached_data_sources(
 	)
 	.await?;
 
-	log::info!("Creating idx_tx_out_address index. This may take a while.");
-	// Note: temporary fix until after PC 1.6.1
-	sqlx::query(
-		r#"
-		  CREATE INDEX IF NOT EXISTS idx_tx_out_address ON tx_out USING hash (address)
-        "#,
-	)
-	.execute(&pool)
-	.await?;
-
 	let db_sync_block_data_source_config = DbSyncBlockDataSourceConfig {
 		cardano_security_parameter: cfg
 			.cardano_security_parameter

@@ -7438,6 +7438,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "cardano-serialization-lib",
+ "db-sync-sqlx",
  "derive-new",
  "figment",
  "hex",
