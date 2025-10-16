@@ -403,9 +403,7 @@ pub enum Operation {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::super::CRATE_NAME;
-	use super::super::super::super::helpers_local::extract_info_from_tx_with_context;
-	use super::super::super::api;
+	use super::super::super::{ api, super::{CRATE_NAME, helpers_local::extract_info_from_tx_with_context}};
 	use super::*;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
