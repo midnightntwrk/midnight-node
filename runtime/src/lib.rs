@@ -562,16 +562,16 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 
 		let result = candidates
 			.into_iter()
-			.filter_map(|member| match member {
+			.map(|member| match member {
 				CommitteeMember::Permissioned { id, keys: _ } =>
 				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
 				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
 				{
-					Some((
+					(
 						xchain_public_to_beefy(id),
 						// set to 0 for unfound stake delegation
 						StakeDelegation(1),
-					))
+					)
 				},
 				CommitteeMember::Registered { .. } => {
 					unreachable!("we have not mocked any registered candidates")
