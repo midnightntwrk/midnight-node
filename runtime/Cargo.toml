@@ -85,6 +85,7 @@ pallet-midnight-system.workspace = true
 pallet-version.workspace = true
 pallet-native-token-observation.workspace = true
 midnight-primitives-native-token-observation.workspace = true
+midnight-primitives-federated-authority-observation.workspace = true
 pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 

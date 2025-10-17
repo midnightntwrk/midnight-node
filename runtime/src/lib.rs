@@ -1620,6 +1620,24 @@ impl_runtime_apis! {
 			GovernedMap::get_version()
 		}
 	}
+
+	impl midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi<Block> for Runtime {
+		fn get_council_address() -> Vec<u8> {
+			pallet_federated_authority_observation::MainChainCouncilAddress::<Runtime>::get().into_inner()
+		}
+
+		fn get_council_policy_id() -> Vec<u8> {
+			pallet_federated_authority_observation::MainChainCouncilPolicyId::<Runtime>::get().into_inner()
+		}
+
+		fn get_technical_committee_address() -> Vec<u8> {
+			pallet_federated_authority_observation::MainChainTechnicalCommitteeAddress::<Runtime>::get().into_inner()
+		}
+
+		fn get_technical_committee_policy_id() -> Vec<u8> {
+			pallet_federated_authority_observation::MainChainTechnicalCommitteeAddress::<Runtime>::get().into_inner()
+		}
+	}
 }
 
 #[cfg(test)]

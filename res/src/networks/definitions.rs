@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_native_token_observation::TokenObservationConfig;
 
-use super::{InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts, MidnightNetwork};
+use super::{InitialAuthorityData, MainChainScripts, MidnightNetwork};
 
 pub struct UndeployedNetwork;
 impl MidnightNetwork for UndeployedNetwork {
@@ -50,12 +51,10 @@ impl MidnightNetwork for UndeployedNetwork {
 		serde_json::from_str(&config_str).unwrap()
 	}
 
-	fn council(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Alice", "//Bob", "//Charlie"])
-	}
-
-	fn technical_committee(&self) -> InitialFederedatedAuthority {
-		InitialFederedatedAuthority::new_from_uris(vec!["//Dave", "//Eve", "//Ferdie"])
+	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig {
+		let config_str =
+			String::from_utf8_lossy(include_bytes!("../../dev/federated-authority-config.json"));
+		serde_json::from_str(&config_str).unwrap()
 	}
 
 	fn genesis_utxo(&self) -> &str {
@@ -82,10 +81,9 @@ pub struct CustomNetwork {
 	pub chain_type: sc_service::ChainType,
 	pub initial_authorities: Vec<InitialAuthorityData>,
 	pub cngd_config: TokenObservationConfig,
-	pub council_membership: InitialFederedatedAuthority,
-	pub technical_committee_membership: InitialFederedatedAuthority,
 	pub main_chain_scripts: MainChainScripts,
 	pub genesis_utxo: String,
+	pub federated_authority_config: FederatedAuthorityObservationConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -120,12 +118,8 @@ impl MidnightNetwork for CustomNetwork {
 		self.cngd_config.clone()
 	}
 
-	fn council(&self) -> InitialFederedatedAuthority {
-		self.council_membership.clone()
-	}
-
-	fn technical_committee(&self) -> InitialFederedatedAuthority {
-		self.technical_committee_membership.clone()
+	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig {
+		self.federated_authority_config.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {

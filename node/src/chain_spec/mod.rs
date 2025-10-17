@@ -21,11 +21,12 @@ use midnight_node_ledger_helpers::{
 };
 
 use midnight_node_runtime::{
-	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
-	MidnightConfig, MidnightSystemCall, NativeTokenManagementConfig, RuntimeCall,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	NativeTokenManagementConfig, RuntimeCall, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
+	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, TimestampCall};
 
@@ -280,7 +281,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		council: CouncilConfig { ..Default::default() },
 		council_membership: CouncilMembershipConfig {
 			members: genesis
-				.council()
+				.federated_authority_config()
+				.council
 				.members
 				.iter()
 				.cloned()
@@ -293,7 +295,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		technical_committee: TechnicalCommitteeConfig { ..Default::default() },
 		technical_committee_membership: TechnicalCommitteeMembershipConfig {
 			members: genesis
-				.technical_committee()
+				.federated_authority_config()
+				.technical_committee
 				.members
 				.iter()
 				.cloned()
@@ -301,6 +304,21 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.collect::<Vec<AccountId>>()
 				.try_into()
 				.expect("Too many members to initialize 'technical_committee_membership'"),
+			..Default::default()
+		},
+		federated_authority_observation: FederatedAuthorityObservationConfig {
+			council_address: genesis.federated_authority_config().council.address.into(),
+			council_policy_id: hex::decode(genesis.federated_authority_config().council.policy_id)
+				.expect("Failed to decode `council_policy_id` hex"),
+			technical_committee_address: genesis
+				.federated_authority_config()
+				.technical_committee
+				.address
+				.into(),
+			technical_committee_policy_id: hex::decode(
+				genesis.federated_authority_config().technical_committee.policy_id,
+			)
+			.expect("Failed to decode `technical_committee_policy_id` hex"),
 			..Default::default()
 		},
 	};

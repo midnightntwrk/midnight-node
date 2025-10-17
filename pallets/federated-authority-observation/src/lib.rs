@@ -40,6 +40,12 @@ mod benchmarking;
 
 pub mod weights;
 
+const MAX_CARDANO_ADDR_LEN: u32 = 150;
+const MAX_POLICY_ID_LEN: u32 = 28;
+
+type BoundedCardanoAddress = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>;
+type BoundedPolicyId = BoundedVec<u8, ConstU32<MAX_POLICY_ID_LEN>>;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
@@ -47,6 +53,25 @@ pub mod pallet {
 
 	/// The in-code storage version.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+
+	#[pallet::storage]
+	/// Script address for managing Council members on Cardano
+	pub type MainChainCouncilAddress<T: Config> =
+		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
+
+	#[pallet::storage]
+	/// Policy ID for Council members on Cardano
+	pub type MainChainCouncilPolicyId<T: Config> = StorageValue<_, BoundedPolicyId, ValueQuery>;
+
+	#[pallet::storage]
+	/// Script address for managing Council members on Cardano
+	pub type MainChainTechnicalCommitteeAddress<T: Config> =
+		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
+
+	#[pallet::storage]
+	/// Policy ID for Technical Committee members on Cardano
+	pub type MainChainTechnicalCommitteePolicyId<T: Config> =
+		StorageValue<_, BoundedPolicyId, ValueQuery>;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -70,6 +95,47 @@ pub mod pallet {
 	#[pallet::storage_version(STORAGE_VERSION)]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
+
+	#[pallet::genesis_config]
+	#[derive(frame_support::DefaultNoBound)]
+	pub struct GenesisConfig<T: Config> {
+		pub council_address: Vec<u8>,
+		pub council_policy_id: Vec<u8>,
+		pub technical_committee_address: Vec<u8>,
+		pub technical_committee_policy_id: Vec<u8>,
+		#[serde(skip)]
+		pub _config: core::marker::PhantomData<T>,
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+		fn build(&self) {
+			MainChainCouncilAddress::<T>::set(
+				self.council_address
+					.clone()
+					.try_into()
+					.expect("Council address longer than expected"),
+			);
+			MainChainCouncilPolicyId::<T>::set(
+				self.council_policy_id
+					.clone()
+					.try_into()
+					.expect("Council policy_id longer than expected"),
+			);
+			MainChainTechnicalCommitteeAddress::<T>::set(
+				self.technical_committee_address
+					.clone()
+					.try_into()
+					.expect("Technical Committee address longer than expected"),
+			);
+			MainChainTechnicalCommitteePolicyId::<T>::set(
+				self.technical_committee_policy_id
+					.clone()
+					.try_into()
+					.expect("Technical Committee policy_id longer than expected"),
+			);
+		}
+	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]

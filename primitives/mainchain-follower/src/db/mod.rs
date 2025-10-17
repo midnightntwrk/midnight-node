@@ -14,5 +14,6 @@
 pub mod queries;
 mod types;
 
+pub use queries::federated_authority_observation::*;
 pub use queries::native_token_observation::*;
 pub use types::*;
