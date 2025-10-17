@@ -31,8 +31,8 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | DUST registration command                                            | 🚧       |
 | Contract Maintenance - updating authority + verifier keys            | 🚧       |
+| Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
-| Contracts receiving Shielded + Unshielded tokens from user           | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
 | Build cNight genesis                                                 | ⏳       |
@@ -46,9 +46,9 @@ To see compatibility with Node, Ledger, and Compactc versions, use the `version`
 
 ```console
 $ midnight-node-toolkit version
-Node: 0.17.0
-Ledger: ledger-6.1.0-alpha.3
-Compactc: 0.25.103-rc.1-UT-ledger6
+Node: 0.17.1
+Ledger: ledger-6.1.0-alpha.4
+Compactc: 0.26.108-rc.0-UT-L6
 
 ```
 
@@ -207,10 +207,10 @@ $ midnight-node-toolkit generate-intent deploy
 >    --output-private-state out/private_state.json \
 >    --output-zswap-state out/zswap.json \
 >    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>    0
 Executing generate-intent
 Executing deploy command
-Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json"]...
-stdout: , stderr: 
+Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
 written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
@@ -348,8 +348,8 @@ $ midnight-node-toolkit generate-intent circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
 >   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
->   --input-onchain-state ./test-data/contract/counter/initial_state.json
->   --input-private-state ./test-data/contract/counter/initial_zswap_state.json
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --input-private-state ./test-data/contract/counter/initial_state.json
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
 >   --output-private-state out/ps_state.json
@@ -357,8 +357,8 @@ $ midnight-node-toolkit generate-intent circuit
 >   increment
 Executing generate-intent
 Executing circuit command
-Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--state-file-path", "[CWD]/test-data/contract/counter/initial_state.json", "--ps-state-file-path", "[CWD]/test-data/contract/counter/initial_zswap_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
-stdout: , stderr: 
+Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+toolkit-js> []
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```
@@ -453,13 +453,40 @@ Tx TransactionWithContext {
 
 ---
 
-### Show Wallet
+### Show Wallet (JSON output)
 ```console
 $ midnight-node-toolkit show-wallet
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-Wallet {
+{
+  "coins": {
 ...
+  },
+  "utxos": [
+    {
+      "id": "c230c54a599a3d3472c5ee3f350c94745f1231412a4be729ea9f40db5e6776df#0",
+      "value": 500000000000000,
+      "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
+      "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
+      "intent_hash": "c230c54a599a3d3472c5ee3f350c94745f1231412a4be729ea9f40db5e6776df",
+      "output_number": 0
+    },
+...
+  ],
+  "dust_utxos": [
+    {
+      "initial_value": 0,
+      "dust_public": "73ff4aaccbb878703e922c8ab5da32a349ca7b5a6e0a2b0950ac68c6a3e273471a",
+      "nonce": "732ccb837ef1fa8cf30c5e4f1beafb9973c47ac6a67529a5541aff0f6625edf72e",
+      "seq": 0,
+      "ctime": 1754395200,
+      "backing_night": "c7b64d5aa64262705b14735aa8eba798d072aa962ac1cb7f9da9693421410552",
+      "mt_index": 0
+    },
+...
+  ]
+}
+
 ```
 
 ---

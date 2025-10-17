@@ -1,0 +1,26 @@
+[package]
+name = "midnight-primitives-federated-authority-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Primitives for federated authority observation"
+license-file.workspace = true
+
+[dependencies]
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+sp-inherents.workspace = true
+sp-runtime.workspace = true
+sidechain-domain.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-inherents/std",
+    "sp-runtime/std",
+    "sidechain-domain/std",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec"]

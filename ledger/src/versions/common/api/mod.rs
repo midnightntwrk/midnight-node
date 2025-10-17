@@ -12,8 +12,9 @@
 // limitations under the License.
 
 use super::{
-	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
+	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
+	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
+	zswap_local,
 };
 
 use super::LOG_TARGET;
@@ -21,10 +22,8 @@ pub use super::types::{self, DeserializationError, LedgerApiError, Serialization
 
 use base_crypto_local::hash::HashOutput;
 use coin_structure_local::coin::UserAddress as UserAddressLedger;
-use ledger_storage::arena::TypedArenaKey;
-use ledger_storage_local::{WellBehavedHasher, db::DB};
-use midnight_serialize::Tagged;
-use midnight_serialize_local::Deserializable;
+use ledger_storage_local::{WellBehavedHasher, arena::TypedArenaKey, db::DB};
+use midnight_serialize_local::{Deserializable, Tagged};
 
 pub mod ledger;
 mod transaction;
@@ -165,7 +164,7 @@ impl Api {
 	where
 		T: midnight_serialize_local::Serializable + SerializableError + Tagged + 'static,
 	{
-		let size = midnight_serialize_local::Serializable::serialized_size(value);
+		let size = midnight_serialize_local::tagged_serialized_size(value);
 		let mut bytes = Vec::with_capacity(size);
 		let error = LedgerApiError::Serialization(<T as SerializableError>::error());
 

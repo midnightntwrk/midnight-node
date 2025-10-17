@@ -13,14 +13,15 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use sp_api::decl_runtime_apis;
 extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use sp_api::decl_runtime_apis;
 
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
+use sidechain_domain::McTxHash;
 
 /// Values for tracking position of a sync on Cardano
 /// Block hash here is mostly informational for debugging purposes
@@ -90,6 +91,167 @@ impl PartialOrd for CardanoPosition {
 			ord => return ord,
 		}
 		self.tx_index_in_block.partial_cmp(&other.tx_index_in_block)
+	}
+}
+
+pub const INHERENT_IDENTIFIER: sp_inherents::InherentIdentifier = *b"ntobsrve";
+
+#[derive(Encode, Debug, PartialEq)]
+#[cfg_attr(feature = "std", derive(Decode, DecodeWithMemTracking, thiserror::Error))]
+pub enum InherentError {
+	#[cfg_attr(feature = "std", error("Unexpected error"))]
+	UnexpectedTokenObserveInherent(Option<Vec<Vec<u8>>>, Option<Vec<Vec<u8>>>),
+	#[cfg_attr(feature = "std", error("Inherent data missing"))]
+	Missing,
+	#[cfg_attr(feature = "std", error("Other unexpected inherent error"))]
+	Other,
+}
+
+impl sp_inherents::IsFatalError for InherentError {
+	fn is_fatal_error(&self) -> bool {
+		true
+	}
+}
+
+#[derive(Decode, DecodeWithMemTracking, Debug, Encode, Clone)]
+pub struct MidnightObservationTokenMovement {
+	pub utxos: Vec<ObservedUtxo>,
+	pub next_cardano_position: CardanoPosition,
+}
+
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, PartialEq, TypeInfo)]
+pub struct ObservedUtxo {
+	pub header: ObservedUtxoHeader,
+	pub data: ObservedUtxoData,
+}
+
+impl PartialOrd for ObservedUtxo {
+	fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Eq for ObservedUtxo {}
+
+impl Ord for ObservedUtxo {
+	fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+		self.header.partial_cmp(&other.header).unwrap()
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub enum ObservedUtxoData {
+	RedemptionCreate(RedemptionCreateData),
+	RedemptionSpend(RedemptionSpendData),
+	Registration(RegistrationData),
+	Deregistration(DeregistrationData),
+	AssetCreate(CreateData),
+	AssetSpend(SpendData),
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct RedemptionCreateData {
+	pub owner: Vec<u8>,
+	pub value: u128,
+	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_index: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct RedemptionSpendData {
+	pub owner: Vec<u8>,
+	pub value: u128,
+	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_index: u16,
+	pub spending_tx_hash: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct RegistrationData {
+	pub cardano_address: Vec<u8>,
+	pub dust_address: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct DeregistrationData {
+	pub cardano_address: Vec<u8>,
+	pub dust_address: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct CreateData {
+	pub value: u128,
+	pub owner: Vec<u8>,
+	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_index: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpendData {
+	pub value: u128,
+	pub owner: Vec<u8>,
+	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_index: u16,
+	pub spending_tx_hash: [u8; 32],
+}
+
+/// Header for an observed UTXO
+/// This header can be used for both create and spend events for UTXOs.
+/// The ordering assumes that each header is unique per TX i.e. that only one relevant UTXO is included in each transaction
+#[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct ObservedUtxoHeader {
+	pub tx_position: CardanoPosition,
+	pub tx_hash: McTxHash,
+	pub utxo_tx_hash: McTxHash,
+	pub utxo_index: UtxoIndexInTx,
+}
+impl ObservedUtxoHeader {
+	fn is_spend(&self) -> bool {
+		self.tx_hash == self.utxo_tx_hash
+	}
+}
+
+impl core::fmt::Display for ObservedUtxoHeader {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(
+			f,
+			"{{ tx_position: {}, tx_hash: {}, utxo: {}#{} }}",
+			self.tx_position,
+			hex::encode(self.tx_hash.0),
+			hex::encode(self.utxo_tx_hash.0),
+			self.utxo_index.0
+		)
+	}
+}
+
+#[derive(
+	Debug, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, DecodeWithMemTracking, TypeInfo,
+)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct UtxoIndexInTx(pub u16);
+
+impl PartialOrd for ObservedUtxoHeader {
+	fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+		match self.tx_position.partial_cmp(&other.tx_position) {
+			Some(core::cmp::Ordering::Equal) => {},
+			ord => return ord,
+		}
+		if self.is_spend() && !other.is_spend() {
+			Some(core::cmp::Ordering::Less)
+		} else if !self.is_spend() && other.is_spend() {
+			Some(core::cmp::Ordering::Greater)
+		} else {
+			self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0)
+		}
 	}
 }
 

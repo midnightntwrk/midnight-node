@@ -198,12 +198,12 @@ pub(crate) async fn run_command(
 		Commands::ShowWallet(args) => {
 			let result = show_wallet::execute(args).await?;
 			match result {
-				ShowWalletResult::FromSeed(result) => {
+				ShowWalletResult::Debug(result) => {
 					println!("{:#?}", result.wallet);
 					println!("Unshielded UTXOs: {:#?}", result.utxos)
 				},
-				ShowWalletResult::FromAddress(utxos) => {
-					println!("Unshielded UTXOS: {:#?}", utxos)
+				ShowWalletResult::Json(json) => {
+					println!("{}", serde_json::to_string_pretty(&json)?);
 				},
 				ShowWalletResult::DryRun(()) => (),
 			}
@@ -258,7 +258,7 @@ pub(crate) async fn run_command(
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
 			let ledger_version =
-				utils::find_dependency_version("mn-ledger").expect("missing ledger version");
+				find_dependency_version("mn-ledger").expect("missing ledger version");
 			let compactc_version = include_str!("../../toolkit-js/COMPACTC_VERSION").trim();
 
 			println!(

@@ -30,16 +30,16 @@ type Database = ledger_storage::db::ParityDb;
 
 // TODO: hard fork
 #[cfg(feature = "std")]
-type DatabaseHF = ledger_storage::db::ParityDb;
-//type DatabaseHF = ledger_storage_hf::db::ParityDb;
+// type DatabaseHF = ledger_storage::db::ParityDb;
+type DatabaseHF = ledger_storage_hf::db::ParityDb;
 
 #[cfg(feature = "std")]
 type Signature = base_crypto::signatures::Signature;
 
 // TODO: hard fork
 #[cfg(feature = "std")]
-type SignatureHF = base_crypto::signatures::Signature;
-//type SignatureHF = base_crypto_hf::signatures::Signature;
+// type SignatureHF = base_crypto::signatures::Signature;
+type SignatureHF = base_crypto_hf::signatures::Signature;
 
 #[runtime_interface]
 pub trait LedgerBridge {
@@ -403,7 +403,7 @@ pub trait LedgerBridgeHf {
 		action: u8,
 		nonce: PassFatPointerAndDecode<[u8; 32]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
-		hard_fork_test::Bridge::<Signature, Database>::construct_cnight_generates_dust_event(
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::construct_cnight_generates_dust_event(
 			value, owner, time, action, nonce,
 		)
 	}
@@ -411,7 +411,7 @@ pub trait LedgerBridgeHf {
 	fn construct_cnight_generates_dust_system_tx(
 		events: PassFatPointerAndDecode<Vec<Vec<u8>>>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
-		hard_fork_test::Bridge::<Signature, Database>::construct_cnight_generates_dust_system_tx(
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::construct_cnight_generates_dust_system_tx(
 			events,
 		)
 	}

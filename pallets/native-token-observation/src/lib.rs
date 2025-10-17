@@ -21,9 +21,10 @@
 use derive_new::new;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
-use midnight_primitives_mainchain_follower::idp::MidnightObservationTokenMovement;
-use midnight_primitives_mainchain_follower::idp::{INHERENT_IDENTIFIER, InherentError};
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
+use midnight_primitives_native_token_observation::{
+	CardanoPosition, INHERENT_IDENTIFIER, InherentError,
+};
 pub use pallet::*;
 use pallet_timestamp::{self as timestamp};
 
@@ -609,7 +610,8 @@ pub mod pallet {
 		) -> DispatchResult {
 			ensure_none(origin)?;
 
-			let now = timestamp::Pallet::<T>::get();
+			let now_ms = timestamp::Pallet::<T>::get();
+			let now = now_ms / 1000;
 
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 

@@ -52,33 +52,33 @@ docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
 
 deploy_filename="contract_deploy.mn"
 
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs batches -n 1 -b 1
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
     --dest-file "/out/$deploy_filename" --to-bytes \
     contract-simple deploy \
     --rng-seed "$RNG_SEED"
 
 contract_address=$(
-    docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out "$TOOLKIT_IMAGE" \
+    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out "$TOOLKIT_IMAGE" \
         contract-address --src-file "/out/$deploy_filename" --tagged
 )
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" generate-txs \
     --src-file="/out/$deploy_filename" send
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --rng-seed "$RNG_SEED" \
     --contract-address "$contract_address"
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key store \
     --rng-seed "$RNG_SEED" \
     --contract-address "$contract_address"
 
-docker run --rm -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key check \
     --rng-seed "$RNG_SEED" \
