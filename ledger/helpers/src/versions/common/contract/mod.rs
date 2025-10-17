@@ -14,11 +14,23 @@
 use async_trait::async_trait;
 use std::{any::Any, sync::Arc};
 
-use crate::{
+use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
 	Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker, Resolver, ResultModeGather,
 	ResultModeVerify, Signature, Sp, StdRng, Transcripts,
 };
+
+// Re-export types needed by submodules
+pub use super::super::{
+	ChargedState, ContractMaintenanceAuthority, ContractState, DUST_EXPECTED_FILES, DustResolver,
+	EntryPointBuf, FetchMode, HashMapStorage, HistoricMerkleTree_check_root,
+	HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree, MidnightDataProvider, OutputMode,
+	PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue, ValueReprAlignedValue, key,
+	leaf_hash, partition_transcripts, stval, verifier_key,
+};
+
+#[cfg(feature = "test-utils")]
+pub use super::super::test_resolver;
 
 mod call;
 mod contracts;

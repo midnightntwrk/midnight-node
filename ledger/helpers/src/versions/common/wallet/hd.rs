@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{NetworkId, WalletSeed};
+#![cfg(feature = "can-panic")]
+
+use super::super::{Deserializable, NetworkId, Serializable, Tagged, WalletSeed};
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};
-use midnight_serialize::{Deserializable, Serializable, Tagged};
 use std::str::FromStr;
 
 pub const HRP_CONSTANT: &str = "mn";
@@ -139,6 +140,7 @@ pub trait IntoWalletAddress {
 }
 
 // in bech32-encoded addresses, we use the data's specific tag as a prefix, but not the global tag prefix
+#[cfg(feature = "can-panic")]
 pub(crate) fn short_tagged_serialize<T: Serializable + Tagged>(data: &T) -> Vec<u8> {
 	let tag = T::tag();
 	let mut buffer = vec![0; tag.len() + 1 + data.serialized_size()];

@@ -61,6 +61,7 @@ onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger",
 base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
 transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
 zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
+zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
 midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.3" }
