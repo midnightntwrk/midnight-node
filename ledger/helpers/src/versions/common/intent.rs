@@ -11,15 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-	BuildContractAction, ContractEffects, DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent,
-	KeyLocation, LedgerContext, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
-	PedersenRandomness, ProofPreimageMarker, Resolver, Signature, StdRng, Timestamp,
-	UnshieldedOfferInfo, deserialize,
+#![cfg(feature = "can-panic")]
+
+use super::{
+	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,
+	DustResolver, FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode,
+	PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial, Resolver,
+	Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
-use ledger_storage::storage::Array;
-use mn_ledger::structure::ContractAction;
 use rand::{CryptoRng, Rng};
 use std::{
 	io,
@@ -27,7 +27,6 @@ use std::{
 	sync::Arc,
 	time::{SystemTime, UNIX_EPOCH},
 };
-use transient_crypto::proofs::ProvingKeyMaterial;
 
 pub type SegmentId = u16;
 

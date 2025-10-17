@@ -11,22 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{DB, LedgerState, Utxo, WalletSeed};
+use super::super::{
+	DB, LedgerState, NetworkId, Utxo, WalletSeed,
+	ledger_storage::Storable,
+	mn_ledger::{error::EventReplayError, events::Event},
+	onchain_runtime::context::BlockContext,
+	zswap::Offer,
+};
 
 mod dust;
 mod hd;
 mod shielded;
 mod unshielded;
 
-use crate::NetworkId;
 pub use dust::*;
 pub use hd::*;
-use ledger_storage::Storable;
-use mn_ledger::{error::EventReplayError, events::Event};
-use onchain_runtime::context::BlockContext;
 pub use shielded::*;
 pub use unshielded::*;
-use zswap::Offer;
 
 #[derive(Clone, Debug)]
 pub struct Wallet<D: DB + Clone> {
@@ -76,6 +77,7 @@ impl<D: DB + Clone> Wallet<D> {
 			.collect()
 	}
 
+	#[cfg(feature = "can-panic")]
 	pub fn increment_seed(s: &str) -> String {
 		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
 		let result = num + 1;
@@ -83,6 +85,7 @@ impl<D: DB + Clone> Wallet<D> {
 		format!("{result:0width$b}")
 	}
 
+	#[cfg(feature = "can-panic")]
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
 		input.parse().expect("failed to decode seed")
 	}

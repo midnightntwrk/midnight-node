@@ -15,7 +15,6 @@ use async_trait::async_trait;
 use backoff::{ExponentialBackoff, future::retry};
 
 use midnight_node_ledger_helpers::*;
-use mn_ledger::test_utilities::ProofServerProvider;
 
 pub struct RemoteProofServer {
 	url: String,

@@ -190,6 +190,7 @@ mod test {
 			&output_private_state,
 			"--output-zswap-state",
 			&output_zswap_state,
+			"0",
 		];
 		let cli = Cli::parse_from(args);
 		run_command(cli.command).await.expect("should work");
