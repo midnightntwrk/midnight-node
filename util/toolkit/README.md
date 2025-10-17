@@ -48,7 +48,7 @@ To see compatibility with Node, Ledger, and Compactc versions, use the `version`
 $ midnight-node-toolkit version
 Node: 0.17.1
 Ledger: ledger-6.1.0-alpha.3
-Compactc: 0.25.103-rc.1-UT-ledger6
+Compactc: 0.26.108-rc.0-UT-L6
 
 ```
 
@@ -207,10 +207,10 @@ $ midnight-node-toolkit generate-intent deploy
 >    --output-private-state out/private_state.json \
 >    --output-zswap-state out/zswap.json \
 >    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>    0
 Executing generate-intent
 Executing deploy command
-Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json"]...
-stdout: , stderr: 
+Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
 written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
@@ -358,7 +358,7 @@ $ midnight-node-toolkit generate-intent circuit
 Executing generate-intent
 Executing circuit command
 Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
-stdout: , stderr: 
+toolkit-js> []
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```

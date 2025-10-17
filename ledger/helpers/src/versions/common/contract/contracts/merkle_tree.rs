@@ -11,11 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![cfg(feature = "can-panic")]
+
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use std::{any::Any, borrow::Cow, sync::Arc};
 
-use crate::{
+use super::super::{
 	AlignedValue, ChargedState, Contract, ContractAddress, ContractCallPrototype, ContractDeploy,
 	ContractMaintenanceAuthority, ContractOperation, ContractState, DB, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
@@ -26,13 +28,26 @@ use crate::{
 
 #[cfg(feature = "test-utils")]
 lazy_static! {
-	static ref RESOLVER: Resolver = crate::test_resolver("simple-merkle-tree");
+	static ref RESOLVER: Resolver = super::super::test_resolver("simple-merkle-tree");
 }
+
+#[cfg(not(feature = "test-utils"))]
+use super::super::{
+	DUST_EXPECTED_FILES, DustResolver, FetchMode, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
+};
 
 #[cfg(not(feature = "test-utils"))]
 lazy_static! {
 	pub static ref RESOLVER: Resolver = Resolver::new(
-		crate::PUBLIC_PARAMS.clone(),
+		PUBLIC_PARAMS.clone(),
+		DustResolver(
+			MidnightDataProvider::new(
+				FetchMode::OnDemand,
+				OutputMode::Log,
+				DUST_EXPECTED_FILES.to_owned(),
+			)
+			.unwrap(),
+		),
 		Box::new(|_key_location| Box::pin(std::future::ready(Ok(None)))),
 	);
 }

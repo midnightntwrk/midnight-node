@@ -26,11 +26,12 @@
     "dist"
   ],
   "dependencies": {
-    "@effect/cli": "^0.69.0",
-    "@midnight-ntwrk/compact-js": "2.2.0-rc.1",
-    "@midnight-ntwrk/compact-js-command": "2.2.0-rc.1",
-    "@midnight-ntwrk/compact-js-node": "2.2.0-rc.1",
-    "effect": "^3.17.7"
+    "@effect/platform-node": "^0.98.3",
+    "@effect/cli": "^0.71.0",
+    "@midnight-ntwrk/compact-js": "2.3.0-rc.4",
+    "@midnight-ntwrk/compact-js-command": "2.3.0-rc.4",
+    "@midnight-ntwrk/compact-js-node": "2.3.0-rc.4",
+    "effect": "^3.18.4"
   },
   "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "^2.0.2",

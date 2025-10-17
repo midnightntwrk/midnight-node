@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
+#![cfg(feature = "can-panic")]
+
+use super::super::{
 	CoinPublicKey, DB, DerivationPath, DeriveSeed, Deserializable, EncryptionPublicKey,
 	HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK, HashOutput,
 	IntoWalletAddress, NetworkId, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
@@ -79,6 +81,7 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		Self { state, coin_public_key, enc_public_key, secret_keys: None }
 	}
 
+	#[cfg(feature = "can-panic")]
 	pub fn secret_keys(&self) -> &SecretKeys {
 		self.secret_keys.as_ref().expect("Missing `SecretKeys` for the `ShieldedWallet")
 	}

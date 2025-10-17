@@ -42,7 +42,7 @@ lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
-midnight-node-ledger-helpers = { workspace = true, optional = true}
+midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
 [dev-dependencies]
@@ -86,10 +86,11 @@ std = [
     "zswap-hf",
     "sha2",
     "toml",
+    "midnight-node-ledger-helpers",
     "derive-where"
 ]
 runtime-benchmarks = []
-test-utils = ["midnight-node-ledger-helpers"]
+test-utils = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_runtime)'] }
