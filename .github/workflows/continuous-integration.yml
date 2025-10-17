@@ -213,7 +213,7 @@ jobs:
 
           . ./.envrc && earthly --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --build-arg TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --secret GITHUB_TOKEN +rebuild-genesis
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
   hardfork-e2e:
     name: Hardfork E2E
