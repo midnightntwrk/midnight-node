@@ -1,18 +1,16 @@
 use crate::{
-	beefy::BeefyRelayChainProof,
+	beefy::BeefyConsensusState,
+	cardano_encoding::{RelayChainProof, ToPlutusData},
 	error::Error,
-	helpers::MnMetaConversion,
+	helpers::{MnMetaConversion, ToHex},
 	mmr::{LeavesProofExt, PeakNodes},
 	mn_meta,
-	types::{Block, BlockHash, RootHash},
+	types::{BeefySignedCommitment, BeefyValidatorSet, Block, BlockHash},
 };
 
 use mmr_rpc::LeavesProof;
-use parity_scale_codec::Encode;
 use sp_consensus_beefy::{
-	ValidatorSet as BeefyValidatorSet, VersionedFinalityProof,
-	ecdsa_crypto::{Public as BeefyPublic, Signature as ECDSASig},
-	mmr::BeefyAuthoritySet,
+	VersionedFinalityProof, ecdsa_crypto::Signature as ECDSASig, mmr::BeefyAuthoritySet,
 };
 use sp_core::{Bytes, H256};
 use sp_mmr_primitives::LeafProof;
@@ -28,9 +26,6 @@ use subxt::{
 	},
 	runtime_api::Payload,
 };
-
-type SubxtBlock = subxt::blocks::Block<PolkadotConfig, OnlineClient<PolkadotConfig>>;
-type BeefySignedCommitment = sp_consensus_beefy::SignedCommitment<Block, ECDSASig>;
 
 pub struct Relayer {
 	// Shared RPC client interface for the relayer
@@ -65,10 +60,18 @@ impl Relayer {
 			let justification = result?;
 
 			match self.handle_justification_stream_data(justification.0).await {
-				Ok(proof) => {
-					self.check_proof_items(&proof.mmr_proof).await?;
+				Ok((consensus_state, relay_chain_proof)) => {
+					println!("{consensus_state:#?}");
+					println!("\n{relay_chain_proof:#?}");
 
-					proof.print_as_hex();
+					println!(
+						"Plutus Beefy Consensus State: {:?}",
+						consensus_state.to_plutus_data().as_hex()
+					);
+					println!(
+						"\nPlutus Relay Chain Proof: {:?}\n",
+						relay_chain_proof.to_plutus_data().as_hex()
+					);
 				},
 				Err(e) => {
 					println!("Handling Justification failed: {e:?}");
@@ -82,7 +85,7 @@ impl Relayer {
 	async fn handle_justification_stream_data(
 		&self,
 		justification: Vec<u8>,
-	) -> Result<BeefyRelayChainProof, Error> {
+	) -> Result<(BeefyConsensusState, RelayChainProof), Error> {
 		let VersionedFinalityProof::<Block, ECDSASig>::V1(beef_signed_commitment) =
 			Decode::decode(&mut &justification[..])?;
 
@@ -94,20 +97,25 @@ impl Relayer {
 
 		// Generate the mmr proof
 		let mmr_proof = self.get_mmr_proof(block_to_query, best_block, at_block_hash).await?;
+		// verify the mmr proof
+		self.check_proof_items(&mmr_proof).await?;
 
+		// retrieve necessary data in creating the RelayChainProof
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
 		let next_authorities = self.get_next_beefy_authority_set(at_block_hash).await?;
+		let current_authorities = self.get_beefy_authority_set(at_block_hash).await?;
 
-		let relay_proof = BeefyRelayChainProof::create(
-			mmr_proof,
+		let consensus_state =
+			BeefyConsensusState::try_new(&mmr_proof, current_authorities, &next_authorities)?;
+
+		let relay_proof = RelayChainProof::generate(
 			beef_signed_commitment,
-			validator_set,
-			next_authorities,
+			mmr_proof,
+			&validator_set,
+			&next_authorities,
 		)?;
 
-		//
-
-		Ok(relay_proof)
+		Ok((consensus_state, relay_proof))
 	}
 
 	/// Returns a tuple of  2 options; whether we query with the latest (best block), or by the block hash from the commitment
@@ -129,7 +137,7 @@ impl Relayer {
 				Some(commitment_block_hash)
 			},
 			Some(block_number) => {
-				println!("Querying from the best block number: {block_number}");
+				println!("\nQuerying from the best block number: {block_number}");
 				None
 			},
 		};
@@ -140,24 +148,8 @@ impl Relayer {
 
 // For Proof creation
 impl Relayer {
-	/// Direct checking of the mmr proof
-	pub async fn verify_mmr_proof(
-		&self,
-		root_hash: H256,
-		leaves_proof: LeavesProof<H256>,
-	) -> Result<bool, Error> {
-		let mut rpc_params = RpcParams::new();
-		rpc_params.push(root_hash)?;
-		rpc_params.push(leaves_proof)?;
-
-		let result =
-			self.rpc.request::<Option<bool>>("mmr_verifyProofStateless", rpc_params).await?;
-
-		result.ok_or(Error::ProofVerificationFailed)
-	}
-
 	/// Checks the items of the proof, whether these node hashes exists at a certain block on the chain
-	pub async fn check_proof_items(&self, proof: &LeavesProof<H256>) -> Result<(), Error> {
+	async fn check_proof_items(&self, proof: &LeavesProof<H256>) -> Result<(), Error> {
 		let at_block_hash = Some(proof.block_hash);
 
 		let PeakNodes { peaks, num_of_peaks, .. } = proof.peak_nodes();
@@ -178,19 +170,6 @@ impl Relayer {
 				});
 			}
 		}
-
-		Ok(())
-	}
-
-	pub async fn verify_authorities_proof(
-		&self,
-		proof: &BeefyRelayChainProof,
-	) -> Result<(), Error> {
-		let (_, at_block_hash) = self.choose_params(&proof.signed_commitment).await?;
-
-		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
-
-		let validators = validator_set.validators();
 
 		Ok(())
 	}
@@ -217,34 +196,10 @@ impl Relayer {
 
 // Getting data from storage, or api
 impl Relayer {
-	// getting mmr root based on the block hash
-	async fn current_mmr_root(&self, block_hash: BlockHash) -> Result<String, Error> {
-		let params = rpc_params![block_hash];
-
-		self.rpc.request::<String>("mmr_root", params).await.map_err(|e| Error::Rpc(e))
-	}
-
-	async fn get_beefy_validators(
-		&self,
-		at_block_hash: Option<BlockHash>,
-	) -> Result<Vec<BeefyPublic>, Error> {
-		let beefy_validator_set_query = mn_meta::storage().beefy().authorities();
-
-		let validators = self
-			.storage_fetcher(at_block_hash, &beefy_validator_set_query)
-			.await?
-			.map(|bounded_validators| bounded_validators.0)
-			.ok_or(Error::EmptyValidatorSet);
-
-		validators.map(|validators| {
-			validators.into_iter().map(|validator| validator.into_non_metadata()).collect()
-		})
-	}
-
 	async fn get_beefy_validator_set(
 		&self,
 		at_block_hash: Option<BlockHash>,
-	) -> Result<BeefyValidatorSet<BeefyPublic>, Error> {
+	) -> Result<BeefyValidatorSet, Error> {
 		let validator_set_call = mn_meta::apis().beefy_api().validator_set();
 
 		let validator_set = self.runtime_api(at_block_hash, validator_set_call).await?;
@@ -254,7 +209,6 @@ impl Relayer {
 			.ok_or(Error::EmptyValidatorSet)
 	}
 
-	// Below are for authority set proofs
 	async fn get_beefy_authority_set(
 		&self,
 		at_block_hash: Option<BlockHash>,
@@ -267,17 +221,6 @@ impl Relayer {
 			.map(|auth_set| auth_set.into_non_metadata());
 
 		result.ok_or(Error::EmptyAuthoritySet)
-	}
-
-	async fn get_beefy_authorities_proof(
-		&self,
-		at_block_hash: BlockHash,
-	) -> Result<BeefyAuthoritySet<H256>, Error> {
-		let authorities_proof_call = mn_meta::apis().beefy_mmr_api().authority_set_proof();
-
-		let result = self.api.runtime_api().at(at_block_hash).call(authorities_proof_call).await?;
-
-		Ok(result.into_non_metadata())
 	}
 
 	async fn get_next_beefy_authority_set(
@@ -319,7 +262,7 @@ impl Relayer {
 			None => self.api.storage().at_latest().await?,
 		};
 
-		storage_fetcher.fetch(address).await.map_err(|e| Error::ClientError(e))
+		storage_fetcher.fetch(address).await.map_err(Error::Subxt)
 	}
 
 	async fn runtime_api<T: Payload>(
@@ -334,6 +277,6 @@ impl Relayer {
 				result.call(payload).await
 			},
 		}
-		.map_err(|e| Error::ClientError(e))
+		.map_err(Error::Subxt)
 	}
 }
