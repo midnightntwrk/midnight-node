@@ -11,26 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use base_crypto::{
-	rng::SplittableRng,
-	signatures::SigningKey,
-	time::{Duration, Timestamp},
-};
-use coin_structure::coin::TokenType;
-use ledger_storage::{Storable, arena::Sp};
-use midnight_serialize::Serializable;
-use mn_ledger::{
-	dust::{DustActions, DustPublicKey, DustRegistration, DustSpend},
-	structure::{BindingKind, PedersenDowngradeable, ProofKind, SignatureKind},
-	verify::WellFormedStrictness,
-};
+#![cfg(feature = "can-panic")]
+
 use rand::Rng as _;
 
-use crate::{
-	BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, HashMapStorage, Intent, LedgerContext,
-	Offer, OfferInfo, Pedersen, PedersenRandomness, ProofMarker, ProofPreimage,
-	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
-	Signature, StdRng, Transaction, WalletSeed, serialize,
+use super::{
+	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, Duration, DustActions,
+	DustPublicKey, DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer,
+	OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker,
+	ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment,
+	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
+	Storable, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
 };
 use std::{
 	collections::HashMap,

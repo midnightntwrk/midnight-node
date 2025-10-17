@@ -1,5 +1,5 @@
 import { CompiledContract, ContractExecutable, type Contract } from '@midnight-ntwrk/compact-js/effect';
-import { Contract as C_ } from './out/contract/index.cjs';
+import { Contract as C_ } from './out/contract/index.js';
 
 /**
  * A type that describes the private state of the contract.

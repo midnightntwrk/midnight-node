@@ -14,7 +14,7 @@
 use async_trait::async_trait;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
-use crate::{
+use super::super::{
 	BuildContractAction, Contract, ContractAddress, DB, Intent, LedgerContext, PedersenRandomness,
 	ProofPreimage, ProofPreimageMarker, Signature, StdRng,
 };
