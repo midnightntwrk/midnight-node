@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "unsafe")]
+#![cfg(feature = "can-panic")]
 
 use super::{
 	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,

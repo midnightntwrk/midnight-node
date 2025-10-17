@@ -77,7 +77,7 @@ impl<D: DB + Clone> Wallet<D> {
 			.collect()
 	}
 
-	#[cfg(feature = "unsafe")]
+	#[cfg(feature = "can-panic")]
 	pub fn increment_seed(s: &str) -> String {
 		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
 		let result = num + 1;
@@ -85,7 +85,7 @@ impl<D: DB + Clone> Wallet<D> {
 		format!("{result:0width$b}")
 	}
 
-	#[cfg(feature = "unsafe")]
+	#[cfg(feature = "can-panic")]
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
 		input.parse().expect("failed to decode seed")
 	}

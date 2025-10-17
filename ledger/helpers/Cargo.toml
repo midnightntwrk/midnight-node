@@ -42,7 +42,7 @@ toml.workspace = true
 
 [features]
 default = ["std"]
-unsafe = [] # usafe here means the API can panic
+can-panic = []
 std = [
 	"mn-ledger",
 	"base-crypto",

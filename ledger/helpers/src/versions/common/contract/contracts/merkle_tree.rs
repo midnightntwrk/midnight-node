@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "unsafe")]
+#![cfg(feature = "can-panic")]
 
 use async_trait::async_trait;
 use lazy_static::lazy_static;

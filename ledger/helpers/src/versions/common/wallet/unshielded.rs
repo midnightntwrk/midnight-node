@@ -73,7 +73,7 @@ pub struct UnshieldedWallet {
 
 impl DeriveSeed for UnshieldedWallet {}
 
-#[cfg(feature = "unsafe")]
+#[cfg(feature = "can-panic")]
 impl IntoWalletAddress for UnshieldedWallet {
 	fn address(&self, network_id: NetworkId) -> WalletAddress {
 		let hrp_string =
@@ -111,7 +111,7 @@ impl UnshieldedWallet {
 		Self::from_seed(derived_seed)
 	}
 
-	#[cfg(feature = "unsafe")]
+	#[cfg(feature = "can-panic")]
 	pub fn signing_key(&self) -> &SigningKey {
 		self.signing_key
 			.as_ref()

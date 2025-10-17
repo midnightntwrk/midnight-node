@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "unsafe")]
+#![cfg(feature = "can-panic")]
 
 use super::super::{Deserializable, NetworkId, Serializable, Tagged, WalletSeed};
 use bech32::{Bech32m, Hrp};
@@ -140,7 +140,7 @@ pub trait IntoWalletAddress {
 }
 
 // in bech32-encoded addresses, we use the data's specific tag as a prefix, but not the global tag prefix
-#[cfg(feature = "unsafe")]
+#[cfg(feature = "can-panic")]
 pub(crate) fn short_tagged_serialize<T: Serializable + Tagged>(data: &T) -> Vec<u8> {
 	let tag = T::tag();
 	let mut buffer = vec![0; tag.len() + 1 + data.serialized_size()];
