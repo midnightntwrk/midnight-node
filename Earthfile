@@ -305,6 +305,9 @@ rebuild-genesis-state:
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
+    IF [ "$GENERATE_TEST_TXS" = "true" ]
+        COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
+    END
 
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
