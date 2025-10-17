@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 # ntp to keep correct time
 # curl to enable compose healthchecks
 RUN apt-get update -qq \
@@ -14,6 +14,6 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
 RUN rm -rf /node
 COPY util/upgrader/bin/entrypoint.sh /entrypoint.sh
 
-RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]

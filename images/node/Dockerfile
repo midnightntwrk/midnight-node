@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1
@@ -29,7 +29,7 @@ COPY .envrc ./bin/.envrc
 COPY res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
-RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
 USER appuser
 
 EXPOSE 30333 9933 9944 9615
