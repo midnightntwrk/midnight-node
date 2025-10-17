@@ -68,8 +68,8 @@ pub use zkir::{IrSource, LocalProvingProvider};
 pub use mn_ledger::{
 	construct::{ContractCallPrototype, PreTranscript, partition_transcripts},
 	dust::{
-		DUST_EXPECTED_FILES, DustActions, DustPublicKey, DustRegistration, DustResolver,
-		DustSecretKey, InitialNonce,
+		DUST_EXPECTED_FILES, DustActions, DustGenerationInfo, DustOutput, DustPublicKey,
+		DustRegistration, DustResolver, DustSecretKey, InitialNonce,
 	},
 	error::{
 		BlockLimitExceeded, FeeCalculationError, MalformedTransaction, PartitionFailure,

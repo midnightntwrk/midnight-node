@@ -25,7 +25,7 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Execute compiled contracts                                           | ✅       |
 | Pre-generate and send 100s of transactions (performance testing)     | ✅       |
 | Support for node runtime forks                                       | ✅       |
-| Fetch and print wallet state                                         | ✅       |
+| Fetch and print wallet state and DUST balance                        | ✅       |
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
@@ -487,6 +487,31 @@ $ midnight-node-toolkit show-wallet
   ]
 }
 
+```
+
+---
+
+### Dust Balance
+
+Prints the total Dust Balance, including a breakdown of the source of Dust per Dust-Output.
+
+```console
+$ midnight-node-toolkit dust-balance
+>   --src-file ./res/genesis/genesis_block_undeployed.mn
+>   --seed 0000000000000000000000000000000000000000000000000000000000000001
+{
+  "generation_infos": [
+...
+  ],
+  "source": {
+    "736942213e3107956b9581f4f4cceff68662a779b3a1d522219b6d9d8990178e16": 2500000000000000000000000,
+    "732ccb837ef1fa8cf30c5e4f1beafb9973c47ac6a67529a5541aff0f6625edf72e": 2500000000000000000000000,
+    "73909675949e44cbcc8401b3c00e23b7d98dd677e9be4e68c584dd82a384033172": 2500000000000000000000000,
+    "735ed54863c571cee9d05089edccbafbada4c2cc0ba99f25e0dc36f40a6eae1056": 2500000000000000000000000,
+    "730450f94a3b0d546312b3e7831931a4f0e35560789932d0cddab1faba48452055": 2500000000000000000000000
+  },
+  "total": 12500000000000000000000000
+}
 ```
 
 ---

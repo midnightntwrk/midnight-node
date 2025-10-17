@@ -41,6 +41,7 @@ use midnight_node_toolkit::{
 
 use crate::commands::{
 	contract_state::{self, ContractStateArgs},
+	dust_balance::{self, DustBalanceArgs, DustBalanceResult},
 	show_address::ShowAddress,
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 };
@@ -78,6 +79,8 @@ enum Commands {
 	GenerateSampleIntent(GenerateSampleIntentArgs),
 	/// Sends a custom contract (serialized intent .mn files )
 	SendIntent(SendIntentArgs),
+	/// Show the state of a wallet using it's seed
+	DustBalance(DustBalanceArgs),
 	/// Show the state of a wallet using it's seed
 	ShowWallet(ShowWalletArgs),
 	/// Show the address of a wallet using it's seed
@@ -275,6 +278,17 @@ pub(crate) async fn run_command(
 				},
 				ShowTokenType::SingleTokenType(ttype) => println!("{ttype}"),
 			};
+
+			Ok(())
+		},
+		Commands::DustBalance(args) => {
+			let result = dust_balance::execute(args).await?;
+			match result {
+				DustBalanceResult::Json(json) => {
+					println!("{}", serde_json::to_string_pretty(&json)?);
+				},
+				DustBalanceResult::DryRun(()) => (),
+			}
 
 			Ok(())
 		},
