@@ -20,8 +20,8 @@ ENV MN_SYNC_CACHE=/.cache/sync
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
-RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-RUN rm -rf /node
+RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version && \
+  rm -rf /node
 COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
 RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
