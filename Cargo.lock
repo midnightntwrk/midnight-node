@@ -6796,6 +6796,7 @@ dependencies = [
  "flate2",
  "futures",
  "group",
+ "indicatif",
  "k256",
  "lazy_static",
  "midnight-base-crypto-derive 1.0.0-alpha.1-hard-fork-test",
@@ -6932,12 +6933,14 @@ dependencies = [
  "midnight-zswap 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.3)",
  "rand 0.8.5",
  "rayon",
+ "reqwest 0.12.22",
  "serde",
  "sha2 0.10.9",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "zeroize",
+ "zkir 2.0.0-alpha.4-hard-fork-test",
 ]
 
 [[package]]
@@ -6970,7 +6973,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zeroize",
- "zkir",
+ "zkir 2.0.0-alpha.4",
 ]
 
 [[package]]
@@ -7127,18 +7130,28 @@ dependencies = [
  "itertools 0.14.0",
  "lazy_static",
  "midnight-base-crypto 1.0.0-alpha.1",
+ "midnight-base-crypto 1.0.0-alpha.1-hard-fork-test",
  "midnight-coin-structure 1.0.0-alpha.3",
+ "midnight-coin-structure 1.0.0-alpha.3-hard-fork-test",
+ "midnight-ledger 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.3)",
  "midnight-ledger 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3)",
  "midnight-onchain-runtime 1.0.0-alpha.3",
+ "midnight-onchain-runtime 1.0.0-alpha.3-hard-fork-test",
  "midnight-serialize 1.0.0-alpha.1",
+ "midnight-serialize 1.0.0-alpha.1-hard-fork-test",
  "midnight-storage 1.0.0-alpha.3",
+ "midnight-storage 1.0.0-alpha.3-hard-fork-test",
  "midnight-transient-crypto 1.0.0-alpha.3",
+ "midnight-transient-crypto 1.0.0-alpha.3-hard-fork-test",
+ "midnight-zswap 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.3)",
  "midnight-zswap 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3)",
  "rand 0.8.5",
  "serde",
  "thiserror 1.0.69",
  "tokio",
- "zkir",
+ "toml 0.9.5",
+ "zkir 2.0.0-alpha.4",
+ "zkir 2.0.0-alpha.4-hard-fork-test",
 ]
 
 [[package]]
@@ -7260,7 +7273,6 @@ dependencies = [
  "hex-literal 0.4.1",
  "indicatif",
  "log",
- "midnight-ledger 6.1.0-alpha.3 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.3)",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "parity-scale-codec",
@@ -18727,6 +18739,28 @@ dependencies = [
  "midnight-proofs",
  "midnight-serialize 1.0.0-alpha.1",
  "midnight-transient-crypto 1.0.0-alpha.3",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "zkir"
+version = "2.0.0-alpha.4-hard-fork-test"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.3#0fb4a83e76f0d75f01cf7dd6581e401917e18709"
+dependencies = [
+ "anyhow",
+ "const-hex",
+ "group",
+ "hex",
+ "midnight-base-crypto 1.0.0-alpha.1-hard-fork-test",
+ "midnight-circuits",
+ "midnight-proofs",
+ "midnight-serialize 1.0.0-alpha.1-hard-fork-test",
+ "midnight-transient-crypto 1.0.0-alpha.3-hard-fork-test",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",

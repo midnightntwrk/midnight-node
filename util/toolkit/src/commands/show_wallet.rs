@@ -6,9 +6,10 @@ use crate::{
 };
 use clap::Args;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{QualifiedInfo, Timestamp, serialize_untagged};
+use midnight_node_ledger_helpers::{
+	QualifiedDustOutput, QualifiedInfo, Timestamp, serialize_untagged,
+};
 use midnight_node_toolkit::cli_parsers::{self as cli};
-use mn_ledger::dust::QualifiedDustOutput;
 
 #[derive(Debug)]
 pub struct WalletInfo<D: DB + Clone> {

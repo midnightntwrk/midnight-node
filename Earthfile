@@ -288,6 +288,7 @@ rebuild-genesis-state:
                 --output-intent /res/test-data/contract/counter/deploy.bin \
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
+                0 \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
