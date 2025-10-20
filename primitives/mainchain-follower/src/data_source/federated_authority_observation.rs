@@ -13,13 +13,9 @@
 
 use crate::FederatedAuthorityObservationDataSource;
 use derive_new::new;
-use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData,
-};
+use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::McBlockHash;
-use sp_core::sr25519::Public;
-use sp_keyring::Sr25519Keyring;
 pub use sqlx::PgPool;
 
 #[derive(new)]
@@ -38,29 +34,10 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
 		// TODO: federated-authority-observation
 		// Replaced when queried from Cardano
-		// Council members
-		let dave_public: Public = Sr25519Keyring::Dave.public();
-		let dave = AuthorityMemberPublicKey(dave_public.0.to_vec());
-
-		let eve_public: Public = Sr25519Keyring::Eve.public();
-		let eve = AuthorityMemberPublicKey(eve_public.0.to_vec());
-
-		let ferdie_public: Public = Sr25519Keyring::Ferdie.public();
-		let ferdie = AuthorityMemberPublicKey(ferdie_public.0.to_vec());
-
-		// Technical committee members
-		let alice_public: Public = Sr25519Keyring::Alice.public();
-		let alice = AuthorityMemberPublicKey(alice_public.0.to_vec());
-
-		let bob_public: Public = Sr25519Keyring::Bob.public();
-		let bob = AuthorityMemberPublicKey(bob_public.0.to_vec());
-
-		let charlie_public: Public = Sr25519Keyring::Charlie.public();
-		let charlie = AuthorityMemberPublicKey(charlie_public.0.to_vec());
 
 		Ok(FederatedAuthorityData {
-			council_authorities: vec![dave, eve, ferdie],
-			technical_committee_authorities: vec![alice, bob, charlie],
+			council_authorities: vec![],
+			technical_committee_authorities: vec![],
 			mc_block_hash: mc_block_hash.clone(),
 		})
 	}

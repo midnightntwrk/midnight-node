@@ -2,9 +2,9 @@ name: +check (format + lint)
 
 on:
   pull_request:
-    branches: [ '**' ]
+    branches: ["**"]
   push:
-    branches: [ 'main' ]
+    branches: ["main"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
@@ -22,17 +22,18 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Merge Conflict Finder
-        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c  # v4.0
+        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
       - name: Run build
         run: |

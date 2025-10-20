@@ -15,6 +15,7 @@ members = [
     "util/toolkit",
     "util/documented",
     "util/upgrader",
+    "tests/e2e",
     "docs",
 ]
 package = { license-file = "LICENSE" }
@@ -44,28 +45,28 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 
 [workspace.dependencies]
 # Midnight dependencies
-mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-6.1.0-alpha.3" }
-ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.3", features = ["parity-db"] }
-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.3" }
-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-6.1.0-alpha.3" }
-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-6.1.0-alpha.3" }
-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-6.1.0-alpha.3" }
-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.3" }
-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-6.1.0-alpha.3" }
+mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-6.1.0-alpha.4" }
+ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.4", features = ["parity-db"] }
+coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.4" }
+onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-6.1.0-alpha.4" }
+base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-6.1.0-alpha.4" }
+transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-6.1.0-alpha.4" }
+zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.4" }
+zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-6.1.0-alpha.4" }
 
 # Hard-fork test dependencies
-mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-6.1.0-alpha.3", features = ["parity-db"] }
-coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
-zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
+mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-6.1.0-alpha.4", features = ["parity-db"] }
+coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
+zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.3" }
-midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-6.1.0-alpha.3" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.4" }
+midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-6.1.0-alpha.4" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
