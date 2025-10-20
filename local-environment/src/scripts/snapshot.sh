@@ -9,8 +9,18 @@ install_packages() {
   return 1
 }
 
-if [ -z "$SNAPSHOT_S3_URI" ]; then
+if [ -z "${SNAPSHOT_S3_URI:-}" ]; then
   echo "SNAPSHOT_S3_URI must be provided" >&2
+  exit 1
+fi
+
+if [ -z "${SNAPSHOT_S3_ENDPOINT_URL:-}" ]; then
+  echo "SNAPSHOT_S3_ENDPOINT_URL must be provided" >&2
+  exit 1
+fi
+
+if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+  echo "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be provided" >&2
   exit 1
 fi
 
@@ -35,13 +45,10 @@ else
   tar -czf "$ARCHIVE" -C /node/chain .
 fi
 
-# Temp - local throwaway node testing
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin
+# Avoid potentially previously set STS tokens for miniio compatibility
+unset AWS_SESSION_TOKEN
 
-echo "Uploading $ARCHIVE to $SNAPSHOT_S3_URI"
-# Also throwaway. Safe
-aws s3 cp --endpoint-url "https://toward-civilization-introduced-grove.trycloudflare.com" "$ARCHIVE" "$SNAPSHOT_S3_URI"
+aws s3 cp --endpoint-url "$SNAPSHOT_S3_ENDPOINT_URL" "$ARCHIVE" "$SNAPSHOT_S3_URI"
 
 echo "Cleaning up temporary archive"
 rm -f "$ARCHIVE"

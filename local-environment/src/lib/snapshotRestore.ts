@@ -16,7 +16,7 @@ import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
 import YAML from "yaml";
-import { DEFAULT_S3_ROOT } from "./resources";
+import { ensureSnapshotCredentials } from "./snapshotEnv";
 
 interface RestoreSnapshotOptions {
   namespace: string;
@@ -57,7 +57,13 @@ export async function restoreSnapshotFromS3(
   };
 
   try {
-    downloadSnapshot(snapshotUri, archivePath, mergedEnv);
+    const credentials = ensureSnapshotCredentials(toStringRecord(mergedEnv));
+    downloadSnapshot(
+      snapshotUri,
+      archivePath,
+      mergedEnv,
+      credentials.endpointUrl,
+    );
 
     const unpackedRoot = extractSnapshotArchive(archivePath, extractDir);
 
@@ -87,10 +93,13 @@ function resolveSnapshotUri(
   }
 
   const base = env.MN_SNAPSHOT_S3_URI ?? process.env.MN_SNAPSHOT_S3_URI;
-  const root = (base && base.length > 0 ? base : DEFAULT_S3_ROOT).replace(
-    /\/$/,
-    "",
-  );
+  if (!base || base.trim().length === 0) {
+    throw new Error(
+      "No snapshot S3 base URI provided. Pass --from-snapshot with a fully qualified URI or set MN_SNAPSHOT_S3_URI.",
+    );
+  }
+
+  const root = base.replace(/\/$/, "");
 
   const trimmedId = snapshotId.replace(/^\/+/, "");
   return `${root}/${trimmedId}`;
@@ -113,26 +122,15 @@ function downloadSnapshot(
   snapshotUri: string,
   destination: string,
   env: NodeJS.ProcessEnv,
+  endpointUrl: string,
 ) {
   console.log(`Downloading snapshot archive to ${destination}`);
-  // const result = spawnSync("aws", ["s3", "cp", snapshotUri, destination], {
   const result = spawnSync(
     "aws",
-    [
-      "s3",
-      "cp",
-      "--endpoint-url",
-      "https://toward-civilization-introduced-grove.trycloudflare.com",
-      snapshotUri,
-      destination,
-    ],
+    ["s3", "cp", "--endpoint-url", endpointUrl, snapshotUri, destination],
     {
       stdio: "inherit",
-      env: {
-        ...env,
-        AWS_ACCESS_KEY_ID: "minioadmin",
-        AWS_SECRET_ACCESS_KEY: "minioadmin",
-      },
+      env,
     },
   );
 
@@ -303,4 +301,10 @@ function determineArchiveName(snapshotUri: string): string {
     }
   }
   return "snapshot.tar";
+}
+
+function toStringRecord(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter(([, value]) => typeof value === "string"),
+  ) as Record<string, string>;
 }

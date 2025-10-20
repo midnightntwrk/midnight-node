@@ -16,11 +16,14 @@ import { existsSync, readFileSync } from "fs";
 import path from "path";
 import YAML from "yaml";
 import { SnapshotOptions } from "../lib/types";
-import { DEFAULT_S3_ROOT } from "../lib/resources";
+import {
+  ensureSnapshotCredentials,
+  SnapshotCredentials,
+} from "../lib/snapshotEnv";
 
 const DEFAULT_SNAPSHOT_IMAGE =
   process.env.MN_SNAPSHOT_IMAGE ?? "amazon/aws-cli:2.17.16";
-const DEFAULT_S3_URI = process.env.MN_SNAPSHOT_S3_URI ?? DEFAULT_S3_ROOT;
+const DEFAULT_S3_URI = process.env.MN_SNAPSHOT_S3_URI ?? "";
 const DEFAULT_TIMEOUT_MINUTES = 30;
 
 interface KubernetesMetadata {
@@ -73,6 +76,10 @@ export async function snapshot(
   const timeoutMinutes = options.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES;
   const timeoutSeconds = Math.max(Math.floor(timeoutMinutes * 60), 30);
 
+  const snapshotEnv = cleanProcessEnv();
+  const snapshotCredentials = ensureSnapshotCredentials(snapshotEnv);
+  const credentialsSecretName = `${snapshotPodName}-aws-credentials`;
+
   if (!s3Uri) {
     throw new Error(
       "No S3 URI provided. Pass --s3-uri or set MN_SNAPSHOT_S3_URI.",
@@ -88,8 +95,17 @@ export async function snapshot(
 
   let snapshotPodCreated = false;
   let bootnodeScaledDown = false;
+  let snapshotSecretCreated = false;
 
   try {
+    const secretManifest = buildSnapshotSecretManifest({
+      namespace,
+      secretName: credentialsSecretName,
+      credentials: snapshotCredentials,
+    });
+    applyManifest(secretManifest);
+    snapshotSecretCreated = true;
+
     console.log(`Scaling ${bootnodeStatefulSet} down to 0 replicas`);
     scaleStatefulSet(namespace, bootnodeStatefulSet, 0);
     bootnodeScaledDown = true;
@@ -122,6 +138,9 @@ export async function snapshot(
       snapshotImage,
       s3Uri,
       bootnodeStatefulSet,
+      credentialsSecretName,
+      endpointUrl: snapshotCredentials.endpointUrl,
+      includeSessionToken: Boolean(snapshotCredentials.sessionToken),
     });
 
     applyManifest(manifest);
@@ -136,6 +155,10 @@ export async function snapshot(
   } finally {
     if (snapshotPodCreated) {
       deleteSnapshotPod(namespace, snapshotPodName);
+    }
+
+    if (snapshotSecretCreated) {
+      deleteSecret(namespace, credentialsSecretName);
     }
 
     if (bootnodeScaledDown) {
@@ -234,6 +257,33 @@ function resolveBootnodePvc(namespace: string, bootnode: string): string {
   }
 }
 
+function buildSnapshotSecretManifest(params: {
+  namespace: string;
+  secretName: string;
+  credentials: SnapshotCredentials;
+}): Record<string, unknown> {
+  const { namespace, secretName, credentials } = params;
+  const stringData: Record<string, string> = {
+    AWS_ACCESS_KEY_ID: credentials.accessKeyId,
+    AWS_SECRET_ACCESS_KEY: credentials.secretAccessKey,
+  };
+
+  if (credentials.sessionToken) {
+    stringData.AWS_SESSION_TOKEN = credentials.sessionToken;
+  }
+
+  return {
+    apiVersion: "v1",
+    kind: "Secret",
+    metadata: {
+      name: secretName,
+      namespace,
+    },
+    type: "Opaque",
+    stringData,
+  };
+}
+
 function buildSnapshotPodManifest(params: {
   namespace: string;
   podName: string;
@@ -241,6 +291,9 @@ function buildSnapshotPodManifest(params: {
   snapshotImage: string;
   s3Uri: string;
   bootnodeStatefulSet: string;
+  credentialsSecretName: string;
+  endpointUrl: string;
+  includeSessionToken: boolean;
 }): Record<string, unknown> {
   const {
     namespace,
@@ -249,6 +302,9 @@ function buildSnapshotPodManifest(params: {
     snapshotImage,
     s3Uri,
     bootnodeStatefulSet,
+    credentialsSecretName,
+    endpointUrl,
+    includeSessionToken,
   } = params;
 
   return {
@@ -273,7 +329,39 @@ function buildSnapshotPodManifest(params: {
           args: [SNAPSHOT_SCRIPT],
           env: [
             { name: "SNAPSHOT_S3_URI", value: s3Uri },
+            { name: "SNAPSHOT_S3_ENDPOINT_URL", value: endpointUrl },
             { name: "BOOTNODE_NAME", value: bootnodeStatefulSet },
+            {
+              name: "AWS_ACCESS_KEY_ID",
+              valueFrom: {
+                secretKeyRef: {
+                  name: credentialsSecretName,
+                  key: "AWS_ACCESS_KEY_ID",
+                },
+              },
+            },
+            {
+              name: "AWS_SECRET_ACCESS_KEY",
+              valueFrom: {
+                secretKeyRef: {
+                  name: credentialsSecretName,
+                  key: "AWS_SECRET_ACCESS_KEY",
+                },
+              },
+            },
+            ...(includeSessionToken
+              ? [
+                  {
+                    name: "AWS_SESSION_TOKEN",
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: credentialsSecretName,
+                        key: "AWS_SESSION_TOKEN",
+                      },
+                    },
+                  },
+                ]
+              : []),
           ],
           volumeMounts: [
             {
@@ -356,6 +444,21 @@ function deleteSnapshotPod(namespace: string, podName: string): void {
     `kubectl delete pod ${podName} -n ${namespace} --ignore-not-found`,
     execOptions({ stdio: ["ignore", "inherit", "inherit"] }),
   );
+}
+
+function deleteSecret(namespace: string, name: string): void {
+  execSync(
+    `kubectl delete secret ${name} -n ${namespace} --ignore-not-found`,
+    execOptions({ stdio: ["ignore", "inherit", "inherit"] }),
+  );
+}
+
+function cleanProcessEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([, value]) => typeof value === "string",
+    ),
+  ) as Record<string, string>;
 }
 
 function waitForStatefulSetReady(

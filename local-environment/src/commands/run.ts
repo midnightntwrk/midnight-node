@@ -27,6 +27,7 @@ import {
 import { RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
 import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
+import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
 
 /**
  * Runs a specified network, with passed configuration
@@ -70,6 +71,7 @@ async function runEphemeralEnvironment(
   const composeFile = resolveComposeFile(namespace);
 
   if (runOptions.fromSnapshot) {
+    ensureSnapshotCredentials(env);
     await restoreSnapshotFromS3({
       namespace,
       composeFile,
