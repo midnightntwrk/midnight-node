@@ -2,15 +2,14 @@
 title: Installation
 ---
 
-This guide is for reference only, please check the latest information on getting starting with Substrate 
-[here](https://docs.substrate.io/main-docs/install/).
+This guide covers the complete setup needed for midnight-node development. For general Substrate information, see the [official Substrate docs](https://docs.substrate.io/main-docs/install/).
 
-This page will guide you through the **2 steps** needed to prepare a computer for **Substrate** development.
-Since Substrate is built with [the Rust programming language](https://www.rust-lang.org/), the first
-thing you will need to do is prepare the computer for Rust development - these steps will vary based
-on the computer's operating system. Once Rust is configured, you will use its toolchains to interact
-with Rust projects; the commands for Rust's toolchains will be the same for all supported,
-Unix-based operating systems.
+This page will guide you through the **3 steps** needed to prepare a computer for midnight-node development. Since midnight-node is built with [the Rust programming language](https://www.rust-lang.org/) on top of Substrate, the first thing you will need to do is prepare the computer for Rust development - these steps will vary based on the computer's operating system. Once Rust is configured, you will use its toolchains to interact with Rust projects; the commands for Rust's toolchains will be the same for all supported, Unix-based operating systems.
+
+**Steps:**
+1. Build dependencies
+2. Rust developer environment
+3. Midnight-specific setup (GitHub access, Nix, Direnv)
 
 ## Build dependencies
 
@@ -222,4 +221,110 @@ specific nightly version, follow these steps:
 rustup uninstall nightly
 rustup install nightly-<yyyy-MM-dd>
 rustup target add wasm32v1-none --toolchain nightly-<yyyy-MM-dd>
+```
+
+## Midnight-Specific Setup
+
+### GitHub Personal Access Token
+
+Midnight-node depends on private packages that require authentication. Create a GitHub Personal Access Token (classic) with the following permissions:
+
+1. Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
+2. Generate new token with these scopes:
+   - `repo` - Full control of private repositories
+   - `read:packages` - Download packages from GitHub Package Registry
+
+### Configure Netrc
+
+Add your GitHub credentials to `~/.netrc`:
+
+```bash
+machine github.com
+login YOUR_GITHUB_USERNAME
+password YOUR_GITHUB_TOKEN
+```
+
+Set proper permissions:
+
+```bash
+chmod 600 ~/.netrc
+```
+
+### Docker Authentication
+
+Authenticate Docker with GitHub Container Registry:
+
+```bash
+echo $YOUR_GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+### Nix Development Environment
+
+Midnight-node uses Nix for reproducible development environments. The repository includes a `flake.nix` that sets up all required tools (earthly, rustup, clang, etc.).
+
+Install Nix with flakes enabled:
+
+```bash
+# Install Nix (if not already installed)
+curl -L https://nixos.org/nix/install | sh
+
+# Enable flakes (add to ~/.config/nix/nix.conf or /etc/nix/nix.conf)
+experimental-features = nix-command flakes
+```
+
+Enter the development environment:
+
+```bash
+# Navigate to midnight-node repository
+cd /path/to/midnight-node
+
+# Start Nix development shell
+nix develop
+```
+
+The Nix shell will automatically source `.envrc` and set up all build dependencies.
+
+### Direnv (Alternative to Nix)
+
+If not using Nix, you can manually source the environment configuration:
+
+```bash
+# Install direnv
+# macOS:
+brew install direnv
+
+# Ubuntu/Debian:
+sudo apt install direnv
+
+# Add to your shell (~/.bashrc or ~/.zshrc)
+eval "$(direnv hook bash)"  # or zsh, fish, etc.
+
+# Allow direnv in the repository
+cd /path/to/midnight-node
+direnv allow
+```
+
+When using direnv, environment variables from `.envrc` are automatically loaded when you enter the directory.
+
+**Manual alternative:** If you don't want to use direnv, source `.envrc` manually before running commands:
+
+```bash
+source .envrc
+cargo check
+cargo test
+```
+
+### Verify Setup
+
+After completing the setup, verify everything works:
+
+```bash
+# If using Nix
+nix develop
+
+# Check cargo commands work
+cargo check
+
+# Check earthly is available
+earthly --version
 ```

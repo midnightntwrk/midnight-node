@@ -2,8 +2,115 @@
 
 # Midnight Node
 
-This is an implementation of the Midnight blockchain. This node houses the Midnight Ledger, allowing participants of Midnight
-to come to consensus on the public and their private state.
+Implementation of the Midnight blockchain node, providing consensus, transaction processing, and privacy-preserving smart contract execution. The node enables participants to maintain both public blockchain state and private user state through zero-knowledge proofs.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                            Midnight Node                             │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │                            Runtime                             │  │
+│  │                                                                │  │
+│  │  ┌──────────────────────────────────────────────────────────┐  │  │
+│  │  │                         Pallets                          │  │  │
+│  │  │                                                          │  │  │
+│  │  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐   │  │  │
+│  │  │  │  Midnight   │  │   Native     │  │   Federated    │   │  │  │
+│  │  │  │   System    │  │    Token     │  │   Authority    │   │  │  │
+│  │  │  │             │  │ Observation  │  │                │   │  │  │
+│  │  │  └─────────────┘  └──────────────┘  └────────────────┘   │  │  │
+│  │  │                                                          │  │  │
+│  │  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐   │  │  │
+│  │  │  │   Version   │  │   Midnight   │  │   Federated    │   │  │  │
+│  │  │  │             │  │              │  │   Authority    │   │  │  │
+│  │  │  │             │  │              │  │  Observation   │   │  │  │
+│  │  │  └─────────────┘  └──────────────┘  └────────────────┘   │  │  │
+│  │  └──────────────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │                        Node Services                           │  │
+│  │                                                                │  │
+│  │    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐      │  │
+│  │    │   RPC    │  │ Consensus│  │  Network │  │ Keystore │      │  │
+│  │    │  Server  │  │   AURA   │  │   P2P    │  │          │      │  │
+│  │    │          │  │  GRANDPA │  │          │  │          │      │  │
+│  │    └──────────┘  └──────────┘  └──────────┘  └──────────┘      │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ WebSocket RPC
+                                    │ Port: 9944
+                                    ▼
+                         ┌──────────────────────┐
+                         │   External Clients   │
+                         │  (Wallets, Indexers, │
+                         │     Applications)    │
+                         └──────────────────────┘
+```
+
+## Components
+
+### Runtime Pallets
+
+Midnight Node includes six custom runtime pallets that implement core blockchain functionality:
+
+**[pallet-midnight](pallets/midnight)** - Core pallet managing ledger state and transaction execution
+- Processes privacy-preserving smart contract transactions
+- Maintains ledger state root and provides state access interface
+- Integrates with midnight-ledger for zero-knowledge proof verification
+
+**[pallet-midnight-system](pallets/midnight-system)** - System transaction management
+- Handles administrative operations requiring root privileges
+- Applies system-level transactions to ledger state
+
+**[pallet-native-token-observation](pallets/native-token-observation)** - Cardano bridge integration
+- Tracks cNIGHT token registration from Cardano mainchain
+- Manages DUST generation and UTXO tracking
+- Processes Cardano Midnight System Transactions (CMST)
+
+**[pallet-federated-authority](pallets/federated-authority)** - Multi-collective governance
+- Requires consensus from multiple authority bodies for critical operations
+- Motion-based proposal system with time limits
+- Executes approved motions with root privileges
+
+**[pallet-federated-authority-observation](pallets/federated-authority-observation)** - Governance synchronization
+- Observes authority changes from mainchain
+- Updates Council and Technical Committee memberships
+- Propagates governance changes across the network
+
+**[pallet-version](pallets/version)** - Runtime version tracking
+- Records runtime spec version in block digests
+- Enables version monitoring and upgrade tracking
+
+### Node Services
+
+**RPC Server** - WebSocket endpoint (default port 9944) for client connections
+
+**Consensus** - Hybrid consensus mechanism:
+- AURA for block production (6-second blocks)
+- GRANDPA for Byzantine-fault-tolerant finality
+- BEEFY for bridge security
+- MMR for efficient light client proofs
+
+**Network** - P2P networking via libp2p (default port 30333)
+
+**Keystore** - Local cryptographic key management for validators
+
+## Features
+
+**Privacy-Preserving Smart Contracts** - Execute contracts with zero-knowledge proofs while maintaining public blockchain state
+
+**Partner Chain Architecture** - Integrated with Cardano mainchain as a partner chain with cross-chain token bridging (cNIGHT to DUST)
+
+**Multi-Layer Governance** - Federated authority system requiring consensus from multiple governance bodies with automatic mainchain synchronization
+
+**High Performance** - 6-second block time with efficient finality mechanism and optimized transaction processing
+
+**Developer Tools** - Comprehensive CLI with chain specification generation, runtime benchmarking, and upgrade testing capabilities
 
 ## Quick Start
 
@@ -24,12 +131,13 @@ that we are still in the process of being release. As such:
 [Proposals](docs/proposals)
 [Decisions](docs/decisions)
 
-- [Configuration](docs/config.md)
-- [Testing Upgrades](docs/testing-upgrades.md)
-- [Chain Specifications](docs/chain_specs.md)
-- [Rust Installation](docs/rust-setup.md)
-- [Block Weights](docs/weights.md)
-- [Actionlint Guide](docs/actionlint-guide.md)
+- [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
+- [Rust Installation](docs/rust-setup.md) - Complete setup including GitHub access, Nix, and Direnv
+- [Testing Upgrades](docs/testing-upgrades.md) - Runtime and node upgrade testing
+- [Configuration](docs/config.md) - Node configuration options
+- [Chain Specifications](docs/chain_specs.md) - Working with different networks
+- [Block Weights](docs/weights.md) - Runtime weights documentation
+- [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
 
 ## Prerequisites
 
@@ -46,57 +154,69 @@ that we are still in the process of being release. As such:
 
 ## Development Workflow
 
-Ensure you're using direnv, or source `.envrc` manually.
-(For RustRover you can use https://plugins.jetbrains.com/plugin/15285-direnv-integration )
+See [docs/development-workflow.md](docs/development-workflow.md) for complete workflow guidance including:
+- Environment setup (Nix, Direnv, or manual)
+- Cargo vs Earthly best practices (when to use each)
+- Common development tasks and commands
+- Ledger upgrade procedures
+- Debugging tips and techniques
+- Chain specification workflow
+- AWS secrets workflow
 
-Common development commands are kept in the Earthfile prefixed with 'local-'. To see them all, run:
-
-```shell
-$ earthly doc
-```
+For quick earthly target reference, run `earthly doc` to list all available targets.
 
 ## How-To Guides
 
 ### Rebuilding preprod/prod genesis
 
-For `preprod` and `prod` chains, node keys and wallet seeds used in genesis are
-stored as secrets.
+For `preprod` and `prod` chains, node keys and wallet seeds used in genesis are stored as AWS secrets.
 
-It's possible to rebuild the chainspecs for `preprod` and `prod` chains without
-access to the secrets, since the public keys for the initial authority nodes
-are stored in `/res/$NETWORK_NAME/initial-authorities.json`. To rebuild chainspecs without rebuilding the genesis, run:
+**Working without AWS access:**
+
+If you don't have AWS access, you can still rebuild chainspecs without rebuilding the genesis, since the public keys for the initial authority nodes are stored in `/res/$NETWORK_NAME/initial-authorities.json`:
 
 ```shell
 $ earthly +rebuild-chainspecs
 ```
 
-If you need to re-generate the mock file for a `preprod` or `prod` chain, you'll need access to the secrets. These can
-be copied from `AWS` into the `/secrets` directory. For example, for testnet these files would be:
+For local development without secrets, use the `undeployed` network.
 
-```shell
-secrets/testnet-seeds-aws.json
-secrets/testnet-keys-aws.json
-```
+**Working with AWS access:**
 
-The mock file can be regenerated by running:
+If you have AWS access, you can perform full genesis rebuilds:
 
-```shell
-$ earthly +generate-keys
-# Output: /res/testnet/initial-authorities.json and /res/mock-bridge-data/testnet-mock.json
-```
+1. Copy secrets from AWS into the `/secrets` directory:
+   ```shell
+   # Example for testnet
+   secrets/testnet-seeds-aws.json
+   secrets/testnet-keys-aws.json
+   ```
 
-To rebuild the genesis for a preprod environment, copy the keys from `AWS` into the `/secrets` directory and run:
+2. Regenerate the mock file:
+   ```shell
+   $ earthly +generate-keys
+   # Output: /res/testnet/initial-authorities.json and /res/mock-bridge-data/testnet-mock.json
+   ```
 
-```shell
-# secrets copied from /secrets/testnet-02-genesis-seeds.json
-$ earthly +rebuild-genesis-testnet-02
-```
+3. Rebuild genesis for a preprod environment:
+   ```shell
+   # secrets copied from /secrets/testnet-02-genesis-seeds.json
+   $ earthly +rebuild-genesis-testnet-02
+   ```
 
-If you want to regenerate the genesis seeds, run:
+4. (Optional) Regenerate the genesis seeds:
+   ```shell
+   $ earthly +generate-testnet-02-genesis-seeds
+   ```
 
-```shell
-$ earthly +generate-testnet-02-genesis-seeds
-```
+**Need genesis rebuilt but don't have AWS access?**
+
+Contact the node team in Slack. Provide:
+- Your PR number
+- Which network needs genesis rebuilt (qanet/preview/testnet)
+- Confirmation that you've committed all necessary changes
+
+A team member with AWS access will download the secrets and run the rebuild command for you.
 
 ### How to use transaction generator in the midnight toolkit
 
@@ -109,9 +229,37 @@ These are built in CI. See the workflow files for the latest `earthly` commands:
 - [node](.github/workflows/main.yml)
 - [toolkit](.github/workflows/main.yml)
 
-### Start bootstrapped local network
+### Start local network
 
-Start a local network with 5/7 authority node using the existing chain specification `local`
+**Available Networks:**
+- `local` - Development network (default)
+- `qanet` - QA testing network
+- `preview` - Preview/staging network
+- `perfnet` - Performance testing network
+
+Chain specifications are located in `/res/` directory.
+
+**Configuration Parameters:**
+
+| Parameter | Environment Variable | CLI Flag | Description |
+|-----------|---------------------|----------|-------------|
+| Config preset | `CFG_PRESET=dev` | - | Development mode configuration |
+| Validator seed | `SEED=//Alice` | - | Validator identity (//Alice, //Bob, etc.) |
+| Chain spec | - | `--chain local` | Network to connect to |
+| Base path | - | `--base-path /tmp/node-1` | Data directory |
+| Validator mode | - | `--validator` | Run as validator |
+| P2P port | - | `--port 30333` | Networking port (default: 30333) |
+| RPC port | - | `--rpc-port 9944` | WebSocket RPC port (default: 9944) |
+| Node key | - | `--node-key "0x..."` | Network identity key |
+| Bootstrap nodes | - | `--bootnodes "/ip4/..."` | Initial peers |
+
+**Start single-node local network** for development:
+
+```shell
+CFG_PRESET=dev SEED=//Alice ./target/release/midnight-node --base-path /tmp/node-1 --chain local --validator
+```
+
+**Start multi-node local network** with 5/7 authority nodes using the `local` chain specification:
 
 ```shell
 CFG_PRESET=dev SEED=//Alice ./target/release/midnight-node --base-path /tmp/node-1 --node-key="0000000000000000000000000000000000000000000000000000000000000001" --validator --port 30333

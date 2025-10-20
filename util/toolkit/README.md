@@ -1,23 +1,64 @@
-# Toolkit
+# Midnight Node Toolkit
+
+CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
+
+## Table of Contents
+
+- [Quick Reference](#quick-reference)
+- [Important Usage Examples](#important-usage-examples)
+- [Implementation Status](#implementation-status)
+- [Usage](#usage)
+  - [Check Version Information](#check-version-information)
+  - [Generate Transactions](#generate-transactions)
+  - [Register DUST Address](#register-dust-address)
+  - [Generate Genesis](#generate-genesis)
+  - [Show Transaction](#show-transaction)
+  - [Show Wallet](#show-wallet-json-output)
+  - [Show Address](#show-address)
+  - [Generate Random Address](#generate-random-address)
+- [Development](#development)
+- [Docker](#docker)
 
 ---
 
-## 🚀 **IMPORTANT: See Usage Examples**
+## Quick Reference
+
+```bash
+# Check version compatibility
+midnight-node-toolkit version
+
+# Show wallet balance and state
+midnight-node-toolkit show-wallet --src-file genesis.mn --seed <seed>
+
+# Generate transactions (basic structure)
+midnight-node-toolkit generate-txs <SOURCE> <DEST> <PROVER> <BUILDER> [BUILDER_ARGS]
+
+# Deploy contract
+midnight-node-toolkit send-intent --intent-file deploy.bin --compiled-contract-dir contract/out
+
+# Register DUST address
+midnight-node-toolkit generate-txs register-dust-address --wallet-seed <seed> --funding-seed <seed>
+
+# Show address (shielded or unshielded)
+midnight-node-toolkit show-address --network undeployed --seed <seed> [--shielded]
+```
+
+---
+
+## Important Usage Examples
 
 **The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
 
-### 👉 Check out the `toolkit-*.sh` files here:
-**https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
+**Check out the `toolkit-*.sh` files here:**
+https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests
 
 These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
 
 ---
 
-
 ## Implementation Status
 
-
-| Feature                                                              | Progress |
+| Feature | Progress |
 |----------------------------------------------------------------------|----------|
 | Send Shielded + Unshielded tokens                                    | ✅       |
 | Sync with local and remote networks                                  | ✅       |
@@ -29,14 +70,15 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
-| DUST registration command                                            | 🚧       |
-| Contract Maintenance - updating authority + verifier keys            | 🚧       |
+| DUST registration command                                            | ✅       |
+| Contract Maintenance - updating authority + verifier keys            | ✅       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
 | Build cNight genesis                                                 | ⏳       |
 
+---
 
 ## Usage
 
@@ -100,7 +142,7 @@ Use the `-h` flag for full usage information.
 **NOTE 1**
 Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGenerator` reads and send `TransactionWithContext` instead of `Transaction`. The reason is now it is necessary to know the `BlockContext` a transaction is valid.
 
-If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#) using as `--src-file` the previously generated `TransactionWithContext`.
+If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-form-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
 
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
