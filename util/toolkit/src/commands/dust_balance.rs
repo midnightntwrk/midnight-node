@@ -97,5 +97,28 @@ pub async fn execute(
 
 #[cfg(test)]
 mod tests {
-	// todo
+	use super::*;
+	use test_case::test_case;
+
+	/// Test data
+	fn td(filepath: &str) -> String {
+		[env!("CARGO_MANIFEST_DIR"), "/test-data/", &filepath].concat().to_string()
+	}
+
+	#[test_case("0000000000000000000000000000000000000000000000000000000000000001", vec![td("genesis/genesis_block_undeployed.mn")]; "when using seed 01")]
+	#[tokio::test]
+	async fn check_balance_non_zero(seed: &str, src_files: Vec<String>) {
+		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
+		let args = DustBalanceArgs {
+			source: Source { src_url: None, fetch_concurrency: 1, src_files: Some(src_files) },
+			seed,
+			dry_run: false,
+		};
+
+		let res = execute(args).await.expect("result was not Ok");
+
+		assert!(
+			matches!(res, DustBalanceResult::Json( DustBalanceJson { total, .. }) if total > 0 )
+		);
+	}
 }
