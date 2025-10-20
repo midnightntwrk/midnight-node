@@ -93,7 +93,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --coin-public "$coin_public" \
     --output-intent "/out/$deploy_intent_filename" \
     --output-private-state "/out/$initial_private_state_filename" \
-    --output-zswap-state "/out/temp.json"
+    --output-zswap-state "/out/temp.json" \
+    20
 
 test -f "$tempdir/$deploy_intent_filename"
 test -f "$tempdir/$initial_private_state_filename"

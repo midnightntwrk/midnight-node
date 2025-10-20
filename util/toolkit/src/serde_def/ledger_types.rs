@@ -1,8 +1,7 @@
 use hex::ToHex as _;
 use midnight_node_ledger_helpers::{
-	DustGenerationInfo, QualifiedInfo, Timestamp, Utxo, serialize_untagged,
+	DustGenerationInfo, QualifiedDustOutput, QualifiedInfo, Timestamp, Utxo, serialize_untagged,
 };
-use mn_ledger::dust::QualifiedDustOutput;
 
 #[derive(Debug, serde::Serialize)]
 pub struct UtxoSer {

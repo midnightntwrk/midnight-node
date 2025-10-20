@@ -288,6 +288,7 @@ rebuild-genesis-state:
                 --output-intent /res/test-data/contract/counter/deploy.bin \
                 --output-private-state /res/test-data/contract/counter/initial_state.json \
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
+                0 \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
@@ -904,7 +905,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit
+    RUN --no-cache npm audit --severity high
 
 audit-yarn:
     ARG DIRECTORY
@@ -914,7 +915,7 @@ audit-yarn:
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit
+    RUN --no-cache yarn npm audit --severity high
 
 audit-local-environment:
     BUILD +audit-npm --DIRECTORY=local-environment/

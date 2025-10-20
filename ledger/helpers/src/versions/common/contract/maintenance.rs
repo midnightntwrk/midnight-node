@@ -12,12 +12,12 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use mn_ledger::structure::SingleUpdate;
 use std::sync::Arc;
 
-use crate::{
+use super::super::{
 	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, DB, Intent, LedgerContext,
-	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, StdRng, VerifyingKey,
+	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SingleUpdate, StdRng,
+	VerifyingKey,
 };
 
 pub struct ContractMaintenanceAuthorityInfo {

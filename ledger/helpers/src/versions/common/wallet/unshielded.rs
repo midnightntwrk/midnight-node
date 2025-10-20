@@ -11,15 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::num::ParseIntError;
-
-use crate::{
-	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, IntentHash,
+use super::super::{
+	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash,
 	IntoWalletAddress, NetworkId, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress,
 	WalletSeed, deserialize_untagged, network, serialize_untagged,
 };
-use base_crypto::hash::HashOutput;
 use hex::FromHexError;
+use std::num::ParseIntError;
 
 #[derive(Copy, Clone, Debug)]
 pub struct UtxoId {
@@ -75,6 +73,7 @@ pub struct UnshieldedWallet {
 
 impl DeriveSeed for UnshieldedWallet {}
 
+#[cfg(feature = "can-panic")]
 impl IntoWalletAddress for UnshieldedWallet {
 	fn address(&self, network_id: NetworkId) -> WalletAddress {
 		let hrp_string =
@@ -112,6 +111,7 @@ impl UnshieldedWallet {
 		Self::from_seed(derived_seed)
 	}
 
+	#[cfg(feature = "can-panic")]
 	pub fn signing_key(&self) -> &SigningKey {
 		self.signing_key
 			.as_ref()

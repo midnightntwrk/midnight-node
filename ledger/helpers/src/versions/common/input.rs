@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-	DB, Input, LedgerContext, ProofPreimage, QualifiedInfo, Segment, Sp, StdRng, TokenInfo,
-	WalletSeed, WalletState,
+#![cfg(feature = "can-panic")]
+
+use super::{
+	DB, Input, LedgerContext, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType, Sp, StdRng,
+	TokenInfo, WalletSeed, WalletState,
 };
-use coin_structure::coin::ShieldedTokenType;
 use itertools::Itertools;
 use std::sync::Arc;
 

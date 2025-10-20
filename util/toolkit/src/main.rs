@@ -261,7 +261,7 @@ pub(crate) async fn run_command(
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
 			let ledger_version =
-				utils::find_dependency_version("mn-ledger").expect("missing ledger version");
+				find_dependency_version("mn-ledger").expect("missing ledger version");
 			let compactc_version = include_str!("../../toolkit-js/COMPACTC_VERSION").trim();
 
 			println!(
