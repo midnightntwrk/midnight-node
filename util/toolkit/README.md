@@ -465,6 +465,7 @@ $ midnight-node-toolkit show-wallet
   "utxos": [
     {
       "id": "c230c54a599a3d3472c5ee3f350c94745f1231412a4be729ea9f40db5e6776df#0",
+      "initial_nonce": "ba356be982b6a8b77635cb5e8602d2889049c6f0080af6cd7403feab3b71eadf",
       "value": 500000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -497,21 +498,18 @@ Prints the total Dust Balance, including a breakdown of the source of Dust per D
 
 ```console
 $ midnight-node-toolkit dust-balance
->   --src-file ./res/genesis/genesis_block_undeployed.mn
+>   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
 {
   "generation_infos": [
 ...
   ],
   "source": {
-    "736942213e3107956b9581f4f4cceff68662a779b3a1d522219b6d9d8990178e16": 2500000000000000000000000,
-    "732ccb837ef1fa8cf30c5e4f1beafb9973c47ac6a67529a5541aff0f6625edf72e": 2500000000000000000000000,
-    "73909675949e44cbcc8401b3c00e23b7d98dd677e9be4e68c584dd82a384033172": 2500000000000000000000000,
-    "735ed54863c571cee9d05089edccbafbada4c2cc0ba99f25e0dc36f40a6eae1056": 2500000000000000000000000,
-    "730450f94a3b0d546312b3e7831931a4f0e35560789932d0cddab1faba48452055": 2500000000000000000000000
+...
   },
   "total": 12500000000000000000000000
 }
+
 ```
 
 ---

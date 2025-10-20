@@ -90,7 +90,6 @@ pub async fn execute(
 				source.insert(dust_output_ser.nonce, balance);
 			}
 		}
-
 		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total }))
 	})
 }

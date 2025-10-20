@@ -1,11 +1,13 @@
 use hex::ToHex as _;
 use midnight_node_ledger_helpers::{
-	DustGenerationInfo, QualifiedDustOutput, QualifiedInfo, Timestamp, Utxo, serialize_untagged,
+	DustGenerationInfo, InitialNonce, QualifiedDustOutput, QualifiedInfo, Timestamp, Utxo,
+	persistent_commit, serialize_untagged,
 };
 
 #[derive(Debug, serde::Serialize)]
 pub struct UtxoSer {
 	pub id: String,
+	pub initial_nonce: String,
 	pub value: u128,
 	pub user_address: String,
 	pub token_type: String,
@@ -18,8 +20,13 @@ impl From<Utxo> for UtxoSer {
 		let intent_hash = utxo.intent_hash.0.0.encode_hex();
 		let output_number = utxo.output_no;
 		let id = format!("{intent_hash}#{output_number}");
+		let initial_nonce = InitialNonce(persistent_commit(&utxo.output_no, utxo.intent_hash.0))
+			.0
+			.0
+			.encode_hex();
 		Self {
 			id,
+			initial_nonce,
 			value: utxo.value,
 			user_address: utxo.owner.0.0.encode_hex(),
 			token_type: utxo.type_.0.0.encode_hex(),
