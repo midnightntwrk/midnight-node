@@ -17,6 +17,9 @@
   "dependencies": {
     "@lucid-evolution/lucid": "^0.4.29",
     "@tsconfig/node22": "^22.0.2",
+    "bech32": "^2.0.0",
+    "cbor2": "^2.0.1",
+    "commander": "^14.0.1",
     "typescript": "^5.9.3"
   },
   "devDependencies": {
