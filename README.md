@@ -29,6 +29,7 @@ that we are still in the process of being release. As such:
 - [Chain Specifications](docs/chain_specs.md)
 - [Rust Installation](docs/rust-setup.md)
 - [Block Weights](docs/weights.md)
+- [Actionlint Guide](docs/actionlint-guide.md)
 
 ## Prerequisites
 
