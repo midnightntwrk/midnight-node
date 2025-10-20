@@ -17,7 +17,7 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
 	println!("Subscribing for registration extrinsic with tx_id: 0x{}", hex::encode(tx_id));
 	let url = load_config().node_url;
-	let api = OnlineClient::<SubstrateConfig>::from_url(&url).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 
 	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
 
