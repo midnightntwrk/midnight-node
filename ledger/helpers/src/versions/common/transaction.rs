@@ -217,7 +217,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			return self.prove_tx(tx).await;
 		};
 
-		let tx = self.pay_fees(tx, network_id, now, ttl).await?;
+		let tx = self.pay_fees(tx, now, ttl).await?;
 		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
 		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 		Ok(tx)
@@ -226,7 +226,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	async fn pay_fees(
 		&mut self,
 		tx: UnprovenTransaction<D>,
-		network_id: String,
 		now: Timestamp,
 		ttl: Timestamp,
 	) -> Result<FinalizedTransaction<D>> {
@@ -234,9 +233,8 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		for _ in 0..10 {
 			let spends = self.gather_dust_spends(missing_dust, now)?;
-			let payment_tx =
-				self.build_dust_tx(&spends, self.rng.clone().split(), &network_id, now, ttl);
-			let paid_tx = tx.merge(&payment_tx)?;
+			let mut paid_tx = tx.clone();
+			self.apply_dust(&mut paid_tx, &spends, self.rng.clone().split(), now, ttl);
 
 			if self.mock_proofs_for_fees {
 				let mock_proven_tx = self.mock_prove_tx(&paid_tx)?;
@@ -304,16 +302,22 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		if dust_imbalance < 0 { Ok(Some(dust_imbalance.unsigned_abs())) } else { Ok(None) }
 	}
 
-	fn build_dust_tx(
+	fn apply_dust(
 		&self,
+		tx: &mut UnprovenTransaction<D>,
 		spends: &[DustSpend<ProofPreimageMarker, D>],
 		mut rng: StdRng,
-		network_id: &str,
 		now: Timestamp,
 		ttl: Timestamp,
-	) -> UnprovenTransaction<D> {
-		let mut intent = Intent::empty(&mut rng, ttl);
-		let segment_id = Segment::FeePayments.into();
+	) {
+		let Transaction::Standard(stx) = tx else {
+			return;
+		};
+		let segment_id = Segment::Fallible.into();
+		let mut intent = match stx.intents.get(&segment_id) {
+			Some(intent) => (*intent).clone(),
+			None => Intent::empty(&mut rng, ttl),
+		};
 		let registrations = self
 			.dust_registrations
 			.iter()
@@ -326,8 +330,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			registrations,
 			ctime: now,
 		}));
-		let intents = HashMapStorage::new().insert(segment_id, intent);
-		Transaction::from_intents(network_id, intents)
+		stx.intents = stx.intents.insert(segment_id, intent);
 	}
 
 	fn gather_dust_spends(

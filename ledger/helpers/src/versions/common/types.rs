@@ -149,7 +149,6 @@ pub type Transcripts<D> = (Option<Transcript<D>>, Option<Transcript<D>>);
 pub enum Segment {
 	Guaranteed = 0,
 	Fallible = 1,
-	FeePayments = 2,
 }
 
 impl From<Segment> for u16 {
@@ -157,7 +156,6 @@ impl From<Segment> for u16 {
 		match val {
 			Segment::Guaranteed => 0,
 			Segment::Fallible => 1,
-			Segment::FeePayments => 2,
 		}
 	}
 }

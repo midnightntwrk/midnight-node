@@ -2,18 +2,18 @@ name: Checkmarx One Scan
 
 # ↓ lock down top‐level permissions to only what we use
 permissions:
-  contents: read             # we only need to checkout code
-  actions: read              # to query workflows/runs
-  pull-requests: write       # to comment on or label PRs
+  contents: read # we only need to checkout code
+  actions: read # to query workflows/runs
+  pull-requests: write # to comment on or label PRs
 
 on:
   pull_request:
-    branches: [ '**' ]
+    branches: ["**"]
   push:
-    branches: [ 'main' ]
-  workflow_dispatch: {}   # so you can still run it manually
+    branches: ["main"]
+  workflow_dispatch: {} # so you can still run it manually
   schedule:
-    - cron: "0 0 * * *"   # run daily at midnight UTC
+    - cron: "0 0 * * *" # run daily at midnight UTC
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
@@ -48,4 +48,4 @@ jobs:
           cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
           cx-tenant: ${{ secrets.CX_TENANT }}
           scs-repo-token: ${{ secrets.MIDNIGHTCI_REPO }}
-          upload-to-github: 'true'
+          upload-to-github: "true"
