@@ -122,7 +122,7 @@ function downloadSnapshot(
       "s3",
       "cp",
       "--endpoint-url",
-      "https://cet-percentage-integrate-membrane.trycloudflare.com",
+      "https://toward-civilization-introduced-grove.trycloudflare.com",
       snapshotUri,
       destination,
     ],

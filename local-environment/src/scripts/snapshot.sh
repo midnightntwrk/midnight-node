@@ -9,27 +9,6 @@ install_packages() {
   return 1
 }
 
-ensure_tar() {
-  if command -v tar >/dev/null 2>&1; then
-    return 0
-  fi
-
-  echo "Installing tar dependency"
-  if ! install_packages tar gzip; then
-    echo "tar is required but could not be installed automatically" >&2
-    exit 1
-  fi
-}
-
-ensure_zstd() {
-  if command -v zstd >/dev/null 2>&1; then
-    return 0
-  fi
-
-  echo "Attempting to install zstd for optimal compression"
-  install_packages zstd || true
-}
-
 if [ -z "$SNAPSHOT_S3_URI" ]; then
   echo "SNAPSHOT_S3_URI must be provided" >&2
   exit 1
@@ -40,8 +19,8 @@ if [ ! -d /node ]; then
   exit 1
 fi
 
-ensure_tar
-ensure_zstd
+yum -y makecache
+yum -y install tar zstd
 
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 ARCHIVE_BASENAME="${BOOTNODE_NAME:-bootnode}-node-$TIMESTAMP"
@@ -62,7 +41,7 @@ export AWS_SECRET_ACCESS_KEY=minioadmin
 
 echo "Uploading $ARCHIVE to $SNAPSHOT_S3_URI"
 # Also throwaway. Safe
-aws s3 cp --endpoint-url "https://cet-percentage-integrate-membrane.trycloudflare.com" "$ARCHIVE" "$SNAPSHOT_S3_URI"
+aws s3 cp --endpoint-url "https://toward-civilization-introduced-grove.trycloudflare.com" "$ARCHIVE" "$SNAPSHOT_S3_URI"
 
 echo "Cleaning up temporary archive"
 rm -f "$ARCHIVE"
