@@ -7,12 +7,12 @@ on:
         type: string
         description: QA branch to use
         required: false
-        default: 'qa-qanet'
-      RESET: 
+        default: "qa-qanet"
+      RESET:
         type: choice
         description: Reset the cache
         required: true
-        default: 'false'
+        default: "false"
         options:
           - true
           - false
@@ -24,24 +24,24 @@ on:
           - node-dev-01
           - testnet-02
           - local
-        default: 'qanet'
+        default: "qanet"
   workflow_call:
     inputs:
       QA_BRANCH:
         type: string
         description: QA branch to use
         required: false
-        default: 'qa-qanet'
+        default: "qa-qanet"
       RESET:
         type: string
         description: Reset the cache
         required: true
-        default: 'false'
+        default: "false"
       TEST_ENV_INPUT:
         type: string
         description: Midnight network to use (testnet/testnet-02/qanet/node-dev-01/local)
         required: true
-        default: 'qanet'
+        default: "qanet"
     secrets:
       MIDNIGHTCI_PACKAGES_READ:
         required: true
@@ -71,12 +71,13 @@ jobs:
     steps:
       - name: Log in to GitHub Container registry
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
-          registry: 'https://ghcr.io'
+          registry: "https://ghcr.io"
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           clean: false
 
@@ -84,8 +85,8 @@ jobs:
         run: |
           RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
           WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
-          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
-          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+          echo "RPC_URL=$RPC_URL" >> "$GITHUB_ENV"
+          echo "WS_URL=$WS_URL" >> "$GITHUB_ENV"
 
       - name: Determine the latest successful run ID with appropriate artifact
         continue-on-error: true
@@ -94,7 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LATEST_RUN_ID=$(./.github/scripts/find_run_id.sh ${{ github.repository }} "+node-e2e-test-remote (${{ env.TEST_ENV }})" ".sync_cache-${{ env.TEST_ENV }}")
-          echo "LATEST_RUN_ID=$LATEST_RUN_ID" >> $GITHUB_ENV
+          echo "LATEST_RUN_ID=$LATEST_RUN_ID" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v4
         continue-on-error: true
@@ -107,6 +108,7 @@ jobs:
 
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         if: ${{ env.TEST_ENV == 'local' }}
         with:
           registry: ghcr.io
@@ -126,14 +128,14 @@ jobs:
           else
             IMAGE_TAG=$(./.github/scripts/get_node_version.sh "${{ env.RPC_URL }}")
           fi
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-        
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+
       - name: Run txs generation for testnet-02
         if: ${{ env.TEST_ENV == 'testnet-02' }}
         run: |
           # image tag with testnet support
           docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-generator:${{ env.IMAGE_TAG }} generate-contract-calls -u ${{ env.WS_URL }} -o /out/res/test-contract/ --funding-seed ${{ secrets.TESTNET_FUNDING_SEED }}
-      
+
       - name: Run txs generation for qanet
         if: ${{ env.TEST_ENV == 'qanet' }}
         run: |
@@ -151,7 +153,7 @@ jobs:
           docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
 
       - name: Upload sync cache
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: .sync_cache-${{ env.TEST_ENV }}
@@ -159,7 +161,7 @@ jobs:
           include-hidden-files: true
 
       - name: Upload generated contract txs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: test-contract
           path: ./res/test-contract/
@@ -178,13 +180,14 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           ref: ${{ env.QA_BRANCH }}
           clean: false
 
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -194,8 +197,8 @@ jobs:
         run: |
           RPC_URL=${{ (env.TEST_ENV == 'local' && 'http://localhost:9944') || (env.TEST_ENV == 'qanet' && 'https://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'https://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'https://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'https://rpc.testnet-02.midnight.network')}}
           WS_URL=${{ (env.TEST_ENV == 'local' && 'ws://localhost:9944') || (env.TEST_ENV == 'qanet' && 'wss://rpc.qanet.dev.midnight.network') || (env.TEST_ENV == 'node-dev-01' && 'wss://rpc.node-dev-01.dev.midnight.network') || (env.TEST_ENV == 'testnet' && 'wss://rpc.testnet.midnight.network') || (env.TEST_ENV == 'testnet-02' && 'wss://rpc.testnet-02.midnight.network')}}
-          echo "RPC_URL=$RPC_URL" >> $GITHUB_ENV
-          echo "WS_URL=$WS_URL" >> $GITHUB_ENV
+          echo "RPC_URL=$RPC_URL" >> "$GITHUB_ENV"
+          echo "WS_URL=$WS_URL" >> "$GITHUB_ENV"
 
       - name: Download sync cache
         continue-on-error: true
@@ -219,19 +222,19 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           echo "machine github.com" >> ./netrc
           echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
           echo "  password x-oauth-basic" >> ./netrc
           export NETRC="$(pwd)/netrc"
 
-          . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV=$TEST_ENV --build-arg WS_URL=$WS_URL +node-e2e-test-remote
+          . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV="$TEST_ENV" --build-arg WS_URL="$WS_URL" +node-e2e-test-remote
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: success() || failure()
         with:
           name: Test Artifacts
