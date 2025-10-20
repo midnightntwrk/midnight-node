@@ -2,6 +2,5 @@
 pub mod api;
 pub mod cfg;
 fn main() {
-    // No‑op
+	// No‑op
 }
-

@@ -5,10 +5,6 @@ edition = "2021"
 publish = false
 autotests = false
 
-[[bin]]
-name = "midnight-node-e2e"
-path = "src/main.rs"
-
 [dependencies]
 hex.workspace = true
 cardano-serialization-lib.workspace = true

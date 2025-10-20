@@ -494,7 +494,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util .
+        metadata rustfmt.toml util tests .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
