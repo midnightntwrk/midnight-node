@@ -1,4 +1,4 @@
-#tookit
+#toolkit
 # Add `maintain-contract` and `maintain-circuit` comannds to `generate-intent`
 
 Lets you build maintenance transactions for a contract.
