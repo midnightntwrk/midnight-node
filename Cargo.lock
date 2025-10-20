@@ -7232,7 +7232,6 @@ dependencies = [
 name = "midnight-node-e2e"
 version = "0.1.0"
 dependencies = [
- "cardano-serialization-lib 14.1.2",
  "config 0.13.4",
  "hex",
  "midnight-node-metadata",
@@ -7243,7 +7242,6 @@ dependencies = [
  "subxt 0.44.0",
  "tiny-bip39",
  "tokio",
- "uplc",
  "whisky",
 ]
 
