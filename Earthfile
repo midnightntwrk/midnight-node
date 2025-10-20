@@ -594,6 +594,8 @@ check-benchmarks:
 check-metadata:
     ARG NODE_IMAGE
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
+
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
           sleep 5 && \
