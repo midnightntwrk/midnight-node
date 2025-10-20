@@ -46,8 +46,7 @@ pub fn get_mapping_validator_address() -> String {
 	let cbor_hex = load_cbor(&cfg.mapping_validator_policy_file);
 	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
 	let network = NetworkInfo::testnet_preview().network_id();
-	let validator_address = whisky::script_to_address(network, &script_hash.unwrap(), None);
-	validator_address
+	whisky::script_to_address(network, &script_hash.unwrap(), None)
 }
 
 pub fn get_auth_token_policy_id() -> String {

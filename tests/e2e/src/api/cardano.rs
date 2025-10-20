@@ -51,7 +51,7 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	let cfg = load_config();
 	let payment_addr = cfg.payment_addr.clone();
 	let client = get_ogmios_client().await;
-	let utxos = client.query_utxos(&[payment_addr.clone().into()]).await.unwrap();
+	let utxos = client.query_utxos(std::slice::from_ref(&payment_addr)).await.unwrap();
 	assert!(!utxos.is_empty(), "No UTXOs found for funding address");
 	let utxo = utxos
 		.iter()
@@ -64,13 +64,13 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 	let cbor_hex = skey_value["cborHex"].as_str().expect("No cborHex in skey JSON");
 	let input_tx_hash = hex::encode(utxo.transaction.id);
 	let input_index = utxo.index;
-	let input_assets = build_asset_vector(&utxo);
+	let input_assets = build_asset_vector(utxo);
 	let mut tx_builder = whisky::TxBuilder::new_core();
 	tx_builder
 		.tx_in(&input_tx_hash, input_index.into(), &input_assets, address)
 		.tx_out(address, &assets)
 		.change_address(&payment_addr)
-		.signing_key(&cbor_hex)
+		.signing_key(cbor_hex)
 		.complete_sync(None)
 		.unwrap()
 		.complete_signing()
@@ -107,13 +107,13 @@ pub async fn register(
 		.tx_in(
 			&hex::encode(tx_in.transaction.id),
 			tx_in.index.into(),
-			&build_asset_vector(&tx_in),
+			&build_asset_vector(tx_in),
 			&payment_addr,
 		)
 		.tx_in_collateral(
 			&hex::encode(collateral_utxo.transaction.id),
 			collateral_utxo.index.into(),
-			&build_asset_vector(&collateral_utxo),
+			&build_asset_vector(collateral_utxo),
 			&payment_addr,
 		)
 		.tx_out(&validator_address, &send_assets)
@@ -140,8 +140,7 @@ pub async fn register(
 pub fn create_wallet() -> Wallet {
 	let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
 	let phrase = mnemonic.phrase();
-	let wallet = Wallet::new_mnemonic(phrase).unwrap();
-	wallet
+	Wallet::new_mnemonic(phrase).unwrap()
 }
 
 pub fn get_cardano_address(wallet: &Wallet) -> Address {
@@ -163,7 +162,7 @@ pub fn get_cardano_address_as_bytes(wallet: &Wallet) -> Vec<u8> {
 
 pub async fn make_collateral(address: &str) -> OgmiosUtxo {
 	let assets = vec![Asset::new_from_str("lovelace", "5000000")];
-	let tx_id = send(&address, assets).await;
+	let tx_id = send(address, assets).await;
 	println!("Collateral transaction ID: {}", tx_id);
 	match find_utxo_by_tx_id(address, &tx_id).await {
 		Some(utxo) => utxo,
@@ -172,7 +171,7 @@ pub async fn make_collateral(address: &str) -> OgmiosUtxo {
 }
 
 pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
-	let tx_id = send(&address, assets).await;
+	let tx_id = send(address, assets).await;
 	println!("Funding transaction ID: {}", tx_id);
 	match find_utxo_by_tx_id(address, &tx_id).await {
 		Some(utxo) => utxo,

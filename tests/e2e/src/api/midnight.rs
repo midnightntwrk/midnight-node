@@ -35,8 +35,7 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 				let decoded_ext = ext.as_root_extrinsic::<mn_meta::Call>();
 				let runtime_call = decoded_ext.unwrap();
 				match &runtime_call {
-					mn_meta::Call::NativeTokenObservation(e) => match e {
-						native_token_observation::Call::process_tokens { utxos, .. } => {
+					mn_meta::Call::NativeTokenObservation(e) => if let native_token_observation::Call::process_tokens { utxos, .. } = e {
 							println!(
 								"  NativeTokenObservation::process_tokens called with {} UTXOs",
 								utxos.len()
@@ -54,9 +53,7 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 									}
 								}
 							}
-						},
-						_ => {},
-					},
+						}
 					_ => {
 						continue;
 					},
