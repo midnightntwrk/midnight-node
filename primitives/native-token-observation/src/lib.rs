@@ -246,12 +246,16 @@ impl PartialOrd for ObservedUtxoHeader {
 			ord => return ord,
 		}
 		if self.is_spend() && !other.is_spend() {
-			Some(core::cmp::Ordering::Less)
-		} else if !self.is_spend() && other.is_spend() {
-			Some(core::cmp::Ordering::Greater)
-		} else {
-			self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0)
+			return Some(core::cmp::Ordering::Less);
 		}
+		if !self.is_spend() && other.is_spend() {
+			return Some(core::cmp::Ordering::Greater);
+		}
+		match self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0) {
+			Some(core::cmp::Ordering::Equal) => {},
+			ord => return ord,
+		}
+		self.utxo_index.0.partial_cmp(&other.utxo_index.0)
 	}
 }
 
