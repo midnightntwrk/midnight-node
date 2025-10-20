@@ -5,7 +5,9 @@ mkdir -p ${MOUNTED_DIRS[@]}
 chown -R appuser:appuser ${MOUNTED_DIRS[@]}
 
 function cleanup() {
-    chown -R "${RESTORE_OWNER:-'1000:1000'}" ${MOUNTED_DIRS[@]}
+    if [ -n "$RESTORE_OWNER" ]; then
+        chown -R "$RESTORE_OWNER" ${MOUNTED_DIRS[@]}
+    fi
 }
 trap cleanup EXIT
 
