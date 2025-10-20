@@ -8,17 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'The git ref to release (branch, tag, or commit SHA)'
+        description: "The git ref to release (branch, tag, or commit SHA)"
         required: true
-        default: 'main'
+        default: "main"
       suffix:
         description: 'Optional suffix (e.g. "-rc.1" or "-beta.1") to append to the image tag'
         required: false
-        default: ''
+        default: ""
       release-type:
-        description: 'Github release type?'
+        description: "Github release type?"
         required: false
-        default: 'latest'
+        default: "latest"
         type: choice
         options:
           - "Don't create a release."
@@ -27,7 +27,7 @@ on:
           - latest
       force:
         type: boolean
-        description: 'Force release if it already exists?'
+        description: "Force release if it already exists?"
         required: true
         default: false
 
@@ -40,12 +40,13 @@ jobs:
     steps:
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - name: Checkout Season action repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           repository: midnight-ntwrk/season-action
           ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
@@ -53,7 +54,7 @@ jobs:
           token: ${{ secrets.MIDNIGHTCI_REPO }}
 
       - name: Checkout repo
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           ref: ${{ inputs.ref }}
           path: ./.tmp-package
@@ -88,16 +89,16 @@ jobs:
           export SEASON_IMAGE_NAME=midnight-node-toolkit
           season-retag
 
-# TODO: Fix upgrader image release
-#      - name: Retag and push hard-fork-test-upgrader image
-#        working-directory: ./.tmp-package
-#        shell: bash
-#        env:
-#          FORCE: ${{ github.event.inputs.force }}
-#        run: |
-#          export SEASON_IMAGE_NAME=midnight-hardfork-test-upgrader
-#          export SEASON_IMAGE_TAG_COMMIT=$SEASON_SHORT_COMMIT
-#          season-retag
+      # TODO: Fix upgrader image release
+      #      - name: Retag and push hard-fork-test-upgrader image
+      #        working-directory: ./.tmp-package
+      #        shell: bash
+      #        env:
+      #          FORCE: ${{ github.event.inputs.force }}
+      #        run: |
+      #          export SEASON_IMAGE_NAME=midnight-hardfork-test-upgrader
+      #          export SEASON_IMAGE_TAG_COMMIT=$SEASON_SHORT_COMMIT
+      #          season-retag
 
       - name: Build Release Notes
         working-directory: ./.tmp-package
