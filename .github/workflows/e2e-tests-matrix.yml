@@ -7,11 +7,11 @@ on:
         type: string
         description: QA branch to use
         required: false
-      RESET: 
+      RESET:
         type: choice
         description: Reset the cache
         required: true
-        default: 'false'
+        default: "false"
         options: [true, false]
       TEST_ENV_INPUT:
         type: choice
@@ -20,9 +20,9 @@ on:
         default: qanet
 
   schedule:
-    - cron: '0 2 * * *'   # node-dev-01
-    - cron: '0 3 * * *'   # qanet
-    - cron: '30 3 * * *'  # testnet-02
+    - cron: "0 2 * * *" # node-dev-01
+    - cron: "0 3 * * *" # qanet
+    - cron: "30 3 * * *" # testnet-02
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
