@@ -1,6 +1,6 @@
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
-use midnight_node_metadata::midnight_metadata::native_token_observation;
+use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use whisky::Asset;
 

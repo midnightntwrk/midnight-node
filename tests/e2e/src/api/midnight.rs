@@ -1,5 +1,5 @@
 use crate::cfg::load_config;
-use midnight_node_metadata::midnight_metadata::{
+use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
 	native_token_observation::{self},
 };
