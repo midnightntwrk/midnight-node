@@ -209,9 +209,13 @@ pub struct SpendData {
 #[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct ObservedUtxoHeader {
+	/// The position of the observed TX on-chain.
 	pub tx_position: CardanoPosition,
+	/// The hash of the observed TX.
 	pub tx_hash: McTxHash,
+	/// The hash of the TX which created the UTXO.
 	pub utxo_tx_hash: McTxHash,
+	/// The index of the UTXO within the TX which created it.
 	pub utxo_index: UtxoIndexInTx,
 }
 impl ObservedUtxoHeader {
@@ -251,6 +255,9 @@ impl PartialOrd for ObservedUtxoHeader {
 		if !self.is_spend() && other.is_spend() {
 			return Some(core::cmp::Ordering::Greater);
 		}
+		// We need an ordering which is consistent between validators,
+		// not necessarily the real ordering on-chain.
+		// Ordering by hash then index is good enough.
 		match self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0) {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
