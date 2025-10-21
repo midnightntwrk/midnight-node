@@ -7377,6 +7377,7 @@ dependencies = [
  "pallet-beefy-mmr",
  "pallet-collective",
  "pallet-federated-authority",
+ "pallet-federated-authority-observation",
  "pallet-governed-map",
  "pallet-grandpa",
  "pallet-membership",
@@ -9212,6 +9213,27 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-federated-authority-observation"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-federated-authority-observation",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "runtime-common",
+ "scale-info",
+ "sidechain-domain",
+ "sp-inherents",
  "sp-io",
  "sp-runtime",
  "sp-std",
