@@ -210,6 +210,7 @@ mod test {
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
 		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
+		let output_result = out_dir.path().join("output.json").to_string_lossy().to_string();
 
 		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
@@ -241,6 +242,8 @@ mod test {
 			&output_private_state,
 			"--output-zswap-state",
 			&output_zswap_state,
+			"--output-result",
+			&output_result,
 			"--contract-address",
 			&contract_address_hex,
 			"increment",
@@ -252,5 +255,6 @@ mod test {
 		assert!(fs::exists(&output_intent).unwrap());
 		assert!(fs::exists(&output_private_state).unwrap());
 		assert!(fs::exists(&output_zswap_state).unwrap());
+		assert!(fs::exists(&output_result).unwrap());
 	}
 }

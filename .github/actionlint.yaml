@@ -1,0 +1,25 @@
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-8-core-x64
+    - ubuntu-latest-16-core-x64
+    - ubuntu-latest-8-core-arm64
+
+paths:
+  .github/workflows/*.{yml,yaml}:
+    ignore:
+      # Workflow validation ignores
+      - 'default value.*but.*also required'
+      - 'property.*is not defined in object type'
+      - 'property.*is not defined'
+      - 'is not defined.*object type'
+      - 'receiver of object dereference'
+      # Shellcheck ignores
+      - 'SC2129'  # Consider using { cmd1; cmd2; } >> file
+      - 'SC2155'  # Declare and assign separately
+      - 'SC2236'  # Use -n instead of ! -z
+      - 'SC2046'  # Quote to prevent word splitting
+      - 'SC2086'  # Double quote to prevent globbing
+      - 'SC2002'  # Useless cat
+      - 'SC2034'  # Variable appears unused
+      - 'SC2091'  # Remove surrounding $()
+      - 'SC1089'  # Parsing stopped here

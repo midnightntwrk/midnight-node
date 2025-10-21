@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::BufRead, path::PathBuf};
 
 use clap::{
 	Args,
@@ -89,6 +89,9 @@ pub struct CircuitArgs {
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
+	/// A file path of where the invoked circuit result data should be written.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	output_result: Option<RelativePath>,
 	/// Name of the circuit to invoke
 	circuit_id: String,
 	/// Arguments to pass to the circuit
@@ -126,6 +129,8 @@ pub struct DeployArgs {
 pub enum ToolkitJsError {
 	#[error("failed to execute toolkit-js")]
 	ExecutionError(std::io::Error),
+	#[error("failed to read toolkit-js output")]
+	ToolkitJsOutputReadError(std::io::Error),
 }
 
 impl ToolkitJs {
@@ -212,6 +217,10 @@ impl ToolkitJs {
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
 		}
+		let output_result = args.output_result.map(|s| s.absolute());
+		if let Some(ref output_result) = output_result {
+			cmd_args.extend_from_slice(&["--output-result", &output_result]);
+		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
@@ -233,11 +242,25 @@ impl ToolkitJs {
 			.output()
 			.map_err(ToolkitJsError::ExecutionError)?;
 
-		println!(
-			"stdout: {}, stderr: {}",
-			String::from_utf8_lossy(&output.stdout),
-			String::from_utf8_lossy(&output.stderr)
-		);
+		for line in output.stdout.lines() {
+			let line = line.map_err(|e| ToolkitJsError::ToolkitJsOutputReadError(e))?;
+			let line = line.trim_end();
+			if line.is_empty() {
+				println!("toolkit-js>");
+			} else {
+				println!("toolkit-js> {line}");
+			}
+		}
+
+		for line in output.stderr.lines() {
+			let line = line.map_err(|e| ToolkitJsError::ToolkitJsOutputReadError(e))?;
+			let line = line.trim_end();
+			if line.is_empty() {
+				eprintln!("toolkit-js>");
+			} else {
+				eprintln!("toolkit-js> {line}");
+			}
+		}
 		Ok(())
 	}
 }

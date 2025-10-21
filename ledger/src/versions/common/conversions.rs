@@ -11,8 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::types::{InvalidError, MalformedError, SystemTransactionError};
-use super::{ledger_storage_local, mn_ledger_local};
+use super::{
+	super::common::BlockContext,
+	ledger_storage_local, mn_ledger_local,
+	types::{InvalidError, MalformedError, SystemTransactionError},
+};
 use ledger_storage_local::db::DB;
 use mn_ledger_local::error::{
 	MalformedTransaction, SystemTransactionError as LedgerSystemTransactionError,
@@ -90,6 +93,17 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::TooManyZswapEntries => Me::TooManyZswapEntries,
 			Mt::BalanceCheckOverspend { .. } => Me::BalanceCheckOverspend,
 			_ => Me::UnknownError,
+		}
+	}
+}
+
+#[cfg(all(feature = "std", feature = "test-utils"))]
+impl From<super::super::helpers_local::BlockContext> for BlockContext {
+	fn from(value: super::super::helpers_local::BlockContext) -> Self {
+		Self {
+			tblock: value.tblock.to_secs(),
+			tblock_err: value.tblock_err,
+			parent_block_hash: value.parent_block_hash.0.to_vec(),
 		}
 	}
 }
