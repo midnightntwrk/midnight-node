@@ -107,10 +107,12 @@ impl GenesisGenerator {
 		proof_server: Option<String>,
 		funding: FundingArgs,
 		seeds: &[WalletSeed],
+		cnight_system_tx: Option<SystemTransaction>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
-		me.init(seed, network_id, proof_server, &funding, seeds).await?;
+		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx)
+			.await?;
 		Ok(me)
 	}
 
@@ -121,6 +123,7 @@ impl GenesisGenerator {
 		proof_server: Option<String>,
 		funding: &FundingArgs,
 		seeds: &[WalletSeed],
+		cnight_system_tx: Option<SystemTransaction>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
 			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
@@ -160,6 +163,10 @@ impl GenesisGenerator {
 
 		// Restore fees now that we've finished.
 		self.set_parameters(original_parameters, &genesis_block_context)?;
+
+		if let Some(system_tx) = cnight_system_tx {
+			self.apply_system_tx(system_tx, &genesis_block_context)?;
+		}
 
 		self.state = self.state.post_block_update(genesis_block_context.tblock, self.fullness)?;
 		Ok(())
