@@ -19,7 +19,10 @@ import { Subscription, take, timeout } from "rxjs";
 import { HOST_ADDR } from "./env.js";
 
 function normHex(x: string) {
-  return x.replace(/^0x/i, "").toLowerCase();
+  if (x.startsWith("0x")) {
+    x = x.slice(2);
+  }
+  return x.toLowerCase();
 }
 
 // export function checkCreate(
@@ -277,8 +280,8 @@ export function checkMappingAdded(
   console.time(timeId);
 
   const sub = api.event.NativeTokenObservation.MappingAdded.watch((m) => {
-    const cardano = normHex(m.cardano_address.asHex());
     const dust = normHex(m.dust_address);
+    const cardano = normHex(m.cardano_address.asHex());
     const utxo = normHex(m.utxo_id);
 
     if (cardano !== normHex(cardanoHex)) {
