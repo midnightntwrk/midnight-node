@@ -85,7 +85,9 @@ pallet-midnight-system.workspace = true
 pallet-version.workspace = true
 pallet-native-token-observation.workspace = true
 midnight-primitives-native-token-observation.workspace = true
-pallet-federated-authority-observation.workspace = true
+# TODO: Federated Authority Observation
+# Uncomment when we are able to query new memberships set from Governance smart contracts
+# pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 
 [dev-dependencies]
@@ -120,7 +122,9 @@ std = [
     "pallet-native-token-management/std",
     "pallet-version/std",
     "pallet-native-token-observation/std",
-    "pallet-federated-authority-observation/std",
+    # TODO: Federated Authority Observation
+    # Uncomment when we are able to query new memberships set from Governance smart contracts
+    # "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
     "pallet-sudo/std",
     "pallet-scheduler/std",
@@ -188,7 +192,9 @@ runtime-benchmarks = [
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
-    "pallet-federated-authority-observation/runtime-benchmarks",
+    # TODO: Federated Authority Observation
+    # Uncomment when we are able to query new memberships set from Governance smart contracts
+    #"pallet-federated-authority-observation/runtime-benchmarks",
     "pallet-governed-map/runtime-benchmarks"
 ]
 try-runtime = [
