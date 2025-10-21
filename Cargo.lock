@@ -7631,7 +7631,6 @@ dependencies = [
  "async-trait",
  "cardano-serialization-lib 14.1.2",
  "derive-new",
- "figment",
  "hex",
  "log",
  "midnight-primitives-federated-authority-observation",

@@ -63,7 +63,12 @@ fn block_hash(block_number: u32) -> [u8; 32] {
 }
 
 fn test_position(block_number: u32, tx_index_in_block: u32) -> CardanoPosition {
-	CardanoPosition { block_hash: block_hash(block_number), block_number, tx_index_in_block }
+	CardanoPosition {
+		block_hash: block_hash(block_number),
+		block_number,
+		block_timestamp: ((block_number * 20) as i64).into(),
+		tx_index_in_block,
+	}
 }
 
 fn test_header(

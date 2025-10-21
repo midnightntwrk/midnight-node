@@ -85,6 +85,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 				next_cardano_position: CardanoPosition {
 					block_hash: [0; 32],
 					block_number: 0,
+					block_timestamp: 0.into(),
 					tx_index_in_block: 0,
 				},
 			})

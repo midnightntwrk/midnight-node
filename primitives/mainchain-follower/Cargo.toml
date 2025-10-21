@@ -24,7 +24,6 @@ cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
-figment = { workspace = true , optional = true }
 serde = { workspace = true , optional = true }
 secrecy = { workspace = true, features = ["serde"], optional = true }
 scale-info.workspace = true
@@ -53,7 +52,6 @@ std = [
     "cardano-serialization-lib",
     "sqlx",
     "log/std",
-    "figment",
     "serde",
     "partner-chains-db-sync-data-sources",
     "secrecy",

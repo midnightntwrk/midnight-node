@@ -76,6 +76,7 @@ pub async fn get_cngd_genesis(
 		// Required to fulfill struct, but value will be unused
 		block_hash: [0; 32],
 		block_number: 0,
+		block_timestamp: 0.into(),
 		tx_index_in_block: 0,
 	};
 
