@@ -42,9 +42,10 @@ pub use super::{
 	mn_ledger::{
 		construct::{ContractCallPrototype, PreTranscript, partition_transcripts},
 		dust::{
-			DUST_EXPECTED_FILES, DustActions, DustLocalState, DustNullifier, DustOutput,
-			DustParameters, DustPublicKey, DustRegistration, DustResolver, DustSecretKey,
-			DustSpend, DustSpendError as MnLedgerDustSpendError, InitialNonce, QualifiedDustOutput,
+			DUST_EXPECTED_FILES, DustActions, DustGenerationInfo, DustLocalState, DustNullifier,
+			DustOutput, DustParameters, DustPublicKey, DustRegistration, DustResolver,
+			DustSecretKey, DustSpend, DustSpendError as MnLedgerDustSpendError, InitialNonce,
+			QualifiedDustOutput,
 		},
 		error::{
 			BlockLimitExceeded, EventReplayError, FeeCalculationError, MalformedTransaction,
