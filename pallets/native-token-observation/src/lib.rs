@@ -57,6 +57,8 @@ mod tests;
 
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
+#[cfg(any(test, feature = "mock"))]
+pub mod mock_with_capture;
 
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
