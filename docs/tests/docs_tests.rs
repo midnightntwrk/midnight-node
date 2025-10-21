@@ -42,7 +42,7 @@ fn check_doc_files_are_linked_in_readme() {
 	let readme_str = std::fs::read_to_string("../README.md").unwrap();
 	let local_env_str = std::fs::read_to_string("../local-environment/README.md").unwrap();
 
-	let projects = vec![readme_str, local_env_str];
+	let projects = [readme_str, local_env_str];
 
 	let paths = std::fs::read_dir("./").unwrap();
 
