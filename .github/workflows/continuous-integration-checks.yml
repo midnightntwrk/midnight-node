@@ -37,9 +37,4 @@ jobs:
 
       - name: Run build
         run: |
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
           . ./.envrc && earthly --ci +check

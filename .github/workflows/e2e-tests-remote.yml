@@ -226,11 +226,6 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV="$TEST_ENV" --build-arg WS_URL="$WS_URL" +node-e2e-test-remote
 
       - name: Upload test artifacts
