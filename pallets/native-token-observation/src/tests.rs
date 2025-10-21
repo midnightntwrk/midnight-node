@@ -30,6 +30,7 @@ use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
 };
+use midnight_primitives_native_token_observation::TimestampUnixMillis;
 use rand::prelude::*;
 use test_log::test;
 
@@ -66,7 +67,7 @@ fn test_position(block_number: u32, tx_index_in_block: u32) -> CardanoPosition {
 	CardanoPosition {
 		block_hash: block_hash(block_number),
 		block_number,
-		block_timestamp: ((block_number * 20) as i64).into(),
+		block_timestamp: TimestampUnixMillis(block_number as i64 * 20 * 1000),
 		tx_index_in_block,
 	}
 }
