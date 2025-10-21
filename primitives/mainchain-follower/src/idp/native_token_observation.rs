@@ -18,7 +18,7 @@ use crate::{
 };
 use midnight_primitives_native_token_observation::{
 	CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
-	TokenObservationConfig,
+	TimestampUnixMillis, TokenObservationConfig,
 };
 use parity_scale_codec::Decode;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
@@ -85,7 +85,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 				next_cardano_position: CardanoPosition {
 					block_hash: [0; 32],
 					block_number: 0,
-					block_timestamp: 0.into(),
+					block_timestamp: TimestampUnixMillis(0),
 					tx_index_in_block: 0,
 				},
 			})

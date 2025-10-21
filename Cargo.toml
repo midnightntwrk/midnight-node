@@ -245,6 +245,7 @@ derive-where = "1.5.0"
 tempfile = "3.22.0"
 impl-trait-for-tuples = "0.2.2"
 test-log = "0.2"
+sqlx = { version = "0.8.5",  default-features = false}
 
 [profile.release]
 panic = "unwind"

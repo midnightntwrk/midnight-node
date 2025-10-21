@@ -7665,6 +7665,7 @@ dependencies = [
  "sidechain-domain",
  "sp-api",
  "sp-inherents",
+ "sqlx",
  "thiserror 1.0.69",
 ]
 

@@ -229,7 +229,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.tx_hash.0),
@@ -307,7 +307,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.tx_hash.0),
@@ -374,7 +374,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.tx_hash.0),
@@ -444,7 +444,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.tx_hash.0),
@@ -521,7 +521,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.tx_hash.0),
@@ -583,7 +583,7 @@ impl MidnightNativeTokenObservationDataSourceImpl {
 				tx_position: CardanoPosition {
 					block_hash: row.block_hash.0,
 					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().timestamp().into(),
+					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
 				},
 				tx_hash: McTxHash(row.spending_tx_hash.0),

@@ -146,7 +146,7 @@ impl From<Block> for CardanoPosition {
 		CardanoPosition {
 			block_hash: b.hash,
 			block_number: b.block_number.0,
-			block_timestamp: b.time.and_utc().timestamp().into(),
+			block_timestamp: b.time.and_utc().into(),
 			tx_index_in_block: b.tx_count as u32,
 		}
 	}

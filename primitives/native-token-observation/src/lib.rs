@@ -23,6 +23,9 @@ use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sidechain_domain::McTxHash;
 
+#[cfg(feature = "std")]
+use sqlx::types::chrono::{DateTime, Utc};
+
 #[derive(
 	Encode,
 	Decode,
@@ -37,11 +40,12 @@ use sidechain_domain::McTxHash;
 	Default,
 )]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-pub struct TimestampUnixSeconds(i64);
+pub struct TimestampUnixMillis(pub i64);
 
-impl From<i64> for TimestampUnixSeconds {
-	fn from(value: i64) -> Self {
-		Self(value)
+#[cfg(feature = "std")]
+impl From<DateTime<Utc>> for TimestampUnixMillis {
+	fn from(value: DateTime<Utc>) -> Self {
+		Self(value.timestamp_millis())
 	}
 }
 
@@ -69,7 +73,7 @@ pub struct CardanoPosition {
 	/// Block number of the last processed block
 	pub block_number: u32,
 	/// Block timestamp (seconds since unix epoch) of the last processed block
-	pub block_timestamp: TimestampUnixSeconds,
+	pub block_timestamp: TimestampUnixMillis,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
 }
