@@ -207,7 +207,11 @@ pub mod pallet {
 			)
 			.ok()?;
 
-			Some(Call::reset_members { council_authorities, technical_committee_authorities })
+			if !council_authorities.is_empty() && !technical_committee_authorities.is_empty() {
+				Some(Call::reset_members { council_authorities, technical_committee_authorities })
+			} else {
+				None
+			}
 		}
 
 		fn is_inherent(call: &Self::Call) -> bool {
