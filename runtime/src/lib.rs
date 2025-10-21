@@ -125,7 +125,10 @@ use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
-use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
+use runtime_common::governance::{AlwaysNo, MembershipHandler};
+// TODO: Federated Authority Observation
+// Uncomment when we are able to query new memberships set from Governance smart contracts
+// use runtime_common::governance::MembershipObservationHandler;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -966,15 +969,17 @@ impl pallet_federated_authority::Config for Runtime {
 	type WeightInfo = ();
 }
 
-impl pallet_federated_authority_observation::Config for Runtime {
-	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
-	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
-	type CouncilMembershipHandler =
-		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
-	type TechnicalCommitteeMembershipHandler =
-		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
-	type WeightInfo = ();
-}
+// TODO: Federated Authority Observation
+// Uncomment when we are able to query new memberships set from Governance smart contracts
+// impl pallet_federated_authority_observation::Config for Runtime {
+// 	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+// 	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+// 	type CouncilMembershipHandler =
+// 		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
+// 	type TechnicalCommitteeMembershipHandler =
+// 		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
+// 	type WeightInfo = ();
+// }
 
 pub struct MidnightTokenTransferHandler;
 
@@ -1115,9 +1120,11 @@ mod runtime {
 
 	#[runtime::pallet_index(44)]
 	pub type FederatedAuthority = pallet_federated_authority::Pallet<Runtime>;
-	#[runtime::pallet_index(45)]
-	pub type FederatedAuthorityObservation =
-		pallet_federated_authority_observation::Pallet<Runtime>;
+	// TODO: Federated Authority Observation
+	// Uncomment when we are able to query new memberships set from Governance smart contracts
+	// #[runtime::pallet_index(45)]
+	// pub type FederatedAuthorityObservation =
+	// 	pallet_federated_authority_observation::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
