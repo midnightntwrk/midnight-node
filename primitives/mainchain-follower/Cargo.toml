@@ -25,7 +25,6 @@ sqlx = { workspace = true,  optional = true, features = ["runtime-tokio-rustls",
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
 serde = { workspace = true , optional = true }
-secrecy = { workspace = true, features = ["serde"], optional = true }
 scale-info.workspace = true
 log.workspace = true
 rand = { version = "0.9.1", default-features = false }
@@ -54,7 +53,6 @@ std = [
     "log/std",
     "serde",
     "partner-chains-db-sync-data-sources",
-    "secrecy",
     "hex/std",
     "rand/std",
     "rand/thread_rng",
