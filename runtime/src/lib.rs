@@ -125,8 +125,7 @@ use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
-use runtime_common::governance::MembershipObservationHandler;
-use runtime_common::governance::{AlwaysNo, MembershipHandler};
+use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 
 /// An index to a block.
 pub type BlockNumber = u32;
