@@ -15,7 +15,7 @@
 
 pub mod idp;
 
-pub use midnight_primitives_native_token_observation::{
+pub use midnight_primitives_cnight_observation::{
 	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
 	RegistrationData, SpendData, UtxoIndexInTx,
@@ -43,7 +43,7 @@ pub mod inherent_provider {
 	use super::*;
 	use crate::data_source::ObservedUtxos;
 	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
-	use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+	use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
 	use sidechain_domain::McBlockHash;
 
 	#[async_trait::async_trait]

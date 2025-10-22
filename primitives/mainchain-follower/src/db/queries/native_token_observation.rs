@@ -20,7 +20,7 @@ use crate::db::{
 	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, RedemptionCreateRow,
 	RedemptionSpendRow, RegistrationRow,
 };
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoPosition;
 use sidechain_domain::*;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 

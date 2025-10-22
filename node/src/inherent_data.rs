@@ -22,7 +22,7 @@ use midnight_node_runtime::{
 	CrossChainPublic,
 	opaque::{Block, SessionKeys},
 };
-use midnight_primitives_native_token_observation::NativeTokenObservationApi;
+use midnight_primitives_cnight_observation::NativeTokenObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};

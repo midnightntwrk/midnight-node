@@ -20,7 +20,7 @@ use crate::{
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use derive_new::new;
-use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;

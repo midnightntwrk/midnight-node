@@ -1,8 +1,8 @@
 [package]
-name = "midnight-primitives-native-token-observation"
+name = "midnight-primitives-cnight-observation"
 version = "0.1.0"
 edition = "2024"
-description = "Midnight native token observation primitives"
+description = "Midnight cNight observation primitives"
 license-file.workspace = true
 
 [dependencies]

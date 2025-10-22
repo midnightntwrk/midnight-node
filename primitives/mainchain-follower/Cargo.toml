@@ -9,7 +9,7 @@ license-file.workspace = true
 hex = { workspace = true, default-features = false }
 sp-std.workspace = true
 parity-scale-codec.workspace = true
-midnight-primitives-native-token-observation.workspace = true
+midnight-primitives-cnight-observation.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 async-trait = { workspace = true, optional = true }
 sidechain-domain.workspace = true

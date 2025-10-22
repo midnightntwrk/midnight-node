@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use midnight_primitives_cnight_observation::TokenObservationConfig;
 
 use super::{InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts, MidnightNetwork};
 

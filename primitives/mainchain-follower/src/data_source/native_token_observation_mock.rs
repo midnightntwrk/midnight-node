@@ -16,7 +16,7 @@ use crate::{
 	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
-use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct NativeTokenObservationDataSourceMock;

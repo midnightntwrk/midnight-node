@@ -7,10 +7,10 @@ use midnight_primitives_mainchain_follower::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 	data_source::ObservedUtxos,
 };
-use midnight_primitives_native_token_observation::{
+use midnight_primitives_cnight_observation::{
 	CardanoPosition, INHERENT_IDENTIFIER, TokenObservationConfig,
 };
-use pallet_native_token_observation::{MappingEntry, Mappings, mock_with_capture as mock};
+use pallet_cnight_observation::{MappingEntry, Mappings, mock_with_capture as mock};
 use serde::{Deserialize, Serialize};
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;

@@ -16,7 +16,7 @@
 use crate::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
-use midnight_primitives_native_token_observation::{
+use midnight_primitives_cnight_observation::{
 	CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
 	TokenObservationConfig,
 };

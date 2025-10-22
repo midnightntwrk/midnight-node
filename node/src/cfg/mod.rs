@@ -22,7 +22,7 @@ use midnight_node_res::{
 		UndeployedNetwork,
 	},
 };
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use midnight_primitives_cnight_observation::TokenObservationConfig;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
 

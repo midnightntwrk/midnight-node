@@ -54,7 +54,7 @@ pub use frame_support::{
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
@@ -993,7 +993,7 @@ impl pallet_native_token_management::Config for Runtime {
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 }
 
-impl pallet_native_token_observation::Config for Runtime {
+impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
@@ -1066,7 +1066,7 @@ mod runtime {
 	#[runtime::pallet_index(12)]
 	pub type NativeTokenManagement = pallet_native_token_management::Pallet<Runtime>;
 	#[runtime::pallet_index(13)]
-	pub type NativeTokenObservation = pallet_native_token_observation::Pallet<Runtime>;
+	pub type NativeTokenObservation = pallet_cnight_observation::Pallet<Runtime>;
 
 	// Utility
 	#[runtime::pallet_index(15)]
@@ -1579,29 +1579,29 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl midnight_primitives_native_token_observation::NativeTokenObservationApi<Block> for Runtime {
+	impl midnight_primitives_cnight_observation::NativeTokenObservationApi<Block> for Runtime {
 		fn get_redemption_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_mapping_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_native_token_observation::NextCardanoPosition::<Runtime>::get()
+			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
 		}
 
 		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_native_token_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
+			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
 		}
 
 		fn get_cardano_block_window_size() -> u32 {
-			pallet_native_token_observation::CardanoBlockWindowSize::<Runtime>::get()
+			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
 		}
 
 		fn get_native_token_identifier() -> (Vec<u8>, Vec<u8>) {
-			let (policy_id, asset_name) = pallet_native_token_observation::NativeAssetIdentifier::<Runtime>::get();
+			let (policy_id, asset_name) = pallet_cnight_observation::NativeAssetIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
 		}
 	}

@@ -7154,15 +7154,15 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-primitives-cnight-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
- "midnight-primitives-native-token-observation",
  "mmr-gadget",
  "mmr-rpc",
+ "pallet-cnight-observation",
  "pallet-governed-map",
  "pallet-midnight",
  "pallet-midnight-rpc",
- "pallet-native-token-observation",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "parity-scale-codec",
@@ -7341,7 +7341,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto 1.0.0-alpha.4",
  "midnight-ledger 6.1.0-alpha.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.4)",
- "midnight-primitives-native-token-observation",
+ "midnight-primitives-cnight-observation",
  "midnight-serialize 1.0.0-alpha.4",
  "midnight-storage 1.0.0-alpha.4",
  "midnight-transient-crypto 1.0.0-alpha.4",
@@ -7371,10 +7371,11 @@ dependencies = [
  "frame-try-runtime",
  "log",
  "midnight-node-ledger",
- "midnight-primitives-native-token-observation",
+ "midnight-primitives-cnight-observation",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
+ "pallet-cnight-observation",
  "pallet-collective",
  "pallet-federated-authority",
  "pallet-federated-authority-observation",
@@ -7386,7 +7387,6 @@ dependencies = [
  "pallet-migrations",
  "pallet-mmr",
  "pallet-native-token-management",
- "pallet-native-token-observation",
  "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
@@ -7605,6 +7605,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-cnight-observation"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-api",
+ "sp-inherents",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "midnight-primitives-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
@@ -7634,8 +7648,8 @@ dependencies = [
  "figment",
  "hex",
  "log",
+ "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
- "midnight-primitives-native-token-observation",
  "parity-scale-codec",
  "partner-chains-db-sync-data-sources",
  "rand 0.9.2",
@@ -7653,20 +7667,6 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
-]
-
-[[package]]
-name = "midnight-primitives-native-token-observation"
-version = "0.1.0"
-dependencies = [
- "hex",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-api",
- "sp-inherents",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -9183,6 +9183,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-cnight-observation"
+version = "1.4.0"
+dependencies = [
+ "derive-new",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "midnight-node-ledger",
+ "midnight-node-ledger-helpers",
+ "midnight-node-res",
+ "midnight-primitives",
+ "midnight-primitives-cnight-observation",
+ "midnight-primitives-mainchain-follower",
+ "pallet-midnight",
+ "pallet-midnight-system",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "rand 0.8.5",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-core",
+ "sp-io",
+ "tempfile",
+ "test-log",
+]
+
+[[package]]
 name = "pallet-collective"
 version = "41.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506#6fd693e6d9cfa46cd2acbcb41cd5b0451a62d67c"
@@ -9409,35 +9438,6 @@ dependencies = [
  "scale-info",
  "sidechain-domain",
  "sp-native-token-management",
-]
-
-[[package]]
-name = "pallet-native-token-observation"
-version = "1.4.0"
-dependencies = [
- "derive-new",
- "frame-support",
- "frame-system",
- "hex",
- "log",
- "midnight-node-ledger",
- "midnight-node-ledger-helpers",
- "midnight-node-res",
- "midnight-primitives",
- "midnight-primitives-mainchain-follower",
- "midnight-primitives-native-token-observation",
- "pallet-midnight",
- "pallet-midnight-system",
- "pallet-timestamp",
- "parity-scale-codec",
- "rand 0.8.5",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-core",
- "sp-io",
- "tempfile",
- "test-log",
 ]
 
 [[package]]

@@ -14,7 +14,7 @@
 use cardano_serialization_lib::{
 	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
 };
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoPosition;
 use sqlx::error::BoxDynError;
 use sqlx::postgres::PgTypeInfo;
 use sqlx::types::JsonValue;
