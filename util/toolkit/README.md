@@ -365,6 +365,47 @@ written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 To send it, see "Generate and send a tx from an intent" above
 
+- Generate a contract maintenance intent
+```console
+$ midnight-node-toolkit generate-intent maintain-contract
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --output-intent out/intent.bin
+>   --signing 0000000000000000000000000000000000000000000000000000000000000001
+>   0000000000000000000000000000000000000000000000000000000000000002
+Executing generate-intent
+Executing maintain command
+Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
+written: out/intent.bin
+
+```
+
+To send it, see "Generate and send a tx from an intent" above
+
+- Generate a circuit maintenance intent
+```console
+$ midnight-node-toolkit generate-intent maintain-circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --output-intent out/intent.bin
+>   --signing 0000000000000000000000000000000000000000000000000000000000000001
+>   increment
+>   ./test-data/contract/counter/keys/increment.verifier
+Executing generate-intent
+Executing maintain command
+Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
+written: out/intent.bin
+
+```
+
+To send it, see "Generate and send a tx from an intent" above
+
 #### Custom Contracts (Shielded Tokens)
 
 - Invoking a contract that mints shielded tokens requires destinations to be passed when sending the intent
