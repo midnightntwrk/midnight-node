@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true
@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -131,7 +131,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -174,7 +174,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -346,7 +346,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true

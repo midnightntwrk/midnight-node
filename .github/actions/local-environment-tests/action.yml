@@ -44,7 +44,7 @@ runs:
 
     - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
       with:
-        version: v0.8.0
+        version: v0.8.16
 
     - name: Docker Login
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
