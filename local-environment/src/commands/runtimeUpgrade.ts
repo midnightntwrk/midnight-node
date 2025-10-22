@@ -51,6 +51,7 @@ export async function runtimeUpgrade(
     await run(namespace, {
       profiles: opts.profiles,
       envFile: opts.envFile,
+      fromSnapshot: opts.fromSnapshot,
     });
   }
 

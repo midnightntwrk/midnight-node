@@ -76,7 +76,6 @@ export function getSecrets(namespace: string): Record<string, string> {
   collectBootPods(namespace, portMapping, secrets);
 
   const envObject = convertSecretsToEnvObject(secrets);
-  console.log(`prepared env keys: ${Object.keys(envObject).sort().join(", ")}`);
   return envObject;
 }
 

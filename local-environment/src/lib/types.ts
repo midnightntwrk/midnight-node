@@ -15,6 +15,7 @@
 export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
+  fromSnapshot?: string;
 }
 
 export interface ImageUpgradeOptions extends RunOptions {
@@ -45,4 +46,17 @@ export interface RuntimeUpgradeOptions extends RunOptions {
   skipRun?: boolean;
   /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
   rpcUrl?: string;
+}
+
+export interface SnapshotOptions {
+  /** name of the bootnode statefulset to snapshot */
+  bootnodeStatefulSet?: string;
+  /** optional pvc name override */
+  pvcName?: string;
+  /** s3 uri that receives the archive */
+  s3Uri?: string;
+  /** container image used to perform the snapshot */
+  snapshotImage?: string;
+  /** timeout window in minutes */
+  timeoutMinutes?: number;
 }
