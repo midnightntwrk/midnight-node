@@ -71,6 +71,34 @@ brew update
 brew install openssl
 ```
 
+#### LLVM for WASM compilation
+
+The default XCode installation of LLVM does not support WASM build targets. To build WASM runtimes on macOS, you need to install LLVM from Homebrew and configure your environment to use it:
+
+```bash
+# Install LLVM via Homebrew
+brew install llvm
+
+# Add LLVM to your PATH and set compiler flags
+export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
+export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
+```
+
+To make these environment variables permanent, add them to your shell profile (`~/.zshrc` or `~/.bash_profile`):
+
+```bash
+echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc
+echo 'export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"' >> ~/.zshrc
+echo 'export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"' >> ~/.zshrc
+```
+
+Without this configuration, you may encounter build errors such as:
+```
+error: unable to create target: 'No available targets are compatible with triple "wasm32-unknown-unknown"'
+```
+
+
 ### Windows
 
 **_PLEASE NOTE:_** Native Windows development of Substrate is _not_ very well supported! It is _highly_
