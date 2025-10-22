@@ -73,30 +73,15 @@ brew install openssl
 
 #### LLVM for WASM compilation
 
-The default XCode installation of LLVM does not support WASM build targets. To build WASM runtimes on macOS, you need to install LLVM from Homebrew and configure your environment to use it:
+The default XCode installation of LLVM does not support WASM build targets. Install LLVM from Homebrew:
 
 ```bash
-# Install LLVM via Homebrew
 brew install llvm
-
-# Add LLVM to your PATH and set compiler flags
-export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
-export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
 ```
 
-To make these environment variables permanent, add them to your shell profile (`~/.zshrc` or `~/.bash_profile`):
+The `.envrc` file will automatically configure the necessary environment variables (`PATH`, `LDFLAGS`, `CPPFLAGS`) when you `cd` into the repository. If LLVM is not installed, you'll see a warning message.
 
-```bash
-echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc
-echo 'export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"' >> ~/.zshrc
-echo 'export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"' >> ~/.zshrc
-```
-
-Without this configuration, you may encounter build errors such as:
-```
-error: unable to create target: 'No available targets are compatible with triple "wasm32-unknown-unknown"'
-```
+> **Note:** If not using direnv (see [Prerequisites](../README.md#prerequisites)), you'll need to manually configure the environment variables shown in `.envrc`.
 
 
 ### Windows
