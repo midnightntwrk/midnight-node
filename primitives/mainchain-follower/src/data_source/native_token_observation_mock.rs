@@ -15,9 +15,7 @@ use crate::{
 	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
-use midnight_primitives_cnight_observation::{
-	CardanoPosition, ObservedUtxos, TokenObservationConfig,
-};
+use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct NativeTokenObservationDataSourceMock;
@@ -58,7 +56,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSourceMock {
 	async fn get_utxos_up_to_capacity(
 		&self,
-		_config: &TokenObservationConfig,
+		_config: &CNightAddresses,
 		start: CardanoPosition,
 		_current_tip: McBlockHash,
 		_capacity: usize,

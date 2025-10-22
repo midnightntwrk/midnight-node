@@ -20,9 +20,7 @@ use crate::{
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use derive_new::new;
-use midnight_primitives_cnight_observation::{
-	CardanoPosition, ObservedUtxos, TokenObservationConfig,
-};
+use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -74,7 +72,7 @@ pub struct MidnightNativeTokenObservationDataSourceImpl {
 impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservationDataSourceImpl {
 	async fn get_utxos_up_to_capacity(
 		&self,
-		config: &TokenObservationConfig,
+		config: &CNightAddresses,
 		start_position: CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,

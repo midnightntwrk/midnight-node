@@ -22,7 +22,7 @@ use midnight_node_res::{
 		UndeployedNetwork,
 	},
 };
-use midnight_primitives_cnight_observation::TokenObservationConfig;
+use midnight_primitives_cnight_observation::CNightAddresses;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
 
@@ -121,7 +121,7 @@ impl SubstrateCli for Cfg {
 				)
 				.map_err(|e| format!("failed to read cngd config: {e}"))?;
 
-				let cngd_config: TokenObservationConfig = serde_json::from_str(&cngd_config_str)
+				let cngd_config: CNightAddresses = serde_json::from_str(&cngd_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
 				let main_chain_scripts =

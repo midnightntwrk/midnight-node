@@ -41,9 +41,7 @@ pub use {
 #[cfg(feature = "std")]
 pub mod inherent_provider {
 	use super::*;
-	use midnight_primitives_cnight_observation::{
-		CardanoPosition, ObservedUtxos, TokenObservationConfig,
-	};
+	use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use sidechain_domain::McBlockHash;
 
@@ -52,7 +50,7 @@ pub mod inherent_provider {
 	pub trait MidnightNativeTokenObservationDataSource {
 		async fn get_utxos_up_to_capacity(
 			&self,
-			config: &TokenObservationConfig,
+			config: &CNightAddresses,
 			start_position: CardanoPosition,
 			current_tip: McBlockHash,
 			capacity: usize,

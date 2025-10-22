@@ -64,7 +64,7 @@ impl core::fmt::Display for CardanoPosition {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-pub struct TokenObservationConfig {
+pub struct CNightAddresses {
 	/// Address of the cNight mapping validator
 	pub mapping_validator_address: String,
 	/// Address of the glacier drop redemption validator

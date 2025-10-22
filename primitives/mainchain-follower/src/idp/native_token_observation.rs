@@ -17,8 +17,7 @@ use crate::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
-	TokenObservationConfig,
+	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
 };
 use parity_scale_codec::Decode;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
@@ -119,7 +118,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 
-		let config = TokenObservationConfig {
+		let config = CNightAddresses {
 			mapping_validator_address,
 			redemption_validator_address,
 			policy_id,

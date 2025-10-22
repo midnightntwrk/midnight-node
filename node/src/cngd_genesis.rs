@@ -4,13 +4,14 @@ use midnight_node_res::native_token_observation_consts::{
 	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
 };
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos, TokenObservationConfig,
+	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
-use pallet_cnight_observation::{MappingEntry, Mappings, mock_with_capture as mock};
-use serde::{Deserialize, Serialize};
+use pallet_cnight_observation::{
+	MappingEntry, Mappings, config::CNightGenesis, mock_with_capture as mock,
+};
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
@@ -20,15 +21,6 @@ use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 const UTXO_CAPACITY: usize = 1000;
-
-#[derive(Serialize, Deserialize)]
-pub struct CNightGeneratesDustConfig {
-	cardano_addresses: TokenObservationConfig,
-	initial_utxos: ObservedUtxos,
-	initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
-	#[serde(with = "hex")]
-	system_tx: Vec<u8>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CngdGenesisError {
@@ -91,7 +83,7 @@ pub async fn get_cngd_genesis(
 	let mut all_utxos = Vec::new();
 	let initial_cardano_tip_hash = initial_cardano_tip_hash.clone();
 
-	let token_observation_config = TokenObservationConfig {
+	let token_observation_config = CNightAddresses {
 		mapping_validator_address: TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS.to_string(),
 		redemption_validator_address: TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS.to_string(),
 		policy_id: hex::encode(TEST_CNIGHT_CURRENCY_POLICY_ID),
@@ -130,7 +122,7 @@ pub async fn get_cngd_genesis(
 
 	let PalletExecResult { mappings: initial_mappings, system_tx } = exec_pallet(&initial_utxos);
 
-	let config = CNightGeneratesDustConfig {
+	let config = CNightGenesis {
 		cardano_addresses: token_observation_config,
 		initial_utxos,
 		initial_mappings,
