@@ -140,6 +140,16 @@ impl Ord for ObservedUtxo {
 	}
 }
 
+/// A struct to contain all UTXOs in a given range
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct ObservedUtxos {
+	// Start position (inclusive)
+	pub start: CardanoPosition,
+	// End position (inclusive)
+	pub end: CardanoPosition,
+	pub utxos: Vec<ObservedUtxo>,
+}
+
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub enum ObservedUtxoData {

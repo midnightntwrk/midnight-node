@@ -25,7 +25,7 @@ pub use federated_authority_observation::FederatedAuthorityObservationDataSource
 pub use federated_authority_observation_mock::FederatedAuthorityObservationDataSourceMock;
 pub use native_token_observation::{
 	MidnightNativeTokenObservationDataSourceError, MidnightNativeTokenObservationDataSourceImpl,
-	ObservedUtxos, TxHash, TxPosition,
+	TxHash, TxPosition,
 };
 pub use native_token_observation_mock::NativeTokenObservationDataSourceMock;
 

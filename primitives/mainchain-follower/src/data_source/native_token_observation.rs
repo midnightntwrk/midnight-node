@@ -20,7 +20,9 @@ use crate::{
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use derive_new::new;
-use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
+use midnight_primitives_cnight_observation::{
+	CardanoPosition, ObservedUtxos, TokenObservationConfig,
+};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -64,16 +66,6 @@ pub struct MidnightNativeTokenObservationDataSourceImpl {
 	pub metrics_opt: Option<McFollowerMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
-}
-
-/// A struct to contain all UTXOs in a given range
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-pub struct ObservedUtxos {
-	// Start position (inclusive)
-	pub start: CardanoPosition,
-	// End position (inclusive)
-	pub end: CardanoPosition,
-	pub utxos: Vec<ObservedUtxo>,
 }
 
 // If we need better logging here, we could use use db_sync_follower::observed_async_trait

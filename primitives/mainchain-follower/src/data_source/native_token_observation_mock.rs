@@ -11,12 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::data_source::ObservedUtxos;
 use crate::{
 	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
-use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
+use midnight_primitives_cnight_observation::{
+	CardanoPosition, ObservedUtxos, TokenObservationConfig,
+};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct NativeTokenObservationDataSourceMock;

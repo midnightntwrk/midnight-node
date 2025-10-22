@@ -3,12 +3,11 @@ use midnight_node_res::native_token_observation_consts::{
 	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
 	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
 };
+use midnight_primitives_cnight_observation::{
+	CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos, TokenObservationConfig,
+};
 use midnight_primitives_mainchain_follower::{
 	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
-	data_source::ObservedUtxos,
-};
-use midnight_primitives_cnight_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, TokenObservationConfig,
 };
 use pallet_cnight_observation::{MappingEntry, Mappings, mock_with_capture as mock};
 use serde::{Deserialize, Serialize};

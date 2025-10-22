@@ -41,9 +41,10 @@ pub use {
 #[cfg(feature = "std")]
 pub mod inherent_provider {
 	use super::*;
-	use crate::data_source::ObservedUtxos;
+	use midnight_primitives_cnight_observation::{
+		CardanoPosition, ObservedUtxos, TokenObservationConfig,
+	};
 	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
-	use midnight_primitives_cnight_observation::{CardanoPosition, TokenObservationConfig};
 	use sidechain_domain::McBlockHash;
 
 	#[async_trait::async_trait]
