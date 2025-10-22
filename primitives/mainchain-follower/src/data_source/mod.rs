@@ -14,7 +14,6 @@
 //! Data sources implementations that read from db-sync postgres.
 //!
 //! This module uses the types and functions provided by the `db` module
-// TODO: Remove figment
 
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
@@ -28,29 +27,9 @@ pub use native_token_observation::{
 	ObservedUtxos, TxHash, TxPosition,
 };
 pub use native_token_observation_mock::NativeTokenObservationDataSourceMock;
-
-use figment::Figment;
-use figment::providers::Env;
-use secrecy::{ExposeSecret, SecretString};
-use serde::Deserialize;
 pub use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{error::Error, str::FromStr};
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ConnectionConfig {
-	pub(crate) db_sync_postgres_connection_string: SecretString,
-}
-
-impl ConnectionConfig {
-	pub fn from_env() -> Result<Self, Box<dyn Error + Send + Sync + 'static>> {
-		let config: Self = Figment::new()
-			.merge(Env::raw())
-			.extract()
-			.map_err(|e| format!("Failed to read main chain follower connection: {e}"))?;
-		Ok(config)
-	}
-}
 
 pub async fn get_connection(
 	connection_string: &str,
@@ -77,15 +56,6 @@ pub async fn get_connection(
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("Could not connect to database: postgres://***:***@{0}:{1}/{2}; error: {3}")]
 struct PostgresConnectionError(String, u16, String, String);
-
-pub async fn get_connection_from_env() -> Result<PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let config = ConnectionConfig::from_env()?;
-	get_connection(
-		config.db_sync_postgres_connection_string.expose_secret(),
-		std::time::Duration::from_secs(30),
-	)
-	.await
-}
 
 #[cfg(test)]
 mod tests {
