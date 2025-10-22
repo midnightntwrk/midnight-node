@@ -8,7 +8,7 @@ use midnight_primitives_mainchain_follower::{
 	data_source::ObservedUtxos,
 };
 use midnight_primitives_native_token_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, TokenObservationConfig,
+	CardanoPosition, INHERENT_IDENTIFIER, TimestampUnixMillis, TokenObservationConfig,
 };
 use pallet_native_token_observation::{MappingEntry, Mappings, mock};
 use serde::{Deserialize, Serialize};
@@ -76,6 +76,7 @@ pub async fn get_cngd_genesis(
 		// Required to fulfill struct, but value will be unused
 		block_hash: [0; 32],
 		block_number: 0,
+		block_timestamp: TimestampUnixMillis(0),
 		tx_index_in_block: 0,
 	};
 

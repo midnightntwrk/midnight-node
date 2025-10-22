@@ -6,85 +6,16 @@ use crate::{
 };
 use clap::Args;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{
-	QualifiedDustOutput, QualifiedInfo, Timestamp, serialize_untagged,
+use midnight_node_ledger_helpers::serialize_untagged;
+use midnight_node_toolkit::{
+	cli_parsers::{self as cli},
+	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
-use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Debug)]
 pub struct WalletInfo<D: DB + Clone> {
 	pub wallet: Wallet<D>,
 	pub utxos: Vec<Utxo>,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct UtxoSer {
-	pub id: String,
-	pub value: u128,
-	pub user_address: String,
-	pub token_type: String,
-	pub intent_hash: String,
-	pub output_number: u32,
-}
-
-impl From<Utxo> for UtxoSer {
-	fn from(utxo: Utxo) -> Self {
-		let intent_hash = utxo.intent_hash.0.0.encode_hex();
-		let output_number = utxo.output_no;
-		let id = format!("{intent_hash}#{output_number}");
-		Self {
-			id,
-			value: utxo.value,
-			user_address: utxo.owner.0.0.encode_hex(),
-			token_type: utxo.type_.0.0.encode_hex(),
-			intent_hash,
-			output_number,
-		}
-	}
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct QualifiedDustOutputSer {
-	pub initial_value: u128,
-	pub dust_public: String,
-	pub nonce: String,
-	pub seq: u32,
-	pub ctime: Timestamp,
-	pub backing_night: String,
-	pub mt_index: u64,
-}
-
-impl From<QualifiedDustOutput> for QualifiedDustOutputSer {
-	fn from(output: QualifiedDustOutput) -> Self {
-		Self {
-			initial_value: output.initial_value,
-			dust_public: serialize_untagged(&output.owner).unwrap().encode_hex(),
-			nonce: serialize_untagged(&output.nonce).unwrap().encode_hex(),
-			seq: output.seq,
-			ctime: output.ctime,
-			backing_night: serialize_untagged(&output.backing_night).unwrap().encode_hex(),
-			mt_index: output.mt_index,
-		}
-	}
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct QualifiedInfoSer {
-	pub nonce: String,
-	pub token_type: String,
-	pub value: u128,
-	pub mt_index: u64,
-}
-
-impl From<QualifiedInfo> for QualifiedInfoSer {
-	fn from(info: QualifiedInfo) -> Self {
-		Self {
-			nonce: serialize_untagged(&info.nonce).unwrap().encode_hex(),
-			token_type: serialize_untagged(&info.type_).unwrap().encode_hex(),
-			value: info.value,
-			mt_index: info.mt_index,
-		}
-	}
 }
 
 #[derive(Debug, serde::Serialize)]
