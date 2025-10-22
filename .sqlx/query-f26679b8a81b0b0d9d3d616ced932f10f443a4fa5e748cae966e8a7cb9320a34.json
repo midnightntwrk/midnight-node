@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT \n    datum.value::jsonb AS \"full_datum!: _\",\n    block.block_no as \"block_number!: _\",\n    block.hash as \"block_hash: _\",\n    block.time as \"block_timestamp: _\",\n    tx.block_index as \"tx_index_in_block: _\",\n    tx.hash AS \"tx_hash: _\",\n    tx_tx_out.hash as \"utxo_tx_hash: _\",\n    tx_out.index as \"utxo_index: _\"\nFROM tx_out\n    JOIN tx_in ON tx_in.tx_out_id = tx_out.tx_id\n                AND tx_in.tx_out_index = tx_out.index\n    JOIN tx ON tx.id = tx_in.tx_in_id\n    JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id\n    JOIN datum ON datum.hash = tx_out.data_hash\n    JOIN block ON block.id = tx.block_id\nWHERE tx_out.address = $1\n    AND (block.block_no, tx.block_index) >= ($2, $3)\n    AND (block.block_no, tx.block_index) < ($4, $5)\nORDER BY block.block_no, tx.block_index\nLIMIT $6 OFFSET $7;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "full_datum!: _",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_timestamp: _",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "tx_index_in_block: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "utxo_tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "utxo_index: _",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f26679b8a81b0b0d9d3d616ced932f10f443a4fa5e748cae966e8a7cb9320a34"
+}
