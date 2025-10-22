@@ -133,7 +133,6 @@ that we are still in the process of being release. As such:
 
 - [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
 - [Rust Installation](docs/rust-setup.md) - Complete setup including GitHub access, Nix, and Direnv
-- [Testing Upgrades](docs/testing-upgrades.md) - Runtime and node upgrade testing
 - [Configuration](docs/config.md) - Node configuration options
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation

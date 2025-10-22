@@ -2,9 +2,9 @@
 title: Installation
 ---
 
-This guide covers the complete setup needed for midnight-node development. For general Substrate information, see the [official Substrate docs](https://docs.substrate.io/main-docs/install/).
+This guide covers the complete setup needed for midnight-node development. For general Polkadot SDK information, see the [official Polkadot SDK docs](https://docs.polkadot.com).
 
-This page will guide you through the **3 steps** needed to prepare a computer for midnight-node development. Since midnight-node is built with [the Rust programming language](https://www.rust-lang.org/) on top of Substrate, the first thing you will need to do is prepare the computer for Rust development - these steps will vary based on the computer's operating system. Once Rust is configured, you will use its toolchains to interact with Rust projects; the commands for Rust's toolchains will be the same for all supported, Unix-based operating systems.
+This page will guide you through the **3 steps** needed to prepare a computer for midnight-node development. Since midnight-node is built with [the Rust programming language](https://www.rust-lang.org/) on top of Polkadot SDK, the first thing you will need to do is prepare the computer for Rust development - these steps will vary based on the computer's operating system. Once Rust is configured, you will use its toolchains to interact with Rust projects; the commands for Rust's toolchains will be the same for all supported, Unix-based operating systems.
 
 **Steps:**
 1. Build dependencies
@@ -13,9 +13,9 @@ This page will guide you through the **3 steps** needed to prepare a computer fo
 
 ## Build dependencies
 
-Substrate development is easiest on Unix-based operating systems like macOS or Linux. The examples
-in the [Substrate Docs](https://docs.substrate.io) use Unix-style terminals to demonstrate how to
-interact with Substrate from the command line.
+Polkadot SDK development is easiest on Unix-based operating systems like macOS or Linux. The examples
+in the [Polkadot SDK Docs](https://docs.polkadot.com) use Unix-style terminals to demonstrate how to
+interact with Polkadot SDK from the command line.
 
 ### Ubuntu/Debian
 
@@ -72,11 +72,11 @@ brew install openssl
 
 ### Windows
 
-**_PLEASE NOTE:_** Native Windows development of Substrate is _not_ very well supported! It is _highly_
+**_PLEASE NOTE:_** Native Windows development of Polkadot SDK is _not_ very well supported! It is _highly_
 recommend to use [Windows Subsystem Linux](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
 (WSL) and follow the instructions for [Ubuntu/Debian](#ubuntudebian).
 Please refer to the separate
-[guide for native Windows development](https://docs.substrate.io/main-docs/install/windows/).
+[guide for native Windows development](https://docs.polkadot.com).
 
 ## Rust developer environment
 
@@ -101,12 +101,12 @@ rustup target add wasm32v1-none --toolchain nightly
 
 ## Test your set-up
 
-Now the best way to ensure that you have successfully prepared a computer for Substrate
-development is to follow the steps in [our first Substrate tutorial](https://docs.substrate.io/tutorials/v3/create-your-first-substrate-chain/).
+Now the best way to ensure that you have successfully prepared a computer for Polkadot SDK
+development is to follow the steps in the [official Polkadot SDK tutorials](https://docs.polkadot.com).
 
-## Troubleshooting Substrate builds
+## Troubleshooting Polkadot SDK builds
 
-Sometimes you can't get the Substrate node template
+Sometimes you can't get the Polkadot SDK node template
 to compile out of the box. Here are some tips to help you work through that.
 
 ### Rust configuration check
@@ -150,19 +150,19 @@ section.
 
 ### WebAssembly compilation
 
-Substrate uses [WebAssembly](https://webassembly.org) (Wasm) to produce portable blockchain
+Polkadot SDK uses [WebAssembly](https://webassembly.org) (Wasm) to produce portable blockchain
 runtimes. You will need to configure your Rust compiler to use
 [`nightly` builds](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) to allow you to
-compile Substrate runtime code to the Wasm target.
+compile Polkadot SDK runtime code to the Wasm target.
 
-> There are upstream issues in Rust that need to be resolved before all of Substrate can use the stable Rust toolchain.
-> [This is our tracking issue](https://github.com/paritytech/substrate/issues/1252) if you're curious as to why and how this will be resolved.
+> There are upstream issues in Rust that need to be resolved before all of Polkadot SDK can use the stable Rust toolchain.
+> [This is the tracking issue](https://github.com/paritytech/polkadot-sdk/issues) if you're curious as to why and how this will be resolved.
 
-#### Latest nightly for Substrate `master`
+#### Latest nightly for Polkadot SDK `master`
 
-Developers who are building Substrate _itself_ should always use the latest bug-free versions of
-Rust stable and nightly. This is because the Substrate codebase follows the tip of Rust nightly,
-which means that changes in Substrate often depend on upstream changes in the Rust nightly compiler.
+Developers who are building Polkadot SDK _itself_ should always use the latest bug-free versions of
+Rust stable and nightly. This is because the Polkadot SDK codebase follows the tip of Rust nightly,
+which means that changes in Polkadot SDK often depend on upstream changes in the Rust nightly compiler.
 To ensure your Rust compiler is always up to date, you should run:
 
 ```bash
@@ -171,7 +171,7 @@ rustup update nightly
 rustup target add wasm32v1-none --toolchain nightly
 ```
 
-> NOTE: It may be necessary to occasionally rerun `rustup update` if a change in the upstream Substrate
+> NOTE: It may be necessary to occasionally rerun `rustup update` if a change in the upstream Polkadot SDK
 > codebase depends on a new feature of the Rust compiler. When you do this, both your nightly
 > and stable toolchains will be pulled to the most recent release, and for nightly, it is
 > generally _not_ expected to compile WASM without error (although it very often does).
@@ -182,7 +182,7 @@ rustup target add wasm32v1-none --toolchain nightly
 
 If you want to guarantee that your build works on your computer as you update Rust and other
 dependencies, you should use a specific Rust nightly version that is known to be
-compatible with the version of Substrate they are using; this version will vary from project to
+compatible with the version of Polkadot SDK they are using; this version will vary from project to
 project and different projects may use different mechanisms to communicate this version to
 developers. For instance, the Polkadot client specifies this information in its
 [release notes](https://github.com/paritytech/polkadot/releases).
@@ -202,7 +202,7 @@ rustup target add wasm32v1-none --toolchain nightly-<yyyy-MM-dd>
 
 ### Specifying nightly version
 
-Use the `WASM_BUILD_TOOLCHAIN` environment variable to specify the Rust nightly version a Substrate
+Use the `WASM_BUILD_TOOLCHAIN` environment variable to specify the Rust nightly version a Polkadot SDK
 project should use for Wasm compilation:
 
 ```bash

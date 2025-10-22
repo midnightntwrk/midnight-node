@@ -1,47 +1,6 @@
-# Midnight Node Toolkit
+# Midnight Toolkit
 
 CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
-
-## Table of Contents
-
-- [Quick Reference](#quick-reference)
-- [Important Usage Examples](#important-usage-examples)
-- [Implementation Status](#implementation-status)
-- [Usage](#usage)
-  - [Check Version Information](#check-version-information)
-  - [Generate Transactions](#generate-transactions)
-  - [Register DUST Address](#register-dust-address)
-  - [Generate Genesis](#generate-genesis)
-  - [Show Transaction](#show-transaction)
-  - [Show Wallet](#show-wallet-json-output)
-  - [Show Address](#show-address)
-  - [Generate Random Address](#generate-random-address)
-- [Development](#development)
-- [Docker](#docker)
-
----
-
-## Quick Reference
-
-```bash
-# Check version compatibility
-midnight-node-toolkit version
-
-# Show wallet balance and state
-midnight-node-toolkit show-wallet --src-file genesis.mn --seed <seed>
-
-# Generate transactions (basic structure)
-midnight-node-toolkit generate-txs <SOURCE> <DEST> <PROVER> <BUILDER> [BUILDER_ARGS]
-
-# Deploy contract
-midnight-node-toolkit send-intent --intent-file deploy.bin --compiled-contract-dir contract/out
-
-# Register DUST address
-midnight-node-toolkit generate-txs register-dust-address --wallet-seed <seed> --funding-seed <seed>
-
-# Show address (shielded or unshielded)
-midnight-node-toolkit show-address --network undeployed --seed <seed> [--shielded]
-```
 
 ---
 
