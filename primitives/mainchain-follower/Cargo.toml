@@ -25,9 +25,7 @@ sqlx = { version = "0.8.5",  optional = true,  default-features = false, feature
 db-sync-sqlx = { workspace = true, optional = true }
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
-figment = { workspace = true , optional = true }
 serde = { workspace = true , optional = true }
-secrecy = { workspace = true, features = ["serde"], optional = true }
 scale-info.workspace = true
 log.workspace = true
 rand = { version = "0.9.1", default-features = false }
@@ -55,10 +53,8 @@ std = [
     "sqlx",
     "db-sync-sqlx",
     "log/std",
-    "figment",
     "serde",
     "partner-chains-db-sync-data-sources",
-    "secrecy",
     "hex/std",
     "rand/std",
     "rand/thread_rng",

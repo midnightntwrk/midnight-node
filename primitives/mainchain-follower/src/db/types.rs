@@ -69,6 +69,7 @@ impl From<Block> for CardanoPosition {
 		CardanoPosition {
 			block_hash: b.hash,
 			block_number: b.block_number.0,
+			block_timestamp: b.time.and_utc().into(),
 			tx_index_in_block: b.tx_count as u32,
 		}
 	}
@@ -83,6 +84,7 @@ pub struct RedemptionCreateRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub tx_hash: DbTxHash,
 	pub utxo_index: DbUtxoIndexInTx,
@@ -94,6 +96,7 @@ pub struct RedemptionSpendRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub tx_hash: DbTxHash,
 	pub utxo_tx_hash: DbTxHash,
@@ -106,6 +109,7 @@ pub struct RegistrationRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub tx_hash: DbTxHash,
 	pub utxo_index: DbUtxoIndexInTx,
@@ -116,6 +120,7 @@ pub struct DeregistrationRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub tx_hash: DbTxHash,
 	pub utxo_tx_hash: DbTxHash,
@@ -126,6 +131,7 @@ pub struct DeregistrationRow {
 pub struct AssetCreateRow {
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub quantity: i64,
 	pub holder_address: String,
@@ -137,6 +143,7 @@ pub struct AssetCreateRow {
 pub struct AssetSpendRow {
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
+	pub block_timestamp: NaiveDateTime,
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub quantity: i64,
 	pub holder_address: String,
