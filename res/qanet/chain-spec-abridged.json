@@ -218,14 +218,10 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "0x616464725f7465737431777268707037676d7a7435706c7833647837737a3235676c30706a783332327a347033706a746b6d66706e706670637167636b6a6b",
+            "committee_candidate_address": "addr_test1wrhpp7gmzt5plx3dx7sz25gl0pjx322z4p3pjtkmfpnpfpcqgckjk",
             "d_parameter_policy_id": "0x0499e919fc1040af975ea1dc7b8a414c99f0e1d070e547dc81999010",
             "permissioned_candidates_policy_id": "0xca3c98056e6bce7df274f0a9161ad53208bdb1cef072f0743307ad2f"
           }
-        },
-        "nativeTokenManagement": {
-          "mainChainScripts": null,
-          "marker": null
         },
         "nativeTokenObservation": {
           "mappingValidatorAddress": [

@@ -191,14 +191,10 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "0x616464725f746573743177716b36653973617a353234307468353632656b7632307839683233777a76653968713033307763366b366d637667796b766e3936",
+            "committee_candidate_address": "addr_test1wqk6e9saz5240th562ekv20x9h23wzve9hq030wc6k6mcvgykvn96",
             "d_parameter_policy_id": "0xbfe2f69c11377659bbfe7da8fd4fcddc606a910aa4fe9d5c3b70bc2f",
             "permissioned_candidates_policy_id": "0x60cac5f19351dd77d5023a5251b80bb42b78d29b8c4c0c39aa777a2b"
           }
-        },
-        "nativeTokenManagement": {
-          "mainChainScripts": null,
-          "marker": null
         },
         "nativeTokenObservation": {
           "mappingValidatorAddress": [
@@ -454,7 +450,7 @@
         },
         "governedMap": {
           "mainChainScripts": {
-            "validator_address": "0x616464725f7465737431777239766379306878686b7273766e75706a6e75716d386364396c68676766766761327535776c78743536796e73636b77736e7335",
+            "validator_address": "addr_test1wr9vcy0hxhkrsvnupjnuqm8cd9lhggfvga2u5wlxt56ynsckwsns5",
             "asset_policy_id": "0xa1005d640f9bae8a99bc15f4c67882ee981ab3157884027fccbdd31d"
           },
           "marker": null
