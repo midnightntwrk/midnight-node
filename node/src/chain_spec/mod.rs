@@ -27,7 +27,7 @@ use midnight_node_runtime::{
 	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
-use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, TimestampCall};
+use midnight_node_runtime::{BeefyConfig, CNightObservationConfig, TimestampCall};
 
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -263,7 +263,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		tx_pause: Default::default(),
 		pallet_session: Default::default(),
 		native_token_management: NativeTokenManagementConfig { ..Default::default() },
-		native_token_observation: NativeTokenObservationConfig {
+		c_night_observation: CNightObservationConfig {
 			redemption_validator_address: genesis
 				.cnight_generates_dust_config()
 				.redemption_validator_address

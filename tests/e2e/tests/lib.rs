@@ -1,6 +1,6 @@
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
-use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
+use midnight_node_metadata::midnight_metadata_latest::cnight_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use whisky::Asset;
 
@@ -35,7 +35,7 @@ async fn register_for_dust_production() {
 		.iter()
 		.filter_map(|e| e.ok())
 		.filter_map(|evt| {
-			evt.as_event::<native_token_observation::events::Registration>().ok().flatten()
+			evt.as_event::<cnight_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
 			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
@@ -52,7 +52,7 @@ async fn register_for_dust_production() {
 		.iter()
 		.filter_map(|e| e.ok())
 		.filter_map(|evt| {
-			evt.as_event::<native_token_observation::events::MappingAdded>().ok().flatten()
+			evt.as_event::<cnight_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
 			map.0.cardano_address.0 == cardano_address

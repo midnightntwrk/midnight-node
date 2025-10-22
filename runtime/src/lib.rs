@@ -1066,7 +1066,7 @@ mod runtime {
 	#[runtime::pallet_index(12)]
 	pub type NativeTokenManagement = pallet_native_token_management::Pallet<Runtime>;
 	#[runtime::pallet_index(13)]
-	pub type NativeTokenObservation = pallet_cnight_observation::Pallet<Runtime>;
+	pub type CNightObservation = pallet_cnight_observation::Pallet<Runtime>;
 
 	// Utility
 	#[runtime::pallet_index(15)]
@@ -1579,7 +1579,7 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl midnight_primitives_cnight_observation::NativeTokenObservationApi<Block> for Runtime {
+	impl midnight_primitives_cnight_observation::CNightObservationApi<Block> for Runtime {
 		fn get_redemption_validator_address() -> Vec<u8> {
 			pallet_cnight_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
 		}

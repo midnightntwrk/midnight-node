@@ -13,11 +13,9 @@
 
 //! Native Token Observation Inherent Data Provider
 
-use crate::{
-	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
-};
+use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
+	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
 };
 use parity_scale_codec::Decode;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
@@ -27,7 +25,7 @@ use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
 pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
 
-pub struct MidnightNativeTokenObservationInherentDataProvider {
+pub struct MidnightCNightObservationInherentDataProvider {
 	pub utxos: Vec<ObservedUtxo>,
 	pub next_cardano_position: CardanoPosition,
 }
@@ -58,12 +56,12 @@ impl From<FromUtf8Error> for IDPCreationError {
 	}
 }
 
-impl MidnightNativeTokenObservationInherentDataProvider {
+impl MidnightCNightObservationInherentDataProvider {
 	/// Creates inherent data provider only if the pallet is present in the runtime.
 	/// Returns empty data if not.
 	pub async fn new_if_pallet_present<Block, C>(
 		client: Arc<C>,
-		data_source: &(dyn MidnightNativeTokenObservationDataSource + Send + Sync),
+		data_source: &(dyn MidnightCNightObservationDataSource + Send + Sync),
 		parent_hash: <Block as BlockT>::Hash,
 		mc_hash: sidechain_domain::McBlockHash,
 	) -> Result<Self, IDPCreationError>
@@ -71,11 +69,11 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: NativeTokenObservationApi<Block>,
+		C::Api: CNightObservationApi<Block>,
 	{
 		if let Ok(true) = client
 			.runtime_api()
-			.has_api::<dyn NativeTokenObservationApi<Block>>(parent_hash)
+			.has_api::<dyn CNightObservationApi<Block>>(parent_hash)
 		{
 			Self::new(client, data_source, parent_hash, mc_hash).await
 		} else {
@@ -92,7 +90,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 
 	pub async fn new<Block, C>(
 		client: Arc<C>,
-		data_source: &(dyn MidnightNativeTokenObservationDataSource + Send + Sync),
+		data_source: &(dyn MidnightCNightObservationDataSource + Send + Sync),
 		parent_hash: <Block as BlockT>::Hash,
 		mc_hash: sidechain_domain::McBlockHash,
 	) -> Result<Self, IDPCreationError>
@@ -100,7 +98,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: NativeTokenObservationApi<Block>,
+		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
 		let redemption_validator_address = api.get_redemption_validator_address(parent_hash)?;
@@ -140,7 +138,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 }
 
 #[async_trait::async_trait]
-impl sp_inherents::InherentDataProvider for MidnightNativeTokenObservationInherentDataProvider {
+impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDataProvider {
 	async fn provide_inherent_data(
 		&self,
 		inherent_data: &mut sp_inherents::InherentData,

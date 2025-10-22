@@ -444,7 +444,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.sync_run(|config| {
 				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_native_token_observation_data_source(
+					crate::main_chain_follower::create_cnight_observation_data_source(
 						cfg.midnight_cfg.clone(),
 						None,
 					),

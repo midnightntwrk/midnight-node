@@ -31,7 +31,7 @@ pub mod data_source;
 pub use {
 	data_source::{
 		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
-		MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
+		MidnightCNightObservationDataSourceImpl, CNightObservationDataSourceMock,
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
@@ -47,7 +47,7 @@ pub mod inherent_provider {
 
 	#[async_trait::async_trait]
 	// Simple wrapper trait for native token observation
-	pub trait MidnightNativeTokenObservationDataSource {
+	pub trait MidnightCNightObservationDataSource {
 		async fn get_utxos_up_to_capacity(
 			&self,
 			config: &CNightAddresses,

@@ -12,21 +12,21 @@
 // limitations under the License.
 
 use crate::{
-	MidnightNativeTokenObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
+	MidnightCNightObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
 use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use sidechain_domain::{McBlockHash, McTxHash};
 
-pub struct NativeTokenObservationDataSourceMock;
+pub struct CNightObservationDataSourceMock;
 
-impl Default for NativeTokenObservationDataSourceMock {
+impl Default for CNightObservationDataSourceMock {
 	fn default() -> Self {
 		Self::new()
 	}
 }
 
-impl NativeTokenObservationDataSourceMock {
+impl CNightObservationDataSourceMock {
 	pub fn new() -> Self {
 		Self
 	}
@@ -53,7 +53,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 }
 
 #[async_trait::async_trait]
-impl MidnightNativeTokenObservationDataSource for NativeTokenObservationDataSourceMock {
+impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 	async fn get_utxos_up_to_capacity(
 		&self,
 		_config: &CNightAddresses,

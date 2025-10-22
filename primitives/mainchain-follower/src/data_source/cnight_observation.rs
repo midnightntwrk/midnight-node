@@ -15,7 +15,7 @@ use crate::db::{
 	get_deregistrations, get_redemption_creates, get_redemption_spends, get_registrations,
 };
 use crate::{
-	CreateData, DeregistrationData, MidnightNativeTokenObservationDataSource, ObservedUtxo,
+	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
@@ -53,13 +53,13 @@ pub struct TxPosition {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum MidnightNativeTokenObservationDataSourceError {
+pub enum MidnightCNightObservationDataSourceError {
 	#[error("missing reference for block hash `{0}` in db-sync")]
 	MissingBlockReference(McBlockHash),
 }
 
 #[derive(new)]
-pub struct MidnightNativeTokenObservationDataSourceImpl {
+pub struct MidnightCNightObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<McFollowerMetrics>,
 	#[allow(dead_code)]
@@ -69,7 +69,7 @@ pub struct MidnightNativeTokenObservationDataSourceImpl {
 // If we need better logging here, we could use use db_sync_follower::observed_async_trait
 // But perhaps there are better options for tracing
 #[async_trait::async_trait]
-impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservationDataSourceImpl {
+impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSourceImpl {
 	async fn get_utxos_up_to_capacity(
 		&self,
 		config: &CNightAddresses,
@@ -80,7 +80,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
-			.ok_or(MidnightNativeTokenObservationDataSourceError::MissingBlockReference(
+			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(
 				current_tip,
 			))?
 			.into();
@@ -187,7 +187,7 @@ impl MidnightNativeTokenObservationDataSource for MidnightNativeTokenObservation
 	}
 }
 
-impl MidnightNativeTokenObservationDataSourceImpl {
+impl MidnightCNightObservationDataSourceImpl {
 	#[allow(clippy::too_many_arguments)]
 	async fn get_redemption_create_utxos(
 		&self,

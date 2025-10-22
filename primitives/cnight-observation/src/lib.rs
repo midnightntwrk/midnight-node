@@ -263,7 +263,7 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
-	pub trait NativeTokenObservationApi {
+	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which executes Glacier Drop redemptions
 		fn get_redemption_validator_address() -> Vec<u8>;
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums

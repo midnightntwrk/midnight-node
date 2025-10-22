@@ -45,7 +45,7 @@ frame_support::construct_runtime!(
 	pub enum Test {
 		System: frame_system,
 		Timestamp: pallet_timestamp,
-		NativeTokenObservation: crate::pallet,
+		CNightObservation: crate::pallet,
 		Mock: mock_pallet,
 	}
 );
@@ -134,7 +134,7 @@ impl mock_pallet::Config for Test {}
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t: TestExternalities = RuntimeGenesisConfig {
 		system: Default::default(),
-		native_token_observation: Default::default(),
+		c_night_observation: Default::default(),
 	}
 	.build_storage()
 	.unwrap()

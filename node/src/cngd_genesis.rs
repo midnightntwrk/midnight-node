@@ -1,5 +1,5 @@
 use frame_support::inherent::ProvideInherent;
-use midnight_node_res::native_token_observation_consts::{
+use midnight_node_res::cnight_observation_consts::{
 	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
 	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
 };
@@ -7,7 +7,7 @@ use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos,
 };
 use midnight_primitives_mainchain_follower::{
-	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
 use pallet_cnight_observation::{
 	MappingEntry, Mappings, config::CNightGenesis, mock_with_capture as mock,
@@ -56,9 +56,9 @@ struct PalletExecResult {
 fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 	mock::new_test_ext().execute_with(|| {
 		let inherent_data = create_inherent(utxos.utxos.clone(), utxos.end);
-		let call = mock::NativeTokenObservation::create_inherent(&inherent_data)
+		let call = mock::CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = mock::RuntimeCall::NativeTokenObservation(call);
+		let call = mock::RuntimeCall::CNightObservation(call);
 		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
 
 		PalletExecResult {
@@ -69,7 +69,7 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 }
 
 pub async fn get_cngd_genesis(
-	native_token_observation_data_source: Arc<dyn MidnightNativeTokenObservationDataSource>,
+	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource>,
 	// Cardano block hash("mc hash") which is assumed to be the tip for the queries
 	initial_cardano_tip_hash: McBlockHash,
 ) -> Result<(), CngdGenesisError> {
@@ -91,7 +91,7 @@ pub async fn get_cngd_genesis(
 	};
 
 	loop {
-		let observed = native_token_observation_data_source
+		let observed = cnight_observation_data_source
 			.get_utxos_up_to_capacity(
 				&token_observation_config,
 				current_position,
