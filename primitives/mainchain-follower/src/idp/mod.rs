@@ -17,14 +17,14 @@
 //! Anything that is called from or passed to the pallet goes here.
 
 #[cfg(feature = "std")]
-pub mod federated_authority_observation;
-#[cfg(feature = "std")]
 pub mod cnight_observation;
-
 #[cfg(feature = "std")]
-pub use federated_authority_observation::FederatedAuthorityInherentDataProvider;
+pub mod federated_authority_observation;
+
 #[cfg(feature = "std")]
 pub use cnight_observation::{
 	DEFAULT_CARDANO_BLOCK_WINDOW_SIZE, IDPCreationError,
 	MidnightCNightObservationInherentDataProvider,
 };
+#[cfg(feature = "std")]
+pub use federated_authority_observation::FederatedAuthorityInherentDataProvider;

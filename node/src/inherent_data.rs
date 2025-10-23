@@ -44,9 +44,7 @@ use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
 	FederatedAuthorityObservationDataSource, MidnightCNightObservationDataSource,
-	idp::{
-		FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider,
-	},
+	idp::{FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider},
 };
 use sp_native_token_management::{
 	NativeTokenManagementApi, NativeTokenManagementDataSource,

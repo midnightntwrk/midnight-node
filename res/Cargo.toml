@@ -10,7 +10,6 @@ license-file.workspace = true
 [features]
 default = ["std"]
 chain-spec = [
-    "midnight-primitives-cnight-observation/std",
     "pallet-cnight-observation/std",
     "std",
     "sp-core/std",
@@ -34,7 +33,6 @@ sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
 sp-governed-map = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
-midnight-primitives-cnight-observation = { workspace = true, optional = true }
 pallet-cnight-observation = { workspace = true, optional = true }
 
 [dev-dependencies]

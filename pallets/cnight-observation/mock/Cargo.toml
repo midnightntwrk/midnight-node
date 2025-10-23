@@ -19,8 +19,6 @@ scale-info.workspace = true
 sidechain-domain.workspace = true
 pallet-timestamp.workspace = true
 midnight-primitives.workspace = true
-midnight-primitives-mainchain-follower.workspace = true
-midnight-primitives-cnight-observation.workspace = true
 
 [features]
 default = ["std"]
@@ -30,6 +28,7 @@ std = [
     "scale-info/std",
     "parity-scale-codec/std",
     "midnight-primitives/std",
-    "midnight-primitives-mainchain-follower/std",
-    "midnight-primitives-cnight-observation/std",
 ]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec", "sp-io"]

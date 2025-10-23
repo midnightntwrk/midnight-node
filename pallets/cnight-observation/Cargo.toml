@@ -8,7 +8,6 @@ license-file.workspace = true
 [dependencies]
 frame-support.workspace = true
 frame-system.workspace = true
-pallet-timestamp.workspace = true
 sidechain-domain.workspace = true
 midnight-primitives.workspace = true
 midnight-primitives-mainchain-follower.workspace = true
@@ -26,7 +25,6 @@ serde = { workspace = true, optional = true }
 sp-io.workspace = true
 rand = { version = "^0.8.4", features = ["std_rng"] }
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
-pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 test-log.workspace = true
 midnight-node-ledger-helpers.workspace = true

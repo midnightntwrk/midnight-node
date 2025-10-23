@@ -80,9 +80,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
-			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(
-				current_tip,
-			))?
+			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();

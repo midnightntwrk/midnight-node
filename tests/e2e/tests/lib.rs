@@ -34,9 +34,7 @@ async fn register_for_dust_production() {
 	let registration = registration_events
 		.iter()
 		.filter_map(|e| e.ok())
-		.filter_map(|evt| {
-			evt.as_event::<cnight_observation::events::Registration>().ok().flatten()
-		})
+		.filter_map(|evt| evt.as_event::<cnight_observation::events::Registration>().ok().flatten())
 		.find(|reg| {
 			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
 		});
@@ -51,9 +49,7 @@ async fn register_for_dust_production() {
 	let mapping_added = registration_events
 		.iter()
 		.filter_map(|e| e.ok())
-		.filter_map(|evt| {
-			evt.as_event::<cnight_observation::events::MappingAdded>().ok().flatten()
-		})
+		.filter_map(|evt| evt.as_event::<cnight_observation::events::MappingAdded>().ok().flatten())
 		.find(|map| {
 			map.0.cardano_address.0 == cardano_address
 				&& map.0.dust_address == dust_hex

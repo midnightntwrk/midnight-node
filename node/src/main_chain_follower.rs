@@ -33,9 +33,9 @@ use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestam
 use std::{error::Error, str::FromStr as _, sync::Arc};
 
 use midnight_primitives_mainchain_follower::{
-	FederatedAuthorityObservationDataSource, FederatedAuthorityObservationDataSourceImpl,
-	FederatedAuthorityObservationDataSourceMock, MidnightCNightObservationDataSource,
-	MidnightCNightObservationDataSourceImpl, CNightObservationDataSourceMock,
+	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
+	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
 
 // TODO: Decide if it should be experimental

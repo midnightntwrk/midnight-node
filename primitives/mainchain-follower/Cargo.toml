@@ -24,7 +24,6 @@ cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { workspace = true,  optional = true, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
-serde = { workspace = true , optional = true }
 scale-info.workspace = true
 log.workspace = true
 rand = { version = "0.9.1", default-features = false }
@@ -51,7 +50,6 @@ std = [
     "cardano-serialization-lib",
     "sqlx",
     "log/std",
-    "serde",
     "partner-chains-db-sync-data-sources",
     "hex/std",
     "rand/std",
