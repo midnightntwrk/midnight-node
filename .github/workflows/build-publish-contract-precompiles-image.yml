@@ -54,11 +54,5 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${GITHUB_TOKEN}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           # Run Earthly platform-specific image builds
           . ./.envrc && earthly --ci --platform=linux/amd64 --push +contract-precompile-image
