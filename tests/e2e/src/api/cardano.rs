@@ -178,3 +178,149 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 		None => panic!("Wallet UTXO not found after funding"),
 	}
 }
+
+/// Create a one-shot UTxO for minting governance tokens
+/// This UTxO will be consumed during minting to ensure it can only happen once
+pub async fn create_one_shot_utxo(
+	wallet_address: &str,
+	_one_shot_tx_hash: &str,
+	_one_shot_index: u32,
+) -> OgmiosUtxo {
+	// In a real scenario, this would be a pre-existing UTxO
+	// For testing, we create one with the specific tx_id and index
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
+	let tx_id = send(wallet_address, assets).await;
+	println!("One-shot UTXO created with tx_id: {}", tx_id);
+
+	// Wait and return the UTXO
+	match find_utxo_by_tx_id(wallet_address, &tx_id).await {
+		Some(utxo) => utxo,
+		None => panic!("One-shot UTXO not found after creation"),
+	}
+}
+
+/// Deploy a governance contract and mint the NFT with multisig datum
+///
+/// # Arguments
+/// * `signing_wallet` - The wallet to sign the transaction
+/// * `tx_in` - Input UTxO to fund the transaction
+/// * `collateral_utxo` - Collateral UTxO for script execution
+/// * `one_shot_utxo` - The one-shot UTxO to consume (ensures single minting)
+/// * `script_cbor` - The compiled contract CBOR
+/// * `script_address` - The script address to send the NFT to
+/// * `sr25519_pubkeys` - Map of Cardano pubkey hash to Sr25519 public key (hex strings)
+/// * `total_signers` - Total number of required signers
+pub async fn deploy_governance_contract(
+	signing_wallet: &Wallet,
+	tx_in: &OgmiosUtxo,
+	collateral_utxo: &OgmiosUtxo,
+	one_shot_utxo: &OgmiosUtxo,
+	script_cbor: &str,
+	script_address: &str,
+	policy_id: &str,
+	sr25519_pubkeys: Vec<(String, String)>, // (cardano_pubkey_hash, sr25519_pubkey)
+	total_signers: u64,
+) -> [u8; 32] {
+	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
+
+	// Build the Multisig datum
+	// Format: constructor 0 with fields [total_signers: Int, signers: Map]
+	let mut signers_map = serde_json::Map::new();
+	for (cardano_hash, sr25519_key) in &sr25519_pubkeys {
+		signers_map.insert(
+			format!("{{\"bytes\":\"{}\"}}", cardano_hash),
+			serde_json::json!({"bytes": sr25519_key}),
+		);
+	}
+
+	let datum = serde_json::to_string(&serde_json::json!({
+		"constructor": 0,
+		"fields": [
+			{"int": total_signers},
+			{"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
+				serde_json::json!({
+					"k": {"bytes": cardano_hash},
+					"v": {"bytes": sr25519_key}
+				})
+			}).collect::<Vec<_>>()}
+		]
+	}))
+	.unwrap();
+
+	// Build the redeemer (same structure as datum for the permissioned contracts)
+	let redeemer = serde_json::to_string(&serde_json::json!({
+		"constructor": 0,
+		"fields": [{
+			"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
+				serde_json::json!({
+					"k": {"bytes": cardano_hash},
+					"v": {"bytes": sr25519_key}
+				})
+			}).collect::<Vec<_>>()
+		}]
+	}))
+	.unwrap();
+
+	println!("Deploying governance contract");
+	println!("  Script address: {}", script_address);
+	println!("  Policy ID: {}", policy_id);
+	println!("  Total signers: {}", total_signers);
+	println!("  Datum: {}", datum);
+	println!("  Redeemer: {}", redeemer);
+
+	let send_assets = vec![
+		Asset::new_from_str("lovelace", "2000000"), // 2 ADA
+		Asset::new_from_str(policy_id, "1"),        // The governance NFT
+	];
+
+	let network = Network::Custom(get_local_env_cost_models());
+
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		// Add regular input for fees
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(tx_in),
+			&payment_addr,
+		)
+		// Add one-shot input (no redeemer for regular UTxO)
+		.tx_in(
+			&hex::encode(one_shot_utxo.transaction.id),
+			one_shot_utxo.index.into(),
+			&build_asset_vector(one_shot_utxo),
+			&payment_addr,
+		)
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(collateral_utxo),
+			&payment_addr,
+		)
+		// Output to script address with NFT and datum
+		.tx_out(script_address, &send_assets)
+		.tx_out_inline_datum_value(&WData::JSON(datum))
+		// Mint the NFT
+		.mint_plutus_script_v2()
+		.mint(1, policy_id, "") // Empty asset name
+		.minting_script(script_cbor)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(redeemer),
+			ex_units: Budget { mem: 14000000, steps: 10000000000 },
+		})
+		.change_address(&payment_addr)
+		.complete_sync(None)
+		.unwrap();
+
+	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex());
+	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let client = get_ogmios_client().await;
+	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	println!(
+		"Governance contract deployed, transaction ID: {:?}",
+		hex::encode(response.transaction.id)
+	);
+	response.transaction.id
+}

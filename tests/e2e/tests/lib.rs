@@ -1,6 +1,8 @@
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
-use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
+use midnight_node_metadata::midnight_metadata_latest::{
+	federated_authority_observation, native_token_observation,
+};
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use whisky::Asset;
 
@@ -65,5 +67,166 @@ async fn register_for_dust_production() {
 	);
 	if let Some(mapping) = mapping_added {
 		println!("Matching MappingAdded event found: {:?}", mapping);
+	}
+}
+
+#[tokio::test]
+#[ignore] // Remove this when ready to run the test with a live environment
+async fn deploy_governance_contracts_and_validate_membership_reset() {
+	println!("=== Starting Governance Contracts E2E Test ===");
+
+	// Example Sr25519 public keys for testing (Alice and Bob from Substrate)
+	// In production, these would be the actual governance committee member keys
+	const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
+	const BOB_SR25519: &str = "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48";
+
+	// Create test wallet for contract deployment
+	let deployer_wallet = create_wallet();
+	let deployer_address = get_cardano_address_as_bech32(&deployer_wallet);
+	println!("Deployer wallet created: {}", deployer_address);
+
+	// Get deployer's Cardano pubkey hash for the multisig mapping
+	let deployer_cardano_hash = hex::encode(deployer_wallet.account.public_key.hash().to_bytes());
+
+	// Fund deployer wallet with plenty of ADA for multiple transactions
+	let funding_assets = vec![Asset::new_from_str("lovelace", "500000000")]; // 500 ADA
+	let tx_in_utxo = fund_wallet(&deployer_address, funding_assets).await;
+	println!("Deployer wallet funded");
+
+	// Create additional funding UTxO for second deployment
+	let tx_in_utxo_2 = fund_wallet(&deployer_address, funding_assets).await;
+	println!("Second funding UTXO created");
+
+	// Create collateral for script transactions
+	let collateral_utxo = make_collateral(&deployer_address).await;
+	println!("Collateral UTXO created");
+
+	// Load contract CBORs and calculate addresses and policy IDs
+	use midnight_node_e2e::cfg::*;
+	let council_cbor = get_council_forever_cbor();
+	let council_address = get_council_forever_address();
+	let council_policy_id = get_council_forever_policy_id();
+
+	let tech_auth_cbor = get_tech_auth_forever_cbor();
+	let tech_auth_address = get_tech_auth_forever_address();
+	let tech_auth_policy_id = get_tech_auth_forever_policy_id();
+
+	println!("Council Forever:");
+	println!("  Policy ID (calculated): {}", council_policy_id);
+	println!("  Address: {}", council_address);
+
+	println!("Technical Authority Forever:");
+	println!("  Policy ID (calculated): {}", tech_auth_policy_id);
+	println!("  Address: {}", tech_auth_address);
+
+	// Create one-shot UTxOs for minting
+	let council_one_shot = create_one_shot_utxo(&deployer_address, "", 0).await;
+	println!("Council one-shot UTXO created");
+
+	let tech_auth_one_shot = create_one_shot_utxo(&deployer_address, "", 0).await;
+	println!("Technical Authority one-shot UTXO created");
+
+	// Deploy Council Forever contract
+	println!("\n=== Deploying Council Forever Contract ===");
+	let council_members = vec![
+		(deployer_cardano_hash.clone(), ALICE_SR25519.to_string()),
+		(deployer_cardano_hash.clone(), BOB_SR25519.to_string()),
+	];
+
+	let _council_tx_id = deploy_governance_contract(
+		&deployer_wallet,
+		&tx_in_utxo,
+		&collateral_utxo,
+		&council_one_shot,
+		&council_cbor,
+		&council_address,
+		&council_policy_id,
+		council_members.clone(),
+		2, // total_signers
+	)
+	.await;
+
+	println!("✓ Council Forever contract deployed successfully");
+
+	// Deploy Technical Authority Forever contract
+	println!("\n=== Deploying Technical Authority Forever Contract ===");
+	let tech_auth_members = vec![
+		(deployer_cardano_hash.clone(), ALICE_SR25519.to_string()),
+		(deployer_cardano_hash.clone(), BOB_SR25519.to_string()),
+	];
+
+	let _tech_auth_tx_id = deploy_governance_contract(
+		&deployer_wallet,
+		&tx_in_utxo_2,
+		&collateral_utxo,
+		&tech_auth_one_shot,
+		&tech_auth_cbor,
+		&tech_auth_address,
+		&tech_auth_policy_id,
+		tech_auth_members.clone(),
+		2, // total_signers
+	)
+	.await;
+
+	println!("✓ Technical Authority Forever contract deployed successfully");
+
+	// Subscribe to federated authority observation events
+	println!("Subscribing to federated authority events...");
+	let events_result = subscribe_to_federated_authority_events().await;
+
+	match events_result {
+		Ok(events) => {
+			println!("Successfully received federated authority events");
+
+			// Verify CouncilMembersReset event
+			let council_reset = events
+				.iter()
+				.filter_map(|e| e.ok())
+				.filter_map(|evt| {
+					evt.as_event::<federated_authority_observation::events::CouncilMembersReset>()
+						.ok()
+						.flatten()
+				})
+				.next();
+
+			assert!(council_reset.is_some(), "CouncilMembersReset event not found");
+
+			if let Some(event) = council_reset {
+				println!(
+					"✓ CouncilMembersReset event found with {} members",
+					event.members.0.len()
+				);
+				// TODO: Verify the members match the expected Sr25519 public keys
+			}
+
+			// Verify TechnicalCommitteeMembersReset event
+			let tech_committee_reset = events
+				.iter()
+				.filter_map(|e| e.ok())
+				.filter_map(|evt| {
+					evt.as_event::<federated_authority_observation::events::TechnicalCommitteeMembersReset>()
+						.ok()
+						.flatten()
+				})
+				.next();
+
+			assert!(
+				tech_committee_reset.is_some(),
+				"TechnicalCommitteeMembersReset event not found"
+			);
+
+			if let Some(event) = tech_committee_reset {
+				println!(
+					"✓ TechnicalCommitteeMembersReset event found with {} members",
+					event.members.0.len()
+				);
+				// TODO: Verify the members match the expected Sr25519 public keys
+			}
+
+			println!("=== Governance Contracts E2E Test PASSED ===");
+		},
+		Err(e) => {
+			panic!("Failed to receive federated authority events: {}", e);
+		},
 	}
 }

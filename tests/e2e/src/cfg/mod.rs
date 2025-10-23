@@ -13,6 +13,8 @@ pub struct AppConfig {
 	pub payment_skey_file: String,
 	pub mapping_validator_policy_file: String,
 	pub auth_token_policy_file: String,
+	pub council_forever_file: String,
+	pub tech_auth_forever_file: String,
 }
 
 pub fn load_config() -> AppConfig {
@@ -53,7 +55,41 @@ pub fn get_auth_token_policy_id() -> String {
 	let cfg = load_config();
 	let cbor_hex = load_cbor(&cfg.auth_token_policy_file);
 	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
+	script_hash.expect("Error calculating `auth_token_policy_id`")
+}
+
+pub fn get_council_forever_cbor() -> String {
+	let cfg = load_config();
+	load_cbor(&cfg.council_forever_file)
+}
+
+pub fn get_council_forever_policy_id() -> String {
+	let cbor_hex = get_council_forever_cbor();
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
+	script_hash.expect("Error calculating `council_forever_policy_id`")
+}
+
+pub fn get_council_forever_address() -> String {
+	let script_hash = get_council_forever_policy_id();
+	let network = NetworkInfo::testnet_preview().network_id();
+	whisky::script_to_address(network, &script_hash, None)
+}
+
+pub fn get_tech_auth_forever_cbor() -> String {
+	let cfg = load_config();
+	load_cbor(&cfg.tech_auth_forever_file)
+}
+
+pub fn get_tech_auth_forever_policy_id() -> String {
+	let cbor_hex = get_tech_auth_forever_cbor();
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
 	script_hash.unwrap()
+}
+
+pub fn get_tech_auth_forever_address() -> String {
+	let script_hash = get_tech_auth_forever_policy_id();
+	let network = NetworkInfo::testnet_preview().network_id();
+	whisky::script_to_address(network, &script_hash, None)
 }
 
 pub fn get_local_env_cost_models() -> Vec<Vec<i64>> {
