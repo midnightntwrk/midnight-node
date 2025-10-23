@@ -51,11 +51,11 @@ pub mod pallet {
 	use scale_info::prelude::vec::Vec;
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
-		GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
 	};
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
