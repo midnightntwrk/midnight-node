@@ -14,11 +14,13 @@
 use std::str::FromStr;
 
 use clap::Parser;
+
+use crate::cfg::Cfg;
 use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
 use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
-use sc_cli::{CliConfiguration, SharedParams};
+use sc_cli::{CliConfiguration, SharedParams, SubstrateCli};
 use sidechain_domain::McBlockHash;
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -100,11 +102,31 @@ pub enum Subcommand {
 pub struct MidnightRuntime;
 impl PartnerChainRuntime for MidnightRuntime {
 	type Keys = SessionKeys;
-	fn create_chain_spec(config: &CreateChainSpecConfig<Self::Keys>) -> serde_json::Value {
-		let _ = config;
-		todo!("implement create_chain_spec")
+
+	fn create_chain_spec(_config: &CreateChainSpecConfig<Self::Keys>) -> serde_json::Value {
+		let cfg = Cfg::new_no_validation()
+			.expect("chainspec configuration must load without validation errors");
+
+		let chain_id = cfg
+			.chain_spec_cfg
+			.chainspec_id
+			.as_deref()
+			.expect("chain spec configuration must define an identifier");
+
+		let chain_spec = cfg
+			.load_spec(chain_id)
+			.expect("chain spec generation must succeed when using default configuration");
+
+		let chain_spec_json =
+			chain_spec.as_json(false).expect("Chain spec serialization cannot fail");
+		let chain_spec_value: serde_json::Value =
+			serde_json::from_str(&chain_spec_json).expect("Generated chain spec JSON is valid");
+
+		chain_spec_value
 	}
+
 	fn key_definitions() -> Vec<KeyDefinition<'static>> {
+		// TODO: BEEFY(follow up pr)
 		vec![AURA, GRANDPA, CROSS_CHAIN]
 	}
 }
