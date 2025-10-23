@@ -165,16 +165,16 @@ export function checkDeregistration(
   console.time(timeId);
 
   const sub = api.event.NativeTokenObservation.Deregistration.watch((reg) => {
-    if (reg.cardano_address.asHex().replace(/^0x/, "") != cardanoHex) {
+    if (Buffer.from(reg.cardano_address).toString("hex").replace(/^0x/, "") != cardanoHex) {
       console.log(
-        `Found Dereg event, but cardanoAddress ${reg.cardano_address.asHex()} was not expected address ${cardanoHex}`,
+        `Found Dereg event, but cardanoAddress ${Buffer.from(reg.cardano_address).toString("hex")} was not expected address ${cardanoHex}`,
       );
       return false;
     }
 
-    if (reg.dust_address.asHex().replace(/^0x/, "") != dustHex) {
+    if (Buffer.from(reg.dust_address).toString("hex").replace(/^0x/, "") != dustHex) {
       console.log(
-        `Found Dereg event, but dustAddress ${reg.dust_address.asHex()} was not expected address ${dustHex}`,
+        `Found Dereg event, but dustAddress ${Buffer.from(reg.dust_address).toString("hex")} was not expected address ${dustHex}`,
       );
       return false;
     }
@@ -216,8 +216,8 @@ export function checkMultipleReg(
   const foundPairs = new Set();
 
   const sub = api.event.NativeTokenObservation.Registration.watch((reg) => {
-    const cardanoHex = reg.cardano_address.asHex().replace(/^0x/, "");
-    const dustHex = reg.dust_address.asHex().replace(/^0x/, "");
+    const cardanoHex = Buffer.from(reg.cardano_address).toString("hex").replace(/^0x/, "");
+    const dustHex = Buffer.from(reg.dust_address).toString("hex").replace(/^0x/, "");
 
     // Check if this matches any of our expected pairs
     for (let i = 0; i < expectedPairs.length; i++) {
@@ -281,7 +281,7 @@ export function checkMappingAdded(
 
   const sub = api.event.NativeTokenObservation.MappingAdded.watch((m) => {
     const dust = normHex(m.dust_address);
-    const cardano = normHex(m.cardano_address.asHex());
+    const cardano = normHex(Buffer.from(m.cardano_address).toString("hex"));
     const utxo = normHex(m.utxo_id);
 
     if (cardano !== normHex(cardanoHex)) {
@@ -334,7 +334,7 @@ export function checkMappingRemoved(
   console.time(timeId);
 
   const sub = api.event.NativeTokenObservation.MappingRemoved.watch((m) => {
-    const cardano = normHex(m.cardano_address.asHex());
+    const cardano = normHex(Buffer.from(m.cardano_address).toString("hex"));
     const dust = normHex(m.dust_address);
     const utxo = normHex(m.utxo_id);
 
