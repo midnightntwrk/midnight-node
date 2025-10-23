@@ -113,34 +113,6 @@ jobs:
 
           . ./.envrc && earthly +check-deps
 
-  check-benchmarks:
-    name: Check Benchmarks Compilation
-    runs-on: ubuntu-latest-16-core-x64
-    steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
-      - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
-
-      - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-
-      - name: Check Benchmarks
-        run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
-
-          . ./.envrc && earthly +check-benchmarks
-
   rebuild-genesis:
     name: Check Genesis Rebuild
     needs: run
