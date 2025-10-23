@@ -1,20 +1,19 @@
 use frame_support::inherent::ProvideInherent;
-use midnight_node_res::cnight_observation_consts::{
-	TEST_CNIGHT_ASSET_NAME, TEST_CNIGHT_CURRENCY_POLICY_ID, TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS,
-	TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS,
-};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
-use pallet_cnight_observation::{MappingEntry, Mappings, config::CNightGenesis};
+use pallet_cnight_observation::{
+	MappingEntry, Mappings,
+	config::{CNightGenesis, SystemTx},
+};
 use pallet_cnight_observation_mock::mock_with_capture as mock;
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -22,7 +21,7 @@ use tokio::{fs::File, io::AsyncWriteExt};
 const UTXO_CAPACITY: usize = 1000;
 
 #[derive(Debug, thiserror::Error)]
-pub enum CngdGenesisError {
+pub enum CNightGenesisError {
 	#[error("Failed to query UTXOs: {0}")]
 	UtxoQueryError(Box<dyn std::error::Error + Send + Sync>),
 
@@ -49,7 +48,7 @@ fn create_inherent(
 
 struct PalletExecResult {
 	mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
-	system_tx: Vec<u8>,
+	system_tx: Option<Vec<u8>>,
 }
 
 fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
@@ -62,16 +61,18 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 
 		PalletExecResult {
 			mappings: Mappings::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect(),
-			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop().unwrap(),
+			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
 		}
 	})
 }
 
-pub async fn get_cngd_genesis(
+pub async fn generate_cnight_genesis(
+	addresses: CNightAddresses,
 	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource>,
 	// Cardano block hash("mc hash") which is assumed to be the tip for the queries
-	initial_cardano_tip_hash: McBlockHash,
-) -> Result<(), CngdGenesisError> {
+	cardano_tip: McBlockHash,
+	output_path: impl AsRef<Path>,
+) -> Result<(), CNightGenesisError> {
 	let mut current_position = CardanoPosition {
 		// Required to fulfill struct, but value will be unused
 		block_hash: [0; 32],
@@ -80,25 +81,17 @@ pub async fn get_cngd_genesis(
 	};
 
 	let mut all_utxos = Vec::new();
-	let initial_cardano_tip_hash = initial_cardano_tip_hash.clone();
-
-	let token_observation_config = CNightAddresses {
-		mapping_validator_address: TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS.to_string(),
-		redemption_validator_address: TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS.to_string(),
-		policy_id: hex::encode(TEST_CNIGHT_CURRENCY_POLICY_ID),
-		asset_name: TEST_CNIGHT_ASSET_NAME.to_string(),
-	};
 
 	loop {
 		let observed = cnight_observation_data_source
 			.get_utxos_up_to_capacity(
-				&token_observation_config,
+				&addresses,
 				current_position,
-				initial_cardano_tip_hash.clone(),
+				cardano_tip.clone(),
 				UTXO_CAPACITY,
 			)
 			.await
-			.map_err(CngdGenesisError::UtxoQueryError)?;
+			.map_err(CNightGenesisError::UtxoQueryError)?;
 
 		current_position = observed.end;
 		log::info!(
@@ -108,7 +101,7 @@ pub async fn get_cngd_genesis(
 		all_utxos.extend(observed.utxos);
 
 		// Optional: break early if position is past the tip
-		if current_position.block_hash == initial_cardano_tip_hash.0 {
+		if current_position.block_hash == cardano_tip.0 {
 			break;
 		}
 	}
@@ -122,15 +115,15 @@ pub async fn get_cngd_genesis(
 	let PalletExecResult { mappings: initial_mappings, system_tx } = exec_pallet(&initial_utxos);
 
 	let config = CNightGenesis {
-		addresses: token_observation_config,
+		addresses,
 		initial_utxos,
 		initial_mappings,
-		system_tx,
+		system_tx: system_tx.map(SystemTx),
 	};
 
 	let json = serde_json::to_string_pretty(&config)?;
-	let mut file = File::create("cngd-config.json").await?;
+	let mut file = File::create(output_path.as_ref()).await?;
 	file.write_all(json.as_bytes()).await?;
-	log::info!("Wrote cNIGHT Generates Dust genesis to cngd-config.json");
+	log::info!("Wrote cNIGHT Generates Dust genesis to {}", output_path.as_ref().display());
 	Ok(())
 }

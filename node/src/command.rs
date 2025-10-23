@@ -16,13 +16,14 @@
 use crate::cfg::Cfg;
 use crate::{
 	cli::{self, Cli, Subcommand},
-	cngd_genesis::get_cngd_genesis,
+	cnight_genesis::generate_cnight_genesis,
 	service::{self, StorageInit},
 };
 use clap::Parser;
 use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
-use sc_cli::{CliConfiguration, RunCmd, SubstrateCli};
+use midnight_primitives_cnight_observation::CNightAddresses;
+use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
 use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
@@ -440,22 +441,36 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.sync_run(|config| cmd.run::<Block>(&config))
 		},
-		Subcommand::GenerateCngdGenesis(ref cmd) => {
-			let runner = cfg.create_runner(cmd)?;
-			runner.sync_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
+		Subcommand::GenerateCNightGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let data_sources =
 					crate::main_chain_follower::create_cnight_observation_data_source(
 						cfg.midnight_cfg.clone(),
 						None,
-					),
-				)?;
+					)
+					.await?;
 
-				config
-					.tokio_handle
-					.block_on(get_cngd_genesis(data_sources, cmd.initial_mc_hash.clone()))
+				let cnight_addresses_str = std::fs::read_to_string(&cmd.cnight_addresses)?;
+				let addresses: CNightAddresses = serde_json::from_str(&cnight_addresses_str)
 					.map_err(|e| {
-						sc_cli::Error::Input(format!("cNGD genesis generation failed: {e}"))
+						sc_cli::Error::Input(format!(
+							"failed to read cnight addresses file as json: {e:?}"
+						))
 					})?;
+				generate_cnight_genesis(
+					addresses,
+					data_sources,
+					cmd.cardano_tip.clone(),
+					&cmd.output.clone(),
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("cNGD genesis generation failed: {e}"))
+				})?;
 
 				Ok(())
 			})

@@ -165,8 +165,10 @@ pub enum ObservedUtxoData {
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RedemptionCreateData {
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub owner: Vec<u8>,
 	pub value: u128,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
 }
@@ -174,24 +176,31 @@ pub struct RedemptionCreateData {
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RedemptionSpendData {
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub owner: Vec<u8>,
 	pub value: u128,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub spending_tx_hash: [u8; 32],
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct RegistrationData {
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub cardano_address: Vec<u8>,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub dust_address: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeregistrationData {
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub cardano_address: Vec<u8>,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub dust_address: Vec<u8>,
 }
 
@@ -199,7 +208,9 @@ pub struct DeregistrationData {
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateData {
 	pub value: u128,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub owner: Vec<u8>,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
 }
@@ -208,9 +219,12 @@ pub struct CreateData {
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpendData {
 	pub value: u128,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub owner: Vec<u8>,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
+	#[cfg_attr(feature = "std", serde(with = "hex"))]
 	pub spending_tx_hash: [u8; 32],
 }
 
