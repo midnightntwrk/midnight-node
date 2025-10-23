@@ -51,11 +51,11 @@ pub mod pallet {
 	use scale_info::prelude::vec::Vec;
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
-		active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
+		GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
 	};
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
@@ -354,6 +354,8 @@ pub mod pallet {
 						let state_key: BoundedVec<_, _> =
 							new_state_key.try_into().expect("New state key size out of boundaries");
 						StateKey::<T>::put(state_key);
+
+						LedgerApi::flush_storage();
 					},
 					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
 				};
