@@ -265,16 +265,18 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		native_token_management: NativeTokenManagementConfig { ..Default::default() },
 		c_night_observation: CNightObservationConfig {
 			redemption_validator_address: genesis
-				.cnight_generates_dust_config()
+				.cnight_genesis()
+				.addresses
 				.redemption_validator_address
 				.into(),
 			mapping_validator_address: genesis
-				.cnight_generates_dust_config()
+				.cnight_genesis()
+				.addresses
 				.mapping_validator_address
 				.into(),
-			token_policy_id: hex::decode(genesis.cnight_generates_dust_config().policy_id)
+			token_policy_id: hex::decode(genesis.cnight_genesis().addresses.policy_id)
 				.expect("failed to decode policy id as hex"),
-			token_asset_name: genesis.cnight_generates_dust_config().asset_name.into(),
+			token_asset_name: genesis.cnight_genesis().addresses.asset_name.into(),
 			_marker: Default::default(),
 		},
 		council: CouncilConfig { ..Default::default() },

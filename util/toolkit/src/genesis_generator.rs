@@ -587,7 +587,7 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds)
+		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None)
 			.await
 			.unwrap();
 

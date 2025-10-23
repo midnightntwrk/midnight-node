@@ -1,11 +1,12 @@
 use midnight_primitives_cnight_observation::{CNightAddresses, ObservedUtxos};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::MappingEntry;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CNightGenesis {
-	pub cardano_addresses: CNightAddresses,
+	pub addresses: CNightAddresses,
 	pub initial_utxos: ObservedUtxos,
 	pub initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
 	#[serde(with = "hex")]

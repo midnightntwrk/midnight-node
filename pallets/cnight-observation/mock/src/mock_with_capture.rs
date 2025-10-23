@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mock::sp_runtime::testing::H256;
 use frame_support::sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
-use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+use midnight_primitives::MidnightSystemTransactionExecutor;
 use sidechain_domain::*;
 use sp_io::TestExternalities;
+use sp_runtime::testing::H256;
+use std::sync::{LazyLock, Mutex};
 
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -44,9 +45,7 @@ frame_support::construct_runtime!(
 	pub enum Test {
 		System: frame_system,
 		Timestamp: pallet_timestamp,
-		CNightObservation: crate::pallet,
-		Midnight: pallet_midnight,
-		MidnightSystem: pallet_midnight_system,
+		CNightObservation: pallet_cnight_observation,
 		Mock: mock_pallet,
 	}
 );
@@ -68,17 +67,6 @@ impl Get<BlockReward> for LedgerBlockReward {
 	fn get() -> BlockReward {
 		(0, None)
 	}
-}
-
-impl pallet_midnight::Config for Test {
-	type WeightInfo = pallet_midnight::weights::SubstrateWeight<Test>;
-	type BlockReward = LedgerBlockReward;
-	type SlotDuration = ConstU64<SLOT_DURATION>;
-}
-
-impl pallet_midnight_system::Config for Test {
-	type LedgerStateProviderMut = Midnight;
-	type LedgerBlockContextProvider = Midnight;
 }
 
 impl frame_system::Config for Test {
@@ -118,21 +106,36 @@ parameter_types! {
 	pub const MaxRegistrationsPerCardanoAddress: u8 = 100;
 }
 
-impl crate::pallet::Config for Test {
-	type MidnightSystemTransactionExecutor = MidnightSystem;
+pub struct MidnightSystemTx {}
+
+static CAPTURED_SYSTEM_TXS: LazyLock<Mutex<Vec<Vec<u8>>>> = LazyLock::new(|| Mutex::new(vec![]));
+
+impl MidnightSystemTx {
+	pub fn pop_captured_system_txs() -> Vec<Vec<u8>> {
+		CAPTURED_SYSTEM_TXS.lock().unwrap().drain(..).collect()
+	}
+}
+
+impl MidnightSystemTransactionExecutor for MidnightSystemTx {
+	fn execute_system_transaction(
+		serialized_system_transaction: Vec<u8>,
+	) -> Result<midnight_node_ledger::types::Hash, __private::DispatchError> {
+		CAPTURED_SYSTEM_TXS.lock().unwrap().push(serialized_system_transaction);
+		Ok(midnight_node_ledger::types::Hash::default())
+	}
+}
+
+impl pallet_cnight_observation::Config for Test {
+	type MidnightSystemTransactionExecutor = MidnightSystemTx;
 }
 
 impl mock_pallet::Config for Test {}
 
+#[cfg(feature = "std")]
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t: TestExternalities = RuntimeGenesisConfig {
 		system: Default::default(),
 		c_night_observation: Default::default(),
-		midnight: MidnightConfig {
-			_config: Default::default(),
-			network_id: UndeployedNetwork.network_id(),
-			genesis_state_key: midnight_node_ledger::get_root(UndeployedNetwork.genesis_state()),
-		},
 	}
 	.build_storage()
 	.unwrap()

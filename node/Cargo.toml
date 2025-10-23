@@ -81,7 +81,8 @@ midnight-primitives-mainchain-follower = { workspace = true, default-features = 
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
-pallet-cnight-observation = { workspace = true, default-features = true, features = ["mock"] }
+pallet-cnight-observation = { workspace = true, default-features = true}
+pallet-cnight-observation-mock = { workspace = true, default-features = true}
 mn-ledger.workspace = true
 
 # CLI-specific dependencies

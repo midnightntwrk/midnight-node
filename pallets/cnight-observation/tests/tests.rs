@@ -1,3 +1,6 @@
+use frame_support::inherent::InherentData;
+use midnight_primitives_cnight_observation::INHERENT_IDENTIFIER;
+use midnight_primitives_cnight_observation::MidnightObservationTokenMovement;
 // This file is part of midnight-node.
 // Copyright (C) 2025 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
@@ -10,15 +13,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-use self::mock::CNightObservation;
-use self::mock::Test;
-use crate::mock::new_test_ext;
-use crate::mock::{RuntimeCall, RuntimeEvent, System};
-
-use crate::*;
+use frame_support::pallet_prelude::*;
 use frame_support::sp_runtime::traits::Dispatchable;
-// use frame_support::testing_prelude::bounded_vec;
 use frame_support::{BoundedVec, assert_ok};
 use midnight_node_ledger::types::BlockContext;
 use midnight_node_ledger_helpers::{
@@ -26,11 +22,18 @@ use midnight_node_ledger_helpers::{
 	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+use midnight_primitives_cnight_observation::CardanoPosition;
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
 };
+use pallet_cnight_observation::*;
+use pallet_cnight_observation_mock::mock::{
+	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
+};
 use rand::prelude::*;
+use sp_core::ConstU32;
+use sp_core::Get;
 use test_log::test;
 
 fn create_inherent(

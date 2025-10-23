@@ -9,9 +9,8 @@ use midnight_primitives_cnight_observation::{
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
-use pallet_cnight_observation::{
-	MappingEntry, Mappings, config::CNightGenesis, mock_with_capture as mock,
-};
+use pallet_cnight_observation::{MappingEntry, Mappings, config::CNightGenesis};
+use pallet_cnight_observation_mock::mock_with_capture as mock;
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
@@ -123,7 +122,7 @@ pub async fn get_cngd_genesis(
 	let PalletExecResult { mappings: initial_mappings, system_tx } = exec_pallet(&initial_utxos);
 
 	let config = CNightGenesis {
-		cardano_addresses: token_observation_config,
+		addresses: token_observation_config,
 		initial_utxos,
 		initial_mappings,
 		system_tx,

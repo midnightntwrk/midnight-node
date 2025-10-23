@@ -141,6 +141,7 @@ impl Ord for ObservedUtxo {
 }
 
 /// A struct to contain all UTXOs in a given range
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct ObservedUtxos {
 	// Start position (inclusive)

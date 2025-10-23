@@ -7160,6 +7160,7 @@ dependencies = [
  "mmr-gadget",
  "mmr-rpc",
  "pallet-cnight-observation",
+ "pallet-cnight-observation-mock",
  "pallet-governed-map",
  "pallet-midnight",
  "pallet-midnight-rpc",
@@ -7345,6 +7346,7 @@ dependencies = [
  "midnight-serialize 1.0.0-alpha.4",
  "midnight-storage 1.0.0-alpha.4",
  "midnight-transient-crypto 1.0.0-alpha.4",
+ "pallet-cnight-observation",
  "sc-service",
  "serde",
  "serde_json",
@@ -9197,6 +9199,7 @@ dependencies = [
  "midnight-primitives",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-mainchain-follower",
+ "pallet-cnight-observation-mock",
  "pallet-midnight",
  "pallet-midnight-system",
  "pallet-timestamp",
@@ -9209,6 +9212,27 @@ dependencies = [
  "sp-io",
  "tempfile",
  "test-log",
+]
+
+[[package]]
+name = "pallet-cnight-observation-mock"
+version = "1.4.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "midnight-node-ledger",
+ "midnight-node-res",
+ "midnight-primitives",
+ "midnight-primitives-cnight-observation",
+ "midnight-primitives-mainchain-follower",
+ "pallet-cnight-observation",
+ "pallet-midnight",
+ "pallet-midnight-system",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-io",
 ]
 
 [[package]]
