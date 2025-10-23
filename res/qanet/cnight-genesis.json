@@ -9,11 +9,13 @@
     "start": {
       "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "block_number": 0,
+      "block_timestamp": 0,
       "tx_index_in_block": 0
     },
     "end": {
       "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "block_number": 0,
+      "block_timestamp": 0,
       "tx_index_in_block": 0
     },
     "utxos": []
