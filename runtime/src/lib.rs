@@ -1045,8 +1045,6 @@ mod runtime {
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
 
-	//#[runtime::pallet_index(12)]
-	//pub type NativeTokenManagement = pallet_native_token_management::Pallet<Runtime>;
 	#[runtime::pallet_index(13)]
 	pub type NativeTokenObservation = pallet_native_token_observation::Pallet<Runtime>;
 

@@ -48,12 +48,6 @@ use midnight_primitives_mainchain_follower::{
 		FederatedAuthorityInherentDataProvider, MidnightNativeTokenObservationInherentDataProvider,
 	},
 };
-/*
-use sp_native_token_management::{
-	NativeTokenManagementApi, NativeTokenManagementDataSource,
-	NativeTokenManagementInherentDataProvider,
-};
-*/
 
 //#[cfg(feature = "experimental")]
 //use {midnight_node_runtime::BeneficiaryId, sp_block_rewards::BlockBeneficiaryInherentProvider};
@@ -66,7 +60,6 @@ pub(crate) struct ProposalCIDP<T> {
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	native_token_observation_data_source:
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
-	//native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
@@ -84,7 +77,6 @@ where
 			ScEpochNumber,
 		>,
 	T::Api: NativeTokenObservationApi<Block>,
-	//T::Api: NativeTokenManagementApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
 {
 	type InherentDataProviders = (
@@ -92,9 +84,7 @@ where
 		sp_timestamp::InherentDataProvider,
 		McHashIDP,
 		AriadneIDP,
-		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
 		MidnightNativeTokenObservationInherentDataProvider,
-		//NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 	);
@@ -152,17 +142,6 @@ where
 		)
 		.await?;
 
-		/*
-		let native_token_management = NativeTokenManagementInherentDataProvider::new(
-			client.clone(),
-			native_token_management_data_source.as_ref(),
-			mc_hash.mc_hash(),
-			mc_hash.previous_mc_hash(),
-			parent_hash,
-		)
-		.await?;
-		 */
-
 		let governed_map = GovernedMapInherentDataProvider::new(
 			client.as_ref(),
 			parent_hash,
@@ -202,7 +181,6 @@ pub struct VerifierCIDP<T> {
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	native_token_observation_data_source:
 		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
-	//native_token_management_data_source: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
@@ -225,14 +203,12 @@ where
 			ScEpochNumber,
 		>,
 	T::Api: NativeTokenObservationApi<Block>,
-	//T::Api: NativeTokenManagementApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_timestamp::InherentDataProvider,
 		AriadneIDP,
 		MidnightNativeTokenObservationInherentDataProvider,
-		//NativeTokenManagementInherentDataProvider,
 		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 	);
@@ -287,17 +263,6 @@ where
 			mc_hash.clone(),
 		)
 		.await?;
-
-		/*
-		let native_token_management = NativeTokenManagementInherentDataProvider::new(
-			client.clone(),
-			native_token_management_data_source.as_ref(),
-			mc_hash.clone(),
-			mc_state_reference.previous_mc_hash(),
-			parent_hash,
-		)
-		.await?;
-		 */
 
 		let governed_map = GovernedMapInherentDataProvider::new(
 			client.as_ref(),
