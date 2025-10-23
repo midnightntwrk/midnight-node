@@ -42,9 +42,9 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true
@@ -89,9 +89,9 @@ jobs:
     name: Check Unused Dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -117,9 +117,9 @@ jobs:
     name: Check Benchmarks Compilation
     runs-on: ubuntu-latest-16-core-x64
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -154,9 +154,9 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -320,9 +320,9 @@ jobs:
     needs: run
     runs-on: ubuntu-latest-8-core-x64
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true
