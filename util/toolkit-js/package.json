@@ -33,7 +33,7 @@
     "@midnight-ntwrk/compact-js-node": "2.3.0-pre.7934d2a",
     "effect": "^3.18.4"
   },
-  "d evDependencies": {
+  "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "^2.1.0",
     "@tsconfig/node22": "^22.0.2",
     "@types/node": "^22.15.29",
