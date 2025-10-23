@@ -46,6 +46,7 @@ SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
+    block.time as "block_timestamp: _",
     tx.block_index as "tx_index_in_block: _",
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _",
@@ -102,6 +103,7 @@ SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
+    block.time as "block_timestamp: _",
     tx.block_index as "tx_index_in_block: _",
     tx.hash AS "tx_hash: _",
     tx_tx_out.hash as "utxo_tx_hash: _",
@@ -155,6 +157,7 @@ SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
+    block.time as "block_timestamp: _",
     tx.block_index as "tx_index_in_block: _",
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _"
@@ -201,6 +204,7 @@ SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
+    block.time as "block_timestamp: _",
     tx.block_index as "tx_index_in_block: _",
     tx.hash AS "tx_hash: _",
     tx_tx_out.hash as "utxo_tx_hash: _",
@@ -247,6 +251,7 @@ pub(crate) async fn get_asset_creates(
 SELECT
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
+    block.time as "block_timestamp: _",
     tx.block_index as "tx_index_in_block: _",
     ma_tx_out.quantity::BIGINT AS "quantity!: _",
     tx_out.address AS "holder_address: _",
@@ -294,6 +299,7 @@ pub(crate) async fn get_asset_spends(
 SELECT
     spending_block.block_no as "block_number!: _",
     spending_block.hash as "block_hash: _",
+    spending_block.time as block_timestamp,
     spending_tx.block_index as "tx_index_in_block: _",
     ma_tx_out.quantity::BIGINT AS "quantity!: _",
     tx_out.address AS "holder_address: _",

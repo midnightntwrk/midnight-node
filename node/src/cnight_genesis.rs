@@ -1,6 +1,6 @@
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos,
+	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
@@ -77,6 +77,7 @@ pub async fn generate_cnight_genesis(
 		// Required to fulfill struct, but value will be unused
 		block_hash: [0; 32],
 		block_number: 0,
+		block_timestamp: TimestampUnixMillis(0),
 		tx_index_in_block: 0,
 	};
 

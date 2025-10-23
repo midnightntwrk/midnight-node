@@ -24,7 +24,6 @@ use frame_system::pallet_prelude::*;
 use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIER, InherentError};
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
-use pallet_timestamp::{self as timestamp};
 
 #[cfg(feature = "std")]
 pub mod config;
@@ -123,7 +122,7 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
-	pub trait Config: frame_system::Config<Hash = H256> + timestamp::Config<Moment = u64> {
+	pub trait Config: frame_system::Config<Hash = H256> {
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
 	}
 
@@ -605,12 +604,18 @@ pub mod pallet {
 		) -> DispatchResult {
 			ensure_none(origin)?;
 
-			let now_ms = timestamp::Pallet::<T>::get();
-			let now = now_ms / 1000;
-
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 
 			for utxo in utxos {
+				// Truncate the block timestamp from milliseconds to seconds
+				// Timestamp on Cardano is calculated using (slotLength * slotNumber) + systemStart
+				// which can be a fractional value - but in practice, it's an int for
+				// preview, pre-prod, and mainnet
+				//
+				// Check the Shelley genesis files for the networks here:
+				// https://book.world.dev.cardano.org/environments.html
+				let now = utxo.header.tx_position.block_timestamp.0 as u64 / 1000;
+
 				match utxo.data {
 					ObservedUtxoData::RedemptionCreate(data) => {
 						log::debug!("Processing Redemption Create: {data:?}");

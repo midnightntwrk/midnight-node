@@ -16,6 +16,7 @@
 use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
+	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
@@ -71,9 +72,8 @@ impl MidnightCNightObservationInherentDataProvider {
 		C: ProvideRuntimeApi<Block> + Send + Sync,
 		C::Api: CNightObservationApi<Block>,
 	{
-		if let Ok(true) = client
-			.runtime_api()
-			.has_api::<dyn CNightObservationApi<Block>>(parent_hash)
+		if let Ok(true) =
+			client.runtime_api().has_api::<dyn CNightObservationApi<Block>>(parent_hash)
 		{
 			Self::new(client, data_source, parent_hash, mc_hash).await
 		} else {
@@ -82,6 +82,7 @@ impl MidnightCNightObservationInherentDataProvider {
 				next_cardano_position: CardanoPosition {
 					block_hash: [0; 32],
 					block_number: 0,
+					block_timestamp: TimestampUnixMillis(0),
 					tx_index_in_block: 0,
 				},
 			})

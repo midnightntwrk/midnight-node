@@ -39,6 +39,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 			tx_position: CardanoPosition {
 				block_number: start.block_number,
 				block_hash: start.block_hash,
+				block_timestamp: start.block_timestamp,
 				tx_index_in_block: 1,
 			},
 			tx_hash: McTxHash(rand::random()),

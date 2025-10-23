@@ -51,6 +51,10 @@ npm run stop:testnet-02
 npm run stop:node-dev-01
 ```
 
+### Fork Testing
+
+See [fork-testing.md](../docs/fork-testing.md)
+
 ### Local Environment
 
 In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.

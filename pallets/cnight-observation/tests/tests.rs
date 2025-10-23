@@ -22,7 +22,7 @@ use midnight_node_ledger_helpers::{
 	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
-use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::{CardanoPosition, TimestampUnixMillis};
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
@@ -66,7 +66,12 @@ fn block_hash(block_number: u32) -> [u8; 32] {
 }
 
 fn test_position(block_number: u32, tx_index_in_block: u32) -> CardanoPosition {
-	CardanoPosition { block_hash: block_hash(block_number), block_number, tx_index_in_block }
+	CardanoPosition {
+		block_hash: block_hash(block_number),
+		block_number,
+		block_timestamp: TimestampUnixMillis(block_number as i64 * 20 * 1000),
+		tx_index_in_block,
+	}
 }
 
 fn test_header(
