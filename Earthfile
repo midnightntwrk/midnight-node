@@ -1027,6 +1027,17 @@ local-env-e2e:
     RUN --no-cache HOST_ADDR=$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal") \
         yarn run start
 
+local-env-rust-e2e:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests local-environment scripts .
+    RUN sed -i \
+        -e 's|node_url = "ws://127.0.0.1:9933"|node_url = "ws://172.17.0.1:9933"|' \
+        -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
+        tests/e2e/src/cfg/local/config.toml
+    WORKDIR tests/e2e
+    RUN cargo test --test e2e_tests
+
 # compares chain parameters with testnet-02
 chain-params-check:
     FROM alpine
