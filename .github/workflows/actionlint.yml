@@ -1,6 +1,7 @@
 name: Validate GitHub Actions Workflows
 
 on:
+  merge_group:
   pull_request:
     paths:
       - ".github/workflows/*.yml"

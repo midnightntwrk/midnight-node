@@ -7235,6 +7235,7 @@ dependencies = [
 name = "midnight-node-e2e"
 version = "0.1.0"
 dependencies = [
+ "blake2 0.10.6",
  "config 0.13.4",
  "hex",
  "midnight-node-metadata",
