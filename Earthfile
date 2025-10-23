@@ -140,7 +140,7 @@ rebuild-sqlx:
     CACHE /target
     RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
     COPY local-environment/localenv_postgres.password .
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
         cargo sqlx prepare --workspace
     SAVE ARTIFACT .sqlx AS LOCAL .sqlx
@@ -499,7 +499,7 @@ prep:
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
     # for now this is ok as there's only one compile task dependent on this.
-    # RUN --mount type=secret,id=netrc,target=/root/.netrc cargo fetch --locked \
+    # RUN cargo fetch --locked \
     #   --target aarch64-unknown-linux-gnu \
     #   --target x86_64-unknown-linux-gnu \
     #   --target wasm32v1-none
@@ -536,7 +536,7 @@ check-deps:
     RUN cargo binstall --no-confirm cargo-shear
 
     # shear
-    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo shear
+    RUN cargo shear
 
 # check-rust runs cargo fmt and clippy.
 planner:
@@ -555,7 +555,7 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     # Build dependencies - this is the caching Docker layer!
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -569,7 +569,7 @@ check-rust:
     RUN cargo fmt --all -- --check
 
     # --offline used to hard fail if caching broken.
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --offline -- -D warnings
+    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --offline -- -D warnings
 
 # check-nodejs lints any nodejs projects
 check-nodejs:
@@ -588,7 +588,7 @@ check-benchmarks:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
-    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo check --locked --features runtime-benchmarks
+    RUN cargo check --locked --features runtime-benchmarks
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -639,7 +639,7 @@ test:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    RUN --mount type=secret,id=netrc,target=/root/.netrc MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
     RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
     RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
@@ -660,7 +660,7 @@ build-prepare:
     ENV CXX=clang++
 
     # Build dependencies - this is the caching Docker layer!
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
 
 # build creates production ready binaries
@@ -702,7 +702,7 @@ build-normal:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         cargo build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
@@ -754,7 +754,7 @@ build-benchmarks:
     ARG NATIVEARCH
 
     # Build with runtime-benchmarks feature
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         cargo build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
@@ -1024,6 +1024,17 @@ local-env-e2e:
     WORKDIR tests
     RUN --no-cache HOST_ADDR=$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal") \
         yarn run start
+
+local-env-rust-e2e:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests local-environment scripts .
+    RUN sed -i \
+        -e 's|node_url = "ws://127.0.0.1:9933"|node_url = "ws://172.17.0.1:9933"|' \
+        -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
+        tests/e2e/src/cfg/local/config.toml
+    WORKDIR tests/e2e
+    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

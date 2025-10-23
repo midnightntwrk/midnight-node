@@ -42,9 +42,9 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true
@@ -69,12 +69,6 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
 
       - name: Upload build artifacts
@@ -95,9 +89,9 @@ jobs:
     name: Check Unused Dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -117,21 +111,15 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           . ./.envrc && earthly +check-deps
 
   check-benchmarks:
     name: Check Benchmarks Compilation
     runs-on: ubuntu-latest-16-core-x64
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -151,12 +139,6 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           . ./.envrc && earthly +check-benchmarks
 
   rebuild-genesis:
@@ -172,9 +154,9 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -204,12 +186,6 @@ jobs:
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
-
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
 
           . ./.envrc && earthly --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --build-arg TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +rebuild-genesis
 
@@ -344,9 +320,9 @@ jobs:
     needs: run
     runs-on: ubuntu-latest-8-core-x64
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
           allow-privileged: true
@@ -368,12 +344,6 @@ jobs:
 
       - name: Run metadata check
         run: |
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
-
           . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
 
   toolkit-contracts-e2e:
@@ -453,7 +423,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@e7ef886cf8f69c25ecef6bbc2858a42e273496ec #v2.62.28
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951 #v2.62.33
         with:
           tool: just
 
