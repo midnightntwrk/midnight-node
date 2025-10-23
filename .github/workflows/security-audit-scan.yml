@@ -34,11 +34,6 @@ jobs:
 
       - name: Run cargo deny and npm audit
         run: |
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
           . ./.envrc && earthly --ci +audit
 
       # TODO: Remove this checkout step once upload-sarif-github-action repo is made public
