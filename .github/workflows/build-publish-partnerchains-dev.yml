@@ -11,7 +11,7 @@ concurrency:
 jobs:
   run:
     name: Build an image with Partner Chains tools
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
