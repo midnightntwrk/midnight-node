@@ -3,6 +3,7 @@ use midnight_node_e2e::api::midnight::*;
 use midnight_node_e2e::cfg::*;
 use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
+use whisky::csl::Address;
 use whisky::Asset;
 
 #[tokio::test]
@@ -28,7 +29,7 @@ async fn register_for_dust_production() {
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
 	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
-	let registration_events = subscribe_to_cngd_registration_extrinsic(&register_tx_id)
+	let registration_events = subscribe_to_native_token_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
 
@@ -91,6 +92,7 @@ async fn cnight_produces_dust() {
 	let tx_id = mint_tokens(
 		&cardano_wallet,
 		&get_cnight_token_policy_id(),
+		"",
 		&amount.to_string(),
 		&minting_script,
 	)
@@ -115,4 +117,85 @@ async fn cnight_produces_dust() {
 	let utxo_owner_hex = hex::encode(utxo_owner.unwrap());
 	println!("UTXO owner in hex: {:?}", utxo_owner_hex);
 	assert_eq!(utxo_owner_hex, dust_hex, "UTXO owner does not match DUST address");
+}
+
+#[tokio::test]
+async fn deregister_from_dust_production() {
+	let cardano_wallet = create_wallet();
+	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
+	println!("New Cardano wallet created: {:?}", bech32_address);
+
+	let dust_hex = new_dust_hex(32);
+	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
+
+	let collateral_utxo = make_collateral(&bech32_address).await;
+	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let tx_in = fund_wallet(&bech32_address, assets).await;
+
+	let register_tx_id =
+		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
+
+	let validator_address = get_mapping_validator_address();
+	let register_tx = find_utxo_by_tx_id(&validator_address, &hex::encode(&register_tx_id))
+		.await
+		.expect("No registration UTXO found after registering");
+	println!("Found registration UTXO: {:?}", register_tx);
+
+	let client = get_ogmios_client().await;
+	let utxos = client.query_utxos(&[bech32_address.clone().into()]).await.unwrap();
+	assert!(!utxos.is_empty(), "No UTXOs found for funding address");
+	let utxo = utxos
+		.iter()
+		.max_by_key(|u| u.value.lovelace)
+		.expect("No UTXO with lovelace found");
+
+	let deregister_tx = deregister(&cardano_wallet, &utxo, &register_tx, &collateral_utxo).await;
+	println!("Deregistration transaction submitted with hash: {:?}", deregister_tx);
+
+	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
+	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let events = subscribe_to_native_token_observation_events(&deregister_tx)
+		.await
+		.expect("Failed to listen to cNgD registration event");
+
+	let deregistration = events
+		.iter()
+		.filter_map(|e| e.ok())
+		.filter_map(|evt| {
+			evt.as_event::<native_token_observation::events::Deregistration>()
+				.ok()
+				.flatten()
+		})
+		.find(|reg| {
+			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+		});
+	assert!(
+		deregistration.is_some(),
+		"Did not find deregistration event with expected cardano_address and dust_address"
+	);
+	if let Some(deregistration) = deregistration {
+		println!("Matching Deregistration event found: {:?}", deregistration);
+	}
+
+	let mapping_removed = events
+		.iter()
+		.filter_map(|e| e.ok())
+		.filter_map(|evt| {
+			evt.as_event::<native_token_observation::events::MappingRemoved>()
+				.ok()
+				.flatten()
+		})
+		.find(|map| {
+			map.0.cardano_address.0 == cardano_address
+				&& map.0.dust_address == dust_hex
+				&& map.0.utxo_id == hex::encode(register_tx_id)
+		});
+	assert!(
+		mapping_removed.is_some(),
+		"Did not find MappingRemoved event with expected cardano_address, dust_address, and utxo_id"
+	);
+	if let Some(mapping) = mapping_removed {
+		println!("Matching MappingRemoved event found: {:?}", mapping);
+	}
 }
