@@ -6,7 +6,6 @@ description = "Extensions to Partnerchains mainchain follower"
 license-file.workspace = true
 
 [dependencies]
-hex = { workspace = true, default-features = false }
 sp-std.workspace = true
 parity-scale-codec.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -51,7 +50,6 @@ std = [
     "sqlx",
     "log/std",
     "partner-chains-db-sync-data-sources",
-    "hex/std",
     "rand/std",
     "rand/thread_rng",
 ]
