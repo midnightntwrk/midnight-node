@@ -17,9 +17,10 @@ parity-scale-codec.workspace = true
 scale-info.workspace = true
 log.workspace = true
 sp-core.workspace = true
+sp-std.workspace = true
 hex.workspace = true
 derive-new.workspace= true
-serde = { workspace = true, optional = true }
+serde = { workspace = true}
 
 [dev-dependencies]
 sp-io.workspace = true
@@ -39,6 +40,7 @@ std = [
     "scale-info/std",
     "serde/std",
     "sp-core/std",
+    "sp-std/std",
     "parity-scale-codec/std",
     "midnight-primitives/std",
     "midnight-primitives-mainchain-follower/std",

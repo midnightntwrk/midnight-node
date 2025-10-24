@@ -38,23 +38,13 @@ pub enum IDPCreationError {
 	#[error("Failed to read native token data from data source. Db sync may need to be synced")]
 	DbSyncDataDiscrepancy,
 	#[error("Failed to call runtime API: {0:?}")]
-	ApiError(ApiError),
+	ApiError(#[from] ApiError),
+	#[error("Failed to decode string as UTF8 (check address values)")]
+	StringDecodeError(#[from] FromUtf8Error),
 	#[error("Failed to retrieve previous MC hash: {0:?}")]
 	McHashError(Box<dyn Error + Send + Sync>),
-	#[error("Onchain asset name or policy id likely invalid: {0:?}")]
-	InvalidOnchainState(FromUtf8Error),
-}
-
-impl From<ApiError> for IDPCreationError {
-	fn from(err: ApiError) -> Self {
-		Self::ApiError(err)
-	}
-}
-
-impl From<FromUtf8Error> for IDPCreationError {
-	fn from(err: FromUtf8Error) -> Self {
-		Self::InvalidOnchainState(err)
-	}
+	#[error("Onchain state for CNight invalid: {0:?}")]
+	InvalidOnchainStateCNight(String),
 }
 
 impl MidnightCNightObservationInherentDataProvider {
@@ -102,26 +92,24 @@ impl MidnightCNightObservationInherentDataProvider {
 		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
-		let redemption_validator_address = api.get_redemption_validator_address(parent_hash)?;
-		let redemption_validator_address = String::from_utf8(redemption_validator_address)?;
-
-		let mapping_validator_address = api.get_mapping_validator_address(parent_hash)?;
-		let mapping_validator_address = String::from_utf8(mapping_validator_address)?;
-
+		let redemption_validator_address =
+			String::from_utf8(api.get_redemption_validator_address(parent_hash)?)?;
+		let mapping_validator_address =
+			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
 
-		let (policy_id, asset_name) = api.get_native_token_identifier(parent_hash)?;
-		let policy_id = hex::encode(policy_id.clone());
-		let asset_name =
-			String::from_utf8(asset_name.clone()).map_err(IDPCreationError::InvalidOnchainState)?;
-
+		let (cnight_policy_id, cnight_asset_name) = api.get_native_token_identifier(parent_hash)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
 			redemption_validator_address,
-			policy_id,
-			asset_name,
+			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
+				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
+			})?,
+			cnight_asset_name: cnight_asset_name.try_into().map_err(|_e| {
+				IDPCreationError::InvalidOnchainStateCNight("cnight_asset_name".to_string())
+			})?,
 		};
 
 		let observed_utxos = data_source

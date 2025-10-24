@@ -8,10 +8,11 @@ license-file.workspace = true
 [dependencies]
 sp-api.workspace = true
 sp-inherents.workspace = true
+sp-core.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
-serde = { workspace = true , optional = true }
-hex = { workspace = true }
+serde = { workspace = true }
+hex = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true, optional = true }
 sidechain-domain.workspace = true
 sqlx = { workspace = true,  optional = true, features = ["chrono"] }
@@ -19,13 +20,13 @@ sqlx = { workspace = true,  optional = true, features = ["chrono"] }
 [features]
 default = ["std"]
 std = [
-    "hex/serde",
     "hex/std",
     "sp-api/std",
     "sp-inherents/std",
+    "sp-core/std",
     "parity-scale-codec/std",
     "scale-info/std",
-    "serde",
+    "serde/std",
     "sqlx",
     "thiserror",
     "sidechain-domain/std"

@@ -1,14 +1,16 @@
-use midnight_primitives_cnight_observation::{CNightAddresses, ObservedUtxos};
+use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 
 use crate::MappingEntry;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CNightGenesis {
 	pub addresses: CNightAddresses,
-	pub initial_utxos: ObservedUtxos,
-	pub initial_mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
+	pub observed_utxos: ObservedUtxos,
+	pub mappings: BTreeMap<Vec<u8>, Vec<MappingEntry>>,
+	pub utxo_owners: BTreeMap<Vec<u8>, Vec<u8>>,
+	pub next_cardano_position: CardanoPosition,
 	pub system_tx: Option<SystemTx>,
 }
 

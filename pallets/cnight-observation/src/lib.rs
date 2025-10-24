@@ -24,8 +24,8 @@ use frame_system::pallet_prelude::*;
 use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIER, InherentError};
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
+use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "std")]
 pub mod config;
 
 /// Cardano-based Midnight System Transaction (CMST)  Header
@@ -54,7 +54,10 @@ pub enum UtxoActionType {
 
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
-pub const MAX_CARDANO_ADDR_LEN: u32 = 150;
+/// Addresses are in Bech32 repr. The max length is:
+/// max(len('addr'), len('addr_test')) + 1 byte separator + len(bech32_encode(<shelly_address_max = 57 bytes>))
+/// = 9 + 1 + 98 = 108
+pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -71,17 +74,29 @@ pub mod pallet {
 		Hash as LedgerHash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
 
+	use crate::config::CNightGenesis;
+
 	use super::*;
 
 	struct CNightGeneratesDustEventSerialized(Vec<u8>);
 	use scale_info::prelude::string::String;
 
-	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>;
+	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>;
 	pub type DustAddress = Vec<u8>;
 	pub type BoundedUtxoHash = BoundedVec<u8, ConstU32<32>>;
 
-	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(
+		Debug,
+		Clone,
+		PartialEq,
+		Eq,
+		Encode,
+		Decode,
+		DecodeWithMemTracking,
+		TypeInfo,
+		Serialize,
+		Deserialize,
+	)]
 	pub struct MappingEntry {
 		pub cardano_address: BoundedCardanoAddress,
 		pub dust_address: DustAddress,
@@ -175,7 +190,7 @@ pub mod pallet {
 
 	#[pallet::storage]
 	// A full identifier for a native asset on Cardano: (policy id, asset name)
-	pub type NativeAssetIdentifier<T: Config> = StorageValue<
+	pub type CNightIdentifier<T: Config> = StorageValue<
 		_,
 		(
 			// Policy ID
@@ -208,10 +223,7 @@ pub mod pallet {
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
 	pub struct GenesisConfig<T: Config> {
-		pub mapping_validator_address: Vec<u8>,
-		pub redemption_validator_address: Vec<u8>,
-		pub token_policy_id: Vec<u8>,
-		pub token_asset_name: Vec<u8>,
+		pub config: CNightGenesis,
 		pub _marker: PhantomData<T>,
 	}
 
@@ -219,23 +231,54 @@ pub mod pallet {
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
 			MainChainMappingValidatorAddress::<T>::set(
-				self.mapping_validator_address
-					.clone()
+				self.config
+					.addresses
+					.mapping_validator_address
+					.as_bytes()
+					.to_vec()
 					.try_into()
 					.expect("Mapping Validator address longer than expected"),
 			);
 
 			MainChainRedemptionValidatorAddress::<T>::set(
-				self.redemption_validator_address
-					.clone()
+				self.config
+					.addresses
+					.redemption_validator_address
+					.as_bytes()
+					.to_vec()
 					.try_into()
 					.expect("Redemption Validator address longer than expected"),
 			);
 
-			NativeAssetIdentifier::<T>::set((
-				self.token_policy_id.clone().try_into().expect("Policy ID too long"),
-				self.token_asset_name.clone().try_into().expect("Asset name too long"),
+			CNightIdentifier::<T>::set((
+				self.config
+					.addresses
+					.cnight_policy_id
+					.to_vec()
+					.try_into()
+					.expect("Policy ID too long"),
+				self.config
+					.addresses
+					.cnight_asset_name
+					.as_bytes()
+					.to_vec()
+					.try_into()
+					.expect("Asset name too long"),
 			));
+
+			for (k, v) in &self.config.mappings {
+				let k: BoundedCardanoAddress =
+					k.clone().try_into().expect("Mapping key longer than expected");
+				Mappings::<T>::insert(k, v.clone());
+			}
+
+			for (k, v) in &self.config.utxo_owners {
+				let k: BoundedUtxoHash =
+					k.clone().try_into().expect("Mapping key longer than expected");
+				UtxoOwners::<T>::insert(k, v.clone());
+			}
+
+			NextCardanoPosition::<T>::set(self.config.next_cardano_position);
 		}
 	}
 

@@ -48,6 +48,7 @@ pub mod inherent_provider {
 	#[async_trait::async_trait]
 	// Simple wrapper trait for native token observation
 	pub trait MidnightCNightObservationDataSource {
+		// TODO: Change the error type to something explicit
 		async fn get_utxos_up_to_capacity(
 			&self,
 			config: &CNightAddresses,

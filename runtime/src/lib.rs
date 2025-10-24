@@ -56,6 +56,7 @@ use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
+pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
@@ -1601,7 +1602,7 @@ impl_runtime_apis! {
 		}
 
 		fn get_native_token_identifier() -> (Vec<u8>, Vec<u8>) {
-			let (policy_id, asset_name) = pallet_cnight_observation::NativeAssetIdentifier::<Runtime>::get();
+			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
 		}
 	}

@@ -42,16 +42,42 @@ pub mod mock_pallet {
 	pub type LastTokenTransfer<T: Config> = StorageValue<_, NativeTokenAmount, OptionQuery>;
 }
 
-frame_support::construct_runtime!(
-	pub enum Test {
-		System: frame_system,
-		Timestamp: pallet_timestamp,
-		CNightObservation: pallet_cnight_observation,
-		Midnight: pallet_midnight,
-		MidnightSystem: pallet_midnight_system,
-		Mock: mock_pallet,
-	}
-);
+#[frame_support::runtime]
+mod runtime {
+	use frame_system::pallet;
+
+	use crate::mock;
+
+	use super::*;
+
+	#[runtime::runtime]
+	#[runtime::derive(
+		RuntimeCall,
+		RuntimeEvent,
+		RuntimeError,
+		RuntimeOrigin,
+		RuntimeFreezeReason,
+		RuntimeHoldReason,
+		RuntimeSlashReason,
+		RuntimeLockId,
+		RuntimeTask,
+		RuntimeViewFunction
+	)]
+	pub struct Test;
+
+	#[runtime::pallet_index(0)]
+	pub type System = frame_system::Pallet<Test>;
+	#[runtime::pallet_index(1)]
+	pub type Timestamp = pallet_timestamp::Pallet<Test>;
+	#[runtime::pallet_index(2)]
+	pub type CNightObservation = pallet_cnight_observation::Pallet<Test>;
+	#[runtime::pallet_index(3)]
+	pub type Midnight = pallet_midnight::Pallet<Test>;
+	#[runtime::pallet_index(4)]
+	pub type MidnightSystem = pallet_midnight_system::Pallet<Test>;
+	#[runtime::pallet_index(5)]
+	pub type Mock = mock_pallet::Pallet<Test>;
+}
 
 pub const SLOT_DURATION: u64 = 6 * 1000;
 

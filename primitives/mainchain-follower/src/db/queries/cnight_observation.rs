@@ -30,8 +30,8 @@ use sqlx::{Pool, Postgres, error::Error as SqlxError};
 pub async fn get_redemption_creates(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
-	policy_id_hex: &str,
-	asset_name_hex: &str,
+	policy_id: [u8; 28],
+	asset_name: &[u8],
 	start: CardanoPosition,
 	end: CardanoPosition,
 	limit: usize,
@@ -58,16 +58,16 @@ FROM tx_out
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 WHERE tx_out.address = $1
-    AND encode(ma.policy, 'hex') = $2
-    AND encode(ma.name, 'hex') = $3
+    AND ma.policy = $2
+    AND ma.name = $3
     AND (block.block_no, tx.block_index) >= ($4, $5)
     AND (block.block_no, tx.block_index) < ($6, $7)
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
 		smart_contract_address,
-		policy_id_hex,
-		asset_name_hex,
+		&policy_id,
+		asset_name,
 		start.block_number as i32,
 		start.tx_index_in_block as i32,
 		end.block_number as i32,
@@ -83,8 +83,8 @@ LIMIT $8 OFFSET $9;
 pub async fn get_redemption_spends(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
-	policy_id_hex: &str,
-	asset_name_hex: &str,
+	policy_id: [u8; 28],
+	asset_name: &[u8],
 	start: CardanoPosition,
 	end: CardanoPosition,
 	limit: usize,
@@ -119,16 +119,16 @@ FROM tx_out
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 WHERE tx_out.address = $1
-    AND encode(ma.policy, 'hex') = $2
-    AND encode(ma.name, 'hex') = $3
+    AND ma.policy = $2
+    AND ma.name = $3
     AND (block.block_no, tx.block_index) >= ($4, $5)
     AND (block.block_no, tx.block_index) < ($6, $7)
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
 		smart_contract_address,
-		policy_id_hex,
-		asset_name_hex,
+		&policy_id,
+		asset_name,
 		start.block_number as i32,
 		start.tx_index_in_block as i32,
 		end.block_number as i32,
@@ -236,8 +236,8 @@ LIMIT $6 OFFSET $7;
 
 pub(crate) async fn get_asset_creates(
 	pool: &Pool<Postgres>,
-	policy_id_hex: &str,
-	asset_name_hex: &str,
+	policy_id: [u8; 28],
+	asset_name: &[u8],
 	start: CardanoPosition,
 	end: CardanoPosition,
 	limit: usize,
@@ -262,15 +262,15 @@ FROM ma_tx_out
     JOIN tx_out ON tx_out.id = ma_tx_out.tx_out_id
     JOIN tx ON tx_out.tx_id = tx.id
     JOIN block ON tx.block_id = block.id
-WHERE encode(ma.policy, 'hex') = $1
-    AND encode(ma.name, 'hex') = $2
+WHERE ma.policy = $1
+    AND ma.name = $2
     AND (block.block_no, tx.block_index) >= ($3, $4)
     AND (block.block_no, tx.block_index) < ($5, $6)
 ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,
-		policy_id_hex,
-		asset_name_hex,
+		&policy_id,
+		asset_name,
 		start.block_number as i32,
 		start.tx_index_in_block as i32,
 		end.block_number as i32,
@@ -284,8 +284,8 @@ LIMIT $7 OFFSET $8;
 
 pub(crate) async fn get_asset_spends(
 	pool: &Pool<Postgres>,
-	policy_id_hex: &str,
-	asset_name_hex: &str,
+	policy_id: [u8; 28],
+	asset_name: &[u8],
 	start: CardanoPosition,
 	end: CardanoPosition,
 	limit: usize,
@@ -314,15 +314,15 @@ FROM ma_tx_out
     JOIN tx ON tx_out.tx_id = tx.id
     JOIN tx AS spending_tx ON tx_in.tx_in_id = spending_tx.id
     JOIN block AS spending_block ON spending_tx.block_id = spending_block.id
-WHERE encode(ma.policy, 'hex') = $1
-    AND encode(ma.name, 'hex') = $2
+WHERE ma.policy = $1
+    AND ma.name = $2
     AND (spending_block.block_no, spending_tx.block_index) >= ($3, $4)
     AND (spending_block.block_no, spending_tx.block_index) < ($5, $6)
 ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,
-		policy_id_hex,
-		asset_name_hex,
+		&policy_id,
+		asset_name,
 		start.block_number as i32,
 		start.tx_index_in_block as i32,
 		end.block_number as i32,

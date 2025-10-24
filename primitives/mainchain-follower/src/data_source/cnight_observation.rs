@@ -56,6 +56,8 @@ pub struct TxPosition {
 pub enum MidnightCNightObservationDataSourceError {
 	#[error("missing reference for block hash `{0}` in db-sync")]
 	MissingBlockReference(McBlockHash),
+	#[error("Error querying database")]
+	DBQueryError(#[from] sqlx::error::Error),
 }
 
 #[derive(new)]
@@ -77,6 +79,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		current_tip: McBlockHash,
 		tx_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		let cnight_asset_name = config.cnight_asset_name.as_bytes();
+
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
@@ -111,8 +115,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_asset_create_utxos(
-				&config.policy_id,
-				&config.asset_name,
+				config.cnight_policy_id,
+				&cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -120,8 +124,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_asset_spend_utxos(
-				&config.policy_id,
-				&config.asset_name,
+				config.cnight_policy_id,
+				&cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -130,8 +134,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.await?,
 			self.get_redemption_create_utxos(
 				&config.redemption_validator_address,
-				&config.policy_id,
-				&config.asset_name,
+				config.cnight_policy_id,
+				&cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -140,8 +144,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.await?,
 			self.get_redemption_spend_utxos(
 				&config.redemption_validator_address,
-				&config.policy_id,
-				&config.asset_name,
+				config.cnight_policy_id,
+				&cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -190,22 +194,15 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_redemption_create_utxos(
 		&self,
 		address: &str,
-		policy_id_hex: &str,
-		asset_name_hex: &str,
+		policy_id: [u8; 28],
+		asset_name: &[u8],
 		start: CardanoPosition,
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
 		let rows = get_redemption_creates(
-			&self.pool,
-			address,
-			policy_id_hex,
-			asset_name_hex,
-			start,
-			end,
-			limit,
-			offset,
+			&self.pool, address, policy_id, asset_name, start, end, limit, offset,
 		)
 		.await
 		.map_err(|e| format!("Failed to fetch data: {e}"))?;
@@ -268,22 +265,15 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_redemption_spend_utxos(
 		&self,
 		address: &str,
-		policy_id_hex: &str,
-		asset_name_hex: &str,
+		policy_id: [u8; 28],
+		asset_name: &[u8],
 		start: CardanoPosition,
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
 		let rows = get_redemption_spends(
-			&self.pool,
-			address,
-			policy_id_hex,
-			asset_name_hex,
-			start,
-			end,
-			limit,
-			offset,
+			&self.pool, address, policy_id, asset_name, start, end, limit, offset,
 		)
 		.await
 		.map_err(|e| format!("Failed to fetch data: {e}"))?;
@@ -350,10 +340,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
-		let rows = get_registrations(&self.pool, address, start, end, limit, offset)
-			.await
-			.map_err(|e| format!("Failed to fetch data: {e}"))?;
+	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+		let rows = get_registrations(&self.pool, address, start, end, limit, offset).await?;
 
 		let mut utxos = Vec::new();
 
@@ -420,10 +408,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
-		let rows = get_deregistrations(&self.pool, address, start, end, limit, offset)
-			.await
-			.map_err(|e| format!("Failed to fetch data: {e}"))?;
+	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+		let rows = get_deregistrations(&self.pool, address, start, end, limit, offset).await?;
 
 		let mut utxos = Vec::new();
 
@@ -484,21 +470,15 @@ impl MidnightCNightObservationDataSourceImpl {
 
 	async fn get_asset_create_utxos(
 		&self,
-		policy_id_hex: &str,
-		asset_name: &str,
+		policy_id: [u8; 28],
+		asset_name: &[u8],
 		start: CardanoPosition,
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
 		let rows = crate::db::get_asset_creates(
-			&self.pool,
-			policy_id_hex,
-			asset_name,
-			start,
-			end,
-			limit,
-			offset,
+			&self.pool, policy_id, asset_name, start, end, limit, offset,
 		)
 		.await?;
 
@@ -546,21 +526,15 @@ impl MidnightCNightObservationDataSourceImpl {
 
 	async fn get_asset_spend_utxos(
 		&self,
-		policy_id_hex: &str,
-		asset_name: &str,
+		policy_id: [u8; 28],
+		asset_name: &[u8],
 		start: CardanoPosition,
 		end: CardanoPosition,
 		limit: usize,
 		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
 		let rows = crate::db::get_asset_spends(
-			&self.pool,
-			policy_id_hex,
-			asset_name,
-			start,
-			end,
-			limit,
-			offset,
+			&self.pool, policy_id, asset_name, start, end, limit, offset,
 		)
 		.await?;
 

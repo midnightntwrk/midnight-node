@@ -107,11 +107,12 @@ fn dust_address() -> [u8; 32] {
 }
 
 // Onchain cardano address
-fn cardano_address(input: &[u8]) -> BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>> {
-	testbvec::<ConstU32<MAX_CARDANO_ADDR_LEN>>(input, None)
+fn cardano_address(input: &[u8]) -> BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>> {
+	testbvec::<ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>(input, None)
 }
 
-fn test_wallet_pairing() -> (BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>, [u8; 32]) {
+fn test_wallet_pairing() -> (BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>, [u8; 32])
+{
 	(cardano_address(b"cardano1"), dust_address())
 }
 

@@ -6,14 +6,15 @@ use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 };
 use pallet_cnight_observation::{
-	MappingEntry, Mappings,
+	MappingEntry, Mappings, NextCardanoPosition, UtxoOwners,
 	config::{CNightGenesis, SystemTx},
 };
 use pallet_cnight_observation_mock::mock_with_capture as mock;
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use sp_std::collections::btree_map::BTreeMap;
+use std::{path::Path, sync::Arc};
 
 use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -47,7 +48,9 @@ fn create_inherent(
 }
 
 struct PalletExecResult {
-	mappings: HashMap<Vec<u8>, Vec<MappingEntry>>,
+	mappings: BTreeMap<Vec<u8>, Vec<MappingEntry>>,
+	utxo_owners: BTreeMap<Vec<u8>, Vec<u8>>,
+	next_cardano_position: CardanoPosition,
 	system_tx: Option<Vec<u8>>,
 }
 
@@ -61,6 +64,8 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 
 		PalletExecResult {
 			mappings: Mappings::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect(),
+			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect(),
+			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
 			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
 		}
 	})
@@ -107,18 +112,21 @@ pub async fn generate_cnight_genesis(
 		}
 	}
 
-	let initial_utxos = ObservedUtxos {
+	let observed_utxos = ObservedUtxos {
 		start: CardanoPosition::default(),
 		end: current_position,
 		utxos: all_utxos,
 	};
 
-	let PalletExecResult { mappings: initial_mappings, system_tx } = exec_pallet(&initial_utxos);
+	let PalletExecResult { mappings, utxo_owners, next_cardano_position, system_tx } =
+		exec_pallet(&observed_utxos);
 
 	let config = CNightGenesis {
 		addresses,
-		initial_utxos,
-		initial_mappings,
+		observed_utxos,
+		mappings,
+		utxo_owners,
+		next_cardano_position,
 		system_tx: system_tx.map(SystemTx),
 	};
 

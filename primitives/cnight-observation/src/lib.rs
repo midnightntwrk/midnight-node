@@ -17,6 +17,7 @@ extern crate alloc;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 use sp_api::decl_runtime_apis;
 
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
@@ -38,8 +39,9 @@ use sqlx::types::chrono::{DateTime, Utc};
 	PartialEq,
 	Debug,
 	Default,
+	Serialize,
+	Deserialize,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimestampUnixMillis(pub i64);
 
 #[cfg(feature = "std")]
@@ -51,7 +53,6 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 
 /// Values for tracking position of a sync on Cardano
 /// Block hash here is mostly informational for debugging purposes
-/// TODO: Default probably shouldn't be derived
 #[derive(
 	Encode,
 	Decode,
@@ -64,11 +65,12 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 	PartialEq,
 	Debug,
 	Default,
+	Serialize,
+	Deserialize,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub block_hash: [u8; 32],
 	/// Block number of the last processed block
 	pub block_number: u32,
@@ -90,17 +92,18 @@ impl core::fmt::Display for CardanoPosition {
 	}
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CNightAddresses {
-	/// Address of the cNight mapping validator
+	/// Address of the cNight mapping validator. Shelley address, Bech32
 	pub mapping_validator_address: String,
-	/// Address of the glacier drop redemption validator
+	/// Address of the glacier drop redemption validator. Shelley address, Bech32
 	pub redemption_validator_address: String,
 	/// Policy ID of the currency token (i.e. cNIGHT)
-	pub policy_id: String,
-	/// Asset name of the currency token (i.e. cNIGHT)
-	pub asset_name: String,
+	#[serde(with = "hex")]
+	pub cnight_policy_id: [u8; 28],
+	/// Asset name of the currency token. Max length: 32 bytes
+	/// [Cardano Source](https://github.com/IntersectMBO/cardano-ledger/blob/683bef2e40cbd10339452c9f2009867c855baf1a/shelley-ma/shelley-ma-test/cddl-files/shelley-ma.cddl#L252)
+	pub cnight_asset_name: String,
 }
 
 impl CardanoPosition {
@@ -147,8 +150,9 @@ pub struct MidnightObservationTokenMovement {
 	pub next_cardano_position: CardanoPosition,
 }
 
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, PartialEq, TypeInfo)]
+#[derive(
+	Debug, Clone, Encode, Decode, DecodeWithMemTracking, PartialEq, TypeInfo, Serialize, Deserialize,
+)]
 pub struct ObservedUtxo {
 	pub header: ObservedUtxoHeader,
 	pub data: ObservedUtxoData,
@@ -169,8 +173,7 @@ impl Ord for ObservedUtxo {
 }
 
 /// A struct to contain all UTXOs in a given range
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ObservedUtxos {
 	// Start position (inclusive)
 	pub start: CardanoPosition,
@@ -179,8 +182,9 @@ pub struct ObservedUtxos {
 	pub utxos: Vec<ObservedUtxo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub enum ObservedUtxoData {
 	RedemptionCreate(RedemptionCreateData),
 	RedemptionSpend(RedemptionSpendData),
@@ -190,77 +194,84 @@ pub enum ObservedUtxoData {
 	AssetSpend(SpendData),
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct RedemptionCreateData {
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub owner: Vec<u8>,
 	pub value: u128,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct RedemptionSpendData {
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub owner: Vec<u8>,
 	pub value: u128,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub spending_tx_hash: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct RegistrationData {
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub cardano_address: Vec<u8>,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub dust_address: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct DeregistrationData {
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub cardano_address: Vec<u8>,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub dust_address: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct CreateData {
 	pub value: u128,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub owner: Vec<u8>,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
+)]
 pub struct SpendData {
 	pub value: u128,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub owner: Vec<u8>,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
-	#[cfg_attr(feature = "std", serde(with = "hex"))]
+	#[serde(with = "hex")]
 	pub spending_tx_hash: [u8; 32],
 }
 
 /// Header for an observed UTXO
 /// This header can be used for both create and spend events for UTXOs.
 /// The ordering assumes that each header is unique per TX i.e. that only one relevant UTXO is included in each transaction
-#[derive(Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq)]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+#[derive(
+	Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Serialize, Deserialize,
+)]
 pub struct ObservedUtxoHeader {
 	pub tx_position: CardanoPosition,
 	pub tx_hash: McTxHash,
@@ -282,9 +293,18 @@ impl core::fmt::Display for ObservedUtxoHeader {
 }
 
 #[derive(
-	Debug, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, DecodeWithMemTracking, TypeInfo,
+	Debug,
+	Copy,
+	Clone,
+	PartialEq,
+	PartialOrd,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	TypeInfo,
+	Serialize,
+	Deserialize,
 )]
-#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct UtxoIndexInTx(pub u16);
 
 impl PartialOrd for ObservedUtxoHeader {
