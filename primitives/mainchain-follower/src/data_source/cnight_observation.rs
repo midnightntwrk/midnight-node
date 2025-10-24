@@ -116,7 +116,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.await?,
 			self.get_asset_create_utxos(
 				config.cnight_policy_id,
-				&cnight_asset_name,
+				cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -125,7 +125,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.await?,
 			self.get_asset_spend_utxos(
 				config.cnight_policy_id,
-				&cnight_asset_name,
+				cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -135,7 +135,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			self.get_redemption_create_utxos(
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
-				&cnight_asset_name,
+				cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
@@ -145,7 +145,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			self.get_redemption_spend_utxos(
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
-				&cnight_asset_name,
+				cnight_asset_name,
 				start_position,
 				end,
 				utxo_capacity,
