@@ -60,7 +60,7 @@ mod tests {
   "system_tx": null
 }"#;
 
-		let genesis: CNightGenesis = serde_json::from_str(&my_json).unwrap();
+		let genesis: CNightGenesis = serde_json::from_str(my_json).unwrap();
 
 		assert!(genesis.validate().is_ok());
 	}
@@ -100,7 +100,7 @@ mod tests {
   "system_tx": null
 }"#;
 
-		let genesis: CNightGenesis = serde_json::from_str(&my_json).unwrap();
+		let genesis: CNightGenesis = serde_json::from_str(my_json).unwrap();
 
 		assert!(genesis.validate().is_err());
 	}
