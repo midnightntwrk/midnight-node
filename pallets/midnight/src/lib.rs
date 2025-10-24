@@ -354,6 +354,8 @@ pub mod pallet {
 						let state_key: BoundedVec<_, _> =
 							new_state_key.try_into().expect("New state key size out of boundaries");
 						StateKey::<T>::put(state_key);
+
+						LedgerApi::flush_storage();
 					},
 					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
 				};
