@@ -3,7 +3,6 @@ use midnight_node_e2e::api::midnight::*;
 use midnight_node_e2e::cfg::*;
 use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
-use whisky::csl::Address;
 use whisky::Asset;
 
 #[tokio::test]
@@ -82,7 +81,10 @@ async fn register_2_cardano_same_dust_address_production() {
 
 	let dust_hex = new_dust_hex(32);
 	println!("Registering First Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
-	println!("Registering Second Cardano wallet {} with DUST address {}", second_bech32_address, dust_hex);
+	println!(
+		"Registering Second Cardano wallet {} with DUST address {}",
+		second_bech32_address, dust_hex
+	);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
 	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
@@ -101,23 +103,36 @@ async fn register_2_cardano_same_dust_address_production() {
 
 	let register_tx_id =
 		register(&bech32_address, &dust_hex, &first_cardano_wallet, &tx_in, &collateral_utxo).await;
-	println!("Registration transaction for the first cardano submitted with hash: {:?}", register_tx_id);
+	println!(
+		"Registration transaction for the first cardano submitted with hash: {:?}",
+		register_tx_id
+	);
 
-	let second_register_tx_id =
-	register(&second_bech32_address, &dust_hex, &second_cardano_wallet, &second_tx_in, &second_collateral_utxo).await;
-	println!("Registration transaction for second cardano submitted with hash: {:?}", register_tx_id);
+	let second_register_tx_id = register(
+		&second_bech32_address,
+		&dust_hex,
+		&second_cardano_wallet,
+		&second_tx_in,
+		&second_collateral_utxo,
+	)
+	.await;
+	println!(
+		"Registration transaction for second cardano submitted with hash: {:?}",
+		register_tx_id
+	);
 
 	let cardano_address = get_cardano_address_as_bytes(&first_cardano_wallet);
 	let second_cardano_address = get_cardano_address_as_bytes(&second_cardano_wallet);
 
 	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
-	let registration_events = subscribe_to_cngd_registration_extrinsic(&register_tx_id)
+	let registration_events = subscribe_to_native_token_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
 
-	let second_registration_events = subscribe_to_cngd_registration_extrinsic(&second_register_tx_id)
-		.await
-		.expect("Failed to listen to cNgD registration event");
+	let second_registration_events =
+		subscribe_to_native_token_observation_events(&second_register_tx_id)
+			.await
+			.expect("Failed to listen to cNgD registration event");
 
 	let registration = registration_events
 		.iter()
@@ -149,7 +164,6 @@ async fn register_2_cardano_same_dust_address_production() {
 		"Did not find second registration event with expected second cardano_address and dust_address"
 	);
 
-
 	if let Some(registration) = registration {
 		println!("Matching Registration event found: {:?}", registration);
 	}
@@ -180,7 +194,7 @@ async fn register_2_cardano_same_dust_address_production() {
 			map.0.cardano_address.0 == second_cardano_address
 				&& map.0.dust_address == dust_hex
 				&& map.0.utxo_id == hex::encode(second_register_tx_id)
-		});		
+		});
 	assert!(
 		mapping_added.is_some(),
 		"Did not find first MappingAdded event with expected cardano_address, dust_address, and utxo_id"
