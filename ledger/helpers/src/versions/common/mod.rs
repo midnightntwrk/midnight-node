@@ -107,35 +107,45 @@ pub use rand::{
 	rngs::{OsRng, StdRng},
 };
 
+// Module declarations with can-panic feature
+#[cfg(feature = "can-panic")]
 pub mod context;
+#[cfg(feature = "can-panic")]
 pub mod contract;
+#[cfg(feature = "can-panic")]
 mod input;
+#[cfg(feature = "can-panic")]
 mod intent;
+#[cfg(feature = "can-panic")]
 mod offer;
+#[cfg(feature = "can-panic")]
 mod output;
-mod proving;
+#[cfg(feature = "can-panic")]
 pub mod transaction;
+#[cfg(feature = "can-panic")]
 mod transient;
-pub mod types;
+#[cfg(feature = "can-panic")]
 mod unshielded_offer;
+#[cfg(feature = "can-panic")]
 mod utxo_output;
+#[cfg(feature = "can-panic")]
 mod utxo_spend;
+#[cfg(feature = "can-panic")]
 pub mod wallet;
 
-pub use context::*;
-pub use contract::*;
-pub use input::*;
-pub use intent::*;
-pub use offer::*;
-pub use output::*;
-pub use proving::*;
-pub use transaction::*;
-pub use transient::*;
+// Module declarations without can-panic feature
+mod proving;
+pub mod types;
+
+// Re-exports with can-panic feature
+#[cfg(feature = "can-panic")]
+pub use {
+	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
+	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+};
+
+// Re-exports without can-panic feature
 pub use types::*;
-pub use unshielded_offer::*;
-pub use utxo_output::*;
-pub use utxo_spend::*;
-pub use wallet::*;
 
 #[repr(u8)]
 #[non_exhaustive]

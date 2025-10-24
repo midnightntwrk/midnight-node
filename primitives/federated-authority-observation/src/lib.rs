@@ -38,6 +38,11 @@ where
 	strings
 		.into_iter()
 		.map(|s| {
+			let s = s.strip_prefix("0x").ok_or_else(|| {
+				serde::de::Error::custom(
+					"sr25519 hex public key expected to be prepended with `0x`",
+				)
+			})?;
 			let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
 			sr25519::Public::from_slice(&bytes)
 				.map_err(|_| serde::de::Error::custom("Invalid sr25519 public key length"))

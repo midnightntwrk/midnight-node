@@ -179,24 +179,47 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 	}
 }
 
-/// Create a one-shot UTxO for minting governance tokens
-/// This UTxO will be consumed during minting to ensure it can only happen once
-pub async fn create_one_shot_utxo(
-	wallet_address: &str,
-	_one_shot_tx_hash: &str,
-	_one_shot_index: u32,
-) -> OgmiosUtxo {
-	// In a real scenario, this would be a pre-existing UTxO
-	// For testing, we create one with the specific tx_id and index
-	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-	let tx_id = send(wallet_address, assets).await;
-	println!("One-shot UTXO created with tx_id: {}", tx_id);
+/// Retrieve the pre-created one-shot UTxO from the local environment
+///
+/// The local-environment creates these UTxOs during Cardano setup in entrypoint.sh
+/// The UTxO references are saved to files that we read here
+///
+/// # Arguments
+/// * `governance_type` - Either "council" or "techauth"
+pub async fn get_one_shot_utxo(governance_type: &str) -> OgmiosUtxo {
+	let file_path =
+		format!("../../local-environment/runtime-values/{}.oneshot.utxo", governance_type);
 
-	// Wait and return the UTXO
-	match find_utxo_by_tx_id(wallet_address, &tx_id).await {
-		Some(utxo) => utxo,
-		None => panic!("One-shot UTXO not found after creation"),
+	let utxo_ref = std::fs::read_to_string(&file_path)
+		.unwrap_or_else(|_| panic!("Failed to read one-shot UTxO file at {}. Make sure local-environment is running and has created the one-shot UTxOs.", file_path))
+		.trim()
+		.to_string();
+
+	println!("Reading {} one-shot UTxO from file: {}", governance_type, utxo_ref);
+
+	let parts: Vec<&str> = utxo_ref.split('#').collect();
+	if parts.len() != 2 {
+		panic!("Invalid UTxO reference format in file: {}", utxo_ref);
 	}
+
+	let tx_hash = parts[0];
+
+	// Query the UTxO from Cardano to get full details
+	let client = get_ogmios_client().await;
+	let cfg = load_config();
+	let payment_addr = cfg.payment_addr.clone();
+
+	let utxos = client.query_utxos(&[payment_addr]).await.expect("Failed to query UTxOs");
+
+	// Find the matching UTxO
+	for utxo in utxos {
+		if hex::encode(&utxo.transaction.id) == tx_hash {
+			println!("✓ Found {} one-shot UTxO: {}#{}", governance_type, tx_hash, utxo.index);
+			return utxo;
+		}
+	}
+
+	panic!("One-shot UTxO {} not found on chain. It may have already been spent.", utxo_ref);
 }
 
 /// Deploy a governance contract and mint the NFT with multisig datum

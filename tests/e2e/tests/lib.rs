@@ -119,12 +119,13 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	println!("  Policy ID (calculated): {}", tech_auth_policy_id);
 	println!("  Address: {}", tech_auth_address);
 
-	// Create one-shot UTxOs for minting
-	let council_one_shot = create_one_shot_utxo(&deployer_address, "", 0).await;
-	println!("Council one-shot UTXO created");
+	// Get pre-created one-shot UTxOs from local-environment
+	// These are created by the Cardano entrypoint.sh script during network setup
+	let council_one_shot = get_one_shot_utxo("council").await;
+	println!("✓ Council one-shot UTXO retrieved from local-environment");
 
-	let tech_auth_one_shot = create_one_shot_utxo(&deployer_address, "", 0).await;
-	println!("Technical Authority one-shot UTXO created");
+	let tech_auth_one_shot = get_one_shot_utxo("techauth").await;
+	println!("✓ Technical Authority one-shot UTXO retrieved from local-environment");
 
 	// Deploy Council Forever contract
 	println!("\n=== Deploying Council Forever Contract ===");
