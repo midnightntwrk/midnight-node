@@ -15,18 +15,19 @@
 //!
 //! This module uses the types and functions provided by the `db` module
 
+pub mod cnight_observation;
+pub mod cnight_observation_mock;
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
-pub mod native_token_observation;
-pub mod native_token_observation_mock;
 
+pub use cnight_observation::{
+	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
+	TxPosition,
+};
+pub use cnight_observation_mock::CNightObservationDataSourceMock;
 pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;
 pub use federated_authority_observation_mock::FederatedAuthorityObservationDataSourceMock;
-pub use native_token_observation::{
-	MidnightNativeTokenObservationDataSourceError, MidnightNativeTokenObservationDataSourceImpl,
-	ObservedUtxos, TxHash, TxPosition,
-};
-pub use native_token_observation_mock::NativeTokenObservationDataSourceMock;
+
 pub use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{error::Error, str::FromStr};

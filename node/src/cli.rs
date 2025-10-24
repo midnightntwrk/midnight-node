@@ -18,7 +18,6 @@ use clap::Parser;
 use midnight_node_runtime::{CrossChainPublic, opaque::SessionKeys};
 use parity_scale_codec::Encode;
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
-use sc_cli::{CliConfiguration, SharedParams};
 use sidechain_domain::McBlockHash;
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -37,19 +36,14 @@ pub struct Cli {
 }
 
 #[derive(Debug, Parser)]
-pub struct CngdGenesisCmd {
+pub struct CNightGenesisCmd {
 	/// The Cardano block hash assumed to be the latest for this query
 	#[arg(short, long)]
-	pub initial_mc_hash: McBlockHash,
-	#[allow(missing_docs)]
-	#[clap(flatten)]
-	pub shared_params: SharedParams,
-}
-
-impl CliConfiguration for CngdGenesisCmd {
-	fn shared_params(&self) -> &sc_cli::SharedParams {
-		&self.shared_params
-	}
+	pub cardano_tip: McBlockHash,
+	#[arg(long)]
+	pub cnight_addresses: std::path::PathBuf,
+	#[arg(short, long, default_value = "cnight-genesis.json")]
+	pub output: std::path::PathBuf,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -70,7 +64,7 @@ pub enum Subcommand {
 	CheckBlock(sc_cli::CheckBlockCmd),
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
-	GenerateCngdGenesis(CngdGenesisCmd),
+	GenerateCNightGenesis(CNightGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
