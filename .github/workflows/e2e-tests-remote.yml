@@ -169,7 +169,7 @@ jobs:
   run:
     needs: generate
     name: Run node e2e tests on ${{ github.env.TEST_ENV }}
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:

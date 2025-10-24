@@ -15,10 +15,13 @@ pub fn new_dust_hex(bytes: usize) -> String {
 	a.iter().map(|b| format!("{:02x}", b)).collect::<String>()
 }
 
-pub async fn subscribe_to_cngd_registration_extrinsic(
+pub async fn subscribe_to_native_token_observation_events(
 	tx_id: &[u8],
 ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
-	println!("Subscribing for registration extrinsic with tx_id: 0x{}", hex::encode(tx_id));
+	println!(
+		"Subscribing for native token observation extrinsic with tx_id: 0x{}",
+		hex::encode(tx_id)
+	);
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 
@@ -38,7 +41,8 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 				let decoded_ext = ext.as_root_extrinsic::<mn_meta::Call>();
 				let runtime_call = decoded_ext.unwrap();
 				match &runtime_call {
-					mn_meta::Call::NativeTokenObservation(e) => if let native_token_observation::Call::process_tokens { utxos, .. } = e {
+					mn_meta::Call::NativeTokenObservation(e) => {
+						if let native_token_observation::Call::process_tokens { utxos, .. } = e {
 							println!(
 								"  NativeTokenObservation::process_tokens called with {} UTXOs",
 								utxos.len()
@@ -49,26 +53,35 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 								for utxo in utxos {
 									let utxo_tx_id = utxo.header.tx_hash.0;
 									if utxo_tx_id == tx_id {
-										println!("*** Found UTXO with matching registration tx hash: 0x{} ***", hex::encode(tx_id));
+										println!(
+											"*** Found UTXO with matching tx hash: 0x{} ***",
+											hex::encode(tx_id)
+										);
 										return Ok(events);
 									} else {
-										println!("Tx hash 0x{} does not match expected registration tx hash 0x{}", hex::encode(utxo_tx_id), hex::encode(tx_id));
+										println!(
+											"Tx hash 0x{} does not match expected tx hash 0x{}",
+											hex::encode(utxo_tx_id),
+											hex::encode(tx_id)
+										);
 									}
 								}
 							}
 						}
+					},
 					_ => {
 						continue;
 					},
 				}
 			}
 		}
-		Err("Did not find registration event".into())
-	}).await;
+		Err("Did not find native token observation event".into())
+	})
+	.await;
 
 	match result {
 		Ok(res) => res,
-		Err(_) => Err("Timeout waiting for registration event".into()),
+		Err(_) => Err("Timeout waiting for native token observation event".into()),
 	}
 }
 

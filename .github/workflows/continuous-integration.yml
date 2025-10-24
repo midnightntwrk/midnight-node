@@ -192,7 +192,7 @@ jobs:
   hardfork-e2e:
     name: Hardfork E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -212,7 +212,7 @@ jobs:
   ledger-rollback-e2e:
     name: Ledger Rollback E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -235,7 +235,7 @@ jobs:
   node-e2e:
     name: Node E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -258,7 +258,7 @@ jobs:
   toolkit-e2e:
     name: Toolkit E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -278,7 +278,7 @@ jobs:
   toolkit-mint-e2e:
     name: Toolkit Mint E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -298,7 +298,7 @@ jobs:
   toolkit-ut-e2e:
     name: Toolkit Unshielded Token E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -318,7 +318,7 @@ jobs:
   metadata-check:
     name: Metadata Check
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -349,7 +349,7 @@ jobs:
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # 5.0.0
@@ -369,7 +369,7 @@ jobs:
   startup-dev-e2e:
     name: Startup E2E in dev mode
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -388,7 +388,7 @@ jobs:
   genesis-undeployed-e2e:
     name: Genesis Wallets E2E for Undeployed network
     needs: run
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
@@ -432,12 +432,6 @@ jobs:
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
-
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
 
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
