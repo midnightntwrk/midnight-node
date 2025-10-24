@@ -15,13 +15,10 @@ pub fn new_dust_hex(bytes: usize) -> String {
 	a.iter().map(|b| format!("{:02x}", b)).collect::<String>()
 }
 
-pub async fn subscribe_to_native_token_observation_events(
+pub async fn subscribe_to_cnight_observation_events(
 	tx_id: &[u8],
 ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
-	println!(
-		"Subscribing for native token observation extrinsic with tx_id: 0x{}",
-		hex::encode(tx_id)
-	);
+	println!("Subscribing for cNIGHT observation extrinsic with tx_id: 0x{}", hex::encode(tx_id));
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 
@@ -44,7 +41,7 @@ pub async fn subscribe_to_native_token_observation_events(
 					mn_meta::Call::CNightObservation(e) => {
 						if let c_night_observation::Call::process_tokens { utxos, .. } = e {
 							println!(
-								"  NativeTokenObservation::process_tokens called with {} UTXOs",
+								"  CNightObservation::process_tokens called with {} UTXOs",
 								utxos.len()
 							);
 							if utxos.is_empty() {
@@ -75,13 +72,13 @@ pub async fn subscribe_to_native_token_observation_events(
 				}
 			}
 		}
-		Err("Did not find native token observation event".into())
+		Err("Did not find cNIGHT observation event".into())
 	})
 	.await;
 
 	match result {
 		Ok(res) => res,
-		Err(_) => Err("Timeout waiting for native token observation event".into()),
+		Err(_) => Err("Timeout waiting for cNIGHT observation event".into()),
 	}
 }
 

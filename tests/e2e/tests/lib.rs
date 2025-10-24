@@ -28,7 +28,7 @@ async fn register_for_dust_production() {
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
 	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
-	let registration_events = subscribe_to_native_token_observation_events(&register_tx_id)
+	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
 
@@ -125,14 +125,13 @@ async fn register_2_cardano_same_dust_address_production() {
 	let second_cardano_address = get_cardano_address_as_bytes(&second_cardano_wallet);
 
 	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
-	let registration_events = subscribe_to_native_token_observation_events(&register_tx_id)
+	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
 
-	let second_registration_events =
-		subscribe_to_native_token_observation_events(&second_register_tx_id)
-			.await
-			.expect("Failed to listen to cNgD registration event");
+	let second_registration_events = subscribe_to_cnight_observation_events(&second_register_tx_id)
+		.await
+		.expect("Failed to listen to cNgD registration event");
 
 	let registration = registration_events
 		.iter()
@@ -293,12 +292,14 @@ async fn deregister_from_dust_production() {
 		.max_by_key(|u| u.value.lovelace)
 		.expect("No UTXO with lovelace found");
 
-	let deregister_tx = deregister(&cardano_wallet, &utxo, &register_tx, &collateral_utxo).await;
+	let deregister_tx = deregister(&cardano_wallet, &utxo, &register_tx, &collateral_utxo)
+		.await
+		.unwrap();
 	println!("Deregistration transaction submitted with hash: {:?}", deregister_tx);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
 	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
-	let events = subscribe_to_native_token_observation_events(&deregister_tx)
+	let events = subscribe_to_cnight_observation_events(&deregister_tx)
 		.await
 		.expect("Failed to listen to cNgD registration event");
 
@@ -337,4 +338,47 @@ async fn deregister_from_dust_production() {
 	if let Some(mapping) = mapping_removed {
 		println!("Matching MappingRemoved event found: {:?}", mapping);
 	}
+}
+
+#[tokio::test]
+#[ignore = "See bug https://shielded.atlassian.net/browse/PM-19856"]
+async fn alice_cannot_deregister_bob() {
+	// Create Alice and Bob wallets
+	let alice = create_wallet();
+	let alice_bech32 = get_cardano_address_as_bech32(&alice);
+
+	let bob = create_wallet();
+	let bob_bech32 = get_cardano_address_as_bech32(&bob);
+	let dust_hex = new_dust_hex(32);
+
+	// Fund Alice and Bob wallets
+	let ada_to_fund = vec![Asset::new_from_str("lovelace", "160000000")];
+	let alice_collateral = make_collateral(&alice_bech32).await;
+	let deregister_tx_in = fund_wallet(&alice_bech32, ada_to_fund.clone()).await;
+
+	let bob_collateral = make_collateral(&bob_bech32).await;
+	let register_tx_in = fund_wallet(&bob_bech32, ada_to_fund.clone()).await;
+
+	// Bob registers his DUST address
+	println!("Registering Bob wallet {} with DUST address {}", bob_bech32, dust_hex);
+	let register_tx_id =
+		register(&bob_bech32, &dust_hex, &bob, &register_tx_in, &bob_collateral).await;
+	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
+
+	// Find Bob's registration UTXO
+	let validator_address = get_mapping_validator_address();
+	let register_tx = find_utxo_by_tx_id(&validator_address, &hex::encode(&register_tx_id))
+		.await
+		.expect("No registration UTXO found after registering");
+	println!("Found registration UTXO: {:?}", register_tx);
+
+	// Alice attempts to deregister Bob
+	let deregister_tx =
+		deregister(&alice, &deregister_tx_in, &register_tx, &alice_collateral).await;
+	assert!(deregister_tx.is_err(), "Alice should not be able to deregister Bob");
+
+	// Check if Bob's registration still exists in mapping validator UTXOs
+	let still_unspent =
+		wait_utxo_unspent_for_3_blocks(&validator_address, &hex::encode(&register_tx_id)).await;
+	assert!(still_unspent, "Bob's registration UTXO should still be unspent");
 }
