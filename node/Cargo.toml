@@ -120,7 +120,7 @@ frame-support.workspace = true
 time-source.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive"] }
 config = "0.14.0"
-serde_valid = "0.24.0"
+serde_valid.workspace = true
 documented.workspace = true
 shell-words = "1.1.0"
 derive-new.workspace = true

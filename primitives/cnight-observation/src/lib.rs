@@ -93,16 +93,22 @@ impl core::fmt::Display for CardanoPosition {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "std", derive(serde_valid::Validate))]
 pub struct CNightAddresses {
 	/// Address of the cNight mapping validator. Shelley address, Bech32
+	#[cfg_attr(feature = "std", validate(pattern = r"^(addr|addr_test)1[0-9a-z]{1,108}$"))]
 	pub mapping_validator_address: String,
 	/// Address of the glacier drop redemption validator. Shelley address, Bech32
+	#[cfg_attr(feature = "std", validate(pattern = r"^(addr|addr_test)1[0-9a-z]{1,108}$"))]
 	pub redemption_validator_address: String,
 	/// Policy ID of the currency token (i.e. cNIGHT)
 	#[serde(with = "hex")]
 	pub cnight_policy_id: [u8; 28],
 	/// Asset name of the currency token. Max length: 32 bytes
 	/// [Cardano Source](https://github.com/IntersectMBO/cardano-ledger/blob/683bef2e40cbd10339452c9f2009867c855baf1a/shelley-ma/shelley-ma-test/cddl-files/shelley-ma.cddl#L252)
+	#[cfg_attr(feature = "std", validate(max_length = 32))]
+	// Ascii only
+	#[cfg_attr(feature = "std", validate(pattern = r"^[\x00-\x7F]*$"))]
 	pub cnight_asset_name: String,
 }
 

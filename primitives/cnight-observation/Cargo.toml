@@ -11,6 +11,7 @@ sp-inherents.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 serde = { workspace = true }
+serde_valid = { workspace = true, optional = true }
 hex = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true, optional = true }
 sidechain-domain.workspace = true
@@ -25,6 +26,7 @@ std = [
     "parity-scale-codec/std",
     "scale-info/std",
     "serde/std",
+    "serde_valid",
     "sqlx",
     "thiserror",
     "sidechain-domain/std"

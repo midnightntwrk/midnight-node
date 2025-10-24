@@ -21,6 +21,7 @@ sp-std.workspace = true
 hex.workspace = true
 derive-new.workspace= true
 serde = { workspace = true}
+serde_valid = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
@@ -31,6 +32,7 @@ test-log.workspace = true
 midnight-node-ledger-helpers.workspace = true
 tempfile.workspace = true
 pallet-cnight-observation-mock.workspace = true
+serde_json.workspace = true
 
 [features]
 default = ["std"]
@@ -45,7 +47,8 @@ std = [
     "midnight-primitives/std",
     "midnight-primitives-mainchain-follower/std",
     "midnight-primitives-cnight-observation/std",
-    "derive-new/std"
+    "derive-new/std",
+    "serde_valid"
 ]
 
 [package.metadata.cargo-shear]

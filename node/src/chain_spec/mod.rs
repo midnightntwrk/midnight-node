@@ -14,6 +14,7 @@
 use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
 use midnight_node_res::networks::MidnightNetwork;
+use serde_valid::Validate as _;
 
 use midnight_node_ledger_helpers::{
 	BlockContext, DefaultDB, ProofMarker, Signature as LedgerSignature, TransactionWithContext,
@@ -240,6 +241,11 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		})
 		.collect::<Vec<_>>();
 
+	let cnight_genesis = genesis.cnight_genesis();
+	cnight_genesis.validate().map_err(|e| {
+		ChainSpecInitError::ParseError(format!("failed to validate cnight genesis config: {e}"))
+	})?;
+
 	let config = RuntimeGenesisConfig {
 		system: Default::default(),
 		aura: Default::default(),
@@ -287,9 +293,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		pallet_session: Default::default(),
 		native_token_management: NativeTokenManagementConfig { ..Default::default() },
 		c_night_observation: CNightObservationConfig {
-			// TODO: Validate the config
-			// Bech32 addresses, asset name <= 32 bytes
-			config: genesis.cnight_genesis(),
+			config: cnight_genesis,
 			_marker: Default::default(),
 		},
 		council: CouncilConfig { ..Default::default() },
