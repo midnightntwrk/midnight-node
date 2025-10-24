@@ -78,12 +78,7 @@ runs:
     - name: rust e2e tests
       id: rust-e2e-tests
       run: |
-        # Set NETRC env var for Earthly to use for private repos
-        echo "machine github.com" >> ./netrc
-        echo "  login ${{inputs.netrc}}" >> ./netrc
-        echo "  password x-oauth-basic" >> ./netrc
-        export NETRC="$(pwd)/netrc"
-        . ./.envrc && earthly +local-env-rust-e2e
+        earthly +local-env-rust-e2e
       shell: bash
 
     - name: e2e tests
