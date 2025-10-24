@@ -71,7 +71,7 @@ async fn register_for_dust_production() {
 }
 
 #[tokio::test]
-#[ignore] // Remove this when ready to run the test with a live environment
+// #[ignore] // Remove this when ready to run the test with a live environment
 async fn deploy_governance_contracts_and_validate_membership_reset() {
 	println!("=== Starting Governance Contracts E2E Test ===");
 
@@ -80,29 +80,31 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
 	const BOB_SR25519: &str = "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48";
 
-	// Create test wallet for contract deployment
-	let deployer_wallet = create_wallet();
-	let deployer_address = get_cardano_address_as_bech32(&deployer_wallet);
-	println!("Deployer wallet created: {}", deployer_address);
+	// Use the funded_address from config as the deployer
+	// The funded_address owns the one-shot UTxOs, so we use it for all inputs to simplify signing
+	use midnight_node_e2e::cfg::*;
+	let cfg = load_config();
+	let funded_address = cfg.payment_addr.clone();
+	println!("Using funded_address for deployment: {}", funded_address);
 
-	// Get deployer's Cardano pubkey hash for the multisig mapping
-	let deployer_cardano_hash = hex::encode(deployer_wallet.account.public_key.hash().to_bytes());
+	// Get funded_address Cardano pubkey hash for the multisig mapping
+	// The funded_address key hash is: e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
+	let funded_cardano_hash = "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b";
 
-	// Fund deployer wallet with plenty of ADA for multiple transactions
+	// Fund UTxOs for deployment (these will be owned by funded_address)
 	let funding_assets = vec![Asset::new_from_str("lovelace", "500000000")]; // 500 ADA
-	let tx_in_utxo = fund_wallet(&deployer_address, funding_assets).await;
-	println!("Deployer wallet funded");
+	let tx_in_utxo = fund_wallet(&funded_address, funding_assets.clone()).await;
+	println!("First funding UTXO created");
 
 	// Create additional funding UTxO for second deployment
-	let tx_in_utxo_2 = fund_wallet(&deployer_address, funding_assets).await;
+	let tx_in_utxo_2 = fund_wallet(&funded_address, funding_assets).await;
 	println!("Second funding UTXO created");
 
 	// Create collateral for script transactions
-	let collateral_utxo = make_collateral(&deployer_address).await;
+	let collateral_utxo = make_collateral(&funded_address).await;
 	println!("Collateral UTXO created");
 
 	// Load contract CBORs and calculate addresses and policy IDs
-	use midnight_node_e2e::cfg::*;
 	let council_cbor = get_council_forever_cbor();
 	let council_address = get_council_forever_address();
 	let council_policy_id = get_council_forever_policy_id();
@@ -130,12 +132,11 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	// Deploy Council Forever contract
 	println!("\n=== Deploying Council Forever Contract ===");
 	let council_members = vec![
-		(deployer_cardano_hash.clone(), ALICE_SR25519.to_string()),
-		(deployer_cardano_hash.clone(), BOB_SR25519.to_string()),
+		(funded_cardano_hash.to_string(), ALICE_SR25519.to_string()),
+		(funded_cardano_hash.to_string(), BOB_SR25519.to_string()),
 	];
 
 	let _council_tx_id = deploy_governance_contract(
-		&deployer_wallet,
 		&tx_in_utxo,
 		&collateral_utxo,
 		&council_one_shot,
@@ -152,12 +153,11 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	// Deploy Technical Authority Forever contract
 	println!("\n=== Deploying Technical Authority Forever Contract ===");
 	let tech_auth_members = vec![
-		(deployer_cardano_hash.clone(), ALICE_SR25519.to_string()),
-		(deployer_cardano_hash.clone(), BOB_SR25519.to_string()),
+		(funded_cardano_hash.to_string(), ALICE_SR25519.to_string()),
+		(funded_cardano_hash.to_string(), BOB_SR25519.to_string()),
 	];
 
 	let _tech_auth_tx_id = deploy_governance_contract(
-		&deployer_wallet,
 		&tx_in_utxo_2,
 		&collateral_utxo,
 		&tech_auth_one_shot,

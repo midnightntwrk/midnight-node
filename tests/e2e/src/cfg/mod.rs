@@ -43,6 +43,18 @@ pub fn load_cbor(path: &str) -> String {
 	}
 }
 
+pub fn load_script_hash(path: &str) -> String {
+	let file_content = std::fs::read_to_string(path).expect("Failed to read file");
+	match serde_json::from_str::<serde_json::Value>(&file_content) {
+		Ok(json) => json
+			.get("hash")
+			.and_then(|v| v.as_str())
+			.map(|s| s.to_string())
+			.expect("No hash in file"),
+		Err(_) => panic!("File is not valid JSON"),
+	}
+}
+
 pub fn get_mapping_validator_address() -> String {
 	let cfg = load_config();
 	let cbor_hex = load_cbor(&cfg.mapping_validator_policy_file);
@@ -64,9 +76,8 @@ pub fn get_council_forever_cbor() -> String {
 }
 
 pub fn get_council_forever_policy_id() -> String {
-	let cbor_hex = get_council_forever_cbor();
-	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
-	script_hash.expect("Error calculating `council_forever_policy_id`")
+	let cfg = load_config();
+	load_script_hash(&cfg.council_forever_file)
 }
 
 pub fn get_council_forever_address() -> String {
@@ -81,9 +92,8 @@ pub fn get_tech_auth_forever_cbor() -> String {
 }
 
 pub fn get_tech_auth_forever_policy_id() -> String {
-	let cbor_hex = get_tech_auth_forever_cbor();
-	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
-	script_hash.unwrap()
+	let cfg = load_config();
+	load_script_hash(&cfg.tech_auth_forever_file)
 }
 
 pub fn get_tech_auth_forever_address() -> String {
@@ -121,19 +131,25 @@ pub fn get_local_env_cost_models() -> Vec<Vec<i64>> {
 			25933, 32, 24623, 32, 43053543, 10, 53384111, 14333, 10, 43574283, 26308, 10, 100000,
 			100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000,
 		],
+		// Plutus V3 cost models (from local-environment genesis.conway.json)
 		vec![
 			100788, 420, 1, 1, 1000, 173, 0, 1, 1000, 59957, 4, 1, 11183, 32, 201305, 8356, 4,
 			16000, 100, 16000, 100, 16000, 100, 16000, 100, 16000, 100, 16000, 100, 100, 100,
 			16000, 100, 94375, 32, 132994, 32, 61462, 4, 72010, 178, 0, 1, 22151, 32, 91189, 769,
-			4, 2, 85848, 228465, 122, 0, 1, 1, 1000, 42921, 4, 2, 24548, 29498, 38, 1, 898148,
-			27279, 1, 51775, 558, 1, 39184, 1000, 60594, 1, 141895, 32, 83150, 32, 15299, 32,
-			76049, 1, 13169, 4, 22100, 10, 28999, 74, 1, 28999, 74, 1, 43285, 552, 1, 44749, 541,
-			1, 33852, 32, 68246, 32, 72362, 32, 7243, 32, 7391, 32, 11546, 32, 85848, 228465, 122,
-			0, 1, 1, 90434, 519, 0, 1, 74433, 32, 85848, 228465, 122, 0, 1, 1, 85848, 228465, 122,
-			0, 1, 1, 955506, 213312, 0, 2, 270652, 22588, 4, 1457325, 64566, 4, 20467, 1, 4, 0,
-			141992, 32, 100788, 420, 1, 1, 81663, 32, 59498, 32, 20142, 32, 24588, 32, 20744, 32,
-			25933, 32, 24623, 32, 43053543, 10, 53384111, 14333, 10, 43574283, 26308, 10, 100000,
-			100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000,
+			4, 2, 85848, 123203, 7305, -900, 1716, 549, 57, 85848, 0, 1, 1, 1000, 42921, 4, 2,
+			24548, 29498, 38, 1, 898148, 27279, 1, 51775, 558, 1, 39184, 1000, 60594, 1, 141895,
+			32, 83150, 32, 15299, 32, 76049, 1, 13169, 4, 22100, 10, 28999, 74, 1, 28999, 74, 1,
+			43285, 552, 1, 44749, 541, 1, 33852, 32, 68246, 32, 72362, 32, 7243, 32, 7391, 32,
+			11546, 32, 85848, 123203, 7305, -900, 1716, 549, 57, 85848, 0, 1, 90434, 519, 0, 1,
+			74433, 32, 85848, 123203, 7305, -900, 1716, 549, 57, 85848, 0, 1, 1, 85848, 123203,
+			7305, -900, 1716, 549, 57, 85848, 0, 1, 955506, 213312, 0, 2, 270652, 22588, 4,
+			1457325, 64566, 4, 20467, 1, 4, 0, 141992, 32, 100788, 420, 1, 1, 81663, 32, 59498,
+			32, 20142, 32, 24588, 32, 20744, 32, 25933, 32, 24623, 32, 43053543, 10, 53384111,
+			14333, 10, 43574283, 26308, 10, 16000, 100, 16000, 100, 962335, 18, 2780678, 6,
+			442008, 1, 52538055, 3756, 18, 267929, 18, 76433006, 8868, 18, 52948122, 18, 1995836,
+			36, 3227919, 12, 901022, 1, 166917843, 4307, 36, 284546, 36, 158221314, 26549, 36,
+			74698472, 36, 333849714, 1, 254006273, 72, 2174038, 72, 2261318, 64571, 4, 207616,
+			8310, 4, 1293828, 28716, 63, 0, 1, 1006041, 43623, 251, 0, 1,
 		],
 	]
 }

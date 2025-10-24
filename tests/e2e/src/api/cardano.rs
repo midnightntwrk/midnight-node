@@ -187,11 +187,32 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 /// # Arguments
 /// * `governance_type` - Either "council" or "techauth"
 pub async fn get_one_shot_utxo(governance_type: &str) -> OgmiosUtxo {
-	let file_path =
-		format!("../../local-environment/runtime-values/{}.oneshot.utxo", governance_type);
+	// Find the workspace root by searching upward for local-environment directory
+	let current_dir = std::env::current_dir().expect("Failed to get current directory");
+	let mut search_dir = current_dir.as_path();
+
+	let file_path = loop {
+		let candidate = search_dir
+			.join("local-environment/src/networks/local-env/runtime-values")
+			.join(format!("{}.oneshot.utxo", governance_type));
+		if candidate.exists() {
+			break candidate;
+		}
+
+		// Try going up one level
+		match search_dir.parent() {
+			Some(parent) => search_dir = parent,
+			None => panic!(
+				"Failed to find local-environment/src/networks/local-env/runtime-values/{}.oneshot.utxo. \
+				Searched from {} upward. Make sure local-environment is running and has created the one-shot UTxOs.",
+				governance_type,
+				current_dir.display()
+			),
+		}
+	};
 
 	let utxo_ref = std::fs::read_to_string(&file_path)
-		.unwrap_or_else(|_| panic!("Failed to read one-shot UTxO file at {}. Make sure local-environment is running and has created the one-shot UTxOs.", file_path))
+		.unwrap_or_else(|_| panic!("Failed to read one-shot UTxO file at {}. Make sure local-environment is running and has created the one-shot UTxOs.", file_path.display()))
 		.trim()
 		.to_string();
 
@@ -225,16 +246,14 @@ pub async fn get_one_shot_utxo(governance_type: &str) -> OgmiosUtxo {
 /// Deploy a governance contract and mint the NFT with multisig datum
 ///
 /// # Arguments
-/// * `signing_wallet` - The wallet to sign the transaction
-/// * `tx_in` - Input UTxO to fund the transaction
-/// * `collateral_utxo` - Collateral UTxO for script execution
-/// * `one_shot_utxo` - The one-shot UTxO to consume (ensures single minting)
+/// * `tx_in` - Input UTxO to fund the transaction (must be owned by funded_address)
+/// * `collateral_utxo` - Collateral UTxO for script execution (must be owned by funded_address)
+/// * `one_shot_utxo` - The one-shot UTxO to consume (ensures single minting, owned by funded_address)
 /// * `script_cbor` - The compiled contract CBOR
 /// * `script_address` - The script address to send the NFT to
 /// * `sr25519_pubkeys` - Map of Cardano pubkey hash to Sr25519 public key (hex strings)
 /// * `total_signers` - Total number of required signers
 pub async fn deploy_governance_contract(
-	signing_wallet: &Wallet,
 	tx_in: &OgmiosUtxo,
 	collateral_utxo: &OgmiosUtxo,
 	one_shot_utxo: &OgmiosUtxo,
@@ -244,7 +263,14 @@ pub async fn deploy_governance_contract(
 	sr25519_pubkeys: Vec<(String, String)>, // (cardano_pubkey_hash, sr25519_pubkey)
 	total_signers: u64,
 ) -> [u8; 32] {
-	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
+	// Load the funded_address credentials (owner of all inputs)
+	let cfg = load_config();
+	let funded_addr = cfg.payment_addr.clone();
+	let skey_json =
+		fs::read_to_string(&cfg.payment_skey_file).expect("Failed to read payment.skey");
+	let skey_value: serde_json::Value =
+		serde_json::from_str(&skey_json).expect("Invalid skey JSON");
+	let funded_skey_cbor = skey_value["cborHex"].as_str().expect("No cborHex in skey JSON");
 
 	// Build the Multisig datum
 	// Format: constructor 0 with fields [total_signers: Int, signers: Map]
@@ -302,42 +328,37 @@ pub async fn deploy_governance_contract(
 	tx_builder
 		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
-		// Add regular input for fees
-		.tx_in(
-			&hex::encode(tx_in.transaction.id),
-			tx_in.index.into(),
-			&build_asset_vector(tx_in),
-			&payment_addr,
-		)
-		// Add one-shot input (no redeemer for regular UTxO)
+		// Add one-shot input (owned by funded_address) - use only this input to simplify
 		.tx_in(
 			&hex::encode(one_shot_utxo.transaction.id),
 			one_shot_utxo.index.into(),
 			&build_asset_vector(one_shot_utxo),
-			&payment_addr,
+			&funded_addr,
 		)
 		.tx_in_collateral(
 			&hex::encode(collateral_utxo.transaction.id),
 			collateral_utxo.index.into(),
 			&build_asset_vector(collateral_utxo),
-			&payment_addr,
+			&funded_addr,
 		)
-		// Output to script address with NFT and datum
-		.tx_out(script_address, &send_assets)
-		.tx_out_inline_datum_value(&WData::JSON(datum))
-		// Mint the NFT
-		.mint_plutus_script_v2()
+		// Mint the NFT BEFORE adding outputs
+		.mint_plutus_script_v3()
 		.mint(1, policy_id, "") // Empty asset name
 		.minting_script(script_cbor)
 		.mint_redeemer_value(&WRedeemer {
 			data: WData::JSON(redeemer),
 			ex_units: Budget { mem: 14000000, steps: 10000000000 },
 		})
-		.change_address(&payment_addr)
+		// Output to script address with NFT and datum
+		.tx_out(script_address, &send_assets)
+		.tx_out_inline_datum_value(&WData::JSON(datum))
+		.change_address(&funded_addr)
 		.complete_sync(None)
 		.unwrap();
 
-	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex());
+	// Sign the transaction after building it
+	let wallet = Wallet::new_cli(funded_skey_cbor).unwrap();
+	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
 	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
 	let client = get_ogmios_client().await;
 	let response = client.submit_transaction(&tx_bytes).await.unwrap();
