@@ -19,8 +19,7 @@
 #![warn(missing_docs)]
 
 use authority_selection_inherents::CommitteeMember;
-use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionInputs;
-use authority_selection_inherents::filter_invalid_candidates::CandidateValidationApi;
+use authority_selection_inherents::{AuthoritySelectionInputs, CandidateValidationApi};
 use jsonrpsee::RpcModule;
 use midnight_node_runtime::{
 	AccountId, BlockNumber, CrossChainPublic, Hash, Nonce,
