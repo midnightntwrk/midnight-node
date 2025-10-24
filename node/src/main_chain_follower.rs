@@ -187,7 +187,7 @@ pub async fn create_cached_data_sources(
 			.await?,
 		),
 		federated_authority_observation: Arc::new(
-			FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000),
+			FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt, 1000),
 		),
 	})
 }

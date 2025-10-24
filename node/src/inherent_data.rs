@@ -22,6 +22,7 @@ use midnight_node_runtime::{
 	CrossChainPublic,
 	opaque::{Block, SessionKeys},
 };
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
 use midnight_primitives_native_token_observation::NativeTokenObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
@@ -84,6 +85,7 @@ where
 	T::Api: NativeTokenObservationApi<Block>,
 	T::Api: NativeTokenManagementApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
+	T::Api: FederatedAuthorityObservationApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_consensus_aura::inherents::InherentDataProvider,
@@ -170,7 +172,9 @@ where
 		.await?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
+			parent_hash,
 			&mc_hash.mc_hash(),
 		)
 		.await?;
@@ -224,6 +228,7 @@ where
 	T::Api: NativeTokenObservationApi<Block>,
 	T::Api: NativeTokenManagementApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
+	T::Api: FederatedAuthorityObservationApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_timestamp::InherentDataProvider,
@@ -305,7 +310,9 @@ where
 		.await?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
+			parent_hash,
 			&mc_hash,
 		)
 		.await?;

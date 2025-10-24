@@ -7154,6 +7154,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-native-token-observation",
@@ -7342,6 +7343,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto 1.0.0-alpha.4",
  "midnight-ledger 6.1.0-alpha.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.4)",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-native-token-observation",
  "midnight-serialize 1.0.0-alpha.4",
  "midnight-storage 1.0.0-alpha.4",
@@ -7372,6 +7374,7 @@ dependencies = [
  "frame-try-runtime",
  "log",
  "midnight-node-ledger",
+ "midnight-primitives-federated-authority-observation",
  "midnight-primitives-native-token-observation",
  "pallet-aura",
  "pallet-beefy",
@@ -7609,9 +7612,13 @@ dependencies = [
 name = "midnight-primitives-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "parity-scale-codec",
  "scale-info",
+ "serde",
  "sidechain-domain",
+ "sp-api",
+ "sp-core",
  "sp-inherents",
  "sp-runtime",
 ]

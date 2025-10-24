@@ -11,9 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::FederatedAuthorityObservationDataSource;
+use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utxo};
+use cardano_serialization_lib::PlutusData;
 use derive_new::new;
-use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
+use midnight_primitives_federated_authority_observation::{
+	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
+};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::McBlockHash;
 pub use sqlx::PgPool;
@@ -30,19 +33,133 @@ pub struct FederatedAuthorityObservationDataSourceImpl {
 impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
 	async fn get_federated_authority_data(
 		&self,
+		config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
-		// TODO: federated-authority-observation
-		// Replaced when queried from Cardano
+		// Get block number from hash
+		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
+
+		let block_number = match block {
+			Some(b) => b.block_number.0,
+			None => {
+				return Err(format!("Block not found for hash: {:?}", mc_block_hash).into());
+			},
+		};
+
+		// Query council UTXO
+		let council_utxo = get_governance_body_utxo(
+			&self.pool,
+			&config.council.address,
+			&config.council.policy_id,
+			block_number,
+		)
+		.await?;
+
+		let council_authorities = match council_utxo {
+			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
+				Ok(keys) => keys,
+				Err(e) => {
+					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
+					vec![]
+				},
+			},
+			None => {
+				log::warn!("No council UTXO found for block {}. Using empty list.", block_number);
+				vec![]
+			},
+		};
+
+		// Query technical committee UTXO
+		let technical_committee_utxo = get_governance_body_utxo(
+			&self.pool,
+			&config.technical_committee.address,
+			&config.technical_committee.policy_id,
+			block_number,
+		)
+		.await?;
+
+		let technical_committee_authorities = match technical_committee_utxo {
+			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
+				Ok(keys) => keys,
+				Err(e) => {
+					log::warn!(
+						"Failed to decode technical committee datum: {}. Using empty list.",
+						e
+					);
+					vec![]
+				},
+			},
+			None => {
+				log::warn!(
+					"No technical committee UTXO found for block {}. Using empty list.",
+					block_number
+				);
+				vec![]
+			},
+		};
 
 		Ok(FederatedAuthorityData {
-			council_authorities: vec![],
-			technical_committee_authorities: vec![],
+			council_authorities,
+			technical_committee_authorities,
 			mc_block_hash: mc_block_hash.clone(),
 		})
 	}
 }
 
 impl FederatedAuthorityObservationDataSourceImpl {
-	// TODO: federated-authority-observation
+	/// Decode PlutusData containing governance body members
+	///
+	/// Expected format: `[total_signers: Int, [...(CborBytes, Sr25519Keys)]]`
+	/// where Sr25519Keys is a 32-byte public key
+	///
+	/// Returns a vector of AuthorityMemberPublicKey
+	fn decode_governance_datum(
+		datum: &PlutusData,
+	) -> Result<Vec<AuthorityMemberPublicKey>, Box<dyn std::error::Error + Send + Sync>> {
+		// Try to parse as a list of plutus data
+		let list = datum.as_list().ok_or("Expected PlutusData to be a list")?;
+
+		if list.len() < 2 {
+			return Err(
+				format!("Expected at least 2 elements in datum list, got {}", list.len()).into()
+			);
+		}
+
+		// Get the second element which should be the list of members
+		let members_list = list.get(1).as_list().ok_or("Expected second element to be a list")?;
+
+		let mut authority_keys = Vec::new();
+
+		// Each member is a tuple (CborBytes, Sr25519Keys)
+		for i in 0..members_list.len() {
+			let member_tuple = match members_list.get(i).as_list() {
+				Some(tuple) => tuple,
+				None => continue, // Skip invalid entries
+			};
+
+			if member_tuple.len() < 2 {
+				continue; // Skip incomplete tuples
+			}
+
+			// Get the second element which should be the Sr25519 key (32 bytes)
+			let sr25519_key_data = match member_tuple.get(1).as_bytes() {
+				Some(bytes) => bytes,
+				None => continue, // Skip if not bytes
+			};
+
+			// Sr25519 public keys are exactly 32 bytes
+			if sr25519_key_data.len() != 32 {
+				log::warn!(
+					"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+					sr25519_key_data.len()
+				);
+				continue;
+			}
+
+			// TODO: Handle CborBytes (first element of tuple) when needed
+			authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
+		}
+
+		Ok(authority_keys)
+	}
 }

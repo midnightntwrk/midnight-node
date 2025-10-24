@@ -42,7 +42,9 @@ pub use {
 pub mod inherent_provider {
 	use super::*;
 	use crate::data_source::ObservedUtxos;
-	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
+	use midnight_primitives_federated_authority_observation::{
+		FederatedAuthorityData, FederatedAuthorityObservationConfig,
+	};
 	use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
 	use sidechain_domain::McBlockHash;
 
@@ -59,9 +61,10 @@ pub mod inherent_provider {
 	}
 
 	#[async_trait::async_trait]
-	pub trait FederatedAuthorityObservationDataSource<FA = ()>: Send + Sync {
+	pub trait FederatedAuthorityObservationDataSource {
 		async fn get_federated_authority_data(
 			&self,
+			config: &FederatedAuthorityObservationConfig,
 			mc_block_hash: &McBlockHash,
 		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>>;
 	}
