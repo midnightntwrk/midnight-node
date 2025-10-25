@@ -33,9 +33,9 @@ use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestam
 use std::{error::Error, str::FromStr as _, sync::Arc};
 
 use midnight_primitives_mainchain_follower::{
-	FederatedAuthorityObservationDataSource, FederatedAuthorityObservationDataSourceImpl,
-	FederatedAuthorityObservationDataSourceMock, MidnightNativeTokenObservationDataSource,
-	MidnightNativeTokenObservationDataSourceImpl, NativeTokenObservationDataSourceMock,
+	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
+	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
 
 // TODO: Decide if it should be experimental
@@ -45,7 +45,7 @@ use midnight_primitives_mainchain_follower::{
 pub struct DataSources {
 	pub mc_hash: Arc<dyn McHashDataSource + Send + Sync>,
 	pub authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
-	pub native_token_observation: Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
+	pub cnight_observation: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	pub native_token_management: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
@@ -90,7 +90,7 @@ pub async fn create_mock_data_sources(
 		sidechain_rpc: Arc::new(SidechainRpcDataSourceMock::new(block.clone())),
 		mc_hash: Arc::new(McHashDataSourceMock::new(block)),
 		authority_selection: Arc::new(authority_selection_data_source_mock),
-		native_token_observation: Arc::new(NativeTokenObservationDataSourceMock::new()),
+		cnight_observation: Arc::new(CNightObservationDataSourceMock::new()),
 		native_token_management: Arc::new(NativeTokenDataSourceMock::new()),
 		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
 		federated_authority_observation: Arc::new(
@@ -163,7 +163,7 @@ pub async fn create_cached_data_sources(
 		)),
 		mc_hash: Arc::new(McHashDataSourceImpl::new(block.clone(), metrics_opt.clone())),
 		authority_selection: Arc::new(candidates_data_source_cached),
-		native_token_observation: Arc::new(MidnightNativeTokenObservationDataSourceImpl::new(
+		cnight_observation: Arc::new(MidnightCNightObservationDataSourceImpl::new(
 			pool.clone(),
 			metrics_opt.clone(),
 			1000,
@@ -193,11 +193,10 @@ pub async fn create_cached_data_sources(
 }
 
 // Helper for users who only need native token observation data source
-pub async fn create_native_token_observation_data_source(
+pub async fn create_cnight_observation_data_source(
 	cfg: MidnightCfg,
 	metrics_opt: Option<McFollowerMetrics>,
-) -> Result<Arc<dyn MidnightNativeTokenObservationDataSource>, Box<dyn Error + Send + Sync + 'static>>
-{
+) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
@@ -205,7 +204,7 @@ pub async fn create_native_token_observation_data_source(
 	)
 	.await?;
 
-	Ok(Arc::new(MidnightNativeTokenObservationDataSourceImpl::new(
+	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(
 		pool.clone(),
 		metrics_opt.clone(),
 		1000,

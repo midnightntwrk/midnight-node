@@ -11,16 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::mock::sp_runtime::testing::H256;
 use frame_support::sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
-use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use sidechain_domain::*;
 use sp_io::TestExternalities;
+use sp_runtime::testing::H256;
+
+#[cfg(feature = "std")]
+use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -40,16 +42,42 @@ pub mod mock_pallet {
 	pub type LastTokenTransfer<T: Config> = StorageValue<_, NativeTokenAmount, OptionQuery>;
 }
 
-frame_support::construct_runtime!(
-	pub enum Test {
-		System: frame_system,
-		Timestamp: pallet_timestamp,
-		NativeTokenObservation: crate::pallet,
-		Midnight: pallet_midnight,
-		MidnightSystem: pallet_midnight_system,
-		Mock: mock_pallet,
-	}
-);
+#[frame_support::runtime]
+mod runtime {
+	use frame_system::pallet;
+
+	use crate::mock;
+
+	use super::*;
+
+	#[runtime::runtime]
+	#[runtime::derive(
+		RuntimeCall,
+		RuntimeEvent,
+		RuntimeError,
+		RuntimeOrigin,
+		RuntimeFreezeReason,
+		RuntimeHoldReason,
+		RuntimeSlashReason,
+		RuntimeLockId,
+		RuntimeTask,
+		RuntimeViewFunction
+	)]
+	pub struct Test;
+
+	#[runtime::pallet_index(0)]
+	pub type System = frame_system::Pallet<Test>;
+	#[runtime::pallet_index(1)]
+	pub type Timestamp = pallet_timestamp::Pallet<Test>;
+	#[runtime::pallet_index(2)]
+	pub type CNightObservation = pallet_cnight_observation::Pallet<Test>;
+	#[runtime::pallet_index(3)]
+	pub type Midnight = pallet_midnight::Pallet<Test>;
+	#[runtime::pallet_index(4)]
+	pub type MidnightSystem = pallet_midnight_system::Pallet<Test>;
+	#[runtime::pallet_index(5)]
+	pub type Mock = mock_pallet::Pallet<Test>;
+}
 
 pub const SLOT_DURATION: u64 = 6 * 1000;
 
@@ -118,16 +146,17 @@ parameter_types! {
 	pub const MaxRegistrationsPerCardanoAddress: u8 = 100;
 }
 
-impl crate::pallet::Config for Test {
+impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
 impl mock_pallet::Config for Test {}
 
+#[cfg(feature = "std")]
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t: TestExternalities = RuntimeGenesisConfig {
 		system: Default::default(),
-		native_token_observation: Default::default(),
+		c_night_observation: Default::default(),
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: UndeployedNetwork.network_id(),

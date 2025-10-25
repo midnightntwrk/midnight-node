@@ -13,12 +13,10 @@
 
 //! Native Token Observation Inherent Data Provider
 
-use crate::{
-	MidnightNativeTokenObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
-};
-use midnight_primitives_native_token_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, InherentError, NativeTokenObservationApi,
-	TimestampUnixMillis, TokenObservationConfig,
+use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
+	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
@@ -28,7 +26,7 @@ use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
 pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
 
-pub struct MidnightNativeTokenObservationInherentDataProvider {
+pub struct MidnightCNightObservationInherentDataProvider {
 	pub utxos: Vec<ObservedUtxo>,
 	pub next_cardano_position: CardanoPosition,
 }
@@ -40,31 +38,21 @@ pub enum IDPCreationError {
 	#[error("Failed to read native token data from data source. Db sync may need to be synced")]
 	DbSyncDataDiscrepancy,
 	#[error("Failed to call runtime API: {0:?}")]
-	ApiError(ApiError),
+	ApiError(#[from] ApiError),
+	#[error("Failed to decode string as UTF8 (check address values)")]
+	StringDecodeError(#[from] FromUtf8Error),
 	#[error("Failed to retrieve previous MC hash: {0:?}")]
 	McHashError(Box<dyn Error + Send + Sync>),
-	#[error("Onchain asset name or policy id likely invalid: {0:?}")]
-	InvalidOnchainState(FromUtf8Error),
+	#[error("Onchain state for CNight invalid: {0:?}")]
+	InvalidOnchainStateCNight(String),
 }
 
-impl From<ApiError> for IDPCreationError {
-	fn from(err: ApiError) -> Self {
-		Self::ApiError(err)
-	}
-}
-
-impl From<FromUtf8Error> for IDPCreationError {
-	fn from(err: FromUtf8Error) -> Self {
-		Self::InvalidOnchainState(err)
-	}
-}
-
-impl MidnightNativeTokenObservationInherentDataProvider {
+impl MidnightCNightObservationInherentDataProvider {
 	/// Creates inherent data provider only if the pallet is present in the runtime.
 	/// Returns empty data if not.
 	pub async fn new_if_pallet_present<Block, C>(
 		client: Arc<C>,
-		data_source: &(dyn MidnightNativeTokenObservationDataSource + Send + Sync),
+		data_source: &(dyn MidnightCNightObservationDataSource + Send + Sync),
 		parent_hash: <Block as BlockT>::Hash,
 		mc_hash: sidechain_domain::McBlockHash,
 	) -> Result<Self, IDPCreationError>
@@ -72,11 +60,10 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: NativeTokenObservationApi<Block>,
+		C::Api: CNightObservationApi<Block>,
 	{
-		if let Ok(true) = client
-			.runtime_api()
-			.has_api::<dyn NativeTokenObservationApi<Block>>(parent_hash)
+		if let Ok(true) =
+			client.runtime_api().has_api::<dyn CNightObservationApi<Block>>(parent_hash)
 		{
 			Self::new(client, data_source, parent_hash, mc_hash).await
 		} else {
@@ -94,7 +81,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 
 	pub async fn new<Block, C>(
 		client: Arc<C>,
-		data_source: &(dyn MidnightNativeTokenObservationDataSource + Send + Sync),
+		data_source: &(dyn MidnightCNightObservationDataSource + Send + Sync),
 		parent_hash: <Block as BlockT>::Hash,
 		mc_hash: sidechain_domain::McBlockHash,
 	) -> Result<Self, IDPCreationError>
@@ -102,29 +89,27 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: NativeTokenObservationApi<Block>,
+		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
-		let redemption_validator_address = api.get_redemption_validator_address(parent_hash)?;
-		let redemption_validator_address = String::from_utf8(redemption_validator_address)?;
-
-		let mapping_validator_address = api.get_mapping_validator_address(parent_hash)?;
-		let mapping_validator_address = String::from_utf8(mapping_validator_address)?;
-
+		let redemption_validator_address =
+			String::from_utf8(api.get_redemption_validator_address(parent_hash)?)?;
+		let mapping_validator_address =
+			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
 
-		let (policy_id, asset_name) = api.get_native_token_identifier(parent_hash)?;
-		let policy_id = hex::encode(policy_id.clone());
-		let asset_name =
-			String::from_utf8(asset_name.clone()).map_err(IDPCreationError::InvalidOnchainState)?;
-
+		let (cnight_policy_id, cnight_asset_name) = api.get_native_token_identifier(parent_hash)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 
-		let config = TokenObservationConfig {
+		let config = CNightAddresses {
 			mapping_validator_address,
 			redemption_validator_address,
-			policy_id,
-			asset_name,
+			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
+				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
+			})?,
+			cnight_asset_name: cnight_asset_name.try_into().map_err(|_e| {
+				IDPCreationError::InvalidOnchainStateCNight("cnight_asset_name".to_string())
+			})?,
 		};
 
 		let observed_utxos = data_source
@@ -142,7 +127,7 @@ impl MidnightNativeTokenObservationInherentDataProvider {
 }
 
 #[async_trait::async_trait]
-impl sp_inherents::InherentDataProvider for MidnightNativeTokenObservationInherentDataProvider {
+impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDataProvider {
 	async fn provide_inherent_data(
 		&self,
 		inherent_data: &mut sp_inherents::InherentData,

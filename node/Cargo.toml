@@ -29,6 +29,7 @@ futures.workspace = true
 sc-cli.workspace = true
 sc-chain-spec.workspace = true
 sp-core.workspace = true
+sp-std = { workspace = true, features = ["std"] }
 sp-keyring.workspace = true
 sc-keystore.workspace = true
 sc-executor.workspace = true
@@ -78,10 +79,11 @@ midnight-node-ledger-helpers = {workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
-midnight-primitives-native-token-observation  = { workspace = true, default-features = true }
+midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
-pallet-native-token-observation = { workspace = true, default-features = true, features = ["mock"] }
+pallet-cnight-observation = { workspace = true, default-features = true}
+pallet-cnight-observation-mock = { workspace = true, default-features = true}
 mn-ledger.workspace = true
 
 # CLI-specific dependencies
@@ -118,7 +120,7 @@ frame-support.workspace = true
 time-source.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive"] }
 config = "0.14.0"
-serde_valid = "0.24.0"
+serde_valid.workspace = true
 documented.workspace = true
 shell-words = "1.1.0"
 derive-new.workspace = true

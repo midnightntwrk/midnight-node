@@ -3,7 +3,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
-	native_token_observation::{self},
+	c_night_observation::{self},
 };
 use rand::RngCore;
 use subxt::{blocks::ExtrinsicEvents, OnlineClient, SubstrateConfig};
@@ -15,10 +15,13 @@ pub fn new_dust_hex(bytes: usize) -> String {
 	a.iter().map(|b| format!("{:02x}", b)).collect::<String>()
 }
 
-pub async fn subscribe_to_cngd_registration_extrinsic(
+pub async fn subscribe_to_native_token_observation_events(
 	tx_id: &[u8],
 ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
-	println!("Subscribing for registration extrinsic with tx_id: 0x{}", hex::encode(tx_id));
+	println!(
+		"Subscribing for native token observation extrinsic with tx_id: 0x{}",
+		hex::encode(tx_id)
+	);
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 
@@ -38,7 +41,8 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 				let decoded_ext = ext.as_root_extrinsic::<mn_meta::Call>();
 				let runtime_call = decoded_ext.unwrap();
 				match &runtime_call {
-					mn_meta::Call::NativeTokenObservation(e) => if let native_token_observation::Call::process_tokens { utxos, .. } = e {
+					mn_meta::Call::CNightObservation(e) => {
+						if let c_night_observation::Call::process_tokens { utxos, .. } = e {
 							println!(
 								"  NativeTokenObservation::process_tokens called with {} UTXOs",
 								utxos.len()
@@ -49,26 +53,35 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 								for utxo in utxos {
 									let utxo_tx_id = utxo.header.tx_hash.0;
 									if utxo_tx_id == tx_id {
-										println!("*** Found UTXO with matching registration tx hash: 0x{} ***", hex::encode(tx_id));
+										println!(
+											"*** Found UTXO with matching tx hash: 0x{} ***",
+											hex::encode(tx_id)
+										);
 										return Ok(events);
 									} else {
-										println!("Tx hash 0x{} does not match expected registration tx hash 0x{}", hex::encode(utxo_tx_id), hex::encode(tx_id));
+										println!(
+											"Tx hash 0x{} does not match expected tx hash 0x{}",
+											hex::encode(utxo_tx_id),
+											hex::encode(tx_id)
+										);
 									}
 								}
 							}
 						}
+					},
 					_ => {
 						continue;
 					},
 				}
 			}
 		}
-		Err("Did not find registration event".into())
-	}).await;
+		Err("Did not find native token observation event".into())
+	})
+	.await;
 
 	match result {
 		Ok(res) => res,
-		Err(_) => Err("Timeout waiting for registration event".into()),
+		Err(_) => Err("Timeout waiting for native token observation event".into()),
 	}
 }
 
@@ -88,14 +101,14 @@ pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> Strin
 pub async fn query_night_utxo_owners(
 	utxo: String,
 ) -> Result<
-	Option<mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners>,
+	Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	Box<dyn std::error::Error>,
 > {
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 	let nonce = hex::decode(&utxo).unwrap();
 	let storage_address = mn_meta::storage()
-		.native_token_observation()
+		.c_night_observation()
 		.utxo_owners(mn_meta::runtime_types::bounded_collections::bounded_vec::BoundedVec(nonce));
 
 	let owners = api.storage().at_latest().await?.fetch(&storage_address).await?;
@@ -105,13 +118,11 @@ pub async fn query_night_utxo_owners(
 
 pub async fn poll_utxo_owners_until_change(
 	utxo: String,
-	initial_value: Option<
-		mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners,
-	>,
+	initial_value: Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	timeout_secs: u64,
 	poll_interval_ms: u64,
 ) -> Result<
-	Option<mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners>,
+	Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	Box<dyn std::error::Error>,
 > {
 	let start = Instant::now();
