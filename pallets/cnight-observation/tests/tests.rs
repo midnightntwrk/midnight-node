@@ -678,9 +678,6 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let expected_dust_hex = hex::encode(dust_addr.as_slice());
-		let expected_utxo_hex = hex::encode(reg_header.utxo_tx_hash.0);
-
 		// Assert: Registration + MappingAdded both emitted with correct payloads
 		let mut saw_registration = false;
 		let mut saw_mapping_added = false;
@@ -697,11 +694,13 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 			if let mock::RuntimeEvent::CNightObservation(crate::Event::MappingAdded(m)) =
 				&record.event
 			{
-				let expected = Mapping::new(
-					cardano_addr.clone(),
-					expected_dust_hex.clone(),
-					expected_utxo_hex.clone(),
-				);
+				let expected = MappingEntry {
+					cardano_address: cardano_addr.clone(),
+					dust_address: dust_addr.into(),
+					utxo_id: reg_header.utxo_tx_hash.0,
+					utxo_index: reg_header.utxo_index.0,
+				};
+
 				assert_eq!(m, &expected);
 				saw_mapping_added = true;
 			}
@@ -750,9 +749,6 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let expected_dust_hex = hex::encode(dust_addr.as_slice());
-		let expected_removed_utxo_hex = hex::encode(dereg_header.utxo_tx_hash.0);
-
 		let mut saw_deregistration = false;
 		let mut saw_mapping_removed = false;
 
@@ -768,11 +764,13 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 			if let mock::RuntimeEvent::CNightObservation(crate::Event::MappingRemoved(m)) =
 				&record.event
 			{
-				let expected = Mapping::new(
-					cardano_addr.clone(),
-					expected_dust_hex.clone(),
-					expected_removed_utxo_hex.clone(),
-				);
+				let expected = MappingEntry {
+					cardano_address: cardano_addr.clone(),
+					dust_address: dust_addr.into(),
+					utxo_id: reg_header.utxo_tx_hash.0,
+					utxo_index: reg_header.utxo_index.0,
+				};
+
 				assert_eq!(m, &expected);
 				saw_mapping_removed = true;
 			}
