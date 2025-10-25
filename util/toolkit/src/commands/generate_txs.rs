@@ -30,10 +30,10 @@ pub struct GenerateTxsArgs {
 	#[command(flatten)]
 	destination: Destination,
 	// Proof Server Host
-	#[arg(long, short)]
+	#[arg(long, short, global = true)]
 	proof_server: Option<String>,
 	/// Dry-run - don't generate any txs, just print out the settings
-	#[arg(long)]
+	#[arg(long, global = true)]
 	dry_run: bool,
 }
 
