@@ -695,7 +695,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				&record.event
 			{
 				let expected = MappingEntry {
-					cardano_address: cardano_addr.clone().into(),
+					cardano_address: cardano_addr.clone(),
 					dust_address: dust_addr.into(),
 					utxo_id: reg_header.utxo_tx_hash.0,
 					utxo_index: reg_header.utxo_index.0,
@@ -765,7 +765,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				&record.event
 			{
 				let expected = MappingEntry {
-					cardano_address: cardano_addr.clone().into(),
+					cardano_address: cardano_addr.clone(),
 					dust_address: dust_addr.into(),
 					utxo_id: reg_header.utxo_tx_hash.0,
 					utxo_index: reg_header.utxo_index.0,
