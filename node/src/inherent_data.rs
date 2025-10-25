@@ -22,7 +22,7 @@ use midnight_node_runtime::{
 	CrossChainPublic,
 	opaque::{Block, SessionKeys},
 };
-use midnight_primitives_native_token_observation::NativeTokenObservationApi;
+use midnight_primitives_cnight_observation::CNightObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
@@ -43,10 +43,8 @@ use std::error::Error;
 use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
-	FederatedAuthorityObservationDataSource, MidnightNativeTokenObservationDataSource,
-	idp::{
-		FederatedAuthorityInherentDataProvider, MidnightNativeTokenObservationInherentDataProvider,
-	},
+	FederatedAuthorityObservationDataSource, MidnightCNightObservationDataSource,
+	idp::{FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider},
 };
 
 //#[cfg(feature = "experimental")]
@@ -58,8 +56,7 @@ pub(crate) struct ProposalCIDP<T> {
 	client: Arc<T>,
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
-	native_token_observation_data_source:
-		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
+	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
@@ -76,7 +73,7 @@ where
 			AuthoritySelectionInputs,
 			ScEpochNumber,
 		>,
-	T::Api: NativeTokenObservationApi<Block>,
+	T::Api: CNightObservationApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
 {
 	type InherentDataProviders = (
@@ -84,7 +81,8 @@ where
 		sp_timestamp::InherentDataProvider,
 		McHashIDP,
 		AriadneIDP,
-		MidnightNativeTokenObservationInherentDataProvider,
+		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
+		MidnightCNightObservationInherentDataProvider,=
 		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 	);
@@ -99,7 +97,7 @@ where
 			client,
 			mc_hash_data_source,
 			authority_selection_data_source,
-			native_token_observation_data_source,
+			cnight_observation_data_source,
 			governed_map_data_source,
 			federated_authority_observation_data_source,
 		} = self;
@@ -134,9 +132,9 @@ where
 		)?;
 		 */
 
-		let native_token_observation = MidnightNativeTokenObservationInherentDataProvider::new(
+		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
 			client.clone(),
-			native_token_observation_data_source.as_ref(),
+			cnight_observation_data_source.as_ref(),
 			parent_hash,
 			mc_hash.mc_hash(),
 		)
@@ -164,8 +162,7 @@ where
 			ariadne_data_provider,
 			//#[cfg(feature = "experimental")]
 			//block_beneficiary_provider,
-			native_token_observation,
-			//native_token_management,
+			cnight_observation,
 			governed_map,
 			federated_authority,
 		))
@@ -179,8 +176,7 @@ pub struct VerifierCIDP<T> {
 	client: Arc<T>,
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
-	native_token_observation_data_source:
-		Arc<dyn MidnightNativeTokenObservationDataSource + Send + Sync>,
+	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
@@ -202,13 +198,13 @@ where
 			AuthoritySelectionInputs,
 			ScEpochNumber,
 		>,
-	T::Api: NativeTokenObservationApi<Block>,
+	T::Api: CNightObservationApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_timestamp::InherentDataProvider,
 		AriadneIDP,
-		MidnightNativeTokenObservationInherentDataProvider,
+		MidnightCNightObservationInherentDataProvider,
 		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 	);
@@ -223,7 +219,7 @@ where
 			client,
 			mc_hash_data_source,
 			authority_selection_data_source,
-			native_token_observation_data_source,
+			cnight_observation_data_source,
 			governed_map_data_source,
 			federated_authority_observation_data_source,
 		} = self;
@@ -256,9 +252,9 @@ where
 		)
 		.await?;
 
-		let native_token_observation = MidnightNativeTokenObservationInherentDataProvider::new(
+		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
 			client.clone(),
-			native_token_observation_data_source.as_ref(),
+			cnight_observation_data_source.as_ref(),
 			parent_hash,
 			mc_hash.clone(),
 		)
@@ -282,8 +278,7 @@ where
 		Ok((
 			timestamp,
 			ariadne_data_provider,
-			native_token_observation,
-			// native_token_management,
+			cnight_observation,
 			governed_map,
 			federated_authority,
 		))

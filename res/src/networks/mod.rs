@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use pallet_cnight_observation::config::CNightGenesis;
 use {
 	serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer},
 	sp_core::crypto::CryptoBytes,
@@ -206,7 +206,7 @@ pub trait MidnightNetwork {
 	fn genesis_utxo(&self) -> &str;
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
-	fn cnight_generates_dust_config(&self) -> TokenObservationConfig;
+	fn cnight_genesis(&self) -> CNightGenesis;
 	fn council(&self) -> InitialFederedatedAuthority;
 	fn technical_committee(&self) -> InitialFederedatedAuthority;
 

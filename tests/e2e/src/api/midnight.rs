@@ -3,7 +3,7 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
-	native_token_observation::{self},
+	c_night_observation::{self},
 };
 use rand::RngCore;
 use subxt::{blocks::ExtrinsicEvents, OnlineClient, SubstrateConfig};
@@ -41,8 +41,8 @@ pub async fn subscribe_to_native_token_observation_events(
 				let decoded_ext = ext.as_root_extrinsic::<mn_meta::Call>();
 				let runtime_call = decoded_ext.unwrap();
 				match &runtime_call {
-					mn_meta::Call::NativeTokenObservation(e) => {
-						if let native_token_observation::Call::process_tokens { utxos, .. } = e {
+					mn_meta::Call::CNightObservation(e) => {
+						if let c_night_observation::Call::process_tokens { utxos, .. } = e {
 							println!(
 								"  NativeTokenObservation::process_tokens called with {} UTXOs",
 								utxos.len()
@@ -101,14 +101,14 @@ pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> Strin
 pub async fn query_night_utxo_owners(
 	utxo: String,
 ) -> Result<
-	Option<mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners>,
+	Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	Box<dyn std::error::Error>,
 > {
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
 	let nonce = hex::decode(&utxo).unwrap();
 	let storage_address = mn_meta::storage()
-		.native_token_observation()
+		.c_night_observation()
 		.utxo_owners(mn_meta::runtime_types::bounded_collections::bounded_vec::BoundedVec(nonce));
 
 	let owners = api.storage().at_latest().await?.fetch(&storage_address).await?;
@@ -118,13 +118,11 @@ pub async fn query_night_utxo_owners(
 
 pub async fn poll_utxo_owners_until_change(
 	utxo: String,
-	initial_value: Option<
-		mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners,
-	>,
+	initial_value: Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	timeout_secs: u64,
 	poll_interval_ms: u64,
 ) -> Result<
-	Option<mn_meta::native_token_observation::storage::types::utxo_owners::UtxoOwners>,
+	Option<mn_meta::c_night_observation::storage::types::utxo_owners::UtxoOwners>,
 	Box<dyn std::error::Error>,
 > {
 	let start = Instant::now();
