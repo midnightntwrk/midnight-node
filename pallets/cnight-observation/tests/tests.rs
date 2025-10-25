@@ -1,3 +1,6 @@
+use frame_support::inherent::InherentData;
+use midnight_primitives_cnight_observation::INHERENT_IDENTIFIER;
+use midnight_primitives_cnight_observation::MidnightObservationTokenMovement;
 // This file is part of midnight-node.
 // Copyright (C) 2025 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
@@ -10,15 +13,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-use self::mock::NativeTokenObservation;
-use self::mock::Test;
-use crate::mock::new_test_ext;
-use crate::mock::{RuntimeCall, RuntimeEvent, System};
-
-use crate::*;
+use frame_support::pallet_prelude::*;
 use frame_support::sp_runtime::traits::Dispatchable;
-// use frame_support::testing_prelude::bounded_vec;
 use frame_support::{BoundedVec, assert_ok};
 use midnight_node_ledger::types::BlockContext;
 use midnight_node_ledger_helpers::{
@@ -26,12 +22,18 @@ use midnight_node_ledger_helpers::{
 	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+use midnight_primitives_cnight_observation::{CardanoPosition, TimestampUnixMillis};
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
 };
-use midnight_primitives_native_token_observation::TimestampUnixMillis;
+use pallet_cnight_observation::*;
+use pallet_cnight_observation_mock::mock::{
+	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
+};
 use rand::prelude::*;
+use sp_core::ConstU32;
+use sp_core::Get;
 use test_log::test;
 
 fn create_inherent(
@@ -105,11 +107,12 @@ fn dust_address() -> [u8; 32] {
 }
 
 // Onchain cardano address
-fn cardano_address(input: &[u8]) -> BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>> {
-	testbvec::<ConstU32<MAX_CARDANO_ADDR_LEN>>(input, None)
+fn cardano_address(input: &[u8]) -> BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>> {
+	testbvec::<ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>(input, None)
 }
 
-fn test_wallet_pairing() -> (BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>, [u8; 32]) {
+fn test_wallet_pairing() -> (BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>, [u8; 32])
+{
 	(cardano_address(b"cardano1"), dust_address())
 }
 
@@ -173,9 +176,9 @@ fn asset_create_should_emit_valid_event_if_registered() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		// Confirm the expected SystemTxCreateUtxo event was emitted
@@ -240,9 +243,9 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		// Confirm the expected SystemTxCreateUtxo event was emitted
@@ -296,9 +299,9 @@ fn redemption_create_should_emit_valid_event_if_registered() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		// Confirm the expected SystemTxCreateUtxo event was emitted
@@ -362,9 +365,9 @@ fn redemption_destroy_should_emit_valid_event_if_registered() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		// Confirm the expected SystemTxCreateUtxo event was emitted
@@ -409,9 +412,9 @@ fn process_tokens_should_not_emit_valid_utxo_event_if_not_registered() {
 		}];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let found = frame_system::Pallet::<Test>::events().iter().any(|record| {
@@ -454,9 +457,9 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let stored: Vec<DustAddress> = Mappings::<Test>::get(cardano_addr.clone())
@@ -492,9 +495,9 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		}];
 
 		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		// Advance block and clear events
@@ -512,13 +515,13 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		}];
 
 		let inherent_data = create_inherent(utxos, test_position(5, 0));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let registration_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::Registration(reg)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::Registration(reg)) =
 				&record.event
 			{
 				let expected = Registration::new(cardano_addr.clone(), dust_addr.clone().to_vec());
@@ -556,13 +559,13 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(5, 3));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let registration_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::Registration(reg)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::Registration(reg)) =
 				&record.event
 			{
 				let expected = Registration::new(cardano_addr.clone(), dust_addr.clone().to_vec());
@@ -625,16 +628,16 @@ fn two_registrations_in_same_block_emit_no_registered_event() {
 		];
 
 		let inherent_data = create_inherent(utxos, test_position(5, 3));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		NativeTokenObservation::on_initialize(1);
-		NativeTokenObservation::on_finalize(1);
+		CNightObservation::on_initialize(1);
+		CNightObservation::on_finalize(1);
 
 		let saw_registered = any_event(|e| {
-			matches!(e, RuntimeEvent::NativeTokenObservation(crate::Event::Registration { .. }))
+			matches!(e, RuntimeEvent::CNightObservation(crate::Event::Registration { .. }))
 		});
 		assert!(
 			!saw_registered,
@@ -646,7 +649,7 @@ fn two_registrations_in_same_block_emit_no_registered_event() {
 			.filter(|r| {
 				matches!(
 					r.event,
-					RuntimeEvent::NativeTokenObservation(crate::Event::MappingAdded { .. })
+					RuntimeEvent::CNightObservation(crate::Event::MappingAdded { .. })
 				)
 			})
 			.count();
@@ -670,9 +673,9 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 		}];
 
 		let inherent_data = create_inherent(utxos, test_position(10, 1));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let expected_dust_hex = hex::encode(dust_addr.as_slice());
@@ -683,7 +686,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 		let mut saw_mapping_added = false;
 
 		for record in frame_system::Pallet::<Test>::events() {
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::Registration(reg)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::Registration(reg)) =
 				&record.event
 			{
 				let expected = Registration::new(cardano_addr.clone(), dust_addr.to_vec());
@@ -691,7 +694,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				saw_registration = true;
 			}
 
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::MappingAdded(m)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::MappingAdded(m)) =
 				&record.event
 			{
 				let expected = Mapping::new(
@@ -723,9 +726,9 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 			}),
 		}];
 		let inherent_data = create_inherent(utxos, test_position(20, 1));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		System::set_block_number(System::block_number() + 1);
@@ -742,9 +745,9 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 			}),
 		}];
 		let inherent_data = create_inherent(utxos, test_position(21, 1));
-		let call = NativeTokenObservation::create_inherent(&inherent_data)
+		let call = CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
-		let call = RuntimeCall::NativeTokenObservation(call);
+		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
 		let expected_dust_hex = hex::encode(dust_addr.as_slice());
@@ -754,7 +757,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let mut saw_mapping_removed = false;
 
 		for record in frame_system::Pallet::<Test>::events() {
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::Deregistration(d)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::Deregistration(d)) =
 				&record.event
 			{
 				let expected = Deregistration::new(cardano_addr.clone(), dust_addr.to_vec());
@@ -762,7 +765,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				saw_deregistration = true;
 			}
 
-			if let mock::RuntimeEvent::NativeTokenObservation(crate::Event::MappingRemoved(m)) =
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::MappingRemoved(m)) =
 				&record.event
 			{
 				let expected = Mapping::new(
@@ -828,7 +831,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		let re_registered_found = events.iter().any(|record| {
 // 			matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(crate::Event::Registered(e))
+// 				mock::RuntimeEvent::CNightObservation(crate::Event::Registered(e))
 // 					if e.0 == cardano_addr
 // 			)
 // 		});
@@ -874,7 +877,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			cmst_header
 // 		));
 //
-// 		let updated = NativeTokenObservation::get_registrations_for(cardano_addr.clone());
+// 		let updated = CNightObservation::get_registrations_for(cardano_addr.clone());
 //
 // 		// Assert it no longer includes dust2
 // 		assert!(!updated.contains(&dust_address(b"dust2")), "dust2 should be removed");
@@ -904,10 +907,10 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		> = bounded_vec![dust_address(b"dustA"), dust_address(b"dustB")];
 //
 // 		Registrations::<Test>::insert(addr.clone(), storage_values_before);
-// 		assert!(NativeTokenObservation::is_registered(&addr));
+// 		assert!(CNightObservation::is_registered(&addr));
 // 		// Registrations are unique by cardano wallet address. This is considered invalid
 // 		Registrations::<Test>::insert(addr.clone(), storage_values_after);
-// 		assert!(!NativeTokenObservation::is_registered(&addr));
+// 		assert!(!CNightObservation::is_registered(&addr));
 // 	});
 // }
 //
@@ -929,7 +932,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			cmst_header.clone()
 // 		));
 //
-// 		let updated = NativeTokenObservation::get_registrations_for(cardano_addr.clone());
+// 		let updated = CNightObservation::get_registrations_for(cardano_addr.clone());
 // 		assert!(updated.contains(&dust_address(b"dust-0")));
 //
 // 		let new_dust = dust_address(b"dust-1");
@@ -946,7 +949,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			));
 // 		}
 //
-// 		let updated = NativeTokenObservation::get_registrations_for(cardano_addr.clone());
+// 		let updated = CNightObservation::get_registrations_for(cardano_addr.clone());
 //
 // 		// Expect dust-0 to be evicted
 // 		assert!(!updated.contains(&dust_address(b"dust-0")), "dust-0 should have been evicted");
@@ -1005,7 +1008,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			.filter(|record| {
 // 				matches!(
 // 					&record.event,
-// 					mock::RuntimeEvent::NativeTokenObservation(crate::Event::Registered(e))
+// 					mock::RuntimeEvent::CNightObservation(crate::Event::Registered(e))
 // 					if e.0 == cardano_addr
 // 				)
 // 			})
@@ -1054,7 +1057,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		let found = events.iter().any(|record| {
 // 			matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(
+// 				mock::RuntimeEvent::CNightObservation(
 // 					crate::Event::RemovedOld((addr, _))
 // 				) if addr == &cardano_addr
 // 			)
@@ -1093,7 +1096,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		let found = events.iter().any(|record| {
 // 			matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(
+// 				mock::RuntimeEvent::CNightObservation(
 // 					crate::Event::AttemptedRemoveNonexistantElement
 // 				)
 // 			)
@@ -1126,7 +1129,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		assert!(
 // 			events.iter().any(|record| matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(crate::Event::InvalidCardanoAddress)
+// 				mock::RuntimeEvent::CNightObservation(crate::Event::InvalidCardanoAddress)
 // 			)),
 // 			"Expected InvalidCardanoAddress event"
 // 		);
@@ -1150,7 +1153,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		assert!(
 // 			events.iter().any(|record| matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(crate::Event::InvalidDustAddress)
+// 				mock::RuntimeEvent::CNightObservation(crate::Event::InvalidDustAddress)
 // 			)),
 // 			"Expected InvalidDustAddress event"
 // 		);
@@ -1189,7 +1192,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			let found = events.iter().any(|record| {
 // 				matches!(
 // 					&record.event,
-// 					mock::RuntimeEvent::NativeTokenObservation(crate::Event::Added((addr, _)))
+// 					mock::RuntimeEvent::CNightObservation(crate::Event::Added((addr, _)))
 // 					if addr == cardano
 // 				)
 // 			});
@@ -1217,7 +1220,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		let added_found = events_after.iter().any(|record| {
 // 			matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(crate::Event::Added((addr, _)))
+// 				mock::RuntimeEvent::CNightObservation(crate::Event::Added((addr, _)))
 // 				if addr == &extra_cardano
 // 			)
 // 		});
@@ -1263,7 +1266,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 			let found = events.iter().any(|record| {
 // 				matches!(
 // 					&record.event,
-// 					mock::RuntimeEvent::NativeTokenObservation(crate::Event::Removed((addr, _)))
+// 					mock::RuntimeEvent::CNightObservation(crate::Event::Removed((addr, _)))
 // 					if addr == &cardano_bounded
 // 				)
 // 			});
@@ -1288,7 +1291,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		let removed_found = events_after.iter().any(|record| {
 // 			matches!(
 // 				&record.event,
-// 				mock::RuntimeEvent::NativeTokenObservation(crate::Event::Removed((addr, _)))
+// 				mock::RuntimeEvent::CNightObservation(crate::Event::Removed((addr, _)))
 // 				if addr == &cardano_addr
 // 			)
 // 		});
