@@ -48,8 +48,8 @@ services:
     environment:
       <<: *common-variables
       ARGS: >
-        --port 30334 
-        --unsafe-rpc-external 
+        --port 30334
+        --unsafe-rpc-external
 
   node0:
     image: "${NODE_IMAGE}"
@@ -63,8 +63,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30335
 
   node1:
@@ -79,8 +79,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30336
 
   node2:
@@ -95,8 +95,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30337
 
   node3:
@@ -111,8 +111,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30338
 
   node4:
@@ -127,8 +127,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30339
 
   node5:
@@ -143,8 +143,8 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30340
 
   node6:
@@ -159,14 +159,14 @@ services:
     environment:
       <<: [*common-variables, *validator-variables]
       ARGS: >
-        --validator 
-        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --validator
+        --bootnodes /dns/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30341
 
   # NOTE: Don't do this in production! Secret files should be mounted instead.
   # https://docs.docker.com/engine/swarm/secrets/#use-secrets-in-compose
   generate-secrets:
-    image: "debian:bookworm-slim"
+    image: "debian:trixie-slim"
     volumes:
       - boot-node-secrets:/secrets/boot-node
       - node-0-secrets:/secrets/node-0
