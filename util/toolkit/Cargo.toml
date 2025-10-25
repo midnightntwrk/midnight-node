@@ -20,7 +20,7 @@ midnight-node-ledger-helpers = { workspace = true, features = [ "std", "can-pani
 midnight-node-metadata.workspace = true
 subxt.workspace = true
 tokio.workspace = true
-hex = "0.4.3"
+hex = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand.workspace = true

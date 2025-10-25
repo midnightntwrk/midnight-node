@@ -83,8 +83,8 @@ midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-version.workspace = true
-pallet-native-token-observation.workspace = true
-midnight-primitives-native-token-observation.workspace = true
+pallet-cnight-observation.workspace = true
+midnight-primitives-cnight-observation.workspace = true
 pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 
@@ -119,7 +119,7 @@ std = [
     "pallet-mmr/std",
     "pallet-native-token-management/std",
     "pallet-version/std",
-    "pallet-native-token-observation/std",
+    "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
     "pallet-sudo/std",
@@ -164,7 +164,7 @@ std = [
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
-    "midnight-primitives-native-token-observation/std",
+    "midnight-primitives-cnight-observation/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [

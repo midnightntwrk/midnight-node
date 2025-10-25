@@ -1926,7 +1926,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5551,7 +5551,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7154,15 +7154,16 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-primitives-cnight-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
- "midnight-primitives-native-token-observation",
  "mmr-gadget",
  "mmr-rpc",
+ "pallet-cnight-observation",
+ "pallet-cnight-observation-mock",
  "pallet-governed-map",
  "pallet-midnight",
  "pallet-midnight-rpc",
- "pallet-native-token-observation",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "parity-scale-codec",
@@ -7219,6 +7220,7 @@ dependencies = [
  "sp-session-validator-management",
  "sp-session-validator-management-query",
  "sp-sidechain",
+ "sp-std",
  "sp-timestamp",
  "sqlx",
  "substrate-build-script-utils",
@@ -7232,6 +7234,7 @@ dependencies = [
 name = "midnight-node-e2e"
 version = "0.1.0"
 dependencies = [
+ "blake2 0.10.6",
  "config 0.13.4",
  "hex",
  "midnight-node-metadata",
@@ -7341,10 +7344,10 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-base-crypto 1.0.0-alpha.4",
  "midnight-ledger 6.1.0-alpha.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.4)",
- "midnight-primitives-native-token-observation",
  "midnight-serialize 1.0.0-alpha.4",
  "midnight-storage 1.0.0-alpha.4",
  "midnight-transient-crypto 1.0.0-alpha.4",
+ "pallet-cnight-observation",
  "sc-service",
  "serde",
  "serde_json",
@@ -7371,10 +7374,11 @@ dependencies = [
  "frame-try-runtime",
  "log",
  "midnight-node-ledger",
- "midnight-primitives-native-token-observation",
+ "midnight-primitives-cnight-observation",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
+ "pallet-cnight-observation",
  "pallet-collective",
  "pallet-federated-authority",
  "pallet-federated-authority-observation",
@@ -7386,7 +7390,6 @@ dependencies = [
  "pallet-migrations",
  "pallet-mmr",
  "pallet-native-token-management",
- "pallet-native-token-observation",
  "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
@@ -7605,6 +7608,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-cnight-observation"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "serde_valid",
+ "sidechain-domain",
+ "sp-api",
+ "sp-inherents",
+ "sqlx",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "midnight-primitives-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
@@ -7631,15 +7650,13 @@ dependencies = [
  "async-trait",
  "cardano-serialization-lib 14.1.2",
  "derive-new",
- "hex",
  "log",
+ "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
- "midnight-primitives-native-token-observation",
  "parity-scale-codec",
  "partner-chains-db-sync-data-sources",
  "rand 0.9.2",
  "scale-info",
- "serde",
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",
@@ -7651,21 +7668,6 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
-]
-
-[[package]]
-name = "midnight-primitives-native-token-observation"
-version = "0.1.0"
-dependencies = [
- "hex",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-api",
- "sp-inherents",
- "sqlx",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -9182,6 +9184,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-cnight-observation"
+version = "1.4.0"
+dependencies = [
+ "derive-new",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "midnight-node-ledger",
+ "midnight-node-ledger-helpers",
+ "midnight-node-res",
+ "midnight-primitives",
+ "midnight-primitives-cnight-observation",
+ "midnight-primitives-mainchain-follower",
+ "pallet-cnight-observation-mock",
+ "pallet-midnight-system",
+ "parity-scale-codec",
+ "rand 0.8.5",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "serde_valid",
+ "sidechain-domain",
+ "sp-core",
+ "sp-io",
+ "sp-std",
+ "tempfile",
+ "test-log",
+]
+
+[[package]]
+name = "pallet-cnight-observation-mock"
+version = "1.4.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "midnight-node-ledger",
+ "midnight-node-res",
+ "midnight-primitives",
+ "pallet-cnight-observation",
+ "pallet-midnight",
+ "pallet-midnight-system",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-io",
+]
+
+[[package]]
 name = "pallet-collective"
 version = "41.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506#6fd693e6d9cfa46cd2acbcb41cd5b0451a62d67c"
@@ -9408,35 +9460,6 @@ dependencies = [
  "scale-info",
  "sidechain-domain",
  "sp-native-token-management",
-]
-
-[[package]]
-name = "pallet-native-token-observation"
-version = "1.4.0"
-dependencies = [
- "derive-new",
- "frame-support",
- "frame-system",
- "hex",
- "log",
- "midnight-node-ledger",
- "midnight-node-ledger-helpers",
- "midnight-node-res",
- "midnight-primitives",
- "midnight-primitives-mainchain-follower",
- "midnight-primitives-native-token-observation",
- "pallet-midnight",
- "pallet-midnight-system",
- "pallet-timestamp",
- "parity-scale-codec",
- "rand 0.8.5",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-core",
- "sp-io",
- "tempfile",
- "test-log",
 ]
 
 [[package]]
@@ -11198,7 +11221,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11503,9 +11526,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.1"
+version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
+checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -11515,9 +11538,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.9"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
+checksum = "5276caf25ac86c8d810222b3dbb938e512c55c6831a10f3e6ed1c93b84041f1c"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -11926,7 +11949,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12006,7 +12029,7 @@ dependencies = [
  "security-framework 3.2.0",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -13837,12 +13860,12 @@ dependencies = [
 
 [[package]]
 name = "serde_valid"
-version = "0.24.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32c92fa3e7abc9108490d7f9ac752008e12297d5a969511a66fd0a42fbcaf1cd"
+checksum = "de7f50148816c0fbeab7089476c91dbfae94bd891cc4e2c535f30b54ceb90ad2"
 dependencies = [
  "indexmap 2.10.0",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "num-traits",
  "once_cell",
  "paste",
@@ -13857,13 +13880,13 @@ dependencies = [
 
 [[package]]
 name = "serde_valid_derive"
-version = "0.24.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02529dfc96005e7e0d2dd5a12a7d9664cf51be96a5b1a58a496e8080020711ee"
+checksum = "c030af8a53ec37caf1ed98e5ce02cf7d4f65e637e8eaa089ed785689e86c9046"
 dependencies = [
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "paste",
- "proc-macro-error",
+ "proc-macro-error2",
  "proc-macro2",
  "quote 1.0.40",
  "strsim",
@@ -13872,9 +13895,9 @@ dependencies = [
 
 [[package]]
 name = "serde_valid_literal"
-version = "0.24.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b385e1d2d8fd49695e9ae387ebf9bde548fe8dcecd1cf5f164f9c2a2b4a3c3"
+checksum = "50b2fb68eefc69006cebe74b0f672ae68464c72b150dacd00d0877227c1300f7"
 dependencies = [
  "paste",
  "regex",
@@ -18459,7 +18482,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

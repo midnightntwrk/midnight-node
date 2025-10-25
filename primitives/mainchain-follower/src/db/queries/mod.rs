@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod cnight_observation;
 pub mod federated_authority_observation;
-pub mod native_token_observation;
 
-pub use native_token_observation::*;
+pub use cnight_observation::*;

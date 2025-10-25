@@ -137,6 +137,75 @@ pub async fn register(
 	response.transaction.id
 }
 
+pub async fn deregister(
+	signing_wallet: &Wallet,
+	tx_in: &OgmiosUtxo,
+	register_tx: &OgmiosUtxo,
+	collateral_utxo: &OgmiosUtxo,
+) -> [u8; 32] {
+	let validator_address = get_mapping_validator_address();
+	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
+	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
+	let auth_token_policy_id = get_auth_token_policy_id();
+	let send_assets = vec![Asset::new_from_str("lovelace", "20000000")];
+	let cfg = load_config();
+	let minting_script = load_cbor(&cfg.auth_token_policy_file);
+	let network = Network::Custom(get_local_env_cost_models());
+	let mapping_validator_cbor = &load_cbor(&cfg.mapping_validator_policy_file);
+	let register_asset_tx_vector = build_asset_vector(register_tx);
+	println!("Register tx assets: {:?}", register_asset_tx_vector);
+	let script_hash = whisky::get_script_hash(mapping_validator_cbor, LanguageVersion::V2);
+	println!("Mapping validator script hash: {:?}", script_hash);
+
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(tx_in),
+			&payment_addr,
+		)
+		.spending_plutus_script_v2()
+		.tx_in(
+			&hex::encode(register_tx.transaction.id),
+			register_tx.index.into(),
+			&build_asset_vector(register_tx),
+			&validator_address,
+		)
+		.tx_in_inline_datum_present()
+		.tx_in_script(mapping_validator_cbor)
+		.tx_in_redeemer_value(&WRedeemer {
+			data: WData::JSON(datum),
+			ex_units: Budget { mem: 3765700, steps: 941562940 },
+		})
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(collateral_utxo),
+			&payment_addr,
+		)
+		.tx_out(&payment_addr, &send_assets)
+		.mint_plutus_script_v2()
+		.mint(-1, &auth_token_policy_id, "")
+		.minting_script(&minting_script)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			ex_units: Budget { mem: 3765700, steps: 941562940 },
+		})
+		.change_address(&payment_addr)
+		.complete_sync(None)
+		.unwrap();
+
+	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex());
+	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let client = get_ogmios_client().await;
+	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	println!("Transaction submitted, response: {:?}", response);
+	response.transaction.id
+}
+
 pub fn create_wallet() -> Wallet {
 	let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
 	let phrase = mnemonic.phrase();
@@ -177,4 +246,59 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 		Some(utxo) => utxo,
 		None => panic!("Wallet UTXO not found after funding"),
 	}
+}
+
+pub async fn mint_tokens(
+	wallet: &Wallet,
+	policy_id: &str,
+	asset_name: &str,
+	amount: &str,
+	minting_script: &str,
+) -> [u8; 32] {
+	let network = Network::Custom(get_local_env_cost_models());
+	let payment_addr = get_cardano_address_as_bech32(wallet);
+	let collateral_utxo = make_collateral(&payment_addr).await;
+
+	let client = get_ogmios_client().await;
+	let utxos = client.query_utxos(std::slice::from_ref(&payment_addr)).await.unwrap();
+	assert!(!utxos.is_empty(), "No UTXOs found for payment address {}", payment_addr);
+	let utxo = utxos
+		.iter()
+		.max_by_key(|u| u.value.lovelace)
+		.expect("No UTXO with lovelace found");
+	let input_tx_hash = hex::encode(utxo.transaction.id);
+	let input_index = utxo.index;
+	let input_assets = build_asset_vector(utxo);
+
+	let assets =
+		vec![Asset::new_from_str("lovelace", "1500000"), Asset::new_from_str(policy_id, amount)];
+
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		.tx_in(&input_tx_hash, input_index.into(), &input_assets, &payment_addr)
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(&collateral_utxo),
+			&payment_addr,
+		)
+		.tx_out(&payment_addr, &assets)
+		.mint_plutus_script_v2()
+		.mint(amount.parse().unwrap(), policy_id, asset_name)
+		.minting_script(minting_script)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			ex_units: Budget { mem: 376570, steps: 94156294 },
+		})
+		.change_address(&payment_addr)
+		.complete_sync(None)
+		.unwrap();
+
+	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	println!("Transaction submitted, response: {:?}", response);
+	response.transaction.id
 }
