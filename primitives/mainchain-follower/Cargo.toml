@@ -6,10 +6,9 @@ description = "Extensions to Partnerchains mainchain follower"
 license-file.workspace = true
 
 [dependencies]
-hex = { workspace = true, default-features = false }
 sp-std.workspace = true
 parity-scale-codec.workspace = true
-midnight-primitives-native-token-observation.workspace = true
+midnight-primitives-cnight-observation.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 async-trait = { workspace = true, optional = true }
 sidechain-domain.workspace = true
@@ -24,7 +23,6 @@ cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { workspace = true,  optional = true, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
-serde = { workspace = true , optional = true }
 scale-info.workspace = true
 log.workspace = true
 rand = { version = "0.9.1", default-features = false }
@@ -51,9 +49,7 @@ std = [
     "cardano-serialization-lib",
     "sqlx",
     "log/std",
-    "serde",
     "partner-chains-db-sync-data-sources",
-    "hex/std",
     "rand/std",
     "rand/thread_rng",
 ]

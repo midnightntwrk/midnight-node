@@ -35,7 +35,6 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
-| Build cNight genesis                                                 | ⏳       |
 
 
 ## Usage

@@ -32,6 +32,7 @@ pub trait EnsureFromIdentity<O> {
 	/// On success, returns the pallet index of the authority that matched.
 	fn ensure_from_bodies(o: O) -> Result<AuthId, O>;
 
+	#[allow(clippy::result_unit_err)]
 	#[cfg(feature = "runtime-benchmarks")]
 	fn try_successful_origin() -> Result<O, ()>;
 }

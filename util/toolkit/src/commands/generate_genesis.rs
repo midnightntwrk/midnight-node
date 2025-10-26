@@ -3,10 +3,20 @@ use midnight_node_toolkit::{
 	cli_parsers::{self as cli},
 	network_as_str,
 };
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use midnight_node_ledger_helpers::{NetworkId, Serializable, Tagged, WalletSeed, serialize};
+use midnight_node_ledger_helpers::{
+	NetworkId, Serializable, SystemTransaction, Tagged, WalletSeed,
+	midnight_serialize::tagged_deserialize, serialize,
+};
 use midnight_node_toolkit::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
+
+#[derive(Deserialize)]
+pub struct CNightGeneratesDustConfig {
+	#[serde(with = "hex")]
+	system_tx: Vec<u8>,
+}
 
 #[derive(Args)]
 pub struct GenerateGenesisArgs {
@@ -30,6 +40,10 @@ pub struct GenerateGenesisArgs {
 	/// File containing the wallet seeds to fund
 	#[arg(long)]
 	seeds_file: PathBuf,
+	/// File containing cNight generates Dust config. If a system_tx exists in this file, it is
+	/// applied to the LedgerState
+	#[arg(long)]
+	cnight_generates_dust_config: Option<PathBuf>,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -64,9 +78,25 @@ pub async fn execute(
 		})
 		.collect();
 
-	let genesis =
-		GenesisGenerator::new(args.nonce_seed, network, args.proof_server, args.funding, &seeds?)
-			.await?;
+	// Parse the seeds file
+	let cnight_system_tx: Option<SystemTransaction> =
+		if let Some(filepath) = args.cnight_generates_dust_config {
+			let json_str = std::fs::read_to_string(filepath)?;
+			let config: CNightGeneratesDustConfig = serde_json::from_str(&json_str)?;
+			Some(tagged_deserialize(&mut &config.system_tx[..])?)
+		} else {
+			None
+		};
+
+	let genesis = GenesisGenerator::new(
+		args.nonce_seed,
+		network,
+		args.proof_server,
+		args.funding,
+		&seeds?,
+		cnight_system_tx,
+	)
+	.await?;
 
 	let genesis_state_path = dir.join(format!("genesis_state_{suffix}.mn"));
 	serialize_and_write(&genesis.state, &genesis_state_path)?;

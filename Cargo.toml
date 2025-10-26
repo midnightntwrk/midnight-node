@@ -6,6 +6,8 @@ members = [
     "metadata",
     "node",
     "pallets/midnight",
+    "pallets/cnight-observation",
+    "pallets/cnight-observation/mock",
     "pallets/midnight-system",
     "pallets/version",
     "primitives/midnight",
@@ -76,7 +78,8 @@ midnight-node-res = { path = "res", default-features = false }
 pallet-midnight = { path = "pallets/midnight", default-features = false }
 pallet-midnight-system = { path = "pallets/midnight-system", default-features = false }
 pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false }
-pallet-native-token-observation = { path = "pallets/native-token-observation", default-features = false }
+pallet-cnight-observation = { path = "pallets/cnight-observation", default-features = false }
+pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
@@ -86,7 +89,7 @@ midnight-node-runtime = { path = "runtime", default-features = false }
 midnight-primitives = { path = "primitives/midnight", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
-midnight-primitives-native-token-observation = { path = "primitives/native-token-observation", default-features = false }
+midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 
 runtime-common = { path = "runtime/common", default-features = false }
@@ -229,6 +232,7 @@ hex = { default-features = false, version = "0.4.3" }
 hex-literal = { default-features = false, version = "0.4.1" }
 serde = { default-features = false, version = "1.0.188" }
 serde_json = { default-features = false, version = '1.0.132' }
+serde_valid = { default-features = false, version = "2.0.0" }
 clap = { version = "4.4.18", features = ["env"] }
 lazy_static = { version = "1.4.0", default-features = false }
 derive-new = { version = "0.7.0", default-features = false }
