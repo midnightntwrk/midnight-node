@@ -555,7 +555,7 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -569,7 +569,8 @@ check-rust:
     RUN cargo fmt --all -- --check
 
     # --offline used to hard fail if caching broken.
-    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --offline -- -D warnings
+    # ensure runtime benchmark feature enable to check they compile.
+    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
 
 # check-nodejs lints any nodejs projects
 check-nodejs:
@@ -581,14 +582,6 @@ check-nodejs:
     RUN yarn install --immutable
     COPY tests/ ./
     RUN yarn lint
-
-# check-benchmarks verifies that runtime-benchmarks feature compiles
-check-benchmarks:
-    FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
-    RUN cargo check --locked --features runtime-benchmarks
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -1028,7 +1021,7 @@ local-env-e2e:
         yarn run start
 
 local-env-rust-e2e:
-    FROM +build-prepare
+    FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     RUN sed -i \
@@ -1036,7 +1029,7 @@ local-env-rust-e2e:
         -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
         tests/e2e/src/cfg/local/config.toml
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
+    RUN cargo test -p midnight-node-e2e -- --test-threads=1 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

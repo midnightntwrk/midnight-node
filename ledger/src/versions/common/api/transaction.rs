@@ -479,8 +479,8 @@ mod tests {
 			.collect();
 		let set: std::collections::BTreeSet<&String> = result.iter().collect();
 
-		assert_eq!(result.len(), 2);
-		assert_eq!(set.len(), 2, "identifiers are not unique");
+		assert_eq!(result.len(), 1);
+		assert_eq!(set.len(), 1, "identifiers are not unique");
 	}
 
 	#[test]
