@@ -20,7 +20,8 @@ sp-core.workspace = true
 sp-keyring.workspace = true
 thiserror = { workspace = true, optional = true }
 cardano-serialization-lib = { workspace = true, optional = true }
-sqlx = { workspace = true,  optional = true, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
+sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
+db-sync-sqlx = { workspace = true, optional = true }
 derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
 scale-info.workspace = true
@@ -48,6 +49,7 @@ std = [
     "thiserror",
     "cardano-serialization-lib",
     "sqlx",
+    "db-sync-sqlx",
     "log/std",
     "partner-chains-db-sync-data-sources",
     "rand/std",

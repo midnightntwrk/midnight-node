@@ -11,21 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionDataSource;
+use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CandidatesDataSourceImpl, DbSyncBlockDataSourceConfig,
 	GovernedMapDataSourceCachedImpl, McFollowerMetrics, McHashDataSourceImpl,
-	NativeTokenManagementDataSourceImpl, SidechainRpcDataSourceImpl,
+	SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
 	AuthoritySelectionDataSourceMock, BlockDataSourceMock, GovernedMapDataSourceMock,
-	McHashDataSourceMock, NativeTokenDataSourceMock, SidechainRpcDataSourceMock,
+	McHashDataSourceMock, SidechainRpcDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_governed_map::GovernedMapDataSource;
-use sp_native_token_management::NativeTokenManagementDataSource;
 
 use super::cfg::midnight_cfg::MidnightCfg;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
@@ -46,7 +45,6 @@ pub struct DataSources {
 	pub mc_hash: Arc<dyn McHashDataSource + Send + Sync>,
 	pub authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	pub cnight_observation: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
-	pub native_token_management: Arc<dyn NativeTokenManagementDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	pub federated_authority_observation:
@@ -91,7 +89,6 @@ pub async fn create_mock_data_sources(
 		mc_hash: Arc::new(McHashDataSourceMock::new(block)),
 		authority_selection: Arc::new(authority_selection_data_source_mock),
 		cnight_observation: Arc::new(CNightObservationDataSourceMock::new()),
-		native_token_management: Arc::new(NativeTokenDataSourceMock::new()),
 		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
@@ -113,12 +110,12 @@ pub async fn create_cached_data_sources(
 	)
 	.await?;
 
-	log::info!("Creating idx_tx_out_address index. This may take a while.");
-	// Note: temporary fix until after PC 1.6.1
+	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
 	sqlx::query(
 		r#"
-		  CREATE INDEX IF NOT EXISTS idx_tx_out_address ON tx_out USING hash (address)
-        "#,
+			CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
+			ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
+		"#,
 	)
 	.execute(&pool)
 	.await?;
@@ -168,15 +165,6 @@ pub async fn create_cached_data_sources(
 			metrics_opt.clone(),
 			1000,
 		)),
-		native_token_management: Arc::new(
-			NativeTokenManagementDataSourceImpl::new(
-				pool.clone(),
-				metrics_opt.clone(),
-				cfg.cardano_security_parameter.ok_or(missing("cardano_security_parameter"))?,
-				1000,
-			)
-			.await?,
-		),
 		governed_map: Arc::new(
 			GovernedMapDataSourceCachedImpl::new(
 				pool.clone(),
