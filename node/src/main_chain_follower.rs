@@ -110,6 +110,16 @@ pub async fn create_cached_data_sources(
 	)
 	.await?;
 
+	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
+	sqlx::query(
+		r#"
+			CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
+			ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
+		"#,
+	)
+	.execute(&pool)
+	.await?;
+
 	let db_sync_block_data_source_config = DbSyncBlockDataSourceConfig {
 		cardano_security_parameter: cfg
 			.cardano_security_parameter

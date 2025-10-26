@@ -82,7 +82,7 @@ where
 		McHashIDP,
 		AriadneIDP,
 		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
-		MidnightCNightObservationInherentDataProvider,=
+		MidnightCNightObservationInherentDataProvider,
 		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 	);

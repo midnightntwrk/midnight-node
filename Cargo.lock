@@ -7223,7 +7223,7 @@ dependencies = [
  "sp-session-validator-management",
  "sp-session-validator-management-query",
  "sp-sidechain",
- "sp-std",
+ "sp-std 14.0.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
  "sp-timestamp",
  "sqlx",
  "substrate-build-script-utils",
@@ -7392,7 +7392,6 @@ dependencies = [
  "pallet-midnight-system",
  "pallet-migrations",
  "pallet-mmr",
- "pallet-native-token-management",
  "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
@@ -7618,7 +7617,7 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_valid",
- "sidechain-domain",
+ "sidechain-domain 1.8.0",
  "sp-api",
  "sp-inherents",
  "sqlx",
@@ -7660,7 +7659,7 @@ dependencies = [
  "partner-chains-db-sync-data-sources",
  "rand 0.9.2",
  "scale-info",
- "sidechain-domain",
+ "sidechain-domain 1.8.0",
  "sp-api",
  "sp-blockchain",
  "sp-core 37.0.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
@@ -9226,10 +9225,10 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_valid",
- "sidechain-domain",
- "sp-core",
- "sp-io",
- "sp-std",
+ "sidechain-domain 1.8.0",
+ "sp-core 37.0.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
+ "sp-io 41.0.1 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
+ "sp-std 14.0.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
  "tempfile",
  "test-log",
 ]
@@ -9249,8 +9248,8 @@ dependencies = [
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
- "sidechain-domain",
- "sp-io",
+ "sidechain-domain 1.8.0",
+ "sp-io 41.0.1 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2506-2)",
 ]
 
 [[package]]
@@ -9468,9 +9467,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-native-token-management"
-version = "1.7.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.7.1#c0a6cda9c80c4674246db3e738c98f5327d374fb"
+name = "pallet-partner-chains-bridge"
+version = "1.8.0"
+source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.0#319e5e048e83497d363a1bb6afebd9c95ce0742d"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9478,8 +9477,8 @@ dependencies = [
  "log",
  "parity-scale-codec",
  "scale-info",
- "sidechain-domain",
- "sp-native-token-management",
+ "sidechain-domain 1.8.0",
+ "sp-partner-chains-bridge",
 ]
 
 [[package]]

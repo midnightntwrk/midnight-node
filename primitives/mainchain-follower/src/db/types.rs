@@ -18,7 +18,6 @@ use db_sync_sqlx::{
 	BlockNumber as DbBlockNumber, EpochNumber, SlotNumber, TxHash as DbTxHash,
 	TxIndex as DbUtxoIndexInTx, TxIndexInBlock as DbTxIndexInBlock,
 };
-use midnight_primitives_native_token_observation::CardanoPosition;
 use midnight_primitives_cnight_observation::CardanoPosition;
 
 use sqlx::error::BoxDynError;

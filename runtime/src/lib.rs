@@ -960,24 +960,6 @@ impl pallet_federated_authority_observation::Config for Runtime {
 
 pub struct MidnightTokenTransferHandler;
 
-// Replace with pc native token management pallet
-/*
-impl pallet_native_token_management::TokenTransferHandler for MidnightTokenTransferHandler {
-	fn handle_token_transfer(token_amount: NativeTokenAmount) -> DispatchResult {
-		// TODO: Needs to have dedicated function on the ledger side for receiving block reward mints
-		log::info!("Registered transfer of {} native tokens.", token_amount.0,);
-		Ok(())
-	}
-}
-
-impl pallet_native_token_management::Config for Runtime {
-	type TokenTransferHandler = MidnightTokenTransferHandler;
-	type WeightInfo = pallet_native_token_management::weights::SubstrateWeight<Runtime>;
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
-}
-
- */
-
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
