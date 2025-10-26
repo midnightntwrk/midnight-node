@@ -20,7 +20,7 @@ use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
 use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
-use sc_cli::{CliConfiguration, SharedParams, SubstrateCli};
+use sc_cli::SubstrateCli;
 use sidechain_domain::McBlockHash;
 
 #[derive(Debug, Clone, clap::Parser)]
