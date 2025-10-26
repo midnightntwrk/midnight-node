@@ -73,7 +73,7 @@ brew install openssl
 
 #### LLVM for WASM compilation
 
-The default XCode installation of LLVM does not support WASM build targets. Install LLVM from Homebrew:
+The default XCode installation of LLVM does not support WASM build targets. Please install LLVM via Homebrew:
 
 ```bash
 brew install llvm
