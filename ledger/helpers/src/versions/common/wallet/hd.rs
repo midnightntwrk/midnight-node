@@ -13,7 +13,7 @@
 
 #![cfg(feature = "can-panic")]
 
-use super::super::{Deserializable, NetworkId, Serializable, Tagged, WalletSeed};
+use super::super::{Deserializable, Serializable, Tagged, WalletSeed};
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};
 use std::str::FromStr;
@@ -126,17 +126,15 @@ pub trait DeriveSeed {
 }
 
 pub trait IntoWalletAddress {
-	fn network(network_id: NetworkId) -> String {
-		match network_id {
-			NetworkId::MainNet => "",
-			NetworkId::DevNet => "_dev",
-			NetworkId::TestNet => "_test",
-			NetworkId::Undeployed => "_undeployed",
+	fn network_suffix(network_id: &str) -> String {
+		if network_id == "mainnet" {
+			return String::new();
+		} else {
+			format!("_{network_id}")
 		}
-		.to_string()
 	}
 
-	fn address(&self, network: NetworkId) -> WalletAddress;
+	fn address(&self, network: &str) -> WalletAddress;
 }
 
 // in bech32-encoded addresses, we use the data's specific tag as a prefix, but not the global tag prefix

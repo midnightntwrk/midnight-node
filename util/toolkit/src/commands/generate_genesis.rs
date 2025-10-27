@@ -1,14 +1,11 @@
 use clap::Args;
-use midnight_node_toolkit::{
-	cli_parsers::{self as cli},
-	network_as_str,
-};
+use midnight_node_toolkit::cli_parsers::{self as cli};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 use midnight_node_ledger_helpers::{
-	NetworkId, Serializable, SystemTransaction, Tagged, WalletSeed,
-	midnight_serialize::tagged_deserialize, serialize,
+	Serializable, SystemTransaction, Tagged, WalletSeed, midnight_serialize::tagged_deserialize,
+	serialize,
 };
 use midnight_node_toolkit::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
 
@@ -29,8 +26,8 @@ pub struct GenerateGenesisArgs {
     )]
 	nonce_seed: [u8; 32],
 	// Target Network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 	// Proof Server Host
 	#[arg(long, short)]
 	proof_server: Option<String>,
@@ -58,11 +55,8 @@ pub async fn execute(
 	let dir = Path::new(&args.out_dir);
 	std::fs::create_dir_all(&dir)?;
 
-	let network = args.network;
-	let network_string = network_as_str(network);
-
-	let suffix = if let Some(ref suffix) = args.suffix { suffix } else { network_string };
-	println!("generating genesis for network {network_string} ({suffix})...");
+	let suffix = if let Some(ref suffix) = args.suffix { suffix } else { &args.network };
+	println!("generating genesis for network {} ({suffix})...", &args.network);
 
 	// Parse the seeds file
 	let seeds_str = std::fs::read_to_string(args.seeds_file)?;
@@ -90,7 +84,7 @@ pub async fn execute(
 
 	let genesis = GenesisGenerator::new(
 		args.nonce_seed,
-		network,
+		&args.network,
 		args.proof_server,
 		args.funding,
 		&seeds?,
@@ -124,7 +118,7 @@ fn serialize_and_write<T: Serializable + Tagged>(
 #[cfg(test)]
 mod test {
 	use super::serialize_and_write;
-	use crate::{Cli, DefaultDB, LedgerState, NetworkId, run_command};
+	use crate::{Cli, DefaultDB, LedgerState, run_command};
 	use clap::Parser;
 	use std::{
 		env::temp_dir,
@@ -133,7 +127,7 @@ mod test {
 
 	#[test]
 	fn test_serialize_and_write() {
-		let state = LedgerState::<DefaultDB>::new(NetworkId::Undeployed);
+		let state = LedgerState::<DefaultDB>::new("undeployed");
 
 		let path = temp_dir().join("state.mn");
 

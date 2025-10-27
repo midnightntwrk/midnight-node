@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{DefaultDB, IntoWalletAddress, NetworkId, ShieldedWallet, UnshieldedWallet};
+use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet};
 use clap::Args;
 use midnight_node_toolkit::cli_parsers::{self as cli};
 
@@ -21,8 +21,8 @@ use rand::{Rng, SeedableRng};
 #[derive(Args, Clone)]
 pub struct RandomAddressArgs {
 	/// Target network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 	/// Select if the address should be shielded or not
 	#[arg(long)]
 	shielded: bool,
@@ -43,11 +43,11 @@ pub fn execute(args: RandomAddressArgs) -> String {
 	let address = if args.shielded {
 		let wallet: ShieldedWallet<DefaultDB> = ShieldedWallet::default(seed.into());
 
-		wallet.address(args.network)
+		wallet.address(&args.network)
 	} else {
 		let wallet = UnshieldedWallet::default(seed.into());
 
-		wallet.address(args.network)
+		wallet.address(&args.network)
 	};
 
 	address.to_bech32()
@@ -55,7 +55,6 @@ pub fn execute(args: RandomAddressArgs) -> String {
 
 #[cfg(test)]
 mod tests {
-	use midnight_node_ledger_helpers::NetworkId;
 	use midnight_node_toolkit::cli_parsers as cli;
 
 	use super::RandomAddressArgs;
@@ -64,7 +63,7 @@ mod tests {
 	macro_rules! test_fixture {
 		($network:expr, $shielded:expr, $seed:literal) => {
 			RandomAddressArgs {
-				network: $network,
+				network: $network.to_string(),
 				shielded: $shielded,
 				randomness_seed: Some(cli::hex_str_decode($seed).unwrap()),
 			}
@@ -74,19 +73,19 @@ mod tests {
 		};
 	}
 
-	#[test_case(test_fixture!(NetworkId::DevNet, true, "0000000000000000000000000000000000000000000000000000000000000001") =>
+	#[test_case(test_fixture!("devnet", true, "0000000000000000000000000000000000000000000000000000000000000001") =>
 	    "mn_shield-addr_dev1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmsxqp00mnr3lked3qn6d06yl6lj2dw9x9azd8vlcud9f4c4kx05a2wuv2k7zdv";
 		"shielded address from seed"
 	)]
-	#[test_case(test_fixture!(NetworkId::DevNet, false, "0000000000000000000000000000000000000000000000000000000000000001") =>
+	#[test_case(test_fixture!("devnet", false, "0000000000000000000000000000000000000000000000000000000000000001") =>
 	    "mn_addr_dev1r9fcd53aa5vz34krw59p3zcgjtg4wtrjgny03ykxvhl7njjujvuq5fty4f";
 		"unshielded address from seed"
 	)]
-	#[test_case(test_fixture!(NetworkId::DevNet, false) =>
+	#[test_case(test_fixture!("devnet", false) =>
 	    matches addr if addr.starts_with("mn_addr");
 		"unshielded without seed generates unshielded"
 	)]
-	#[test_case(test_fixture!(NetworkId::DevNet, true) =>
+	#[test_case(test_fixture!("devnet", true) =>
 	    matches addr if addr.starts_with("mn_shield-");
 		"shielded without seed generates shielded"
 	)]

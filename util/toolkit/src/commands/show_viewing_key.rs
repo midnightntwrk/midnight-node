@@ -1,13 +1,11 @@
 use clap::Args;
-use midnight_node_ledger_helpers::{
-	DefaultDB, DerivationPath, NetworkId, Role, ShieldedWallet, WalletSeed,
-};
+use midnight_node_ledger_helpers::{DefaultDB, DerivationPath, Role, ShieldedWallet, WalletSeed};
 use midnight_node_toolkit::cli_parsers as cli;
 #[derive(Args)]
 pub struct ShowViewingKeyArgs {
 	/// Target network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 
 	/// Wallet seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
@@ -17,35 +15,35 @@ pub struct ShowViewingKeyArgs {
 pub fn execute(args: ShowViewingKeyArgs) -> String {
 	let derivation_path = DerivationPath::default_for_role(Role::Zswap);
 
-	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path).viewing_key(args.network)
+	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path).viewing_key(&args.network)
 }
 
 #[cfg(test)]
 mod test {
-	use super::{NetworkId, ShowViewingKeyArgs, cli::wallet_seed_decode, execute};
+	use super::{ShowViewingKeyArgs, cli::wallet_seed_decode, execute};
 	use test_case::test_case;
 
 	#[test_case(
-        NetworkId::Undeployed,
+        "undeployed",
         "0000000000000000000000000000000000000000000000000000000000000001",
         "mn_shield-esk_undeployed1dlyj7u8juj68fd4psnkqhjxh32sec0q480vzswg8kd485e2kljcs9ete5h";
         "test undeployed with 0...01 seed"
     )]
 	#[test_case(
-        NetworkId::DevNet,
+        "devnet",
         "0000000000000000000000000000000000000000000000000000000000000002",
         "mn_shield-esk_dev1w0dctw9zhe2ffqw4s5qks7rnl29wy5mhl957fv9nnhtxulent80q5r8sslj";
         "test devnet with 0...02 seed"
     )]
 	#[test_case(
-        NetworkId::TestNet,
+        "testnet",
         "0000000000000000000000000000000000000000000000000000000000000003",
         "mn_shield-esk_test1wvd5v04ykt59gglxknsdxpwwkhhhj8d6h3ghpkgdhdsszap2p53qkpy8pqk";
         "test testnet with 0...03 seed"
     )]
-	fn test_show_viewing_key(network: NetworkId, seed: &str, viewing_key: &str) {
+	fn test_show_viewing_key(network: &str, seed: &str, viewing_key: &str) {
 		let args = ShowViewingKeyArgs {
-			network,
+			network: network.to_string(),
 			seed: wallet_seed_decode(seed).expect("should return wallet seet"),
 		};
 

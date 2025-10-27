@@ -1,6 +1,4 @@
-use crate::{
-	DefaultDB, IntoWalletAddress, NetworkId, ShieldedWallet, UnshieldedWallet, WalletSeed,
-};
+use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet, WalletSeed};
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DustWallet, serialize, serialize_untagged};
@@ -10,8 +8,8 @@ use serde::Serialize;
 #[derive(Args, Clone)]
 pub struct ShowAddressArgs {
 	/// Target network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 	/// Wallet seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	seed: WalletSeed,
@@ -69,9 +67,9 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed, None);
 
 	let all = Addresses {
-		shielded: shielded_wallet.address(args.network).to_bech32(),
-		unshielded: unshielded_wallet.address(args.network).to_bech32(),
-		dust: dust_wallet.address(args.network).to_bech32(),
+		shielded: shielded_wallet.address(&args.network).to_bech32(),
+		unshielded: unshielded_wallet.address(&args.network).to_bech32(),
+		dust: dust_wallet.address(&args.network).to_bech32(),
 		dust_public: serialize_untagged(&dust_wallet.public_key).unwrap().encode_hex(),
 		coin_public: shielded_wallet.coin_public_key.0.0.encode_hex(),
 		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
@@ -110,7 +108,7 @@ mod test {
 		specific_address.shielded = true;
 
 		let args: ShowAddressArgs = ShowAddressArgs {
-			network: NetworkId::TestNet,
+			network: "testnet".to_string(),
 			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
 			)
@@ -132,7 +130,7 @@ mod test {
 		specific_address.coin_public = true;
 
 		let args: ShowAddressArgs = ShowAddressArgs {
-			network: NetworkId::TestNet,
+			network: "testnet".to_string(),
 			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
 			)
@@ -150,7 +148,7 @@ mod test {
 	#[test]
 	fn test_all() {
 		let args: ShowAddressArgs = ShowAddressArgs {
-			network: NetworkId::TestNet,
+			network: "testnet".to_string(),
 			seed: WalletSeed::try_from_hex_str(
 				"0000000000000000000000000000000000000000000000000000000000000001",
 			)

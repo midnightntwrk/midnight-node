@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::NetworkId;
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
@@ -47,21 +46,19 @@ impl MidnightNodeClient {
 		Ok(MidnightNodeClient { rpc, api })
 	}
 
-	pub async fn get_network_id(&self) -> Result<NetworkId, ClientError> {
-		let storage_query = mn_meta::storage().midnight().network_id();
-		let network_id_vec = self.api.storage().at_latest().await?.fetch(&storage_query).await?;
-
-		let network_id = if let Some(val) = network_id_vec {
-			match val.0.as_slice() {
-				[0] => NetworkId::Undeployed,
-				[1] => NetworkId::DevNet,
-				[2] => NetworkId::TestNet,
-				[3] => NetworkId::MainNet,
-				_ => return Err(ClientError::UnsupportedNetworkId(val.0)),
-			}
-		} else {
-			NetworkId::Undeployed
-		};
+	pub async fn get_network_id(&self) -> Result<String, ClientError> {
+		// let storage_query = mn_meta::storage().midnight().network_id();
+		// let network_id = self.api.storage().at_latest().await?.fetch(&storage_query).await??;
+		let network_id_call = mn_meta::apis().midnight_runtime_api().get_network_id();
+		// Submit the call and get back a result.
+		let network_id = self
+			.api
+			.runtime_api()
+			.at_latest()
+			.await?
+			.call(network_id_call)
+			.await?
+			.expect("on-chain network id is not a String");
 
 		Ok(network_id)
 	}
