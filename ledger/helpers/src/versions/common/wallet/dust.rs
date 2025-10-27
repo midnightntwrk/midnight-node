@@ -4,9 +4,8 @@ use super::super::{
 	DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier, DustOutput,
 	DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError, HRP_CONSTANT,
 	HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, MnLedgerDustSpendError,
-	NetworkId, ProofPreimageMarker, QualifiedDustOutput, Role, Serializable,
-	ShortTaggedDeserializeError, Tagged, Timestamp, WalletAddress, WalletSeed,
-	short_tagged_deserialize, short_tagged_serialize,
+	ProofPreimageMarker, QualifiedDustOutput, Role, Serializable, ShortTaggedDeserializeError,
+	Tagged, Timestamp, WalletAddress, WalletSeed, short_tagged_deserialize, short_tagged_serialize,
 };
 
 #[derive(Debug, Clone)]
@@ -23,9 +22,9 @@ impl<D: DB> DeriveSeed for DustWallet<D> {}
 
 #[cfg(feature = "can-panic")]
 impl<D: DB> IntoWalletAddress for DustWallet<D> {
-	fn address(&self, network_id: NetworkId) -> WalletAddress {
+	fn address(&self, network_id: &str) -> WalletAddress {
 		let hrp_string =
-			format!("{}_{}{}", HRP_CONSTANT, HRP_CREDENTIAL_DUST, Self::network(network_id));
+			format!("{HRP_CONSTANT}_{HRP_CREDENTIAL_DUST}{}", Self::network_suffix(network_id));
 		let hrp = bech32::Hrp::parse(&hrp_string)
 			.unwrap_or_else(|err| panic!("Error while bech32 parsing: {err}"));
 

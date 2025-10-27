@@ -137,57 +137,6 @@ pub use utxo_output::*;
 pub use utxo_spend::*;
 pub use wallet::*;
 
-#[repr(u8)]
-#[non_exhaustive]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-//#[cfg_attr(feature = "proptest", derive(Arbitrary))]
-pub enum NetworkId {
-	Undeployed = 0,
-	DevNet = 1,
-	TestNet = 2,
-	MainNet = 3,
-}
-
-impl From<NetworkId> for String {
-	fn from(value: NetworkId) -> Self {
-		match value {
-			NetworkId::Undeployed => "undeployed",
-			NetworkId::DevNet => "devnet",
-			NetworkId::TestNet => "testnet",
-			NetworkId::MainNet => "mainnet",
-		}
-		.to_string()
-	}
-}
-
-impl Serializable for NetworkId {
-	fn serialize(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-		Serializable::serialize(&(*self as u8), writer)
-	}
-
-	fn serialized_size(&self) -> usize {
-		Serializable::serialized_size(&(*self as u8))
-	}
-}
-
-impl Deserializable for NetworkId {
-	fn deserialize(reader: &mut impl std::io::Read, recursion_depth: u32) -> std::io::Result<Self> {
-		let discriminant = u8::deserialize(reader, recursion_depth)?;
-		Ok(match discriminant {
-			0 => Self::Undeployed,
-			1 => Self::DevNet,
-			2 => Self::TestNet,
-			3 => Self::MainNet,
-			_ => {
-				return Err(std::io::Error::new(
-					std::io::ErrorKind::InvalidData,
-					format!("unknown network id: {discriminant}"),
-				));
-			},
-		})
-	}
-}
-
 /// Serializes a mn_ledger::serialize-able type into bytes
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);

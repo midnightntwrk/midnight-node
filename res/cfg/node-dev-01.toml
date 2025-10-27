@@ -1,9 +1,8 @@
 chain = "res/node-dev-01/chain-spec-raw.json"
 base_path = "node/chain"
 
-chainspec_name = "devnet1"
-chainspec_id = "devnet"
-chainspec_network_id = "devnet"
+chainspec_name = "Midnight NodeDev01"
+chainspec_id = "node-dev-01"
 chainspec_genesis_state = "res/genesis/genesis_state_node-dev-01.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_node-dev-01.mn"
 chainspec_chain_type = "live"
