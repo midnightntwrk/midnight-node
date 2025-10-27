@@ -161,7 +161,7 @@ export function checkDeregistration(
 
   console.time(timeId);
 
-  const sub = api.event.NativeTokenObservation.Deregistration.watch((reg) => {
+  const sub = api.event.CNightObservation.Deregistration.watch((reg) => {
     if (reg.cardano_address.asHex().replace(/^0x/, "") != cardanoHex) {
       console.log(
         `Found Dereg event, but cardanoAddress ${reg.cardano_address.asHex()} was not expected address ${cardanoHex}`,
@@ -212,7 +212,7 @@ export function checkMultipleReg(
 
   const foundPairs = new Set();
 
-  const sub = api.event.NativeTokenObservation.Registration.watch((reg) => {
+  const sub = api.event.CNightObservation.Registration.watch((reg) => {
     const cardanoHex = reg.cardano_address.asHex().replace(/^0x/, "");
     const dustHex = reg.dust_address.asHex().replace(/^0x/, "");
 
@@ -276,7 +276,7 @@ export function checkMappingAdded(
   const timeId = `mappingAddedCheck${Math.random()}`;
   console.time(timeId);
 
-  const sub = api.event.NativeTokenObservation.MappingAdded.watch((m) => {
+  const sub = api.event.CNightObservation.MappingAdded.watch((m) => {
     const cardano = normHex(m.cardano_address.asHex());
     const dust = normHex(m.dust_address);
     const utxo = normHex(m.utxo_id);
@@ -330,7 +330,7 @@ export function checkMappingRemoved(
   const timeId = `mappingRemovedCheck${Math.random()}`;
   console.time(timeId);
 
-  const sub = api.event.NativeTokenObservation.MappingRemoved.watch((m) => {
+  const sub = api.event.CNightObservation.MappingRemoved.watch((m) => {
     const cardano = normHex(m.cardano_address.asHex());
     const dust = normHex(m.dust_address);
     const utxo = normHex(m.utxo_id);

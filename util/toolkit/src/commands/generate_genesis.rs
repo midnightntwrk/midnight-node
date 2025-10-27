@@ -1,12 +1,19 @@
 use clap::Args;
-use midnight_node_toolkit::{
-	cli_parsers::{self as cli},
-	network_as_str,
-};
+use midnight_node_toolkit::cli_parsers::{self as cli};
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use midnight_node_ledger_helpers::{NetworkId, Serializable, Tagged, WalletSeed, serialize};
+use midnight_node_ledger_helpers::{
+	Serializable, SystemTransaction, Tagged, WalletSeed, midnight_serialize::tagged_deserialize,
+	serialize,
+};
 use midnight_node_toolkit::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
+
+#[derive(Deserialize)]
+pub struct CNightGeneratesDustConfig {
+	#[serde(with = "hex")]
+	system_tx: Vec<u8>,
+}
 
 #[derive(Args)]
 pub struct GenerateGenesisArgs {
@@ -19,17 +26,18 @@ pub struct GenerateGenesisArgs {
     )]
 	nonce_seed: [u8; 32],
 	// Target Network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 	// Proof Server Host
 	#[arg(long, short)]
 	proof_server: Option<String>,
-	// Output suffix (defaults to match network)
-	#[arg(long)]
-	suffix: Option<String>,
 	/// File containing the wallet seeds to fund
 	#[arg(long)]
 	seeds_file: PathBuf,
+	/// File containing cNight generates Dust config. If a system_tx exists in this file, it is
+	/// applied to the LedgerState
+	#[arg(long)]
+	cnight_generates_dust_config: Option<PathBuf>,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -44,11 +52,7 @@ pub async fn execute(
 	let dir = Path::new(&args.out_dir);
 	std::fs::create_dir_all(&dir)?;
 
-	let network = args.network;
-	let network_string = network_as_str(network);
-
-	let suffix = if let Some(ref suffix) = args.suffix { suffix } else { network_string };
-	println!("generating genesis for network {network_string} ({suffix})...");
+	println!("generating genesis for network {}...", &args.network);
 
 	// Parse the seeds file
 	let seeds_str = std::fs::read_to_string(args.seeds_file)?;
@@ -64,14 +68,30 @@ pub async fn execute(
 		})
 		.collect();
 
-	let genesis =
-		GenesisGenerator::new(args.nonce_seed, network, args.proof_server, args.funding, &seeds?)
-			.await?;
+	// Parse the seeds file
+	let cnight_system_tx: Option<SystemTransaction> =
+		if let Some(filepath) = args.cnight_generates_dust_config {
+			let json_str = std::fs::read_to_string(filepath)?;
+			let config: CNightGeneratesDustConfig = serde_json::from_str(&json_str)?;
+			Some(tagged_deserialize(&mut &config.system_tx[..])?)
+		} else {
+			None
+		};
 
-	let genesis_state_path = dir.join(format!("genesis_state_{suffix}.mn"));
+	let genesis = GenesisGenerator::new(
+		args.nonce_seed,
+		&args.network,
+		args.proof_server,
+		args.funding,
+		&seeds?,
+		cnight_system_tx,
+	)
+	.await?;
+
+	let genesis_state_path = dir.join(format!("genesis_state_{}.mn", &args.network));
 	serialize_and_write(&genesis.state, &genesis_state_path)?;
 
-	let genesis_tx_path = dir.join(format!("genesis_block_{suffix}.mn"));
+	let genesis_tx_path = dir.join(format!("genesis_block_{}.mn", &args.network));
 	serialize_and_write(&genesis.txs, &genesis_tx_path)?;
 
 	println!("Number of genesis txs: {}", genesis.txs.len());
@@ -94,7 +114,7 @@ fn serialize_and_write<T: Serializable + Tagged>(
 #[cfg(test)]
 mod test {
 	use super::serialize_and_write;
-	use crate::{Cli, DefaultDB, LedgerState, NetworkId, run_command};
+	use crate::{Cli, DefaultDB, LedgerState, run_command};
 	use clap::Parser;
 	use std::{
 		env::temp_dir,
@@ -103,7 +123,7 @@ mod test {
 
 	#[test]
 	fn test_serialize_and_write() {
-		let state = LedgerState::<DefaultDB>::new(NetworkId::Undeployed);
+		let state = LedgerState::<DefaultDB>::new("undeployed");
 
 		let path = temp_dir().join("state.mn");
 

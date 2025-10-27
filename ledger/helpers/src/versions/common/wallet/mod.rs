@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	DB, LedgerState, NetworkId, Utxo, WalletSeed,
+	DB, LedgerState, Utxo, WalletSeed,
 	ledger_storage::Storable,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
@@ -88,14 +88,5 @@ impl<D: DB + Clone> Wallet<D> {
 	#[cfg(feature = "can-panic")]
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
 		input.parse().expect("failed to decode seed")
-	}
-}
-
-pub fn network(network_id: NetworkId) -> &'static str {
-	match network_id {
-		NetworkId::MainNet => "",
-		NetworkId::DevNet => "_dev",
-		NetworkId::TestNet => "_test",
-		NetworkId::Undeployed => "_undeployed",
 	}
 }

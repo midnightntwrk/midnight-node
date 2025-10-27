@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT \n    datum.value::jsonb AS \"full_datum!: _\",\n    block.block_no as \"block_number!: _\",\n    block.hash as \"block_hash: _\",\n    block.time as \"block_timestamp: _\",\n    tx.block_index as \"tx_index_in_block: _\",\n    tx.hash AS \"tx_hash: _\",\n    tx_tx_out.hash as \"utxo_tx_hash: _\",\n    tx_out.index as \"utxo_index: _\",\n    ma_tx_out.quantity::BIGINT AS \"quantity!: _\"\nFROM tx_out\n    JOIN tx_in ON tx_in.tx_out_id = tx_out.tx_id\n                AND tx_in.tx_out_index = tx_out.index\n    JOIN tx ON tx.id = tx_in.tx_in_id\n    JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id\n    JOIN datum ON datum.hash = tx_out.data_hash\n    JOIN block ON block.id = tx.block_id\n    JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id\n    JOIN multi_asset ma ON ma.id = ma_tx_out.ident\nWHERE tx_out.address = $1\n    AND ma.policy = $2\n    AND ma.name = $3\n    AND (block.block_no, tx.block_index) >= ($4, $5)\n    AND (block.block_no, tx.block_index) < ($6, $7)\nORDER BY block.block_no, tx.block_index\nLIMIT $8 OFFSET $9;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "full_datum!: _",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_timestamp: _",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "tx_index_in_block: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "utxo_tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "utxo_index: _",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "quantity!: _",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6131f2d65f2ea0361fc920290f48b9748df4c2dfcbc00343cd4b3daa0b7466e1"
+}

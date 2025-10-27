@@ -2,7 +2,7 @@ use crate::cfg::*;
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
-	transactions::*, types::OgmiosUtxo,
+	transactions::*, types::OgmiosUtxo, OgmiosClientError,
 };
 use std::fs;
 use std::time::Duration;
@@ -26,6 +26,38 @@ pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo
 		tokio::time::sleep(Duration::from_secs(1)).await;
 	}
 	None
+}
+
+/// Waits for a UTXO with the given tx_id to appear, then waits for 3 more Cardano blocks to see if it is spent.
+/// Returns true if the UTXO is still unspent after 3 blocks, false if it is spent.
+pub async fn wait_utxo_unspent_for_3_blocks(address: &str, tx_id: &str) -> bool {
+	let client = get_ogmios_client().await;
+
+	// Get the current block number (slot) as the starting point
+	let start_tip = client.get_tip().await.unwrap();
+	let start_slot = start_tip.slot;
+	println!("Current slot is {}. Waiting for 3 more slots...", start_slot);
+
+	// Wait for 3 more slots (blocks)
+	let mut last_slot = start_slot;
+	while last_slot < start_slot + 3 {
+		let tip = client.get_tip().await.unwrap();
+		if tip.slot > last_slot {
+			println!("Slot advanced: {} -> {}", last_slot, tip.slot);
+			last_slot = tip.slot;
+		}
+		tokio::time::sleep(Duration::from_secs(1)).await;
+	}
+
+	// After 3 slots, check if the UTXO is still present
+	let utxos = client.query_utxos(&[address.into()]).await.unwrap();
+	let still_unspent = utxos.iter().any(|u| hex::encode(u.transaction.id) == tx_id);
+	if still_unspent {
+		println!("UTXO {} is still unspent after 3 slots.", tx_id);
+	} else {
+		println!("UTXO {} was spent within 3 slots.", tx_id);
+	}
+	still_unspent
 }
 
 pub async fn get_ogmios_client() -> OgmiosClients {
@@ -137,6 +169,92 @@ pub async fn register(
 	response.transaction.id
 }
 
+#[derive(Debug)]
+pub enum DeregisterError {
+	Whisky(WError),
+	Ogmios(OgmiosClientError),
+}
+
+impl From<WError> for DeregisterError {
+	fn from(err: WError) -> Self {
+		DeregisterError::Whisky(err)
+	}
+}
+
+impl From<OgmiosClientError> for DeregisterError {
+	fn from(err: OgmiosClientError) -> Self {
+		DeregisterError::Ogmios(err)
+	}
+}
+
+pub async fn deregister(
+	signing_wallet: &Wallet,
+	tx_in: &OgmiosUtxo,
+	register_tx: &OgmiosUtxo,
+	collateral_utxo: &OgmiosUtxo,
+) -> Result<[u8; 32], DeregisterError> {
+	let validator_address = get_mapping_validator_address();
+	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
+	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
+	let auth_token_policy_id = get_auth_token_policy_id();
+	let send_assets = vec![Asset::new_from_str("lovelace", "20000000")];
+	let cfg = load_config();
+	let minting_script = load_cbor(&cfg.auth_token_policy_file);
+	let network = Network::Custom(get_local_env_cost_models());
+	let mapping_validator_cbor = &load_cbor(&cfg.mapping_validator_policy_file);
+	let register_asset_tx_vector = build_asset_vector(register_tx);
+	println!("Register tx assets: {:?}", register_asset_tx_vector);
+	let script_hash = whisky::get_script_hash(mapping_validator_cbor, LanguageVersion::V2);
+	println!("Mapping validator script hash: {:?}", script_hash);
+
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(network.clone())
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(tx_in),
+			&payment_addr,
+		)
+		.spending_plutus_script_v2()
+		.tx_in(
+			&hex::encode(register_tx.transaction.id),
+			register_tx.index.into(),
+			&build_asset_vector(register_tx),
+			&validator_address,
+		)
+		.tx_in_inline_datum_present()
+		.tx_in_script(mapping_validator_cbor)
+		.tx_in_redeemer_value(&WRedeemer {
+			data: WData::JSON(datum),
+			ex_units: Budget { mem: 3765700, steps: 941562940 },
+		})
+		.tx_in_collateral(
+			&hex::encode(collateral_utxo.transaction.id),
+			collateral_utxo.index.into(),
+			&build_asset_vector(collateral_utxo),
+			&payment_addr,
+		)
+		.tx_out(&payment_addr, &send_assets)
+		.mint_plutus_script_v2()
+		.mint(-1, &auth_token_policy_id, "")
+		.minting_script(&minting_script)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			ex_units: Budget { mem: 3765700, steps: 941562940 },
+		})
+		.change_address(&payment_addr)
+		.complete_sync(None)?;
+
+	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex())?;
+	let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+	let client = get_ogmios_client().await;
+	let response = client.submit_transaction(&tx_bytes).await?;
+	println!("Transaction submitted, response: {:?}", response);
+	Ok(response.transaction.id)
+}
+
 pub fn create_wallet() -> Wallet {
 	let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
 	let phrase = mnemonic.phrase();
@@ -182,6 +300,7 @@ pub async fn fund_wallet(address: &str, assets: Vec<Asset>) -> OgmiosUtxo {
 pub async fn mint_tokens(
 	wallet: &Wallet,
 	policy_id: &str,
+	asset_name: &str,
 	amount: &str,
 	minting_script: &str,
 ) -> [u8; 32] {
@@ -216,7 +335,7 @@ pub async fn mint_tokens(
 		)
 		.tx_out(&payment_addr, &assets)
 		.mint_plutus_script_v2()
-		.mint(amount.parse().unwrap(), policy_id, "")
+		.mint(amount.parse().unwrap(), policy_id, asset_name)
 		.minting_script(minting_script)
 		.mint_redeemer_value(&WRedeemer {
 			data: WData::JSON(constr0(serde_json::json!([])).to_string()),

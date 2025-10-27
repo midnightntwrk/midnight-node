@@ -43,7 +43,7 @@ sp-consensus-slots.workspace = true
 sp-core.workspace = true
 sp-genesis-builder.workspace = true
 sp-inherents.workspace = true
-sp-native-token-management.workspace = true
+#sp-partner-chains-bridge.workspace = true
 sp-offchain.workspace = true
 sp-runtime.workspace = true
 sp-session.workspace = true
@@ -70,7 +70,7 @@ authority-selection-inherents.workspace = true
 #pallet-block-rewards.workspace = true
 #sp-block-rewards.workspace = true
 pallet-partner-chains-session.workspace = true
-pallet-native-token-management.workspace = true
+#pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
@@ -83,8 +83,8 @@ midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-version.workspace = true
-pallet-native-token-observation.workspace = true
-midnight-primitives-native-token-observation.workspace = true
+pallet-cnight-observation.workspace = true
+midnight-primitives-cnight-observation.workspace = true
 pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 
@@ -117,9 +117,9 @@ std = [
     "pallet-grandpa/std",
     "pallet-midnight/std",
     "pallet-mmr/std",
-    "pallet-native-token-management/std",
+    #"pallet-partner-chains-bridge/std",
     "pallet-version/std",
-    "pallet-native-token-observation/std",
+    "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
     "pallet-sudo/std",
@@ -139,7 +139,7 @@ std = [
     "sp-consensus-slots/std",
     "sp-core/std",
     "sp-inherents/std",
-    "sp-native-token-management/std",
+    #"sp-partner-chains-bridge/std",
     "sp-offchain/std",
     "sp-runtime/std",
     "sp-session/std",
@@ -164,7 +164,7 @@ std = [
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
-    "midnight-primitives-native-token-observation/std",
+    "midnight-primitives-cnight-observation/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [
@@ -176,7 +176,7 @@ runtime-benchmarks = [
     "pallet-grandpa/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
-    # "pallet-native-token-management/runtime-benchmarks",
+    # "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
     "pallet-sudo/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
@@ -186,7 +186,6 @@ runtime-benchmarks = [
     "pallet-collective/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
     "pallet-session-validator-management-benchmarking/runtime-benchmarks",
-    "pallet-midnight/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
     "pallet-governed-map/runtime-benchmarks"
@@ -202,7 +201,7 @@ try-runtime = [
     "pallet-grandpa/try-runtime",
     "pallet-midnight/try-runtime",
     # TODO: Enable native token mgmt try runtime feature when available
-    # "pallet-native-token-management/try-runtime",
+    # "pallet-partner-chains-bridge/try-runtime",
     "pallet-mmr/try-runtime",
     "pallet-scheduler/try-runtime",
     "pallet-sudo/try-runtime",

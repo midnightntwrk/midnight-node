@@ -47,7 +47,7 @@ fn init_ledger_state(block_context: BlockContext) {
 	);
 
 	sp_tracing::try_init_simple();
-	mock::Midnight::initialize_state(UndeployedNetwork.network_id(), &state_key);
+	mock::Midnight::initialize_state(UndeployedNetwork.id(), &state_key);
 	mock::System::set_block_number(1);
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
 }

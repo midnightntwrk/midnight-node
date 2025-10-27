@@ -16,7 +16,7 @@ pub mod benchmarking;
 pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
-pub mod cngd_genesis;
+pub mod cnight_genesis;
 pub mod command;
 pub mod extensions;
 pub mod inherent_data;
