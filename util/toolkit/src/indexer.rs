@@ -40,7 +40,8 @@ use tokio::{
 use crate::{
 	hash_to_str,
 	indexer::runtimes::{
-		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0, RuntimeVersion,
+		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
+		RuntimeVersion,
 	},
 	serde_def::{self, SourceBlockTransactions},
 };

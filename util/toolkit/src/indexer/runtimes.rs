@@ -116,7 +116,6 @@ impl_midnight_metadata!(
 	midnight_node_metadata::midnight_metadata_0_17_1
 );
 
-
 impl_midnight_metadata!(
 	MidnightMetadata0_18_0,
 	mn_meta_0_18_0,
@@ -174,4 +173,3 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		event.0.serialized_system_transaction
 	}
 }
-
