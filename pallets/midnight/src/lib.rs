@@ -48,7 +48,7 @@ pub mod pallet {
 	};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
-	use scale_info::prelude::vec::Vec;
+	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
@@ -113,7 +113,7 @@ pub mod pallet {
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
 	pub struct GenesisConfig<T: Config> {
-		pub network_id: u8,
+		pub network_id: String,
 		pub genesis_state_key: Vec<u8>,
 		#[serde(skip)]
 		pub _config: PhantomData<T>,
@@ -122,7 +122,7 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			Pallet::<T>::initialize_state(self.network_id, &self.genesis_state_key);
+			Pallet::<T>::initialize_state(&self.network_id, &self.genesis_state_key);
 		}
 	}
 
@@ -142,7 +142,7 @@ pub mod pallet {
 	// The pallet's runtime storage items.
 	// https://docs.substrate.io/main-docs/build/runtime-storage/
 	pub type StateKeyLength = ConstU32<128>;
-	type MaxNetworkIdLength = ConstU32<1>;
+	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
 	// Learn more about declaring storage items:
@@ -290,6 +290,8 @@ pub mod pallet {
 		FeeCalculationError,
 		#[codec(index = 10)]
 		HostApiError,
+		#[codec(index = 11)]
+		NetworkIdNotString,
 	}
 	// grcov-excl-stop
 
@@ -532,14 +534,17 @@ pub mod pallet {
 
 	// grcov-excl-start
 	impl<T: Config> Pallet<T> {
-		pub fn initialize_state(network_id: u8, state_key: &[u8]) {
+		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
 			let genesis_state_key: BoundedVec<_, _> =
 				state_key.to_vec().try_into().expect("Genesis state key size out of boundaries");
 			StateKey::<T>::put(genesis_state_key);
 
-			let network_id: BoundedVec<_, _> =
-				Vec::from([network_id]).try_into().expect("Network Id size out of boundaries");
+			let network_id: BoundedVec<_, _> = network_id
+				.as_bytes()
+				.to_vec()
+				.try_into()
+				.expect("Network Id size out of boundaries");
 			NetworkId::<T>::put(network_id);
 		}
 
@@ -559,10 +564,10 @@ pub mod pallet {
 		}
 
 		// grcov-excl-start
-		pub fn get_network_id() -> Vec<u8> {
+		pub fn get_network_id() -> Result<String, Vec<u8>> {
 			match <NetworkId<T>>::get() {
-				None => Vec::new(),
-				Some(name) => name.into(),
+				None => Ok(String::new()),
+				Some(name) => String::from_utf8(name.to_vec()).map_err(|e| e.as_bytes().to_vec()),
 			}
 		}
 

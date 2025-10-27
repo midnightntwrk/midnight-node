@@ -265,7 +265,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		sudo: SudoConfig { key: genesis.root_key().map(|k| k.into()) },
 		midnight: MidnightConfig {
 			_config: Default::default(),
-			network_id: genesis.network_id(),
+			network_id: genesis.id().to_string(),
 			genesis_state_key: midnight_node_ledger::get_root(genesis.genesis_state()),
 		},
 		session: SessionConfig {
