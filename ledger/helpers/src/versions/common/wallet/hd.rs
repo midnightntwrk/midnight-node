@@ -127,11 +127,7 @@ pub trait DeriveSeed {
 
 pub trait IntoWalletAddress {
 	fn network_suffix(network_id: &str) -> String {
-		if network_id == "mainnet" {
-			return String::new();
-		} else {
-			format!("_{network_id}")
-		}
+		if network_id == "mainnet" { String::new() } else { format!("_{network_id}") }
 	}
 
 	fn address(&self, network: &str) -> WalletAddress;
