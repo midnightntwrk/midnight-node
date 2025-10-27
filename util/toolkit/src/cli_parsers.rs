@@ -143,23 +143,6 @@ where
 	Ok(res)
 }
 
-pub fn network_id_decode(input: &str) -> Result<NetworkId, clap::Error> {
-	match input {
-		"undeployed" => Ok(NetworkId::Undeployed),
-		"devnet" => Ok(NetworkId::DevNet),
-		"testnet" => Ok(NetworkId::TestNet),
-		"mainnet" => Ok(NetworkId::MainNet),
-		_ => {
-			let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
-			err.insert(
-				clap::error::ContextKind::Custom,
-				clap::error::ContextValue::String(format!("invalid network id: {}", input)),
-			);
-			Err(err)
-		},
-	}
-}
-
 pub fn wallet_address(input: &str) -> Result<WalletAddress, clap::Error> {
 	WalletAddress::from_str(input).map_err(|error| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);

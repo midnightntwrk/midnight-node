@@ -14,6 +14,7 @@
 use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
 use midnight_node_res::networks::MidnightNetwork;
+use serde_valid::Validate as _;
 
 use midnight_node_ledger_helpers::{
 	BlockContext, DefaultDB, ProofMarker, Signature as LedgerSignature, TransactionWithContext,
@@ -22,13 +23,16 @@ use midnight_node_ledger_helpers::{
 
 use midnight_node_runtime::{
 	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
-	MidnightConfig, MidnightSystemCall, NativeTokenManagementConfig, RuntimeCall,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
+	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
-use midnight_node_runtime::{BeefyConfig, NativeTokenObservationConfig, TimestampCall};
+use midnight_node_runtime::{
+	BeefyConfig, CNightObservationCall, CNightObservationConfig, TimestampCall,
+};
 
+use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
@@ -131,10 +135,10 @@ pub fn read_mainchain_scripts_from_addresses_json(
 	})
 }
 
-pub fn get_chainspec_genesis_tx_properties(
+pub fn get_chainspec_extrinsics(
 	genesis_block: &[u8],
-	genesis_state: &[u8],
-) -> serde_json::map::Map<String, serde_json::Value> {
+	observed_utxos_cnight: &ObservedUtxos,
+) -> Vec<String> {
 	let txs: Vec<TransactionWithContext<LedgerSignature, ProofMarker, DefaultDB>> =
 		tagged_deserialize(&mut &genesis_block[..]).expect("Failed deserializing genesis block");
 
@@ -177,8 +181,27 @@ pub fn get_chainspec_genesis_tx_properties(
 		}));
 	extrinsics.push(hex::encode(timestamp_extrinsic.encode()));
 
+	// Add CNight extrinsic
+	if !observed_utxos_cnight.utxos.is_empty() {
+		let cnight_extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::CNightObservation(
+			CNightObservationCall::process_tokens {
+				utxos: observed_utxos_cnight.utxos.clone(),
+				next_cardano_position: observed_utxos_cnight.end,
+			},
+		));
+		extrinsics.push(hex::encode(cnight_extrinsic.encode()));
+	}
+
+	extrinsics
+}
+
+pub fn get_chainspec_properties(
+	genesis_block: &[u8],
+	genesis_state: &[u8],
+	observed_utxos_cnight: &ObservedUtxos,
+) -> serde_json::map::Map<String, serde_json::Value> {
 	serde_json::json!({
-		"genesis_extrinsics": extrinsics,
+		"genesis_extrinsics": get_chainspec_extrinsics(genesis_block, observed_utxos_cnight),
 		"genesis_state": hex::encode(genesis_state),
 	})
 	.as_object()
@@ -195,9 +218,10 @@ pub fn chain_config<T: MidnightNetwork>(genesis: T) -> Result<ChainSpec, ChainSp
 		.with_name(genesis.name())
 		.with_id(genesis.id())
 		.with_chain_type(genesis.chain_type())
-		.with_properties(get_chainspec_genesis_tx_properties(
+		.with_properties(get_chainspec_properties(
 			genesis.genesis_block(),
 			genesis.genesis_state(),
+			&genesis.cnight_genesis().observed_utxos,
 		))
 		.with_genesis_config(genesis_config(genesis)?);
 
@@ -216,6 +240,11 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
 		.collect::<Vec<_>>();
+
+	let cnight_genesis = genesis.cnight_genesis();
+	cnight_genesis.validate().map_err(|e| {
+		ChainSpecInitError::ParseError(format!("failed to validate cnight genesis config: {e}"))
+	})?;
 
 	let config = RuntimeGenesisConfig {
 		system: Default::default(),
@@ -236,7 +265,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		sudo: SudoConfig { key: genesis.root_key().map(|k| k.into()) },
 		midnight: MidnightConfig {
 			_config: Default::default(),
-			network_id: genesis.network_id(),
+			network_id: genesis.id().to_string(),
 			genesis_state_key: midnight_node_ledger::get_root(genesis.genesis_state()),
 		},
 		session: SessionConfig {
@@ -262,19 +291,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		tx_pause: Default::default(),
 		pallet_session: Default::default(),
-		native_token_management: NativeTokenManagementConfig { ..Default::default() },
-		native_token_observation: NativeTokenObservationConfig {
-			redemption_validator_address: genesis
-				.cnight_generates_dust_config()
-				.redemption_validator_address
-				.into(),
-			mapping_validator_address: genesis
-				.cnight_generates_dust_config()
-				.mapping_validator_address
-				.into(),
-			token_policy_id: hex::decode(genesis.cnight_generates_dust_config().policy_id)
-				.expect("failed to decode policy id as hex"),
-			token_asset_name: genesis.cnight_generates_dust_config().asset_name.into(),
+		c_night_observation: CNightObservationConfig {
+			config: cnight_genesis,
 			_marker: Default::default(),
 		},
 		council: CouncilConfig { ..Default::default() },

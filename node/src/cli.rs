@@ -13,12 +13,14 @@
 
 use std::str::FromStr;
 
-use authority_selection_inherents::CommitteeMember;
 use clap::Parser;
-use midnight_node_runtime::{CrossChainPublic, opaque::SessionKeys};
+
+use crate::cfg::Cfg;
+use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
+use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
-use sc_cli::{CliConfiguration, SharedParams};
+use sc_cli::SubstrateCli;
 use sidechain_domain::McBlockHash;
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -37,19 +39,14 @@ pub struct Cli {
 }
 
 #[derive(Debug, Parser)]
-pub struct CngdGenesisCmd {
+pub struct CNightGenesisCmd {
 	/// The Cardano block hash assumed to be the latest for this query
 	#[arg(short, long)]
-	pub initial_mc_hash: McBlockHash,
-	#[allow(missing_docs)]
-	#[clap(flatten)]
-	pub shared_params: SharedParams,
-}
-
-impl CliConfiguration for CngdGenesisCmd {
-	fn shared_params(&self) -> &sc_cli::SharedParams {
-		&self.shared_params
-	}
+	pub cardano_tip: McBlockHash,
+	#[arg(long)]
+	pub cnight_addresses: std::path::PathBuf,
+	#[arg(short, long, default_value = "cnight-genesis.json")]
+	pub output: std::path::PathBuf,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -70,7 +67,7 @@ pub enum Subcommand {
 	CheckBlock(sc_cli::CheckBlockCmd),
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
-	GenerateCngdGenesis(CngdGenesisCmd),
+	GenerateCNightGenesis(CNightGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
@@ -99,12 +96,33 @@ pub enum Subcommand {
 #[derive(Clone, Debug)]
 pub struct MidnightRuntime;
 impl PartnerChainRuntime for MidnightRuntime {
-	type AuthorityId = CrossChainPublic;
-	type AuthorityKeys = SessionKeys;
-	type CommitteeMember = CommitteeMember<Self::AuthorityId, Self::AuthorityKeys>;
+	type Keys = SessionKeys;
 
-	fn initial_member(id: Self::AuthorityId, keys: Self::AuthorityKeys) -> Self::CommitteeMember {
-		Self::CommitteeMember::from((id, keys))
+	fn create_chain_spec(_config: &CreateChainSpecConfig<Self::Keys>) -> serde_json::Value {
+		let cfg = Cfg::new_no_validation()
+			.expect("chainspec configuration must load without validation errors");
+
+		let chain_id = cfg
+			.chain_spec_cfg
+			.chainspec_id
+			.as_deref()
+			.expect("chain spec configuration must define an identifier");
+
+		let chain_spec = cfg
+			.load_spec(chain_id)
+			.expect("chain spec generation must succeed when using default configuration");
+
+		let chain_spec_json =
+			chain_spec.as_json(false).expect("Chain spec serialization cannot fail");
+		let chain_spec_value: serde_json::Value =
+			serde_json::from_str(&chain_spec_json).expect("Generated chain spec JSON is valid");
+
+		chain_spec_value
+	}
+
+	fn key_definitions() -> Vec<KeyDefinition<'static>> {
+		// TODO: BEEFY(follow up pr)
+		vec![AURA, GRANDPA, CROSS_CHAIN]
 	}
 }
 
@@ -120,7 +138,14 @@ impl FromStr for MidnightAddress {
 	}
 }
 
+#[derive(Debug)]
 pub struct NotImplementedError;
+impl std::fmt::Display for NotImplementedError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("not implemented")
+	}
+}
+impl core::error::Error for NotImplementedError {}
 
 // TODO: this is used to sign block producer metadata. Do we have a better type for that?
 #[derive(serde::Deserialize, Encode)]

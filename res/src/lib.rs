@@ -75,7 +75,7 @@ pub fn get_config(name: &str) -> Option<String> {
 }
 
 // Well-known values for live Cardano testnet preview resources.
-pub mod native_token_observation_consts {
+pub mod cnight_observation_consts {
 	// Redemption Validator address
 	pub const TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS: &str =
 		"addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4";

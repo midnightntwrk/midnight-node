@@ -17,41 +17,6 @@ use documented::{Documented, DocumentedFields as _};
 use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, validation};
 
-fn network_id_deser<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
-where
-	D: serde::Deserializer<'de>,
-{
-	let s: Option<String> = serde::Deserialize::deserialize(deserializer)?;
-	match s {
-		Some(s) => match s.as_str() {
-			"undeployed" => Ok(Some(0)),
-			"devnet" => Ok(Some(1)),
-			"testnet" => Ok(Some(2)),
-			"mainnet" => Ok(Some(3)),
-			_ => {
-				Err(serde::de::Error::custom(format!("failed to deserialize {s:?} as network_id")))
-			},
-		},
-		None => Ok(None),
-	}
-}
-
-fn network_id_ser<S>(network_id: &Option<u8>, serializer: S) -> Result<S::Ok, S::Error>
-where
-	S: serde::Serializer,
-{
-	match network_id {
-		Some(network_id) => match *network_id {
-			0 => serializer.serialize_str("undeployed"),
-			1 => serializer.serialize_str("devnet"),
-			2 => serializer.serialize_str("testnet"),
-			3 => serializer.serialize_str("mainnet"),
-			_ => serializer.serialize_str("unknown"),
-		},
-		None => serializer.serialize_str("none"),
-	}
-}
-
 #[derive(Debug, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = all_required)]
 /// Parameters required for chainspec generation
@@ -64,12 +29,6 @@ pub struct ChainSpecCfg {
 	/// Id of the network e.g. devnet
 	#[serde(default)]
 	pub chainspec_id: Option<String>,
-	/// Required for generic Live network chain spec
-	/// Id of the network e.g. devnet
-	#[serde(deserialize_with = "network_id_deser")]
-	#[serde(serialize_with = "network_id_ser")]
-	#[serde(default)]
-	pub chainspec_network_id: Option<u8>,
 	/// Required for generic Live network chain spec
 	/// Path to genesis_state
 	#[validate(custom = |s| maybe(s, path_exists))]
@@ -95,7 +54,7 @@ pub struct ChainSpecCfg {
 	/// CNight Generates Dust config file e.g. devnet/cngd-config.json
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
-	pub chainspec_cngd_config: Option<String>,
+	pub chainspec_cnight_genesis: Option<String>,
 
 	/// Required for generic Live network chain spec
 	/// Members of the Council Governance Authority
@@ -109,10 +68,9 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 
 	if cfg.chainspec_name.is_some()
 		|| cfg.chainspec_id.is_some()
-		|| cfg.chainspec_network_id.is_some()
 		|| cfg.chainspec_chain_type.is_some()
 		|| cfg.chainspec_pc_chain_config.is_some()
-		|| cfg.chainspec_cngd_config.is_some()
+		|| cfg.chainspec_cnight_genesis.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
 	{
 		if cfg.chainspec_name.is_none() {
@@ -120,9 +78,6 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		}
 		if cfg.chainspec_id.is_none() {
 			missing.push("chainspec_id".to_string());
-		}
-		if cfg.chainspec_network_id.is_none() {
-			missing.push("chainspec_network_id".to_string());
 		}
 		if cfg.chainspec_chain_type.is_none() {
 			missing.push("chainspec_chain_type".to_string());
@@ -136,8 +91,8 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		if cfg.chainspec_pc_chain_config.is_none() {
 			missing.push("chainspec_pc_chain_config".to_string());
 		}
-		if cfg.chainspec_cngd_config.is_none() {
-			missing.push("chainspec_cngd_config".to_string());
+		if cfg.chainspec_cnight_genesis.is_none() {
+			missing.push("chainspec_cnight_genesis".to_string());
 		}
 		if cfg.chainspec_federated_authority_config.is_none() {
 			missing.push("chainspec_federated_authority_config".to_string());

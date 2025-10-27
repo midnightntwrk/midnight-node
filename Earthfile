@@ -140,7 +140,7 @@ rebuild-sqlx:
     CACHE /target
     RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
     COPY local-environment/localenv_postgres.password .
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
         cargo sqlx prepare --workspace
     SAVE ARTIFACT .sqlx AS LOCAL .sqlx
@@ -158,15 +158,14 @@ rebuild-redemption-skeleton:
 
 rebuild-genesis-state:
     ARG NETWORK
-    ARG SUFFIX=${NETWORK}
     ARG GENERATE_TEST_TXS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    COPY --if-exists res/genesis/genesis_funding_wallets_${SUFFIX}.txt funding_wallets.txt
-    COPY --if-exists secrets/${SUFFIX}-genesis-seeds.json /secrets/genesis-seeds.json
+    COPY --if-exists res/genesis/genesis_funding_wallets_${NETWORK}.txt funding_wallets.txt
+    COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
@@ -182,55 +181,54 @@ rebuild-genesis-state:
     IF [ -f /secrets/genesis-seeds.json ]
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
-            --suffix ${SUFFIX} \
             --seeds-file /secrets/genesis-seeds.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
-        RUN echo "No genesis seeds file found for ${SUFFIX}, using existing genesis state"
-        COPY res/genesis/genesis_state_${SUFFIX}.mn res/genesis/genesis_block_${SUFFIX}.mn /res/genesis
+        RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
+        COPY res/genesis/genesis_state_${NETWORK}.mn res/genesis/genesis_block_${NETWORK}.mn /res/genesis
     END
 
     RUN mkdir -p /res/test-contract
     RUN mkdir -p out /res/test-contract \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
-                --dest-file out/contract_tx_1_deploy_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
+                --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
-                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                | tr -d '\n' > out/contract_address_${SUFFIX}.mn \
+                --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                | tr -d '\n' > out/contract_address_${NETWORK}.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
-                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --dest-file out/contract_tx_2_store_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
+                --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --dest-file out/contract_tx_2_store_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
-                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
+                --contract-address $(cat out/contract_address_${NETWORK}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
-                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
-                --dest-file out/contract_tx_3_check_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
+                --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --src-file out/contract_tx_2_store_${NETWORK}.mn \
+                --dest-file out/contract_tx_3_check_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
-                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
+                --contract-address $(cat out/contract_address_${NETWORK}.mn) \
             && /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
-                --src-file out/contract_tx_1_deploy_${SUFFIX}.mn \
-                --src-file out/contract_tx_2_store_${SUFFIX}.mn \
-                --src-file out/contract_tx_3_check_${SUFFIX}.mn \
-                --dest-file out/contract_tx_4_change_authority_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
+                --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --src-file out/contract_tx_2_store_${NETWORK}.mn \
+                --src-file out/contract_tx_3_check_${NETWORK}.mn \
+                --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
-                --contract-address $(cat out/contract_address_${SUFFIX}.mn) \
+                --contract-address $(cat out/contract_address_${NETWORK}.mn) \
             && cp out/contract*.mn /res/test-contract \
         ; fi
 
@@ -240,7 +238,7 @@ rebuild-genesis-state:
     RUN mkdir -p out /res/test-zswap \
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -258,7 +256,7 @@ rebuild-genesis-state:
                 --unshielded \
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
-                --src-file out/genesis_block_${SUFFIX}.mn \
+                --src-file out/genesis_block_${NETWORK}.mn \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -290,7 +288,7 @@ rebuild-genesis-state:
                 --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
                 0 \
             && /midnight-node-toolkit send-intent \
-                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -300,7 +298,7 @@ rebuild-genesis-state:
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
-                --src-file /res/genesis/genesis_block_${SUFFIX}.mn \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
@@ -322,22 +320,19 @@ rebuild-genesis-state-undeployed:
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --SUFFIX=node-dev-01 \
+        --NETWORK=node-dev-01 \
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --SUFFIX=qanet \
+        --NETWORK=qanet \
         --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --SUFFIX=preview \
+        --NETWORK=preview \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
@@ -499,7 +494,7 @@ prep:
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
     # for now this is ok as there's only one compile task dependent on this.
-    # RUN --mount type=secret,id=netrc,target=/root/.netrc cargo fetch --locked \
+    # RUN cargo fetch --locked \
     #   --target aarch64-unknown-linux-gnu \
     #   --target x86_64-unknown-linux-gnu \
     #   --target wasm32v1-none
@@ -536,7 +531,7 @@ check-deps:
     RUN cargo binstall --no-confirm cargo-shear
 
     # shear
-    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo shear
+    RUN cargo shear
 
 # check-rust runs cargo fmt and clippy.
 planner:
@@ -555,7 +550,7 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     # Build dependencies - this is the caching Docker layer!
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -569,7 +564,8 @@ check-rust:
     RUN cargo fmt --all -- --check
 
     # --offline used to hard fail if caching broken.
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --offline -- -D warnings
+    # ensure runtime benchmark feature enable to check they compile.
+    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
 
 # check-nodejs lints any nodejs projects
 check-nodejs:
@@ -581,14 +577,6 @@ check-nodejs:
     RUN yarn install --immutable
     COPY tests/ ./
     RUN yarn lint
-
-# check-benchmarks verifies that runtime-benchmarks feature compiles
-check-benchmarks:
-    FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
-    RUN --mount type=secret,id=netrc,target=/root/.netrc cargo check --locked --features runtime-benchmarks
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -639,7 +627,7 @@ test:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    RUN --mount type=secret,id=netrc,target=/root/.netrc MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
     RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
     RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
@@ -660,7 +648,7 @@ build-prepare:
     ENV CXX=clang++
 
     # Build dependencies - this is the caching Docker layer!
-    RUN --mount type=secret,id=netrc,target=/root/.netrc SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
 
 # build creates production ready binaries
@@ -702,7 +690,7 @@ build-normal:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         cargo build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
@@ -754,7 +742,7 @@ build-benchmarks:
     ARG NATIVEARCH
 
     # Build with runtime-benchmarks feature
-    RUN --mount type=secret,id=netrc,target=/root/.netrc \
+    RUN \
         cargo build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
@@ -1026,7 +1014,7 @@ local-env-e2e:
         yarn run start
 
 local-env-rust-e2e:
-    FROM +build-prepare
+    FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     RUN sed -i \
@@ -1034,7 +1022,7 @@ local-env-rust-e2e:
         -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
         tests/e2e/src/cfg/local/config.toml
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests
+    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

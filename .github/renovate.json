@@ -17,7 +17,7 @@
     {
       "customType": "regex",
       "description": "Update _version ARGs and ENVs in Earthfile",
-      "managerFilePatterns": [
+      "fileMatch": [
         "/^Earthfile$/"
       ],
       "matchStrings": [
@@ -26,7 +26,7 @@
     }
   ],
   "dockerfile": {
-    "managerFilePatterns": [
+    "fileMatch": [
       "/Earthfile/"
     ]
   }

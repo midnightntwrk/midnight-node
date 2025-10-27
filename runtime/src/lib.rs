@@ -24,13 +24,8 @@ extern crate frame_benchmarking;
 extern crate alloc;
 use alloc::{collections::BTreeMap, string::String};
 use authority_selection_inherents::{
-	CommitteeMember,
-	authority_selection_inputs::AuthoritySelectionInputs,
-	filter_invalid_candidates::{
-		Candidate, PermissionedCandidateDataError, RegistrationDataError, StakeError,
-		validate_permissioned_candidate_data,
-	},
-	select_authorities::select_authorities,
+	AuthoritySelectionInputs, CommitteeMember, PermissionedCandidateDataError,
+	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
 };
 
 pub use frame_support::{
@@ -54,8 +49,9 @@ pub use frame_support::{
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
+pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
@@ -65,9 +61,9 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	AuraPublicKey, DParameter, EpochNonce, GrandpaPublicKey, NativeTokenAmount,
-	PermissionedCandidateData, RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey,
-	StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
+	DParameter, EpochNonce, PermissionedCandidateData, RegistrationData, ScEpochNumber,
+	ScSlotNumber, SidechainPublicKey, StakeDelegation, StakePoolPublicKey, UtxoId,
+	byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -154,9 +150,11 @@ pub const CROSS_CHAIN: KeyTypeId = KeyTypeId(*b"crch");
 /// to even the core data structures.
 pub mod opaque {
 	use super::*;
+	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+	use sp_runtime::key_types::{AURA, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -171,7 +169,6 @@ pub mod opaque {
 	pub mod cross_chain_app {
 		use super::CROSS_CHAIN;
 		use parity_scale_codec::MaxEncodedLen;
-		use sidechain_domain::SidechainPublicKey;
 		use sp_core::crypto::AccountId32;
 		use sp_runtime::MultiSigner;
 		use sp_runtime::app_crypto::{app_crypto, ecdsa};
@@ -202,15 +199,6 @@ pub mod opaque {
 				value.into_inner().0.to_vec()
 			}
 		}
-
-		impl TryFrom<SidechainPublicKey> for Public {
-			type Error = SidechainPublicKey;
-			fn try_from(pubkey: SidechainPublicKey) -> Result<Self, Self::Error> {
-				let cross_chain_public_key =
-					Public::try_from(pubkey.0.as_slice()).map_err(|_| pubkey)?;
-				Ok(cross_chain_public_key)
-			}
-		}
 	}
 
 	impl_opaque_keys! {
@@ -223,16 +211,42 @@ pub mod opaque {
 		}
 	}
 
-	// todo: check possibililty of adding the beefy ecdsa public
-	impl From<(sr25519::Public, ed25519::Public)> for SessionKeys {
-		fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
-			Self { aura: aura.into(), grandpa: grandpa.into() }
+	impl MaybeFromCandidateKeys for SessionKeys {
+		fn maybe_from(keys: &sidechain_domain::CandidateKeys) -> Option<Self> {
+			let aura = keys.find(AURA)?;
+			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
+			let grandpa = keys.find(GRANDPA)?;
+			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
+			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+		}
+	}
+
+	impl From<SessionKeys> for sidechain_domain::CandidateKeys {
+		fn from(value: SessionKeys) -> Self {
+			Self(vec![
+				sidechain_domain::CandidateKey::new(
+					AURA,
+					value.aura.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
+					GRANDPA,
+					value.grandpa.into_inner().to_raw().to_vec(),
+				),
+			])
 		}
 	}
 
 	impl_opaque_keys! {
 		pub struct CrossChainKey {
 			pub account: CrossChainPublic,
+		}
+	}
+
+	impl MaybeFromCandidateKeys for CrossChainKey {
+		fn maybe_from(keys: &sidechain_domain::CandidateKeys) -> Option<Self> {
+			let key = keys.find(CROSS_CHAIN)?;
+			let account = CrossChainPublic::try_from(key.as_slice()).ok()?;
+			Some(Self { account })
 		}
 	}
 }
@@ -513,22 +527,9 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 				return vec![];
 			};
 
-			let Some(aura_public_key) =
-				convert_to_key::<sp_core::sr25519::Public, AuraPublicKey, _>(&session_keys.aura)
-			else {
-				return vec![];
-			};
-
-			let Some(grandpa_public_key) =
-				convert_to_key::<sp_core::ed25519::Public, GrandpaPublicKey, _>(&session_keys.aura)
-			else {
-				return vec![];
-			};
-
 			let candidate = PermissionedCandidateData {
 				sidechain_public_key,
-				aura_public_key,
-				grandpa_public_key,
+				keys: session_keys.clone().into(),
 			};
 
 			permissioned_candidates.push(candidate);
@@ -552,7 +553,7 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 			epoch_nonce,
 		};
 
-		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys>(
+		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys, MaxAuthorities>(
 			Sidechain::genesis_utxo(),
 			input,
 			Runtime::current_epoch_number(),
@@ -562,33 +563,19 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 
 		let result = candidates
 			.into_iter()
-			.filter_map(|member| match member {
-				Candidate::Permissioned(permissioned_candidate) =>
+			.map(|member| match member {
+				CommitteeMember::Permissioned { id, keys: _ } =>
 				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
 				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
 				{
-					Some((
-						xchain_public_to_beefy(permissioned_candidate.account_id),
+					(
+						xchain_public_to_beefy(id),
 						// set to 0 for unfound stake delegation
 						StakeDelegation(1),
-					))
+					)
 				},
-				Candidate::Registered(candidate_with_stake) => {
-					// For mocking purposes, CrosschainPublicKey is converted to BeefyId
-					// BeefyId can be derived from a value provided by the CrosschainPublicKey.
-					let beefy_id = xchain_public_to_beefy(candidate_with_stake.account_id);
-
-					// check if this beefy_id exists in the list of validators
-					if beefy_ids.iter().any(|id| id == &beefy_id) {
-						Some((beefy_id, candidate_with_stake.stake_delegation))
-					} else {
-						log::warn!(
-							target: "runtime:beefy_mmr",
-							"Candidate Public Key not part of the beefy validator set {:#?}",
-							candidate_with_stake.account_keys
-						);
-						None
-					}
+				CommitteeMember::Registered { .. } => {
+					unreachable!("we have not mocked any registered candidates")
 				},
 			})
 			.collect::<Vec<(BeefyId, StakeDelegation)>>();
@@ -700,7 +687,7 @@ parameter_types! {
 fn select_authorities_optionally_overriding(
 	mut input: AuthoritySelectionInputs,
 	sidechain_epoch: ScEpochNumber,
-) -> Option<Vec<Candidate<CrossChainPublic, SessionKeys>>> {
+) -> Option<BoundedVec<CommitteeMember<CrossChainPublic, SessionKeys>, MaxAuthorities>> {
 	let d_parameter_override = pallet_midnight::pallet::DParameterOverride::<Runtime>::get();
 	if let Some(d_parameter_override) = d_parameter_override {
 		input.d_parameter.num_permissioned_candidates = d_parameter_override.0;
@@ -720,12 +707,7 @@ impl pallet_session_validator_management::Config for Runtime {
 		input: AuthoritySelectionInputs,
 		sidechain_epoch: ScEpochNumber,
 	) -> Option<BoundedVec<Self::CommitteeMember, MaxAuthorities>> {
-		Some(BoundedVec::truncate_from(
-			select_authorities_optionally_overriding(input, sidechain_epoch)?
-				.into_iter()
-				.map(CommitteeMember::from)
-				.collect(),
-		))
+		select_authorities_optionally_overriding(input, sidechain_epoch)
 	}
 
 	fn current_epoch_number() -> ScEpochNumber {
@@ -978,22 +960,7 @@ impl pallet_federated_authority_observation::Config for Runtime {
 
 pub struct MidnightTokenTransferHandler;
 
-// Replace with pc native token management pallet
-impl pallet_native_token_management::TokenTransferHandler for MidnightTokenTransferHandler {
-	fn handle_token_transfer(token_amount: NativeTokenAmount) -> DispatchResult {
-		// TODO: Needs to have dedicated function on the ledger side for receiving block reward mints
-		log::info!("Registered transfer of {} native tokens.", token_amount.0,);
-		Ok(())
-	}
-}
-
-impl pallet_native_token_management::Config for Runtime {
-	type TokenTransferHandler = MidnightTokenTransferHandler;
-	type WeightInfo = pallet_native_token_management::weights::SubstrateWeight<Runtime>;
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
-}
-
-impl pallet_native_token_observation::Config for Runtime {
+impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
@@ -1063,10 +1030,8 @@ mod runtime {
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
 
-	#[runtime::pallet_index(12)]
-	pub type NativeTokenManagement = pallet_native_token_management::Pallet<Runtime>;
 	#[runtime::pallet_index(13)]
-	pub type NativeTokenObservation = pallet_native_token_observation::Pallet<Runtime>;
+	pub type CNightObservation = pallet_cnight_observation::Pallet<Runtime>;
 
 	// Utility
 	#[runtime::pallet_index(15)]
@@ -1169,14 +1134,6 @@ mod benches {
 }
 
 impl_runtime_apis! {
-	impl sp_native_token_management::NativeTokenManagementApi<Block> for Runtime {
-		fn get_main_chain_scripts() -> Option<sp_native_token_management::MainChainScripts> {
-			NativeTokenManagement::get_main_chain_scripts()
-		}
-		fn initialized() -> bool {
-			NativeTokenManagement::initialized()
-		}
-	}
 
 	impl sp_genesis_builder::GenesisBuilder<Block> for Runtime {
 		fn build_state(config: Vec<u8>) -> sp_genesis_builder::Result {
@@ -1216,7 +1173,7 @@ impl_runtime_apis! {
 		fn get_zswap_chain_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_chain_state(&contract_address)
 		}
-		fn get_network_id() -> Vec<u8> {
+		fn get_network_id() -> String {
 			Midnight::get_network_id()
 		}
 		fn get_ledger_version() -> Vec<u8> {
@@ -1567,41 +1524,41 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl authority_selection_inherents::filter_invalid_candidates::CandidateValidationApi<Block> for Runtime {
-		fn validate_registered_candidate_data(stake_pool_pub_key: &StakePoolPublicKey,registration_data: &RegistrationData) -> Option<RegistrationDataError> {
-			authority_selection_inherents::filter_invalid_candidates::validate_registration_data(stake_pool_pub_key, registration_data, Sidechain::genesis_utxo()).err()
+	impl authority_selection_inherents::CandidateValidationApi<Block> for Runtime {
+		fn validate_registered_candidate_data(stake_pool_pub_key: &StakePoolPublicKey, registration_data: &RegistrationData) -> Option<RegistrationDataError> {
+			authority_selection_inherents::validate_registration_data::<SessionKeys>(stake_pool_pub_key, registration_data, Sidechain::genesis_utxo()).err()
 		}
 		fn validate_stake(stake: Option<StakeDelegation>) -> Option<StakeError> {
-			authority_selection_inherents::filter_invalid_candidates::validate_stake(stake).err()
+			authority_selection_inherents::validate_stake(stake).err()
 		}
 		fn validate_permissioned_candidate_data(candidate: PermissionedCandidateData) -> Option<PermissionedCandidateDataError> {
-			validate_permissioned_candidate_data::<CrossChainPublic>(candidate).err()
+			validate_permissioned_candidate_data::<CrossChainKey>(candidate).err()
 		}
 	}
 
-	impl midnight_primitives_native_token_observation::NativeTokenObservationApi<Block> for Runtime {
+	impl midnight_primitives_cnight_observation::CNightObservationApi<Block> for Runtime {
 		fn get_redemption_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_mapping_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_native_token_observation::NextCardanoPosition::<Runtime>::get()
+			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
 		}
 
 		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_native_token_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
+			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
 		}
 
 		fn get_cardano_block_window_size() -> u32 {
-			pallet_native_token_observation::CardanoBlockWindowSize::<Runtime>::get()
+			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
 		}
 
 		fn get_native_token_identifier() -> (Vec<u8>, Vec<u8>) {
-			let (policy_id, asset_name) = pallet_native_token_observation::NativeAssetIdentifier::<Runtime>::get();
+			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
 		}
 	}
@@ -1626,8 +1583,7 @@ impl_runtime_apis! {
 mod tests {
 	use crate::mock::*;
 	use crate::{Midnight, select_authorities_optionally_overriding};
-	use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionInputs;
-	use authority_selection_inherents::filter_invalid_candidates::RegisterValidatorSignedMessage;
+	use authority_selection_inherents::{AuthoritySelectionInputs, RegisterValidatorSignedMessage};
 	use frame_support::{
 		assert_ok,
 		dispatch::PostDispatchInfo,
@@ -1850,8 +1806,7 @@ mod tests {
 			.iter()
 			.map(|c| PermissionedCandidateData {
 				sidechain_public_key: c.sidechain_pub_key(),
-				aura_public_key: c.aura_pub_key(),
-				grandpa_public_key: c.grandpa_pub_key(),
+				keys: c.session_keys(),
 			})
 			.collect();
 		AuthoritySelectionInputs {
@@ -1889,8 +1844,7 @@ mod tests {
 						sidechain_signature_bytes_no_recovery,
 					),
 					sidechain_pub_key: validator.sidechain_pub_key(),
-					aura_pub_key: validator.aura_pub_key(),
-					grandpa_pub_key: validator.grandpa_pub_key(),
+					keys: validator.session_keys(),
 					cross_chain_pub_key: CrossChainPublicKey(validator.sidechain_pub_key().0),
 					utxo_info: UtxoInfo::default(),
 					tx_inputs: vec![signed_message.registration_utxo],
