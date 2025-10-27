@@ -23,10 +23,10 @@ use midnight_node_ledger_helpers::{
 
 use midnight_node_runtime::{
 	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
-	MidnightConfig, MidnightSystemCall, NativeTokenManagementConfig, RuntimeCall,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	Signature, SudoConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
+	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 use midnight_node_runtime::{
 	BeefyConfig, CNightObservationCall, CNightObservationConfig, TimestampCall,
@@ -291,7 +291,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		tx_pause: Default::default(),
 		pallet_session: Default::default(),
-		native_token_management: NativeTokenManagementConfig { ..Default::default() },
 		c_night_observation: CNightObservationConfig {
 			config: cnight_genesis,
 			_marker: Default::default(),

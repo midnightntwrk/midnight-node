@@ -97,8 +97,8 @@ authority-selection-inherents.workspace = true
 #sp-block-rewards = { workspace = true, optional = true }
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
-partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "native-token", "sidechain-rpc", "governed-map"] }
-partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "native-token", "sidechain-rpc", "governed-map"] }
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map"] }
+partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map"] }
 pallet-session-validator-management-rpc.workspace = true
 pallet-sidechain-rpc.workspace = true
 pallet-governed-map.workspace = true
@@ -110,6 +110,7 @@ sc-partner-chains-consensus-aura.workspace = true
 sp-session-validator-management-query.workspace = true
 sp-governed-map.workspace = true
 partner-chains-node-commands.workspace = true
+partner-chains-cli.workspace = true
 
 sc-storage-monitor.workspace = true
 sp-inherents.workspace = true
@@ -125,7 +126,7 @@ documented.workspace = true
 shell-words = "1.1.0"
 derive-new.workspace = true
 
-sp-native-token-management = { workspace = true, default-features = true }
+#sp-partner-chains-bridge = { workspace = true, default-features = true }
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
 
@@ -148,8 +149,6 @@ runtime-benchmarks = [
 try-runtime = ["midnight-node-runtime/try-runtime"]
 experimental = [
     #"sp-block-rewards",
-    "partner-chains-db-sync-data-sources/native-token",
-    "partner-chains-mock-data-sources/native-token",
 ]
 
 [package.metadata.cargo-shear]
