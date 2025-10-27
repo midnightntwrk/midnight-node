@@ -31,9 +31,6 @@ pub struct GenerateGenesisArgs {
 	// Proof Server Host
 	#[arg(long, short)]
 	proof_server: Option<String>,
-	// Output suffix (defaults to match network)
-	#[arg(long)]
-	suffix: Option<String>,
 	/// File containing the wallet seeds to fund
 	#[arg(long)]
 	seeds_file: PathBuf,
@@ -55,8 +52,7 @@ pub async fn execute(
 	let dir = Path::new(&args.out_dir);
 	std::fs::create_dir_all(&dir)?;
 
-	let suffix = if let Some(ref suffix) = args.suffix { suffix } else { &args.network };
-	println!("generating genesis for network {} ({suffix})...", &args.network);
+	println!("generating genesis for network {}...", &args.network);
 
 	// Parse the seeds file
 	let seeds_str = std::fs::read_to_string(args.seeds_file)?;
@@ -92,10 +88,10 @@ pub async fn execute(
 	)
 	.await?;
 
-	let genesis_state_path = dir.join(format!("genesis_state_{suffix}.mn"));
+	let genesis_state_path = dir.join(format!("genesis_state_{}.mn", &args.network));
 	serialize_and_write(&genesis.state, &genesis_state_path)?;
 
-	let genesis_tx_path = dir.join(format!("genesis_block_{suffix}.mn"));
+	let genesis_tx_path = dir.join(format!("genesis_block_{}.mn", &args.network));
 	serialize_and_write(&genesis.txs, &genesis_tx_path)?;
 
 	println!("Number of genesis txs: {}", genesis.txs.len());

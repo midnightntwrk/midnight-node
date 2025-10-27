@@ -3,7 +3,6 @@ base_path = "node/chain"
 
 chainspec_name = "preview"
 chainspec_id = "preview"
-chainspec_network_id = "devnet"
 chainspec_genesis_state = "res/genesis/genesis_state_preview.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_preview.mn"
 chainspec_chain_type = "live"
