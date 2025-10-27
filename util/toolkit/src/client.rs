@@ -51,14 +51,7 @@ impl MidnightNodeClient {
 		// let network_id = self.api.storage().at_latest().await?.fetch(&storage_query).await??;
 		let network_id_call = mn_meta::apis().midnight_runtime_api().get_network_id();
 		// Submit the call and get back a result.
-		let network_id = self
-			.api
-			.runtime_api()
-			.at_latest()
-			.await?
-			.call(network_id_call)
-			.await?
-			.expect("on-chain network id is not a String");
+		let network_id = self.api.runtime_api().at_latest().await?.call(network_id_call).await?;
 
 		Ok(network_id)
 	}
