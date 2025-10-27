@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n    spending_block.block_no as \"block_number!: _\",\n    spending_block.hash as \"block_hash: _\",\n    spending_block.time as block_timestamp,\n    spending_tx.block_index as \"tx_index_in_block: _\",\n    ma_tx_out.quantity::BIGINT AS \"quantity!: _\",\n    tx_out.address AS \"holder_address: _\",\n    tx.hash AS \"utxo_tx_hash: _\",\n    tx_out.index AS \"utxo_index: _\",\n    spending_tx.hash AS \"spending_tx_hash: _\"\nFROM ma_tx_out\n    JOIN multi_asset ma ON ma.id = ma_tx_out.ident\n    JOIN tx_out ON tx_out.id = ma_tx_out.tx_out_id\n    JOIN tx_in ON tx_out.tx_id = tx_in.tx_out_id \n                AND tx_out.index = tx_in.tx_out_index\n    JOIN tx ON tx_out.tx_id = tx.id\n    JOIN tx AS spending_tx ON tx_in.tx_in_id = spending_tx.id\n    JOIN block AS spending_block ON spending_tx.block_id = spending_block.id\nWHERE ma.policy = $1\n    AND ma.name = $2\n    AND (spending_block.block_no, spending_tx.block_index) >= ($3, $4)\n    AND (spending_block.block_no, spending_tx.block_index) < ($5, $6)\nORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index\nLIMIT $7 OFFSET $8;\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_timestamp",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "tx_index_in_block: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "quantity!: _",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "holder_address: _",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "utxo_tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "utxo_index: _",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "spending_tx_hash: _",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c9d8bf8693d6752e658edc207abf7fe4e94b74b309f4e8e525f0a37a2eabe994"
+}

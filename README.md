@@ -38,7 +38,6 @@ that we are still in the process of being release. As such:
   and [Docker Compose](https://docs.docker.com/compose/install/) (or podman).
 - [Earthly](https://earthly.dev/get-earthly) - containerized build system
 - [Direnv](https://direnv.net/docs/installation.html) - manages environment variables
-- Netrc file with git credentials. See this [reference setup](https://gist.github.com/technoweenie/1072829)
 
 ## Contributing
 
@@ -147,3 +146,7 @@ See the `--help` flag for more information on other arguments, including key sch
 ```shell
 python ./scripts/generate-keys.py --help
 ```
+
+### Fork Testing
+
+See [fork-testing.md](../docs/fork-testing.md)

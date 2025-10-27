@@ -16,10 +16,12 @@ import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { runtimeUpgrade } from "./commands/runtimeUpgrade";
+import { snapshot } from "./commands/snapshot";
 import {
   RunOptions,
   ImageUpgradeOptions,
   RuntimeUpgradeOptions,
+  SnapshotOptions,
 } from "./lib/types";
 
 const program = new Command();
@@ -34,6 +36,7 @@ interface ImageUpgradeCliOpts {
   waitBetween?: number;
   healthTimeout?: number;
   requireHealthy?: boolean;
+  fromSnapshot?: string;
 }
 
 interface RuntimeUpgradeCliOpts {
@@ -44,17 +47,65 @@ interface RuntimeUpgradeCliOpts {
   profiles?: string[];
   envFile?: string[];
   skipRun?: boolean;
+  fromSnapshot?: string;
+}
+
+interface SnapshotCliOpts {
+  bootnode?: string;
+  pvc?: string;
+  s3Uri?: string;
+  snapshotImage?: string;
+  timeout?: number;
 }
 
 program
   .command("run <network>")
   .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
   .option("--env-file <path...>", "specify one or more env files")
+  .option(
+    "--from-snapshot <id>",
+    "Restore a bootnode snapshot before launching services",
+  )
   .description(
     "Connect to Kubernetes, extract secrets, then run docker-compose up",
   )
   .action(async (network: string, options: RunOptions) => {
     await run(network, options);
+  });
+
+program
+  .command("snapshot <network>")
+  .option(
+    "--bootnode <name>",
+    "Name of the bootnode statefulset to snapshot (default midnight-node-boot-01)",
+  )
+  .option("--pvc <name>", "Explicit PVC name to mount when snapshotting")
+  .option(
+    "--s3-uri <uri>",
+    "Destination S3 URI for the archived /node state (default MN_SNAPSHOT_S3_URI or s3://midnight-node-snapshots)",
+  )
+  .option(
+    "--snapshot-image <image>",
+    "Container image used to run the snapshot helper pod",
+  )
+  .option(
+    "--timeout <minutes>",
+    "Minutes to wait for the snapshot pod to finish (default 30)",
+    parseInt,
+  )
+  .description(
+    "Archive the /node volume from a bootnode PVC and upload it to the configured S3 destination",
+  )
+  .action(async (network: string, cliOpts: SnapshotCliOpts) => {
+    const opts: SnapshotOptions = {
+      bootnodeStatefulSet: cliOpts.bootnode,
+      pvcName: cliOpts.pvc,
+      s3Uri: cliOpts.s3Uri,
+      snapshotImage: cliOpts.snapshotImage,
+      timeoutMinutes: cliOpts.timeout,
+    };
+
+    await snapshot(network, opts);
   });
 
 program
@@ -81,6 +132,10 @@ program
     "--no-require-healthy",
     "Do not wait for healthchecks, just waitBetween",
   )
+  .option(
+    "--from-snapshot <id>",
+    "Restore a bootnode snapshot before launching the rollout",
+  )
   .description(
     "Gradually roll out a new docker image tag across services in the given network",
   )
@@ -97,6 +152,7 @@ program
       waitBetweenMs: cliOpts.waitBetween ?? 5000,
       healthTimeoutSec: cliOpts.healthTimeout ?? 180,
       requireHealthy: cliOpts.requireHealthy !== false,
+      fromSnapshot: cliOpts.fromSnapshot,
     };
     await imageUpgrade(network, opts);
   });
@@ -133,6 +189,10 @@ program
   )
   .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
   .option("--env-file <path...>", "specify one or more env files")
+  .option(
+    "--from-snapshot <id>",
+    "Restore a bootnode snapshot before launching services",
+  )
   .description("Submit a sudo runtime upgrade after an optional block delay")
   .action(async (network: string, cliOpts: RuntimeUpgradeCliOpts) => {
     const profiles = cliOpts.profiles
@@ -147,6 +207,7 @@ program
       envFile: cliOpts.envFile,
       rpcUrl: cliOpts.rpcUrl,
       skipRun: cliOpts.skipRun,
+      fromSnapshot: cliOpts.fromSnapshot,
     };
 
     await runtimeUpgrade(network, opts);

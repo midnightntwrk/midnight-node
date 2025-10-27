@@ -35,7 +35,6 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
-| Build cNight genesis                                                 | ⏳       |
 
 
 ## Usage
@@ -329,7 +328,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
+96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
 
 ```
 
@@ -338,7 +337,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 72b67da64a50b16307d1bc4c2e562da192c8a179b9ed21fe93718754ade6c191
+>   --contract-address 96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
 >   --dest-file out/contract_state.bin
 ```
 
