@@ -174,7 +174,7 @@ impl Eq for ObservedUtxo {}
 
 impl Ord for ObservedUtxo {
 	fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-		self.header.tx_position.partial_cmp(&other.header.tx_position).unwrap()
+		self.header.partial_cmp(&other.header).unwrap()
 	}
 }
 
@@ -279,10 +279,19 @@ pub struct SpendData {
 	Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Serialize, Deserialize,
 )]
 pub struct ObservedUtxoHeader {
+	/// The position of the observed TX on-chain.
 	pub tx_position: CardanoPosition,
+	/// The hash of the observed TX.
 	pub tx_hash: McTxHash,
+	/// The hash of the TX which created the UTXO.
 	pub utxo_tx_hash: McTxHash,
+	/// The index of the UTXO within the TX which created it.
 	pub utxo_index: UtxoIndexInTx,
+}
+impl ObservedUtxoHeader {
+	fn is_spend(&self) -> bool {
+		self.tx_hash == self.utxo_tx_hash
+	}
 }
 
 impl core::fmt::Display for ObservedUtxoHeader {
@@ -319,15 +328,20 @@ impl PartialOrd for ObservedUtxoHeader {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
-		match self.tx_hash.0.partial_cmp(&other.tx_hash.0) {
-			Some(core::cmp::Ordering::Equal) => {},
-			ord => return ord,
+		if self.is_spend() && !other.is_spend() {
+			return Some(core::cmp::Ordering::Less);
 		}
+		if !self.is_spend() && other.is_spend() {
+			return Some(core::cmp::Ordering::Greater);
+		}
+		// We need an ordering which is consistent between validators,
+		// not necessarily the real ordering on-chain.
+		// Ordering by hash then index is good enough.
 		match self.utxo_tx_hash.0.partial_cmp(&other.utxo_tx_hash.0) {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
-		self.utxo_index.partial_cmp(&other.utxo_index)
+		self.utxo_index.0.partial_cmp(&other.utxo_index.0)
 	}
 }
 
