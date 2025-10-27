@@ -1,7 +1,7 @@
 chain = "res/preview/chain-spec-raw.json"
 base_path = "node/chain"
 
-chainspec_name = "preview"
+chainspec_name = "Midnight Preview"
 chainspec_id = "preview"
 chainspec_genesis_state = "res/genesis/genesis_state_preview.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_preview.mn"

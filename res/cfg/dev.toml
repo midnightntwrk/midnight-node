@@ -2,7 +2,7 @@
 use_main_chain_follower_mock = true
 mock_registrations_file = "res/mock-bridge-data/default-registrations.json"
 
-chainspec_name = "undeployed"
+chainspec_name = "Midnight Undeployed"
 chainspec_id = "undeployed"
 chainspec_genesis_state = "res/genesis/genesis_state_undeployed.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_undeployed.mn"
