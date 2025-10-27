@@ -120,7 +120,7 @@ mod test {
 
 		assert!(matches!(
 			address,
-			ShowAddress::SingleAddress(a) if a == "mn_shield-addr_test14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqpnq6kr"
+			ShowAddress::SingleAddress(a) if a == "mn_shield-addr_testnet14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwq237vg4"
 		));
 	}
 

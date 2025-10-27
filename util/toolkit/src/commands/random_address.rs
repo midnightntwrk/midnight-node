@@ -69,16 +69,20 @@ mod tests {
 			}
 		};
 		($network:expr, $shielded:expr) => {
-			RandomAddressArgs { network: $network, shielded: $shielded, randomness_seed: None }
+			RandomAddressArgs {
+				network: $network.to_string(),
+				shielded: $shielded,
+				randomness_seed: None,
+			}
 		};
 	}
 
 	#[test_case(test_fixture!("devnet", true, "0000000000000000000000000000000000000000000000000000000000000001") =>
-	    "mn_shield-addr_dev1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmsxqp00mnr3lked3qn6d06yl6lj2dw9x9azd8vlcud9f4c4kx05a2wuv2k7zdv";
+	    "mn_shield-addr_devnet1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmsxqp00mnr3lked3qn6d06yl6lj2dw9x9azd8vlcud9f4c4kx05a2wuv7hh6r8";
 		"shielded address from seed"
 	)]
 	#[test_case(test_fixture!("devnet", false, "0000000000000000000000000000000000000000000000000000000000000001") =>
-	    "mn_addr_dev1r9fcd53aa5vz34krw59p3zcgjtg4wtrjgny03ykxvhl7njjujvuq5fty4f";
+	    "mn_addr_devnet1r9fcd53aa5vz34krw59p3zcgjtg4wtrjgny03ykxvhl7njjujvuqgeradv";
 		"unshielded address from seed"
 	)]
 	#[test_case(test_fixture!("devnet", false) =>

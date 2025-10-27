@@ -32,13 +32,13 @@ mod test {
 	#[test_case(
         "devnet",
         "0000000000000000000000000000000000000000000000000000000000000002",
-        "mn_shield-esk_dev1w0dctw9zhe2ffqw4s5qks7rnl29wy5mhl957fv9nnhtxulent80q5r8sslj";
+        "mn_shield-esk_devnet1w0dctw9zhe2ffqw4s5qks7rnl29wy5mhl957fv9nnhtxulent80q5dejklr";
         "test devnet with 0...02 seed"
     )]
 	#[test_case(
         "testnet",
         "0000000000000000000000000000000000000000000000000000000000000003",
-        "mn_shield-esk_test1wvd5v04ykt59gglxknsdxpwwkhhhj8d6h3ghpkgdhdsszap2p53qkpy8pqk";
+        "mn_shield-esk_testnet1wvd5v04ykt59gglxknsdxpwwkhhhj8d6h3ghpkgdhdsszap2p53qkprdkd8";
         "test testnet with 0...03 seed"
     )]
 	fn test_show_viewing_key(network: &str, seed: &str, viewing_key: &str) {
