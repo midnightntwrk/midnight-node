@@ -1173,7 +1173,7 @@ impl_runtime_apis! {
 		fn get_zswap_chain_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_chain_state(&contract_address)
 		}
-		fn get_network_id() -> Result<String, Vec<u8>> {
+		fn get_network_id() -> String {
 			Midnight::get_network_id()
 		}
 		fn get_ledger_version() -> Vec<u8> {

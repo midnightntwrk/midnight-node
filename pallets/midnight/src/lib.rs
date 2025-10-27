@@ -564,10 +564,10 @@ pub mod pallet {
 		}
 
 		// grcov-excl-start
-		pub fn get_network_id() -> Result<String, Vec<u8>> {
+		pub fn get_network_id() -> String {
 			match <NetworkId<T>>::get() {
-				None => Ok(String::new()),
-				Some(name) => String::from_utf8(name.to_vec()).map_err(|e| e.as_bytes().to_vec()),
+				None => String::new(),
+				Some(name) => String::from_utf8(name.to_vec()).expect("NetworkId is not a String"),
 			}
 		}
 
