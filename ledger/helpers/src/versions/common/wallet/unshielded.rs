@@ -13,8 +13,8 @@
 
 use super::super::{
 	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash,
-	IntoWalletAddress, NetworkId, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress,
-	WalletSeed, deserialize_untagged, network, serialize_untagged,
+	IntoWalletAddress, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress, WalletSeed,
+	deserialize_untagged, serialize_untagged,
 };
 use hex::FromHexError;
 use std::num::ParseIntError;
@@ -75,9 +75,11 @@ impl DeriveSeed for UnshieldedWallet {}
 
 #[cfg(feature = "can-panic")]
 impl IntoWalletAddress for UnshieldedWallet {
-	fn address(&self, network_id: NetworkId) -> WalletAddress {
-		let hrp_string =
-			format!("{HRP_CONSTANT}_{HRP_CREDENTIAL_UNSHIELDED}{}", network(network_id));
+	fn address(&self, network_id: &str) -> WalletAddress {
+		let hrp_string = format!(
+			"{HRP_CONSTANT}_{HRP_CREDENTIAL_UNSHIELDED}{}",
+			Self::network_suffix(network_id)
+		);
 		let hrp = bech32::Hrp::parse(&hrp_string)
 			.unwrap_or_else(|err| panic!("Error while bech32 parsing: {err}"));
 

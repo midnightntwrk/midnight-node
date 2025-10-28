@@ -200,7 +200,6 @@ impl InitialFederedatedAuthority {
 pub trait MidnightNetwork {
 	fn name(&self) -> &str;
 	fn id(&self) -> &str;
-	fn network_id(&self) -> u8;
 	fn genesis_state(&self) -> &[u8];
 	fn genesis_block(&self) -> &[u8];
 	fn genesis_utxo(&self) -> &str;

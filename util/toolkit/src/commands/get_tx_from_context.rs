@@ -1,15 +1,12 @@
 use clap::Args;
-use midnight_node_ledger_helpers::{DefaultDB, NetworkId, TransactionWithContext, deserialize};
-use midnight_node_toolkit::{
-	ProofType, SignatureType,
-	cli_parsers::{self as cli},
-};
+use midnight_node_ledger_helpers::{DefaultDB, TransactionWithContext, deserialize};
+use midnight_node_toolkit::{ProofType, SignatureType};
 
 #[derive(Args)]
 pub struct GetTxFromContextArgs {
 	/// Target network
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long)]
+	network: String,
 	/// Serialized Transaction
 	#[arg(long, short)]
 	src_file: String,
@@ -63,26 +60,26 @@ fn deserialize_from_bytes(
 mod test {
 	use std::time::{SystemTime, UNIX_EPOCH};
 
-	use super::{GetTxFromContextArgs, NetworkId, execute};
+	use super::{GetTxFromContextArgs, execute};
 
 	#[test_case::test_case(
-        NetworkId::Undeployed,
+        "undeployed",
         "../../res/test-contract/contract_tx_1_deploy_undeployed.mn";
         "undeployed deploy case"
     )]
 	#[test_case::test_case(
-        NetworkId::Undeployed,
+        "undeployed",
         "../../res/test-contract/contract_tx_2_store_undeployed.mn";
         "undeployed store case"
     )]
 	#[test_case::test_case(
-        NetworkId::Undeployed,
+        "undeployed",
         "../../res/test-contract/contract_tx_3_check_undeployed.mn";
         "undeployed check case"
     )]
-	fn test_get_tx_from_context(network: NetworkId, src_file: &str) {
+	fn test_get_tx_from_context(network: &str, src_file: &str) {
 		let args = GetTxFromContextArgs {
-			network,
+			network: network.to_string(),
 			src_file: src_file.to_string(),
 			dest_file: "output.mn".to_string(),
 			from_bytes: true,

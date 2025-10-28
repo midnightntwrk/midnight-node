@@ -2,7 +2,7 @@ use crate::cfg::*;
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
-	transactions::*, types::OgmiosUtxo,
+	transactions::*, types::OgmiosUtxo, OgmiosClientError,
 };
 use std::fs;
 use std::time::Duration;
@@ -26,6 +26,38 @@ pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo
 		tokio::time::sleep(Duration::from_secs(1)).await;
 	}
 	None
+}
+
+/// Waits for a UTXO with the given tx_id to appear, then waits for 3 more Cardano blocks to see if it is spent.
+/// Returns true if the UTXO is still unspent after 3 blocks, false if it is spent.
+pub async fn wait_utxo_unspent_for_3_blocks(address: &str, tx_id: &str) -> bool {
+	let client = get_ogmios_client().await;
+
+	// Get the current block number (slot) as the starting point
+	let start_tip = client.get_tip().await.unwrap();
+	let start_slot = start_tip.slot;
+	println!("Current slot is {}. Waiting for 3 more slots...", start_slot);
+
+	// Wait for 3 more slots (blocks)
+	let mut last_slot = start_slot;
+	while last_slot < start_slot + 3 {
+		let tip = client.get_tip().await.unwrap();
+		if tip.slot > last_slot {
+			println!("Slot advanced: {} -> {}", last_slot, tip.slot);
+			last_slot = tip.slot;
+		}
+		tokio::time::sleep(Duration::from_secs(1)).await;
+	}
+
+	// After 3 slots, check if the UTXO is still present
+	let utxos = client.query_utxos(&[address.into()]).await.unwrap();
+	let still_unspent = utxos.iter().any(|u| hex::encode(u.transaction.id) == tx_id);
+	if still_unspent {
+		println!("UTXO {} is still unspent after 3 slots.", tx_id);
+	} else {
+		println!("UTXO {} was spent within 3 slots.", tx_id);
+	}
+	still_unspent
 }
 
 pub async fn get_ogmios_client() -> OgmiosClients {
@@ -137,12 +169,30 @@ pub async fn register(
 	response.transaction.id
 }
 
+#[derive(Debug)]
+pub enum DeregisterError {
+	Whisky(WError),
+	Ogmios(OgmiosClientError),
+}
+
+impl From<WError> for DeregisterError {
+	fn from(err: WError) -> Self {
+		DeregisterError::Whisky(err)
+	}
+}
+
+impl From<OgmiosClientError> for DeregisterError {
+	fn from(err: OgmiosClientError) -> Self {
+		DeregisterError::Ogmios(err)
+	}
+}
+
 pub async fn deregister(
 	signing_wallet: &Wallet,
 	tx_in: &OgmiosUtxo,
 	register_tx: &OgmiosUtxo,
 	collateral_utxo: &OgmiosUtxo,
-) -> [u8; 32] {
+) -> Result<[u8; 32], DeregisterError> {
 	let validator_address = get_mapping_validator_address();
 	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
 	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
@@ -195,15 +245,14 @@ pub async fn deregister(
 			ex_units: Budget { mem: 3765700, steps: 941562940 },
 		})
 		.change_address(&payment_addr)
-		.complete_sync(None)
-		.unwrap();
+		.complete_sync(None)?;
 
-	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex());
-	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex())?;
+	let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
 	let client = get_ogmios_client().await;
-	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	let response = client.submit_transaction(&tx_bytes).await?;
 	println!("Transaction submitted, response: {:?}", response);
-	response.transaction.id
+	Ok(response.transaction.id)
 }
 
 pub fn create_wallet() -> Wallet {

@@ -5,7 +5,7 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
+use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
@@ -18,16 +18,6 @@ pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
-}
-
-fn encode_network_id(net_id: NetworkId) -> &'static str {
-	match net_id {
-		NetworkId::Undeployed => "undeployed",
-		NetworkId::DevNet => "devnet",
-		NetworkId::TestNet => "testnet",
-		NetworkId::MainNet => "mainnet",
-		_ => panic!("failed to encode unknown network id"),
-	}
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -70,8 +60,8 @@ pub struct CircuitArgs {
 	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Target network
-	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
@@ -105,8 +95,8 @@ pub struct DeployArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Target network
-	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
@@ -211,7 +201,6 @@ impl ToolkitJs {
 	}
 
 	pub fn execute_deploy(&self, args: DeployArgs) -> Result<(), ToolkitJsError> {
-		let network_id = encode_network_id(args.network);
 		println!("Executing deploy command");
 		let config = args.config.absolute();
 		let output_intent = args.output_intent.absolute();
@@ -223,7 +212,7 @@ impl ToolkitJs {
 			"-c",
 			&config,
 			"--network",
-			network_id,
+			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -260,13 +249,12 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
-		let network_id = encode_network_id(args.network);
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
 			&config,
 			"--network",
-			network_id,
+			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
