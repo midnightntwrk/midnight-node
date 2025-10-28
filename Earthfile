@@ -491,6 +491,10 @@ prep:
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests .
 
+    ENV CARGO_NET_RETRY=10
+    ENV CARGO_HTTP_TIMEOUT=60
+    ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
     # for now this is ok as there's only one compile task dependent on this.
