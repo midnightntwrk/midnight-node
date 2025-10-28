@@ -45,7 +45,7 @@ To see compatibility with Node, Ledger, and Compactc versions, use the `version`
 
 ```console
 $ midnight-node-toolkit version
-Node: 0.17.1
+Node: 0.18.0
 Ledger: ledger-6.1.0-alpha.4
 Compactc: 0.26.108-rc.0-UT-L6
 
