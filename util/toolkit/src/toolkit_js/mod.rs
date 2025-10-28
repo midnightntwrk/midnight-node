@@ -125,8 +125,8 @@ pub struct SharedMaintainArgs {
 	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Target network
-	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	coin_public: CoinPublicKey,
@@ -295,14 +295,13 @@ impl ToolkitJs {
 		let input_onchain_state = args.input_onchain_state.absolute();
 		let output_intent = args.output_intent.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
-		let network_id = encode_network_id(args.network);
 		let mut cmd_args = vec![
 			"maintain",
 			command.name(),
 			"-c",
 			&config,
 			"--network",
-			network_id,
+			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
