@@ -487,13 +487,9 @@ prep-no-copy:
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests .
-
-    ENV CARGO_NET_RETRY=10
-    ENV CARGO_HTTP_TIMEOUT=60
-    ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
