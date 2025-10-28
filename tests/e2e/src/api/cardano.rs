@@ -272,50 +272,64 @@ pub async fn deploy_governance_contract(
 		serde_json::from_str(&skey_json).expect("Invalid skey JSON");
 	let funded_skey_cbor = skey_value["cborHex"].as_str().expect("No cborHex in skey JSON");
 
-	// Build the Multisig datum
-	// Format: constructor 0 with fields [total_signers: Int, signers: Map]
-	let mut signers_map = serde_json::Map::new();
-	for (cardano_hash, sr25519_key) in &sr25519_pubkeys {
-		signers_map.insert(
-			format!("{{\"bytes\":\"{}\"}}", cardano_hash),
-			serde_json::json!({"bytes": sr25519_key}),
-		);
-	}
+	// Extract the verification key hash from the funded address for required signatories
+	// The address format is: payment credential hash (28 bytes)
+	// For enterprise addresses: addr_test + network_tag + payment_keyhash
+	let funded_addr_parsed = Address::from_bech32(&funded_addr).expect("Invalid funded address");
+	let payment_keyhash = funded_addr_parsed
+		.payment_cred()
+		.expect("No payment credential in address")
+		.to_keyhash()
+		.expect("Payment credential is not a keyhash");
+	let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-	let datum = serde_json::to_string(&serde_json::json!({
-		"constructor": 0,
-		"fields": [
+	// Build the Multisig datum
+	let datum = serde_json::json!({
+		"list": [
 			{"int": total_signers},
 			{"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
+				// The signer keys must be in "created signer" format: #"8200581c" + cardano_hash
+				let signer_key = format!("8200581c{}", cardano_hash);
 				serde_json::json!({
-					"k": {"bytes": cardano_hash},
+					"k": {"bytes": signer_key},
 					"v": {"bytes": sr25519_key}
 				})
 			}).collect::<Vec<_>>()}
 		]
-	}))
-	.unwrap();
+	});
 
-	// Build the redeemer (same structure as datum for the permissioned contracts)
-	let redeemer = serde_json::to_string(&serde_json::json!({
-		"constructor": 0,
-		"fields": [{
-			"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
-				serde_json::json!({
-					"k": {"bytes": cardano_hash},
-					"v": {"bytes": sr25519_key}
-				})
-			}).collect::<Vec<_>>()
-		}]
-	}))
-	.unwrap();
+	// Build the redeemer
+	let redeemer = serde_json::json!({
+		"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
+			serde_json::json!({
+				"k": {"bytes": cardano_hash},
+				"v": {"bytes": sr25519_key}
+			})
+		}).collect::<Vec<_>>()
+	});
+
+	// Validation: Verify script hash matches policy ID
+	let calculated_hash = whisky::get_script_hash(script_cbor, LanguageVersion::V3);
+	if let Ok(hash) = calculated_hash {
+		if hash != policy_id {
+			println!("WARNING: Script hash mismatch!");
+			println!("  Expected (policy_id): {}", policy_id);
+			println!("  Calculated from script: {}", hash);
+			println!("  This transaction may fail validation!");
+		}
+	}
 
 	println!("Deploying governance contract");
 	println!("  Script address: {}", script_address);
 	println!("  Policy ID: {}", policy_id);
 	println!("  Total signers: {}", total_signers);
-	println!("  Datum: {}", datum);
-	println!("  Redeemer: {}", redeemer);
+	println!(
+		"  One-shot UTXO: {}#{}",
+		hex::encode(one_shot_utxo.transaction.id),
+		one_shot_utxo.index
+	);
+	println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
+	println!("  Redeemer: {}", serde_json::to_string_pretty(&redeemer).unwrap());
 
 	let send_assets = vec![
 		Asset::new_from_str("lovelace", "2000000"), // 2 ADA
@@ -328,7 +342,14 @@ pub async fn deploy_governance_contract(
 	tx_builder
 		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
-		// Add one-shot input (owned by funded_address) - use only this input to simplify
+		// Add regular input for fees
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(tx_in),
+			&funded_addr,
+		)
+		// Add one-shot input (consumed by minting policy)
 		.tx_in(
 			&hex::encode(one_shot_utxo.transaction.id),
 			one_shot_utxo.index.into(),
@@ -341,29 +362,50 @@ pub async fn deploy_governance_contract(
 			&build_asset_vector(collateral_utxo),
 			&funded_addr,
 		)
-		// Mint the NFT BEFORE adding outputs
-		.mint_plutus_script_v3()
-		.mint(1, policy_id, "") // Empty asset name
-		.minting_script(script_cbor)
-		.mint_redeemer_value(&WRedeemer {
-			data: WData::JSON(redeemer),
-			ex_units: Budget { mem: 14000000, steps: 10000000000 },
-		})
 		// Output to script address with NFT and datum
 		.tx_out(script_address, &send_assets)
-		.tx_out_inline_datum_value(&WData::JSON(datum))
+		.tx_out_inline_datum_value(&WData::JSON(datum.to_string()))
+		// Mint the NFT
+		.mint_plutus_script_v3()
+		.mint(1, policy_id, "")
+		.minting_script(script_cbor)
+		.mint_redeemer_value(&WRedeemer {
+			data: WData::JSON(redeemer.to_string()),
+			// Using generous ex_units to rule out budget issues
+			// Max values from protocol params: mem: 14000000, steps: 10000000000
+			ex_units: Budget { mem: 14000000, steps: 10000000000 },
+		})
 		.change_address(&funded_addr)
+		.required_signer_hash(&payment_keyhash_hex)
+		.signing_key(funded_skey_cbor)
 		.complete_sync(None)
+		.map_err(|e| {
+			panic!("Transaction building failed: {:?}", e);
+		})
+		.unwrap()
+		.complete_signing()
+		.map_err(|e| {
+			panic!("Transaction signing failed: {:?}", e);
+		})
 		.unwrap();
 
-	// Sign the transaction after building it
-	let wallet = Wallet::new_cli(funded_skey_cbor).unwrap();
-	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
-	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	println!("✓ Transaction Built Successfully");
+
+	let signed_tx_hex = tx_builder.tx_hex();
+
+	let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
 	let client = get_ogmios_client().await;
-	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+
+	let response = client
+		.submit_transaction(&tx_bytes)
+		.await
+		.map_err(|e| {
+			panic!("Transaction submission failed: {:?}", e);
+		})
+		.unwrap();
+
 	println!(
-		"Governance contract deployed, transaction ID: {:?}",
+		"✓ Governance contract deployed successfully, transaction ID: {:?}",
 		hex::encode(response.transaction.id)
 	);
 	response.transaction.id

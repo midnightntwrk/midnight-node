@@ -43,6 +43,39 @@ pub fn load_cbor(path: &str) -> String {
 	}
 }
 
+/// Add CBOR wrapper to a script for use in transactions
+/// Cardano requires double CBOR encoding: the script itself is CBOR-encoded,
+/// then that is wrapped in another CBOR bytestring
+pub fn wrap_script_cbor(inner_cbor_hex: &str) -> String {
+	// Decode the inner CBOR hex to bytes
+	let inner_bytes = hex::decode(inner_cbor_hex).expect("Invalid hex string");
+
+	// CBOR encode as bytestring: 0x58 for bytestring with 1-byte length prefix
+	// or 0x59 for 2-byte length, 0x5a for 4-byte length
+	let len = inner_bytes.len();
+	let mut wrapped = Vec::new();
+
+	if len <= 23 {
+		// Tiny bytestring: length in the type byte itself (0x40 + len)
+		wrapped.push(0x40 + len as u8);
+	} else if len <= 255 {
+		// Short bytestring: 0x58 + 1-byte length
+		wrapped.push(0x58);
+		wrapped.push(len as u8);
+	} else if len <= 65535 {
+		// Medium bytestring: 0x59 + 2-byte length (big-endian)
+		wrapped.push(0x59);
+		wrapped.extend_from_slice(&(len as u16).to_be_bytes());
+	} else {
+		// Large bytestring: 0x5a + 4-byte length (big-endian)
+		wrapped.push(0x5a);
+		wrapped.extend_from_slice(&(len as u32).to_be_bytes());
+	}
+
+	wrapped.extend_from_slice(&inner_bytes);
+	hex::encode(wrapped)
+}
+
 pub fn load_script_hash(path: &str) -> String {
 	let file_content = std::fs::read_to_string(path).expect("Failed to read file");
 	match serde_json::from_str::<serde_json::Value>(&file_content) {
@@ -72,12 +105,15 @@ pub fn get_auth_token_policy_id() -> String {
 
 pub fn get_council_forever_cbor() -> String {
 	let cfg = load_config();
-	load_cbor(&cfg.council_forever_file)
+	let inner_cbor = load_cbor(&cfg.council_forever_file);
+	// V3 scripts from Aiken need double CBOR encoding
+	wrap_script_cbor(&inner_cbor)
 }
 
 pub fn get_council_forever_policy_id() -> String {
-	let cfg = load_config();
-	load_script_hash(&cfg.council_forever_file)
+	let cbor_hex = get_council_forever_cbor();
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V3);
+	script_hash.expect("Error calculating `council_forever_policy_id`")
 }
 
 pub fn get_council_forever_address() -> String {
@@ -88,12 +124,15 @@ pub fn get_council_forever_address() -> String {
 
 pub fn get_tech_auth_forever_cbor() -> String {
 	let cfg = load_config();
-	load_cbor(&cfg.tech_auth_forever_file)
+	let inner_cbor = load_cbor(&cfg.tech_auth_forever_file);
+	// V3 scripts from Aiken need double CBOR encoding
+	wrap_script_cbor(&inner_cbor)
 }
 
 pub fn get_tech_auth_forever_policy_id() -> String {
-	let cfg = load_config();
-	load_script_hash(&cfg.tech_auth_forever_file)
+	let cbor_hex = get_tech_auth_forever_cbor();
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V3);
+	script_hash.expect("Error calculating `tech_auth_forever_policy_id`")
 }
 
 pub fn get_tech_auth_forever_address() -> String {
@@ -143,13 +182,13 @@ pub fn get_local_env_cost_models() -> Vec<Vec<i64>> {
 			11546, 32, 85848, 123203, 7305, -900, 1716, 549, 57, 85848, 0, 1, 90434, 519, 0, 1,
 			74433, 32, 85848, 123203, 7305, -900, 1716, 549, 57, 85848, 0, 1, 1, 85848, 123203,
 			7305, -900, 1716, 549, 57, 85848, 0, 1, 955506, 213312, 0, 2, 270652, 22588, 4,
-			1457325, 64566, 4, 20467, 1, 4, 0, 141992, 32, 100788, 420, 1, 1, 81663, 32, 59498,
-			32, 20142, 32, 24588, 32, 20744, 32, 25933, 32, 24623, 32, 43053543, 10, 53384111,
-			14333, 10, 43574283, 26308, 10, 16000, 100, 16000, 100, 962335, 18, 2780678, 6,
-			442008, 1, 52538055, 3756, 18, 267929, 18, 76433006, 8868, 18, 52948122, 18, 1995836,
-			36, 3227919, 12, 901022, 1, 166917843, 4307, 36, 284546, 36, 158221314, 26549, 36,
-			74698472, 36, 333849714, 1, 254006273, 72, 2174038, 72, 2261318, 64571, 4, 207616,
-			8310, 4, 1293828, 28716, 63, 0, 1, 1006041, 43623, 251, 0, 1,
+			1457325, 64566, 4, 20467, 1, 4, 0, 141992, 32, 100788, 420, 1, 1, 81663, 32, 59498, 32,
+			20142, 32, 24588, 32, 20744, 32, 25933, 32, 24623, 32, 43053543, 10, 53384111, 14333,
+			10, 43574283, 26308, 10, 16000, 100, 16000, 100, 962335, 18, 2780678, 6, 442008, 1,
+			52538055, 3756, 18, 267929, 18, 76433006, 8868, 18, 52948122, 18, 1995836, 36, 3227919,
+			12, 901022, 1, 166917843, 4307, 36, 284546, 36, 158221314, 26549, 36, 74698472, 36,
+			333849714, 1, 254006273, 72, 2174038, 72, 2261318, 64571, 4, 207616, 8310, 4, 1293828,
+			28716, 63, 0, 1, 1006041, 43623, 251, 0, 1,
 		],
 	]
 }
