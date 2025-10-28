@@ -6,6 +6,8 @@ use whisky::LanguageVersion;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
+	#[serde(default)]
+	pub env: Option<String>,
 	pub node_url: String,
 	pub ogmios_url: String,
 	pub payment_addr: String,
@@ -17,17 +19,18 @@ pub struct AppConfig {
 }
 
 pub fn load_config() -> AppConfig {
-	let env = std::env::var("ENV").unwrap_or_else(|_| "local".to_string());
-	let config_path = format!("./src/cfg/{}/config.toml", env);
-	let settings = config_rs::Config::builder()
-		.add_source(config_rs::File::with_name(&config_path))
-		.build();
-	let mut cfg: AppConfig = settings.unwrap().try_deserialize().unwrap();
-	cfg.payment_addr = fs::read_to_string(&cfg.payment_addr_file)
-		.expect("Failed to read payment address file")
-		.trim()
-		.to_string();
-	cfg
+    let env = std::env::var("ENV").unwrap_or_else(|_| "local".to_string());
+    let config_path = format!("./src/cfg/{}/config.toml", env);
+    let settings = config_rs::Config::builder()
+        .add_source(config_rs::File::with_name(&config_path))
+        .build();
+    let mut cfg: AppConfig = settings.unwrap().try_deserialize().unwrap();
+    cfg.env = Some(env);
+    cfg.payment_addr = fs::read_to_string(&cfg.payment_addr_file)
+        .expect("Failed to read payment address file")
+        .trim()
+        .to_string();
+    cfg
 }
 
 pub fn load_cbor(path: &str) -> String {

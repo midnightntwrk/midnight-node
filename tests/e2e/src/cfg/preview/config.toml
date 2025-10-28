@@ -1,0 +1,8 @@
+node_url = "wss://rpc.preview.midnight.network"
+ogmios_url = "wss://ogmios.qanet.dev.midnight.network"
+payment_addr = ""
+payment_addr_file = "../../local-environment/src/networks/local-env/configurations/cardano/keys/funded_address.addr"
+payment_skey_file = "../../local-environment/src/networks/local-env/configurations/cardano/keys/funded_address.skey"
+mapping_validator_policy_file = "../../scripts/cnight-generates-dust/mapping_validator.plutus"
+auth_token_policy_file = "../../scripts/cnight-generates-dust/auth_token_policy.plutus"
+cnight_token_policy_file = "../../scripts/cnight-generates-dust/cnight_policy.plutus"
