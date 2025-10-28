@@ -1,3 +1,4 @@
+#runtime
 # Removed Mapping and replaced with MappingEntry
 
 `MappingEntry` is a stricter version of the `Mapping` type. Instead of having two different types that represent the same thing, we now just use `MappingEntry` everywhere that `Mapping` was used.
