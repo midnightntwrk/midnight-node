@@ -247,8 +247,7 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 #[cfg(test)]
 mod tests {
 	use super::super::super::super::{
-		CRATE_NAME,
-		helpers_local::{NetworkId, extract_info_from_tx_with_context},
+		CRATE_NAME, helpers_local::extract_info_from_tx_with_context,
 	};
 	use super::super::Api;
 	use super::*;
@@ -299,7 +298,7 @@ mod tests {
 			println!("This test should only be run with ledger latest");
 			return;
 		}
-		let ledger: LedgerState<DefaultDB> = LedgerState::new(NetworkId::Undeployed);
+		let ledger: LedgerState<DefaultDB> = LedgerState::new("undeployed");
 		let mut bytes = vec![];
 		assert!(midnight_serialize_local::tagged_serialize(&ledger, &mut bytes).is_ok());
 		let _: LedgerState<DefaultDB> =

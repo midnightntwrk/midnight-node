@@ -134,7 +134,7 @@ fn init_ledger_state() {
 		1024 * 1024,
 	);
 
-	mock::Midnight::initialize_state(UndeployedNetwork.network_id(), &state_key);
+	mock::Midnight::initialize_state(UndeployedNetwork.id(), &state_key);
 	mock::System::set_block_number(1);
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
 }

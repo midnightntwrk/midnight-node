@@ -45,7 +45,7 @@ To see compatibility with Node, Ledger, and Compactc versions, use the `version`
 
 ```console
 $ midnight-node-toolkit version
-Node: 0.17.1
+Node: 0.18.0
 Ledger: ledger-6.1.0-alpha.4
 Compactc: 0.26.108-rc.0-UT-L6
 
@@ -328,7 +328,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
+040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
 
 ```
 
@@ -337,7 +337,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
+>   --contract-address 040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
 >   --dest-file out/contract_state.bin
 ```
 
@@ -428,7 +428,6 @@ Show deserialized result of a single transaction. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction
->   --network undeployed
 >   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
 
 Tx StandardTransaction {
@@ -443,7 +442,6 @@ Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction --with-context
->   --network undeployed
 >   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
 
 Tx TransactionWithContext {

@@ -25,10 +25,6 @@ impl MidnightNetwork for UndeployedNetwork {
 		"undeployed"
 	}
 
-	fn network_id(&self) -> u8 {
-		0
-	}
-
 	fn genesis_state(&self) -> &[u8] {
 		include_bytes!("../../genesis/genesis_state_undeployed.mn")
 	}
@@ -76,7 +72,6 @@ impl MidnightNetwork for UndeployedNetwork {
 pub struct CustomNetwork {
 	pub name: String,
 	pub id: String,
-	pub network_id: u8,
 	pub genesis_state: Vec<u8>,
 	pub genesis_block: Vec<u8>,
 	pub chain_type: sc_service::ChainType,
@@ -94,10 +89,6 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn id(&self) -> &str {
 		&self.id
-	}
-
-	fn network_id(&self) -> u8 {
-		self.network_id
 	}
 
 	fn genesis_state(&self) -> &[u8] {
