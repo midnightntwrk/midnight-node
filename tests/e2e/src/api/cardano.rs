@@ -13,7 +13,7 @@ use whisky::*;
 pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo> {
 	let client = get_ogmios_client().await;
 	let mut attempts = 0;
-	while attempts < 10 {
+	while attempts < 60 {
 		let utxos = client.query_utxos(&[address.into()]).await.unwrap();
 		println!("Waiting for UTXO with tx_id {}, attempt {}: {:?}", tx_id, attempts + 1, utxos);
 		for utxo in &utxos {
@@ -146,11 +146,12 @@ pub async fn register(
 	];
 	let cfg = load_config();
 	let minting_script = load_cbor(&cfg.auth_token_policy_file);
-	let network = Network::Custom(get_local_env_cost_models());
-
 	let mut tx_builder = whisky::TxBuilder::new_core();
+	let network = Network::Custom(get_local_env_cost_models());
+	if cfg.env.as_deref() == Some("local") {
+		tx_builder.network(network.clone());
+	}
 	tx_builder
-		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
 		.tx_in(
 			&hex::encode(tx_in.transaction.id),
