@@ -1,6 +1,6 @@
 {
   "name": "Midnight QANet",
-  "id": "qanet",
+  "id": "midnight_qanet",
   "chainType": "Live",
   "bootNodes": [],
   "telemetryEndpoints": null,
