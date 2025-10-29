@@ -407,7 +407,6 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-		_network_id: NetworkId,
 		// the directory where to save the file
 		dir: &str,
 		// partial name of the file

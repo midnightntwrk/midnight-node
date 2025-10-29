@@ -157,7 +157,6 @@ impl SubstrateCli for Cfg {
 				let network: CustomNetwork = CustomNetwork {
 					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
 					id: self.chain_spec_cfg.chainspec_id.as_ref().unwrap().clone(),
-					network_id: self.chain_spec_cfg.chainspec_network_id.unwrap(),
 					genesis_block,
 					genesis_state,
 					initial_authorities,

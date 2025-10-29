@@ -1,12 +1,10 @@
 use std::fmt;
 
 use crate::{
-	DefaultDB, NetworkId, ProofType, SignatureType, Transaction, TransactionWithContext,
-	deserialize,
+	DefaultDB, ProofType, SignatureType, Transaction, TransactionWithContext, deserialize,
 };
 use clap::Args;
 use midnight_node_ledger_helpers::PureGeneratorPedersen;
-use midnight_node_toolkit::cli_parsers::{self as cli};
 
 type InnerReturnType = Result<ShowTransactionResult, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -39,8 +37,6 @@ impl fmt::Display for TransactionInfo {
 
 #[derive(Args)]
 pub struct ShowTransactionArgs {
-	#[arg(long, value_parser = cli::network_id_decode)]
-	network: NetworkId,
 	/// Serialized Transaction
 	#[arg(long, short)]
 	src_file: String,
@@ -54,13 +50,13 @@ pub struct ShowTransactionArgs {
 
 pub fn execute(args: ShowTransactionArgs) -> InnerReturnType {
 	if !args.from_bytes {
-		tx_from_bytes(args.src_file, args.with_context, args.network)
+		tx_from_bytes(args.src_file, args.with_context)
 	} else {
-		tx_from_file(args.src_file, args.with_context, args.network)
+		tx_from_file(args.src_file, args.with_context)
 	}
 }
 
-fn tx_from_bytes(src_file: String, with_context: bool, _network: NetworkId) -> InnerReturnType {
+fn tx_from_bytes(src_file: String, with_context: bool) -> InnerReturnType {
 	let tx_bytes = std::fs::read(&src_file)?;
 	Ok(ShowTransactionResult {
 		transaction: if with_context {
@@ -72,7 +68,7 @@ fn tx_from_bytes(src_file: String, with_context: bool, _network: NetworkId) -> I
 	})
 }
 
-fn tx_from_file(src_file: String, with_context: bool, _network: NetworkId) -> InnerReturnType {
+fn tx_from_file(src_file: String, with_context: bool) -> InnerReturnType {
 	let bytes = std::fs::read(&src_file)?;
 	Ok(ShowTransactionResult {
 		transaction: if with_context {
@@ -86,7 +82,7 @@ fn tx_from_file(src_file: String, with_context: bool, _network: NetworkId) -> In
 
 #[cfg(test)]
 mod test {
-	use super::{InnerReturnType, NetworkId, TransactionInfo, tx_from_file};
+	use super::{InnerReturnType, TransactionInfo, tx_from_file};
 	use test_case::test_case;
 
 	#[test_case(
@@ -103,10 +99,9 @@ mod test {
 	)]
 	fn test_show_transaction_funcs<F>(src_file: &str, with_context: bool, func: F)
 	where
-		F: Fn(String, bool, NetworkId) -> InnerReturnType,
+		F: Fn(String, bool) -> InnerReturnType,
 	{
-		let result =
-			func(src_file.to_string(), with_context, NetworkId::Undeployed).expect("should be ok");
+		let result = func(src_file.to_string(), with_context).expect("should be ok");
 
 		match result.transaction {
 			TransactionInfo::Transaction(_) if with_context => assert!(false),

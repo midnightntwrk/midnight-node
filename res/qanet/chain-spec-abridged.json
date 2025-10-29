@@ -1,6 +1,6 @@
 {
-  "name": "qanet1",
-  "id": "qanet",
+  "name": "Midnight QANet",
+  "id": "midnight_qanet",
   "chainType": "Live",
   "bootNodes": [],
   "telemetryEndpoints": null,
@@ -28,7 +28,7 @@
           "slotsPerEpoch": 300
         },
         "midnight": {
-          "networkId": 1,
+          "networkId": "qanet",
           "genesisStateKey": [
             109,
             105,
@@ -69,38 +69,38 @@
             93,
             41,
             58,
-            130,
-            53,
-            4,
-            29,
-            184,
-            112,
-            67,
-            203,
-            141,
-            111,
-            78,
-            46,
-            15,
-            100,
-            224,
-            97,
-            168,
-            113,
-            225,
-            244,
-            232,
-            128,
-            86,
-            18,
-            240,
-            246,
-            95,
-            99,
-            82,
-            15,
-            190,
-            51
+            136,
+            199,
+            171,
+            153,
+            186,
+            107,
+            173,
+            118,
+            198,
+            196,
+            79,
+            147,
+            156,
+            103,
+            142,
+            205,
+            216,
+            230,
+            69,
+            115,
+            136,
+            250,
+            7,
+            152,
+            131,
+            182,
+            150,
+            196,
+            74,
+            9,
+            7,
+            44
           ]
         },
         "sudo": {
@@ -380,8 +380,8 @@
         "councilMembership": {
           "members": [
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-            "5EsUggUWjUrpnZD9tR3ypzMsvZFmt2bdfx5cPuSa72MiCkf5",
-            "5HpbqnDosRvFwMHr8u1X9FhLuiebrHagxfHmGpukEZVjYFXs"
+            "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
+            "5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y"
           ]
         },
         "technicalCommittee": {
@@ -389,9 +389,9 @@
         },
         "technicalCommitteeMembership": {
           "members": [
-            "5Eseb3zmCedjXKTi8vJbbRyNa63ngaMK7gWZE9pz8NTwcixo",
-            "5DwUCXDQ1hQPccbheY3vYhaQRTgwNvMtiWrKSddFdSUzPtHh",
-            "5GjSLc2mAGRmPAXqRyYNghWqLsjFv5LHdGDgGXcAJHeHriNe"
+            "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy",
+            "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw",
+            "5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL"
           ]
         }
       }

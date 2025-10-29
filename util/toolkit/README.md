@@ -45,7 +45,7 @@ To see compatibility with Node, Ledger, and Compactc versions, use the `version`
 
 ```console
 $ midnight-node-toolkit version
-Node: 0.17.1
+Node: 0.18.0
 Ledger: ledger-6.1.0-alpha.4
 Compactc: 0.26.108-rc.0-UT-L6
 
@@ -328,7 +328,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
+040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
 
 ```
 
@@ -337,7 +337,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 96eed69b0fc8198d1ddd9f3fcd95f632e907caa102be813044cbdc15a062d128
+>   --contract-address 040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
 >   --dest-file out/contract_state.bin
 ```
 
@@ -359,6 +359,47 @@ Executing circuit command
 Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 toolkit-js> []
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
+
+```
+
+To send it, see "Generate and send a tx from an intent" above
+
+- Generate a contract maintenance intent
+```console
+$ midnight-node-toolkit generate-intent maintain-contract
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --output-intent out/intent.bin
+>   --signing 0000000000000000000000000000000000000000000000000000000000000001
+>   0000000000000000000000000000000000000000000000000000000000000002
+Executing generate-intent
+Executing maintain command
+Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
+written: out/intent.bin
+
+```
+
+To send it, see "Generate and send a tx from an intent" above
+
+- Generate a circuit maintenance intent
+```console
+$ midnight-node-toolkit generate-intent maintain-circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./test-data/contract/counter/contract_state.mn
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --output-intent out/intent.bin
+>   --signing 0000000000000000000000000000000000000000000000000000000000000001
+>   increment
+>   ./test-data/contract/counter/keys/increment.verifier
+Executing generate-intent
+Executing maintain command
+Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
+written: out/intent.bin
 
 ```
 
@@ -428,7 +469,6 @@ Show deserialized result of a single transaction. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction
->   --network undeployed
 >   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
 
 Tx StandardTransaction {
@@ -443,7 +483,6 @@ Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction --with-context
->   --network undeployed
 >   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
 
 Tx TransactionWithContext {

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod address;
 pub mod cli_parsers;
 pub mod client;
 pub mod genesis_generator;
@@ -50,26 +49,4 @@ pub fn hash_to_str(h: H256) -> String {
 // A default token used for zswap tests
 pub fn t_token() -> ShieldedTokenType {
 	Default::default()
-}
-pub fn network_as_str(id: NetworkId) -> &'static str {
-	match id {
-		NetworkId::MainNet => "mainnet",
-		NetworkId::DevNet => "devnet",
-		NetworkId::TestNet => "testnet",
-		NetworkId::Undeployed => "undeployed",
-		_ => panic!("unknown network id: {id:?}"),
-	}
-}
-
-#[cfg(test)]
-mod test {
-	use crate::network_as_str;
-	use midnight_node_ledger_helpers::NetworkId;
-
-	#[test]
-	fn test_network_as_str() {
-		assert_eq!("mainnet", network_as_str(NetworkId::MainNet));
-		assert_eq!("devnet", network_as_str(NetworkId::DevNet));
-		assert_eq!("undeployed", network_as_str(NetworkId::Undeployed));
-	}
 }

@@ -267,7 +267,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_017_001,
+	spec_version: 000_018_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -1173,7 +1173,7 @@ impl_runtime_apis! {
 		fn get_zswap_chain_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_chain_state(&contract_address)
 		}
-		fn get_network_id() -> Vec<u8> {
+		fn get_network_id() -> String {
 			Midnight::get_network_id()
 		}
 		fn get_ledger_version() -> Vec<u8> {
