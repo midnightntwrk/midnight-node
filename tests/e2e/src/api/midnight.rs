@@ -69,8 +69,7 @@ pub async fn subscribe_to_cngd_registration_extrinsic(
 	}
 }
 
-pub async fn subscribe_to_federated_authority_events(
-) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
+pub async fn subscribe_to_federated_authority_events() -> Result<(), Box<dyn std::error::Error>> {
 	println!("Subscribing to federated authority observation events");
 	let url = load_config().node_url;
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
@@ -101,22 +100,18 @@ pub async fn subscribe_to_federated_authority_events(
 			if council_reset.is_some() || tech_committee_reset.is_some() {
 				if let Some(event) = council_reset {
 					println!(
-						"*** Found CouncilMembersReset event with {} members ***",
+						"✓ Found CouncilMembersReset event with {} members",
 						event.members.0.len()
 					);
 				}
 				if let Some(event) = tech_committee_reset {
 					println!(
-						"*** Found TechnicalCommitteeMembersReset event with {} members ***",
+						"✓ Found TechnicalCommitteeMembersReset event with {} members",
 						event.members.0.len()
 					);
 				}
 
-				// Return events from any extrinsic in this block
-				let extrinsics = block.extrinsics().await?;
-				if let Some(ext) = extrinsics.iter().next() {
-					return Ok(ext.events().await?);
-				}
+				return Ok(());
 			}
 		}
 		Err("Did not find federated authority events".into())

@@ -1,8 +1,6 @@
 use midnight_node_e2e::api::cardano::*;
 use midnight_node_e2e::api::midnight::*;
-use midnight_node_metadata::midnight_metadata_latest::{
-	federated_authority_observation, native_token_observation,
-};
+use midnight_node_metadata::midnight_metadata_latest::native_token_observation;
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use whisky::Asset;
 
@@ -183,61 +181,8 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 		timeout(Duration::from_secs(30), subscribe_to_federated_authority_events()).await;
 
 	match events_result {
-		Ok(Ok(events)) => {
+		Ok(Ok(_)) => {
 			println!("Successfully received federated authority events");
-
-			// Verify CouncilMembersReset event
-			let council_reset = events
-				.iter()
-				.filter_map(|e| e.ok())
-				.filter_map(|evt| {
-					evt.as_event::<federated_authority_observation::events::CouncilMembersReset>()
-						.ok()
-						.flatten()
-				})
-				.next();
-
-			let council_found = if let Some(ref event) = council_reset {
-				println!(
-					"✓ CouncilMembersReset event found with {} members",
-					event.members.0.len()
-				);
-				true
-			} else {
-				println!("⚠ CouncilMembersReset event not found");
-				false
-			};
-
-			// Verify TechnicalCommitteeMembersReset event
-			let tech_committee_reset = events
-				.iter()
-				.filter_map(|e| e.ok())
-				.filter_map(|evt| {
-					evt.as_event::<federated_authority_observation::events::TechnicalCommitteeMembersReset>()
-						.ok()
-						.flatten()
-				})
-				.next();
-
-			let tech_committee_found = if let Some(ref event) = tech_committee_reset {
-				println!(
-					"✓ TechnicalCommitteeMembersReset event found with {} members",
-					event.members.0.len()
-				);
-				true
-			} else {
-				println!("⚠ TechnicalCommitteeMembersReset event not found");
-				false
-			};
-
-			if council_found && tech_committee_found {
-				println!("\n=== Governance Contracts E2E Test PASSED ===");
-				println!("Both contracts deployed and membership events received successfully.");
-			} else {
-				println!("\n=== Governance Contracts E2E Test PARTIAL SUCCESS ===");
-				println!("Contracts deployed successfully, but some events were not received within timeout.");
-				println!("This may be normal if the Midnight blockchain is still processing the transactions.");
-			}
 		},
 		Ok(Err(e)) => {
 			println!("\n=== Governance Contracts E2E Test PARTIAL SUCCESS ===");

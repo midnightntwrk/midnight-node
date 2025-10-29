@@ -196,37 +196,8 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
 			}
-		} else if let Some(members_list) = members_data.as_list() {
-			// Fallback: try parsing as a list of tuples (for backwards compatibility)
-			for i in 0..members_list.len() {
-				let member_tuple = match members_list.get(i).as_list() {
-					Some(tuple) => tuple,
-					None => continue, // Skip invalid entries
-				};
-
-				if member_tuple.len() < 2 {
-					continue; // Skip incomplete tuples
-				}
-
-				// Get the second element which should be the Sr25519 key (32 bytes)
-				let sr25519_key_data = match member_tuple.get(1).as_bytes() {
-					Some(bytes) => bytes,
-					None => continue, // Skip if not bytes
-				};
-
-				// Sr25519 public keys are exactly 32 bytes
-				if sr25519_key_data.len() != 32 {
-					log::warn!(
-						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
-						sr25519_key_data.len()
-					);
-					continue;
-				}
-
-				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
-			}
 		} else {
-			return Err("Expected second element to be either a map or a list".into());
+			return Err("Expected second element to be a map".into());
 		}
 
 		Ok(authority_keys)
