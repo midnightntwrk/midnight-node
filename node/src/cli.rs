@@ -14,7 +14,6 @@
 use std::str::FromStr;
 
 use clap::Parser;
-use serde_valid::Validate;
 
 use crate::cfg::Cfg;
 use midnight_node_runtime::opaque::SessionKeys;
