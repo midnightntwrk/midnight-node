@@ -216,4 +216,12 @@ pub trait MidnightNetwork {
 	fn chain_type(&self) -> sc_service::ChainType {
 		sc_service::ChainType::Live
 	}
+
+	fn network_id(&self) -> String {
+		if self.id() == "midnight" {
+			return "mainnet".to_string();
+		} else {
+			self.id().trim_start_matches("midnight_").to_string()
+		}
+	}
 }
