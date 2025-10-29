@@ -1,7 +1,7 @@
 {
     "council": {
-        "address": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
-        "policy_id": "00000000000000000000000000000000000000000000000000000001",
+        "address": "addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha",
+        "policy_id": "8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b",
         "members": [
             "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
             "0x7c24a8cb088769cb57462594c0012a335f6b938454b5853aee48b139ae4fac0a",
@@ -9,8 +9,8 @@
         ]
     },
     "technical_committee": {
-        "address": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
-        "policy_id": "00000000000000000000000000000000000000000000000000000001",
+        "address": "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2",
+        "policy_id": "f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28",
         "members": [
             "0x7c45fee2baacf39999113ef0d9cb35144f17dae6a51ab0e8211853162d3d6840",
             "0x52f3c5ec2fe34821a0c1d38ab8750f6644a8f23fdf2b1c3688a12a695f7de158",
