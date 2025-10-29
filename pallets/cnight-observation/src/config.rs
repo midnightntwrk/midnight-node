@@ -1,4 +1,6 @@
-use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, ObservedUtxos, StakeAddressBytes,
+};
 use serde::{Deserialize, Serialize};
 use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 
@@ -10,8 +12,10 @@ pub struct CNightGenesis {
 	#[cfg_attr(feature = "std", validate)]
 	pub addresses: CNightAddresses,
 	pub observed_utxos: ObservedUtxos,
-	pub mappings: BTreeMap<Vec<u8>, Vec<MappingEntry>>,
-	pub utxo_owners: BTreeMap<Vec<u8>, Vec<u8>>,
+	pub mappings: BTreeMap<StakeAddressBytes, Vec<MappingEntry>>,
+	/// We use Vec<u8> here for DustAddressBytes because serde doesn't support length-33 byte
+	/// arrays
+	pub utxo_owners: BTreeMap<[u8; 32], Vec<u8>>,
 	pub next_cardano_position: CardanoPosition,
 	pub system_tx: Option<SystemTx>,
 }

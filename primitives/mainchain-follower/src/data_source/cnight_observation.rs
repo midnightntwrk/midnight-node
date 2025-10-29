@@ -19,6 +19,10 @@ use crate::{
 	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
+use cardano_serialization_lib::{
+	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, PlutusData, RewardAddress,
+	ScriptHash,
+};
 use derive_new::new;
 use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
@@ -58,6 +62,24 @@ pub enum MidnightCNightObservationDataSourceError {
 	MissingBlockReference(McBlockHash),
 	#[error("Error querying database")]
 	DBQueryError(#[from] sqlx::error::Error),
+	#[error("Error extracting network id from Cardano address")]
+	CardanoNetworkError(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum RegistrationDatumDecodeError {
+	#[error("Cardano credential not bytes")]
+	CardanoCredentialNotBytes,
+	#[error("Cardano credential invalid tag")]
+	CardanoCredentialInvalidTag(u64),
+	#[error("Cardano credential invalid key hash")]
+	CardanoCredentialInvalidKeyHash,
+	#[error("Cardano credential invalid script hash")]
+	CardanoCredentialInvalidScriptHash,
+	#[error("Dust address not bytes")]
+	DustAddressNotBytes,
+	#[error("Dust address invalid length (should be 33)")]
+	DustAddressInvalidLength(usize),
 }
 
 #[derive(new)]
@@ -81,6 +103,13 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
+		let cardano_network = Address::from_bech32(&config.mapping_validator_address)
+			.ok()
+			.and_then(|a| a.network_id().ok())
+			.ok_or(MidnightCNightObservationDataSourceError::CardanoNetworkError(
+				config.mapping_validator_address.clone(),
+			))?;
+
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
@@ -99,6 +128,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		// ^ We may not have to do the above if the queries are fast enough
 		let mut utxos = [
 			self.get_registration_utxos(
+				cardano_network,
 				&config.mapping_validator_address,
 				start_position,
 				end,
@@ -107,6 +137,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_deregistration_utxos(
+				cardano_network,
 				&config.mapping_validator_address,
 				start_position,
 				end,
@@ -115,6 +146,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_asset_create_utxos(
+				cardano_network,
 				config.cnight_policy_id,
 				cnight_asset_name,
 				start_position,
@@ -124,6 +156,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_asset_spend_utxos(
+				cardano_network,
 				config.cnight_policy_id,
 				cnight_asset_name,
 				start_position,
@@ -133,6 +166,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_redemption_create_utxos(
+				cardano_network,
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
 				cnight_asset_name,
@@ -143,6 +177,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			)
 			.await?,
 			self.get_redemption_spend_utxos(
+				cardano_network,
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
 				cnight_asset_name,
@@ -190,9 +225,55 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 }
 
 impl MidnightCNightObservationDataSourceImpl {
+	fn decode_registration_datum(
+		datum: ConstrPlutusData,
+	) -> Result<(Credential, [u8; 33]), RegistrationDatumDecodeError> {
+		// We use a Vec here because the `get` method on `PlutusList` can panic
+		let list: Vec<PlutusData> = datum.data().into_iter().cloned().collect();
+
+		let Some(cardano_credential) = list.first().and_then(|d| d.as_constr_plutus_data()) else {
+			return Err(RegistrationDatumDecodeError::CardanoCredentialNotBytes);
+		};
+
+		let credential = match u64::from(cardano_credential.alternative()) {
+			0 => cardano_credential
+				.data()
+				.into_iter()
+				.next()
+				.and_then(|d| d.as_bytes())
+				.and_then(|hash_bytes| Ed25519KeyHash::from_bytes(hash_bytes).ok())
+				.map(|hash| Credential::from_keyhash(&hash))
+				.ok_or(RegistrationDatumDecodeError::CardanoCredentialInvalidKeyHash)?,
+			1 => cardano_credential
+				.data()
+				.into_iter()
+				.next()
+				.and_then(|d| d.as_bytes())
+				.and_then(|hash_bytes| ScriptHash::from_bytes(hash_bytes).ok())
+				.map(|hash| Credential::from_scripthash(&hash))
+				.ok_or(RegistrationDatumDecodeError::CardanoCredentialInvalidScriptHash)?,
+			tag => {
+				return Err(RegistrationDatumDecodeError::CardanoCredentialInvalidTag(tag));
+			},
+		};
+
+		let Some(dust_address) = list.get(1).and_then(|d| d.as_bytes()) else {
+			return Err(RegistrationDatumDecodeError::DustAddressNotBytes);
+		};
+
+		let dust_addr_length = dust_address.len();
+
+		let Ok(dust_address) = <[u8; 33]>::try_from(dust_address) else {
+			return Err(RegistrationDatumDecodeError::DustAddressInvalidLength(dust_addr_length));
+		};
+
+		Ok((credential, dust_address))
+	}
+
 	#[allow(clippy::too_many_arguments)]
 	async fn get_redemption_create_utxos(
 		&self,
+		cardano_network: u8,
 		address: &str,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
@@ -223,9 +304,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
-				log::error!(
-					"INTERNAL ERROR: Plutus data for mapping validator not Constr ({header:?})"
-				);
+				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
 			let list = constr.data();
@@ -235,15 +314,24 @@ impl MidnightCNightObservationDataSourceImpl {
 				continue;
 			};
 
-			let Some(owner) = cardano_serialization_lib::Address::from_bytes(owner_bytes.clone())
-				.map(|addr| addr.to_bytes())
-				.ok()
+			let Some(cardano_address) =
+				cardano_serialization_lib::Address::from_bytes(owner_bytes.clone()).ok()
 			else {
 				log::error!(
 					"Cardano address {owner_bytes:?} not valid cardano address ({header:?})"
 				);
 				continue;
 			};
+
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!(
+					"Cardano Address {:?} has no delegation part",
+					cardano_address.to_hex()
+				);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -264,6 +352,7 @@ impl MidnightCNightObservationDataSourceImpl {
 	#[allow(clippy::too_many_arguments)]
 	async fn get_redemption_spend_utxos(
 		&self,
+		cardano_network: u8,
 		address: &str,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
@@ -306,15 +395,24 @@ impl MidnightCNightObservationDataSourceImpl {
 				continue;
 			};
 
-			let Some(owner) = cardano_serialization_lib::Address::from_bytes(owner_bytes.clone())
-				.map(|addr| addr.to_bytes())
-				.ok()
+			let Some(cardano_address) =
+				cardano_serialization_lib::Address::from_bytes(owner_bytes.clone()).ok()
 			else {
 				log::error!(
 					"Cardano address {owner_bytes:?} not valid cardano address ({header:?})"
 				);
 				continue;
 			};
+
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!(
+					"Cardano Address {:?} has no delegation part",
+					cardano_address.to_hex()
+				);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -335,6 +433,7 @@ impl MidnightCNightObservationDataSourceImpl {
 
 	async fn get_registration_utxos(
 		&self,
+		cardano_network: u8,
 		address: &str,
 		start: CardanoPosition,
 		end: CardanoPosition,
@@ -359,33 +458,20 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
-				log::error!(
-					"INTERNAL ERROR: Plutus data for mapping validator not Constr ({header:?})"
-				);
+				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
-			let list = constr.data();
-
-			let Some(cardano_address_bytes) = list.get(0).as_bytes() else {
-				log::error!("Cardano address not bytes ({header:?})");
-				continue;
-			};
-
-			let Some(dust_address) = list.get(1).as_bytes() else {
-				log::error!("Midnight address not bytes ({header:?})");
-				continue;
+			let (credential, dust_address) = match Self::decode_registration_datum(constr) {
+				Ok(pair) => pair,
+				Err(e) => {
+					log::error!("Failed to decode registration datum: {e:?} ({header:?})");
+					continue;
+				},
 			};
 
-			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bytes(cardano_address_bytes.clone())
-					.map(|addr| addr.to_bytes())
-					.ok()
-			else {
-				log::error!(
-					"Cardano address {cardano_address_bytes:?} not valid cardano address ({header:?})"
-				);
-				continue;
-			};
+			let reward_address = RewardAddress::new(cardano_network, &credential);
+			// Unwrap here is OK - we know the reward_address is always 29 bytes
+			let cardano_address = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -403,6 +489,7 @@ impl MidnightCNightObservationDataSourceImpl {
 
 	async fn get_deregistration_utxos(
 		&self,
+		cardano_network: u8,
 		address: &str,
 		start: CardanoPosition,
 		end: CardanoPosition,
@@ -427,32 +514,20 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
-				log::error!(
-					"INTERNAL ERROR: Plutus data for mapping validator not Constr ({header:?})"
-				);
+				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
-			let list = constr.data();
-
-			let Some(cardano_address_bytes) = list.get(0).as_bytes() else {
-				log::error!("Cardano address not bytes ({header:?})");
-				continue;
-			};
-			let Some(dust_address) = list.get(1).as_bytes() else {
-				log::error!("Midnight address not bytes ({header:?})");
-				continue;
+			let (credential, dust_address) = match Self::decode_registration_datum(constr) {
+				Ok(pair) => pair,
+				Err(e) => {
+					log::error!("Failed to decode registration datum: {e:?} ({header:?})");
+					continue;
+				},
 			};
 
-			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bytes(cardano_address_bytes.clone())
-					.map(|addr| addr.to_bytes())
-					.ok()
-			else {
-				log::error!(
-					"Cardano address {cardano_address_bytes:?} not valid cardano address ({header:?})"
-				);
-				continue;
-			};
+			let reward_address = RewardAddress::new(cardano_network, &credential);
+			// Unwrap here is OK - we know the reward_address is always 29 bytes
+			let cardano_address = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -468,8 +543,10 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn get_asset_create_utxos(
 		&self,
+		cardano_network: u8,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
 		start: CardanoPosition,
@@ -498,21 +575,27 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bech32(&row.holder_address)
-					.map(|addr| addr.to_bytes())
-					.ok()
+				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
 				log::error!(
 					"Cardano address {:?} not valid bech32 cardano address",
-					row.holder_address
+					&row.holder_address
 				);
 				continue;
 			};
+
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
+
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::AssetCreate(CreateData {
 					value: row.quantity as u128,
-					owner: cardano_address,
+					owner,
 					utxo_tx_hash: row.tx_hash.0,
 					utxo_tx_index: row.utxo_index.0,
 				}),
@@ -524,8 +607,10 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn get_asset_spend_utxos(
 		&self,
+		cardano_network: u8,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
 		start: CardanoPosition,
@@ -554,9 +639,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bech32(&row.holder_address)
-					.map(|addr| addr.to_bytes())
-					.ok()
+				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
 				log::error!(
 					"Cardano address {:?} not valid bech32 cardano address",
@@ -565,11 +648,18 @@ impl MidnightCNightObservationDataSourceImpl {
 				continue;
 			};
 
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
+
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::AssetSpend(SpendData {
 					value: row.quantity as u128,
-					owner: cardano_address,
+					owner,
 					utxo_tx_hash: row.utxo_tx_hash.0,
 					utxo_tx_index: row.utxo_index.0,
 					spending_tx_hash: row.spending_tx_hash.0,

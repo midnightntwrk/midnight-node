@@ -27,6 +27,15 @@ use sidechain_domain::McTxHash;
 #[cfg(feature = "std")]
 use sqlx::types::chrono::{DateTime, Utc};
 
+/// Addresses are in Bech32 repr. The max length is:
+/// max(len('addr'), len('addr_test')) + 1 byte separator + len(bech32_encode(<shelly_address_max = 57 bytes>))
+/// = 9 + 1 + 98 = 108
+pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
+pub const CARDANO_STAKE_ADDRESS_LENGTH: usize = 29;
+
+pub type StakeAddressBytes = [u8; CARDANO_STAKE_ADDRESS_LENGTH];
+pub type DustAddressBytes = [u8; 33];
+
 #[derive(
 	Encode,
 	Decode,
@@ -205,7 +214,7 @@ pub enum ObservedUtxoData {
 )]
 pub struct RedemptionCreateData {
 	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: StakeAddressBytes,
 	pub value: u128,
 	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
@@ -217,7 +226,7 @@ pub struct RedemptionCreateData {
 )]
 pub struct RedemptionSpendData {
 	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: StakeAddressBytes,
 	pub value: u128,
 	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
@@ -231,9 +240,9 @@ pub struct RedemptionSpendData {
 )]
 pub struct RegistrationData {
 	#[serde(with = "hex")]
-	pub cardano_address: Vec<u8>,
+	pub cardano_address: [u8; 29],
 	#[serde(with = "hex")]
-	pub dust_address: Vec<u8>,
+	pub dust_address: [u8; 33],
 }
 
 #[derive(
@@ -241,9 +250,9 @@ pub struct RegistrationData {
 )]
 pub struct DeregistrationData {
 	#[serde(with = "hex")]
-	pub cardano_address: Vec<u8>,
+	pub cardano_address: StakeAddressBytes,
 	#[serde(with = "hex")]
-	pub dust_address: Vec<u8>,
+	pub dust_address: DustAddressBytes,
 }
 
 #[derive(
@@ -252,7 +261,7 @@ pub struct DeregistrationData {
 pub struct CreateData {
 	pub value: u128,
 	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: StakeAddressBytes,
 	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,
@@ -264,7 +273,7 @@ pub struct CreateData {
 pub struct SpendData {
 	pub value: u128,
 	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: StakeAddressBytes,
 	#[serde(with = "hex")]
 	pub utxo_tx_hash: [u8; 32],
 	pub utxo_tx_index: u16,

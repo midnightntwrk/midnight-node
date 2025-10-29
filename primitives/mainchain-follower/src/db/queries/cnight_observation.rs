@@ -24,8 +24,6 @@ use midnight_primitives_cnight_observation::CardanoPosition;
 use sidechain_domain::*;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
-// TODO: Compare bytes not hex strings for policy_id and asset_name
-
 #[allow(clippy::too_many_arguments)]
 pub async fn get_redemption_creates(
 	pool: &Pool<Postgres>,

@@ -21,6 +21,7 @@ sp-std.workspace = true
 hex.workspace = true
 derive-new.workspace= true
 serde = { workspace = true}
+serde_arrays = { workspace = true }
 serde_valid = { workspace = true, optional = true }
 
 [dev-dependencies]
