@@ -102,14 +102,8 @@ impl PartnerChainRuntime for MidnightRuntime {
 		let cfg = Cfg::new_no_validation()
 			.expect("chainspec configuration must load without validation errors");
 
-		let chain_id = cfg
-			.chain_spec_cfg
-			.chainspec_id
-			.as_deref()
-			.expect("chain spec configuration must define an identifier");
-
 		let chain_spec = cfg
-			.load_spec(chain_id)
+			.load_spec("")
 			.expect("chain spec generation must succeed when using default configuration");
 
 		let chain_spec_json =
