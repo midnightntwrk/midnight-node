@@ -57,14 +57,26 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 
 		let council_authorities = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => keys,
+				Ok(keys) => {
+					log::info!(
+						"Successfully decoded {} council members from block {}",
+						keys.len(),
+						utxo.block_number.0
+					);
+					keys
+				},
 				Err(e) => {
 					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
 					vec![]
 				},
 			},
 			None => {
-				log::warn!("No council UTXO found for block {}. Using empty list.", block_number);
+				log::warn!(
+					"No council UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					block_number,
+					config.council.address,
+					config.council.policy_id
+				);
 				vec![]
 			},
 		};
@@ -80,7 +92,14 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 
 		let technical_committee_authorities = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => keys,
+				Ok(keys) => {
+					log::info!(
+						"Successfully decoded {} technical committee members from block {}",
+						keys.len(),
+						utxo.block_number.0
+					);
+					keys
+				},
 				Err(e) => {
 					log::warn!(
 						"Failed to decode technical committee datum: {}. Using empty list.",
@@ -91,8 +110,10 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 			None => {
 				log::warn!(
-					"No technical committee UTXO found for block {}. Using empty list.",
-					block_number
+					"No technical committee UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					block_number,
+					config.technical_committee.address,
+					config.technical_committee.policy_id
 				);
 				vec![]
 			},
@@ -125,39 +146,87 @@ impl FederatedAuthorityObservationDataSourceImpl {
 			);
 		}
 
-		// Get the second element which should be the list of members
-		let members_list = list.get(1).as_list().ok_or("Expected second element to be a list")?;
+		// Get the second element which contains the members
+		// The Multisig type with @list annotation encodes the signers field as a map
+		let members_data = &list.get(1);
 
 		let mut authority_keys = Vec::new();
 
-		// Each member is a tuple (CborBytes, Sr25519Keys)
-		for i in 0..members_list.len() {
-			let member_tuple = match members_list.get(i).as_list() {
-				Some(tuple) => tuple,
-				None => continue, // Skip invalid entries
-			};
+		// Try to parse as a map (Pairs<NativeScriptSigner, Sr25519PubKey>)
+		if let Some(members_map) = members_data.as_map() {
+			// Iterate over map keys
+			let keys = members_map.keys();
+			for i in 0..keys.len() {
+				let key = keys.get(i);
 
-			if member_tuple.len() < 2 {
-				continue; // Skip incomplete tuples
+				// Get the value for this key
+				// PlutusMapValues is a collection of PlutusData elements
+				let values = match members_map.get(&key) {
+					Some(v) => v,
+					None => continue,
+				};
+
+				// For our datum, each key maps to a single Sr25519 public key
+				// Get the first (and only) element from PlutusMapValues
+				let value_data = match values.get(0) {
+					Some(v) => v,
+					None => {
+						log::warn!("Map value at index {} is empty, skipping", i);
+						continue;
+					},
+				};
+
+				// The value should be the Sr25519 key (32 bytes)
+				let sr25519_key_data = match value_data.as_bytes() {
+					Some(bytes) => bytes,
+					None => {
+						log::warn!("Map value at index {} is not bytes, skipping", i);
+						continue;
+					},
+				};
+
+				// Sr25519 public keys are exactly 32 bytes
+				if sr25519_key_data.len() != 32 {
+					log::warn!(
+						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+						sr25519_key_data.len()
+					);
+					continue;
+				}
+
+				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
 			}
+		} else if let Some(members_list) = members_data.as_list() {
+			// Fallback: try parsing as a list of tuples (for backwards compatibility)
+			for i in 0..members_list.len() {
+				let member_tuple = match members_list.get(i).as_list() {
+					Some(tuple) => tuple,
+					None => continue, // Skip invalid entries
+				};
 
-			// Get the second element which should be the Sr25519 key (32 bytes)
-			let sr25519_key_data = match member_tuple.get(1).as_bytes() {
-				Some(bytes) => bytes,
-				None => continue, // Skip if not bytes
-			};
+				if member_tuple.len() < 2 {
+					continue; // Skip incomplete tuples
+				}
 
-			// Sr25519 public keys are exactly 32 bytes
-			if sr25519_key_data.len() != 32 {
-				log::warn!(
-					"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
-					sr25519_key_data.len()
-				);
-				continue;
+				// Get the second element which should be the Sr25519 key (32 bytes)
+				let sr25519_key_data = match member_tuple.get(1).as_bytes() {
+					Some(bytes) => bytes,
+					None => continue, // Skip if not bytes
+				};
+
+				// Sr25519 public keys are exactly 32 bytes
+				if sr25519_key_data.len() != 32 {
+					log::warn!(
+						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+						sr25519_key_data.len()
+					);
+					continue;
+				}
+
+				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
 			}
-
-			// TODO: Handle CborBytes (first element of tuple) when needed
-			authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
+		} else {
+			return Err("Expected second element to be either a map or a list".into());
 		}
 
 		Ok(authority_keys)

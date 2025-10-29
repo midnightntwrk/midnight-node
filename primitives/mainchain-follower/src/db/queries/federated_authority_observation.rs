@@ -22,7 +22,7 @@ use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
 /// Query to get the UTXO for a governance body (council or technical committee) at a specific Cardano block
 ///
-/// This query finds a UTXO that matches:
+/// This query finds the most recent unspent UTXO up to and including the specified block that matches:
 /// - A provided script address
 /// - A provided policy ID (for the native asset)
 ///
@@ -50,7 +50,7 @@ FROM tx_out
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 WHERE tx_out.address = $1
     AND encode(ma.policy, 'hex') = $2
-    AND block.block_no = $3
+    AND block.block_no <= $3
     AND NOT EXISTS (
         SELECT 1 FROM tx_in
         WHERE tx_in.tx_out_id = tx_out.tx_id

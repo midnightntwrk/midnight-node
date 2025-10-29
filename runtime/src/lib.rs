@@ -1635,7 +1635,7 @@ impl_runtime_apis! {
 		}
 
 		fn get_technical_committee_policy_id() -> Vec<u8> {
-			pallet_federated_authority_observation::MainChainTechnicalCommitteeAddress::<Runtime>::get().into_inner()
+			pallet_federated_authority_observation::MainChainTechnicalCommitteePolicyId::<Runtime>::get().into_inner()
 		}
 	}
 }
