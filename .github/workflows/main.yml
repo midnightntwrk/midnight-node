@@ -60,7 +60,7 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951 #v2.62.33
+        uses: taiki-e/install-action@1d76762916ba18e4f0c3b2f71fee3da83a279745 #v2.62.41
         with:
           tool: just
 
@@ -145,7 +145,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951 #v2.62.33
+        uses: taiki-e/install-action@1d76762916ba18e4f0c3b2f71fee3da83a279745 #v2.62.41
         with:
           tool: just
 
