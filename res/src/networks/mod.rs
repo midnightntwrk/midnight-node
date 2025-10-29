@@ -218,10 +218,21 @@ pub trait MidnightNetwork {
 	}
 
 	fn network_id(&self) -> String {
-		if self.id() == "midnight" {
-			return "mainnet".to_string();
+		let network_id = if self.id() == "midnight" {
+			"mainnet".to_string()
 		} else {
 			self.id().trim_start_matches("midnight_").to_string()
+		};
+
+		let spec = "arbitrary string consisting of alphanumeric characters and hyphens";
+		if !network_id.chars().all(|c| c.is_alphanumeric() || c == '-') {
+			panic!(
+				"network_id does not meet spec. chain_id: {}, network_id: {}, spec: {spec}",
+				self.id(),
+				network_id
+			);
 		}
+
+		network_id
 	}
 }
