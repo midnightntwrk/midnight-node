@@ -11,6 +11,8 @@ use midnight_node_toolkit::{cli_parsers as cli, tx_generator::TxGenerator};
 pub enum JsCommand {
 	Deploy(DeployCommandArgs),
 	Circuit(CircuitCommandArgs),
+	MaintainContract(MaintainContractCommandArgs),
+	MaintainCircuit(MaintainCircuitCommandArgs),
 }
 
 #[derive(Args, Debug)]
@@ -34,7 +36,7 @@ pub struct CircuitCommandArgs {
 	circuit_call: toolkit_js::CircuitArgs,
 
 	/// Dry-run - don't generate intent, just print out settings
-	#[arg(long)]
+	#[arg(long, global = true)]
 	dry_run: bool,
 }
 
@@ -47,7 +49,33 @@ pub struct DeployCommandArgs {
 	deploy: toolkit_js::DeployArgs,
 
 	/// Dry-run - don't generate intent, just print out settings
-	#[arg(long)]
+	#[arg(long, global = true)]
+	dry_run: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainContractCommandArgs {
+	#[command(flatten)]
+	toolkit_js: toolkit_js::ToolkitJs,
+
+	#[command(flatten)]
+	maintain: toolkit_js::MaintainContractArgs,
+
+	/// Dry-run - don't generate intent, just print out settings
+	#[arg(long, global = true)]
+	dry_run: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainCircuitCommandArgs {
+	#[command(flatten)]
+	toolkit_js: toolkit_js::ToolkitJs,
+
+	#[command(flatten)]
+	maintain: toolkit_js::MaintainCircuitArgs,
+
+	/// Dry-run - don't generate intent, just print out settings
+	#[arg(long, global = true)]
 	dry_run: bool,
 }
 
@@ -145,6 +173,26 @@ pub async fn execute(
 				toolkit_js::Command::Circuit { args: args.circuit_call, input_zswap_state };
 			args.toolkit_js.execute(command)?;
 		},
+		JsCommand::MaintainContract(args) => {
+			if args.dry_run {
+				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				println!("Dry-run: generate maintain contract intent: {:?}", &args.maintain);
+				return Ok(());
+			}
+			let command =
+				toolkit_js::Command::Maintain(toolkit_js::MaintainCommand::Contract(args.maintain));
+			args.toolkit_js.execute(command)?;
+		},
+		JsCommand::MaintainCircuit(args) => {
+			if args.dry_run {
+				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				println!("Dry-run: generate maintain circuit intent: {:?}", &args.maintain);
+				return Ok(());
+			}
+			let command =
+				toolkit_js::Command::Maintain(toolkit_js::MaintainCommand::Circuit(args.maintain));
+			args.toolkit_js.execute(command)?;
+		},
 	};
 	Ok(())
 }
@@ -158,10 +206,17 @@ pub async fn execute(
 #[cfg(test)]
 mod test {
 	use clap::Parser as _;
+	use midnight_node_ledger_helpers::{Serializable, SigningKey};
 
 	use crate::{Cli, run_command};
 
 	use std::fs;
+
+	fn to_hex<S: Serializable>(value: &S) -> String {
+		let mut bytes = vec![];
+		value.serialize(&mut bytes).unwrap();
+		hex::encode(&bytes)
+	}
 
 	#[tokio::test]
 	async fn test_generate_deploy() {
@@ -256,5 +311,140 @@ mod test {
 		assert!(fs::exists(&output_private_state).unwrap());
 		assert!(fs::exists(&output_zswap_state).unwrap());
 		assert!(fs::exists(&output_result).unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_generate_maintain_contract() {
+		// as this is inside util/toolkit, current dir should move a few directories up
+		let toolkit_js_path = "../toolkit-js".to_string();
+		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
+		let out_dir = tempfile::tempdir().unwrap();
+
+		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
+
+		let contract_address_hex =
+			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
+				.unwrap()
+				.trim()
+				.to_string();
+
+		let signing_key = SigningKey::sample(rand::thread_rng());
+		let signing_key_hex = to_hex(&signing_key);
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"generate-intent",
+			"maintain-contract",
+			"--coin-public",
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			"--toolkit-js-path",
+			&toolkit_js_path,
+			"--config",
+			&config,
+			"--input-onchain-state",
+			"./test-data/contract/counter/contract_state.mn",
+			"--output-intent",
+			&output_intent,
+			"--contract-address",
+			&contract_address_hex,
+			"--signing",
+			&signing_key_hex,
+			&signing_key_hex,
+		];
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		assert!(fs::exists(&output_intent).unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_generate_maintain_circuit() {
+		// as this is inside util/toolkit, current dir should move a few directories up
+		let toolkit_js_path = "../toolkit-js".to_string();
+		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
+		let out_dir = tempfile::tempdir().unwrap();
+
+		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
+
+		let contract_address_hex =
+			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
+				.unwrap()
+				.trim()
+				.to_string();
+
+		let signing_key = SigningKey::sample(rand::thread_rng());
+		let signing_key_hex = to_hex(&signing_key);
+
+		let verifier_path = "./test-data/contract/counter/keys/increment.verifier";
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"generate-intent",
+			"maintain-circuit",
+			"--coin-public",
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			"--toolkit-js-path",
+			&toolkit_js_path,
+			"--config",
+			&config,
+			"--input-onchain-state",
+			"./test-data/contract/counter/contract_state.mn",
+			"--output-intent",
+			&output_intent,
+			"--contract-address",
+			&contract_address_hex,
+			"--signing",
+			&signing_key_hex,
+			"increment",
+			&verifier_path,
+		];
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		assert!(fs::exists(&output_intent).unwrap());
+	}
+
+	#[tokio::test]
+	async fn test_generate_maintain_remove_circuit() {
+		// as this is inside util/toolkit, current dir should move a few directories up
+		let toolkit_js_path = "../toolkit-js".to_string();
+		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
+		let out_dir = tempfile::tempdir().unwrap();
+
+		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
+
+		let contract_address_hex =
+			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
+				.unwrap()
+				.trim()
+				.to_string();
+
+		let signing_key = SigningKey::sample(rand::thread_rng());
+		let signing_key_hex = to_hex(&signing_key);
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"generate-intent",
+			"maintain-circuit",
+			"--coin-public",
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			"--toolkit-js-path",
+			&toolkit_js_path,
+			"--config",
+			&config,
+			"--input-onchain-state",
+			"./test-data/contract/counter/contract_state.mn",
+			"--output-intent",
+			&output_intent,
+			"--contract-address",
+			&contract_address_hex,
+			"--signing",
+			&signing_key_hex,
+			"increment",
+		];
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		assert!(fs::exists(&output_intent).unwrap());
 	}
 }

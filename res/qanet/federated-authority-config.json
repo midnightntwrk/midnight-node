@@ -2,15 +2,15 @@
     "council": {
         "members": [
             "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-            "0x7c24a8cb088769cb57462594c0012a335f6b938454b5853aee48b139ae4fac0a",
-            "0xfea7b7383a91972818f4a507071b58e299518a6041d703dcdfaa3b44f50e7a5d"
+            "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
+            "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"
         ]  
     },
     "technical_committee": {
         "members": [
-            "0x7c45fee2baacf39999113ef0d9cb35144f17dae6a51ab0e8211853162d3d6840",
-            "0x52f3c5ec2fe34821a0c1d38ab8750f6644a8f23fdf2b1c3688a12a695f7de158",
-            "0xce7b43e2c20c0800553d7829eaebe948cd8900e6e6ed92b610f169c1f135fa28"
+            "0x306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20",
+            "0xe659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e",
+            "0x1cbd2d43530a44705ad088af313e18f80b53ef16b36177cd4b77b846f2a5f07c"
         ]
     }
 }
