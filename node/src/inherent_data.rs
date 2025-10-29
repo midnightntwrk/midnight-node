@@ -107,7 +107,8 @@ where
 		let (slot, timestamp) =
 			timestamp_and_slot_cidp(sc_slot_config.slot_duration, time_source.clone());
 
-		let parent_header = client.header(parent_hash)?
+		let parent_header = client
+			.header(parent_hash)?
 			.ok_or_else(|| format!("Missing parent header for {parent_hash:?}"))?;
 
 		let mc_hash = McHashIDP::new_proposal(
