@@ -41,10 +41,10 @@ mod benchmarking;
 pub mod weights;
 
 const MAX_CARDANO_ADDR_LEN: u32 = 150;
-const MAX_POLICY_ID_LEN: u32 = 28;
+const MAX_CARDANO_ADDR_HASH_LEN: u32 = 28;
 
 type BoundedCardanoAddress = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>;
-type BoundedPolicyId = BoundedVec<u8, ConstU32<MAX_POLICY_ID_LEN>>;
+type BoundedPolicyId = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_HASH_LEN>>;
 
 #[frame_support::pallet]
 pub mod pallet {
