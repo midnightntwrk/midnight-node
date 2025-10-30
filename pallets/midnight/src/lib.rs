@@ -102,9 +102,9 @@ pub mod pallet {
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(100);
 
 	pub const FIXED_MN_TRANSACTION_WEIGHT: Weight =
-		Weight::from_parts(WEIGHT_REF_TIME_PER_SECOND / 1000, 0);
+		 Weight::from_parts(100_000_000_000, 0);
 	pub const EXTRA_WEIGHT_PER_CONTRACT_CALL: Weight = Weight::from_parts(0, 0);
-	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(0, 0);
+	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
 	#[pallet::pallet]
 	#[pallet::storage_version(STORAGE_VERSION)]
@@ -171,11 +171,6 @@ pub mod pallet {
 	}
 
 	#[pallet::type_value]
-	pub fn DefaultSafeMode() -> bool {
-		true
-	}
-
-	#[pallet::type_value]
 	pub fn DefaultMaxSkippedSlots() -> u8 {
 		1
 	}
@@ -192,10 +187,11 @@ pub mod pallet {
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
+		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
-	pub type SafeMode<T> = StorageValue<_, bool, ValueQuery, DefaultSafeMode>;
+	pub type ConfigurableHookFnWeight<T> =
+		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
@@ -322,6 +318,7 @@ pub mod pallet {
 			LedgerApi::pre_fetch_storage(&state_key).expect("Failed to pre-fetch storage");
 
 			<T as Config>::WeightInfo::on_finalize()
+				.saturating_add(ConfigurableHookFnWeight::<T>::get())
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
@@ -372,6 +369,7 @@ pub mod pallet {
 			}
 			// TODO: Benchmark Weight in case of a real hard-fork
 			Weight::zero()
+				.saturating_add(ConfigurableHookFnWeight::<T>::get())
 		}
 	}
 
@@ -382,16 +380,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight({
-                if SafeMode::<T>::get() {
-                    ConfigurableWeight::<T>::get()
-                } else {
-                    // TODO: Now that we always revalidate txs, we don't want to validate the tx again to calculate the Weight
-                    //       Weight calculation and benchmarks should be revisited anyway once new Ledger's Cost Model is finished.
-                    //       Deleted code can be checked in: https://github.com/midnightntwrk/midnight-node/pull/1054
-                    ConfigurableWeight::<T>::get()
-                }
-            })]
+		#[pallet::weight(ConfigurableWeight::<T>::get())]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
@@ -489,15 +478,6 @@ pub mod pallet {
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
 			ensure_root(origin)?;
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(5)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring safe mode
-		pub fn set_safe_mode(origin: OriginFor<T>, mode: bool) -> DispatchResult {
-			ensure_root(origin)?;
-			SafeMode::<T>::set(mode);
 			Ok(())
 		}
 	}
