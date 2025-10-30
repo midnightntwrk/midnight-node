@@ -107,7 +107,7 @@ fn dust_address() -> [u8; 33] {
 
 // Onchain cardano address
 fn cardano_address(input: &[u8]) -> StakeAddressBytes {
-	testbytes(input, None)
+	testbytes(input, Some(29))
 }
 
 fn test_wallet_pairing() -> (StakeAddressBytes, DustAddressBytes) {
@@ -188,11 +188,12 @@ fn asset_create_should_emit_valid_event_if_registered() {
 			{
 				println!("system tx detected: {e:?}");
 				println!("looking for owner: {:?}", &dust_address);
+				let dust_address_deser: DustPublicKey =
+					deserialize_untagged(&mut &dust_address[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
 				for event in events.iter() {
 					if event.action == CNightGeneratesDustActionType::Create {
-						let owner_bytes = event.owner.0.as_le_bytes();
-						if owner_bytes.as_slice() == dust_address {
+						if dust_address_deser == event.owner {
 							return true;
 						}
 					}
