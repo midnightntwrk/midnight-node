@@ -42,9 +42,9 @@ runs:
       with:
         clean: false
 
-    - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+    - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
       with:
-        version: v0.8.0
+        version: v0.8.16
 
     - name: Docker Login
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
@@ -60,7 +60,7 @@ runs:
         echo "INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}"
         echo "CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}"
         echo "WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}"
-        
+
         echo "🚀 Running Earthly command..."
         earthly +start-local-env-with-indexer-ci \
           --NODE_IMAGE=${{ inputs.image }} \
@@ -74,6 +74,12 @@ runs:
 #      with:
 #        just-command: indexer-api-e2e
 #        ghcr-password: ${{ inputs.ghcr-password }}
+
+    - name: rust e2e tests
+      id: rust-e2e-tests
+      run: |
+        earthly +local-env-rust-e2e
+      shell: bash
 
     - name: e2e tests
       id: e2e-tests
@@ -92,7 +98,7 @@ runs:
         name: node-e2e-test-results
         path: test-artifacts/e2e/node/
         retention-days: 7
-      
+
     - name: Setup Node
       if: always()
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  #v4.4.0
@@ -106,11 +112,11 @@ runs:
         script: |
           const fs = require('fs');
           const path = require('path');
-          
+
           // Determine test status
           const nodeE2eStatus = '${{ steps.node-e2e-tests.outcome }}';
           const e2eStatus = '${{ steps.e2e-tests.outcome }}';
-          
+
           // Update GitHub step summary
           let summary = '## Node E2E Test Results\n';
           if (fs.existsSync('test-artifacts')) {
@@ -133,7 +139,7 @@ runs:
           } else {
             summary += '❌ No test artifacts found\n';
           }
-          
+
           // Write to GitHub step summary
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 

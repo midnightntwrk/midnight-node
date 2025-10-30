@@ -13,16 +13,15 @@
 
 #[cfg(feature = "std")]
 use super::{
-	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
+	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
+	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
+	zswap_local,
 };
 
 #[cfg(feature = "std")]
-use midnight_serialize::Tagged;
+use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
-use rand::{Rng, SeedableRng, rngs::StdRng};
-#[cfg(feature = "std")]
-use transient_crypto::commitment::PureGeneratorPedersen;
+use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use frame_support::{StorageHasher, Twox128};
 use sp_externalities::{Externalities, ExternalitiesExt};
@@ -45,6 +44,7 @@ use {
 	},
 	base_crypto_local::{hash::HashOutput, time::Timestamp},
 	coin_structure_local::coin::Commitment,
+	coin_structure_local::coin::Nonce,
 	coin_structure_local::coin::UnshieldedTokenType,
 	ledger_storage_local::{
 		Storage,
@@ -78,6 +78,7 @@ use crate::common::types::{
 use {lazy_static::lazy_static, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
+pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
 
 #[cfg(feature = "std")]
 lazy_static! {
@@ -88,6 +89,7 @@ lazy_static! {
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
 }
+
 #[cfg(feature = "std")]
 impl<S: SignatureKind<D> + std::fmt::Debug, D: DB> Bridge<S, D>
 where
@@ -416,13 +418,11 @@ where
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let target_address = api.night_address(receiver)?;
-		let mut rng = StdRng::seed_from_u64(0x42);
+
+		let nonce = create_nonce(MINT_COINS_DOMAIN_SEPARATOR, &block_context.parent_block_hash, 0);
+
 		let sys_tx = api::SystemTransaction::PayFromTreasuryUnshielded {
-			outputs: vec![api::OutputInstructionUnshielded {
-				amount,
-				target_address,
-				nonce: rng.r#gen(),
-			}],
+			outputs: vec![api::OutputInstructionUnshielded { amount, target_address, nonce }],
 			token_type: UnshieldedTokenType(HashOutput([0u8; 32])), // TODO: UnshieldedTokenType::Reward,
 		};
 		let ledger = Self::get_ledger(&api, state_key)?;
@@ -658,4 +658,21 @@ where
 		let system_tx = SystemTransaction::CNightGeneratesDustUpdate { events: events? };
 		api.tagged_serialize(&system_tx)
 	}
+}
+
+/// Creates a Nonce using BlakeTwo256; similar Hashing type set in the Runtime.
+///
+/// # Arguments
+/// * `separator` - an indicator from which this nonce belongs to.
+/// * `block_hash`
+/// * `output_number` - its position in the list
+#[cfg(feature = "std")]
+fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce {
+	use sp_runtime::traits::{BlakeTwo256, Hash};
+
+	let concatenated = [block_hash, separator, &[output_number]].concat();
+
+	let h256 = BlakeTwo256::hash(&concatenated);
+
+	Nonce(HashOutput(h256.0))
 }

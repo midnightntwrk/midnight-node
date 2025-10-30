@@ -1,5 +1,5 @@
 import { CompiledContract, ContractExecutable, type Contract } from '@midnight-ntwrk/compact-js/effect';
-import { Contract as C_ } from './out/contract/index.cjs';
+import { Contract as C_ } from './out/contract/index.js';
 
 /**
  * A type that describes the private state of the contract.
@@ -10,14 +10,6 @@ type PrivateState = {};
 type MintContract = C_<PrivateState>;
 const MintContract = C_;
 
-/**
- * An object that represents the witness functions defined by the compiled contract.
- */
-const witnesses: Contract.Contract.Witnesses<MintContract> = {
-  // In this example, we simply increment the count stored in our private state.
-  something: () => [{}, []]
-}
-
 const createInitialPrivateState: () => PrivateState = () => ({});
 
 export default {
@@ -25,7 +17,7 @@ export default {
   // that binds the output from `compactc` to the physical and logical assets that are required for its
   // execution.
   contractExecutable: CompiledContract.make<MintContract>('MintContract', MintContract).pipe(
-    CompiledContract.withWitnesses(witnesses),
+    CompiledContract.withVacantWitnesses, // MintContract has no witnesses.
     CompiledContract.withCompiledFileAssets('./out'),
     ContractExecutable.make
   ),

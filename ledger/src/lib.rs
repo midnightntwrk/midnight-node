@@ -36,22 +36,14 @@ pub mod host_api;
 pub mod hard_fork_test {
 	#[cfg(feature = "std")]
 	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage as ledger_storage_local, midnight_serialize as midnight_serialize_local,
-		mn_ledger as mn_ledger_local, onchain_runtime as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap as zswap_local,
-	};
-	// TODO: use actual hard-fork versions again
-	/*
-	#[cfg(feature = "std")]
-	pub(crate) use {
 		base_crypto_hf as base_crypto_local, coin_structure_hf as coin_structure_local,
 		ledger_storage_hf as ledger_storage_local,
+		midnight_node_ledger_helpers::hard_fork_test as helpers_local,
 		midnight_serialize_hf as midnight_serialize_local, mn_ledger_hf as mn_ledger_local,
 		onchain_runtime_hf as onchain_runtime_local, transient_crypto_hf as transient_crypto_local,
 		zswap_hf as zswap_local,
 	};
-	*/
+
 	pub const CRATE_NAME: &str = "mn-ledger-hf";
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -63,10 +55,13 @@ pub mod latest {
 	#[cfg(feature = "std")]
 	pub(crate) use {
 		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage as ledger_storage_local, midnight_serialize as midnight_serialize_local,
-		mn_ledger as mn_ledger_local, onchain_runtime as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap as zswap_local,
+		ledger_storage as ledger_storage_local,
+		midnight_node_ledger_helpers::latest as helpers_local,
+		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
+		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
+		zswap as zswap_local,
 	};
+
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[allow(clippy::duplicate_mod)]
 	mod common;

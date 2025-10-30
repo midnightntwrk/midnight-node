@@ -364,9 +364,9 @@ pub fn new_partial(
 			client.clone(),
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
-			data_sources.native_token_observation.clone(),
-			data_sources.native_token_management.clone(),
+			data_sources.cnight_observation.clone(),
 			data_sources.governed_map.clone(),
+			data_sources.federated_authority_observation.clone(),
 		),
 		spawner: &task_manager.spawn_essential_handle(),
 		registry: config.prometheus_registry(),
@@ -625,9 +625,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				client.clone(),
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
-				data_sources.native_token_observation.clone(),
-				data_sources.native_token_management.clone(),
+				data_sources.cnight_observation.clone(),
 				data_sources.governed_map.clone(),
+				data_sources.federated_authority_observation.clone(),
 			),
 			force_authoring,
 			backoff_authoring_blocks,
@@ -739,12 +739,14 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		);
 	}
 
-	sc_storage_monitor::StorageMonitorService::try_spawn(
-		storage_monitor_params,
-		database_source.path().expect("db path available").into(),
-		&task_manager.spawn_essential_handle(),
-	)
-	.map_err(|e| sc_service::Error::Other(e.to_string()))?;
+	if let Some(database_path) = database_source.path() {
+		sc_storage_monitor::StorageMonitorService::try_spawn(
+			storage_monitor_params,
+			database_path.to_path_buf(),
+			&task_manager.spawn_essential_handle(),
+		)
+		.map_err(|e| ServiceError::Application(e.into()))?;
+	}
 
 	Ok(task_manager)
 }

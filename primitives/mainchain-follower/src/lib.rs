@@ -14,9 +14,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod idp;
-pub mod types;
 
-pub use types::*;
+pub use midnight_primitives_cnight_observation::{
+	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
+	RegistrationData, SpendData, UtxoIndexInTx,
+};
 
 #[cfg(feature = "std")]
 pub mod db;
@@ -27,9 +30,9 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		MidnightNativeTokenObservationDataSourceImpl, mock::NativeTokenObservationDataSourceMock,
+		CNightObservationDataSourceMock, FederatedAuthorityObservationDataSourceImpl,
+		FederatedAuthorityObservationDataSourceMock, MidnightCNightObservationDataSourceImpl,
 	},
-	idp::MidnightObservationTokenMovement,
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
 	sp_std::boxed::Box,
@@ -38,20 +41,29 @@ pub use {
 #[cfg(feature = "std")]
 pub mod inherent_provider {
 	use super::*;
-	use crate::data_source::ObservedUtxos;
-	use midnight_primitives_native_token_observation::{CardanoPosition, TokenObservationConfig};
+	use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+	use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
 	use sidechain_domain::McBlockHash;
 
 	#[async_trait::async_trait]
 	// Simple wrapper trait for native token observation
-	pub trait MidnightNativeTokenObservationDataSource {
+	pub trait MidnightCNightObservationDataSource {
+		// TODO: Change the error type to something explicit
 		async fn get_utxos_up_to_capacity(
 			&self,
-			config: &TokenObservationConfig,
+			config: &CNightAddresses,
 			start_position: CardanoPosition,
 			current_tip: McBlockHash,
 			capacity: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
+	}
+
+	#[async_trait::async_trait]
+	pub trait FederatedAuthorityObservationDataSource<FA = ()>: Send + Sync {
+		async fn get_federated_authority_data(
+			&self,
+			mc_block_hash: &McBlockHash,
+		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
 	#[derive(Clone, Debug)]

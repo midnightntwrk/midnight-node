@@ -1,5 +1,4 @@
 use clap::Args;
-use midnight_node_ledger_helpers::NetworkId;
 use midnight_node_toolkit::{
 	ProofType, SignatureType,
 	tx_generator::{
@@ -57,13 +56,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let received_txs = source.get_txs().await.expect("should receive txs");
 
 	builder
-		.generate_intent_file(
-			received_txs,
-			prover,
-			NetworkId::Undeployed,
-			&args.dest_dir,
-			partial_file_name,
-		)
+		.generate_intent_file(received_txs, prover, &args.dest_dir, partial_file_name)
 		.await;
 }
 

@@ -1,0 +1,55 @@
+[package]
+name = "pallet-cnight-observation"
+version = "1.4.0"
+edition = "2024"
+description = "Pallet responsible for applying observed cNight actions on Cardano to the Midnight Ledger."
+license-file.workspace = true
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+sidechain-domain.workspace = true
+midnight-primitives.workspace = true
+midnight-primitives-mainchain-follower.workspace = true
+midnight-primitives-cnight-observation.workspace = true
+midnight-node-ledger = { default-features = false, workspace = true }
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+log.workspace = true
+sp-core.workspace = true
+sp-std.workspace = true
+hex.workspace = true
+derive-new.workspace= true
+serde = { workspace = true}
+serde_valid = { workspace = true, optional = true }
+
+[dev-dependencies]
+sp-io.workspace = true
+rand = { version = "^0.8.4", features = ["std_rng"] }
+midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
+pallet-midnight-system.workspace = true
+test-log.workspace = true
+midnight-node-ledger-helpers.workspace = true
+tempfile.workspace = true
+pallet-cnight-observation-mock.workspace = true
+serde_json.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "serde/std",
+    "sp-core/std",
+    "sp-std/std",
+    "parity-scale-codec/std",
+    "midnight-primitives/std",
+    "midnight-primitives-mainchain-follower/std",
+    "midnight-primitives-cnight-observation/std",
+    "derive-new/std",
+    "serde_valid"
+]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info", "parity-scale-codec", "sp-io"]

@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::{io::BufRead, path::PathBuf};
 
 use clap::{
-	Args,
+	Args, Subcommand,
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, NetworkId};
+use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
@@ -18,16 +18,6 @@ pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
-}
-
-fn encode_network_id(net_id: NetworkId) -> &'static str {
-	match net_id {
-		NetworkId::Undeployed => "undeployed",
-		NetworkId::DevNet => "devnet",
-		NetworkId::TestNet => "testnet",
-		NetworkId::MainNet => "mainnet",
-		_ => panic!("failed to encode unknown network id"),
-	}
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -58,6 +48,7 @@ impl From<PathBuf> for RelativePath {
 pub enum Command {
 	Deploy(DeployArgs),
 	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Maintain(MaintainCommand),
 }
 
 #[derive(Args, Debug)]
@@ -69,8 +60,8 @@ pub struct CircuitArgs {
 	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
 	contract_address: ContractAddress,
 	/// Target network
-	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
@@ -89,6 +80,9 @@ pub struct CircuitArgs {
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
+	/// A file path of where the invoked circuit result data should be written.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	output_result: Option<RelativePath>,
 	/// Name of the circuit to invoke
 	circuit_id: String,
 	/// Arguments to pass to the circuit
@@ -101,8 +95,8 @@ pub struct DeployArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Target network
-	#[arg(long, default_value = "undeployed", value_parser = cli::network_id_decode)]
-	network: NetworkId,
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
@@ -118,12 +112,81 @@ pub struct DeployArgs {
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_zswap_state: RelativePath,
+	/// Arguments to pass to the contract constructor
+	constructor_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SharedMaintainArgs {
+	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
+	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	config: RelativePath,
+	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
+	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	contract_address: ContractAddress,
+	/// Target network
+	#[arg(long, default_value = "undeployed")]
+	network: String,
+	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
+	#[arg(long, value_parser = cli::coin_public_decode)]
+	coin_public: CoinPublicKey,
+	/// A public BIP-340 signing key, hex encoded.
+	#[arg(long)]
+	signing: Option<String>,
+	/// Input file containing the current on-chain circuit state
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	input_onchain_state: RelativePath,
+	/// The output file of the intent
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	output_intent: RelativePath,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainContractArgs {
+	#[command(flatten)]
+	shared: SharedMaintainArgs,
+	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
+	new_signing: String,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainCircuitArgs {
+	#[command(flatten)]
+	shared: SharedMaintainArgs,
+	/// Name of the circuit to maintain.
+	circuit_id: String,
+	/// The path to a public BIP-340 verifier key, hex encoded. Replaces the verifier key of the circuit.
+	/// If missing, removes the circuit instead.
+	#[arg(value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p).absolute()))]
+	verifier: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MaintainCommand {
+	Contract(MaintainContractArgs),
+	Circuit(MaintainCircuitArgs),
+}
+impl MaintainCommand {
+	fn name(&self) -> &'static str {
+		match self {
+			Self::Contract(_) => "contract",
+			Self::Circuit(_) => "circuit",
+		}
+	}
+	fn shared_args(&self) -> &SharedMaintainArgs {
+		match self {
+			Self::Contract(args) => &args.shared,
+			Self::Circuit(args) => &args.shared,
+		}
+	}
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum ToolkitJsError {
 	#[error("failed to execute toolkit-js")]
 	ExecutionError(std::io::Error),
+	#[error("failed to read toolkit-js output")]
+	ToolkitJsOutputReadError(std::io::Error),
 }
 
 impl ToolkitJs {
@@ -133,11 +196,11 @@ impl ToolkitJs {
 			Command::Circuit { args, input_zswap_state } => {
 				self.execute_ciruit(args, input_zswap_state)
 			},
+			Command::Maintain(command) => self.execute_maintain(command),
 		}
 	}
 
 	pub fn execute_deploy(&self, args: DeployArgs) -> Result<(), ToolkitJsError> {
-		let network_id = encode_network_id(args.network);
 		println!("Executing deploy command");
 		let config = args.config.absolute();
 		let output_intent = args.output_intent.absolute();
@@ -149,7 +212,7 @@ impl ToolkitJs {
 			"-c",
 			&config,
 			"--network",
-			network_id,
+			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -162,6 +225,8 @@ impl ToolkitJs {
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}
+		// Add positional args
+		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
 		println!(
 			"written: {}, {}, {}",
@@ -184,18 +249,17 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
-		let network_id = encode_network_id(args.network);
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
 			&config,
 			"--network",
-			network_id,
+			&args.network,
 			"--coin-public",
 			&coin_public_key,
-			"--state-file-path",
+			"--input",
 			&input_onchain_state,
-			"--ps-state-file-path",
+			"--input-ps",
 			&input_private_state,
 			"--output",
 			&output_intent,
@@ -206,7 +270,11 @@ impl ToolkitJs {
 		];
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
-			cmd_args.extend_from_slice(&["--zswap-state-file-path", &input_zswap_state]);
+			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
+		}
+		let output_result = args.output_result.map(|s| s.absolute());
+		if let Some(ref output_result) = output_result {
+			cmd_args.extend_from_slice(&["--output-result", &output_result]);
 		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
@@ -216,6 +284,49 @@ impl ToolkitJs {
 			"written: {}, {}, {}",
 			args.output_intent, args.output_private_state, args.output_zswap_state
 		);
+		Ok(())
+	}
+
+	pub fn execute_maintain(&self, command: MaintainCommand) -> Result<(), ToolkitJsError> {
+		let args = command.shared_args();
+		let contract_address_str = hex::encode(args.contract_address.0.0);
+		println!("Executing maintain command");
+		let config = args.config.absolute();
+		let input_onchain_state = args.input_onchain_state.absolute();
+		let output_intent = args.output_intent.absolute();
+		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let mut cmd_args = vec![
+			"maintain",
+			command.name(),
+			"-c",
+			&config,
+			"--network",
+			&args.network,
+			"--coin-public",
+			&coin_public_key,
+			"--input",
+			&input_onchain_state,
+			"--output",
+			&output_intent,
+		];
+		if let Some(ref signing) = args.signing {
+			cmd_args.extend_from_slice(&["--signing", signing]);
+		}
+		// Add positional args
+		cmd_args.push(&contract_address_str);
+		match &command {
+			MaintainCommand::Contract(args) => {
+				cmd_args.push(&args.new_signing);
+			},
+			MaintainCommand::Circuit(args) => {
+				cmd_args.push(&args.circuit_id);
+				if let Some(vk_path) = &args.verifier {
+					cmd_args.push(&vk_path);
+				}
+			},
+		}
+		self.execute_js(&cmd_args)?;
+		println!("written: {}", args.output_intent);
 		Ok(())
 	}
 
@@ -229,11 +340,25 @@ impl ToolkitJs {
 			.output()
 			.map_err(ToolkitJsError::ExecutionError)?;
 
-		println!(
-			"stdout: {}, stderr: {}",
-			String::from_utf8_lossy(&output.stdout),
-			String::from_utf8_lossy(&output.stderr)
-		);
+		for line in output.stdout.lines() {
+			let line = line.map_err(|e| ToolkitJsError::ToolkitJsOutputReadError(e))?;
+			let line = line.trim_end();
+			if line.is_empty() {
+				println!("toolkit-js>");
+			} else {
+				println!("toolkit-js> {line}");
+			}
+		}
+
+		for line in output.stderr.lines() {
+			let line = line.map_err(|e| ToolkitJsError::ToolkitJsOutputReadError(e))?;
+			let line = line.trim_end();
+			if line.is_empty() {
+				eprintln!("toolkit-js>");
+			} else {
+				eprintln!("toolkit-js> {line}");
+			}
+		}
 		Ok(())
 	}
 }

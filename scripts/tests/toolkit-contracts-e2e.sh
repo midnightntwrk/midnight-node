@@ -86,13 +86,15 @@ coin_public=$(
 
 echo "Generate deploy intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent deploy -c /toolkit-js/contract/contract.config.ts \
     --coin-public "$coin_public" \
     --output-intent "/out/$deploy_intent_filename" \
     --output-private-state "/out/$initial_private_state_filename" \
-    --output-zswap-state "/out/temp.json"
+    --output-zswap-state "/out/temp.json" \
+    20
 
 test -f "$tempdir/$deploy_intent_filename"
 test -f "$tempdir/$initial_private_state_filename"
@@ -101,6 +103,7 @@ cat "$tempdir/$initial_private_state_filename"
 
 echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent \
@@ -112,12 +115,14 @@ test -f "$tempdir/$deploy_tx_filename"
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
 contract_address=$(
     docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address \
@@ -126,6 +131,7 @@ contract_address=$(
 
 echo "Get contract state"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-state \
@@ -136,6 +142,7 @@ test -f "$tempdir/$state_filename"
 
 echo "Generate circuit call intent"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c /toolkit-js/contract/contract.config.ts \
@@ -153,6 +160,7 @@ test -f "$tempdir/$incremented_private_state_filename"
 
 echo "Generate circuit call tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent \
@@ -161,6 +169,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
 
 echo "Generate circuit call intent reset"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c /toolkit-js/contract/contract.config.ts \

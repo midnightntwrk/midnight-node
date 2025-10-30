@@ -12,7 +12,7 @@
 // limitations under the License.
 
 #![cfg_attr(not(feature = "std"), no_std)]
-// `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
+// `frame_support::runtime` does a lot of recursion and requires us to increase the limit to 256.
 #![recursion_limit = "256"]
 // Needed for GetSidechainStatus (used inside of a macro, so can't apply directly)
 #![allow(deprecated)]
@@ -24,17 +24,12 @@ extern crate frame_benchmarking;
 extern crate alloc;
 use alloc::{collections::BTreeMap, string::String};
 use authority_selection_inherents::{
-	CommitteeMember,
-	authority_selection_inputs::AuthoritySelectionInputs,
-	filter_invalid_candidates::{
-		Candidate, PermissionedCandidateDataError, RegistrationDataError, StakeError,
-		validate_permissioned_candidate_data,
-	},
-	select_authorities::select_authorities,
+	AuthoritySelectionInputs, CommitteeMember, PermissionedCandidateDataError,
+	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
 };
 
 pub use frame_support::{
-	BoundedVec, PalletId, StorageValue, construct_runtime,
+	BoundedVec, PalletId, StorageValue,
 	genesis_builder_helper::{build_state, get_preset},
 	pallet_prelude::DispatchResult,
 	parameter_types, storage,
@@ -54,8 +49,9 @@ pub use frame_support::{
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
-use midnight_primitives_native_token_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
+pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
@@ -65,9 +61,9 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	AuraPublicKey, DParameter, EpochNonce, GrandpaPublicKey, NativeTokenAmount,
-	PermissionedCandidateData, RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey,
-	StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
+	DParameter, EpochNonce, PermissionedCandidateData, RegistrationData, ScEpochNumber,
+	ScSlotNumber, SidechainPublicKey, StakeDelegation, StakePoolPublicKey, UtxoId,
+	byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -112,21 +108,20 @@ mod mock;
 /// With committee size 5 we would like any validator to have two slots for signing certificates.
 /// 5 * 2 * 6 = 60
 /// (Needs to multiply cleanly into 24h)
-pub const SLOTS_PER_EPOCH: u32 = 1200;
+pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod check_call_filter;
 mod constants;
 mod currency;
-mod governance;
 mod session_manager;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
-use governance::MembershipHandler;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
+use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -155,9 +150,11 @@ pub const CROSS_CHAIN: KeyTypeId = KeyTypeId(*b"crch");
 /// to even the core data structures.
 pub mod opaque {
 	use super::*;
+	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+	use sp_runtime::key_types::{AURA, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -172,7 +169,6 @@ pub mod opaque {
 	pub mod cross_chain_app {
 		use super::CROSS_CHAIN;
 		use parity_scale_codec::MaxEncodedLen;
-		use sidechain_domain::SidechainPublicKey;
 		use sp_core::crypto::AccountId32;
 		use sp_runtime::MultiSigner;
 		use sp_runtime::app_crypto::{app_crypto, ecdsa};
@@ -203,15 +199,6 @@ pub mod opaque {
 				value.into_inner().0.to_vec()
 			}
 		}
-
-		impl TryFrom<SidechainPublicKey> for Public {
-			type Error = SidechainPublicKey;
-			fn try_from(pubkey: SidechainPublicKey) -> Result<Self, Self::Error> {
-				let cross_chain_public_key =
-					Public::try_from(pubkey.0.as_slice()).map_err(|_| pubkey)?;
-				Ok(cross_chain_public_key)
-			}
-		}
 	}
 
 	impl_opaque_keys! {
@@ -224,16 +211,42 @@ pub mod opaque {
 		}
 	}
 
-	// todo: check possibililty of adding the beefy ecdsa public
-	impl From<(sr25519::Public, ed25519::Public)> for SessionKeys {
-		fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
-			Self { aura: aura.into(), grandpa: grandpa.into() }
+	impl MaybeFromCandidateKeys for SessionKeys {
+		fn maybe_from(keys: &sidechain_domain::CandidateKeys) -> Option<Self> {
+			let aura = keys.find(AURA)?;
+			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
+			let grandpa = keys.find(GRANDPA)?;
+			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
+			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+		}
+	}
+
+	impl From<SessionKeys> for sidechain_domain::CandidateKeys {
+		fn from(value: SessionKeys) -> Self {
+			Self(vec![
+				sidechain_domain::CandidateKey::new(
+					AURA,
+					value.aura.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
+					GRANDPA,
+					value.grandpa.into_inner().to_raw().to_vec(),
+				),
+			])
 		}
 	}
 
 	impl_opaque_keys! {
 		pub struct CrossChainKey {
 			pub account: CrossChainPublic,
+		}
+	}
+
+	impl MaybeFromCandidateKeys for CrossChainKey {
+		fn maybe_from(keys: &sidechain_domain::CandidateKeys) -> Option<Self> {
+			let key = keys.find(CROSS_CHAIN)?;
+			let account = CrossChainPublic::try_from(key.as_slice()).ok()?;
+			Some(Self { account })
 		}
 	}
 }
@@ -254,7 +267,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_017_000,
+	spec_version: 000_018_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -363,9 +376,9 @@ impl frame_system::Config for Runtime {
 	type DbWeight = ParityDbWeight;
 	/// Version of the runtime.
 	type Version = Version;
-	/// Converts a module to the index of the module in `construct_runtime!`.
+	/// Converts a module to the index of the module in `runtime!`.
 	///
-	/// This type is being generated by `construct_runtime!`.
+	/// This type is being generated by `runtime!`.
 	type PalletInfo = PalletInfo;
 	/// What to do if a new account is created.
 	type OnNewAccount = ();
@@ -514,22 +527,9 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 				return vec![];
 			};
 
-			let Some(aura_public_key) =
-				convert_to_key::<sp_core::sr25519::Public, AuraPublicKey, _>(&session_keys.aura)
-			else {
-				return vec![];
-			};
-
-			let Some(grandpa_public_key) =
-				convert_to_key::<sp_core::ed25519::Public, GrandpaPublicKey, _>(&session_keys.aura)
-			else {
-				return vec![];
-			};
-
 			let candidate = PermissionedCandidateData {
 				sidechain_public_key,
-				aura_public_key,
-				grandpa_public_key,
+				keys: session_keys.clone().into(),
 			};
 
 			permissioned_candidates.push(candidate);
@@ -553,7 +553,7 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 			epoch_nonce,
 		};
 
-		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys>(
+		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys, MaxAuthorities>(
 			Sidechain::genesis_utxo(),
 			input,
 			Runtime::current_epoch_number(),
@@ -563,33 +563,19 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 
 		let result = candidates
 			.into_iter()
-			.filter_map(|member| match member {
-				Candidate::Permissioned(permissioned_candidate) =>
+			.map(|member| match member {
+				CommitteeMember::Permissioned { id, keys: _ } =>
 				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
 				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
 				{
-					Some((
-						xchain_public_to_beefy(permissioned_candidate.account_id),
+					(
+						xchain_public_to_beefy(id),
 						// set to 0 for unfound stake delegation
 						StakeDelegation(1),
-					))
+					)
 				},
-				Candidate::Registered(candidate_with_stake) => {
-					// For mocking purposes, CrosschainPublicKey is converted to BeefyId
-					// BeefyId can be derived from a value provided by the CrosschainPublicKey.
-					let beefy_id = xchain_public_to_beefy(candidate_with_stake.account_id);
-
-					// check if this beefy_id exists in the list of validators
-					if beefy_ids.iter().any(|id| id == &beefy_id) {
-						Some((beefy_id, candidate_with_stake.stake_delegation))
-					} else {
-						log::warn!(
-							target: "runtime:beefy_mmr",
-							"Candidate Public Key not part of the beefy validator set {:#?}",
-							candidate_with_stake.account_keys
-						);
-						None
-					}
+				CommitteeMember::Registered { .. } => {
+					unreachable!("we have not mocked any registered candidates")
 				},
 			})
 			.collect::<Vec<(BeefyId, StakeDelegation)>>();
@@ -701,7 +687,7 @@ parameter_types! {
 fn select_authorities_optionally_overriding(
 	mut input: AuthoritySelectionInputs,
 	sidechain_epoch: ScEpochNumber,
-) -> Option<Vec<Candidate<CrossChainPublic, SessionKeys>>> {
+) -> Option<BoundedVec<CommitteeMember<CrossChainPublic, SessionKeys>, MaxAuthorities>> {
 	let d_parameter_override = pallet_midnight::pallet::DParameterOverride::<Runtime>::get();
 	if let Some(d_parameter_override) = d_parameter_override {
 		input.d_parameter.num_permissioned_candidates = d_parameter_override.0;
@@ -721,12 +707,7 @@ impl pallet_session_validator_management::Config for Runtime {
 		input: AuthoritySelectionInputs,
 		sidechain_epoch: ScEpochNumber,
 	) -> Option<BoundedVec<Self::CommitteeMember, MaxAuthorities>> {
-		Some(BoundedVec::truncate_from(
-			select_authorities_optionally_overriding(input, sidechain_epoch)?
-				.into_iter()
-				.map(CommitteeMember::from)
-				.collect(),
-		))
+		select_authorities_optionally_overriding(input, sidechain_epoch)
 	}
 
 	fn current_epoch_number() -> ScEpochNumber {
@@ -861,15 +842,15 @@ parameter_types! {
 }
 
 /// Council
-type CouncilCollective = pallet_collective::Instance1;
-impl pallet_collective::Config<CouncilCollective> for Runtime {
+type CouncilCollectiveInstance = pallet_collective::Instance1;
+impl pallet_collective::Config<CouncilCollectiveInstance> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
-	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
+	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
@@ -878,13 +859,14 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
-impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
+type CouncilMembershipInstance = pallet_membership::Instance1;
+impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, Council>;
 	type MembershipChanged = MembershipHandler<Runtime, Council>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
@@ -892,15 +874,15 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Runtime {
 }
 
 /// Technical Committee
-type TechnicalCommitteeCollective = pallet_collective::Instance2;
-impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
+type TechnicalCommitteeCollectiveInstance = pallet_collective::Instance2;
+impl pallet_collective::Config<TechnicalCommitteeCollectiveInstance> for Runtime {
 	type RuntimeOrigin = RuntimeOrigin;
 	type Proposal = RuntimeCall;
 	type RuntimeEvent = RuntimeEvent;
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
-	type DefaultVote = pallet_collective::MoreThanMajorityThenPrimeDefaultVote; // TODO: change
+	type DefaultVote = AlwaysNo;
 	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
@@ -909,13 +891,14 @@ impl pallet_collective::Config<TechnicalCommitteeCollective> for Runtime {
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
-impl pallet_membership::Config<pallet_membership::Instance2> for Runtime {
+type TechnicalCommitteeMembershipInstance = pallet_membership::Instance2;
+impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
 	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
@@ -927,20 +910,30 @@ pub const MAX_MOTIONS_PER_BLOCK: u32 = 10;
 
 type CouncilApproval = AuthorityBody<
 	Council,
-	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollectiveInstance, 2, 3>,
 >;
 type TechnicalCommitteeApproval = AuthorityBody<
 	TechnicalCommittee,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<
+		AccountId,
+		TechnicalCommitteeCollectiveInstance,
+		2,
+		3,
+	>,
 >;
 
 type CouncilRevoke = AuthorityBody<
 	Council,
-	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<AccountId, CouncilCollectiveInstance, 2, 3>,
 >;
 type TechnicalCommitteeRevoke = AuthorityBody<
 	TechnicalCommittee,
-	pallet_collective::EnsureProportionAtLeast<AccountId, TechnicalCommitteeCollective, 2, 3>,
+	pallet_collective::EnsureProportionAtLeast<
+		AccountId,
+		TechnicalCommitteeCollectiveInstance,
+		2,
+		3,
+	>,
 >;
 
 impl pallet_federated_authority::Config for Runtime {
@@ -955,24 +948,19 @@ impl pallet_federated_authority::Config for Runtime {
 	type WeightInfo = ();
 }
 
+impl pallet_federated_authority_observation::Config for Runtime {
+	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+	type TechnicalCommitteeMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
+	type CouncilMembershipHandler =
+		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
+	type TechnicalCommitteeMembershipHandler =
+		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
+	type WeightInfo = ();
+}
+
 pub struct MidnightTokenTransferHandler;
 
-// Replace with pc native token management pallet
-impl pallet_native_token_management::TokenTransferHandler for MidnightTokenTransferHandler {
-	fn handle_token_transfer(token_amount: NativeTokenAmount) -> DispatchResult {
-		// TODO: Needs to have dedicated function on the ledger side for receiving block reward mints
-		log::info!("Registered transfer of {} native tokens.", token_amount.0,);
-		Ok(())
-	}
-}
-
-impl pallet_native_token_management::Config for Runtime {
-	type TokenTransferHandler = MidnightTokenTransferHandler;
-	type WeightInfo = pallet_native_token_management::weights::SubstrateWeight<Runtime>;
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
-}
-
-impl pallet_native_token_observation::Config for Runtime {
+impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
@@ -996,62 +984,106 @@ impl pallet_governed_map::Config for Runtime {
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
-construct_runtime!(
-	pub struct Runtime {
-		System: frame_system = 0,
-		Timestamp: pallet_timestamp = 1,
-		Aura: pallet_aura = 2,
-		Grandpa: pallet_grandpa = 3,
-		Sidechain: pallet_sidechain = 4,
+#[frame_support::runtime]
+mod runtime {
+	use super::*;
 
-		// Midnight pallets:
-		Midnight: pallet_midnight = 5,
-        MidnightSystem: pallet_midnight_system = 6,
+	#[runtime::runtime]
+	#[runtime::derive(
+		RuntimeCall,
+		RuntimeEvent,
+		RuntimeError,
+		RuntimeOrigin,
+		RuntimeFreezeReason,
+		RuntimeHoldReason,
+		RuntimeSlashReason,
+		RuntimeLockId,
+		RuntimeTask,
+		RuntimeViewFunction
+	)]
+	pub struct Runtime;
 
-		Sudo: pallet_sudo = 7,
-		SessionCommitteeManagement: pallet_session_validator_management = 8,
-		//#[cfg(feature = "experimental")]
-		//BlockRewards: pallet_block_rewards = 9,
+	#[runtime::pallet_index(0)]
+	pub type System = frame_system::Pallet<Runtime>;
+	#[runtime::pallet_index(1)]
+	pub type Timestamp = pallet_timestamp::Pallet<Runtime>;
+	#[runtime::pallet_index(2)]
+	pub type Aura = pallet_aura::Pallet<Runtime>;
+	#[runtime::pallet_index(3)]
+	pub type Grandpa = pallet_grandpa::Pallet<Runtime>;
+	#[runtime::pallet_index(4)]
+	pub type Sidechain = pallet_sidechain::Pallet<Runtime>;
 
-		NodeVersion: pallet_version = 11,
+	// Midnight pallets:
+	#[runtime::pallet_index(5)]
+	pub type Midnight = pallet_midnight::Pallet<Runtime>;
+	#[runtime::pallet_index(6)]
+	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
 
-		NativeTokenManagement: pallet_native_token_management = 12,
-		NativeTokenObservation: pallet_native_token_observation = 13,
+	#[runtime::pallet_index(7)]
+	pub type Sudo = pallet_sudo::Pallet<Runtime>;
+	#[runtime::pallet_index(8)]
+	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+	//#[cfg(feature = "experimental")]
+	//BlockRewards: pallet_block_rewards = 9,
 
-		// Utility
-		Preimage: pallet_preimage = 15,
+	#[runtime::pallet_index(11)]
+	pub type NodeVersion = pallet_version::Pallet<Runtime>;
 
-		MultiBlockMigrations: pallet_migrations = 16,
-		// Only stub implementation of pallet_session should be wired.
-		// Partner Chains session_manager ValidatorManagementSessionManager writes to pallet_session::pallet::CurrentIndex.
-		// ValidatorManagementSessionManager is wired in by pallet_partner_chains_session.
-		PalletSession: pallet_session = 17,
+	#[runtime::pallet_index(13)]
+	pub type CNightObservation = pallet_cnight_observation::Pallet<Runtime>;
 
-		Scheduler: pallet_scheduler = 18,
-		TxPause: pallet_tx_pause = 19,
-		// SafeMode: pallet_safe_mode = 20,
+	// Utility
+	#[runtime::pallet_index(15)]
+	pub type Preimage = pallet_preimage::Pallet<Runtime>;
 
-        // BEEFY Bridges support.
-        Beefy: pallet_beefy = 21,
-        // MMR leaf construction must be after session in order to have a leaf's next_auth_set
-		// refer to block<N>. See issue polkadot-fellows/runtimes#160 for details.
-        Mmr: pallet_mmr = 22,
-        BeefyMmrLeaf: pallet_beefy_mmr = 23,
+	#[runtime::pallet_index(16)]
+	pub type MultiBlockMigrations = pallet_migrations::Pallet<Runtime>;
+	// Only stub implementation of pallet_session should be wired.
+	// Partner Chains session_manager ValidatorManagementSessionManager writes to pallet_session::pallet::CurrentIndex.
+	// ValidatorManagementSessionManager is wired in by pallet_partner_chains_session.
+	#[runtime::pallet_index(17)]
+	pub type PalletSession = pallet_session::Pallet<Runtime>;
 
-		// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
-		Session: pallet_partner_chains_session = 30,
-        GovernedMap: pallet_governed_map = 31,
+	#[runtime::pallet_index(18)]
+	pub type Scheduler = pallet_scheduler::Pallet<Runtime>;
+	#[runtime::pallet_index(19)]
+	pub type TxPause = pallet_tx_pause::Pallet<Runtime>;
+	// SafeMode: pallet_safe_mode = 20,
 
-        // Governance
-        Council: pallet_collective::<Instance1> = 40,
-        CouncilMembership: pallet_membership::<Instance1> = 41,
+	// BEEFY Bridges support.
+	#[runtime::pallet_index(21)]
+	pub type Beefy = pallet_beefy::Pallet<Runtime>;
+	// MMR leaf construction must be after session in order to have a leaf's next_auth_set
+	// refer to block<N>. See issue polkadot-fellows/runtimes#160 for details.
+	#[runtime::pallet_index(22)]
+	pub type Mmr = pallet_mmr::Pallet<Runtime>;
+	#[runtime::pallet_index(23)]
+	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
 
-        TechnicalCommittee: pallet_collective::<Instance2> = 42,
-        TechnicalCommitteeMembership: pallet_membership::<Instance2> = 43,
+	// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
+	#[runtime::pallet_index(30)]
+	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
+	#[runtime::pallet_index(31)]
+	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
-        FederatedAuthority: pallet_federated_authority = 44,
-	}
-);
+	// Governance
+	#[runtime::pallet_index(40)]
+	pub type Council = pallet_collective::Pallet<Runtime, Instance1>;
+	#[runtime::pallet_index(41)]
+	pub type CouncilMembership = pallet_membership::Pallet<Runtime, Instance1>;
+
+	#[runtime::pallet_index(42)]
+	pub type TechnicalCommittee = pallet_collective::Pallet<Runtime, Instance2>;
+	#[runtime::pallet_index(43)]
+	pub type TechnicalCommitteeMembership = pallet_membership::Pallet<Runtime, Instance2>;
+
+	#[runtime::pallet_index(44)]
+	pub type FederatedAuthority = pallet_federated_authority::Pallet<Runtime>;
+	#[runtime::pallet_index(45)]
+	pub type FederatedAuthorityObservation =
+		pallet_federated_authority_observation::Pallet<Runtime>;
+}
 
 /// The address format for describing accounts.
 pub type Address = sp_runtime::MultiAddress<AccountId, ()>;
@@ -1097,18 +1129,11 @@ mod benches {
 		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
+		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 	);
 }
 
 impl_runtime_apis! {
-	impl sp_native_token_management::NativeTokenManagementApi<Block> for Runtime {
-		fn get_main_chain_scripts() -> Option<sp_native_token_management::MainChainScripts> {
-			NativeTokenManagement::get_main_chain_scripts()
-		}
-		fn initialized() -> bool {
-			NativeTokenManagement::initialized()
-		}
-	}
 
 	impl sp_genesis_builder::GenesisBuilder<Block> for Runtime {
 		fn build_state(config: Vec<u8>) -> sp_genesis_builder::Result {
@@ -1148,7 +1173,7 @@ impl_runtime_apis! {
 		fn get_zswap_chain_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_chain_state(&contract_address)
 		}
-		fn get_network_id() -> Vec<u8> {
+		fn get_network_id() -> String {
 			Midnight::get_network_id()
 		}
 		fn get_ledger_version() -> Vec<u8> {
@@ -1499,41 +1524,41 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl authority_selection_inherents::filter_invalid_candidates::CandidateValidationApi<Block> for Runtime {
-		fn validate_registered_candidate_data(stake_pool_pub_key: &StakePoolPublicKey,registration_data: &RegistrationData) -> Option<RegistrationDataError> {
-			authority_selection_inherents::filter_invalid_candidates::validate_registration_data(stake_pool_pub_key, registration_data, Sidechain::genesis_utxo()).err()
+	impl authority_selection_inherents::CandidateValidationApi<Block> for Runtime {
+		fn validate_registered_candidate_data(stake_pool_pub_key: &StakePoolPublicKey, registration_data: &RegistrationData) -> Option<RegistrationDataError> {
+			authority_selection_inherents::validate_registration_data::<SessionKeys>(stake_pool_pub_key, registration_data, Sidechain::genesis_utxo()).err()
 		}
 		fn validate_stake(stake: Option<StakeDelegation>) -> Option<StakeError> {
-			authority_selection_inherents::filter_invalid_candidates::validate_stake(stake).err()
+			authority_selection_inherents::validate_stake(stake).err()
 		}
 		fn validate_permissioned_candidate_data(candidate: PermissionedCandidateData) -> Option<PermissionedCandidateDataError> {
-			validate_permissioned_candidate_data::<CrossChainPublic>(candidate).err()
+			validate_permissioned_candidate_data::<CrossChainKey>(candidate).err()
 		}
 	}
 
-	impl midnight_primitives_native_token_observation::NativeTokenObservationApi<Block> for Runtime {
+	impl midnight_primitives_cnight_observation::CNightObservationApi<Block> for Runtime {
 		fn get_redemption_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_mapping_validator_address() -> Vec<u8> {
-			pallet_native_token_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
+			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
 		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_native_token_observation::NextCardanoPosition::<Runtime>::get()
+			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
 		}
 
 		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_native_token_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
+			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
 		}
 
 		fn get_cardano_block_window_size() -> u32 {
-			pallet_native_token_observation::CardanoBlockWindowSize::<Runtime>::get()
+			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
 		}
 
 		fn get_native_token_identifier() -> (Vec<u8>, Vec<u8>) {
-			let (policy_id, asset_name) = pallet_native_token_observation::NativeAssetIdentifier::<Runtime>::get();
+			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
 		}
 	}
@@ -1558,8 +1583,7 @@ impl_runtime_apis! {
 mod tests {
 	use crate::mock::*;
 	use crate::{Midnight, select_authorities_optionally_overriding};
-	use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionInputs;
-	use authority_selection_inherents::filter_invalid_candidates::RegisterValidatorSignedMessage;
+	use authority_selection_inherents::{AuthoritySelectionInputs, RegisterValidatorSignedMessage};
 	use frame_support::{
 		assert_ok,
 		dispatch::PostDispatchInfo,
@@ -1782,8 +1806,7 @@ mod tests {
 			.iter()
 			.map(|c| PermissionedCandidateData {
 				sidechain_public_key: c.sidechain_pub_key(),
-				aura_public_key: c.aura_pub_key(),
-				grandpa_public_key: c.grandpa_pub_key(),
+				keys: c.session_keys(),
 			})
 			.collect();
 		AuthoritySelectionInputs {
@@ -1821,8 +1844,7 @@ mod tests {
 						sidechain_signature_bytes_no_recovery,
 					),
 					sidechain_pub_key: validator.sidechain_pub_key(),
-					aura_pub_key: validator.aura_pub_key(),
-					grandpa_pub_key: validator.grandpa_pub_key(),
+					keys: validator.session_keys(),
 					cross_chain_pub_key: CrossChainPublicKey(validator.sidechain_pub_key().0),
 					utxo_info: UtxoInfo::default(),
 					tx_inputs: vec![signed_message.registration_utxo],

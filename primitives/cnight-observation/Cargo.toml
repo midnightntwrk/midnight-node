@@ -1,0 +1,33 @@
+[package]
+name = "midnight-primitives-cnight-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight cNight observation primitives"
+license-file.workspace = true
+
+[dependencies]
+sp-api.workspace = true
+sp-inherents.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+serde = { workspace = true }
+serde_valid = { workspace = true, optional = true }
+hex = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true, optional = true }
+sidechain-domain.workspace = true
+sqlx = { workspace = true,  optional = true, features = ["chrono"] }
+
+[features]
+default = ["std"]
+std = [
+    "hex/std",
+    "sp-api/std",
+    "sp-inherents/std",
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "serde/std",
+    "serde_valid",
+    "sqlx",
+    "thiserror",
+    "sidechain-domain/std"
+]

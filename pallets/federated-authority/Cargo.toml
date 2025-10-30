@@ -36,6 +36,8 @@ std = [
 	"parity-scale-codec/std",
 	"frame-support/std",
 	"frame-system/std",
+    "pallet-membership/std",
+    "pallet-collective/std",
 	"scale-info/std",
 	"sp-std/std",
 ]

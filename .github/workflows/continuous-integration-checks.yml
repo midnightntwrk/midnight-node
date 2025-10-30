@@ -2,9 +2,9 @@ name: +check (format + lint)
 
 on:
   pull_request:
-    branches: [ '**' ]
+    branches: ["**"]
   push:
-    branches: [ 'main' ]
+    branches: ["main"]
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
@@ -15,30 +15,26 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: earthly/actions-setup@43211c7a0eae5344d6d79fb4aaf209c8f8866203 # v1.0.13
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          version: v0.8.0
+          version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Merge Conflict Finder
-        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c  # v4.0
+        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
       - name: Run build
         run: |
-          # Set NETRC env var for Earthly to use for private repos
-          echo "machine github.com" >> ./netrc
-          echo "  login ${{secrets.MIDNIGHTCI_REPO}}" >> ./netrc
-          echo "  password x-oauth-basic" >> ./netrc
-          export NETRC="$(pwd)/netrc"
           . ./.envrc && earthly --ci +check

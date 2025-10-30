@@ -1,0 +1,8 @@
+node_url = "ws://127.0.0.1:9933"
+ogmios_url = "ws://127.0.0.1:1337"
+payment_addr = ""
+payment_addr_file = "../../local-environment/src/networks/local-env/configurations/cardano/keys/funded_address.addr"
+payment_skey_file = "../../local-environment/src/networks/local-env/configurations/cardano/keys/funded_address.skey"
+mapping_validator_policy_file = "../../scripts/cnight-generates-dust/mapping_validator.plutus"
+auth_token_policy_file = "../../scripts/cnight-generates-dust/auth_token_policy.plutus"
+cnight_token_policy_file = "../../scripts/cnight-generates-dust/cnight_policy.plutus"

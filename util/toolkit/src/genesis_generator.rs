@@ -103,24 +103,27 @@ type Result<T, E = GenesisGeneratorError<DefaultDB>> = std::result::Result<T, E>
 impl GenesisGenerator {
 	pub async fn new(
 		seed: [u8; 32],
-		network_id: NetworkId,
+		network_id: &str,
 		proof_server: Option<String>,
 		funding: FundingArgs,
 		seeds: &[WalletSeed],
+		cnight_system_tx: Option<SystemTransaction>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
-		me.init(seed, network_id, proof_server, &funding, seeds).await?;
+		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx)
+			.await?;
 		Ok(me)
 	}
 
 	async fn init(
 		&mut self,
 		seed: [u8; 32],
-		network_id: NetworkId,
+		network_id: &str,
 		proof_server: Option<String>,
 		funding: &FundingArgs,
 		seeds: &[WalletSeed],
+		cnight_system_tx: Option<SystemTransaction>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
 			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
@@ -160,6 +163,10 @@ impl GenesisGenerator {
 
 		// Restore fees now that we've finished.
 		self.set_parameters(original_parameters, &genesis_block_context)?;
+
+		if let Some(system_tx) = cnight_system_tx {
+			self.apply_system_tx(system_tx, &genesis_block_context)?;
+		}
 
 		self.state = self.state.post_block_update(genesis_block_context.tblock, self.fullness)?;
 		Ok(())
@@ -257,7 +264,7 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		wallets: Vec<Wallet<DefaultDB>>,
 		rng: &mut StdRng,
-		network: NetworkId,
+		network: &str,
 		proof_server: Option<String>,
 	) -> Result<()> {
 		// Generate Shielded Offer
@@ -297,7 +304,7 @@ impl GenesisGenerator {
 	// returns a transaction that underwent proving.
 	async fn run_proof(
 		&self,
-		network_id: NetworkId,
+		network_id: &str,
 		proof_server: Option<String>,
 		intents: IntentsMap,
 		guaranteed_shielded_offer: Option<ShieldedOffer>,
@@ -336,7 +343,7 @@ impl GenesisGenerator {
 
 	fn shielded_offer(
 		wallets: &[Wallet<DefaultDB>],
-		network: NetworkId,
+		network: &str,
 		funding: &FundingArgs,
 		rng: &mut StdRng,
 	) -> Option<ShieldedOffer> {
@@ -419,7 +426,7 @@ impl GenesisGenerator {
 
 	fn unshielded_offer(
 		wallets: &[Wallet<DefaultDB>],
-		network: NetworkId,
+		network: &str,
 		funding: &FundingArgs,
 	) -> Sp<UnshieldedOffer<Signature, DefaultDB>, DefaultDB> {
 		let FundingArgs { unshielded_mint_amount, unshielded_alt_token_types, .. } = funding;
@@ -569,7 +576,7 @@ mod test {
 		};
 
 		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
-		let network_id = NetworkId::Undeployed;
+		let network_id = "undeployed";
 		let proof_server = None;
 		let seeds = [
 			"0000000000000000000000000000000000000000000000000000000000000001",
@@ -580,7 +587,7 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds)
+		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None)
 			.await
 			.unwrap();
 

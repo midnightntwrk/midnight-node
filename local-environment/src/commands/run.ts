@@ -17,6 +17,7 @@ import fs, { existsSync } from "fs";
 import { parse } from "dotenv";
 import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
+import { prepareNamespaceKeystore } from "../lib/keystore";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -25,6 +26,8 @@ import {
 } from "../lib/localEnv";
 import { RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
+import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
+import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
 
 /**
  * Runs a specified network, with passed configuration
@@ -65,32 +68,23 @@ async function runEphemeralEnvironment(
     }
   }
 
-  const searchPath = path.resolve(
-    __dirname,
-    "../networks",
-    "well-known",
+  const composeFile = resolveComposeFile(namespace);
+
+  if (runOptions.fromSnapshot) {
+    ensureSnapshotCredentials(env);
+    await restoreSnapshotFromS3({
+      namespace,
+      composeFile,
+      snapshotId: runOptions.fromSnapshot,
+      env,
+    });
+  }
+
+  // Setup keystore on nodes
+  await prepareNamespaceKeystore({
     namespace,
-    "*.network.yaml",
-  );
-  const candidates = globSync(searchPath);
-
-  if (candidates.length === 0) {
-    console.error(
-      `❌ No .network.yaml file found for namespace '${namespace}'`,
-    );
-    process.exit(1);
-  }
-
-  // Prefer: <namespace>.network.yaml
-  const preferred = candidates.find(
-    (p) => path.basename(p) === `${namespace}.network.yaml`,
-  );
-  const composeFile = preferred || candidates[0];
-
-  if (!existsSync(composeFile)) {
-    console.error(`❌ Resolved file not found: ${composeFile}`);
-    process.exit(1);
-  }
+    env,
+  });
 
   runDockerCompose({
     composeFile,
@@ -102,6 +96,12 @@ async function runEphemeralEnvironment(
 
 function runLocalEnvironment(runOptions: RunOptions) {
   console.log("⚙️  Preparing local environment...");
+
+  if (runOptions.fromSnapshot) {
+    console.warn(
+      "--from-snapshot is not supported for the local-env target; ignoring.",
+    );
+  }
 
   generateSecretsIfMissing();
 
@@ -147,6 +147,34 @@ function runLocalEnvironment(runOptions: RunOptions) {
   });
 
   return;
+}
+
+function resolveComposeFile(namespace: string): string {
+  const searchPath = path.resolve(
+    __dirname,
+    "../networks",
+    "well-known",
+    namespace,
+    "*.network.yaml",
+  );
+  const candidates = globSync(searchPath);
+
+  if (candidates.length === 0) {
+    console.error(`No .network.yaml file found for namespace '${namespace}'`);
+    process.exit(1);
+  }
+
+  const preferred = candidates.find(
+    (p) => path.basename(p) === `${namespace}.network.yaml`,
+  );
+  const composeFile = preferred || candidates[0];
+
+  if (!existsSync(composeFile)) {
+    console.error(`Resolved file not found: ${composeFile}`);
+    process.exit(1);
+  }
+
+  return composeFile;
 }
 
 // Helper to ensure no undefined values in env vars

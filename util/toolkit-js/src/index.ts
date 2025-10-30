@@ -14,7 +14,7 @@
 import { Effect, Layer, Logger, LogLevel } from 'effect';
 import { Command, CliConfig } from '@effect/cli';
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
-import { ConfigCompiler, deployCommand, circuitCommand } from '@midnight-ntwrk/compact-js-command/effect';
+import { ConfigCompiler, deployCommand, circuitCommand, maintainCommand } from '@midnight-ntwrk/compact-js-command/effect';
 import Package from '@midnight-ntwrk/node-toolkit/package.json' with { type: 'json'};
 
 const cli = Command.run(
@@ -22,7 +22,8 @@ const cli = Command.run(
     Command.withDescription('Provides utilities to execute Compact compiled contracts from the command line.'),
     Command.withSubcommands([
       deployCommand,
-      circuitCommand
+      circuitCommand,
+      maintainCommand
     ])
   ),
   {

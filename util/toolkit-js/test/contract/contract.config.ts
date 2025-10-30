@@ -12,7 +12,7 @@
  */
 
 import { CompiledContract, ContractExecutable, type Contract } from '@midnight-ntwrk/compact-js/effect';
-import { Contract as C_ } from './managed/counter/contract/index.cjs';
+import { Contract as C_ } from './managed/counter/contract/index.js';
 
 /**
  * A type that describes the private state of the contract.
@@ -32,7 +32,7 @@ const CounterContract = C_;
  */
 const witnesses: Contract.Contract.Witnesses<CounterContract> = {
   // In this example, we simply increment the count stored in our private state.
-  private_increment: ({ privateState }) => [{ count: privateState.count + 1 }, []],
+  private_increment: ({ privateState }, amount) => [{ count: privateState.count + Number(amount) }, []],
   private_decrement: ({ privateState }, amount) => [
     { count: privateState.count - Number(amount as unknown as bigint) },
     []
