@@ -42,10 +42,7 @@ pub mod migrations;
 #[frame_support::pallet]
 pub mod pallet {
 	use crate::weights::WeightInfo;
-	use frame_support::{
-		pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto,
-		weights::constants::WEIGHT_REF_TIME_PER_SECOND,
-	};
+	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
 	use scale_info::prelude::{string::String, vec::Vec};
@@ -101,8 +98,7 @@ pub mod pallet {
 	#[cfg(hardfork_test)]
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(100);
 
-	pub const FIXED_MN_TRANSACTION_WEIGHT: Weight =
-		 Weight::from_parts(100_000_000_000, 0);
+	pub const FIXED_MN_TRANSACTION_WEIGHT: Weight = Weight::from_parts(100_000_000_000, 0);
 	pub const EXTRA_WEIGHT_PER_CONTRACT_CALL: Weight = Weight::from_parts(0, 0);
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
@@ -368,8 +364,7 @@ pub mod pallet {
 				LedgerApi::set_default_storage();
 			}
 			// TODO: Benchmark Weight in case of a real hard-fork
-			Weight::zero()
-				.saturating_add(ConfigurableHookFnWeight::<T>::get())
+			Weight::zero().saturating_add(ConfigurableHookFnWeight::<T>::get())
 		}
 	}
 
