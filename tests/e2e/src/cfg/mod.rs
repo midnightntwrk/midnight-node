@@ -15,6 +15,7 @@ pub struct AppConfig {
 	pub auth_token_policy_file: String,
 	pub council_forever_file: String,
 	pub tech_auth_forever_file: String,
+	pub cnight_token_policy_file: String,
 }
 
 pub fn load_config() -> AppConfig {
@@ -139,6 +140,13 @@ pub fn get_tech_auth_forever_address() -> String {
 	let script_hash = get_tech_auth_forever_policy_id();
 	let network = NetworkInfo::testnet_preview().network_id();
 	whisky::script_to_address(network, &script_hash, None)
+}
+
+pub fn get_cnight_token_policy_id() -> String {
+	let cfg = load_config();
+	let cbor_hex = load_cbor(&cfg.cnight_token_policy_file);
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
+	script_hash.unwrap()
 }
 
 pub fn get_local_env_cost_models() -> Vec<Vec<i64>> {

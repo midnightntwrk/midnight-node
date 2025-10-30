@@ -16,8 +16,8 @@
 use super::super::{
 	CoinPublicKey, DB, DerivationPath, DeriveSeed, Deserializable, EncryptionPublicKey,
 	HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK, HashOutput,
-	IntoWalletAddress, NetworkId, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
-	WalletState, network,
+	IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
+	WalletState,
 };
 use bech32::{Bech32m, Hrp};
 use derive_where::derive_where;
@@ -34,9 +34,9 @@ pub struct ShieldedWallet<D: DB + Clone> {
 impl<D: DB + Clone> DeriveSeed for ShieldedWallet<D> {}
 
 impl<D: DB + Clone> IntoWalletAddress for ShieldedWallet<D> {
-	fn address(&self, network_id: NetworkId) -> WalletAddress {
+	fn address(&self, network_id: &str) -> WalletAddress {
 		let hrp_string =
-			format!("{}_{}{}", HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, network(network_id));
+			format!("{HRP_CONSTANT}_{HRP_CREDENTIAL_SHIELDED}{}", Self::network_suffix(network_id));
 		let hrp = bech32::Hrp::parse(&hrp_string)
 			.unwrap_or_else(|err| panic!("Error while bech32 parsing: {err}"));
 		let coin_pub_key = self.coin_public_key.0.0;
@@ -88,8 +88,11 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 
 	/// Bech32m-encoded shielded encryption secret key, aka. "viewing key" sent from the wallet
 	/// to the Indexer.
-	pub fn viewing_key(&self, network_id: NetworkId) -> String {
-		let hrp = format!("{HRP_CONSTANT}_{HRP_CREDENTIAL_SHIELDED_ESK}{}", network(network_id));
+	pub fn viewing_key(&self, network_id: &str) -> String {
+		let hrp = format!(
+			"{HRP_CONSTANT}_{HRP_CREDENTIAL_SHIELDED_ESK}{}",
+			Self::network_suffix(network_id)
+		);
 		let hrp = Hrp::parse(&hrp).expect("HRP for encryption secret key can be parsed");
 
 		let mut data = Vec::with_capacity(64);

@@ -1,0 +1,32 @@
+{
+  "addresses": {
+    "mapping_validator_address": "addr_test1wral0lzw5kpjytmw0gmsdcgctx09au24nt85zma38py8g3crwvpwe",
+    "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
+    "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
+    "cnight_asset_name": ""
+  },
+  "observed_utxos": {
+    "start": {
+      "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "block_number": 0,
+      "block_timestamp": 0,
+      "tx_index_in_block": 0
+    },
+    "end": {
+      "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "block_number": 0,
+      "block_timestamp": 0,
+      "tx_index_in_block": 0
+    },
+    "utxos": []
+  },
+  "mappings": {},
+  "utxo_owners": {},
+  "next_cardano_position": {
+    "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "block_number": 0,
+    "block_timestamp": 0,
+    "tx_index_in_block": 0
+  },
+  "system_tx": null
+}

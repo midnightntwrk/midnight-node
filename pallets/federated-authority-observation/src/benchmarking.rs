@@ -13,8 +13,6 @@
 
 //! Benchmarking setup for pallet-federated-authority-observation
 
-#![cfg(feature = "runtime-benchmarks")]
-
 use super::*;
 
 use crate::Pallet as FederatedAuthorityObservation;

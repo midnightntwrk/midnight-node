@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use pallet_cnight_observation::config::CNightGenesis;
 
 use super::{InitialAuthorityData, MainChainScripts, MidnightNetwork};
 
@@ -24,10 +24,6 @@ impl MidnightNetwork for UndeployedNetwork {
 
 	fn id(&self) -> &str {
 		"undeployed"
-	}
-
-	fn network_id(&self) -> u8 {
-		0
 	}
 
 	fn genesis_state(&self) -> &[u8] {
@@ -46,8 +42,8 @@ impl MidnightNetwork for UndeployedNetwork {
 		vec![InitialAuthorityData::new_from_uri("//Alice")]
 	}
 
-	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
-		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cngd-config.json"));
+	fn cnight_genesis(&self) -> CNightGenesis {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cnight-genesis.json"));
 		serde_json::from_str(&config_str).unwrap()
 	}
 
@@ -75,12 +71,11 @@ impl MidnightNetwork for UndeployedNetwork {
 pub struct CustomNetwork {
 	pub name: String,
 	pub id: String,
-	pub network_id: u8,
 	pub genesis_state: Vec<u8>,
 	pub genesis_block: Vec<u8>,
 	pub chain_type: sc_service::ChainType,
 	pub initial_authorities: Vec<InitialAuthorityData>,
-	pub cngd_config: TokenObservationConfig,
+	pub cnight_genesis: CNightGenesis,
 	pub main_chain_scripts: MainChainScripts,
 	pub genesis_utxo: String,
 	pub federated_authority_config: FederatedAuthorityObservationConfig,
@@ -92,10 +87,6 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn id(&self) -> &str {
 		&self.id
-	}
-
-	fn network_id(&self) -> u8 {
-		self.network_id
 	}
 
 	fn genesis_state(&self) -> &[u8] {
@@ -114,8 +105,8 @@ impl MidnightNetwork for CustomNetwork {
 		self.initial_authorities.clone()
 	}
 
-	fn cnight_generates_dust_config(&self) -> TokenObservationConfig {
-		self.cngd_config.clone()
+	fn cnight_genesis(&self) -> CNightGenesis {
+		self.cnight_genesis.clone()
 	}
 
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig {

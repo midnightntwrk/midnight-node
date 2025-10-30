@@ -2,14 +2,13 @@
 use_main_chain_follower_mock = true
 mock_registrations_file = "res/mock-bridge-data/default-registrations.json"
 
-chainspec_name = "undeployed"
-chainspec_id = "undeployed"
-chainspec_network_id = "undeployed"
+chainspec_name = "Midnight Undeployed"
+chainspec_id = "midnight_undeployed"
 chainspec_genesis_state = "res/genesis/genesis_state_undeployed.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_undeployed.mn"
 chainspec_chain_type = "local"
 chainspec_pc_chain_config = "res/dev/pc-chain-config.json"
-chainspec_cngd_config = "res/dev/cngd-config.json"
+chainspec_cnight_genesis = "res/dev/cnight-genesis.json"
 chainspec_federated_authority_config = "res/dev/federated-authority-config.json"
 
 args = [

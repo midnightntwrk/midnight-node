@@ -26,16 +26,16 @@ pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
 #[derive(clap::Args)]
 pub struct Destination {
 	/// RPC URL(s) of node instance(s) used to send generated transactions. Can set multiple.
-	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()])]
+	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()], global = true)]
 	pub dest_urls: Vec<String>,
 	/// The rate at which to send txs (per second)
-	#[arg(long, short, default_value = "1", conflicts_with = "dest_file")]
+	#[arg(long, short, default_value = "1", conflicts_with = "dest_file", global = true)]
 	pub rate: f32,
 	/// Output filename to write generated transaction.
-	#[arg(long, conflicts_with = "dest_urls")]
+	#[arg(long, conflicts_with = "dest_urls", global = true)]
 	pub dest_file: Option<String>,
 	/// Save generated tx file as bytes rather than JSON.
-	#[arg(long, default_value = "false", conflicts_with = "dest_urls")]
+	#[arg(long, default_value = "false", conflicts_with = "dest_urls", global = true)]
 	pub to_bytes: bool,
 }
 

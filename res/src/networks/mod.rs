@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use pallet_cnight_observation::config::CNightGenesis;
 use {
 	serde::{Deserialize, Deserializer, Serialize},
 	sp_core::crypto::CryptoBytes,
@@ -147,18 +147,37 @@ impl MainChainScripts {
 pub trait MidnightNetwork {
 	fn name(&self) -> &str;
 	fn id(&self) -> &str;
-	fn network_id(&self) -> u8;
 	fn genesis_state(&self) -> &[u8];
 	fn genesis_block(&self) -> &[u8];
 	fn genesis_utxo(&self) -> &str;
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
-	fn cnight_generates_dust_config(&self) -> TokenObservationConfig;
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
+	fn cnight_genesis(&self) -> CNightGenesis;
+
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)
 	}
 	fn chain_type(&self) -> sc_service::ChainType {
 		sc_service::ChainType::Live
+	}
+
+	fn network_id(&self) -> String {
+		let network_id = if self.id() == "midnight" {
+			"mainnet".to_string()
+		} else {
+			self.id().trim_start_matches("midnight_").to_string()
+		};
+
+		let spec = "arbitrary string consisting of alphanumeric characters and hyphens";
+		if !network_id.chars().all(|c| c.is_alphanumeric() || c == '-') {
+			panic!(
+				"network_id does not meet spec. chain_id: {}, network_id: {}, spec: {spec}",
+				self.id(),
+				network_id
+			);
+		}
+
+		network_id
 	}
 }
