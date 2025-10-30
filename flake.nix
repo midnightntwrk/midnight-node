@@ -1,12 +1,25 @@
 {
-  inputs.flake-utils.url = "github:numtide/flake-utils";
+  inputs = {
+    flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    crane.url = "github:ipetkov/crane";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-utils, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
       isDarwin = pkgs.lib.hasSuffix "darwin" system;
       isDarwinAArch64 = system == "aarch64-darwin";
     in {
+      packages.default = import ./nix/package.nix {
+        inherit inputs;
+        targetSystem = system;
+      };
+
       devShells.default = let rust = [];
 
       in pkgs.mkShell {
