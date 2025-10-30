@@ -352,7 +352,7 @@ pub async fn get_one_shot_utxo(governance_type: &str) -> OgmiosUtxo {
 
 	// Find the matching UTxO
 	for utxo in utxos {
-		if hex::encode(&utxo.transaction.id) == tx_hash {
+		if hex::encode(utxo.transaction.id) == tx_hash {
 			println!("✓ Found {} one-shot UTxO: {}#{}", governance_type, tx_hash, utxo.index);
 			return utxo;
 		}
@@ -371,6 +371,7 @@ pub async fn get_one_shot_utxo(governance_type: &str) -> OgmiosUtxo {
 /// * `script_address` - The script address to send the NFT to
 /// * `sr25519_pubkeys` - Map of Cardano pubkey hash to Sr25519 public key (hex strings)
 /// * `total_signers` - Total number of required signers
+#[allow(clippy::too_many_arguments)]
 pub async fn deploy_governance_contract(
 	tx_in: &OgmiosUtxo,
 	collateral_utxo: &OgmiosUtxo,

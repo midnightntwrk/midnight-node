@@ -43,7 +43,7 @@ where
 					"sr25519 hex public key expected to be prepended with `0x`",
 				)
 			})?;
-			let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+			let bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
 			sr25519::Public::from_slice(&bytes)
 				.map_err(|_| serde::de::Error::custom("Invalid sr25519 public key length"))
 		})

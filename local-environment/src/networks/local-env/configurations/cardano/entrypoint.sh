@@ -384,35 +384,6 @@ cp /shared/techauth.oneshot.utxo /runtime-values/techauth.oneshot.utxo
 cp /shared/techauth_oneshot_hash.txt /runtime-values/techauth_oneshot_hash.txt
 cp /shared/techauth_oneshot_index.txt /runtime-values/techauth_oneshot_index.txt
 
-echo ""
-echo "========================================="
-echo "One-Shot UTxOs Created Successfully!"
-echo "========================================="
-echo ""
-echo "NEXT STEPS FOR CONTRACT COMPILATION:"
-echo "1. Update midnight-reserve-contracts/aiken.toml with these values:"
-echo ""
-echo "   [config.default.council_one_shot_hash]"
-echo "   bytes = \"$council_oneshot_hash\""
-echo "   encoding = \"hex\""
-echo "   council_one_shot_index = $council_oneshot_index"
-echo ""
-echo "   [config.default.technical_authority_one_shot_hash]"
-echo "   bytes = \"$techauth_oneshot_hash\""
-echo "   encoding = \"hex\""
-echo "   technical_authority_one_shot_index = $techauth_oneshot_index"
-echo ""
-echo "2. Recompile contracts:"
-echo "   cd midnight-reserve-contracts"
-echo "   aiken build"
-echo ""
-echo "3. Copy new contract CBORs to test config:"
-echo "   Update tests/e2e/src/cfg/local/council_forever.json"
-echo "   Update tests/e2e/src/cfg/local/tech_auth_forever.json"
-echo ""
-echo "========================================="
-echo ""
-
 echo "Fixing permissions for generated files..."
 chown $(id -u):$(id -g) \
   /runtime-values/genesis.utxo \
