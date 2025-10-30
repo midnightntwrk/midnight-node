@@ -22,11 +22,11 @@ $ docker run ghcr.io/midnight-ntwrk/midnight-node:latest --help
 
 This will show you the most up-to-date list of all configuration values available in the node.
 
-## Equivalence with Substrate CLI
+## Equivalence with Polkadot SDK CLI
 
 The node application has been designed to maintain equivalence with the default
-Substrate CLI as far as possible. This means online support articles that solve
-your problem that reference the Substrate CLI will work for the Midnight node.
+Polkadot SDK CLI as far as possible. This means online support articles that solve
+your problem that reference the Polkadot SDK CLI will work for the Midnight node.
 
 You can either set the CLI by passing it as arguments to the docker image, or by setting the `ARGS` environment variable.
 

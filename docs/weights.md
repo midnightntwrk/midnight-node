@@ -3,7 +3,7 @@ title: Block Weights
 ---
 
 This document describes the concepts of transaction and block weights.
-Substrate defines one unit of weight as one picosecond of execution time 
+Polkadot SDK defines one unit of weight as one picosecond of execution time 
 on reference hardware. So each transaction is subject to an estimation of 
 how long it will run on some upfront specified reference hardware. 
 On the other hand, the total limit on a maximal weight of a single block 
@@ -12,7 +12,7 @@ This upper limit and a predefined timeout achieve the desired average block time
 
 
 ## Transaction dispatch classes
-Substrate distinguishes between three categories of transactions:
+Polkadot SDK distinguishes between three categories of transactions:
 - Normal: external user blockchain transactions,
 - Operational: internal operational transactions,
 - Mandatory: high-priority transactions which are are always included regardless of their weight.
@@ -49,7 +49,7 @@ fn block_weights_fixed_size() -> frame_system::limits::BlockWeights {
 ```
 
 ## Transaction weights
-In each Substrate pallet, it's possible to define multiple entry points (Calls) to 
+In each Polkadot SDK pallet, it's possible to define multiple entry points (Calls) to 
 interact with the blockchain. In the simplest case, one would specify a single entry 
 point for submitting any (pallet-specific) transactions. Providing more than one entry 
 point allows the node to distinguish between different kinds of transactions at the top 
@@ -68,9 +68,9 @@ tests to establish an approximate worst case weight to represent the resources r
 each function call and each code path.
 
 ## External references
-- [Unit of weight in Substrate](https://docs.substrate.io/reference/glossary/#weight)
-- [Default weight annotations](https://docs.substrate.io/build/tx-weights-fees/#default-weight-annotations)
+- [Unit of weight in Polkadot SDK](https://docs.polkadot.com/polkadot-protocol/glossary/#weight)
+- [Default weight annotations](https://docs.polkadot.com/polkadot-protocol/basics/blocks-transactions-fees/fees/#default-weight-annotations)
 - [BlockWeights API](https://docs.rs/frame-system/latest/frame_system/limits/struct.BlockWeights.html)
 - [BlockWeightsBuilder API](https://docs.rs/frame-system/latest/frame_system/limits/struct.BlockWeightsBuilder.html)
-- [Custom Weights](https://docs.substrate.io/reference/how-to-guides/weights/use-custom-weights/)
-- [Benchmarks](https://docs.substrate.io/test/benchmark/)
+- [Custom weight implementations](https://docs.polkadot.com/polkadot-protocol/basics/blocks-transactions-fees/fees/#custom-weights)
+- [Benchmarking FRAME Pallets](https://docs.polkadot.com/develop/parachains/testing/benchmarking/)

@@ -1,4 +1,6 @@
-# Toolkit
+# Midnight Toolkit
+
+CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
 
 ---
 
@@ -13,11 +15,9 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 
 ---
 
-
 ## Implementation Status
 
-
-| Feature                                                              | Progress |
+| Feature | Progress |
 |----------------------------------------------------------------------|----------|
 | Send Shielded + Unshielded tokens                                    | ✅       |
 | Sync with local and remote networks                                  | ✅       |
@@ -29,13 +29,14 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
-| DUST registration command                                            | 🚧       |
-| Contract Maintenance - updating authority + verifier keys            | 🚧       |
+| DUST registration command                                            | ✅       |
+| Contract Maintenance - updating authority + verifier keys            | ✅       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
 
+---
 
 ## Usage
 
@@ -99,7 +100,7 @@ Use the `-h` flag for full usage information.
 **NOTE 1**
 Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGenerator` reads and send `TransactionWithContext` instead of `Transaction`. The reason is now it is necessary to know the `BlockContext` a transaction is valid.
 
-If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#) using as `--src-file` the previously generated `TransactionWithContext`.
+If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-from-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
 
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
@@ -446,7 +447,7 @@ midnight-node-toolkit \
 
 ---
 
-### Get a serialized `Transaction` form a serialized `TransactionWithContext`
+### Get a serialized `Transaction` from a serialized `TransactionWithContext`
 Extracts a `Transaction` from a `--src-file` which contains a serialized `TransactionWithContext`, serializes it, saves it in `--dest-file`, and return its `BlockContext` timestamp in seconds as output.
 ```ignore
 $ midnight-node-toolkit get-tx-from-context
