@@ -36,7 +36,7 @@
   "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "^2.1.0",
     "@tsconfig/node22": "^22.0.2",
-    "@types/node": "^22.18.10",
+    "@types/node": "^22.18.13",
     "shx": "^0.4.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.1"
