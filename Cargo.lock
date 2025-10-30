@@ -9232,6 +9232,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "hex",
  "log",
  "midnight-primitives-federated-authority-observation",
  "pallet-collective",

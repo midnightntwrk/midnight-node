@@ -16,6 +16,7 @@ log.workspace = true
 sp-inherents.workspace = true
 sp-std.workspace = true
 frame-benchmarking = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
@@ -46,6 +47,7 @@ runtime-benchmarks = [
     "pallet-collective/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
+    "hex",
 ]
 
 [package.metadata.cargo-shear]

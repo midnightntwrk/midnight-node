@@ -146,6 +146,60 @@ mod benchmarks {
 		assert_eq!(tc_current.len(), b as usize);
 	}
 
+	/// Benchmark setting the Council address
+	#[benchmark]
+	fn set_council_address() {
+		// Create a valid Cardano address (bech32 encoded)
+		let address = b"addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha".to_vec();
+
+		#[extrinsic_call]
+		set_council_address(RawOrigin::Root, address.clone());
+
+		// Verify the address was set
+		assert_eq!(MainChainCouncilAddress::<T>::get().to_vec(), address);
+	}
+
+	/// Benchmark setting the Technical Committee address
+	#[benchmark]
+	fn set_technical_committee_address() {
+		// Create a valid Cardano address (bech32 encoded)
+		let address = b"addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2".to_vec();
+
+		#[extrinsic_call]
+		set_technical_committee_address(RawOrigin::Root, address.clone());
+
+		// Verify the address was set
+		assert_eq!(MainChainTechnicalCommitteeAddress::<T>::get().to_vec(), address);
+	}
+
+	/// Benchmark setting the Council policy ID
+	#[benchmark]
+	fn set_council_policy_id() {
+		// Create a valid policy ID (28 bytes - decoded from hex)
+		let policy_id = hex::decode("8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b")
+			.expect("Valid hex");
+
+		#[extrinsic_call]
+		set_council_policy_id(RawOrigin::Root, policy_id.clone());
+
+		// Verify the policy ID was set
+		assert_eq!(MainChainCouncilPolicyId::<T>::get().to_vec(), policy_id);
+	}
+
+	/// Benchmark setting the Technical Committee policy ID
+	#[benchmark]
+	fn set_technical_committee_policy_id() {
+		// Create a valid policy ID (28 bytes - decoded from hex)
+		let policy_id = hex::decode("f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28")
+			.expect("Valid hex");
+
+		#[extrinsic_call]
+		set_technical_committee_policy_id(RawOrigin::Root, policy_id.clone());
+
+		// Verify the policy ID was set
+		assert_eq!(MainChainTechnicalCommitteePolicyId::<T>::get().to_vec(), policy_id);
+	}
+
 	impl_benchmark_test_suite!(
 		FederatedAuthorityObservation,
 		crate::mock::new_test_ext(),

@@ -154,6 +154,10 @@ pub mod pallet {
 		TooManyMembers,
 		/// Membership set is empty
 		EmptyMembers,
+		/// The contract Address provided has a wrong length
+		InvalidAddress,
+		/// The Policy Id provided has a wrong length
+		InvalidPolicyId,
 	}
 
 	#[pallet::hooks]
@@ -251,6 +255,60 @@ pub mod pallet {
 			}
 
 			Ok(PostDispatchInfo { actual_weight: Some(actual_weight), pays_fee: Pays::No })
+		}
+
+		/// Changes the mainchain address for the Council
+		#[pallet::call_index(1)]
+		#[pallet::weight((T::WeightInfo::set_council_address(), DispatchClass::Operational))]
+		pub fn set_council_address(origin: OriginFor<T>, address: Vec<u8>) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainCouncilAddress::<T>::set(
+				address.clone().try_into().map_err(|_| Error::<T>::InvalidAddress)?,
+			);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain address for the Technical Committee
+		#[pallet::call_index(2)]
+		#[pallet::weight((T::WeightInfo::set_technical_committee_address(), DispatchClass::Operational))]
+		pub fn set_technical_committee_address(
+			origin: OriginFor<T>,
+			address: Vec<u8>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainTechnicalCommitteeAddress::<T>::set(
+				address.clone().try_into().map_err(|_| Error::<T>::InvalidAddress)?,
+			);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain policy id for the Council
+		#[pallet::call_index(3)]
+		#[pallet::weight((T::WeightInfo::set_council_policy_id(), DispatchClass::Operational))]
+		pub fn set_council_policy_id(origin: OriginFor<T>, policy_id: Vec<u8>) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainCouncilPolicyId::<T>::set(
+				policy_id.clone().try_into().map_err(|_| Error::<T>::InvalidPolicyId)?,
+			);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain policy id for the Technical Committee
+		#[pallet::call_index(4)]
+		#[pallet::weight((T::WeightInfo::set_technical_committee_policy_id(), DispatchClass::Operational))]
+		pub fn set_technical_committee_policy_id(
+			origin: OriginFor<T>,
+			policy_id: Vec<u8>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainTechnicalCommitteePolicyId::<T>::set(
+				policy_id.clone().try_into().map_err(|_| Error::<T>::InvalidPolicyId)?,
+			);
+
+			Ok(())
 		}
 	}
 
