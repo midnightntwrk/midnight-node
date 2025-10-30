@@ -192,10 +192,10 @@ fn asset_create_should_emit_valid_event_if_registered() {
 					deserialize_untagged(&mut &dust_address[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
 				for event in events.iter() {
-					if event.action == CNightGeneratesDustActionType::Create {
-						if dust_address_deser == event.owner {
-							return true;
-						}
+					if event.action == CNightGeneratesDustActionType::Create
+						&& dust_address_deser == event.owner
+					{
+						return true;
 					}
 				}
 			}

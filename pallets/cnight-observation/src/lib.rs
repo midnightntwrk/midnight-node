@@ -339,10 +339,6 @@ pub mod pallet {
 			header: &ObservedUtxoHeader,
 			data: RegistrationData,
 		) -> Option<(StakeAddressBytes, Vec<MappingEntry>)> {
-			// TODO: Invalid addresses should be skipped - they may be for an incorrect network, or
-			// something else
-			// TODO: Add UTXO info for invalid addresses
-
 			let RegistrationData { cardano_address, dust_address } = data;
 
 			let new_reg = MappingEntry {
@@ -353,14 +349,10 @@ pub mod pallet {
 			};
 
 			let mut mappings = Mappings::<T>::get(cardano_address);
-
 			mappings.push(new_reg.clone());
-
 			Mappings::<T>::insert(cardano_address, mappings.clone());
 
-			let stored_registration = Mappings::<T>::get(cardano_address);
-
-			if stored_registration.len() == 1 && stored_registration[0].dust_address.len() == 32 {
+			if mappings.len() == 1 {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_address,
 					dust_address,
@@ -401,7 +393,7 @@ pub mod pallet {
 
 			let is_valid = Self::is_registered(&cardano_address);
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
-			if was_valid != is_valid && is_valid {
+			if !was_valid && is_valid {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_address,
 					dust_address,
@@ -409,7 +401,7 @@ pub mod pallet {
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
-			if was_valid && mappings.is_empty() {
+			if was_valid && !is_valid {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
 					cardano_address,
 					dust_address,
