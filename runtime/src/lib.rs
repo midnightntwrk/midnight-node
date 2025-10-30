@@ -61,9 +61,9 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	DParameter, EpochNonce, PermissionedCandidateData, RegistrationData, ScEpochNumber,
-	ScSlotNumber, SidechainPublicKey, StakeDelegation, StakePoolPublicKey, UtxoId,
-	byte_string::ByteString,
+	DParameter, EpochNonce, MainchainAddress, PermissionedCandidateData, PolicyId,
+	RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey, StakeDelegation,
+	StakePoolPublicKey, UtxoId, byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -1579,20 +1579,20 @@ impl_runtime_apis! {
 	}
 
 	impl midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi<Block> for Runtime {
-		fn get_council_address() -> Vec<u8> {
-			pallet_federated_authority_observation::MainChainCouncilAddress::<Runtime>::get().into_inner()
+		fn get_council_address() -> MainchainAddress {
+			pallet_federated_authority_observation::MainChainCouncilAddress::<Runtime>::get()
 		}
 
-		fn get_council_policy_id() -> Vec<u8> {
-			pallet_federated_authority_observation::MainChainCouncilPolicyId::<Runtime>::get().into_inner()
+		fn get_council_policy_id() -> PolicyId {
+			pallet_federated_authority_observation::MainChainCouncilPolicyId::<Runtime>::get()
 		}
 
-		fn get_technical_committee_address() -> Vec<u8> {
-			pallet_federated_authority_observation::MainChainTechnicalCommitteeAddress::<Runtime>::get().into_inner()
+		fn get_technical_committee_address() -> MainchainAddress {
+			pallet_federated_authority_observation::MainChainTechnicalCommitteeAddress::<Runtime>::get()
 		}
 
-		fn get_technical_committee_policy_id() -> Vec<u8> {
-			pallet_federated_authority_observation::MainChainTechnicalCommitteePolicyId::<Runtime>::get().into_inner()
+		fn get_technical_committee_policy_id() -> PolicyId {
+			pallet_federated_authority_observation::MainChainTechnicalCommitteePolicyId::<Runtime>::get()
 		}
 	}
 }

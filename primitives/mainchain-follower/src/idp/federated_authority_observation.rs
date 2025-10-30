@@ -40,17 +40,17 @@ impl FederatedAuthorityInherentDataProvider {
 	{
 		let api = client.runtime_api();
 
-		let council_address = api.get_council_address(parent_hash)?;
+		let council_address = api.get_council_address(parent_hash)?.bytes();
 		let council_address = String::from_utf8(council_address)?;
 
 		let council_policy_id = api.get_council_policy_id(parent_hash)?;
-		let council_policy_id = hex::encode(council_policy_id);
+		let council_policy_id = hex::encode(council_policy_id.0);
 
-		let technical_committee_address = api.get_technical_committee_address(parent_hash)?;
+		let technical_committee_address = api.get_technical_committee_address(parent_hash)?.bytes();
 		let technical_committee_address = String::from_utf8(technical_committee_address)?;
 
 		let technical_committee_policy_id = api.get_technical_committee_policy_id(parent_hash)?;
-		let technical_committee_policy_id = hex::encode(technical_committee_policy_id);
+		let technical_committee_policy_id = hex::encode(technical_committee_policy_id.0);
 
 		let council = AuthBodyConfig {
 			address: council_address,

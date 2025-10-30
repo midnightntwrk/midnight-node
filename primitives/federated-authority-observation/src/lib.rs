@@ -9,6 +9,7 @@ extern crate alloc;
 use parity_scale_codec::{Decode, Encode};
 use scale_info::TypeInfo;
 use sidechain_domain::McBlockHash;
+use sidechain_domain::{MainchainAddress, PolicyId};
 use sp_api::decl_runtime_apis;
 use sp_inherents::InherentIdentifier;
 use sp_runtime::Vec;
@@ -109,12 +110,12 @@ pub struct FederatedAuthorityObservationConfig {
 decl_runtime_apis! {
 	pub trait FederatedAuthorityObservationApi {
 		/// Get the Council contract address on Cardano
-		fn get_council_address() -> Vec<u8>;
+		fn get_council_address() -> MainchainAddress;
 		/// Get the Council policy id on Cardano
-		fn get_council_policy_id() -> Vec<u8>;
+		fn get_council_policy_id() -> PolicyId;
 		/// Get the Tecnical Committee contract address on Cardano
-		fn get_technical_committee_address() -> Vec<u8>;
+		fn get_technical_committee_address() -> MainchainAddress;
 		/// Get the Tecnical Committee policy id on Cardano
-		fn get_technical_committee_policy_id() -> Vec<u8>;
+		fn get_technical_committee_policy_id() -> PolicyId;
 	}
 }

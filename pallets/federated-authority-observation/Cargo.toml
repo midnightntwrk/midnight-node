@@ -6,6 +6,7 @@ description = "Pallet responsible for observing federated authority changes from
 license-file.workspace = true
 
 [dependencies]
+hex = { workspace = true, optional = true }
 frame-support.workspace = true
 frame-system.workspace = true
 sidechain-domain.workspace = true
@@ -16,7 +17,7 @@ log.workspace = true
 sp-inherents.workspace = true
 sp-std.workspace = true
 frame-benchmarking = { workspace = true, optional = true }
-hex = { workspace = true, optional = true }
+
 
 [dev-dependencies]
 sp-io.workspace = true

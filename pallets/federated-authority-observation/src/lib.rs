@@ -27,6 +27,7 @@ use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER, InherentError,
 };
 pub use pallet::*;
+use sidechain_domain::{MainchainAddress, PolicyId};
 use sp_std::vec::Vec;
 
 #[cfg(test)]
@@ -40,12 +41,6 @@ mod benchmarking;
 
 pub mod weights;
 
-const MAX_CARDANO_ADDR_LEN: u32 = 150;
-const MAX_CARDANO_ADDR_HASH_LEN: u32 = 28;
-
-type BoundedCardanoAddress = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_LEN>>;
-type BoundedPolicyId = BoundedVec<u8, ConstU32<MAX_CARDANO_ADDR_HASH_LEN>>;
-
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
@@ -56,22 +51,20 @@ pub mod pallet {
 
 	#[pallet::storage]
 	/// Script address for managing Council members on Cardano
-	pub type MainChainCouncilAddress<T: Config> =
-		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
+	pub type MainChainCouncilAddress<T: Config> = StorageValue<_, MainchainAddress, ValueQuery>;
 
 	#[pallet::storage]
 	/// Policy ID for Council members on Cardano
-	pub type MainChainCouncilPolicyId<T: Config> = StorageValue<_, BoundedPolicyId, ValueQuery>;
+	pub type MainChainCouncilPolicyId<T: Config> = StorageValue<_, PolicyId, ValueQuery>;
 
 	#[pallet::storage]
 	/// Script address for managing Council members on Cardano
 	pub type MainChainTechnicalCommitteeAddress<T: Config> =
-		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
+		StorageValue<_, MainchainAddress, ValueQuery>;
 
 	#[pallet::storage]
 	/// Policy ID for Technical Committee members on Cardano
-	pub type MainChainTechnicalCommitteePolicyId<T: Config> =
-		StorageValue<_, BoundedPolicyId, ValueQuery>;
+	pub type MainChainTechnicalCommitteePolicyId<T: Config> = StorageValue<_, PolicyId, ValueQuery>;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -99,10 +92,10 @@ pub mod pallet {
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
 	pub struct GenesisConfig<T: Config> {
-		pub council_address: Vec<u8>,
-		pub council_policy_id: Vec<u8>,
-		pub technical_committee_address: Vec<u8>,
-		pub technical_committee_policy_id: Vec<u8>,
+		pub council_address: MainchainAddress,
+		pub council_policy_id: PolicyId,
+		pub technical_committee_address: MainchainAddress,
+		pub technical_committee_policy_id: PolicyId,
 		#[serde(skip)]
 		pub _config: core::marker::PhantomData<T>,
 	}
@@ -260,7 +253,10 @@ pub mod pallet {
 		/// Changes the mainchain address for the Council
 		#[pallet::call_index(1)]
 		#[pallet::weight((T::WeightInfo::set_council_address(), DispatchClass::Operational))]
-		pub fn set_council_address(origin: OriginFor<T>, address: Vec<u8>) -> DispatchResult {
+		pub fn set_council_address(
+			origin: OriginFor<T>,
+			address: MainchainAddress,
+		) -> DispatchResult {
 			ensure_root(origin)?;
 			MainChainCouncilAddress::<T>::set(
 				address.clone().try_into().map_err(|_| Error::<T>::InvalidAddress)?,
@@ -274,7 +270,7 @@ pub mod pallet {
 		#[pallet::weight((T::WeightInfo::set_technical_committee_address(), DispatchClass::Operational))]
 		pub fn set_technical_committee_address(
 			origin: OriginFor<T>,
-			address: Vec<u8>,
+			address: MainchainAddress,
 		) -> DispatchResult {
 			ensure_root(origin)?;
 			MainChainTechnicalCommitteeAddress::<T>::set(
@@ -287,7 +283,7 @@ pub mod pallet {
 		/// Changes the mainchain policy id for the Council
 		#[pallet::call_index(3)]
 		#[pallet::weight((T::WeightInfo::set_council_policy_id(), DispatchClass::Operational))]
-		pub fn set_council_policy_id(origin: OriginFor<T>, policy_id: Vec<u8>) -> DispatchResult {
+		pub fn set_council_policy_id(origin: OriginFor<T>, policy_id: PolicyId) -> DispatchResult {
 			ensure_root(origin)?;
 			MainChainCouncilPolicyId::<T>::set(
 				policy_id.clone().try_into().map_err(|_| Error::<T>::InvalidPolicyId)?,
@@ -301,7 +297,7 @@ pub mod pallet {
 		#[pallet::weight((T::WeightInfo::set_technical_committee_policy_id(), DispatchClass::Operational))]
 		pub fn set_technical_committee_policy_id(
 			origin: OriginFor<T>,
-			policy_id: Vec<u8>,
+			policy_id: PolicyId,
 		) -> DispatchResult {
 			ensure_root(origin)?;
 			MainChainTechnicalCommitteePolicyId::<T>::set(
