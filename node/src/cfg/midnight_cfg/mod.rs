@@ -112,9 +112,9 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 			return Err(missing("block_stability_margin"));
 		}
 		if cfg.allow_non_ssl {
-			return Err(validation::Error::Custom(format!(
-				"allow_non_ssl must be false if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)"
-			)));
+			return Err(validation::Error::Custom(
+				"allow_non_ssl must be false if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)".to_string()
+			));
 		}
 	}
 	Ok(())
