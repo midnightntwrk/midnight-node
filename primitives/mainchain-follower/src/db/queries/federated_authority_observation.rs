@@ -49,7 +49,7 @@ FROM tx_out
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 WHERE tx_out.address = $1
-    AND encode(ma.policy, 'hex') = $2
+    AND ma.policy = $2
     AND block.block_no <= $3
     AND NOT EXISTS (
         SELECT 1 FROM tx_in

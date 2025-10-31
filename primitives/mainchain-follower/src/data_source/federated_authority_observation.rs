@@ -137,8 +137,14 @@ impl FederatedAuthorityObservationDataSourceImpl {
 	fn decode_governance_datum(
 		datum: &PlutusData,
 	) -> Result<Vec<AuthorityMemberPublicKey>, Box<dyn std::error::Error + Send + Sync>> {
-		// Try to parse as a list of plutus data
-		let list = datum.as_list().ok_or("Expected PlutusData to be a list")?;
+		// Try to parse as a Vec of `PlutusData`
+		// We use a Vec here because the `get` method on `PlutusList` can panic
+		let list: Vec<PlutusData> = datum
+			.as_list()
+			.ok_or("Expected PlutusData to be a list")?
+			.into_iter()
+			.cloned()
+			.collect();
 
 		if list.len() < 2 {
 			return Err(
@@ -148,20 +154,20 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 		// Get the second element which contains the members
 		// The Multisig type with @list annotation encodes the signers field as a map
-		let members_data = &list.get(1);
+		let members_data = list.get(1).ok_or("Expected index 1 to exist in the list")?;
 
 		let mut authority_keys = Vec::new();
 
 		// Try to parse as a map (Pairs<NativeScriptSigner, Sr25519PubKey>)
 		if let Some(members_map) = members_data.as_map() {
 			// Iterate over map keys
-			let keys = members_map.keys();
+			let keys: Vec<PlutusData> = members_map.keys().into_iter().cloned().collect();
 			for i in 0..keys.len() {
-				let key = keys.get(i);
+				let key = keys.get(i).ok_or("Index {i:?} not found in members_map keys")?;
 
 				// Get the value for this key
 				// PlutusMapValues is a collection of PlutusData elements
-				let values = match members_map.get(&key) {
+				let values = match members_map.get(key) {
 					Some(v) => v,
 					None => continue,
 				};
