@@ -19,6 +19,7 @@ members = [
     "util/upgrader",
     "tests/e2e",
     "docs",
+    "relay"
 ]
 package = { license-file = "LICENSE" }
 
@@ -214,7 +215,6 @@ sp-inherents = { default-features = false, git = "https://github.com/paritytech/
 sp-keystore = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-keyring = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 sp-crypto-hashing = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
-
 
 parity-scale-codec = { version = "3.7.5", default-features = false }
 scale-info = { version = "2.1.1", default-features = false }
