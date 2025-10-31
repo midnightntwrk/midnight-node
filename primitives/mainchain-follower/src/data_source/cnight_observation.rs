@@ -99,7 +99,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 	async fn get_utxos_up_to_capacity(
 		&self,
 		config: &CNightAddresses,
-		start_position: CardanoPosition,
+		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
@@ -132,8 +132,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			self.get_registration_utxos(
 				cardano_network,
 				&config.mapping_validator_address,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -141,8 +141,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			self.get_deregistration_utxos(
 				cardano_network,
 				&config.mapping_validator_address,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -151,8 +151,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				cardano_network,
 				config.cnight_policy_id,
 				cnight_asset_name,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -161,8 +161,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				cardano_network,
 				config.cnight_policy_id,
 				cnight_asset_name,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -172,8 +172,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
 				cnight_asset_name,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -183,8 +183,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				&config.redemption_validator_address,
 				config.cnight_policy_id,
 				cnight_asset_name,
-				start_position,
-				end,
+				&start_position,
+				&end,
 				utxo_capacity,
 				0,
 			)
@@ -199,9 +199,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let mut num_txs = 0;
 		let mut cur_tx: Option<CardanoPosition> = None;
 		for utxo in utxos {
-			if cur_tx.is_none_or(|tx| tx < utxo.header.tx_position) {
+			if cur_tx.as_ref().is_none_or(|tx| tx < &utxo.header.tx_position) {
 				num_txs += 1;
-				cur_tx = Some(utxo.header.tx_position);
+				cur_tx = Some(utxo.header.tx_position.clone());
 			}
 			if num_txs == tx_capacity {
 				break;
@@ -212,13 +212,13 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		if num_txs < tx_capacity {
 			// We couldn't find enough UTXOs in the range, which means we're up-to-date with the
 			// current_tip
-			Ok(ObservedUtxos { start: start_position, end, utxos: truncated_utxos })
+			Ok(ObservedUtxos { start: start_position.clone(), end, utxos: truncated_utxos })
 		} else {
 			Ok(ObservedUtxos {
-				start: start_position,
+				start: start_position.clone(),
 				end: truncated_utxos
 					.last()
-					.map_or(start_position, |u| u.header.tx_position)
+					.map_or(start_position.clone(), |u| u.header.tx_position.clone())
 					.increment(),
 				utxos: truncated_utxos,
 			})
@@ -279,8 +279,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		address: &str,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
@@ -295,7 +295,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -340,7 +340,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
 					owner,
 					value: row.quantity as u128,
-					utxo_tx_hash: row.tx_hash.0,
+					utxo_tx_hash: McTxHash(row.tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
 				}),
 			};
@@ -358,8 +358,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		address: &str,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
@@ -374,7 +374,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -421,9 +421,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				data: ObservedUtxoData::RedemptionSpend(RedemptionSpendData {
 					value: row.quantity as u128,
 					owner,
-					utxo_tx_hash: row.utxo_tx_hash.0,
+					utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
-					spending_tx_hash: row.tx_hash.0,
+					spending_tx_hash: McTxHash(row.tx_hash.0),
 				}),
 			};
 
@@ -437,8 +437,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		&self,
 		cardano_network: u8,
 		address: &str,
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
@@ -449,7 +449,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -493,8 +493,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		&self,
 		cardano_network: u8,
 		address: &str,
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
@@ -505,7 +505,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -551,8 +551,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
@@ -566,7 +566,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -598,7 +598,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				data: ObservedUtxoData::AssetCreate(CreateData {
 					value: row.quantity as u128,
 					owner,
-					utxo_tx_hash: row.tx_hash.0,
+					utxo_tx_hash: McTxHash(row.tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
 				}),
 			};
@@ -615,8 +615,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		policy_id: [u8; 28],
 		asset_name: &[u8],
-		start: CardanoPosition,
-		end: CardanoPosition,
+		start: &CardanoPosition,
+		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
@@ -630,7 +630,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		for row in rows {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
-					block_hash: row.block_hash.0,
+					block_hash: McBlockHash(row.block_hash.0),
 					block_number: row.block_number.0,
 					block_timestamp: row.block_timestamp.and_utc().into(),
 					tx_index_in_block: row.tx_index_in_block.0,
@@ -662,9 +662,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				data: ObservedUtxoData::AssetSpend(SpendData {
 					value: row.quantity as u128,
 					owner,
-					utxo_tx_hash: row.utxo_tx_hash.0,
+					utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
-					spending_tx_hash: row.spending_tx_hash.0,
+					spending_tx_hash: McTxHash(row.spending_tx_hash.0),
 				}),
 			};
 

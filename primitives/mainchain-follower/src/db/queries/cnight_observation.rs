@@ -30,8 +30,8 @@ pub async fn get_redemption_creates(
 	smart_contract_address: &str,
 	policy_id: [u8; 28],
 	asset_name: &[u8],
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<RedemptionCreateRow>, SqlxError> {
@@ -83,8 +83,8 @@ pub async fn get_redemption_spends(
 	smart_contract_address: &str,
 	policy_id: [u8; 28],
 	asset_name: &[u8],
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<RedemptionSpendRow>, SqlxError> {
@@ -141,8 +141,8 @@ LIMIT $8 OFFSET $9;
 pub async fn get_registrations(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<RegistrationRow>, SqlxError> {
@@ -184,8 +184,8 @@ LIMIT $6 OFFSET $7;
 pub async fn get_deregistrations(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<DeregistrationRow>, SqlxError> {
@@ -236,8 +236,8 @@ pub(crate) async fn get_asset_creates(
 	pool: &Pool<Postgres>,
 	policy_id: [u8; 28],
 	asset_name: &[u8],
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<AssetCreateRow>, SqlxError> {
@@ -284,8 +284,8 @@ pub(crate) async fn get_asset_spends(
 	pool: &Pool<Postgres>,
 	policy_id: [u8; 28],
 	asset_name: &[u8],
-	start: CardanoPosition,
-	end: CardanoPosition,
+	start: &CardanoPosition,
+	end: &CardanoPosition,
 	limit: usize,
 	offset: usize,
 ) -> Result<Vec<AssetSpendRow>, SqlxError> {

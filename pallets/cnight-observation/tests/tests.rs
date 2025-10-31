@@ -33,6 +33,7 @@ use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
 };
 use rand::prelude::*;
+use sidechain_domain::{McBlockHash, McTxHash};
 use test_log::test;
 
 fn create_inherent(
@@ -49,19 +50,19 @@ fn create_inherent(
 	inherent_data
 }
 
-fn tx_hash(block_number: u32, tx_index_in_block: u32) -> [u8; 32] {
+fn tx_hash(block_number: u32, tx_index_in_block: u32) -> McTxHash {
 	let mut seed = [0u8; 32];
 	seed[0..4].copy_from_slice(&block_number.to_be_bytes());
 	seed[4..8].copy_from_slice(&tx_index_in_block.to_be_bytes());
 	let mut rng = rand::rngs::StdRng::from_seed(seed);
-	rng.r#gen()
+	McTxHash(rng.r#gen())
 }
 
-fn block_hash(block_number: u32) -> [u8; 32] {
+fn block_hash(block_number: u32) -> McBlockHash {
 	let mut seed = [0u8; 32];
 	seed[0..4].copy_from_slice(&block_number.to_be_bytes());
 	let mut rng = rand::rngs::StdRng::from_seed(seed);
-	rng.r#gen()
+	McBlockHash(rng.r#gen())
 }
 
 fn test_position(block_number: u32, tx_index_in_block: u32) -> CardanoPosition {
@@ -77,14 +78,12 @@ fn test_header(
 	block_number: u32,
 	tx_index_in_block: u32,
 	utxo_index: u16,
-	utxo_tx_hash: Option<[u8; 32]>,
+	utxo_tx_hash: Option<McTxHash>,
 ) -> ObservedUtxoHeader {
 	ObservedUtxoHeader {
 		tx_position: test_position(block_number, tx_index_in_block),
-		tx_hash: sidechain_domain::McTxHash(tx_hash(block_number, tx_index_in_block)),
-		utxo_tx_hash: sidechain_domain::McTxHash(
-			utxo_tx_hash.unwrap_or_else(|| tx_hash(block_number, tx_index_in_block)),
-		),
+		tx_hash: tx_hash(block_number, tx_index_in_block),
+		utxo_tx_hash: utxo_tx_hash.unwrap_or_else(|| tx_hash(block_number, tx_index_in_block)),
 		utxo_index: UtxoIndexInTx(utxo_index),
 	}
 }
@@ -739,7 +738,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		frame_system::Pallet::<Test>::reset_events();
 
 		// make the removal UTXO reference the registration UTXO so the MappingEntry matches
-		let dereg_header = test_header(21, 0, 0, Some(reg_header.utxo_tx_hash.0));
+		let dereg_header = test_header(21, 0, 0, Some(reg_header.utxo_tx_hash));
 
 		let utxos = vec![ObservedUtxo {
 			header: dereg_header.clone(),

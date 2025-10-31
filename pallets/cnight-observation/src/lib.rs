@@ -263,7 +263,7 @@ pub mod pallet {
 				UtxoOwners::<T>::insert(H256(*k), v);
 			}
 
-			NextCardanoPosition::<T>::set(self.config.next_cardano_position);
+			NextCardanoPosition::<T>::set(self.config.next_cardano_position.clone());
 		}
 	}
 
@@ -412,7 +412,7 @@ pub mod pallet {
 			};
 
 			let nonce = T::Hashing::hash(
-				&[b"asset_create", &data.utxo_tx_hash[..], &data.utxo_tx_index.to_be_bytes()[..]]
+				&[b"asset_create", &data.utxo_tx_hash.0[..], &data.utxo_tx_index.to_be_bytes()[..]]
 					.concat(),
 			);
 
@@ -440,14 +440,14 @@ pub mod pallet {
 			data: SpendData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
 			let nonce = T::Hashing::hash(
-				&[b"asset_create", &data.utxo_tx_hash[..], &data.utxo_tx_index.to_be_bytes()[..]]
+				&[b"asset_create", &data.utxo_tx_hash.0[..], &data.utxo_tx_index.to_be_bytes()[..]]
 					.concat(),
 			);
 
 			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash),
+					hex::encode(data.utxo_tx_hash.0),
 					data.utxo_tx_index
 				);
 				return None;
@@ -482,7 +482,7 @@ pub mod pallet {
 			let nonce = T::Hashing::hash(
 				&[
 					b"redemption_create",
-					&data.utxo_tx_hash[..],
+					&data.utxo_tx_hash.0[..],
 					&data.utxo_tx_index.to_be_bytes()[..],
 				]
 				.concat(),
@@ -514,7 +514,7 @@ pub mod pallet {
 			let nonce = T::Hashing::hash(
 				&[
 					b"redemption_create",
-					&data.utxo_tx_hash[..],
+					&data.utxo_tx_hash.0[..],
 					&data.utxo_tx_index.to_be_bytes()[..],
 				]
 				.concat(),
@@ -523,7 +523,7 @@ pub mod pallet {
 			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash),
+					hex::encode(data.utxo_tx_hash.0),
 					data.utxo_tx_index
 				);
 				return None;
@@ -606,7 +606,7 @@ pub mod pallet {
 				}
 			}
 
-			NextCardanoPosition::<T>::set(next_cardano_position);
+			NextCardanoPosition::<T>::set(next_cardano_position.clone());
 
 			if !events.is_empty() {
 				// Construct the Ledger system transaction
@@ -621,7 +621,7 @@ pub mod pallet {
 					// Emit System Transaction for the indexer
 					let system_tx = SystemTransactionApplied {
 						header: CmstHeader {
-							block_hash: next_cardano_position.block_hash,
+							block_hash: next_cardano_position.block_hash.0,
 							tx_index_in_block: next_cardano_position.tx_index_in_block,
 						},
 						system_transaction_hash,

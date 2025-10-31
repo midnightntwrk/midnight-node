@@ -22,7 +22,7 @@ use sp_api::decl_runtime_apis;
 
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sidechain_domain::McTxHash;
+use sidechain_domain::{McBlockHash, McTxHash};
 
 #[cfg(feature = "std")]
 use sqlx::types::chrono::{DateTime, Utc};
@@ -132,7 +132,6 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 	DecodeWithMemTracking,
 	TypeInfo,
 	MaxEncodedLen,
-	Copy,
 	Clone,
 	Eq,
 	PartialEq,
@@ -143,8 +142,7 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 )]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
-	#[serde(with = "hex")]
-	pub block_hash: [u8; 32],
+	pub block_hash: McBlockHash,
 	/// Block number of the last processed block
 	pub block_number: u32,
 	/// Block timestamp (seconds since unix epoch) of the last processed block
@@ -158,9 +156,7 @@ impl core::fmt::Display for CardanoPosition {
 		write!(
 			f,
 			"{{ block_number: {}, block_hash: {}, block_index: {} }}",
-			self.block_number,
-			hex::encode(self.block_hash),
-			self.tx_index_in_block
+			self.block_number, self.block_hash, self.tx_index_in_block
 		)
 	}
 }
@@ -279,8 +275,7 @@ pub enum ObservedUtxoData {
 pub struct RedemptionCreateData {
 	pub owner: CardanoRewardAddressBytes,
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
 }
 
@@ -290,11 +285,9 @@ pub struct RedemptionCreateData {
 pub struct RedemptionSpendData {
 	pub owner: CardanoRewardAddressBytes,
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
-	#[serde(with = "hex")]
-	pub spending_tx_hash: [u8; 32],
+	pub spending_tx_hash: McTxHash,
 }
 
 #[derive(
@@ -319,8 +312,7 @@ pub struct DeregistrationData {
 pub struct CreateData {
 	pub value: u128,
 	pub owner: CardanoRewardAddressBytes,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
 }
 
@@ -330,11 +322,9 @@ pub struct CreateData {
 pub struct SpendData {
 	pub value: u128,
 	pub owner: CardanoRewardAddressBytes,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
-	#[serde(with = "hex")]
-	pub spending_tx_hash: [u8; 32],
+	pub spending_tx_hash: McTxHash,
 }
 
 /// Header for an observed UTXO

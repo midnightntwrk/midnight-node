@@ -19,6 +19,7 @@ use midnight_primitives_cnight_observation::{
 	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
+use sidechain_domain::McBlockHash;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
@@ -70,7 +71,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			Ok(Self {
 				utxos: vec![],
 				next_cardano_position: CardanoPosition {
-					block_hash: [0; 32],
+					block_hash: McBlockHash([0; 32]),
 					block_number: 0,
 					block_timestamp: TimestampUnixMillis(0),
 					tx_index_in_block: 0,
@@ -115,7 +116,7 @@ impl MidnightCNightObservationInherentDataProvider {
 		let observed_utxos = data_source
 			.get_utxos_up_to_capacity(
 				&config,
-				cardano_position_start,
+				&cardano_position_start,
 				mc_hash,
 				utxo_capacity as usize,
 			)
@@ -136,7 +137,7 @@ impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDat
 			INHERENT_IDENTIFIER,
 			&MidnightObservationTokenMovement {
 				utxos: self.utxos.clone(),
-				next_cardano_position: self.next_cardano_position,
+				next_cardano_position: self.next_cardano_position.clone(),
 			},
 		)
 	}
