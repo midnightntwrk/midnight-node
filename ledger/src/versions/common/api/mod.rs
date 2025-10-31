@@ -33,6 +33,7 @@ pub(crate) type LedgerParameters = mn_ledger_local::structure::LedgerParameters;
 pub(crate) type ContractState<D> = onchain_runtime_local::state::ContractState<D>;
 pub(crate) type ZswapState<D> = zswap_local::ledger::State<D>;
 pub(crate) type ContractAddress = coin_structure_local::contract::ContractAddress;
+pub(crate) type DustPublicKey = mn_ledger_local::dust::DustPublicKey;
 pub(crate) type UserAddress = coin_structure_local::coin::UserAddress;
 pub(crate) type OutputInstructionUnshielded =
 	mn_ledger_local::structure::OutputInstructionUnshielded;
@@ -61,6 +62,12 @@ impl SerializableError for ContractAddress {
 impl DeserializableError for ContractAddress {
 	fn error() -> DeserializationError {
 		DeserializationError::ContractAddress
+	}
+}
+
+impl DeserializableError for DustPublicKey {
+	fn error() -> DeserializationError {
+		DeserializationError::DustPublicKey
 	}
 }
 

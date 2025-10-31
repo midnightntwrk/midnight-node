@@ -22,10 +22,83 @@ use sp_api::decl_runtime_apis;
 
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sidechain_domain::McTxHash;
+use sidechain_domain::{McBlockHash, McTxHash};
 
 #[cfg(feature = "std")]
 use sqlx::types::chrono::{DateTime, Utc};
+
+/// Addresses are in Bech32 repr. The max length is:
+/// max(len('addr'), len('addr_test')) + 1 byte separator + len(bech32_encode(<shelly_address_max = 57 bytes>))
+/// = 9 + 1 + 98 = 108
+pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
+pub const CARDANO_REWARD_ADDRESS_LENGTH: usize = 29;
+
+#[derive(
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	TypeInfo,
+	MaxEncodedLen,
+	Copy,
+	Clone,
+	Eq,
+	PartialEq,
+	Debug,
+	Default,
+	Serialize,
+	Deserialize,
+	PartialOrd,
+	Ord,
+)]
+pub struct CardanoRewardAddressBytes(
+	#[serde(with = "hex")] pub [u8; CARDANO_REWARD_ADDRESS_LENGTH],
+);
+
+impl TryFrom<Vec<u8>> for CardanoRewardAddressBytes {
+	type Error = <[u8; CARDANO_REWARD_ADDRESS_LENGTH] as TryFrom<Vec<u8>>>::Error;
+
+	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+		Ok(Self(value.try_into()?))
+	}
+}
+
+#[derive(
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	TypeInfo,
+	MaxEncodedLen,
+	Copy,
+	Clone,
+	Eq,
+	PartialEq,
+	Debug,
+	Serialize,
+	Deserialize,
+	PartialOrd,
+	Ord,
+)]
+pub struct DustPublicKeyBytes(#[serde(with = "hex")] pub [u8; 33]);
+
+impl Default for DustPublicKeyBytes {
+	fn default() -> Self {
+		Self([0u8; 33])
+	}
+}
+
+impl TryFrom<Vec<u8>> for DustPublicKeyBytes {
+	type Error = <[u8; 33] as TryFrom<Vec<u8>>>::Error;
+
+	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+		Ok(Self(value.try_into()?))
+	}
+}
+
+impl From<[u8; 33]> for DustPublicKeyBytes {
+	fn from(value: [u8; 33]) -> Self {
+		Self(value)
+	}
+}
 
 #[derive(
 	Encode,
@@ -59,7 +132,6 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 	DecodeWithMemTracking,
 	TypeInfo,
 	MaxEncodedLen,
-	Copy,
 	Clone,
 	Eq,
 	PartialEq,
@@ -70,8 +142,7 @@ impl From<DateTime<Utc>> for TimestampUnixMillis {
 )]
 pub struct CardanoPosition {
 	/// Hash of the last processed block
-	#[serde(with = "hex")]
-	pub block_hash: [u8; 32],
+	pub block_hash: McBlockHash,
 	/// Block number of the last processed block
 	pub block_number: u32,
 	/// Block timestamp (seconds since unix epoch) of the last processed block
@@ -85,9 +156,7 @@ impl core::fmt::Display for CardanoPosition {
 		write!(
 			f,
 			"{{ block_number: {}, block_hash: {}, block_index: {} }}",
-			self.block_number,
-			hex::encode(self.block_hash),
-			self.tx_index_in_block
+			self.block_number, self.block_hash, self.tx_index_in_block
 		)
 	}
 }
@@ -204,11 +273,9 @@ pub enum ObservedUtxoData {
 	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
 )]
 pub struct RedemptionCreateData {
-	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: CardanoRewardAddressBytes,
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
 }
 
@@ -216,34 +283,27 @@ pub struct RedemptionCreateData {
 	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
 )]
 pub struct RedemptionSpendData {
-	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
+	pub owner: CardanoRewardAddressBytes,
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
-	#[serde(with = "hex")]
-	pub spending_tx_hash: [u8; 32],
+	pub spending_tx_hash: McTxHash,
 }
 
 #[derive(
 	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
 )]
 pub struct RegistrationData {
-	#[serde(with = "hex")]
-	pub cardano_address: Vec<u8>,
-	#[serde(with = "hex")]
-	pub dust_address: Vec<u8>,
+	pub cardano_reward_address: CardanoRewardAddressBytes,
+	pub dust_public_key: DustPublicKeyBytes,
 }
 
 #[derive(
 	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
 )]
 pub struct DeregistrationData {
-	#[serde(with = "hex")]
-	pub cardano_address: Vec<u8>,
-	#[serde(with = "hex")]
-	pub dust_address: Vec<u8>,
+	pub cardano_reward_address: CardanoRewardAddressBytes,
+	pub dust_public_key: DustPublicKeyBytes,
 }
 
 #[derive(
@@ -251,10 +311,8 @@ pub struct DeregistrationData {
 )]
 pub struct CreateData {
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub owner: CardanoRewardAddressBytes,
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
 }
 
@@ -263,13 +321,10 @@ pub struct CreateData {
 )]
 pub struct SpendData {
 	pub value: u128,
-	#[serde(with = "hex")]
-	pub owner: Vec<u8>,
-	#[serde(with = "hex")]
-	pub utxo_tx_hash: [u8; 32],
+	pub owner: CardanoRewardAddressBytes,
+	pub utxo_tx_hash: McTxHash,
 	pub utxo_tx_index: u16,
-	#[serde(with = "hex")]
-	pub spending_tx_hash: [u8; 32],
+	pub spending_tx_hash: McTxHash,
 }
 
 /// Header for an observed UTXO
