@@ -261,7 +261,8 @@ async fn get_connection(
 	connection_string: &str,
 	pool_cfg: DbPoolCfg,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let connect_options = sqlx::postgres::PgConnectOptions::from_str(connection_string)?;
+	let connect_options = sqlx::postgres::PgConnectOptions::from_str(connection_string)?
+		.ssl_mode(sqlx::postgres::PgSslMode::Require);
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(pool_cfg.max_connections)
 		.acquire_timeout(pool_cfg.acquire_timeout)
