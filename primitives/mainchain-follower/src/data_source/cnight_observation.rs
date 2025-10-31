@@ -476,8 +476,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address: cardano_address,
+					dust_public_key: dust_address,
 				}),
 			};
 
@@ -532,8 +532,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Deregistration(DeregistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address: cardano_address,
+					dust_public_key: dust_address,
 				}),
 			};
 

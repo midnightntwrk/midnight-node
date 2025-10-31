@@ -95,23 +95,23 @@ pub mod pallet {
 	)]
 	pub struct MappingEntry {
 		#[serde(with = "serde_arrays")]
-		pub cardano_address: CardanoRewardAddressBytes,
+		pub cardano_reward_address: CardanoRewardAddressBytes,
 		#[serde(with = "serde_arrays")]
-		pub dust_address: DustPublicKeyBytes,
+		pub dust_public_key: DustPublicKeyBytes,
 		pub utxo_id: [u8; 32],
 		pub utxo_index: u16,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
 	pub struct Registration {
-		pub cardano_address: CardanoRewardAddressBytes,
-		pub dust_address: DustPublicKeyBytes,
+		pub cardano_reward_address: CardanoRewardAddressBytes,
+		pub dust_public_key: DustPublicKeyBytes,
 	}
 
 	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
 	pub struct Deregistration {
-		pub cardano_address: CardanoRewardAddressBytes,
-		pub dust_address: DustPublicKeyBytes,
+		pub cardano_reward_address: CardanoRewardAddressBytes,
+		pub dust_public_key: DustPublicKeyBytes,
 	}
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -319,19 +319,14 @@ pub mod pallet {
 
 		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
 			let mappings = Mappings::<T>::get(wallet);
-			if mappings.len() == 1 { Some(mappings[0].dust_address) } else { None }
+			if mappings.len() == 1 { Some(mappings[0].dust_public_key) } else { None }
 		}
 
 		// Check if any form of a registration could be considered valid as of now
 		pub fn is_registered(utxo_holder: &CardanoRewardAddressBytes) -> bool {
 			let mappings = Mappings::<T>::get(utxo_holder);
 			// For a registration to be valid, there can only be one stored
-			if mappings.len() == 1 {
-				// We store all incoming DUST mappings from Cardano to maintain consistency, so need to manually check the length of all stored
-				mappings[0].dust_address.len() == 32
-			} else {
-				false
-			}
+			mappings.len() == 1
 		}
 
 		#[allow(clippy::type_complexity)]
@@ -339,42 +334,42 @@ pub mod pallet {
 			header: &ObservedUtxoHeader,
 			data: RegistrationData,
 		) -> Option<(CardanoRewardAddressBytes, Vec<MappingEntry>)> {
-			let RegistrationData { cardano_address, dust_address } = data;
+			let RegistrationData { cardano_reward_address, dust_public_key } = data;
 
 			let new_reg = MappingEntry {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 				utxo_id: header.utxo_tx_hash.0,
 				utxo_index: header.utxo_index.0,
 			};
 
-			let mut mappings = Mappings::<T>::get(cardano_address);
+			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 			mappings.push(new_reg.clone());
-			Mappings::<T>::insert(cardano_address, mappings.clone());
+			Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 
 			if mappings.len() == 1 {
 				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}));
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(new_reg));
-			Some((cardano_address, mappings))
+			Some((cardano_reward_address, mappings))
 		}
 
 		fn handle_registration_removal(header: &ObservedUtxoHeader, data: DeregistrationData) {
-			let DeregistrationData { cardano_address, dust_address } = data;
+			let DeregistrationData { cardano_reward_address, dust_public_key } = data;
 
 			let reg_entry = MappingEntry {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 				utxo_id: header.utxo_tx_hash.0,
 				utxo_index: header.utxo_index.0,
 			};
 
-			let was_valid = Self::is_registered(&cardano_address);
-			let mut mappings = Mappings::<T>::get(cardano_address);
+			let was_valid = Self::is_registered(&cardano_reward_address);
+			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 
 			if let Some(index) = mappings.iter().position(|x| x == &reg_entry) {
 				mappings.remove(index);
@@ -386,25 +381,25 @@ pub mod pallet {
 			}
 
 			if mappings.is_empty() {
-				Mappings::<T>::remove(cardano_address);
+				Mappings::<T>::remove(cardano_reward_address);
 			} else {
-				Mappings::<T>::insert(cardano_address, mappings.clone());
+				Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 			}
 
-			let is_valid = Self::is_registered(&cardano_address);
+			let is_valid = Self::is_registered(&cardano_reward_address);
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
 			if !was_valid && is_valid {
 				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}))
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
 			if was_valid && !is_valid {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}))
 			}
 
@@ -415,7 +410,7 @@ pub mod pallet {
 			cur_time: u64,
 			data: CreateData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
-			let Some(dust_address) = Self::get_registration(&data.owner) else {
+			let Some(dust_public_key) = Self::get_registration(&data.owner) else {
 				log::warn!("No valid dust registration for {:?}", &data.owner);
 				return None;
 			};
@@ -425,11 +420,11 @@ pub mod pallet {
 					.concat(),
 			);
 
-			UtxoOwners::<T>::insert(nonce, dust_address);
+			UtxoOwners::<T>::insert(nonce, dust_public_key);
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -453,7 +448,7 @@ pub mod pallet {
 					.concat(),
 			);
 
-			let Some(dust_address) = UtxoOwners::<T>::get(nonce) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
 					hex::encode(data.utxo_tx_hash),
@@ -464,7 +459,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,
@@ -483,7 +478,7 @@ pub mod pallet {
 			cur_time: u64,
 			data: RedemptionCreateData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
-			let Some(dust_address) = Self::get_registration(&data.owner) else {
+			let Some(dust_public_key) = Self::get_registration(&data.owner) else {
 				log::warn!("No valid dust registration for {:?}", &data.owner);
 				return None;
 			};
@@ -497,11 +492,11 @@ pub mod pallet {
 				.concat(),
 			);
 
-			UtxoOwners::<T>::insert(nonce, dust_address);
+			UtxoOwners::<T>::insert(nonce, dust_public_key);
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -529,7 +524,7 @@ pub mod pallet {
 				.concat(),
 			);
 
-			let Some(dust_address) = UtxoOwners::<T>::get(nonce) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
 					hex::encode(data.utxo_tx_hash),
@@ -540,7 +535,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,

@@ -158,8 +158,8 @@ fn asset_create_should_emit_valid_event_if_registered() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -216,8 +216,8 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -284,8 +284,8 @@ fn redemption_create_should_emit_valid_event_if_registered() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -342,8 +342,8 @@ fn redemption_destroy_should_emit_valid_event_if_registered() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -446,8 +446,8 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -469,7 +469,7 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 
 		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_address)
 			.into_iter()
-			.map(|r| r.dust_address)
+			.map(|r| r.dust_public_key)
 			.collect();
 
 		assert_eq!(stored, vec![dust_address]);
@@ -492,8 +492,8 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		let utxos = vec![ObservedUtxo {
 			header: test_header(1, 2, 0, None),
 			data: ObservedUtxoData::Registration(RegistrationData {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 			}),
 		}];
 
@@ -512,8 +512,8 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		let utxos = vec![ObservedUtxo {
 			header: reg_header.clone(),
 			data: ObservedUtxoData::Registration(RegistrationData {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 			}),
 		}];
 
@@ -546,8 +546,8 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 			ObservedUtxo {
 				header: dereg_header,
 				data: ObservedUtxoData::Deregistration(DeregistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			ObservedUtxo {
@@ -618,16 +618,16 @@ fn two_registrations_in_same_block_emit_no_registered_event() {
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 			// Duplicate!
 			ObservedUtxo {
 				header: test_header(1, 2, 0, None),
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 				}),
 			},
 		];
@@ -672,8 +672,8 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 		let utxos = vec![ObservedUtxo {
 			header: reg_header.clone(),
 			data: ObservedUtxoData::Registration(RegistrationData {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 			}),
 		}];
 
@@ -700,8 +700,8 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				&record.event
 			{
 				let expected = MappingEntry {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 					utxo_id: reg_header.utxo_tx_hash.0,
 					utxo_index: reg_header.utxo_index.0,
 				};
@@ -725,8 +725,8 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let utxos = vec![ObservedUtxo {
 			header: reg_header.clone(),
 			data: ObservedUtxoData::Registration(RegistrationData {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 			}),
 		}];
 		let inherent_data = create_inherent(utxos, test_position(20, 1));
@@ -744,8 +744,8 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let utxos = vec![ObservedUtxo {
 			header: dereg_header.clone(),
 			data: ObservedUtxoData::Deregistration(DeregistrationData {
-				cardano_address,
-				dust_address,
+				cardano_reward_address,
+				dust_public_key,
 			}),
 		}];
 		let inherent_data = create_inherent(utxos, test_position(21, 1));
@@ -770,8 +770,8 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				&record.event
 			{
 				let expected = MappingEntry {
-					cardano_address,
-					dust_address,
+					cardano_reward_address,
+					dust_public_key,
 					utxo_id: reg_header.utxo_tx_hash.0,
 					utxo_index: reg_header.utxo_index.0,
 				};

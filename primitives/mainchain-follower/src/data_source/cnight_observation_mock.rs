@@ -47,8 +47,8 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 			utxo_index: UtxoIndexInTx(1),
 		},
 		data: ObservedUtxoData::Registration(RegistrationData {
-			cardano_address: rand::random::<[u8; 29]>(),
-			dust_address: rand::random::<[u8; 33]>(),
+			cardano_reward_address: rand::random::<[u8; 29]>(),
+			dust_public_key: rand::random::<[u8; 33]>(),
 		}),
 	}]
 }

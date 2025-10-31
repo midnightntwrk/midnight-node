@@ -240,9 +240,9 @@ pub struct RedemptionSpendData {
 )]
 pub struct RegistrationData {
 	#[serde(with = "hex")]
-	pub cardano_address: [u8; 29],
+	pub cardano_reward_address: [u8; 29],
 	#[serde(with = "hex")]
-	pub dust_address: [u8; 33],
+	pub dust_public_key: [u8; 33],
 }
 
 #[derive(
@@ -250,9 +250,9 @@ pub struct RegistrationData {
 )]
 pub struct DeregistrationData {
 	#[serde(with = "hex")]
-	pub cardano_address: CardanoRewardAddressBytes,
+	pub cardano_reward_address: CardanoRewardAddressBytes,
 	#[serde(with = "hex")]
-	pub dust_address: DustPublicKeyBytes,
+	pub dust_public_key: DustPublicKeyBytes,
 }
 
 #[derive(
