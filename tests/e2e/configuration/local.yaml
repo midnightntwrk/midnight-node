@@ -1,0 +1,20 @@
+node_client:
+  base_url: "ws://127.0.0.1:9933"
+  network: "local"
+
+ogmios_client:
+  base_url: "ws://127.0.0.1:1337"
+  timeout_seconds: 5
+  network: "preview"
+
+test_files:
+  payments:
+    base_dir: "../../local-environment/src/networks/local-env/configurations/cardano/keys"
+    addr_file: "funded_address.addr"
+    skey_file: "funded_address.skey"
+
+  policies:
+    base_dir: "../../scripts/cnight-generates-dust"
+    mapping_validator: "mapping_validator.plutus"
+    auth_token: "auth_token_policy.plutus"
+    cnight_token: "cnight_policy.plutus"
