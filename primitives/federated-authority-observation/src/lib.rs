@@ -91,7 +91,7 @@ pub struct AuthBodyConfig {
 	/// The Cardano script address for this governance body
 	pub address: String,
 	/// The policy ID for the native asset associated with this governance body
-	pub policy_id: String,
+	pub policy_id: PolicyId,
 	/// Initial members of this governance body (for genesis)
 	#[serde(deserialize_with = "vec_hex_to_vec_sr25519")]
 	pub members: Vec<sp_core::sr25519::Public>,

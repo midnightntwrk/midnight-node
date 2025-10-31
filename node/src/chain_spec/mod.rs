@@ -32,7 +32,7 @@ use midnight_node_runtime::{
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{MainchainAddress, PolicyId};
+use sidechain_domain::MainchainAddress;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
@@ -327,18 +327,15 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				&genesis.federated_authority_config().council.address,
 			)
 			.expect("Failed to decode `council_address`"),
-			council_policy_id: PolicyId::from_str(
-				&genesis.federated_authority_config().council.policy_id,
-			)
-			.expect("Failed to decode `council_policy_id`"),
+			council_policy_id: genesis.federated_authority_config().council.policy_id,
 			technical_committee_address: MainchainAddress::from_str(
 				&genesis.federated_authority_config().technical_committee.address,
 			)
 			.expect("Failed to decode `technical_committee_address`"),
-			technical_committee_policy_id: PolicyId::from_str(
-				&genesis.federated_authority_config().technical_committee.policy_id,
-			)
-			.expect("Failed to decode `technical_committee_id`"),
+			technical_committee_policy_id: genesis
+				.federated_authority_config()
+				.technical_committee
+				.policy_id,
 			..Default::default()
 		},
 	};

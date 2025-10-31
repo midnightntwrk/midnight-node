@@ -18,6 +18,7 @@
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 
 use crate::db::GovernanceBodyUtxoRow;
+use sidechain_domain::PolicyId;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
 /// Query to get the UTXO for a governance body (council or technical committee) at a specific Cardano block
@@ -30,7 +31,7 @@ use sqlx::{Pool, Postgres, error::Error as SqlxError};
 pub async fn get_governance_body_utxo(
 	pool: &Pool<Postgres>,
 	script_address: &str,
-	policy_id_hex: &str,
+	policy_id: &PolicyId,
 	block_number: u32,
 ) -> Result<Option<GovernanceBodyUtxoRow>, SqlxError> {
 	sqlx::query_as::<_, GovernanceBodyUtxoRow>(
@@ -61,7 +62,7 @@ LIMIT 1
         "#,
 	)
 	.bind(script_address)
-	.bind(policy_id_hex)
+	.bind(policy_id.0)
 	.bind(block_number as i32)
 	.fetch_optional(pool)
 	.await
