@@ -79,6 +79,9 @@ pub struct MidnightCfg {
 
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
+
+	/// Allow no-TLS connection upon failure
+	pub allow_non_ssl: bool,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
@@ -107,6 +110,11 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 		}
 		if cfg.block_stability_margin.is_none() {
 			return Err(missing("block_stability_margin"));
+		}
+		if cfg.allow_non_ssl {
+			return Err(validation::Error::Custom(format!(
+				"allow_non_ssl must be false if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)"
+			)));
 		}
 	}
 	Ok(())
