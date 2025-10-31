@@ -7659,7 +7659,6 @@ dependencies = [
  "cardano-serialization-lib 14.1.2",
  "db-sync-sqlx",
  "derive-new",
- "hex",
  "log",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
