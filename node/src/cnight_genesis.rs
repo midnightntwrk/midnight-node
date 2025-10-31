@@ -1,7 +1,7 @@
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, INHERENT_IDENTIFIER,
-	ObservedUtxos, TimestampUnixMillis,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
@@ -50,7 +50,7 @@ fn create_inherent(
 
 struct PalletExecResult {
 	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
-	utxo_owners: BTreeMap<[u8; 32], Vec<u8>>,
+	utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
 	next_cardano_position: CardanoPosition,
 	system_tx: Option<Vec<u8>>,
 }
@@ -65,7 +65,7 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 
 		PalletExecResult {
 			mappings: Mappings::<mock::Test>::iter().collect(),
-			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v.into())).collect(),
+			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v)).collect(),
 			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
 			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
 		}

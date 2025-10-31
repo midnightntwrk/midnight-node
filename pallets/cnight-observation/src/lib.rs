@@ -94,9 +94,7 @@ pub mod pallet {
 		Deserialize,
 	)]
 	pub struct MappingEntry {
-		#[serde(with = "serde_arrays")]
 		pub cardano_reward_address: CardanoRewardAddressBytes,
-		#[serde(with = "serde_arrays")]
 		pub dust_public_key: DustPublicKeyBytes,
 		pub utxo_id: [u8; 32],
 		pub utxo_index: u16,
@@ -262,8 +260,6 @@ pub mod pallet {
 			}
 
 			for (k, v) in &self.config.utxo_owners {
-				let v: DustPublicKeyBytes =
-					v.clone().try_into().expect("DustAddress longer than expected");
 				UtxoOwners::<T>::insert(H256(*k), v);
 			}
 
@@ -424,7 +420,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_public_key,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -459,7 +455,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_public_key,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,
@@ -496,7 +492,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_public_key,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -535,7 +531,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_public_key,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,

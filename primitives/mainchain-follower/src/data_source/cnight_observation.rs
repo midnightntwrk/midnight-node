@@ -24,7 +24,9 @@ use cardano_serialization_lib::{
 	ScriptHash,
 };
 use derive_new::new;
-use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -476,8 +478,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address: cardano_address,
-					dust_public_key: dust_address,
+					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
+					dust_public_key: DustPublicKeyBytes(dust_address),
 				}),
 			};
 
@@ -532,8 +534,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Deregistration(DeregistrationData {
-					cardano_reward_address: cardano_address,
-					dust_public_key: dust_address,
+					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
+					dust_public_key: DustPublicKeyBytes(dust_address),
 				}),
 			};
 

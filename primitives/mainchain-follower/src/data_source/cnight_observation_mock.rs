@@ -15,7 +15,9 @@ use crate::{
 	MidnightCNightObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
-use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;
@@ -47,8 +49,8 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 			utxo_index: UtxoIndexInTx(1),
 		},
 		data: ObservedUtxoData::Registration(RegistrationData {
-			cardano_reward_address: rand::random::<[u8; 29]>(),
-			dust_public_key: rand::random::<[u8; 33]>(),
+			cardano_reward_address: CardanoRewardAddressBytes(rand::random::<[u8; 29]>()),
+			dust_public_key: DustPublicKeyBytes(rand::random::<[u8; 33]>()),
 		}),
 	}]
 }
