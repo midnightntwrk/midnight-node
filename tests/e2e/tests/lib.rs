@@ -74,10 +74,10 @@ async fn register_for_dust_production() {
 async fn deploy_governance_contracts_and_validate_membership_reset() {
 	println!("=== Starting Governance Contracts E2E Test ===");
 
-	// Example Sr25519 public keys for testing (Alice and Bob from Substrate)
+	// Example Sr25519 public keys for testing (Alice and Eve from Substrate)
 	// In production, these would be the actual governance authority member keys
 	const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
-	const BOB_SR25519: &str = "8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48";
+	const EVE_SR25519: &str = "e659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e";
 
 	// Use the funded_address from config as the deployer
 	// The funded_address owns the one-shot UTxOs, so we use it for all inputs to simplify signing
@@ -134,7 +134,7 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	println!("\n=== Deploying Council Forever Contract ===");
 	let council_members = vec![
 		(alice_cardano_hash.to_string(), ALICE_SR25519.to_string()),
-		(bob_cardano_hash.to_string(), BOB_SR25519.to_string()),
+		(bob_cardano_hash.to_string(), EVE_SR25519.to_string()),
 	];
 
 	let council_tx_id = deploy_governance_contract(
@@ -155,7 +155,7 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 	println!("\n=== Deploying Technical Authority Forever Contract ===");
 	let tech_auth_members = vec![
 		(alice_cardano_hash.to_string(), ALICE_SR25519.to_string()),
-		(bob_cardano_hash.to_string(), BOB_SR25519.to_string()),
+		(bob_cardano_hash.to_string(), EVE_SR25519.to_string()),
 	];
 
 	let tech_auth_tx_id = deploy_governance_contract(

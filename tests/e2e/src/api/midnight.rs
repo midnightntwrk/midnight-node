@@ -166,24 +166,24 @@ pub async fn subscribe_to_federated_authority_events() -> Result<(), Box<dyn std
 				.flatten()
 				.next();
 
-			if council_reset.is_some() || tech_committee_reset.is_some() {
-				if let Some(event) = council_reset {
-					println!(
-						"✓ Found CouncilMembersReset event with {} members",
-						event.members.0.len()
-					);
-				}
-				if let Some(event) = tech_committee_reset {
-					println!(
-						"✓ Found TechnicalCommitteeMembersReset event with {} members",
-						event.members.0.len()
-					);
-				}
+			if let Some(event) = &council_reset {
+				println!(
+					"✓ Found CouncilMembersReset event with {} members",
+					event.members.0.len()
+				);
+			}
+			if let Some(event) = &tech_committee_reset {
+				println!(
+					"✓ Found TechnicalCommitteeMembersReset event with {} members",
+					event.members.0.len()
+				);
+			}
 
+			if council_reset.is_some() && tech_committee_reset.is_some() {
 				return Ok(());
 			}
 		}
-		Err("Did not find federated authority events".into())
+		Err("Did not find all federated authority events".into())
 	})
 	.await;
 
