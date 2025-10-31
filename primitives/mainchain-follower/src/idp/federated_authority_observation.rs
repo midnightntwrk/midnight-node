@@ -14,19 +14,58 @@
 //! Federated Authority Observation Inherent Data Provider
 
 use crate::FederatedAuthorityObservationDataSource;
-use midnight_primitives_federated_authority_observation::FederatedAuthorityData;
-use std::error::Error;
+use midnight_primitives_federated_authority_observation::{
+	AuthBodyConfig, FederatedAuthorityData, FederatedAuthorityObservationApi,
+	FederatedAuthorityObservationConfig,
+};
+use sp_api::ProvideRuntimeApi;
+use sp_runtime::traits::Block as BlockT;
+use std::{error::Error, sync::Arc};
 
 pub struct FederatedAuthorityInherentDataProvider {
 	pub data: FederatedAuthorityData,
 }
 
 impl FederatedAuthorityInherentDataProvider {
-	pub async fn new<FA>(
-		data_source: &(dyn FederatedAuthorityObservationDataSource<FA> + Send + Sync),
+	pub async fn new<Block, C>(
+		client: Arc<C>,
+		data_source: &(dyn FederatedAuthorityObservationDataSource + Send + Sync),
+		parent_hash: <Block as BlockT>::Hash,
 		mc_block_hash: &sidechain_domain::McBlockHash,
-	) -> Result<Self, Box<dyn Error + Send + Sync>> {
-		let data = data_source.get_federated_authority_data(mc_block_hash).await?;
+	) -> Result<Self, Box<dyn Error + Send + Sync>>
+	where
+		Block: BlockT,
+		C: ProvideRuntimeApi<Block> + Send + Sync,
+		C::Api: FederatedAuthorityObservationApi<Block>,
+	{
+		let api = client.runtime_api();
+
+		let council_address = api.get_council_address(parent_hash)?.bytes();
+		let council_address = String::from_utf8(council_address)?;
+
+		let council_policy_id = api.get_council_policy_id(parent_hash)?;
+
+		let technical_committee_address = api.get_technical_committee_address(parent_hash)?.bytes();
+		let technical_committee_address = String::from_utf8(technical_committee_address)?;
+
+		let technical_committee_policy_id = api.get_technical_committee_policy_id(parent_hash)?;
+
+		let council = AuthBodyConfig {
+			address: council_address,
+			policy_id: council_policy_id,
+			members: vec![],
+		};
+
+		let technical_committee = AuthBodyConfig {
+			address: technical_committee_address,
+			policy_id: technical_committee_policy_id,
+			members: vec![],
+		};
+
+		let config = FederatedAuthorityObservationConfig { council, technical_committee };
+
+		let data = data_source.get_federated_authority_data(&config, mc_block_hash).await?;
+
 		Ok(Self { data })
 	}
 }
