@@ -19,7 +19,10 @@ import { Subscription, take, timeout } from "rxjs";
 import { HOST_ADDR } from "./env.js";
 
 function normHex(x: string) {
-  return x.replace(/^0x/i, "").toLowerCase();
+  if (x.startsWith("0x")) {
+    x = x.slice(2);
+  }
+  return x.toLowerCase();
 }
 
 // export function checkCreate(
