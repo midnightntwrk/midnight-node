@@ -6,7 +6,6 @@ description = "Pallet responsible for observing federated authority changes from
 license-file.workspace = true
 
 [dependencies]
-hex = { workspace = true, optional = true }
 frame-support.workspace = true
 frame-system.workspace = true
 sidechain-domain.workspace = true
@@ -48,7 +47,6 @@ runtime-benchmarks = [
     "pallet-collective/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
-    "hex",
 ]
 
 [package.metadata.cargo-shear]

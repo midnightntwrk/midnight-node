@@ -103,29 +103,11 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			MainChainCouncilAddress::<T>::set(
-				self.council_address
-					.clone()
-					.try_into()
-					.expect("Council address longer than expected"),
-			);
-			MainChainCouncilPolicyId::<T>::set(
-				self.council_policy_id
-					.clone()
-					.try_into()
-					.expect("Council policy_id longer than expected"),
-			);
-			MainChainTechnicalCommitteeAddress::<T>::set(
-				self.technical_committee_address
-					.clone()
-					.try_into()
-					.expect("Technical Committee address longer than expected"),
-			);
+			MainChainCouncilAddress::<T>::set(self.council_address.clone());
+			MainChainCouncilPolicyId::<T>::set(self.council_policy_id.clone());
+			MainChainTechnicalCommitteeAddress::<T>::set(self.technical_committee_address.clone());
 			MainChainTechnicalCommitteePolicyId::<T>::set(
-				self.technical_committee_policy_id
-					.clone()
-					.try_into()
-					.expect("Technical Committee policy_id longer than expected"),
+				self.technical_committee_policy_id.clone(),
 			);
 		}
 	}
@@ -147,10 +129,6 @@ pub mod pallet {
 		TooManyMembers,
 		/// Membership set is empty
 		EmptyMembers,
-		/// The contract Address provided has a wrong length
-		InvalidAddress,
-		/// The Policy Id provided has a wrong length
-		InvalidPolicyId,
 	}
 
 	#[pallet::hooks]
@@ -258,9 +236,7 @@ pub mod pallet {
 			address: MainchainAddress,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			MainChainCouncilAddress::<T>::set(
-				address.clone().try_into().map_err(|_| Error::<T>::InvalidAddress)?,
-			);
+			MainChainCouncilAddress::<T>::set(address);
 
 			Ok(())
 		}
@@ -273,9 +249,7 @@ pub mod pallet {
 			address: MainchainAddress,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			MainChainTechnicalCommitteeAddress::<T>::set(
-				address.clone().try_into().map_err(|_| Error::<T>::InvalidAddress)?,
-			);
+			MainChainTechnicalCommitteeAddress::<T>::set(address);
 
 			Ok(())
 		}
@@ -285,9 +259,7 @@ pub mod pallet {
 		#[pallet::weight((T::WeightInfo::set_council_policy_id(), DispatchClass::Operational))]
 		pub fn set_council_policy_id(origin: OriginFor<T>, policy_id: PolicyId) -> DispatchResult {
 			ensure_root(origin)?;
-			MainChainCouncilPolicyId::<T>::set(
-				policy_id.clone().try_into().map_err(|_| Error::<T>::InvalidPolicyId)?,
-			);
+			MainChainCouncilPolicyId::<T>::set(policy_id);
 
 			Ok(())
 		}
@@ -300,9 +272,7 @@ pub mod pallet {
 			policy_id: PolicyId,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			MainChainTechnicalCommitteePolicyId::<T>::set(
-				policy_id.clone().try_into().map_err(|_| Error::<T>::InvalidPolicyId)?,
-			);
+			MainChainTechnicalCommitteePolicyId::<T>::set(policy_id);
 
 			Ok(())
 		}
