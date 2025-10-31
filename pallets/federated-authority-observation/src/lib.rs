@@ -27,6 +27,7 @@ use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER, InherentError,
 };
 pub use pallet::*;
+use sidechain_domain::{MainchainAddress, PolicyId};
 use sp_std::vec::Vec;
 
 #[cfg(test)]
@@ -47,6 +48,23 @@ pub mod pallet {
 
 	/// The in-code storage version.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+
+	#[pallet::storage]
+	/// Script address for managing Council members on Cardano
+	pub type MainChainCouncilAddress<T: Config> = StorageValue<_, MainchainAddress, ValueQuery>;
+
+	#[pallet::storage]
+	/// Policy ID for Council members on Cardano
+	pub type MainChainCouncilPolicyId<T: Config> = StorageValue<_, PolicyId, ValueQuery>;
+
+	#[pallet::storage]
+	/// Script address for managing Council members on Cardano
+	pub type MainChainTechnicalCommitteeAddress<T: Config> =
+		StorageValue<_, MainchainAddress, ValueQuery>;
+
+	#[pallet::storage]
+	/// Policy ID for Technical Committee members on Cardano
+	pub type MainChainTechnicalCommitteePolicyId<T: Config> = StorageValue<_, PolicyId, ValueQuery>;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -70,6 +88,29 @@ pub mod pallet {
 	#[pallet::storage_version(STORAGE_VERSION)]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
+
+	#[pallet::genesis_config]
+	#[derive(frame_support::DefaultNoBound)]
+	pub struct GenesisConfig<T: Config> {
+		pub council_address: MainchainAddress,
+		pub council_policy_id: PolicyId,
+		pub technical_committee_address: MainchainAddress,
+		pub technical_committee_policy_id: PolicyId,
+		#[serde(skip)]
+		pub _config: core::marker::PhantomData<T>,
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+		fn build(&self) {
+			MainChainCouncilAddress::<T>::set(self.council_address.clone());
+			MainChainCouncilPolicyId::<T>::set(self.council_policy_id.clone());
+			MainChainTechnicalCommitteeAddress::<T>::set(self.technical_committee_address.clone());
+			MainChainTechnicalCommitteePolicyId::<T>::set(
+				self.technical_committee_policy_id.clone(),
+			);
+		}
+	}
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -185,6 +226,55 @@ pub mod pallet {
 			}
 
 			Ok(PostDispatchInfo { actual_weight: Some(actual_weight), pays_fee: Pays::No })
+		}
+
+		/// Changes the mainchain address for the Council
+		#[pallet::call_index(1)]
+		#[pallet::weight((T::WeightInfo::set_council_address(), DispatchClass::Operational))]
+		pub fn set_council_address(
+			origin: OriginFor<T>,
+			address: MainchainAddress,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainCouncilAddress::<T>::set(address);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain address for the Technical Committee
+		#[pallet::call_index(2)]
+		#[pallet::weight((T::WeightInfo::set_technical_committee_address(), DispatchClass::Operational))]
+		pub fn set_technical_committee_address(
+			origin: OriginFor<T>,
+			address: MainchainAddress,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainTechnicalCommitteeAddress::<T>::set(address);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain policy id for the Council
+		#[pallet::call_index(3)]
+		#[pallet::weight((T::WeightInfo::set_council_policy_id(), DispatchClass::Operational))]
+		pub fn set_council_policy_id(origin: OriginFor<T>, policy_id: PolicyId) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainCouncilPolicyId::<T>::set(policy_id);
+
+			Ok(())
+		}
+
+		/// Changes the mainchain policy id for the Technical Committee
+		#[pallet::call_index(4)]
+		#[pallet::weight((T::WeightInfo::set_technical_committee_policy_id(), DispatchClass::Operational))]
+		pub fn set_technical_committee_policy_id(
+			origin: OriginFor<T>,
+			policy_id: PolicyId,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainTechnicalCommitteePolicyId::<T>::set(policy_id);
+
+			Ok(())
 		}
 	}
 

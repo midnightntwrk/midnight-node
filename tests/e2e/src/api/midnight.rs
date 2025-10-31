@@ -4,6 +4,7 @@ use blake2::Blake2bVar;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
 	c_night_observation::{self},
+	federated_authority_observation,
 };
 use rand::RngCore;
 use subxt::{blocks::ExtrinsicEvents, OnlineClient, SubstrateConfig};
@@ -134,5 +135,60 @@ pub async fn poll_utxo_owners_until_change(
 			return Ok(current_value);
 		}
 		sleep(Duration::from_millis(poll_interval_ms)).await;
+	}
+}
+
+pub async fn subscribe_to_federated_authority_events() -> Result<(), Box<dyn std::error::Error>> {
+	println!("Subscribing to federated authority observation events");
+	let url = load_config().node_url;
+	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&url).await?;
+
+	let mut blocks_sub = api.blocks().subscribe_finalized().await?;
+
+	use tokio::time::{timeout, Duration};
+	let result = timeout(Duration::from_secs(120), async {
+		while let Some(block) = blocks_sub.next().await {
+			let block = block?;
+			let block_number = block.header().number;
+			println!("Checking block #{block_number} for federated authority events");
+
+			let events = block.events().await?;
+
+			// Check for CouncilMembersReset event
+			let council_reset = events
+				.find::<federated_authority_observation::events::CouncilMembersReset>()
+				.flatten()
+				.next();
+
+			// Check for TechnicalCommitteeMembersReset event
+			let tech_committee_reset = events
+				.find::<federated_authority_observation::events::TechnicalCommitteeMembersReset>()
+				.flatten()
+				.next();
+
+			if let Some(event) = &council_reset {
+				println!(
+					"✓ Found CouncilMembersReset event with {} members",
+					event.members.0.len()
+				);
+			}
+			if let Some(event) = &tech_committee_reset {
+				println!(
+					"✓ Found TechnicalCommitteeMembersReset event with {} members",
+					event.members.0.len()
+				);
+			}
+
+			if council_reset.is_some() && tech_committee_reset.is_some() {
+				return Ok(());
+			}
+		}
+		Err("Did not find all federated authority events".into())
+	})
+	.await;
+
+	match result {
+		Ok(res) => res,
+		Err(_) => Err("Timeout waiting for federated authority events".into()),
 	}
 }

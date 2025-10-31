@@ -12,13 +12,14 @@
 // limitations under the License.
 
 use crate::{Error, Event, mock::*};
+use core::str::FromStr;
 use frame_support::inherent::ProvideInherent;
 use frame_support::{BoundedVec, assert_noop, assert_ok};
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
 };
 use parity_scale_codec::Encode;
-use sidechain_domain::McBlockHash;
+use sidechain_domain::{MainchainAddress, McBlockHash, PolicyId};
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
 
@@ -621,5 +622,223 @@ fn membership_handler_integration_test() {
 			"Continuing TC member {} should still have 1 sufficient",
 			continuing_tc_member
 		);
+	});
+}
+
+#[test]
+fn set_council_address_works() {
+	new_test_ext().execute_with(|| {
+		let address = "addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha";
+		let mainchain_address = MainchainAddress::from_str(address).expect("Valid address");
+
+		assert_ok!(FederatedAuthorityObservation::set_council_address(
+			frame_system::RawOrigin::Root.into(),
+			mainchain_address.clone()
+		));
+
+		// Verify the address was set
+		assert_eq!(crate::MainChainCouncilAddress::<Test>::get(), mainchain_address);
+	});
+}
+
+#[test]
+fn set_council_address_requires_root() {
+	new_test_ext().execute_with(|| {
+		let address = "addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha";
+		let mainchain_address = MainchainAddress::from_str(address).expect("Valid address");
+
+		// Should fail with signed origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_council_address(
+				frame_system::RawOrigin::Signed(1).into(),
+				mainchain_address.clone()
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+
+		// Should fail with None origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_council_address(
+				frame_system::RawOrigin::None.into(),
+				mainchain_address
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+	});
+}
+
+#[test]
+fn set_technical_committee_address_works() {
+	new_test_ext().execute_with(|| {
+		let address = "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2";
+		let mainchain_address = MainchainAddress::from_str(address).expect("Valid address");
+
+		assert_ok!(FederatedAuthorityObservation::set_technical_committee_address(
+			frame_system::RawOrigin::Root.into(),
+			mainchain_address.clone()
+		));
+
+		// Verify the address was set
+		assert_eq!(crate::MainChainTechnicalCommitteeAddress::<Test>::get(), mainchain_address);
+	});
+}
+
+#[test]
+fn set_technical_committee_address_requires_root() {
+	new_test_ext().execute_with(|| {
+		let address = "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2";
+		let mainchain_address = MainchainAddress::from_str(address).expect("Valid address");
+
+		// Should fail with signed origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_technical_committee_address(
+				frame_system::RawOrigin::Signed(1).into(),
+				mainchain_address.clone()
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+
+		// Should fail with None origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_technical_committee_address(
+				frame_system::RawOrigin::None.into(),
+				mainchain_address
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+	});
+}
+
+#[test]
+fn set_council_policy_id_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id_str = "8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b";
+		let policy_id = PolicyId::from_str(policy_id_str).expect("Valid policy ID");
+
+		assert_ok!(FederatedAuthorityObservation::set_council_policy_id(
+			frame_system::RawOrigin::Root.into(),
+			policy_id.clone()
+		));
+
+		// Verify the policy ID was set
+		assert_eq!(crate::MainChainCouncilPolicyId::<Test>::get(), policy_id);
+	});
+}
+
+#[test]
+fn set_council_policy_id_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id_str = "8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b";
+		let policy_id = PolicyId::from_str(policy_id_str).expect("Valid policy ID");
+
+		// Should fail with signed origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_council_policy_id(
+				frame_system::RawOrigin::Signed(1).into(),
+				policy_id.clone()
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+
+		// Should fail with None origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_council_policy_id(
+				frame_system::RawOrigin::None.into(),
+				policy_id
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+	});
+}
+
+#[test]
+fn set_technical_committee_policy_id_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id_str = "f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28";
+		let policy_id = PolicyId::from_str(policy_id_str).expect("Valid policy ID");
+
+		assert_ok!(FederatedAuthorityObservation::set_technical_committee_policy_id(
+			frame_system::RawOrigin::Root.into(),
+			policy_id.clone()
+		));
+
+		// Verify the policy ID was set
+		assert_eq!(crate::MainChainTechnicalCommitteePolicyId::<Test>::get(), policy_id);
+	});
+}
+
+#[test]
+fn set_technical_committee_policy_id_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id_str = "f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28";
+		let policy_id = PolicyId::from_str(policy_id_str).expect("Valid policy ID");
+
+		// Should fail with signed origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_technical_committee_policy_id(
+				frame_system::RawOrigin::Signed(1).into(),
+				policy_id.clone()
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+
+		// Should fail with None origin
+		assert_noop!(
+			FederatedAuthorityObservation::set_technical_committee_policy_id(
+				frame_system::RawOrigin::None.into(),
+				policy_id
+			),
+			sp_runtime::DispatchError::BadOrigin
+		);
+	});
+}
+
+#[test]
+fn set_council_address_can_be_updated() {
+	new_test_ext().execute_with(|| {
+		let address1 = "addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha";
+		let address2 = "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2";
+
+		let mainchain_address1 = MainchainAddress::from_str(address1).expect("Valid address");
+		let mainchain_address2 = MainchainAddress::from_str(address2).expect("Valid address");
+
+		// Set initial address
+		assert_ok!(FederatedAuthorityObservation::set_council_address(
+			frame_system::RawOrigin::Root.into(),
+			mainchain_address1.clone()
+		));
+		assert_eq!(crate::MainChainCouncilAddress::<Test>::get(), mainchain_address1);
+
+		// Update to new address
+		assert_ok!(FederatedAuthorityObservation::set_council_address(
+			frame_system::RawOrigin::Root.into(),
+			mainchain_address2.clone()
+		));
+		assert_eq!(crate::MainChainCouncilAddress::<Test>::get(), mainchain_address2);
+	});
+}
+
+#[test]
+fn set_council_policy_id_can_be_updated() {
+	new_test_ext().execute_with(|| {
+		let policy_id_str1 = "8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b";
+		let policy_id_str2 = "f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28";
+
+		let policy_id1 = PolicyId::from_str(policy_id_str1).expect("Valid policy ID");
+		let policy_id2 = PolicyId::from_str(policy_id_str2).expect("Valid policy ID");
+
+		// Set initial policy ID
+		assert_ok!(FederatedAuthorityObservation::set_council_policy_id(
+			frame_system::RawOrigin::Root.into(),
+			policy_id1.clone()
+		));
+		assert_eq!(crate::MainChainCouncilPolicyId::<Test>::get(), policy_id1);
+
+		// Update to new policy ID
+		assert_ok!(FederatedAuthorityObservation::set_council_policy_id(
+			frame_system::RawOrigin::Root.into(),
+			policy_id2.clone()
+		));
+		assert_eq!(crate::MainChainCouncilPolicyId::<Test>::get(), policy_id2);
 	});
 }
