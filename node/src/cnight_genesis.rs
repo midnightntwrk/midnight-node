@@ -1,7 +1,7 @@
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos, StakeAddressBytes,
-	TimestampUnixMillis,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, INHERENT_IDENTIFIER,
+	ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
@@ -49,7 +49,7 @@ fn create_inherent(
 }
 
 struct PalletExecResult {
-	mappings: BTreeMap<StakeAddressBytes, Vec<MappingEntry>>,
+	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
 	utxo_owners: BTreeMap<[u8; 32], Vec<u8>>,
 	next_cardano_position: CardanoPosition,
 	system_tx: Option<Vec<u8>>,

@@ -21,8 +21,8 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, DustAddressBytes, INHERENT_IDENTIFIER, MidnightObservationTokenMovement,
-	StakeAddressBytes, TimestampUnixMillis,
+	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
+	MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -106,11 +106,11 @@ fn dust_address() -> [u8; 33] {
 }
 
 // Onchain cardano address
-fn cardano_address(input: &[u8]) -> StakeAddressBytes {
+fn cardano_address(input: &[u8]) -> CardanoRewardAddressBytes {
 	testbytes(input, Some(29))
 }
 
-fn test_wallet_pairing() -> (StakeAddressBytes, DustAddressBytes) {
+fn test_wallet_pairing() -> (CardanoRewardAddressBytes, DustPublicKeyBytes) {
 	(cardano_address(b"cardano1"), dust_address())
 }
 
@@ -467,7 +467,7 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored: Vec<DustAddressBytes> = Mappings::<Test>::get(cardano_address)
+		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_address)
 			.into_iter()
 			.map(|r| r.dust_address)
 			.collect();

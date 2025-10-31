@@ -60,7 +60,7 @@ pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::MidnightSystemTransactionExecutor;
 	use midnight_primitives_cnight_observation::{
-		CARDANO_BECH32_ADDRESS_MAX_LENGTH, DustAddressBytes, StakeAddressBytes,
+		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoRewardAddressBytes, DustPublicKeyBytes,
 	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -95,23 +95,23 @@ pub mod pallet {
 	)]
 	pub struct MappingEntry {
 		#[serde(with = "serde_arrays")]
-		pub cardano_address: StakeAddressBytes,
+		pub cardano_address: CardanoRewardAddressBytes,
 		#[serde(with = "serde_arrays")]
-		pub dust_address: DustAddressBytes,
+		pub dust_address: DustPublicKeyBytes,
 		pub utxo_id: [u8; 32],
 		pub utxo_index: u16,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
 	pub struct Registration {
-		pub cardano_address: StakeAddressBytes,
-		pub dust_address: DustAddressBytes,
+		pub cardano_address: CardanoRewardAddressBytes,
+		pub dust_address: DustPublicKeyBytes,
 	}
 
 	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
 	pub struct Deregistration {
-		pub cardano_address: StakeAddressBytes,
-		pub dust_address: DustAddressBytes,
+		pub cardano_address: CardanoRewardAddressBytes,
+		pub dust_address: DustPublicKeyBytes,
 	}
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -168,12 +168,12 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type Mappings<T: Config> =
-		StorageMap<_, Blake2_128Concat, StakeAddressBytes, Vec<MappingEntry>, ValueQuery>;
+		StorageMap<_, Blake2_128Concat, CardanoRewardAddressBytes, Vec<MappingEntry>, ValueQuery>;
 
 	// TODO: Read from ledger state directly ?
 	#[pallet::storage]
 	pub type UtxoOwners<T: Config> =
-		StorageMap<_, Blake2_128Concat, T::Hash, DustAddressBytes, OptionQuery>;
+		StorageMap<_, Blake2_128Concat, T::Hash, DustPublicKeyBytes, OptionQuery>;
 
 	#[pallet::storage]
 	// The next Cardano position to look for new transactions
@@ -262,7 +262,7 @@ pub mod pallet {
 			}
 
 			for (k, v) in &self.config.utxo_owners {
-				let v: DustAddressBytes =
+				let v: DustPublicKeyBytes =
 					v.clone().try_into().expect("DustAddress longer than expected");
 				UtxoOwners::<T>::insert(H256(*k), v);
 			}
@@ -317,13 +317,13 @@ pub mod pallet {
 				.expect("Token transfer data not encoded correctly")
 		}
 
-		pub fn get_registration(wallet: &StakeAddressBytes) -> Option<DustAddressBytes> {
+		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
 			let mappings = Mappings::<T>::get(wallet);
 			if mappings.len() == 1 { Some(mappings[0].dust_address) } else { None }
 		}
 
 		// Check if any form of a registration could be considered valid as of now
-		pub fn is_registered(utxo_holder: &StakeAddressBytes) -> bool {
+		pub fn is_registered(utxo_holder: &CardanoRewardAddressBytes) -> bool {
 			let mappings = Mappings::<T>::get(utxo_holder);
 			// For a registration to be valid, there can only be one stored
 			if mappings.len() == 1 {
@@ -338,7 +338,7 @@ pub mod pallet {
 		fn handle_registration(
 			header: &ObservedUtxoHeader,
 			data: RegistrationData,
-		) -> Option<(StakeAddressBytes, Vec<MappingEntry>)> {
+		) -> Option<(CardanoRewardAddressBytes, Vec<MappingEntry>)> {
 			let RegistrationData { cardano_address, dust_address } = data;
 
 			let new_reg = MappingEntry {
