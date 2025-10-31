@@ -69,7 +69,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		end.block_hash = McBlockHash(rand::random());
 
 		let utxos =
-			if start.block_number.is_multiple_of(5) { mock_utxos(&start) } else { Vec::new() };
+			if start.block_number.is_multiple_of(5) { mock_utxos(start) } else { Vec::new() };
 
 		Ok(ObservedUtxos { start: start.clone(), end, utxos })
 	}
