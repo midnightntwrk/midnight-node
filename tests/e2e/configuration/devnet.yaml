@@ -1,0 +1,4 @@
+ogmios_client:
+  base_url: "wss://ogmios.devnet.midnight.network"
+  timeout_seconds: 5
+  network: "preview"
