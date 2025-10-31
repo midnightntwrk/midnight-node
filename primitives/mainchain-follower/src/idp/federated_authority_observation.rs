@@ -55,13 +55,13 @@ impl FederatedAuthorityInherentDataProvider {
 		let council = AuthBodyConfig {
 			address: council_address,
 			policy_id: council_policy_id,
-			members: vec![], // TODO: Federated Authority Observation - populate with current set from API
+			members: vec![],
 		};
 
 		let technical_committee = AuthBodyConfig {
 			address: technical_committee_address,
 			policy_id: technical_committee_policy_id,
-			members: vec![], // TODO: Federated Authority Observation - populate with current set from API
+			members: vec![],
 		};
 
 		let config = FederatedAuthorityObservationConfig { council, technical_committee };

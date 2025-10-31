@@ -44,39 +44,6 @@ pub fn load_cbor(path: &str) -> String {
 	}
 }
 
-/// Add CBOR wrapper to a script for use in transactions
-/// Cardano requires double CBOR encoding: the script itself is CBOR-encoded,
-/// then that is wrapped in another CBOR bytestring
-pub fn wrap_script_cbor(inner_cbor_hex: &str) -> String {
-	// Decode the inner CBOR hex to bytes
-	let inner_bytes = hex::decode(inner_cbor_hex).expect("Invalid hex string");
-
-	// CBOR encode as bytestring: 0x58 for bytestring with 1-byte length prefix
-	// or 0x59 for 2-byte length, 0x5a for 4-byte length
-	let len = inner_bytes.len();
-	let mut wrapped = Vec::new();
-
-	if len <= 23 {
-		// Tiny bytestring: length in the type byte itself (0x40 + len)
-		wrapped.push(0x40 + len as u8);
-	} else if len <= 255 {
-		// Short bytestring: 0x58 + 1-byte length
-		wrapped.push(0x58);
-		wrapped.push(len as u8);
-	} else if len <= 65535 {
-		// Medium bytestring: 0x59 + 2-byte length (big-endian)
-		wrapped.push(0x59);
-		wrapped.extend_from_slice(&(len as u16).to_be_bytes());
-	} else {
-		// Large bytestring: 0x5a + 4-byte length (big-endian)
-		wrapped.push(0x5a);
-		wrapped.extend_from_slice(&(len as u32).to_be_bytes());
-	}
-
-	wrapped.extend_from_slice(&inner_bytes);
-	hex::encode(wrapped)
-}
-
 pub fn load_script_hash(path: &str) -> String {
 	let file_content = std::fs::read_to_string(path).expect("Failed to read file");
 	match serde_json::from_str::<serde_json::Value>(&file_content) {
@@ -108,7 +75,7 @@ pub fn get_council_forever_cbor() -> String {
 	let cfg = load_config();
 	let inner_cbor = load_cbor(&cfg.council_forever_file);
 	// V3 scripts from Aiken need double CBOR encoding
-	wrap_script_cbor(&inner_cbor)
+	whisky::apply_double_cbor_encoding(&inner_cbor).expect("Failed to encode council script")
 }
 
 pub fn get_council_forever_policy_id() -> String {
@@ -127,7 +94,7 @@ pub fn get_tech_auth_forever_cbor() -> String {
 	let cfg = load_config();
 	let inner_cbor = load_cbor(&cfg.tech_auth_forever_file);
 	// V3 scripts from Aiken need double CBOR encoding
-	wrap_script_cbor(&inner_cbor)
+	whisky::apply_double_cbor_encoding(&inner_cbor).expect("Failed to encode tech auth script")
 }
 
 pub fn get_tech_auth_forever_policy_id() -> String {
