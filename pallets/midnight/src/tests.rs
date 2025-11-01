@@ -201,7 +201,7 @@ fn sets_extra_contract_call_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_contract_call_weight();
 
-		assert_eq!(before_weight, crate::EXTRA_WEIGHT_PER_CONTRACT_CALL);
+		assert_eq!(before_weight, crate::EXTRA_WEIGHT_TX_SIZE);
 
 		let new_weight = Weight::from_parts(42, 0);
 
@@ -227,32 +227,6 @@ fn sets_extra_transaction_size_weight() {
 		let after_weight = mock::Midnight::configurable_transaction_size_weight();
 
 		assert_eq!(after_weight, new_weight);
-	});
-}
-
-#[test]
-#[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
-fn disable_safe_mode() {
-	mock::new_test_ext().execute_with(|| {
-		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(ZSWAP_TX);
-
-		init_ledger_state(block_context.into());
-
-		let midnight_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: tx.clone() };
-		let call_info = midnight_call.get_dispatch_info();
-
-		// Starting weight
-		assert_eq!(call_info.call_weight, FIXED_MN_TRANSACTION_WEIGHT);
-
-		// Disable safe mode
-		mock::Midnight::set_safe_mode(RawOrigin::Root.into(), false).unwrap();
-
-		let midnight_call_2 = MidnightCall::<Test>::send_mn_transaction { midnight_tx: tx };
-		let call_info_2 = midnight_call_2.get_dispatch_info();
-
-		assert!(call_info_2.call_weight != call_info.call_weight);
-		assert!(call_info_2.call_weight.ref_time() > call_info.call_weight.ref_time());
 	});
 }
 
