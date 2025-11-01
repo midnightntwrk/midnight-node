@@ -65,7 +65,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight(ConfigurableSystemTxWeight::<T>::get())]
+		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
 		pub fn send_mn_system_transaction(
 			origin: OriginFor<T>,
 			midnight_system_tx: Vec<u8>,

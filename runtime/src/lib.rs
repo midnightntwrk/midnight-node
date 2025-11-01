@@ -790,7 +790,6 @@ impl pallet_block_rewards::Config for Runtime {
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
-	type WeightInfo = pallet_midnight::weights::SubstrateWeight<Runtime>;
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }

@@ -201,7 +201,7 @@ fn sets_extra_contract_call_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_contract_call_weight();
 
-		assert_eq!(before_weight, crate::EXTRA_WEIGHT_PER_CONTRACT_CALL);
+		assert_eq!(before_weight, crate::EXTRA_WEIGHT_TX_SIZE);
 
 		let new_weight = Weight::from_parts(42, 0);
 

@@ -19,8 +19,6 @@
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
-pub mod weights;
-
 mod runtime_api;
 pub use runtime_api::*;
 
@@ -41,7 +39,6 @@ pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::weights::WeightInfo;
 	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
@@ -98,8 +95,7 @@ pub mod pallet {
 	#[cfg(hardfork_test)]
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(100);
 
-	pub const FIXED_MN_TRANSACTION_WEIGHT: Weight = Weight::from_parts(100_000_000_000, 0);
-	pub const EXTRA_WEIGHT_PER_CONTRACT_CALL: Weight = Weight::from_parts(0, 0);
+	// Manually add ~1% of block weight
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
 	#[pallet::pallet]
@@ -125,9 +121,6 @@ pub mod pallet {
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_timestamp::Config {
-		/// Information on runtime weights.
-		type WeightInfo: WeightInfo;
-
 		/// Block reward getter.
 		type BlockReward: Get<(u128, Option<LedgerTypes::Hash>)>;
 
@@ -153,16 +146,6 @@ pub mod pallet {
 
 	#[pallet::type_value]
 	pub fn DefaultWeight() -> Weight {
-		FIXED_MN_TRANSACTION_WEIGHT
-	}
-
-	#[pallet::type_value]
-	pub fn DefaultContractCallWeight() -> Weight {
-		EXTRA_WEIGHT_PER_CONTRACT_CALL
-	}
-
-	#[pallet::type_value]
-	pub fn DefaultTransactionSizeWeight() -> Weight {
 		EXTRA_WEIGHT_TX_SIZE
 	}
 
@@ -177,8 +160,7 @@ pub mod pallet {
 
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_contract_call_weight)]
-	pub type ConfigurableContractCallWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultContractCallWeight>;
+	pub type ConfigurableContractCallWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
@@ -186,8 +168,11 @@ pub mod pallet {
 		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
-	pub type ConfigurableHookFnWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
+	pub type ConfigurableOnInitializeWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
+
+	#[pallet::storage]
+	pub type ConfigurableOnRuntimeUpgradeWeight<T> =
+		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
@@ -313,8 +298,7 @@ pub mod pallet {
 
 			LedgerApi::pre_fetch_storage(&state_key).expect("Failed to pre-fetch storage");
 
-			<T as Config>::WeightInfo::on_finalize()
-				.saturating_add(ConfigurableHookFnWeight::<T>::get())
+			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
@@ -364,7 +348,7 @@ pub mod pallet {
 				LedgerApi::set_default_storage();
 			}
 			// TODO: Benchmark Weight in case of a real hard-fork
-			Weight::zero().saturating_add(ConfigurableHookFnWeight::<T>::get())
+			Weight::zero().saturating_add(ConfigurableOnRuntimeUpgradeWeight::<T>::get())
 		}
 	}
 
