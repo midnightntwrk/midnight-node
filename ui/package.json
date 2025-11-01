@@ -45,20 +45,20 @@
     "stream-browserify": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.29",
+    "@types/node": "22.15.30",
     "@types/react": "19.1.10",
     "@types/react-dom": "19.1.7",
-    "@vitejs/plugin-react": "^5.0.3",
-    "eslint": "^9.35.0",
-    "eslint-config-prettier": "^8.10.1",
-    "eslint-plugin-react": "^7.37.5",
+    "@vitejs/plugin-react": "5.0.3",
+    "eslint": "9.35.0",
+    "eslint-config-prettier": "8.10.2",
+    "eslint-plugin-react": "7.37.5",
     "gh-pages": "6.3.0",
-    "jsdom": "^27.0.0",
+    "jsdom": "27.0.0",
     "prettier": "2.8.8",
-    "typescript": "^4.0.0",
+    "typescript": "4.9.5",
     "vite": "^6.3.6",
-    "vitest": "^3.2.4",
-    "webpack": "^5.101.0"
+    "vitest": "3.2.4",
+    "webpack": "5.101.0"
   },
   "resolutions": {
     "eslint-plugin-jsx-a11y": "6.10.2"
