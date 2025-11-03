@@ -96,7 +96,7 @@ pub mod pallet {
 	pub struct MappingEntry {
 		pub cardano_reward_address: CardanoRewardAddressBytes,
 		pub dust_public_key: DustPublicKeyBytes,
-		pub utxo_id: [u8; 32],
+		pub utxo_tx_hash: [u8; 32],
 		pub utxo_index: u16,
 	}
 
@@ -335,7 +335,7 @@ pub mod pallet {
 			let new_reg = MappingEntry {
 				cardano_reward_address,
 				dust_public_key,
-				utxo_id: header.utxo_tx_hash.0,
+				utxo_tx_hash: header.utxo_tx_hash.0,
 				utxo_index: header.utxo_index.0,
 			};
 
@@ -360,7 +360,7 @@ pub mod pallet {
 			let reg_entry = MappingEntry {
 				cardano_reward_address,
 				dust_public_key,
-				utxo_id: header.utxo_tx_hash.0,
+				utxo_tx_hash: header.utxo_tx_hash.0,
 				utxo_index: header.utxo_index.0,
 			};
 
