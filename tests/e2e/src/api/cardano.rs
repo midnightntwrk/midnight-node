@@ -7,7 +7,7 @@ use ogmios_client::{
 use std::fs;
 use std::time::Duration;
 use whisky::csl::*;
-use whisky::data::constr0;
+use whisky::data::{constr0, constr1};
 use whisky::*;
 
 pub async fn find_utxo_by_tx_id(address: &str, tx_id: &str) -> Option<OgmiosUtxo> {
@@ -113,19 +113,35 @@ pub async fn send(address: &str, assets: Vec<Asset>) -> String {
 }
 
 pub async fn register(
-	cardano_address: &str,
 	midnight_address_hex: &str,
 	signing_wallet: &Wallet,
 	tx_in: &OgmiosUtxo,
 	collateral_utxo: &OgmiosUtxo,
 ) -> [u8; 32] {
 	let validator_address = get_mapping_validator_address();
-	let cardano_address_hex = Address::from_bech32(cardano_address).unwrap().to_hex();
-	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": [{ "bytes": cardano_address_hex }, { "bytes": midnight_address_hex }]})).unwrap();
+	let datum = serde_json::to_string(&serde_json::json!(
+		{
+			"constructor": 0,
+			"fields": [
+				{
+					"constructor": 0,
+					"fields": [
+						{
+							"bytes": &signing_wallet.account.public_key.hash().to_hex()
+						}
+					]
+				},
+				{
+					"bytes": midnight_address_hex
+				}
+			]
+		}
+	))
+	.unwrap();
 	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
 	let auth_token_policy_id = get_auth_token_policy_id();
 	let send_assets = vec![
-		Asset::new_from_str("lovelace", "150000000"),
+		Asset::new_from_str("lovelace", "2000000"),
 		Asset::new_from_str(&auth_token_policy_id, "1"),
 	];
 	let cfg = load_config();
@@ -150,14 +166,15 @@ pub async fn register(
 		)
 		.tx_out(&validator_address, &send_assets)
 		.tx_out_inline_datum_value(&WData::JSON(datum))
-		.mint_plutus_script_v2()
+		.mint_plutus_script_v3()
 		.mint(1, &auth_token_policy_id, "")
 		.minting_script(&minting_script)
 		.mint_redeemer_value(&WRedeemer {
 			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
-			ex_units: Budget { mem: 376570, steps: 94156294 },
+			ex_units: Budget { mem: 14000000, steps: 10000000000 },
 		})
 		.change_address(&payment_addr)
+		.required_signer_hash(&signing_wallet.account.public_key.hash().to_hex())
 		.complete_sync(None)
 		.unwrap();
 
@@ -197,11 +214,11 @@ pub async fn deregister(
 	let datum = serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
 	let payment_addr = get_cardano_address_as_bech32(signing_wallet);
 	let auth_token_policy_id = get_auth_token_policy_id();
-	let send_assets = vec![Asset::new_from_str("lovelace", "20000000")];
+	let send_assets = vec![Asset::new_from_str("lovelace", "2000000")];
 	let cfg = load_config();
 	let minting_script = load_cbor(&cfg.auth_token_policy_file);
 	let network = Network::Custom(get_local_env_cost_models());
-	let mapping_validator_cbor = &load_cbor(&cfg.mapping_validator_policy_file);
+	let mapping_validator_cbor = &load_cbor(&cfg.auth_token_policy_file);
 	let register_asset_tx_vector = build_asset_vector(register_tx);
 	println!("Register tx assets: {:?}", register_asset_tx_vector);
 	let script_hash = whisky::get_script_hash(mapping_validator_cbor, LanguageVersion::V2);
@@ -217,7 +234,7 @@ pub async fn deregister(
 			&build_asset_vector(tx_in),
 			&payment_addr,
 		)
-		.spending_plutus_script_v2()
+		.spending_plutus_script_v3()
 		.tx_in(
 			&hex::encode(register_tx.transaction.id),
 			register_tx.index.into(),
@@ -237,14 +254,15 @@ pub async fn deregister(
 			&payment_addr,
 		)
 		.tx_out(&payment_addr, &send_assets)
-		.mint_plutus_script_v2()
+		.mint_plutus_script_v3()
 		.mint(-1, &auth_token_policy_id, "")
 		.minting_script(&minting_script)
 		.mint_redeemer_value(&WRedeemer {
-			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+			data: WData::JSON(constr1(serde_json::json!([])).to_string()),
 			ex_units: Budget { mem: 3765700, steps: 941562940 },
 		})
 		.change_address(&payment_addr)
+		.required_signer_hash(&signing_wallet.account.public_key.hash().to_hex())
 		.complete_sync(None)?;
 
 	let signed_tx = signing_wallet.sign_tx(&tx_builder.tx_hex())?;

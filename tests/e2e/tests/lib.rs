@@ -11,20 +11,19 @@ async fn register_for_dust_production() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
 	let client = get_ogmios_client().await;
 	let utxos = client.query_utxos(&[bech32_address.clone().into()]).await.unwrap();
 	assert_eq!(utxos.len(), 2, "New wallet should have exactly two UTXOs after funding");
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
@@ -204,6 +203,8 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 		},
 	}
 }
+
+#[tokio::test]
 async fn register_2_cardano_same_dust_address_production() {
 	let first_cardano_wallet = create_wallet();
 	let second_cardano_wallet = create_wallet();
@@ -213,7 +214,7 @@ async fn register_2_cardano_same_dust_address_production() {
 	println!("First Cardano wallet created: {:?}", bech32_address);
 	println!("Second Cardano wallet created: {:?}", second_bech32_address);
 
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering First Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 	println!(
@@ -222,11 +223,11 @@ async fn register_2_cardano_same_dust_address_production() {
 	);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
 	let second_collateral_utxo = make_collateral(&second_bech32_address).await;
-	let assets_second = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets_second = vec![Asset::new_from_str("lovelace", "10000000")];
 	let second_tx_in = fund_wallet(&second_bech32_address, assets_second).await;
 
 	let client = get_ogmios_client().await;
@@ -236,21 +237,14 @@ async fn register_2_cardano_same_dust_address_production() {
 	let second_utxos = client.query_utxos(&[second_bech32_address.clone().into()]).await.unwrap();
 	assert_eq!(second_utxos.len(), 2, "Second wallet should have exactly two UTXOs after funding");
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &first_cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &first_cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!(
 		"Registration transaction for the first cardano submitted with hash: {:?}",
 		register_tx_id
 	);
 
-	let second_register_tx_id = register(
-		&second_bech32_address,
-		&dust_hex,
-		&second_cardano_wallet,
-		&second_tx_in,
-		&second_collateral_utxo,
-	)
-	.await;
+	let second_register_tx_id =
+		register(&dust_hex, &second_cardano_wallet, &second_tx_in, &second_collateral_utxo).await;
 	println!(
 		"Registration transaction for second cardano submitted with hash: {:?}",
 		register_tx_id
@@ -353,15 +347,14 @@ async fn cnight_produces_dust() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let minting_script = load_cbor(&load_config().cnight_token_policy_file);
@@ -402,16 +395,15 @@ async fn deregister_from_dust_production() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let validator_address = get_mapping_validator_address();
@@ -477,7 +469,6 @@ async fn deregister_from_dust_production() {
 }
 
 #[tokio::test]
-#[ignore = "See bug https://shielded.atlassian.net/browse/PM-19856"]
 async fn alice_cannot_deregister_bob() {
 	// Create Alice and Bob wallets
 	let alice = create_wallet();
@@ -485,10 +476,10 @@ async fn alice_cannot_deregister_bob() {
 
 	let bob = create_wallet();
 	let bob_bech32 = get_cardano_address_as_bech32(&bob);
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 
 	// Fund Alice and Bob wallets
-	let ada_to_fund = vec![Asset::new_from_str("lovelace", "160000000")];
+	let ada_to_fund = vec![Asset::new_from_str("lovelace", "10000000")];
 	let alice_collateral = make_collateral(&alice_bech32).await;
 	let deregister_tx_in = fund_wallet(&alice_bech32, ada_to_fund.clone()).await;
 
@@ -497,8 +488,7 @@ async fn alice_cannot_deregister_bob() {
 
 	// Bob registers his DUST address
 	println!("Registering Bob wallet {} with DUST address {}", bob_bech32, dust_hex);
-	let register_tx_id =
-		register(&bob_bech32, &dust_hex, &bob, &register_tx_in, &bob_collateral).await;
+	let register_tx_id = register(&dust_hex, &bob, &register_tx_in, &bob_collateral).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	// Find Bob's registration UTXO
