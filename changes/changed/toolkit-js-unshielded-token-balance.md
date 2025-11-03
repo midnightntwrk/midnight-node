@@ -3,5 +3,5 @@
 
 This fixes balance check for unshielded tokens
 
-- PR: 
+- PR: https://github.com/midnightntwrk/midnight-node/pull/207
 - Fixes: https://shielded.atlassian.net/browse/PM-20069
