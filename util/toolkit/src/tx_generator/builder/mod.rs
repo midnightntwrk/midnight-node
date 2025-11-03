@@ -106,7 +106,6 @@ pub struct ContractCallArgs {
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -134,7 +133,6 @@ pub struct ContractMaintenanceArgs {
 	#[arg(long, default_value = "0")]
 	pub counter: u32,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -162,7 +160,6 @@ pub struct BatchesArgs {
 	#[arg(long)]
 	pub concurrency: Option<usize>,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
