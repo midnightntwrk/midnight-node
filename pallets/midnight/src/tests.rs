@@ -185,7 +185,7 @@ fn sets_manual_test_weight() {
 		let call_info = midnight_call.get_dispatch_info();
 
 		// Starting weight
-		assert_eq!(call_info.call_weight, FIXED_MN_TRANSACTION_WEIGHT);
+		assert_eq!(call_info.call_weight, EXTRA_WEIGHT_TX_SIZE);
 
 		mock::Midnight::set_mn_tx_weight(RawOrigin::Root.into(), Weight::from_parts(42, 0))
 			.unwrap();
