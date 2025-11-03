@@ -12,7 +12,7 @@ async fn register_for_dust_production() {
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
 	let dust_hex = new_dust_hex(33);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
@@ -27,7 +27,8 @@ async fn register_for_dust_production() {
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -39,7 +40,8 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == cardano_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		registration.is_some(),
@@ -56,9 +58,9 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == cardano_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
@@ -215,7 +217,7 @@ async fn register_2_cardano_same_dust_address_production() {
 	println!("Second Cardano wallet created: {:?}", second_bech32_address);
 
 	let dust_hex = new_dust_hex(33);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering First Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 	println!(
 		"Registering Second Cardano wallet {} with DUST address {}",
@@ -253,7 +255,8 @@ async fn register_2_cardano_same_dust_address_production() {
 	let cardano_address = get_cardano_address_as_bytes(&first_cardano_wallet);
 	let second_cardano_address = get_cardano_address_as_bytes(&second_cardano_wallet);
 
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -269,7 +272,8 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == cardano_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 
 	let second_registration = second_registration_events
@@ -279,7 +283,8 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == second_cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == second_cardano_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 
 	assert!(
@@ -307,9 +312,9 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == cardano_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 
 	let second_mapping_added = second_registration_events
@@ -319,9 +324,9 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == second_cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == second_register_tx_id
+			map.0.cardano_reward_address.0 == second_cardano_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == second_register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
@@ -384,7 +389,7 @@ async fn cnight_produces_dust() {
 		.expect("Failed to poll UTXO owners");
 	println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
 
-	let utxo_owner_hex = hex::encode(utxo_owner.unwrap());
+	let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0);
 	println!("UTXO owner in hex: {:?}", utxo_owner_hex);
 	assert_eq!(utxo_owner_hex, dust_hex, "UTXO owner does not match DUST address");
 }
@@ -396,7 +401,7 @@ async fn deregister_from_dust_production() {
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
 	let dust_hex = new_dust_hex(33);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
@@ -426,7 +431,8 @@ async fn deregister_from_dust_production() {
 	println!("Deregistration transaction submitted with hash: {:?}", deregister_tx);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let events = subscribe_to_cnight_observation_events(&deregister_tx)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -438,7 +444,8 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::Deregistration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == cardano_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		deregistration.is_some(),
@@ -455,9 +462,9 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingRemoved>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == cardano_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_removed.is_some(),
