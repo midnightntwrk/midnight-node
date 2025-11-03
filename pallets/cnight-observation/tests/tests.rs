@@ -701,7 +701,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key,
-					utxo_tx_hash: reg_header.utxo_tx_hash.0,
+					utxo_tx_hash: reg_header.utxo_tx_hash,
 					utxo_index: reg_header.utxo_index.0,
 				};
 
@@ -771,7 +771,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key,
-					utxo_tx_hash: reg_header.utxo_tx_hash.0,
+					utxo_tx_hash: reg_header.utxo_tx_hash,
 					utxo_index: reg_header.utxo_index.0,
 				};
 
