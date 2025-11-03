@@ -20,8 +20,8 @@ use crate::{
 	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use cardano_serialization_lib::{
-	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, PlutusData, RewardAddress,
-	ScriptHash,
+	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
+	PlutusData, RewardAddress, ScriptHash,
 };
 use derive_new::new;
 use midnight_primitives_cnight_observation::{
@@ -66,6 +66,8 @@ pub enum MidnightCNightObservationDataSourceError {
 	DBQueryError(#[from] sqlx::error::Error),
 	#[error("Error extracting network id from Cardano address")]
 	CardanoNetworkError(String),
+	#[error("Invalid value for mapping validator address")]
+	MappingValidatorInvalidAddress(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -105,12 +107,29 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
-		let cardano_network = Address::from_bech32(&config.mapping_validator_address)
-			.ok()
-			.and_then(|a| a.network_id().ok())
-			.ok_or(MidnightCNightObservationDataSourceError::CardanoNetworkError(
+		let mapping_validator_address = Address::from_bech32(&config.mapping_validator_address)
+			.map_err(|e| {
+				MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+					e.to_string(),
+				)
+			})?;
+
+		let cardano_network = mapping_validator_address.network_id().map_err(|_| {
+			MidnightCNightObservationDataSourceError::CardanoNetworkError(
 				config.mapping_validator_address.clone(),
-			))?;
+			)
+		})?;
+
+		let mapping_validator_policy_id =
+			EnterpriseAddress::from_address(&mapping_validator_address)
+				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+					"Not EnterpriseAddress".to_string(),
+				))?
+				.payment_cred()
+				.to_scripthash()
+				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+					"MappingValidator address does not contain a script hash".to_string(),
+				))?;
 
 		// Get end position from cardano block hash
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
@@ -131,7 +150,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let mut utxos = [
 			self.get_registration_utxos(
 				cardano_network,
+				&mapping_validator_policy_id,
 				&config.mapping_validator_address,
+				&config.auth_token_asset_name,
 				start_position,
 				&end,
 				utxo_capacity,
@@ -433,16 +454,29 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn get_registration_utxos(
 		&self,
 		cardano_network: u8,
+		mapping_validator_policy_id: &ScriptHash,
 		address: &str,
+		auth_asset_name: &str,
 		start: &CardanoPosition,
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_registrations(&self.pool, address, start, end, limit, offset).await?;
+		let rows = get_registrations(
+			&self.pool,
+			address,
+			mapping_validator_policy_id,
+			auth_asset_name,
+			start,
+			end,
+			limit,
+			offset,
+		)
+		.await?;
 
 		let mut utxos = Vec::new();
 

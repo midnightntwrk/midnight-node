@@ -162,6 +162,11 @@ pub mod pallet {
 		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
 
 	#[pallet::storage]
+	// Asset name for auth token used in MappingValidator
+	pub type MainChainAuthTokenAssetName<T: Config> =
+		StorageValue<_, BoundedVec<u8, ConstU32<32>>, ValueQuery>;
+
+	#[pallet::storage]
 	// Script address for executing Glacier Drop redemptions on Cardano
 	pub type MainChainRedemptionValidatorAddress<T: Config> =
 		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
@@ -256,6 +261,16 @@ pub mod pallet {
 					.try_into()
 					.expect("Asset name too long"),
 			));
+
+			MainChainAuthTokenAssetName::<T>::set(
+				self.config
+					.addresses
+					.auth_token_asset_name
+					.as_bytes()
+					.to_vec()
+					.try_into()
+					.expect("Auth Token asset name longer than expected"),
+			);
 
 			for (k, v) in &self.config.mappings {
 				Mappings::<T>::insert(k, v.clone());

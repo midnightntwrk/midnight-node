@@ -46,6 +46,8 @@ pub enum IDPCreationError {
 	McHashError(Box<dyn Error + Send + Sync>),
 	#[error("Onchain state for CNight invalid: {0:?}")]
 	InvalidOnchainStateCNight(String),
+	#[error("Auth token asset name is not a string")]
+	AuthTokenAssetNameNotString,
 }
 
 impl MidnightCNightObservationInherentDataProvider {
@@ -99,12 +101,17 @@ impl MidnightCNightObservationInherentDataProvider {
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
 
-		let (cnight_policy_id, cnight_asset_name) = api.get_native_token_identifier(parent_hash)?;
+		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
+		let auth_token_asset_name: String = api
+			.get_auth_token_asset_name(parent_hash)?
+			.try_into()
+			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
 			redemption_validator_address,
+			auth_token_asset_name,
 			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
 				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
 			})?,

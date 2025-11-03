@@ -20,6 +20,7 @@ use crate::db::{
 	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, RedemptionCreateRow,
 	RedemptionSpendRow, RegistrationRow,
 };
+use cardano_serialization_lib::ScriptHash;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use sidechain_domain::*;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
@@ -121,7 +122,7 @@ WHERE tx_out.address = $1
     AND ma.name = $3
     AND (block.block_no, tx.block_index) >= ($4, $5)
     AND (block.block_no, tx.block_index) < ($6, $7)
-ORDER BY block.block_no, tx.block_index
+ORDER BY block.block_no, tx.block_index, tx_tx_out.hash, tx_out.index
 LIMIT $8 OFFSET $9;
         "#,
 		smart_contract_address,
@@ -138,9 +139,12 @@ LIMIT $8 OFFSET $9;
 	.await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn get_registrations(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
+	mapping_validator_policy_id: &ScriptHash,
+	auth_token_asset_name: &str,
 	start: &CardanoPosition,
 	end: &CardanoPosition,
 	limit: usize,
@@ -160,16 +164,23 @@ SELECT
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _"
 FROM tx_out
+    JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
+    JOIN multi_asset ma ON ma.id = ma_tx_out.ident
     JOIN datum ON tx_out.data_hash = datum.hash
     JOIN tx ON tx.id = tx_out.tx_id
     JOIN block ON block.id = tx.block_id
 WHERE tx_out.address = $1
-    AND (block.block_no, tx.block_index) >= ($2, $3)
-    AND (block.block_no, tx.block_index) < ($4, $5)
+    AND ma.policy = $2
+    AND ma.name = $3
+    AND ma_tx_out.quantity = 1
+    AND (block.block_no, tx.block_index) >= ($4, $5)
+    AND (block.block_no, tx.block_index) < ($6, $7)
 ORDER BY block.block_no, tx.block_index
-LIMIT $6 OFFSET $7;
+LIMIT $8 OFFSET $9;
         "#,
 		smart_contract_address,
+		&mapping_validator_policy_id.to_bytes(),
+		auth_token_asset_name.as_bytes(),
 		start.block_number as i32,
 		start.tx_index_in_block as i32,
 		end.block_number as i32,
