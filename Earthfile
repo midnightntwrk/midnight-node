@@ -95,7 +95,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.90-bookworm
+    FROM rust:1.90-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -148,7 +148,7 @@ rebuild-sqlx:
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
     # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 node:22-bookworm
+    FROM --platform=linux/amd64 node:22-trixie
     # renovate: datasource=npm packageName=aiken-lang/aiken
     ENV aiken_version=1.1.19
     RUN npm install -g @aiken-lang/aiken@${aiken_version}
@@ -303,6 +303,9 @@ rebuild-genesis-state:
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
+    IF [ "$GENERATE_TEST_TXS" = "true" ]
+        COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
+    END
 
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
@@ -418,7 +421,7 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.90-bookworm
+    FROM rust:1.90-trixie
 
     # Install build dependencies
     RUN apt-get update -qq && \
@@ -432,12 +435,12 @@ node-ci-image-single-platform:
         protobuf-compiler \
         pkg-config \
         grcov \
-        openssh-client \
-        gcc-aarch64-linux-gnu \
-        libc6-dev-arm64-cross \
-        gcc-x86-64-linux-gnu \
-        crossbuild-essential-amd64 \
-        libc6-amd64-cross
+        openssh-client
+        # gcc-aarch64-linux-gnu \
+        # libc6-dev-arm64-cross \
+        # gcc-x86-64-linux-gnu \
+        # crossbuild-essential-amd64 \
+        # libc6-amd64-cross
 
     RUN rustup target add wasm32v1-none aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
@@ -487,7 +490,7 @@ prep-no-copy:
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests .
 
@@ -503,7 +506,7 @@ prep:
 # prepares the toolkit-js, in time for testing
 toolkit-js-prep:
     ARG NATIVEARCH
-    FROM node:22-bookworm
+    FROM node:22-trixie
 
     COPY util/toolkit-js toolkit-js
     ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
@@ -569,7 +572,7 @@ check-rust:
 
 # check-nodejs lints any nodejs projects
 check-nodejs:
-    FROM node:22-bookworm
+    FROM node:22-trixie
     RUN corepack enable
     COPY --dir tests/package.json tests/polkadot-api.json tests/.yarnrc.yml tests/yarn.lock tests/.papi/ ./tests
     COPY metadata/static/midnight_metadata.scale metadata/static/midnight_metadata.scale
@@ -582,6 +585,8 @@ check-nodejs:
 check-metadata:
     ARG NODE_IMAGE
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
+
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
           sleep 5 && \
@@ -889,7 +894,7 @@ audit-rust:
 
 audit-npm:
     ARG DIRECTORY
-    FROM node:22-bookworm
+    FROM node:22-trixie
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
@@ -897,7 +902,7 @@ audit-npm:
 
 audit-yarn:
     ARG DIRECTORY
-    FROM node:22-bookworm
+    FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
@@ -999,7 +1004,7 @@ testnet-sync-e2e:
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
     ARG USEROS
-    FROM node:22-bookworm
+    FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY tests/ tests/
     WORKDIR tests

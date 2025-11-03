@@ -1,6 +1,6 @@
 {
   "name": "Midnight Preview",
-  "id": "preview",
+  "id": "midnight_preview",
   "chainType": "Live",
   "bootNodes": [],
   "telemetryEndpoints": null,

@@ -159,3 +159,13 @@ pub struct BlockTxIndexRow {
 	pub tx_hash: String,
 	pub tx_index: i32,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct GovernanceBodyUtxoRow {
+	pub full_datum: DbDatum,
+	pub block_number: DbBlockNumber,
+	pub block_hash: DbBlockHash,
+	pub tx_index_in_block: DbTxIndexInBlock,
+	pub tx_hash: DbTxHash,
+	pub utxo_index: DbUtxoIndexInTx,
+}

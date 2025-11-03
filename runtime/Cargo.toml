@@ -83,6 +83,7 @@ midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-version.workspace = true
+midnight-primitives-federated-authority-observation.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
 pallet-federated-authority-observation.workspace = true

@@ -1,6 +1,6 @@
 {
   "name": "Midnight NodeDev01",
-  "id": "node-dev-01",
+  "id": "midnight_node-dev-01",
   "chainType": "Live",
   "bootNodes": [],
   "telemetryEndpoints": null,
