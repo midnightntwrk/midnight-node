@@ -25,6 +25,7 @@ use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIE
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
 use serde::{Deserialize, Serialize};
+use sidechain_domain::McBlockHash;
 
 pub mod config;
 
@@ -40,7 +41,7 @@ pub mod config;
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 pub struct CmstHeader {
 	/// Hash of the last processed block
-	pub block_hash: [u8; 32],
+	pub block_hash: McBlockHash,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
 }
@@ -622,7 +623,7 @@ pub mod pallet {
 					// Emit System Transaction for the indexer
 					let system_tx = SystemTransactionApplied {
 						header: CmstHeader {
-							block_hash: next_cardano_position.block_hash.0,
+							block_hash: next_cardano_position.block_hash,
 							tx_index_in_block: next_cardano_position.tx_index_in_block,
 						},
 						system_transaction_hash,
