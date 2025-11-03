@@ -77,6 +77,10 @@ pub struct MidnightCfg {
 	/// see partner-chains DbSyncBlockDataSourceConfig
 	pub block_stability_margin: Option<u32>,
 
+	/// Path to federated authority config file (contains council and technical committee addresses and policy IDs)
+	#[validate(custom = |s| maybe(s, path_exists))]
+	pub federated_authority_config_file: Option<String>,
+
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 

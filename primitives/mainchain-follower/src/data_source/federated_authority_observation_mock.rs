@@ -13,7 +13,7 @@
 
 use crate::FederatedAuthorityObservationDataSource;
 use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData,
+	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
 };
 use sidechain_domain::McBlockHash;
 use sp_core::sr25519::Public;
@@ -32,6 +32,7 @@ impl FederatedAuthorityObservationDataSourceMock {
 impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceMock {
 	async fn get_federated_authority_data(
 		&self,
+		_config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
 		// Council members
