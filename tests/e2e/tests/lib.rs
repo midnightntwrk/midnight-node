@@ -976,37 +976,4 @@ async fn removing_excessive_registrations() {
         utxo_owner_hex, second_dust_hex,
         "UTXO owner does not match DUST address"
     );
-
-    // let minting_script = load_cbor(&load_config().cnight_token_policy_file);
-    // let amount = 100;
-    // let tx_id = mint_tokens(
-    //     &cardano_wallet,
-    //     &get_cnight_token_policy_id(),
-    //     "",
-    //     &amount.to_string(),
-    //     &minting_script,
-    // )
-    // .await;
-    // println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
-
-    // let cnight_utxo = match find_utxo_by_tx_id(&bech32_address, &hex::encode(&tx_id)).await {
-    //     Some(cnight_utxo) => cnight_utxo,
-    //     None => panic!("No cNIGHT UTXO found after minting"),
-    // };
-
-    // let prefix = b"asset_create";
-    // let nonce = calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
-    // println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
-
-    // let utxo_owner = poll_utxo_owners_until_change(nonce, None, 60, 1000)
-    //     .await
-    //     .expect("Failed to poll UTXO owners");
-    // println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
-
-    // let utxo_owner_hex = hex::encode(utxo_owner.unwrap());
-    // println!("UTXO owner in hex: {:?}", utxo_owner_hex);
-    // assert_eq!(
-    //     utxo_owner_hex, second_dust_hex,
-    //     "UTXO owner does not match DUST address"
-    // );
 }
