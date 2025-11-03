@@ -27,6 +27,7 @@ async fn register_for_dust_production() {
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
+	let reward_address = get_reward_address_bytes(&cardano_wallet);
 	let dust_address: [u8; 33] =
 		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
@@ -40,12 +41,12 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_reward_address.0 == cardano_address
+			reg.0.cardano_reward_address.0 == reward_address
 				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		registration.is_some(),
-		"Did not find registration event with expected cardano_address and dust_address"
+		"Did not find registration event with expected reward_address and dust_address"
 	);
 	if let Some(registration) = registration {
 		println!("Matching Registration event found: {:?}", registration);
@@ -58,13 +59,13 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_reward_address.0 == cardano_address
+			map.0.cardano_reward_address.0 == reward_address
 				&& &map.0.dust_public_key.0 == &dust_bytes
 				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
-		"Did not find MappingAdded event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find MappingAdded event with expected reward_address, dust_address, and utxo_id"
 	);
 	if let Some(mapping) = mapping_added {
 		println!("Matching MappingAdded event found: {:?}", mapping);
@@ -253,7 +254,9 @@ async fn register_2_cardano_same_dust_address_production() {
 	);
 
 	let cardano_address = get_cardano_address_as_bytes(&first_cardano_wallet);
+	let reward_address = get_reward_address_bytes(&first_cardano_wallet);
 	let second_cardano_address = get_cardano_address_as_bytes(&second_cardano_wallet);
+	let second_reward_address = get_reward_address_bytes(&second_cardano_wallet);
 
 	let dust_address: [u8; 33] =
 		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
@@ -272,7 +275,7 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_reward_address.0 == cardano_address
+			reg.0.cardano_reward_address.0 == reward_address
 				&& reg.0.dust_public_key.0 == dust_address
 		});
 
@@ -283,18 +286,18 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_reward_address.0 == second_cardano_address
+			reg.0.cardano_reward_address.0 == second_reward_address
 				&& reg.0.dust_public_key.0 == dust_address
 		});
 
 	assert!(
 		registration.is_some(),
-		"Did not find registration event with expected cardano_address and dust_address"
+		"Did not find registration event with expected reward_address and dust_address"
 	);
 
 	assert!(
 		second_registration.is_some(),
-		"Did not find second registration event with expected second cardano_address and dust_address"
+		"Did not find second registration event with expected second reward_address and dust_address"
 	);
 
 	if let Some(registration) = registration {
@@ -312,7 +315,7 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_reward_address.0 == cardano_address
+			map.0.cardano_reward_address.0 == reward_address
 				&& &map.0.dust_public_key.0 == &dust_bytes
 				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
@@ -324,17 +327,17 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_reward_address.0 == second_cardano_address
+			map.0.cardano_reward_address.0 == second_reward_address
 				&& &map.0.dust_public_key.0 == &dust_bytes
 				&& map.0.utxo_tx_hash.0 == second_register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
-		"Did not find first MappingAdded event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find first MappingAdded event with expected reward_address, dust_address, and utxo_id"
 	);
 	assert!(
 		second_mapping_added.is_some(),
-		"Did not find second MappingAdded event with expected second_cardano_address, dust_address, and utxo_id"
+		"Did not find second MappingAdded event with expected second_reward_address, dust_address, and utxo_id"
 	);
 
 	if let Some(mapping) = mapping_added {
@@ -431,6 +434,7 @@ async fn deregister_from_dust_production() {
 	println!("Deregistration transaction submitted with hash: {:?}", deregister_tx);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
+	let reward_address = get_reward_address_bytes(&cardano_wallet);
 	let dust_address: [u8; 33] =
 		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let events = subscribe_to_cnight_observation_events(&deregister_tx)
@@ -444,12 +448,12 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::Deregistration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_reward_address.0 == cardano_address
+			reg.0.cardano_reward_address.0 == reward_address
 				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		deregistration.is_some(),
-		"Did not find deregistration event with expected cardano_address and dust_address"
+		"Did not find deregistration event with expected reward_address and dust_address"
 	);
 	if let Some(deregistration) = deregistration {
 		println!("Matching Deregistration event found: {:?}", deregistration);
@@ -462,13 +466,13 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingRemoved>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_reward_address.0 == cardano_address
+			map.0.cardano_reward_address.0 == reward_address
 				&& &map.0.dust_public_key.0 == &dust_bytes
 				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_removed.is_some(),
-		"Did not find MappingRemoved event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find MappingRemoved event with expected reward_address, dust_address, and utxo_id"
 	);
 	if let Some(mapping) = mapping_removed {
 		println!("Matching MappingRemoved event found: {:?}", mapping);

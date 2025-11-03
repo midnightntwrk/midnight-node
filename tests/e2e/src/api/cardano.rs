@@ -281,9 +281,9 @@ pub fn create_wallet() -> Wallet {
 
 pub fn get_cardano_address(wallet: &Wallet) -> Address {
 	let pub_key_hash = wallet.account.public_key.hash();
-	let payment_cred = whisky::csl::Credential::from_keyhash(&pub_key_hash);
+	let cred = whisky::csl::Credential::from_keyhash(&pub_key_hash);
 	let network = NetworkInfo::testnet_preview().network_id();
-	whisky::csl::RewardAddress::new(network, &payment_cred).to_address()
+	whisky::csl::BaseAddress::new(network, &cred, &cred).to_address()
 }
 
 pub fn get_cardano_address_as_bech32(wallet: &Wallet) -> String {
@@ -291,9 +291,20 @@ pub fn get_cardano_address_as_bech32(wallet: &Wallet) -> String {
 	address.to_bech32(None).unwrap()
 }
 
-pub fn get_cardano_address_as_bytes(wallet: &Wallet) -> [u8; 29] {
+pub fn get_cardano_address_as_bytes(wallet: &Wallet) -> Vec<u8> {
 	let address = get_cardano_address(wallet);
-	address.to_bytes().try_into().unwrap()
+	address.to_bytes()
+}
+
+pub fn get_reward_address_bytes(wallet: &Wallet) -> [u8; 29] {
+	let pub_key_hash = wallet.account.public_key.hash();
+	let cred = whisky::csl::Credential::from_keyhash(&pub_key_hash);
+	let network = NetworkInfo::testnet_preview().network_id();
+	whisky::csl::RewardAddress::new(network, &cred)
+		.to_address()
+		.to_bytes()
+		.try_into()
+		.unwrap()
 }
 
 pub async fn make_collateral(address: &str) -> OgmiosUtxo {
