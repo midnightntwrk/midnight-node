@@ -15,4 +15,5 @@ pub mod queries;
 mod types;
 
 pub use queries::cnight_observation::*;
+pub use queries::federated_authority_observation::*;
 pub use types::*;

@@ -22,24 +22,23 @@ use midnight_node_ledger_helpers::{
 };
 
 use midnight_node_runtime::{
-	AccountId, Block, CouncilConfig, CouncilMembershipConfig, CrossChainPublic, MidnightCall,
+	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
+	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
 	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
-	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, UncheckedExtrinsic, WASM_BINARY,
-	opaque::SessionKeys,
-};
-use midnight_node_runtime::{
-	BeefyConfig, CNightObservationCall, CNightObservationConfig, TimestampCall,
+	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, TimestampCall,
+	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
+use sidechain_domain::MainchainAddress;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use sp_session_validator_management::MainChainScripts;
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 pub enum ChainSpecInitError {
 	Missing(String),
@@ -298,7 +297,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		council: CouncilConfig { ..Default::default() },
 		council_membership: CouncilMembershipConfig {
 			members: genesis
-				.council()
+				.federated_authority_config()
+				.council
 				.members
 				.iter()
 				.cloned()
@@ -311,7 +311,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		technical_committee: TechnicalCommitteeConfig { ..Default::default() },
 		technical_committee_membership: TechnicalCommitteeMembershipConfig {
 			members: genesis
-				.technical_committee()
+				.federated_authority_config()
+				.technical_committee
 				.members
 				.iter()
 				.cloned()
@@ -319,6 +320,22 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.collect::<Vec<AccountId>>()
 				.try_into()
 				.expect("Too many members to initialize 'technical_committee_membership'"),
+			..Default::default()
+		},
+		federated_authority_observation: FederatedAuthorityObservationConfig {
+			council_address: MainchainAddress::from_str(
+				&genesis.federated_authority_config().council.address,
+			)
+			.expect("Failed to decode `council_address`"),
+			council_policy_id: genesis.federated_authority_config().council.policy_id,
+			technical_committee_address: MainchainAddress::from_str(
+				&genesis.federated_authority_config().technical_committee.address,
+			)
+			.expect("Failed to decode `technical_committee_address`"),
+			technical_committee_policy_id: genesis
+				.federated_authority_config()
+				.technical_committee
+				.policy_id,
 			..Default::default()
 		},
 	};
