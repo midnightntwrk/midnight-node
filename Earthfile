@@ -1003,22 +1003,6 @@ testnet-sync-e2e:
 
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
-    ARG USEROS
-    FROM node:22-trixie
-    COPY metadata/static metadata/static
-    COPY tests/ tests/
-    WORKDIR tests
-    RUN corepack enable
-    RUN yarn install --immutable
-    RUN yarn run build
-    WORKDIR /
-    COPY local-environment/ local-environment/
-    COPY scripts/cnight-generates-dust scripts/cnight-generates-dust
-    WORKDIR tests
-    RUN --no-cache HOST_ADDR=$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal") \
-        yarn run start
-
-local-env-rust-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
