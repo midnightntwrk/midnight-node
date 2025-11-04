@@ -904,9 +904,6 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/
 
-audit-tests:
-    BUILD +audit-yarn --DIRECTORY=tests/
-
 audit-ui:
     BUILD +audit-yarn --DIRECTORY=ui/
 
@@ -917,7 +914,6 @@ audit-ui-tests:
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-tests
     BUILD +audit-ui
     BUILD +audit-ui-tests
 
