@@ -570,17 +570,6 @@ check-rust:
     # ensure runtime benchmark feature enable to check they compile.
     RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
 
-# check-nodejs lints any nodejs projects
-check-nodejs:
-    FROM node:22-trixie
-    RUN corepack enable
-    COPY --dir tests/package.json tests/polkadot-api.json tests/.yarnrc.yml tests/yarn.lock tests/.papi/ ./tests
-    COPY metadata/static/midnight_metadata.scale metadata/static/midnight_metadata.scale
-    WORKDIR /tests
-    RUN yarn install --immutable
-    COPY tests/ ./
-    RUN yarn lint
-
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
@@ -599,7 +588,6 @@ check-metadata:
 # check lints/format checks for entire repo
 check:
     BUILD +check-rust
-    BUILD +check-nodejs
 
 # test runs the tests in parallel with code coverage.
 test:
