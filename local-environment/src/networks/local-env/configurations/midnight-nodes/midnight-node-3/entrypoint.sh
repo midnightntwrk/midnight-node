@@ -24,14 +24,16 @@ set -euxo pipefail
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000003 \
   --bootnodes="/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
-  --base-path=/data \
+ --base-path=/data \
   --unsafe-rpc-external \
+  --rpc-methods=Unsafe \
   --rpc-port=9935 \
   --rpc-cors=all \
   --prometheus-port=9617 \
   --prometheus-external \
   --state-pruning=archive \
-  --blocks-pruning=archive &
+  --blocks-pruning=archive \
+  --enable-offchain-indexing true &
 
   touch /shared/midnight-node-3.ready
 
