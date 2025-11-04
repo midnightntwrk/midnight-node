@@ -601,7 +601,7 @@ pub async fn mint_tokens(
 		.minting_script(minting_script)
 		.mint_redeemer_value(&WRedeemer {
 			data: WData::JSON(constr0(serde_json::json!([])).to_string()),
-			ex_units: Budget { mem: 376570, steps: 94156294 },
+			ex_units: Budget { mem: 14000000, steps: 10000000000 },
 		})
 		.change_address(&payment_addr)
 		.complete_sync(None)
