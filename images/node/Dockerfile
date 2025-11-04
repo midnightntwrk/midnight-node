@@ -1,4 +1,4 @@
-FROM debian:trixie-slim
+FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1
