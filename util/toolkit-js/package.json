@@ -28,9 +28,9 @@
   "dependencies": {
     "@effect/platform-node": "^0.98.3",
     "@effect/cli": "^0.71.0",
-    "@midnight-ntwrk/compact-js": "2.3.0-pre.8d87ccd",
-    "@midnight-ntwrk/compact-js-command": "2.3.0-pre.8d87ccd",
-    "@midnight-ntwrk/compact-js-node": "2.3.0-pre.8d87ccd",
+    "@midnight-ntwrk/compact-js": "2.3.0-pre.5d4ff2c",
+    "@midnight-ntwrk/compact-js-command": "2.3.0-pre.5d4ff2c",
+    "@midnight-ntwrk/compact-js-node": "2.3.0-pre.5d4ff2c",
     "effect": "^3.18.4"
   },
   "devDependencies": {

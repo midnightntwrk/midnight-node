@@ -19,7 +19,10 @@ import { Subscription, take, timeout } from "rxjs";
 import { HOST_ADDR } from "./env.js";
 
 function normHex(x: string) {
-  return x.replace(/^0x/i, "").toLowerCase();
+  if (x.startsWith("0x")) {
+    x = x.slice(2);
+  }
+  return x.toLowerCase();
 }
 
 // export function checkCreate(
@@ -278,8 +281,8 @@ export function checkMappingAdded(
 
   const sub = api.event.CNightObservation.MappingAdded.watch((m) => {
     const cardano = normHex(m.cardano_address.asHex());
-    const dust = normHex(m.dust_address);
-    const utxo = normHex(m.utxo_id);
+    const dust = normHex(m.dust_address.asHex());
+    const utxo = normHex(m.utxo_id.asHex());
 
     if (cardano !== normHex(cardanoHex)) {
       console.log(`MappingAdded: cardano mismatch ${cardano} != ${cardanoHex}`);
@@ -332,8 +335,8 @@ export function checkMappingRemoved(
 
   const sub = api.event.CNightObservation.MappingRemoved.watch((m) => {
     const cardano = normHex(m.cardano_address.asHex());
-    const dust = normHex(m.dust_address);
-    const utxo = normHex(m.utxo_id);
+    const dust = normHex(m.dust_address.asHex());
+    const utxo = normHex(m.utxo_id.asHex());
 
     if (cardano !== normHex(cardanoHex)) {
       console.log(

@@ -1,6 +1,6 @@
 {
   "name": "Midnight QANet",
-  "id": "qanet",
+  "id": "midnight_qanet",
   "chainType": "Live",
   "bootNodes": [],
   "telemetryEndpoints": null,
@@ -24,7 +24,7 @@
           "authorities": []
         },
         "sidechain": {
-          "genesisUtxo": "c79a414c8d8cf691caa654861cfb0555c6a7f2016d0b2ae79cc4fc4377372e74#1",
+          "genesisUtxo": "bf9075696b4d042bca82938fb1ef107b1dedc0a3971ccfe1ab3ac297aab59265#0",
           "slotsPerEpoch": 300
         },
         "midnight": {
@@ -218,9 +218,9 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "addr_test1wrhpp7gmzt5plx3dx7sz25gl0pjx322z4p3pjtkmfpnpfpcqgckjk",
-            "d_parameter_policy_id": "0x0499e919fc1040af975ea1dc7b8a414c99f0e1d070e547dc81999010",
-            "permissioned_candidates_policy_id": "0xca3c98056e6bce7df274f0a9161ad53208bdb1cef072f0743307ad2f"
+            "committee_candidate_address": "addr_test1wzp7wnerffnkkhlkvvy9wps0zgwke48ycjpnhv0wrramn5gs8ajnx",
+            "d_parameter_policy_id": "0xa2402f25a5dceef7b742b6a5ef11ff07f62c7d4ef2610830e5d81050",
+            "permissioned_candidates_policy_id": "0x5c1f2f7f9f3791f3eb1a6a29fddd3970d52231b90c3519919a91f090"
           }
         },
         "cNightObservation": {
@@ -371,7 +371,10 @@
           ]
         },
         "governedMap": {
-          "mainChainScripts": null,
+          "mainChainScripts": {
+            "validator_address": "addr_test1wr5hwaejm87psuz8wc8lr6jka75mqug8kwtjyyrxy29njsq49ckl7",
+            "asset_policy_id": "0x4c29efd09a3d7f57940a36f1883861632989fe90d5a3a1549849262c"
+          },
           "marker": null
         },
         "council": {
@@ -380,8 +383,8 @@
         "councilMembership": {
           "members": [
             "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-            "5EsUggUWjUrpnZD9tR3ypzMsvZFmt2bdfx5cPuSa72MiCkf5",
-            "5HpbqnDosRvFwMHr8u1X9FhLuiebrHagxfHmGpukEZVjYFXs"
+            "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
+            "5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y"
           ]
         },
         "technicalCommittee": {
@@ -389,9 +392,9 @@
         },
         "technicalCommitteeMembership": {
           "members": [
-            "5Eseb3zmCedjXKTi8vJbbRyNa63ngaMK7gWZE9pz8NTwcixo",
-            "5DwUCXDQ1hQPccbheY3vYhaQRTgwNvMtiWrKSddFdSUzPtHh",
-            "5GjSLc2mAGRmPAXqRyYNghWqLsjFv5LHdGDgGXcAJHeHriNe"
+            "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy",
+            "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw",
+            "5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL"
           ]
         }
       }
