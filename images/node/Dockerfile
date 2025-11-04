@@ -29,8 +29,14 @@ COPY .envrc ./bin/.envrc
 COPY res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
+# Make entrypoint executable
+RUN chmod +x /entrypoint.sh
+
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "10001" appuser
-# USER appuser
+
+RUN mkdir -p /node/chain && chown -R 10001:10001 /node/chain
+
+USER appuser
 
 EXPOSE 30333 9933 9944 9615
 ENTRYPOINT ["/entrypoint.sh"]

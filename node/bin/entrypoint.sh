@@ -29,8 +29,5 @@ if [ ! -d "$FINAL_BASE_PATH" ]; then
     mkdir -p "$FINAL_BASE_PATH"
 fi
 
-# Change ownership to appuser
-chown -R appuser:appuser "$FINAL_BASE_PATH"
-
 # Now run as appuser
-runuser -u appuser /midnight-node -- "$@"
+exec /midnight-node -- "$@"
