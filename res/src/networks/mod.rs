@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
-	serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer},
+	serde::{Deserialize, Deserializer, Serialize},
 	sp_core::crypto::CryptoBytes,
 	std::str::FromStr,
 };
@@ -29,21 +30,6 @@ where
 	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).expect("hex decode failed");
 	let bytes = CryptoBytes::from_raw(bytes.try_into().expect("slice to array failed"));
 	Ok(bytes)
-}
-
-fn from_hex_vec<'de, D>(deserializer: D) -> Result<Vec<sp_core::sr25519::Public>, D::Error>
-where
-	D: Deserializer<'de>,
-{
-	let strings: Vec<String> = Vec::deserialize(deserializer)?;
-	strings
-		.into_iter()
-		.map(|s| {
-			// Reuse `from_hex` via `serde::de::IntoDeserializer`
-			from_hex::<_, sp_core::sr25519::Public, 32>(s.into_deserializer())
-				.map(|crypto_bytes| sp_core::sr25519::Public::from_raw(crypto_bytes.0))
-		})
-		.collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,45 +144,6 @@ impl MainChainScripts {
 	}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InitialFederedatedAuthority {
-	#[serde(deserialize_with = "from_hex_vec")]
-	pub members: Vec<sp_core::sr25519::Public>,
-}
-
-impl InitialFederedatedAuthority {
-	pub fn new_from_uris(uris: Vec<&str>) -> Self {
-		use sp_core::Pair as _;
-
-		let sr25519_pubkeys = uris
-			.iter()
-			.map(|uri| {
-				sp_core::sr25519::Pair::from_string(uri, None)
-					.expect("failed to generate sr25519 keypair from uri")
-					.public()
-			})
-			.collect();
-
-		InitialFederedatedAuthority { members: sr25519_pubkeys }
-	}
-
-	pub fn load_initial_federated_authority(data: &str) -> Vec<Self> {
-		serde_json::from_str(data).expect("failed to parse initial federared authority")
-	}
-
-	pub fn load_from_federated_authority_config(
-		config: &serde_json::Value,
-		authority_body: &str,
-	) -> Self {
-		let authorities_value = config
-			.get(authority_body)
-			.expect(&format!("no \"{:?}\" exists", authority_body))
-			.clone();
-		serde_json::value::from_value(authorities_value)
-			.expect(&format!("failed to parse \"{:?}\"", authority_body))
-	}
-}
-
 pub trait MidnightNetwork {
 	fn name(&self) -> &str;
 	fn id(&self) -> &str;
@@ -205,14 +152,12 @@ pub trait MidnightNetwork {
 	fn genesis_utxo(&self) -> &str;
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
+	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
-	fn council(&self) -> InitialFederedatedAuthority;
-	fn technical_committee(&self) -> InitialFederedatedAuthority;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)
 	}
-
 	fn chain_type(&self) -> sc_service::ChainType {
 		sc_service::ChainType::Live
 	}

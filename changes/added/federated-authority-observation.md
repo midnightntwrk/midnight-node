@@ -1,8 +1,7 @@
-# Federated Authority Observation pallet
+# Implement `FederatedAuthorityObservationDataSourceImpl` and e2e tests for Federated Authority Observation
 
-A pallet responsible for observing and propagating federated authority changes from the main chain to governance bodies (Council and Technical Committee).
+Implementation of `FederatedAuthorityObservationDataSourceImpl` and e2e tests for Federated Authority Observation
+Now the Node is able to query the Federated Authority members from Cardano smart contracts
 
-Still work in progress as only mock data is queried from the `mainchain-follower` for now.
-
-PR: https://github.com/midnightntwrk/midnight-node/pull/107
-Ticket: https://shielded.atlassian.net/browse/PM-18914
+PR: https://github.com/midnightntwrk/midnight-node/pull/142
+JIRA: https://shielded.atlassian.net/browse/PM-18914

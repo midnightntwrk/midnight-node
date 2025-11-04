@@ -17,11 +17,9 @@ use config::{Config, ConfigError, Environment, File, FileFormat};
 use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
-	networks::{
-		CustomNetwork, InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts,
-		UndeployedNetwork,
-	},
+	networks::{CustomNetwork, InitialAuthorityData, MainChainScripts, UndeployedNetwork},
 };
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
@@ -137,22 +135,10 @@ impl SubstrateCli for Cfg {
 				)
 				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
 
-				let federated_authority_config: serde_json::Value =
+				let federated_authority_config: FederatedAuthorityObservationConfig =
 					serde_json::from_str(&federated_authority_config_str).map_err(|e| {
-						format!("failed to read federated_authority_config as json: {e}")
+						format!("failed to parse FederatedAuthorityObservationConfig: {e}")
 					})?;
-
-				let council_membership =
-					InitialFederedatedAuthority::load_from_federated_authority_config(
-						&federated_authority_config,
-						"council",
-					);
-
-				let technical_committee_membership =
-					InitialFederedatedAuthority::load_from_federated_authority_config(
-						&federated_authority_config,
-						"technical_committee",
-					);
 
 				let network: CustomNetwork = CustomNetwork {
 					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
@@ -162,10 +148,9 @@ impl SubstrateCli for Cfg {
 					initial_authorities,
 					cnight_genesis,
 					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
-					council_membership,
-					technical_committee_membership,
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
+					federated_authority_config,
 				};
 				chain_config(network)
 			},
