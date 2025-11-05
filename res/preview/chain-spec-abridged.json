@@ -294,6 +294,12 @@
             "5CmERLtyg9uzUeeosoU1jK9jZY2TAqgZ1SntKs9941SgM4S2",
             "5EL8yFZJnjDR1Lw5UkBVrt3FV5w17nvq7gnRAs7jSdraNHT2"
           ]
+        },
+        "federatedAuthorityObservation": {
+          "councilAddress": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
+          "councilPolicyId": "0x00000000000000000000000000000000000000000000000000000001",
+          "technicalCommitteeAddress": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
+          "technicalCommitteePolicyId": "0x00000000000000000000000000000000000000000000000000000001"
         }
       }
     }
