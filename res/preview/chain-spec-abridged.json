@@ -297,10 +297,10 @@
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
-          "councilPolicyId": "0x00000000000000000000000000000000000000000000000000000001",
-          "technicalCommitteeAddress": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
-          "technicalCommitteePolicyId": "0x00000000000000000000000000000000000000000000000000000001"
+          "councilAddress": "addr_test1wp9tvrk7r7huz045gcuprapwsyzqude7sa0emu0k8fm2gysrdzp9q",
+          "councilPolicyId": "0x4ab60ede1fafc13eb4463811f42e81040e373e875f9df1f63a76a412",
+          "technicalCommitteeAddress": "addr_test1wrcpur4j3uh5z2gnscqwscm2t50jcgk43un9q2vnyj2funqqcyw3d",
+          "technicalCommitteePolicyId": "0xf01e0eb28f2f4129138600e8636a5d1f2c22d58f2650299324949e4c"
         }
       }
     }

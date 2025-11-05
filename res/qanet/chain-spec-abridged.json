@@ -399,10 +399,10 @@
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wruzxhzhvnj9lxtctznz27xwf96y6apkfnmr7a0cf8q2lzc5ah8y9",
-          "councilPolicyId": "0xf8235c5764e45f997858a62578ce49744d74364cf63f75f849c0af8b",
-          "technicalCommitteeAddress": "addr_test1wqnfed3yn3jlnxexq5yc9c64z6zcy0ed9dutnm239j8mezgwznh66",
-          "technicalCommitteePolicyId": "0x269cb6249c65f99b26050982e3551685823f2d2b78b9ed512c8fbc89"
+          "councilAddress": "addr_test1wrqsrj8s6f4kuk60yrm59eqx7l4z4acyquwf0wzkqs5v5hszzzjq8",
+          "councilPolicyId": "0xc101c8f0d26b6e5b4f20f742e406f7ea2af704071c97b8560428ca5e",
+          "technicalCommitteeAddress": "addr_test1wzc5qcwg9kkwhnk9n9wdrffag6nfzawrv6zhkwxakfwumgq05ny0a",
+          "technicalCommitteePolicyId": "0xb14061c82dacebcec5995cd1a53d46a69175c366857b38ddb25dcda0"
         }
       }
     }
