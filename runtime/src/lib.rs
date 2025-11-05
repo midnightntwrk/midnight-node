@@ -142,6 +142,9 @@ pub type Nonce = u32;
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
 
+/// The stake delegation for every beefy authority id
+pub type Stake = u64;
+
 pub const CROSS_CHAIN: KeyTypeId = KeyTypeId(*b"crch");
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
@@ -487,7 +490,7 @@ impl Convert<BeefyId, Vec<u8>> for RawBeefyId {
 pub struct KeyAndStakeDataProvider;
 
 impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
-	/// Returns an encoded Vec<(BeefyId, StakeDelegation)>
+	/// Returns an encoded Vec<(BeefyId, Stake)>
 	fn extra_data() -> Vec<u8> {
 		// list of all validators
 		let validators = Session::validators_and_keys();
@@ -515,8 +518,12 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 			return vec![];
 		}
 
+		// use the current committee to extract the correct epoch
+		let current_committee = SessionCommitteeManagement::current_committee_storage();
+
 		// With the given validators, recreate a list of permissioned candidates
 		let mut permissioned_candidates = vec![];
+		// let mut registered_candidates = vec![];
 
 		for (idx, (_, session_keys)) in validators.iter().enumerate() {
 			// the SideChainPublicKey is ecdsa, same as beefy. For mocking purposes, we use the same value
@@ -535,17 +542,12 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 			permissioned_candidates.push(candidate);
 		}
 
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let d_parameter = DParameter::new(6, 0);
+		let d_parameter = DParameter::new(permissioned_candidates.len() as u16, 0);
 
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let sample_epoch: u16 = 0x1234;
-		let sample_epoch = sample_epoch.to_be_bytes();
-		let sample_epoch = sample_epoch.to_vec();
+		let epoch_be_bytes = current_committee.epoch.0.to_be_bytes().to_vec();
+		let epoch_nonce = EpochNonce(epoch_be_bytes);
 
-		let epoch_nonce = EpochNonce(sample_epoch);
-
-		// mock an input
+		// create an input
 		let input = AuthoritySelectionInputs {
 			d_parameter,
 			permissioned_candidates,
@@ -570,15 +572,15 @@ impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
 				{
 					(
 						xchain_public_to_beefy(id),
-						// set to 0 for unfound stake delegation
-						StakeDelegation(1),
+						// set to 1 for unfound stake delegation
+						1,
 					)
 				},
 				CommitteeMember::Registered { .. } => {
 					unreachable!("we have not mocked any registered candidates")
 				},
 			})
-			.collect::<Vec<(BeefyId, StakeDelegation)>>();
+			.collect::<Vec<(BeefyId, Stake)>>();
 
 		log::info!(
 			target: "runtime::beefy_mmr",
