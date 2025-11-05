@@ -155,14 +155,6 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	#[pallet::getter(fn configurable_weight)]
-	pub type ConfigurableWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
-
-	#[pallet::storage]
-	#[pallet::getter(fn configurable_contract_call_weight)]
-	pub type ConfigurableContractCallWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
-
-	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
 		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
@@ -348,7 +340,7 @@ pub mod pallet {
 				LedgerApi::set_default_storage();
 			}
 			// TODO: Benchmark Weight in case of a real hard-fork
-			Weight::zero().saturating_add(ConfigurableOnRuntimeUpgradeWeight::<T>::get())
+			ConfigurableOnRuntimeUpgradeWeight::<T>::get()
 		}
 	}
 
@@ -359,7 +351,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight(ConfigurableWeight::<T>::get())]
+		#[pallet::weight(ConfigurableTransactionSizeWeight::<T>::get())]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
@@ -421,15 +413,6 @@ pub mod pallet {
 
 		#[pallet::call_index(1)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring weights - for testing transaction throughput on devnets only.
-		pub fn set_mn_tx_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
-			ensure_root(origin)?;
-			ConfigurableWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(2)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		pub fn override_d_parameter(
 			origin: OriginFor<T>,
 			d_parameter_override: Option<(u16, u16)>,
@@ -439,19 +422,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(3)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring contract call weights
-		pub fn set_contract_call_weight(
-			origin: OriginFor<T>,
-			new_weight: Weight,
-		) -> DispatchResult {
-			ensure_root(origin)?;
-			ConfigurableContractCallWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(4)]
+		#[pallet::call_index(2)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		// A system transaction for configuring contract call weights
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
