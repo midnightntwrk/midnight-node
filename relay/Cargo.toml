@@ -4,19 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-mmr-rpc = { workspace = true, default-features = true }
-parity-scale-codec = { workspace = true, default-features = true, features = ["derive"]}
-sp-core = { workspace = true, default-features = true }
-sp-consensus-beefy = { workspace = true, default-features = true }
-sp-mmr-primitives = { workspace = true, default-features = true }
 subxt = { workspace = true, default-features = true }
 
-midnight-node-metadata = { workspace = true, default-features = true }
-pallas = "0.33.0"
-
 clap = { workspace = true, default-features = true, features = ["derive", "env"] }
-rs_merkle = { git = "https://github.com/midnightntwrk/rs-merkle.git", rev = "7c997a5"}
-hex = { workspace = true, default-features = true }
 serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true, default-features = true }
