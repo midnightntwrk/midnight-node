@@ -185,7 +185,7 @@ pub fn get_chainspec_extrinsics(
 		let cnight_extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::CNightObservation(
 			CNightObservationCall::process_tokens {
 				utxos: observed_utxos_cnight.utxos.clone(),
-				next_cardano_position: observed_utxos_cnight.end,
+				next_cardano_position: observed_utxos_cnight.end.clone(),
 			},
 		));
 		extrinsics.push(hex::encode(cnight_extrinsic.encode()));

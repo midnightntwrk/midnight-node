@@ -11,24 +11,25 @@ async fn register_for_dust_production() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_hex = new_dust_hex(33);
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
 	let client = get_ogmios_client().await;
 	let utxos = client.query_utxos(&[bech32_address.clone().into()]).await.unwrap();
 	assert_eq!(utxos.len(), 2, "New wallet should have exactly two UTXOs after funding");
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let reward_address = get_reward_address_bytes(&cardano_wallet);
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -40,11 +41,12 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == reward_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		registration.is_some(),
-		"Did not find registration event with expected cardano_address and dust_address"
+		"Did not find registration event with expected reward_address and dust_address"
 	);
 	if let Some(registration) = registration {
 		println!("Matching Registration event found: {:?}", registration);
@@ -57,13 +59,13 @@ async fn register_for_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == reward_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
-		"Did not find MappingAdded event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find MappingAdded event with expected reward_address, dust_address, and utxo_id"
 	);
 	if let Some(mapping) = mapping_added {
 		println!("Matching MappingAdded event found: {:?}", mapping);
@@ -204,6 +206,8 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 		},
 	}
 }
+
+#[tokio::test]
 async fn register_2_cardano_same_dust_address_production() {
 	let first_cardano_wallet = create_wallet();
 	let second_cardano_wallet = create_wallet();
@@ -213,8 +217,8 @@ async fn register_2_cardano_same_dust_address_production() {
 	println!("First Cardano wallet created: {:?}", bech32_address);
 	println!("Second Cardano wallet created: {:?}", second_bech32_address);
 
-	let dust_hex = new_dust_hex(32);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_hex = new_dust_hex(33);
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering First Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 	println!(
 		"Registering Second Cardano wallet {} with DUST address {}",
@@ -222,11 +226,11 @@ async fn register_2_cardano_same_dust_address_production() {
 	);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
 	let second_collateral_utxo = make_collateral(&second_bech32_address).await;
-	let assets_second = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets_second = vec![Asset::new_from_str("lovelace", "10000000")];
 	let second_tx_in = fund_wallet(&second_bech32_address, assets_second).await;
 
 	let client = get_ogmios_client().await;
@@ -236,30 +240,26 @@ async fn register_2_cardano_same_dust_address_production() {
 	let second_utxos = client.query_utxos(&[second_bech32_address.clone().into()]).await.unwrap();
 	assert_eq!(second_utxos.len(), 2, "Second wallet should have exactly two UTXOs after funding");
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &first_cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &first_cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!(
 		"Registration transaction for the first cardano submitted with hash: {:?}",
 		register_tx_id
 	);
 
-	let second_register_tx_id = register(
-		&second_bech32_address,
-		&dust_hex,
-		&second_cardano_wallet,
-		&second_tx_in,
-		&second_collateral_utxo,
-	)
-	.await;
+	let second_register_tx_id =
+		register(&dust_hex, &second_cardano_wallet, &second_tx_in, &second_collateral_utxo).await;
 	println!(
 		"Registration transaction for second cardano submitted with hash: {:?}",
 		register_tx_id
 	);
 
 	let cardano_address = get_cardano_address_as_bytes(&first_cardano_wallet);
+	let reward_address = get_reward_address_bytes(&first_cardano_wallet);
 	let second_cardano_address = get_cardano_address_as_bytes(&second_cardano_wallet);
+	let second_reward_address = get_reward_address_bytes(&second_cardano_wallet);
 
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let registration_events = subscribe_to_cnight_observation_events(&register_tx_id)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -275,7 +275,8 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == reward_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 
 	let second_registration = second_registration_events
@@ -285,17 +286,18 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::Registration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == second_cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == second_reward_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 
 	assert!(
 		registration.is_some(),
-		"Did not find registration event with expected cardano_address and dust_address"
+		"Did not find registration event with expected reward_address and dust_address"
 	);
 
 	assert!(
 		second_registration.is_some(),
-		"Did not find second registration event with expected second cardano_address and dust_address"
+		"Did not find second registration event with expected second reward_address and dust_address"
 	);
 
 	if let Some(registration) = registration {
@@ -313,9 +315,9 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == reward_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 
 	let second_mapping_added = second_registration_events
@@ -325,17 +327,17 @@ async fn register_2_cardano_same_dust_address_production() {
 			evt.as_event::<c_night_observation::events::MappingAdded>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == second_cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == second_register_tx_id
+			map.0.cardano_reward_address.0 == second_reward_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == second_register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
-		"Did not find first MappingAdded event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find first MappingAdded event with expected reward_address, dust_address, and utxo_id"
 	);
 	assert!(
 		second_mapping_added.is_some(),
-		"Did not find second MappingAdded event with expected second_cardano_address, dust_address, and utxo_id"
+		"Did not find second MappingAdded event with expected second_reward_address, dust_address, and utxo_id"
 	);
 
 	if let Some(mapping) = mapping_added {
@@ -353,15 +355,14 @@ async fn cnight_produces_dust() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let minting_script = load_cbor(&load_config().cnight_token_policy_file);
@@ -391,7 +392,7 @@ async fn cnight_produces_dust() {
 		.expect("Failed to poll UTXO owners");
 	println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
 
-	let utxo_owner_hex = hex::encode(utxo_owner.unwrap());
+	let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0);
 	println!("UTXO owner in hex: {:?}", utxo_owner_hex);
 	assert_eq!(utxo_owner_hex, dust_hex, "UTXO owner does not match DUST address");
 }
@@ -402,16 +403,15 @@ async fn deregister_from_dust_production() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = new_dust_hex(32);
-	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
+	let dust_hex = new_dust_hex(33);
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
-	let assets = vec![Asset::new_from_str("lovelace", "160000000")];
+	let assets = vec![Asset::new_from_str("lovelace", "10000000")];
 	let tx_in = fund_wallet(&bech32_address, assets).await;
 
-	let register_tx_id =
-		register(&bech32_address, &dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
+	let register_tx_id = register(&dust_hex, &cardano_wallet, &tx_in, &collateral_utxo).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	let validator_address = get_mapping_validator_address();
@@ -434,7 +434,9 @@ async fn deregister_from_dust_production() {
 	println!("Deregistration transaction submitted with hash: {:?}", deregister_tx);
 
 	let cardano_address = get_cardano_address_as_bytes(&cardano_wallet);
-	let dust_address = hex::decode(&dust_hex).expect("Failed to decode DUST hex");
+	let reward_address = get_reward_address_bytes(&cardano_wallet);
+	let dust_address: [u8; 33] =
+		hex::decode(&dust_hex).expect("Failed to decode DUST hex").try_into().unwrap();
 	let events = subscribe_to_cnight_observation_events(&deregister_tx)
 		.await
 		.expect("Failed to listen to cNgD registration event");
@@ -446,11 +448,12 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::Deregistration>().ok().flatten()
 		})
 		.find(|reg| {
-			reg.0.cardano_address.0 == cardano_address && reg.0.dust_address == dust_address
+			reg.0.cardano_reward_address.0 == reward_address
+				&& reg.0.dust_public_key.0 == dust_address
 		});
 	assert!(
 		deregistration.is_some(),
-		"Did not find deregistration event with expected cardano_address and dust_address"
+		"Did not find deregistration event with expected reward_address and dust_address"
 	);
 	if let Some(deregistration) = deregistration {
 		println!("Matching Deregistration event found: {:?}", deregistration);
@@ -463,13 +466,13 @@ async fn deregister_from_dust_production() {
 			evt.as_event::<c_night_observation::events::MappingRemoved>().ok().flatten()
 		})
 		.find(|map| {
-			map.0.cardano_address.0 == cardano_address
-				&& &map.0.dust_address == &dust_bytes
-				&& map.0.utxo_id == register_tx_id
+			map.0.cardano_reward_address.0 == reward_address
+				&& &map.0.dust_public_key.0 == &dust_bytes
+				&& map.0.utxo_tx_hash.0 == register_tx_id
 		});
 	assert!(
 		mapping_removed.is_some(),
-		"Did not find MappingRemoved event with expected cardano_address, dust_address, and utxo_id"
+		"Did not find MappingRemoved event with expected reward_address, dust_address, and utxo_id"
 	);
 	if let Some(mapping) = mapping_removed {
 		println!("Matching MappingRemoved event found: {:?}", mapping);
@@ -477,7 +480,6 @@ async fn deregister_from_dust_production() {
 }
 
 #[tokio::test]
-#[ignore = "See bug https://shielded.atlassian.net/browse/PM-19856"]
 async fn alice_cannot_deregister_bob() {
 	// Create Alice and Bob wallets
 	let alice = create_wallet();
@@ -485,10 +487,10 @@ async fn alice_cannot_deregister_bob() {
 
 	let bob = create_wallet();
 	let bob_bech32 = get_cardano_address_as_bech32(&bob);
-	let dust_hex = new_dust_hex(32);
+	let dust_hex = new_dust_hex(33);
 
 	// Fund Alice and Bob wallets
-	let ada_to_fund = vec![Asset::new_from_str("lovelace", "160000000")];
+	let ada_to_fund = vec![Asset::new_from_str("lovelace", "10000000")];
 	let alice_collateral = make_collateral(&alice_bech32).await;
 	let deregister_tx_in = fund_wallet(&alice_bech32, ada_to_fund.clone()).await;
 
@@ -497,8 +499,7 @@ async fn alice_cannot_deregister_bob() {
 
 	// Bob registers his DUST address
 	println!("Registering Bob wallet {} with DUST address {}", bob_bech32, dust_hex);
-	let register_tx_id =
-		register(&bob_bech32, &dust_hex, &bob, &register_tx_in, &bob_collateral).await;
+	let register_tx_id = register(&dust_hex, &bob, &register_tx_in, &bob_collateral).await;
 	println!("Registration transaction submitted with hash: {:?}", register_tx_id);
 
 	// Find Bob's registration UTXO
