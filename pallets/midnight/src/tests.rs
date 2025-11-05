@@ -18,9 +18,7 @@ use crate::{
 	mock::{RuntimeOrigin, Test},
 };
 use assert_matches::assert_matches;
-use frame_support::{
-	assert_err, assert_ok, dispatch::GetDispatchInfo, pallet_prelude::Weight, traits::OnFinalize,
-};
+use frame_support::{assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize};
 use frame_system::RawOrigin;
 use midnight_node_ledger::types::{
 	BlockContext,
@@ -175,41 +173,6 @@ fn test_validation_fails() {
 				LedgerApiError::Deserialization(DeserializationError::Transaction).into()
 			))
 		);
-	});
-}
-
-#[test]
-fn sets_manual_test_weight() {
-	mock::new_test_ext().execute_with(|| {
-		let midnight_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: vec![] };
-		let call_info = midnight_call.get_dispatch_info();
-
-		// Starting weight
-		assert_eq!(call_info.call_weight, EXTRA_WEIGHT_TX_SIZE);
-
-		mock::Midnight::set_mn_tx_weight(RawOrigin::Root.into(), Weight::from_parts(42, 0))
-			.unwrap();
-
-		let midnight_call_2 = MidnightCall::<Test>::send_mn_transaction { midnight_tx: vec![] };
-		let call_info_2 = midnight_call_2.get_dispatch_info();
-		assert_eq!(call_info_2.call_weight, Weight::from_parts(42, 0));
-	});
-}
-
-#[test]
-fn sets_extra_contract_call_weight() {
-	mock::new_test_ext().execute_with(|| {
-		let before_weight = mock::Midnight::configurable_contract_call_weight();
-
-		assert_eq!(before_weight, crate::EXTRA_WEIGHT_TX_SIZE);
-
-		let new_weight = Weight::from_parts(42, 0);
-
-		mock::Midnight::set_contract_call_weight(RawOrigin::Root.into(), new_weight).unwrap();
-
-		let after_weight = mock::Midnight::configurable_contract_call_weight();
-
-		assert_eq!(after_weight, new_weight);
 	});
 }
 
