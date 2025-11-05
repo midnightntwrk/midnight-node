@@ -69,3 +69,24 @@ fn keys_from_file(key_file: &str) -> Result<Vec<BeefyKeyInfo>, Error> {
 		Error::JsonDecodeError(key_file.to_string())
 	})
 }
+
+#[cfg(test)]
+mod test {
+	use crate::beefy_keys::keys_from_file;
+
+	#[test]
+	fn test_beefy_keys_file() {
+		// get sample data
+		let beefy_keys_file = "test-data/beefy-keys.json";
+
+		let beefy_keys = keys_from_file(beefy_keys_file).expect("Failed to get beefykeyinfo");
+
+		assert_eq!(beefy_keys.len(), 2);
+
+		assert_eq!(beefy_keys[0].suri, "//Alice");
+		assert_eq!(beefy_keys[1].suri, "//Bob");
+
+		assert_eq!(beefy_keys[0].node_url, "ws://localhost:9933");
+		assert_eq!(beefy_keys[1].node_url, "ws://localhost:9934");
+	}
+}
