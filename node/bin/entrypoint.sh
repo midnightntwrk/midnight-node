@@ -30,4 +30,4 @@ if [ ! -d "$FINAL_BASE_PATH" ]; then
 fi
 
 # Now run as appuser
-exec /midnight-node -- "$@"
+exec /midnight-node "$@"
