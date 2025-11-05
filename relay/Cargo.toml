@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+mmr-rpc = { workspace = true, default-features = true }
+parity-scale-codec = { workspace = true, default-features = true, features = ["derive"]}
+
 subxt = { workspace = true, default-features = true }
+sp-core = { workspace = true, default-features = true }
+sp-consensus-beefy = { workspace = true, default-features = true }
 
 clap = { workspace = true, default-features = true, features = ["derive", "env"] }
 serde = { workspace = true, default-features = true }
