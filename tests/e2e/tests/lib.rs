@@ -12,6 +12,7 @@ async fn register_for_dust_production() {
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
 	let dust_hex = new_dust_hex(32);
+	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
@@ -57,8 +58,8 @@ async fn register_for_dust_production() {
 		})
 		.find(|map| {
 			map.0.cardano_address.0 == cardano_address
-				&& map.0.dust_address == dust_hex
-				&& map.0.utxo_id == hex::encode(register_tx_id)
+				&& &map.0.dust_address == &dust_bytes
+				&& map.0.utxo_id == register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
@@ -213,6 +214,7 @@ async fn register_2_cardano_same_dust_address_production() {
 	println!("Second Cardano wallet created: {:?}", second_bech32_address);
 
 	let dust_hex = new_dust_hex(32);
+	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering First Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 	println!(
 		"Registering Second Cardano wallet {} with DUST address {}",
@@ -312,8 +314,8 @@ async fn register_2_cardano_same_dust_address_production() {
 		})
 		.find(|map| {
 			map.0.cardano_address.0 == cardano_address
-				&& map.0.dust_address == dust_hex
-				&& map.0.utxo_id == hex::encode(register_tx_id)
+				&& &map.0.dust_address == &dust_bytes
+				&& map.0.utxo_id == register_tx_id
 		});
 
 	let second_mapping_added = second_registration_events
@@ -324,8 +326,8 @@ async fn register_2_cardano_same_dust_address_production() {
 		})
 		.find(|map| {
 			map.0.cardano_address.0 == second_cardano_address
-				&& map.0.dust_address == dust_hex
-				&& map.0.utxo_id == hex::encode(second_register_tx_id)
+				&& &map.0.dust_address == &dust_bytes
+				&& map.0.utxo_id == second_register_tx_id
 		});
 	assert!(
 		mapping_added.is_some(),
@@ -401,6 +403,7 @@ async fn deregister_from_dust_production() {
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
 	let dust_hex = new_dust_hex(32);
+	let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;
@@ -461,8 +464,8 @@ async fn deregister_from_dust_production() {
 		})
 		.find(|map| {
 			map.0.cardano_address.0 == cardano_address
-				&& map.0.dust_address == dust_hex
-				&& map.0.utxo_id == hex::encode(register_tx_id)
+				&& &map.0.dust_address == &dust_bytes
+				&& map.0.utxo_id == register_tx_id
 		});
 	assert!(
 		mapping_removed.is_some(),
