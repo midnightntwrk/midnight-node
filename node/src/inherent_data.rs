@@ -23,6 +23,7 @@ use midnight_node_runtime::{
 	opaque::{Block, SessionKeys},
 };
 use midnight_primitives_cnight_observation::CNightObservationApi;
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
@@ -75,6 +76,7 @@ where
 		>,
 	T::Api: CNightObservationApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
+	T::Api: FederatedAuthorityObservationApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_consensus_aura::inherents::InherentDataProvider,
@@ -150,7 +152,9 @@ where
 		.await?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
+			parent_hash,
 			&mc_hash.mc_hash(),
 		)
 		.await?;
@@ -200,6 +204,7 @@ where
 		>,
 	T::Api: CNightObservationApi<Block>,
 	T::Api: GovernedMapIDPApi<Block>,
+	T::Api: FederatedAuthorityObservationApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_timestamp::InherentDataProvider,
@@ -270,7 +275,9 @@ where
 		.await?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
+			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
+			parent_hash,
 			&mc_hash,
 		)
 		.await?;
