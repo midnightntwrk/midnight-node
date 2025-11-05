@@ -113,6 +113,16 @@ get-metadata:
     ARG METADATA_IMAGE_NAME="localhost/node:latest"
     ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
+    # Install Docker manually for Trixie
+    RUN apt-get update && \
+        apt-get install -y ca-certificates curl && \
+        install -m 0755 -d /etc/apt/keyrings && \
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+        chmod a+r /etc/apt/keyrings/docker.asc && \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | \
+        tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+        apt-get update && \
+        apt-get install -y docker-ce docker-ce-cli containerd.io
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
           sleep 5 && \
