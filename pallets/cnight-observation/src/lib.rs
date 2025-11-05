@@ -79,7 +79,6 @@ pub mod pallet {
 	use super::*;
 
 	struct CNightGeneratesDustEventSerialized(Vec<u8>);
-	use scale_info::prelude::string::String;
 
 	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>;
 	pub type DustAddress = Vec<u8>;
@@ -102,13 +101,6 @@ pub mod pallet {
 		pub dust_address: DustAddress,
 		pub utxo_id: [u8; 32],
 		pub utxo_index: u16,
-	}
-
-	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
-	pub struct Mapping {
-		pub cardano_address: BoundedCardanoAddress,
-		pub dust_address: String,
-		pub utxo_id: String,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
@@ -146,8 +138,8 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		Registration(Registration),
 		Deregistration(Deregistration),
-		MappingAdded(Mapping),
-		MappingRemoved(Mapping),
+		MappingAdded(MappingEntry),
+		MappingRemoved(MappingEntry),
 		SystemTransactionApplied(SystemTransactionApplied),
 	}
 
@@ -386,11 +378,7 @@ pub mod pallet {
 				}));
 			}
 
-			Self::deposit_event(Event::<T>::MappingAdded(Mapping {
-				cardano_address: cardano_address.clone(),
-				dust_address: hex::encode(dust_address),
-				utxo_id: hex::encode(header.utxo_tx_hash.0),
-			}));
+			Self::deposit_event(Event::<T>::MappingAdded(new_reg));
 			Some((cardano_address, mappings))
 		}
 
@@ -447,11 +435,7 @@ pub mod pallet {
 				}))
 			}
 
-			Self::deposit_event(Event::<T>::MappingRemoved(Mapping {
-				cardano_address,
-				dust_address: hex::encode(dust_address),
-				utxo_id: hex::encode(header.utxo_tx_hash.0),
-			}));
+			Self::deposit_event(Event::<T>::MappingRemoved(reg_entry));
 		}
 
 		fn handle_create(
