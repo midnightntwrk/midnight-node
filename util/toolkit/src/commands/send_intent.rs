@@ -111,7 +111,7 @@ mod test {
 
 		let contract_args = CustomContractArgs {
 			info,
-			compiled_contract_dir: compiled_contract_dir.to_string(),
+			compiled_contract_dirs: vec![compiled_contract_dir.to_string()],
 			intent_files: vec![intent_file],
 			utxo_inputs: vec![],
 			zswap_state_file: None,
@@ -131,26 +131,154 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "due to ledger bug PM-19672, this doesn't work yet"]
-	async fn test_mint_tx() {
+	async fn test_double_deploy() {
 		let out_dir = tempfile::tempdir().unwrap();
 
 		let toolkit_js_path = "../toolkit-js".to_string();
-		let compiled_contract_dir = format!("{toolkit_js_path}/mint/out");
-		let output_tx = out_dir.path().join("mint_tx.mn").to_string_lossy().to_string();
+		let compiled_contract_dir_mint = format!("{toolkit_js_path}/mint/out");
+		let compiled_contract_dir_counter =
+			format!("{toolkit_js_path}/test/contract/managed/counter");
+
+		let double_deploy_tx =
+			out_dir.path().join("double_deploy_tx.mn").to_string_lossy().to_string();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"send-intent",
 			"--src-file",
 			"../../res/genesis/genesis_block_undeployed.mn",
-			"./test-data/contract/mint/deploy_tx.mn",
 			"--intent-file",
-			"./test-data/contract/mint/mint.bin",
-			"--zswap-state-file",
-			"./test-data/contract/mint/mint_zswap.json",
+			"./test-data/contract/mint/deploy.bin",
+			"--intent-file",
+			"./test-data/contract/counter/deploy.bin",
 			"--compiled-contract-dir",
-			&compiled_contract_dir,
+			&compiled_contract_dir_mint,
+			"--compiled-contract-dir",
+			&compiled_contract_dir_counter,
+			"--to-bytes",
+			"--dest-file",
+			&double_deploy_tx,
+		];
+
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		assert!(fs::exists(&double_deploy_tx).unwrap());
+
+		// Generate counter intent
+
+		let counter_config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
+		let counter_output_intent =
+			out_dir.path().join("counter_intent.bin").to_string_lossy().to_string();
+		let output_private_state =
+			out_dir.path().join("counter_state.json").to_string_lossy().to_string();
+		let output_zswap_state =
+			out_dir.path().join("counter_zswap.json").to_string_lossy().to_string();
+		let output_result =
+			out_dir.path().join("counter_output.json").to_string_lossy().to_string();
+		let contract_address_hex =
+			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
+				.unwrap()
+				.trim()
+				.to_string();
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"generate-intent",
+			"circuit",
+			"--toolkit-js-path",
+			&toolkit_js_path,
+			"--config",
+			&counter_config,
+			"--coin-public",
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			"--input-onchain-state",
+			"./test-data/contract/counter/contract_state.mn",
+			"--input-private-state",
+			"./test-data/contract/counter/initial_state.json",
+			"--output-intent",
+			&counter_output_intent,
+			"--output-private-state",
+			&output_private_state,
+			"--output-zswap-state",
+			&output_zswap_state,
+			"--output-result",
+			&output_result,
+			"--contract-address",
+			&contract_address_hex,
+			"increment",
+		];
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		// Generate Mint intent
+		let mint_config = format!("{toolkit_js_path}/mint/mint.config.ts");
+		let mint_output_intent =
+			out_dir.path().join("mint_intent.bin").to_string_lossy().to_string();
+		let output_private_state =
+			out_dir.path().join("mint_state.json").to_string_lossy().to_string();
+		let output_zswap_state =
+			out_dir.path().join("mint_zswap.json").to_string_lossy().to_string();
+		let output_result = out_dir.path().join("mint_output.json").to_string_lossy().to_string();
+		let contract_address_hex =
+			std::fs::read_to_string("./test-data/contract/mint/contract_address.mn")
+				.unwrap()
+				.trim()
+				.to_string();
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"generate-intent",
+			"circuit",
+			"--toolkit-js-path",
+			&toolkit_js_path,
+			"--config",
+			&mint_config,
+			"--coin-public",
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			"--input-onchain-state",
+			"./test-data/contract/mint/contract_state.mn",
+			"--input-private-state",
+			"./test-data/contract/mint/initial_state.json",
+			"--output-intent",
+			&mint_output_intent,
+			"--output-private-state",
+			&output_private_state,
+			"--output-zswap-state",
+			&output_zswap_state,
+			"--output-result",
+			&output_result,
+			"--contract-address",
+			&contract_address_hex,
+			"mint",
+			"3337000000000000000000000000000000000000000000000000000000000000",
+			"feeb000000000000000000000000000000000000000000000000000000000000",
+			"1000",
+		];
+		let cli = Cli::parse_from(args);
+		run_command(cli.command).await.expect("should work");
+
+		let compiled_contract_dir_mint = format!("{toolkit_js_path}/mint/out");
+		let compiled_contract_dir_counter =
+			format!("{toolkit_js_path}/test/contract/managed/counter");
+
+		let output_tx = out_dir.path().join("double_call_tx.mn").to_string_lossy().to_string();
+
+		let args = vec![
+			"midnight-node-toolkit",
+			"send-intent",
+			"--src-file",
+			"../../res/genesis/genesis_block_undeployed.mn",
+			"--src-file",
+			&double_deploy_tx,
+			"--intent-file",
+			&mint_output_intent,
+			"--intent-file",
+			&counter_output_intent,
+			"--compiled-contract-dir",
+			&compiled_contract_dir_mint,
+			"--compiled-contract-dir",
+			&compiled_contract_dir_counter,
 			"--to-bytes",
 			"--dest-file",
 			&output_tx,
