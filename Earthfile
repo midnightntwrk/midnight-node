@@ -570,17 +570,6 @@ check-rust:
     # ensure runtime benchmark feature enable to check they compile.
     RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
 
-# check-nodejs lints any nodejs projects
-check-nodejs:
-    FROM node:22-trixie
-    RUN corepack enable
-    COPY --dir tests/package.json tests/polkadot-api.json tests/.yarnrc.yml tests/yarn.lock tests/.papi/ ./tests
-    COPY metadata/static/midnight_metadata.scale metadata/static/midnight_metadata.scale
-    WORKDIR /tests
-    RUN yarn install --immutable
-    COPY tests/ ./
-    RUN yarn lint
-
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
@@ -599,7 +588,6 @@ check-metadata:
 # check lints/format checks for entire repo
 check:
     BUILD +check-rust
-    BUILD +check-nodejs
 
 # test runs the tests in parallel with code coverage.
 test:
@@ -916,9 +904,6 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/
 
-audit-tests:
-    BUILD +audit-yarn --DIRECTORY=tests/
-
 audit-ui:
     BUILD +audit-yarn --DIRECTORY=ui/
 
@@ -929,7 +914,6 @@ audit-ui-tests:
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-tests
     BUILD +audit-ui
     BUILD +audit-ui-tests
 
@@ -1003,22 +987,6 @@ testnet-sync-e2e:
 
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
-    ARG USEROS
-    FROM node:22-trixie
-    COPY metadata/static metadata/static
-    COPY tests/ tests/
-    WORKDIR tests
-    RUN corepack enable
-    RUN yarn install --immutable
-    RUN yarn run build
-    WORKDIR /
-    COPY local-environment/ local-environment/
-    COPY scripts/cnight-generates-dust scripts/cnight-generates-dust
-    WORKDIR tests
-    RUN --no-cache HOST_ADDR=$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal") \
-        yarn run start
-
-local-env-rust-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .

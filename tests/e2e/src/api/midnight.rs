@@ -7,6 +7,7 @@ use midnight_node_metadata::midnight_metadata_latest::{
 	federated_authority_observation,
 };
 use rand::RngCore;
+use subxt::utils::H256;
 use subxt::{blocks::ExtrinsicEvents, OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, Duration, Instant};
 
@@ -107,7 +108,7 @@ pub async fn query_night_utxo_owners(
 	let nonce = hex::decode(&utxo).unwrap();
 	let storage_address = mn_meta::storage()
 		.c_night_observation()
-		.utxo_owners(mn_meta::runtime_types::bounded_collections::bounded_vec::BoundedVec(nonce));
+		.utxo_owners(H256(nonce.try_into().unwrap()));
 
 	let owners = api.storage().at_latest().await?.fetch(&storage_address).await?;
 
@@ -126,7 +127,7 @@ pub async fn poll_utxo_owners_until_change(
 	let start = Instant::now();
 	loop {
 		let current_value = query_night_utxo_owners(utxo.clone()).await?;
-		if current_value != initial_value {
+		if current_value.as_ref().map(|v| v.0) != initial_value.as_ref().map(|v| v.0) {
 			println!("UtxoOwners storage changed: {:?}", current_value);
 			return Ok(current_value);
 		}
