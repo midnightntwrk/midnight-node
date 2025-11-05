@@ -16,6 +16,7 @@ pub struct AppConfig {
 	pub council_forever_file: String,
 	pub tech_auth_forever_file: String,
 	pub cnight_token_policy_file: String,
+	pub redemption_validator_policy_file: String,
 }
 
 pub fn load_config() -> AppConfig {
@@ -60,6 +61,41 @@ pub fn get_mapping_validator_address() -> String {
 	let cfg = load_config();
 	let cbor_hex = load_cbor(&cfg.mapping_validator_policy_file);
 	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V2);
+	let network = NetworkInfo::testnet_preview().network_id();
+	whisky::script_to_address(network, &script_hash.unwrap(), None)
+}
+
+
+#[derive(Debug, Deserialize)]
+struct Validator {
+    title: String,
+    compiledCode: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Blueprint {
+    validators: Vec<Validator>,
+}
+
+
+pub fn load_redemption_compiled_code() -> String {
+	let cfg = load_config();
+    let file_content = fs::read_to_string(&cfg.redemption_validator_policy_file).expect("Failed to read file");
+    let blueprint: Blueprint = serde_json::from_str(&file_content).expect("Invalid JSON");
+    let redemption = blueprint
+        .validators
+        .into_iter()
+        .find(|v| v.title == "redemption.redemption.spend")
+        .expect("Validator not found");
+    redemption.compiledCode
+}
+
+pub fn get_redemption_policy_id(cbor_hex: &str) -> String {
+	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V3);
+	let double_encoded_cbor = whisky::apply_double_cbor_encoding(cbor_hex)
+		.expect("Failed to double encode redemption script");
+	println!("Redemption double encoded: {}", double_encoded_cbor);
+	println!("Redemption Policy ID: {}", script_hash.as_ref().unwrap());
 	let network = NetworkInfo::testnet_preview().network_id();
 	whisky::script_to_address(network, &script_hash.unwrap(), None)
 }

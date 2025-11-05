@@ -8,3 +8,4 @@ auth_token_policy_file = "../../scripts/cnight-generates-dust/auth_token_policy.
 council_forever_file = "./src/cfg/local/council_forever.json"
 tech_auth_forever_file = "./src/cfg/local/tech_auth_forever.json"
 cnight_token_policy_file = "../../scripts/cnight-generates-dust/cnight_policy.plutus"
+redemption_validator_policy_file = "./src/cfg/redemption_plutus.json"

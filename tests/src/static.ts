@@ -95,5 +95,14 @@ export const redemptionScript: Script = {
     ]),
   ),
 };
+console.log("Redemption Script CBOR:", redemptionScript.script);
+console.log("Redemption script parametrized:", applyParamsToScript(redemptionSkeleton.compiledCode, [
+  cnightPolicyId,
+  fromText(""),
+]));
+console.log("Redemption script skeleton compiled code:", redemptionSkeleton.compiledCode);
+console.log("cnight policy id:", cnightPolicyId);
+console.log("Empty bytes as CBOR hex:", fromText(""));
 
 export const redemptionPolicyId = validatorToScriptHash(redemptionScript);
+console.log("Redemption Policy ID:", redemptionPolicyId);
