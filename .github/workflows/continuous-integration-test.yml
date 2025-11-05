@@ -50,3 +50,8 @@ jobs:
         with:
           name: Lcov Coverage Report
           path: test-artifacts/tests.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: test-artifacts/tests.lcov
