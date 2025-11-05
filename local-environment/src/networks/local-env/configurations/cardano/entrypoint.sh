@@ -97,7 +97,7 @@ add_env_var "MC__FIRST_EPOCH_NUMBER" "0"
 add_env_var "MC__EPOCH_DURATION_MILLIS" "$epoch_duration_millis"
 add_env_var "MC__FIRST_SLOT_NUMBER" "0"
 add_env_var "MC__SLOT_DURATION_MILLIS" "$slot_duration_millis"
-add_env_var "ALLOW_NON_SSL" true
+add_env_var "ALLOW_NON_SSL" false
 
 cp "$MC_ENV_FILE" /shared/mc.env
 cp "$MC_ENV_FILE" /runtime-values/mc.env
