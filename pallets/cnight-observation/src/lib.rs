@@ -25,6 +25,7 @@ use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIE
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
 use serde::{Deserialize, Serialize};
+use sidechain_domain::McBlockHash;
 
 pub mod config;
 
@@ -40,7 +41,7 @@ pub mod config;
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 pub struct CmstHeader {
 	/// Hash of the last processed block
-	pub block_hash: [u8; 32],
+	pub block_hash: McBlockHash,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
 }
@@ -54,20 +55,20 @@ pub enum UtxoActionType {
 
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
-/// Addresses are in Bech32 repr. The max length is:
-/// max(len('addr'), len('addr_test')) + 1 byte separator + len(bech32_encode(<shelly_address_max = 57 bytes>))
-/// = 9 + 1 + 98 = 108
-pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
 
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::MidnightSystemTransactionExecutor;
+	use midnight_primitives_cnight_observation::{
+		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 		RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData,
 	};
 	use scale_info::prelude::vec::Vec;
+	use sidechain_domain::McTxHash;
 	use sp_core::H256;
 
 	use midnight_node_ledger::types::{
@@ -81,8 +82,6 @@ pub mod pallet {
 	struct CNightGeneratesDustEventSerialized(Vec<u8>);
 
 	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>;
-	pub type DustAddress = Vec<u8>;
-	pub type BoundedUtxoHash = BoundedVec<u8, ConstU32<32>>;
 
 	#[derive(
 		Debug,
@@ -97,22 +96,22 @@ pub mod pallet {
 		Deserialize,
 	)]
 	pub struct MappingEntry {
-		pub cardano_address: BoundedCardanoAddress,
-		pub dust_address: DustAddress,
-		pub utxo_id: [u8; 32],
+		pub cardano_reward_address: CardanoRewardAddressBytes,
+		pub dust_public_key: DustPublicKeyBytes,
+		pub utxo_tx_hash: McTxHash,
 		pub utxo_index: u16,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
 	pub struct Registration {
-		pub cardano_address: BoundedCardanoAddress,
-		pub dust_address: DustAddress,
+		pub cardano_reward_address: CardanoRewardAddressBytes,
+		pub dust_public_key: DustPublicKeyBytes,
 	}
 
 	#[derive(Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, new)]
 	pub struct Deregistration {
-		pub cardano_address: BoundedCardanoAddress,
-		pub dust_address: DustAddress,
+		pub cardano_reward_address: CardanoRewardAddressBytes,
+		pub dust_public_key: DustPublicKeyBytes,
 	}
 
 	#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -163,18 +162,23 @@ pub mod pallet {
 		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
 
 	#[pallet::storage]
+	// Asset name for auth token used in MappingValidator
+	pub type MainChainAuthTokenAssetName<T: Config> =
+		StorageValue<_, BoundedVec<u8, ConstU32<32>>, ValueQuery>;
+
+	#[pallet::storage]
 	// Script address for executing Glacier Drop redemptions on Cardano
 	pub type MainChainRedemptionValidatorAddress<T: Config> =
 		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
 
 	#[pallet::storage]
 	pub type Mappings<T: Config> =
-		StorageMap<_, Blake2_128Concat, BoundedCardanoAddress, Vec<MappingEntry>, ValueQuery>;
+		StorageMap<_, Blake2_128Concat, CardanoRewardAddressBytes, Vec<MappingEntry>, ValueQuery>;
 
 	// TODO: Read from ledger state directly ?
 	#[pallet::storage]
 	pub type UtxoOwners<T: Config> =
-		StorageMap<_, Blake2_128Concat, BoundedUtxoHash, DustAddress, OptionQuery>;
+		StorageMap<_, Blake2_128Concat, T::Hash, DustPublicKeyBytes, OptionQuery>;
 
 	#[pallet::storage]
 	// The next Cardano position to look for new transactions
@@ -258,19 +262,25 @@ pub mod pallet {
 					.expect("Asset name too long"),
 			));
 
+			MainChainAuthTokenAssetName::<T>::set(
+				self.config
+					.addresses
+					.auth_token_asset_name
+					.as_bytes()
+					.to_vec()
+					.try_into()
+					.expect("Auth Token asset name longer than expected"),
+			);
+
 			for (k, v) in &self.config.mappings {
-				let k: BoundedCardanoAddress =
-					k.clone().try_into().expect("Mapping key longer than expected");
 				Mappings::<T>::insert(k, v.clone());
 			}
 
 			for (k, v) in &self.config.utxo_owners {
-				let k: BoundedUtxoHash =
-					k.clone().try_into().expect("Mapping key longer than expected");
-				UtxoOwners::<T>::insert(k, v.clone());
+				UtxoOwners::<T>::insert(H256(*k), v);
 			}
 
-			NextCardanoPosition::<T>::set(self.config.next_cardano_position);
+			NextCardanoPosition::<T>::set(self.config.next_cardano_position.clone());
 		}
 	}
 
@@ -320,88 +330,59 @@ pub mod pallet {
 				.expect("Token transfer data not encoded correctly")
 		}
 
-		pub fn get_registration(wallet: &BoundedCardanoAddress) -> Option<DustAddress> {
+		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
 			let mappings = Mappings::<T>::get(wallet);
-			if mappings.len() == 1 { Some(mappings[0].dust_address.clone()) } else { None }
+			if mappings.len() == 1 { Some(mappings[0].dust_public_key) } else { None }
 		}
 
 		// Check if any form of a registration could be considered valid as of now
-		pub fn is_registered(utxo_holder: &BoundedCardanoAddress) -> bool {
+		pub fn is_registered(utxo_holder: &CardanoRewardAddressBytes) -> bool {
 			let mappings = Mappings::<T>::get(utxo_holder);
 			// For a registration to be valid, there can only be one stored
-			if mappings.len() == 1 {
-				// We store all incoming DUST mappings from Cardano to maintain consistency, so need to manually check the length of all stored
-				mappings[0].dust_address.len() == 32
-			} else {
-				false
-			}
+			mappings.len() == 1
 		}
 
 		#[allow(clippy::type_complexity)]
 		fn handle_registration(
 			header: &ObservedUtxoHeader,
 			data: RegistrationData,
-		) -> Option<(BoundedCardanoAddress, Vec<MappingEntry>)> {
-			// TODO: Invalid addresses should be skipped - they may be for an incorrect network, or
-			// something else
-			// TODO: Add UTXO info for invalid addresses
-			let Ok(cardano_address) = BoundedCardanoAddress::try_from(data.cardano_address.clone())
-			else {
-				log::info!(
-					"Invalid Cardano address {:?} received in registration action",
-					data.cardano_address
-				);
-				return None;
-			};
-
-			let dust_address = data.dust_address;
+		) -> Option<(CardanoRewardAddressBytes, Vec<MappingEntry>)> {
+			let RegistrationData { cardano_reward_address, dust_public_key } = data;
 
 			let new_reg = MappingEntry {
-				cardano_address: cardano_address.clone(),
-				dust_address: dust_address.clone(),
-				utxo_id: header.utxo_tx_hash.0,
+				cardano_reward_address,
+				dust_public_key,
+				utxo_tx_hash: header.utxo_tx_hash,
 				utxo_index: header.utxo_index.0,
 			};
 
-			let mut mappings = Mappings::<T>::get(&cardano_address);
-
+			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 			mappings.push(new_reg.clone());
+			Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 
-			Mappings::<T>::insert(cardano_address.clone(), mappings.clone());
-
-			let stored_registration = Mappings::<T>::get(&cardano_address);
-
-			if stored_registration.len() == 1 && stored_registration[0].dust_address.len() == 32 {
+			if mappings.len() == 1 {
 				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_address: cardano_address.clone(),
-					dust_address: dust_address.clone(),
+					cardano_reward_address,
+					dust_public_key,
 				}));
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(new_reg));
-			Some((cardano_address, mappings))
+			Some((cardano_reward_address, mappings))
 		}
 
 		fn handle_registration_removal(header: &ObservedUtxoHeader, data: DeregistrationData) {
-			let Ok(cardano_address) = BoundedVec::try_from(data.clone().cardano_address) else {
-				log::error!(
-					"Requested to remove registration for Cardano address: {:?}, which is of unexpected length. Will not process.",
-					data.cardano_address
-				);
-				return;
-			};
-
-			let dust_address = data.clone().dust_address;
+			let DeregistrationData { cardano_reward_address, dust_public_key } = data;
 
 			let reg_entry = MappingEntry {
-				cardano_address: cardano_address.clone(),
-				dust_address: dust_address.clone(),
-				utxo_id: header.utxo_tx_hash.0,
+				cardano_reward_address,
+				dust_public_key,
+				utxo_tx_hash: header.utxo_tx_hash,
 				utxo_index: header.utxo_index.0,
 			};
 
-			let was_valid = Self::is_registered(&cardano_address);
-			let mut mappings = Mappings::<T>::get(&cardano_address);
+			let was_valid = Self::is_registered(&cardano_reward_address);
+			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 
 			if let Some(index) = mappings.iter().position(|x| x == &reg_entry) {
 				mappings.remove(index);
@@ -413,25 +394,25 @@ pub mod pallet {
 			}
 
 			if mappings.is_empty() {
-				Mappings::<T>::remove(&cardano_address);
+				Mappings::<T>::remove(cardano_reward_address);
 			} else {
-				Mappings::<T>::insert(&cardano_address, mappings.clone());
+				Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 			}
 
-			let is_valid = Self::is_registered(&cardano_address);
+			let is_valid = Self::is_registered(&cardano_reward_address);
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
-			if was_valid != is_valid && is_valid {
+			if !was_valid && is_valid {
 				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_address: cardano_address.clone(),
-					dust_address: dust_address.clone(),
+					cardano_reward_address,
+					dust_public_key,
 				}))
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
-			if was_valid && mappings.is_empty() {
+			if was_valid && !is_valid {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
-					cardano_address: cardano_address.clone(),
-					dust_address: dust_address.clone(),
+					cardano_reward_address,
+					dust_public_key,
 				}))
 			}
 
@@ -442,34 +423,21 @@ pub mod pallet {
 			cur_time: u64,
 			data: CreateData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
-			let Ok(cardano_address) = BoundedVec::try_from(data.owner) else {
-				return None;
-			};
-
-			let Some(dust_address) = Self::get_registration(&cardano_address) else {
-				log::warn!("No valid dust registration for {cardano_address:?}");
+			let Some(dust_public_key) = Self::get_registration(&data.owner) else {
+				log::warn!("No valid dust registration for {:?}", &data.owner);
 				return None;
 			};
 
 			let nonce = T::Hashing::hash(
-				&[b"asset_create", &data.utxo_tx_hash[..], &data.utxo_tx_index.to_be_bytes()[..]]
+				&[b"asset_create", &data.utxo_tx_hash.0[..], &data.utxo_tx_index.to_be_bytes()[..]]
 					.concat(),
 			);
 
-			let Ok(utxo_id) = BoundedVec::try_from(nonce.0.to_vec()) else {
-				log::error!(
-					"cannot create bounded vec from utxo: {}#{}",
-					hex::encode(data.utxo_tx_hash),
-					data.utxo_tx_index
-				);
-				return None;
-			};
-
-			UtxoOwners::<T>::insert(&utxo_id, dust_address.clone());
+			UtxoOwners::<T>::insert(nonce, dust_public_key);
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -489,20 +457,14 @@ pub mod pallet {
 			data: SpendData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
 			let nonce = T::Hashing::hash(
-				&[b"asset_create", &data.utxo_tx_hash[..], &data.utxo_tx_index.to_be_bytes()[..]]
+				&[b"asset_create", &data.utxo_tx_hash.0[..], &data.utxo_tx_index.to_be_bytes()[..]]
 					.concat(),
 			);
 
-			// TODO: Should always fit into a bounded vec
-			let Ok(utxo_hash) = BoundedVec::try_from(nonce.0.to_vec()) else {
-				// TODO: Log here
-				return None;
-			};
-
-			let Some(dust_address) = UtxoOwners::<T>::get(&utxo_hash) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash),
+					hex::encode(data.utxo_tx_hash.0),
 					data.utxo_tx_index
 				);
 				return None;
@@ -510,7 +472,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,
@@ -529,38 +491,25 @@ pub mod pallet {
 			cur_time: u64,
 			data: RedemptionCreateData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
-			let Ok(cardano_address) = BoundedVec::try_from(data.owner) else {
-				return None;
-			};
-
-			let Some(dust_address) = Self::get_registration(&cardano_address) else {
-				log::warn!("No valid dust registration for {cardano_address:?}");
+			let Some(dust_public_key) = Self::get_registration(&data.owner) else {
+				log::warn!("No valid dust registration for {:?}", &data.owner);
 				return None;
 			};
 
 			let nonce = T::Hashing::hash(
 				&[
 					b"redemption_create",
-					&data.utxo_tx_hash[..],
+					&data.utxo_tx_hash.0[..],
 					&data.utxo_tx_index.to_be_bytes()[..],
 				]
 				.concat(),
 			);
 
-			let Ok(utxo_id) = BoundedVec::try_from(nonce.0.to_vec()) else {
-				log::error!(
-					"cannot create bounded vec from utxo: {}#{}",
-					hex::encode(data.utxo_tx_hash),
-					data.utxo_tx_index
-				);
-				return None;
-			};
-
-			UtxoOwners::<T>::insert(&utxo_id, dust_address.clone());
+			UtxoOwners::<T>::insert(nonce, dust_public_key);
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Create as u8,
 				nonce.0,
@@ -582,21 +531,16 @@ pub mod pallet {
 			let nonce = T::Hashing::hash(
 				&[
 					b"redemption_create",
-					&data.utxo_tx_hash[..],
+					&data.utxo_tx_hash.0[..],
 					&data.utxo_tx_index.to_be_bytes()[..],
 				]
 				.concat(),
 			);
 
-			let Ok(utxo_hash) = BoundedVec::try_from(nonce.0.to_vec()) else {
-				// TODO: Log here
-				return None;
-			};
-
-			let Some(dust_address) = UtxoOwners::<T>::get(&utxo_hash) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash),
+					hex::encode(data.utxo_tx_hash.0),
 					data.utxo_tx_index
 				);
 				return None;
@@ -604,7 +548,7 @@ pub mod pallet {
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
-				&dust_address,
+				&dust_public_key.0,
 				cur_time,
 				UtxoActionType::Destroy as u8,
 				nonce.0,
@@ -679,7 +623,7 @@ pub mod pallet {
 				}
 			}
 
-			NextCardanoPosition::<T>::set(next_cardano_position);
+			NextCardanoPosition::<T>::set(next_cardano_position.clone());
 
 			if !events.is_empty() {
 				// Construct the Ledger system transaction
