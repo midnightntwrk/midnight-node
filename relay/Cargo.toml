@@ -14,6 +14,7 @@ sp-mmr-primitives = { workspace = true, default-features = true }
 
 clap = { workspace = true, default-features = true, features = ["derive", "env"] }
 hex = { workspace = true, default-features = true }
+rs_merkle = { git = "https://github.com/midnightntwrk/rs-merkle.git", rev = "7c997a5"}
 serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true, default-features = true }

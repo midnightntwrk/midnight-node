@@ -6999,6 +6999,7 @@ dependencies = [
  "hex",
  "mmr-rpc",
  "parity-scale-codec",
+ "rs_merkle",
  "serde",
  "serde_json",
  "sp-consensus-beefy",
@@ -11857,6 +11858,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9bd6ce569b15c331b1e5fd8cf6adb0bf240678b5f0cdc4d0f41e11683f6feba9"
 dependencies = [
  "archery",
+]
+
+[[package]]
+name = "rs_merkle"
+version = "1.5.0"
+source = "git+https://github.com/midnightntwrk/rs-merkle.git?rev=7c997a5#7c997a58410ae9a23e0513d5eed6cfb410633dc8"
+dependencies = [
+ "parity-scale-codec",
+ "sha2 0.10.9",
 ]
 
 [[package]]

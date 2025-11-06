@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+mod authorities;
 mod beefy_keys;
 mod error;
 mod mmr;
