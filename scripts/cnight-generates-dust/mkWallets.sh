@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Network = testnet
-export CARDANO_NODE_NETWORK_ID=2
+export CARDANO_NODE_NETWORK_ID=42
 
 # Make sure not to overwrite Alice's wallet
 if [[ !(-f payment-alice.vkey || -f payment-alice.skey) ]]; then
@@ -54,10 +54,11 @@ cardano-cli conway address build \
 echo "Wallet address for Alice: `cat payment-alice.addr`"
 echo "Wallet address for Bob  : `cat payment-bob.addr`"
 
-# These values should go into datum-*.json files
-echo "Base16 Alice: `cat payment-alice.addr | basenc --base16`"
-echo "Base16 Bob  : `cat payment-bob.addr   | basenc --base16`"
+cardano-cli address key-hash --payment-verification-key-file payment-alice.vkey
+echo "Wallet PKH for Alice   : `cardano-cli address key-hash --payment-verification-key-file payment-alice.vkey`"
 
-# Save global variables, expecting this to be sourced
-export ALICE_BASE16="$alice_base16"
-export BOB_BASE16="$bob_base16"
+cardano-cli address key-hash --payment-verification-key-file payment-bob.vkey
+echo "Wallet PKH for Bob     : `cardano-cli address key-hash --payment-verification-key-file payment-bob.vkey`"
+
+echo "Update datum-*.json files with the above PKHs before proceeding."
+echo "Done."

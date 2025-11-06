@@ -15,7 +15,9 @@ use crate::{
 	MidnightCNightObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
 	RegistrationData, UtxoIndexInTx,
 };
-use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;
@@ -38,7 +40,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 		header: ObservedUtxoHeader {
 			tx_position: CardanoPosition {
 				block_number: start.block_number,
-				block_hash: start.block_hash,
+				block_hash: start.block_hash.clone(),
 				block_timestamp: start.block_timestamp,
 				tx_index_in_block: 1,
 			},
@@ -47,8 +49,8 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 			utxo_index: UtxoIndexInTx(1),
 		},
 		data: ObservedUtxoData::Registration(RegistrationData {
-			cardano_address: rand::random::<[u8; 32]>().to_vec(),
-			dust_address: rand::random::<[u8; 32]>().to_vec(),
+			cardano_reward_address: CardanoRewardAddressBytes(rand::random::<[u8; 29]>()),
+			dust_public_key: DustPublicKeyBytes(rand::random::<[u8; 33]>()),
 		}),
 	}]
 }
@@ -58,17 +60,17 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 	async fn get_utxos_up_to_capacity(
 		&self,
 		_config: &CNightAddresses,
-		start: CardanoPosition,
+		start: &CardanoPosition,
 		_current_tip: McBlockHash,
 		_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
-		let mut end = start;
+		let mut end = start.clone();
 		end.block_number += 1;
-		end.block_hash = rand::random();
+		end.block_hash = McBlockHash(rand::random());
 
 		let utxos =
-			if start.block_number.is_multiple_of(5) { mock_utxos(&start) } else { Vec::new() };
+			if start.block_number.is_multiple_of(5) { mock_utxos(start) } else { Vec::new() };
 
-		Ok(ObservedUtxos { start, end, utxos })
+		Ok(ObservedUtxos { start: start.clone(), end, utxos })
 	}
 }

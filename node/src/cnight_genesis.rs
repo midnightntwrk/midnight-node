@@ -1,6 +1,7 @@
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
@@ -48,23 +49,23 @@ fn create_inherent(
 }
 
 struct PalletExecResult {
-	mappings: BTreeMap<Vec<u8>, Vec<MappingEntry>>,
-	utxo_owners: BTreeMap<Vec<u8>, Vec<u8>>,
+	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
+	utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
 	next_cardano_position: CardanoPosition,
 	system_tx: Option<Vec<u8>>,
 }
 
 fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 	mock::new_test_ext().execute_with(|| {
-		let inherent_data = create_inherent(utxos.utxos.clone(), utxos.end);
+		let inherent_data = create_inherent(utxos.utxos.clone(), utxos.end.clone());
 		let call = mock::CNightObservation::create_inherent(&inherent_data)
 			.expect("Expected to create inherent call");
 		let call = mock::RuntimeCall::CNightObservation(call);
 		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
 
 		PalletExecResult {
-			mappings: Mappings::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect(),
-			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.into(), v)).collect(),
+			mappings: Mappings::<mock::Test>::iter().collect(),
+			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v)).collect(),
 			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
 			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
 		}
@@ -80,7 +81,7 @@ pub async fn generate_cnight_genesis(
 ) -> Result<(), CNightGenesisError> {
 	let mut current_position = CardanoPosition {
 		// Required to fulfill struct, but value will be unused
-		block_hash: [0; 32],
+		block_hash: McBlockHash([0; 32]),
 		block_number: 0,
 		block_timestamp: TimestampUnixMillis(0),
 		tx_index_in_block: 0,
@@ -92,7 +93,7 @@ pub async fn generate_cnight_genesis(
 		let observed = cnight_observation_data_source
 			.get_utxos_up_to_capacity(
 				&addresses,
-				current_position,
+				&current_position,
 				cardano_tip.clone(),
 				UTXO_CAPACITY,
 			)
@@ -107,7 +108,7 @@ pub async fn generate_cnight_genesis(
 		all_utxos.extend(observed.utxos);
 
 		// Optional: break early if position is past the tip
-		if current_position.block_hash == cardano_tip.0 {
+		if current_position.block_hash == cardano_tip {
 			break;
 		}
 	}

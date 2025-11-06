@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Network = testnet
-export CARDANO_NODE_NETWORK_ID=2
+export CARDANO_NODE_NETWORK_ID=42
 
 UTXO=21b584b9ccab27c27fa0f0f891d9fbdcb18e4ad28665d4eb17b26e41ff190bc4#1
 
