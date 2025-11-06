@@ -1,8 +1,14 @@
+#![allow(clippy::result_large_err)]
+
 mod beefy_keys;
 mod error;
+mod relayer;
 
 use clap::Parser;
 pub use error::Error;
+
+pub type BlockNumber = u32;
+pub type MmrProof = mmr_rpc::LeavesProof<sp_core::H256>;
 
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]
@@ -28,5 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		println!("{e}");
 	};
 
-	Ok(())
+	loop {
+		println!("Starting relay...");
+
+		match relayer::Relayer::new(&cli.node_url.clone()).await {
+			Err(e) => println!("Failed to created relayer: {e}"),
+			Ok(relayer) => relayer.run_relay_by_subscription().await?,
+		}
+	}
 }
