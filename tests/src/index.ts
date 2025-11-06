@@ -58,23 +58,23 @@ function newDustHex(bytes = 32) {
     .join("");
 }
 
-const alicePrivateKey = generatePrivateKey();
-const aliceWallet = makeWalletFromPrivateKey(
-  run.kupmios,
-  "Custom",
-  alicePrivateKey,
-);
-const aliceAddress = await aliceWallet.address();
-// await run.makeCollateral(await aliceWallet.address());
-
-// const bobPrivateKey = generatePrivateKey();
-// const bobWallet = makeWalletFromPrivateKey(
+// const alicePrivateKey = generatePrivateKey();
+// const aliceWallet = makeWalletFromPrivateKey(
 //   run.kupmios,
 //   "Custom",
-//   bobPrivateKey,
+//   alicePrivateKey,
 // );
-// const bobAddress = await bobWallet.address();
-// await run.makeCollateral(await bobWallet.address());
+// const aliceAddress = await aliceWallet.address();
+// await run.makeCollateral(await aliceWallet.address());
+
+const bobPrivateKey = generatePrivateKey();
+const bobWallet = makeWalletFromPrivateKey(
+  run.kupmios,
+  "Custom",
+  bobPrivateKey,
+);
+const bobAddress = await bobWallet.address();
+await run.makeCollateral(await bobWallet.address());
 
 // await run.waitForNextCardanoBlock();
 
@@ -155,22 +155,22 @@ const aliceAddress = await aliceWallet.address();
 
 // console.log("minting 600 cNight for bob...");
 
-// run.selectWallet(ownerKeyPaymentBech32);
-// const cNightUtxo = await run.mintCnight(bobAddress, 1000n);
-// const adaUtxo = await run.send(bobAddress, { lovelace: 1_000_000n });
-// run.selectWallet(bobPrivateKey);
+run.selectWallet(ownerKeyPaymentBech32);
+const cNightUtxo = await run.mintCnight(bobAddress, 1000n);
+const adaUtxo = await run.send(bobAddress, { lovelace: 1_000_000n });
+run.selectWallet(bobPrivateKey);
 
 // await run.waitForNextCardanoBlock();
 
 // await run.printUtxos();
-// console.log("creating redemption contract...");
-// const [redeem1] = await run.createRedemptionContract(
-//   bobAddress,
-//   199,
-//   3,
-//   undefined,
-//   [cNightUtxo, adaUtxo[0]],
-// );
+console.log("creating redemption contract...");
+const [redeem1] = await run.createRedemptionContract(
+  bobAddress,
+  199,
+  3,
+  undefined,
+  [cNightUtxo, adaUtxo[0]],
+);
 
 // // NOTE: Disabled: can be re-enabled when tests are migrated to Rust
 // // checkCreate(bobDustHex, 199n * 3n);

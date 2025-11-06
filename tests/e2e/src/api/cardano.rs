@@ -7,7 +7,6 @@ use ogmios_client::{
 };
 use std::fs;
 use std::time::Duration;
-use uplc::tx::*;
 use whisky::csl::*;
 use whisky::data::constr0;
 use whisky::*;
@@ -592,128 +591,44 @@ pub async fn create_redemption_contract(
 	increment_amount: u64,
 	increments: u32,
 	tx_in: &OgmiosUtxo,
-) {
-	let redemption_compiled_code = load_redemption_compiled_code();
-	println!("Redemption compiled code: {}", redemption_compiled_code);
-	let cnight_token_policy_id = get_cnight_token_policy_id();
-	println!("cnight token policy id: {}", cnight_token_policy_id);
+	cnight_utxo: &OgmiosUtxo,
+	wallet: &Wallet,
+) -> [u8; 32] {
+	let redemption_address = get_redemption_address();
+	let client = get_ogmios_client().await;
+	let mut tx_builder = whisky::TxBuilder::new_core();
+	tx_builder
+		.network(Network::Custom(get_local_env_cost_models()))
+		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
+		.tx_in(
+			&hex::encode(tx_in.transaction.id),
+			tx_in.index.into(),
+			&build_asset_vector(tx_in),
+			&destination_address,
+		)
+		.tx_in(
+			&hex::encode(cnight_utxo.transaction.id),
+			cnight_utxo.index.into(),
+			&build_asset_vector(cnight_utxo),
+			&destination_address,
+		)
+		.tx_out(
+			&redemption_address,
+			&vec![
+				Asset::new_from_str("lovelace", &1000000.to_string()),
+				Asset::new_from_str(
+					&get_cnight_token_policy_id(),
+					&(increment_amount * increments as u64).to_string(),
+				),
+			],
+		)
+		.required_signer_hash(&wallet.account.public_key.hash().to_hex())
+		.complete_sync(None)
+		.unwrap();
 
-	// let double_encoded_script = apply_double_cbor_encoding(&redemption_compiled_code).unwrap();
-	// let plutus_script =
-	// 	csl::PlutusScript::from_bytes(hex_to_bytes(&double_encoded_script).unwrap()).unwrap();
-
-	// // 1. Create PlutusData for each parameter
-	// let policy_id_bytes = hex::decode(&cnight_token_policy_id).unwrap();
-	// let policy_id_data = PlutusData::new_bytes(policy_id_bytes);
-
-	// let empty_data = PlutusData::new_bytes(vec![]);
-
-	// // 2. Create a PlutusData array
-	// let mut params_array = whisky::csl::PlutusList::new();
-	// params_array.add(&policy_id_data);
-	// params_array.add(&empty_data);
-
-	// let script = whisky::apply_params_to_plutus_script(&params_array, plutus_script);
-	// println!("Redemption script after applying params: {}", &script.clone().unwrap().to_hex());
-	// let redemption_policy_id = get_redemption_policy_id(&script.clone().unwrap().to_hex());
-	// println!("Redemption policy ID: {}", redemption_policy_id);
-
-	println!("RADOoooooOOOOO...");
-
-	let plutus_data2 = csl::PlutusData::from_hex(&cnight_token_policy_id).unwrap();
-	// let cnight_json = serde_json::json!({
-	// 	"constructor": 0,
-	// 	"fields": [
-	// 		{ "bytes": cnight_token_policy_id },
-	// 		{ "bytes": "" }
-	// 	]
-	// });
-	let cnight_json = serde_json::json!({ "bytes": cnight_token_policy_id });
-	let empty_data = serde_json::json!({ "bytes": "" });
-	let param = serde_json::to_string(&cnight_json).unwrap();
-	// let plutus_data3 =
-	// 	csl::PlutusData::from_json(&param, csl::PlutusDatumSchema::DetailedSchema).unwrap();
-	// println!("Plutus data from cnight token policy id (method 1): {}", plutus_data3.to_hex());
-	// println!("Plutus data from cnight token policy id: {}", plutus_data2.to_hex());
-	// println!("Plutus data CBOR bytes: {}", policy_id_data.to_hex());
-
-
-	let params_to_apply: &[&str] = &[&serde_json::to_string(&cnight_json).unwrap(), &serde_json::to_string(&empty_data).unwrap()];
-	// let mut items: Vec<&str> = Vec::new();
-
-	// // Add values
-	// items.push(&cnight_token_policy_id);
-	// items.push(vec![]);
-
-	// // Convert to slice when needed
-	// let slice: &[&str] = &items;
-	let script3 = whisky::apply_params_to_script(
-		&redemption_compiled_code,
-		&params_to_apply,
-		BuilderDataType::JSON,
-	);
-	println!("Redemption script after applying params (method 3): {}", script3.clone().unwrap());
-	let redemption_policy_id3 = get_redemption_policy_id(&script3.clone().unwrap());
-	println!("Redemption policy ID: {}", redemption_policy_id3);
-
-	// println!("RADOoooooOOOOO...");
-
-	// // 1. Create PlutusData for each parameter
-	// let policy_id_bytes = hex::decode(&cnight_token_policy_id).unwrap();
-	// let policy_id_data = PlutusData::new_bytes(policy_id_bytes);
-
-	// let empty_data = PlutusData::new_bytes(vec![]);
-
-	// // 2. Create a PlutusData array
-	// let mut params_array = whisky::csl::PlutusList::new();
-	// params_array.add(&policy_id_data);
-	// params_array.add(&empty_data);
-
-	// let params_data = PlutusData::new_list(&params_array);
-
-	// // 3. Encode to CBOR bytes
-	// let params_bytes = params_data.to_bytes(); // This is &[u8]
-
-	// // 4. Pass to uplc::tx::apply_params_to_script
-	// let script_bytes = hex::decode(&redemption_compiled_code).unwrap();
-	// let parametrized_script =
-	// 	uplc::tx::apply_params_to_script(&params_bytes, &script_bytes).unwrap();
-	// let parametrized_script_hex = hex::encode(parametrized_script);
-
-	// println!("Parametrized script hex: {}", parametrized_script_hex);
-
-	// let double_encoded_script = apply_double_cbor_encoding(&parametrized_script_hex).unwrap();
-	// println!("Double encoded script: {}", double_encoded_script);
-
-	// let redemption_policy_id2 = get_redemption_policy_id(&double_encoded_script.clone());
-	// println!("Redemption policy ID: {}", redemption_policy_id2);
-
-
-
-	// let mut plutus_list = csl::PlutusList::new();
-	// let plutus_data = csl::PlutusData::from_hex(&cnight_token_policy_id).unwrap();
-	// plutus_list.add(&plutus_data);
-	// let plutus_data2 = csl::PlutusData::from_hex(&cbor_hex).unwrap();
-	// plutus_list.add(&plutus_data2);
-	// let plutus_script =
-	//     csl::PlutusScript::from_bytes(hex_to_bytes(&redemption_compiled_code).unwrap()).unwrap();
-	// let script2 = apply_params_to_plutus_script(&plutus_list, plutus_script);
-	// println!("Redemption script after applying params: {}", bytes_to_hex(&script2.clone().unwrap().to_bytes()));
-
-	// let redemption_policy_id = get_redemption_policy_id(&script2.unwrap());
-	// let client = get_ogmios_client().await;
-	// let mut tx_builder = whisky::TxBuilder::new_core();
-	// tx_builder
-	// 	.network(Network::Custom(get_local_env_cost_models()))
-	// 	.set_evaluator(Box::new(OfflineTxEvaluator::new()))
-	// 	.tx_in(&hex::encode(tx_in.transaction.id), tx_in.index.into(), &build_asset_vector(tx_in), &destination_address)
-	// 	.tx_out(&destination_address, &vec![Asset::new_from_str("lovelace", &increment_amount.to_string())])
-	// 	.complete_sync(None)
-	// 	.unwrap();
-
-	// let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
-	// let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
-	// let response = client.submit_transaction(&tx_bytes).await.unwrap();
-	// println!("Transaction submitted, response: {:?}", response);
-	// response.transaction.id
+	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+	let response = client.submit_transaction(&tx_bytes).await.unwrap();
+	println!("Transaction submitted, response: {:?}", response);
+	response.transaction.id
 }

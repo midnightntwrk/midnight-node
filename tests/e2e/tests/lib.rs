@@ -521,12 +521,35 @@ async fn alice_cannot_deregister_bob() {
 
 #[tokio::test]
 async fn cnight_in_redemption_contract_produces_dust() {
+	// Create Alice wallet
 	let alice = create_wallet();
 	let alice_bech32 = get_cardano_address_as_bech32(&alice);
 	let dust_hex = new_dust_hex(32);
+
+	// Fund Alice wallet and mint cNIGHT
+	let alice_collateral = make_collateral(&alice_bech32).await;
+	let minting_script = load_cbor(&load_config().cnight_token_policy_file);
+	let amount = 1000;
+	let tx_id = mint_tokens(
+		&alice,
+		&get_cnight_token_policy_id(),
+		"",
+		&amount.to_string(),
+		&minting_script,
+	)
+	.await;
+	println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
+
+	// Create redemption contract
 	let increment_amount = 199;
 	let increments = 3;
-	let alice_collateral = make_collateral(&alice_bech32).await;
-	create_redemption_contract(&alice_bech32, increment_amount, increments, &alice_collateral)
-		.await;
+	create_redemption_contract(
+		&alice_bech32,
+		increment_amount,
+		increments,
+		&alice_collateral,
+		&tx_id,
+		&alice,
+	)
+	.await;
 }

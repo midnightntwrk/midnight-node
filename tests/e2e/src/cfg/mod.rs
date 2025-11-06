@@ -2,6 +2,7 @@ use config as config_rs;
 use serde::Deserialize;
 use std::fs;
 use whisky::csl::NetworkInfo;
+use whisky::BuilderDataType;
 use whisky::LanguageVersion;
 
 #[derive(Debug, Deserialize)]
@@ -65,37 +66,45 @@ pub fn get_mapping_validator_address() -> String {
 	whisky::script_to_address(network, &script_hash.unwrap(), None)
 }
 
-
 #[derive(Debug, Deserialize)]
 struct Validator {
-    title: String,
-    compiledCode: String,
+	title: String,
+	compiledCode: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Blueprint {
-    validators: Vec<Validator>,
+	validators: Vec<Validator>,
 }
 
-
-pub fn load_redemption_compiled_code() -> String {
+pub fn load_redemption_cbor() -> String {
 	let cfg = load_config();
-    let file_content = fs::read_to_string(&cfg.redemption_validator_policy_file).expect("Failed to read file");
-    let blueprint: Blueprint = serde_json::from_str(&file_content).expect("Invalid JSON");
-    let redemption = blueprint
-        .validators
-        .into_iter()
-        .find(|v| v.title == "redemption.redemption.spend")
-        .expect("Validator not found");
-    redemption.compiledCode
+	let file_content =
+		fs::read_to_string(&cfg.redemption_validator_policy_file).expect("Failed to read file");
+	let blueprint: Blueprint = serde_json::from_str(&file_content).expect("Invalid JSON");
+	let redemption = blueprint
+		.validators
+		.into_iter()
+		.find(|v| v.title == "redemption.redemption.spend")
+		.expect("Redemption validator not found");
+	redemption.compiledCode
 }
 
-pub fn get_redemption_policy_id(cbor_hex: &str) -> String {
+pub fn get_redemption_script() -> String {
+	let cnight_policy_param = serde_json::json!({ "bytes": get_cnight_token_policy_id() });
+	let asset_name_param = serde_json::json!({ "bytes": "" });
+	let params: &[&str] = &[
+		&serde_json::to_string(&cnight_policy_param).unwrap(),
+		&serde_json::to_string(&asset_name_param).unwrap(),
+	];
+	let redemption_script =
+		whisky::apply_params_to_script(&load_redemption_cbor(), &params, BuilderDataType::JSON);
+	redemption_script.unwrap()
+}
+
+pub fn get_redemption_address() -> String {
+	let cbor_hex = get_redemption_script();
 	let script_hash = whisky::get_script_hash(&cbor_hex, LanguageVersion::V3);
-	let double_encoded_cbor = whisky::apply_double_cbor_encoding(cbor_hex)
-		.expect("Failed to double encode redemption script");
-	println!("Redemption double encoded: {}", double_encoded_cbor);
-	println!("Redemption Policy ID: {}", script_hash.as_ref().unwrap());
 	let network = NetworkInfo::testnet_preview().network_id();
 	whisky::script_to_address(network, &script_hash.unwrap(), None)
 }
