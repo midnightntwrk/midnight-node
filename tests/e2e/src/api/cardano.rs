@@ -1,6 +1,5 @@
 use crate::cfg::*;
 use bip39::{Language, Mnemonic, MnemonicType};
-use core::slice;
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
 	transactions::*, types::OgmiosUtxo, OgmiosClientError,
@@ -595,7 +594,18 @@ pub async fn create_redemption_contract(
 	wallet: &Wallet,
 ) -> [u8; 32] {
 	let redemption_address = get_redemption_address();
-	let client = get_ogmios_client().await;
+	println!("Redemption contract address: {}", redemption_address);
+	let cardano_address_hex = Address::from_bech32(destination_address).unwrap().to_hex();
+	let data = serde_json::json!({
+		"constructor": 0,
+		"fields": [
+			{ "bytes": &cardano_address_hex },
+			{ "int": increment_amount },
+			{ "int": 0 },
+			{ "int": increments },
+			{ "int": 0 }
+		]
+	});
 	let mut tx_builder = whisky::TxBuilder::new_core();
 	tx_builder
 		.network(Network::Custom(get_local_env_cost_models()))
@@ -615,19 +625,23 @@ pub async fn create_redemption_contract(
 		.tx_out(
 			&redemption_address,
 			&vec![
-				Asset::new_from_str("lovelace", &1000000.to_string()),
+				Asset::new_from_str("lovelace", &2000000.to_string()),
 				Asset::new_from_str(
 					&get_cnight_token_policy_id(),
 					&(increment_amount * increments as u64).to_string(),
 				),
 			],
 		)
+		.tx_out_inline_datum_value(&WData::JSON(serde_json::to_string(&data).unwrap()))
 		.required_signer_hash(&wallet.account.public_key.hash().to_hex())
+		.change_address(&destination_address)
 		.complete_sync(None)
 		.unwrap();
 
 	let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
 	let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+
+	let client = get_ogmios_client().await;
 	let response = client.submit_transaction(&tx_bytes).await.unwrap();
 	println!("Transaction submitted, response: {:?}", response);
 	response.transaction.id

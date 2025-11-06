@@ -482,6 +482,7 @@ async fn alice_cannot_deregister_bob() {
 	// Create Alice and Bob wallets
 	let alice = create_wallet();
 	let alice_bech32 = get_cardano_address_as_bech32(&alice);
+	println!("Alice wallet created: {}", alice_bech32);
 
 	let bob = create_wallet();
 	let bob_bech32 = get_cardano_address_as_bech32(&bob);
@@ -540,6 +541,10 @@ async fn cnight_in_redemption_contract_produces_dust() {
 	.await;
 	println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
 
+	let cnight_utxo = find_utxo_by_tx_id(&alice_bech32, &hex::encode(&tx_id))
+		.await
+		.expect("No cNIGHT UTXO found after minting");
+
 	// Create redemption contract
 	let increment_amount = 199;
 	let increments = 3;
@@ -548,7 +553,7 @@ async fn cnight_in_redemption_contract_produces_dust() {
 		increment_amount,
 		increments,
 		&alice_collateral,
-		&tx_id,
+		&cnight_utxo,
 		&alice,
 	)
 	.await;
