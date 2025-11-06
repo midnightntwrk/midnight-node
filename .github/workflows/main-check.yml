@@ -31,5 +31,5 @@ jobs:
             if (failing.length) {
                 core.setFailed('main not green on ${sha} (passed=${passed.length}, failed=${failing.length}, pending=${pending})\n' + failing.map(r => '- ${r.name}: ${r.html_url || r.details_url}').join('\n'));
             } else {
-                core.info('main green on ${sha} (passed=${passed.length}, failed=0, pending=${pending})'');
+                core.info('main green on ${sha} (passed=${passed.length}, failed=0, pending=${pending})');
             }
