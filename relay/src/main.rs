@@ -1,11 +1,15 @@
 #![allow(clippy::result_large_err)]
 
+mod authorities;
 mod beefy_keys;
 mod error;
+mod helper;
 mod mmr;
 mod relayer;
 
 use clap::Parser;
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+
 pub use error::Error;
 
 pub type BlockNumber = u32;
@@ -13,8 +17,14 @@ pub type Stake = u64;
 
 pub type MmrProof = mmr_rpc::LeavesProof<sp_core::H256>;
 
+pub type BeefyValidatorSet =
+	sp_consensus_beefy::ValidatorSet<sp_consensus_beefy::ecdsa_crypto::Public>;
+pub type BeefySignedCommitment =
+	sp_consensus_beefy::SignedCommitment<BlockNumber, sp_consensus_beefy::ecdsa_crypto::Signature>;
+
 pub type BeefyId = sp_consensus_beefy::ecdsa_crypto::AuthorityId;
-pub type BeefyIdsWithStakes = Vec<(BeefyId, Stake)>;
+pub type BeefyIdWithStake = (BeefyId, Stake);
+pub type BeefyIdsWithStakes = Vec<BeefyIdWithStake>;
 
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]
