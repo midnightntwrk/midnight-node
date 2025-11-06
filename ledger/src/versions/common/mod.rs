@@ -54,7 +54,7 @@ use {
 	},
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
 	mn_ledger_local::{
-		dust::{DustPublicKey, InitialNonce},
+		dust::InitialNonce,
 		semantics::TransactionContext,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
@@ -64,7 +64,7 @@ use {
 	},
 	onchain_runtime_local::cost_model::CostModel,
 	std::time::Instant,
-	transient_crypto_local::{curve::Fr, proofs::Proof as BaseProof},
+	transient_crypto_local::proofs::Proof as BaseProof,
 	zswap_local::Offer,
 };
 
@@ -630,11 +630,10 @@ where
 		action: u8,
 		nonce: [u8; 32],
 	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
 		let event = CNightGeneratesDustEvent {
 			value,
-			owner: DustPublicKey(Fr::from_le_bytes(owner).ok_or(
-				LedgerApiError::Deserialization(api::DeserializationError::DustPublicKey),
-			)?),
+			owner: api.deserialize(owner)?,
 			time: Timestamp::from_secs(time),
 			action: match action {
 				0 => Ok(CNightGeneratesDustActionType::Create),
@@ -645,7 +644,6 @@ where
 			}?,
 			nonce: InitialNonce(HashOutput(nonce)),
 		};
-		let api = api::new();
 		api.tagged_serialize(&event)
 	}
 

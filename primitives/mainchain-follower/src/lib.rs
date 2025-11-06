@@ -54,7 +54,7 @@ pub mod inherent_provider {
 		async fn get_utxos_up_to_capacity(
 			&self,
 			config: &CNightAddresses,
-			start_position: CardanoPosition,
+			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
 			capacity: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
