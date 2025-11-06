@@ -18,6 +18,10 @@ import { imageUpgrade } from "./commands/imageUpgrade";
 import { runtimeUpgrade } from "./commands/runtimeUpgrade";
 import { snapshot } from "./commands/snapshot";
 import {
+  imageThenRuntime,
+  runtimeThenImage,
+} from "./commands/upgradeSequence";
+import {
   RunOptions,
   ImageUpgradeOptions,
   RuntimeUpgradeOptions,
@@ -56,6 +60,23 @@ interface SnapshotCliOpts {
   s3Uri?: string;
   snapshotImage?: string;
   timeout?: number;
+}
+
+interface SequentialUpgradeCliOpts {
+  runtimeWasm: string;
+  runtimeRpcUrl?: string;
+  runtimeSudoUri?: string;
+  runtimeDelayBlocks?: number;
+  runtimeSkipRun?: boolean;
+  imageEnv?: string;
+  imageInclude?: string;
+  imageExclude?: string;
+  imageWaitBetween?: number;
+  imageHealthTimeout?: number;
+  imageNoRequireHealthy?: boolean;
+  profiles?: string[];
+  envFile?: string[];
+  fromSnapshot?: string;
 }
 
 program
@@ -156,6 +177,126 @@ program
     };
     await imageUpgrade(network, opts);
   });
+
+function parseSequentialOptions(cliOpts: SequentialUpgradeCliOpts) {
+  const profiles = cliOpts.profiles
+    ?.map((s: string) => s.trim())
+    .filter(Boolean);
+
+  const runtimeOptions: RuntimeUpgradeOptions = {
+    wasmPath: cliOpts.runtimeWasm,
+    sudoUri: cliOpts.runtimeSudoUri,
+    delayBlocks: cliOpts.runtimeDelayBlocks,
+    rpcUrl: cliOpts.runtimeRpcUrl,
+    skipRun: cliOpts.runtimeSkipRun,
+    profiles,
+    envFile: cliOpts.envFile,
+  };
+
+  const requireHealthy =
+    cliOpts.imageNoRequireHealthy === true ? false : undefined;
+
+  const imageOptions: ImageUpgradeOptions = {
+    imageEnvVar: cliOpts.imageEnv ?? "NODE_IMAGE",
+    includePattern: cliOpts.imageInclude,
+    excludePattern: cliOpts.imageExclude,
+    waitBetweenMs: cliOpts.imageWaitBetween,
+    healthTimeoutSec: cliOpts.imageHealthTimeout,
+    requireHealthy,
+    profiles,
+    envFile: cliOpts.envFile,
+  };
+
+  return { runtimeOptions, imageOptions, fromSnapshot: cliOpts.fromSnapshot };
+}
+
+function addSequentialUpgradeOptions(command: Command) {
+  return command
+    .requiredOption("--runtime-wasm <path>", "Path to the runtime wasm blob")
+    .option(
+      "--runtime-rpc-url <url>",
+      "WebSocket RPC endpoint used during the runtime upgrade",
+    )
+    .option(
+      "--runtime-sudo-uri <uri>",
+      "Keyring URI used to submit the sudo runtime upgrade",
+    )
+    .option(
+      "--runtime-delay-blocks <value>",
+      "Blocks to wait before submitting the runtime upgrade",
+      parseInt,
+    )
+    .option(
+      "--runtime-skip-run",
+      "Skip ensuring docker-compose is running before the runtime upgrade",
+    )
+    .option(
+      "--image-env <VAR>",
+      "Env var controlling the node image tag in compose files (default NODE_IMAGE)",
+    )
+    .option(
+      "--image-include <regex>",
+      "Only roll services whose names match this regex",
+    )
+    .option(
+      "--image-exclude <regex>",
+      "Skip services matching this regex during the rollout",
+    )
+    .option(
+      "--image-wait-between <ms>",
+      "Wait time between service upgrades in ms",
+      parseInt,
+    )
+    .option(
+      "--image-health-timeout <sec>",
+      "Seconds to wait for health when rolling services",
+      parseInt,
+    )
+    .option(
+      "--image-no-require-healthy",
+      "Do not wait for container health checks during the rollout",
+    )
+    .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
+    .option("--env-file <path...>", "specify one or more env files")
+    .option(
+      "--from-snapshot <id>",
+      "Restore a bootnode snapshot before launching the first step",
+    );
+}
+
+addSequentialUpgradeOptions(
+  program
+    .command("runtime-then-image <network>")
+    .description(
+      "Run a runtime upgrade followed by a client image rollout using a shared snapshot",
+    ),
+).action(async (network: string, cliOpts: SequentialUpgradeCliOpts) => {
+  const { runtimeOptions, imageOptions, fromSnapshot } =
+    parseSequentialOptions(cliOpts);
+
+  await runtimeThenImage(network, {
+    fromSnapshot,
+    runtime: runtimeOptions,
+    image: imageOptions,
+  });
+});
+
+addSequentialUpgradeOptions(
+  program
+    .command("image-then-runtime <network>")
+    .description(
+      "Run a client image rollout followed by a runtime upgrade using a shared snapshot",
+    ),
+).action(async (network: string, cliOpts: SequentialUpgradeCliOpts) => {
+  const { runtimeOptions, imageOptions, fromSnapshot } =
+    parseSequentialOptions(cliOpts);
+
+  await imageThenRuntime(network, {
+    fromSnapshot,
+    runtime: runtimeOptions,
+    image: imageOptions,
+  });
+});
 
 program
   .command("stop <network>")

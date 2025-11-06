@@ -1,0 +1,260 @@
+name: Manual Upgrade Sequence
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Target Midnight network namespace"
+        required: true
+        default: qanet
+      upgrade_order:
+        description: "Execution order for runtime and client upgrades"
+        type: choice
+        options:
+          - runtime-then-image
+          - image-then-runtime
+        default: runtime-then-image
+      runtime_wasm:
+        description: "Path to the runtime WASM artifact"
+        required: true
+      runtime_sudo_uri:
+        description: "Key URI used to submit the sudo runtime upgrade"
+        required: false
+      runtime_delay_blocks:
+        description: "Blocks to wait before submitting the runtime upgrade"
+        required: false
+      runtime_rpc_url:
+        description: "WebSocket RPC endpoint for the runtime upgrade"
+        required: false
+        default: ws://localhost:9944
+      runtime_skip_run:
+        description: "Skip docker-compose bring-up before the runtime upgrade"
+        required: false
+        type: boolean
+        default: false
+      node_image:
+        description: "Current node image tag (NODE_IMAGE)"
+        required: true
+      new_node_image:
+        description: "New node image tag (NEW_NODE_IMAGE)"
+        required: true
+      image_include:
+        description: "Regex of services to include in the client rollout"
+        required: false
+      image_exclude:
+        description: "Regex of services to exclude from the client rollout"
+        required: false
+      image_wait_between:
+        description: "Milliseconds to wait between service restarts"
+        required: false
+      image_health_timeout:
+        description: "Seconds to wait for container health checks"
+        required: false
+      image_skip_health_checks:
+        description: "Skip waiting for health checks during the rollout"
+        required: false
+        type: boolean
+        default: false
+      compose_profiles:
+        description: "Comma-separated docker-compose profiles to enable"
+        required: false
+      env_files:
+        description: "Comma-separated list of env files to load"
+        required: false
+      snapshot_key:
+        description: "Override the S3 object key used for the snapshot"
+        required: false
+
+jobs:
+  orchestrate-upgrade:
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_CONSOLE_ADDRESS: ":9001"
+        ports:
+          - "9000:9000"
+          - "9001:9001"
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/ready || exit 1"
+          --health-interval 5s
+          --health-retries 20
+          --health-timeout 5s
+    env:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+      MN_SNAPSHOT_S3_ENDPOINT_URL: http://localhost:9000
+      MN_SNAPSHOT_S3_URI: s3://local-midnight-snapshots
+      NODE_IMAGE: ${{ inputs.node_image }}
+      NEW_NODE_IMAGE: ${{ inputs.new_node_image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: local-environment/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: local-environment
+
+      - name: Install AWS CLI
+        run: pip install awscli
+
+      - name: Wait for MinIO
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MinIO service did not become healthy in time" >&2
+          exit 1
+
+      - name: Determine snapshot key
+        run: |
+          SNAPSHOT_KEY="${{ inputs.snapshot_key }}"
+          if [ -z "$SNAPSHOT_KEY" ]; then
+            SNAPSHOT_KEY="${{ inputs.network }}/run-${{ github.run_id }}.tar.zst"
+          fi
+          echo "SNAPSHOT_KEY=$SNAPSHOT_KEY" >> "$GITHUB_ENV"
+          echo "SNAPSHOT_URI=s3://local-midnight-snapshots/$SNAPSHOT_KEY" >> "$GITHUB_ENV"
+
+      - name: Prepare snapshot bucket
+        run: aws --endpoint-url http://localhost:9000 s3 mb s3://local-midnight-snapshots || true
+
+      - name: Snapshot network state
+        working-directory: local-environment
+        run: |
+          args=("${{ inputs.network }}" "--s3-uri" "$SNAPSHOT_URI")
+
+          if [ -n "${{ inputs.compose_profiles }}" ]; then
+            IFS=',' read -ra PROFILE_LIST <<< "${{ inputs.compose_profiles }}"
+            trimmed_profiles=()
+            for profile in "${PROFILE_LIST[@]}"; do
+              value="$(echo "$profile" | xargs)"
+              if [ -n "$value" ]; then
+                trimmed_profiles+=("$value")
+              fi
+            done
+            if [ ${#trimmed_profiles[@]} -gt 0 ]; then
+              args+=("--profiles")
+              for value in "${trimmed_profiles[@]}"; do
+                args+=("$value")
+              done
+            fi
+          fi
+
+          if [ -n "${{ inputs.env_files }}" ]; then
+            IFS=',' read -ra ENV_LIST <<< "${{ inputs.env_files }}"
+            trimmed_envs=()
+            for env_file in "${ENV_LIST[@]}"; do
+              value="$(echo "$env_file" | xargs)"
+              if [ -n "$value" ]; then
+                trimmed_envs+=("$value")
+              fi
+            done
+            if [ ${#trimmed_envs[@]} -gt 0 ]; then
+              args+=("--env-file")
+              for value in "${trimmed_envs[@]}"; do
+                args+=("$value")
+              done
+            fi
+          fi
+
+          npm run snapshot -- "${args[@]}"
+
+      - name: Run upgrade sequence
+        working-directory: local-environment
+        run: |
+          command="runtime-then-image"
+          if [ "${{ inputs.upgrade_order }}" = "image-then-runtime" ]; then
+            command="image-then-runtime"
+          fi
+
+          args=(
+            "${{ inputs.network }}"
+            "--runtime-wasm" "${{ inputs.runtime_wasm }}"
+            "--from-snapshot" "$SNAPSHOT_KEY"
+          )
+
+          if [ -n "${{ inputs.runtime_rpc_url }}" ]; then
+            args+=("--runtime-rpc-url" "${{ inputs.runtime_rpc_url }}")
+          fi
+
+          if [ -n "${{ inputs.runtime_sudo_uri }}" ]; then
+            args+=("--runtime-sudo-uri" "${{ inputs.runtime_sudo_uri }}")
+          fi
+
+          if [ -n "${{ inputs.runtime_delay_blocks }}" ]; then
+            args+=("--runtime-delay-blocks" "${{ inputs.runtime_delay_blocks }}")
+          fi
+
+          if [ "${{ inputs.runtime_skip_run }}" = 'true' ]; then
+            args+=("--runtime-skip-run")
+          fi
+
+          if [ -n "${{ inputs.image_include }}" ]; then
+            args+=("--image-include" "${{ inputs.image_include }}")
+          fi
+
+          if [ -n "${{ inputs.image_exclude }}" ]; then
+            args+=("--image-exclude" "${{ inputs.image_exclude }}")
+          fi
+
+          if [ -n "${{ inputs.image_wait_between }}" ]; then
+            args+=("--image-wait-between" "${{ inputs.image_wait_between }}")
+          fi
+
+          if [ -n "${{ inputs.image_health_timeout }}" ]; then
+            args+=("--image-health-timeout" "${{ inputs.image_health_timeout }}")
+          fi
+
+          if [ "${{ inputs.image_skip_health_checks }}" = 'true' ]; then
+            args+=("--image-no-require-healthy")
+          fi
+
+          if [ -n "${{ inputs.compose_profiles }}" ]; then
+            IFS=',' read -ra PROFILE_LIST <<< "${{ inputs.compose_profiles }}"
+            trimmed_profiles=()
+            for profile in "${PROFILE_LIST[@]}"; do
+              value="$(echo "$profile" | xargs)"
+              if [ -n "$value" ]; then
+                trimmed_profiles+=("$value")
+              fi
+            done
+            if [ ${#trimmed_profiles[@]} -gt 0 ]; then
+              args+=("--profiles")
+              for value in "${trimmed_profiles[@]}"; do
+                args+=("$value")
+              done
+            fi
+          fi
+
+          if [ -n "${{ inputs.env_files }}" ]; then
+            IFS=',' read -ra ENV_LIST <<< "${{ inputs.env_files }}"
+            trimmed_envs=()
+            for env_file in "${ENV_LIST[@]}"; do
+              value="$(echo "$env_file" | xargs)"
+              if [ -n "$value" ]; then
+                trimmed_envs+=("$value")
+              fi
+            done
+            if [ ${#trimmed_envs[@]} -gt 0 ]; then
+              args+=("--env-file")
+              for value in "${trimmed_envs[@]}"; do
+                args+=("$value")
+              done
+            fi
+          fi
+
+          npm run "$command" -- "${args[@]}"

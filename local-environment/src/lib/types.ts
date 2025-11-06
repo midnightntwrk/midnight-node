@@ -60,3 +60,27 @@ export interface SnapshotOptions {
   /** timeout window in minutes */
   timeoutMinutes?: number;
 }
+
+export type UpgradeSequenceOrder =
+  | "runtime-then-client"
+  | "client-then-runtime";
+
+export interface UpgradeSequenceOptions {
+  /** determines which step runs first */
+  order?: UpgradeSequenceOrder;
+  /** optional snapshot identifier restored before the first step */
+  fromSnapshot?: string;
+  /** runtime upgrade configuration */
+  runtime: RuntimeUpgradeOptions;
+  /** client/image rollout configuration */
+  image: ImageUpgradeOptions;
+}
+
+export interface SequentialUpgradeOptions {
+  /** optional snapshot identifier restored before the first step */
+  fromSnapshot?: string;
+  /** runtime upgrade configuration */
+  runtime: RuntimeUpgradeOptions;
+  /** client/image rollout configuration */
+  image: ImageUpgradeOptions;
+}

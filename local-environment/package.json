@@ -29,6 +29,8 @@
     "runtime-upgrade:devnet": "ts-node src/index.ts runtime-upgrade devnet",
     "runtime-upgrade:testnet-02": "ts-node src/index.ts runtime-upgrade testnet-02",
     "runtime-upgrade:local-env": "ts-node src/index.ts runtime-upgrade local-env",
+    "runtime-then-image": "ts-node src/index.ts runtime-then-image",
+    "image-then-runtime": "ts-node src/index.ts image-then-runtime",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "help": "ts-node src/index.ts -h"
