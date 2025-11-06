@@ -321,7 +321,7 @@ program
   )
   .option(
     "--sudo-uri <uri>",
-    "Keyring URI used to submit the sudo upgrade (default env or //Alice)",
+    "Keyring URI used to submit the sudo upgrade,
   )
   .option(
     "--delay-blocks <value>",

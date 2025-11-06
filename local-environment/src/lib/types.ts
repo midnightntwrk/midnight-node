@@ -38,7 +38,7 @@ export interface ImageUpgradeOptions extends RunOptions {
 export interface RuntimeUpgradeOptions extends RunOptions {
   /** absolute or relative path to the runtime wasm artifact */
   wasmPath: string;
-  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
+  /** sudo key URI used to submit the upgrade
   sudoUri?: string;
   /** how many blocks to wait before submitting the sudo upgrade */
   delayBlocks?: number;
