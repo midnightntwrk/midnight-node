@@ -27,6 +27,7 @@ package = { license-file = "LICENSE" }
 all = { level = "allow", priority = 0 }
 correctness = { level = "warn", priority = 1 }
 complexity = { level = "warn", priority = 1 }
+unwrap_in_result = { level = "warn", priority = 1 }
 zero-prefixed-literal = { level = "allow", priority = 2 }            # 00_1000_000
 type_complexity = { level = "allow", priority = 2 }                  # raison d'etre
 needless-lifetimes = { level = "allow", priority = 2 }               # generated code
