@@ -1,4 +1,6 @@
-use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+};
 use serde::{Deserialize, Serialize};
 use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 
@@ -10,8 +12,8 @@ pub struct CNightGenesis {
 	#[cfg_attr(feature = "std", validate)]
 	pub addresses: CNightAddresses,
 	pub observed_utxos: ObservedUtxos,
-	pub mappings: BTreeMap<Vec<u8>, Vec<MappingEntry>>,
-	pub utxo_owners: BTreeMap<Vec<u8>, Vec<u8>>,
+	pub mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
+	pub utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
 	pub next_cardano_position: CardanoPosition,
 	pub system_tx: Option<SystemTx>,
 }
@@ -29,8 +31,9 @@ mod tests {
 	fn test_validation_ok() {
 		let my_json = r#"{
   "addresses": {
-    "mapping_validator_address": "addr_test1wral0lzw5kpjytmw0gmsdcgctx09au24nt85zma38py8g3crwvpwe",
+    "mapping_validator_address": "addr_test1wp5ac30f95jxl6hj85d40h7rkyen6ksy3r8adqwcrr4xkncremdyk",
     "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
+    "auth_token_asset_name": "",
     "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
     "cnight_asset_name": ""
   },
@@ -71,6 +74,7 @@ mod tests {
   "addresses": {
     "mapping_validator_address": "nonsense",
     "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
+    "auth_token_asset_name": "",
     "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
     "cnight_asset_name": ""
   },
