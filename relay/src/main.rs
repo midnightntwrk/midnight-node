@@ -2,6 +2,7 @@
 
 mod beefy_keys;
 mod error;
+mod mmr;
 mod relayer;
 
 use clap::Parser;
@@ -9,6 +10,10 @@ pub use error::Error;
 
 pub type BlockNumber = u32;
 pub type MmrProof = mmr_rpc::LeavesProof<sp_core::H256>;
+
+pub type Stake = u64;
+pub type BeefyId = sp_consensus_beefy::ecdsa_crypto::AuthorityId;
+pub type LeafExtra = Vec<(BeefyId, Stake)>;
 
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]

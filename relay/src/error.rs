@@ -24,4 +24,7 @@ pub enum Error {
 
 	#[error("Failed to create proof of authorities list")]
 	InvalidAuthoritiesProofCreation,
+
+	#[error("Missing Leaf data in MMR Proof")]
+	NoLeafFound,
 }
