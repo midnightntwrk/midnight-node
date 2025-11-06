@@ -57,7 +57,6 @@ jobs:
       NEW_NODE_IMAGE: ${{ inputs.new_node_image }}
       AWS_DEFAULT_REGION: ${{ secrets.MN_SNAPSHOT_S3_REGION }}
       S3_URI: ${{ secrets.S3_URI }}
-      S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
 
     steps:
       - name: Checkout
