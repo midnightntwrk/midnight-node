@@ -6997,6 +6997,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "midnight-node-metadata",
  "mmr-rpc",
  "parity-scale-codec",
  "rs_merkle",

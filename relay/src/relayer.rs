@@ -7,12 +7,17 @@ use subxt::{
 		client::{RpcParams, RpcSubscription},
 		rpc_params,
 	},
+	runtime_api::Payload,
 };
 
-use crate::{BlockNumber, Error, MmrProof, mmr::get_beefy_ids_with_stakes};
+use crate::{
+	BeefySignedCommitment, BeefyValidatorSet, BlockNumber, Error, MmrProof,
+	authorities::AuthoritiesProof, helper::MnMetaConversion, mmr::get_beefy_ids_with_stakes,
+	mn_meta,
+};
 
 pub type BlockHash = sp_core::H256;
-pub type BeefySignedCommitment = sp_consensus_beefy::SignedCommitment<BlockNumber, EcdsaSignature>;
+
 pub struct Relayer {
 	// Shared RPC client interface for the relayer
 	rpc: RpcClient,
@@ -65,8 +70,14 @@ impl Relayer {
 		let mmr_proof = self.get_mmr_proof(block_to_query, best_block, at_block_hash).await?;
 		println!("Get MMR Proof: {mmr_proof:?}");
 
+		// retrieve necessary data in creating the AuthoritiesProof
+		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+
 		// Only need the leaf extra
-		let _leaf = get_beefy_ids_with_stakes(&mmr_proof)?;
+		let mut leaf_extra = get_beefy_ids_with_stakes(&mmr_proof)?;
+
+		let _authorities_proof =
+			AuthoritiesProof::try_new(&beef_signed_commitment, &validator_set, &mut leaf_extra)?;
 
 		Ok(())
 	}
@@ -112,6 +123,20 @@ impl Relayer {
 		Ok((best_block, at_block_hash))
 	}
 
+	/// Returns the validator set with beefy ids, based on the provided block hash
+	async fn get_beefy_validator_set(
+		&self,
+		at_block_hash: Option<BlockHash>,
+	) -> Result<BeefyValidatorSet, Error> {
+		let validator_set_call = mn_meta::apis().beefy_api().validator_set();
+
+		let validator_set = self.runtime_api(at_block_hash, validator_set_call).await?;
+
+		validator_set
+			.map(|v_set| v_set.into_non_metadata())
+			.ok_or(Error::EmptyValidatorSet)
+	}
+
 	/// Returns the Best Block Number, or None if querying fails.
 	/// No need to throw an error
 	async fn get_best_block_number(&self) -> Option<BlockNumber> {
@@ -136,5 +161,21 @@ impl Relayer {
 				None
 			},
 		}
+	}
+
+	/// Helper function for querying via the runtime api
+	async fn runtime_api<T: Payload>(
+		&self,
+		at_block_hash: Option<BlockHash>,
+		payload: T,
+	) -> Result<T::ReturnType, Error> {
+		match at_block_hash {
+			Some(at_block_hash) => self.api.runtime_api().at(at_block_hash).call(payload).await,
+			None => {
+				let result = self.api.runtime_api().at_latest().await?;
+				result.call(payload).await
+			},
+		}
+		.map_err(Error::Subxt)
 	}
 }

@@ -19,12 +19,15 @@ pub enum Error {
 	#[error("Codec Error: {0}")]
 	Codec(#[from] parity_scale_codec::Error),
 
-	#[error("Block({0}): commitment signatures does not match the validator set")]
-	NoMatchingSignature(BlockNumber),
+	#[error("Block({0}): commitment signature(1) does not match the validator set")]
+	NoMatchingSignature(BlockNumber, u32),
 
 	#[error("Failed to create proof of authorities list")]
 	InvalidAuthoritiesProofCreation,
 
 	#[error("Missing Leaf data in MMR Proof")]
 	NoLeafFound,
+
+	#[error("No Validator Set to generate")]
+	EmptyValidatorSet,
 }
