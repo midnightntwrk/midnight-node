@@ -1,5 +1,6 @@
 use crate::cfg::*;
 use bip39::{Language, Mnemonic, MnemonicType};
+use core::slice;
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
 	transactions::*, types::OgmiosUtxo, OgmiosClientError,
@@ -596,52 +597,98 @@ pub async fn create_redemption_contract(
 	println!("Redemption compiled code: {}", redemption_compiled_code);
 	let cnight_token_policy_id = get_cnight_token_policy_id();
 	println!("cnight token policy id: {}", cnight_token_policy_id);
-	// let empty_bytes = whisky::csl::PlutusData::new_bytes("".into());
-	// let cbor_hex = empty_bytes.to_hex();
-	// println!("CBOR hex of empty bytes: {}", cbor_hex);
-	// let params_to_apply: &[&str] = &[&cnight_token_policy_id, &cbor_hex];
-	// let script =
-	// 	apply_params_to_script(&redemption_compiled_code, &params_to_apply, BuilderDataType::CBOR);
-	// println!("Redemption script after applying params: {}", &script.clone().unwrap());
-	// let redemption_policy_id = get_redemption_policy_id(&script.clone().unwrap());
-	// println!("Redemption policy ID: {}", redemption_policy_id);
 
 	// let double_encoded_script = apply_double_cbor_encoding(&redemption_compiled_code).unwrap();
 	// let plutus_script =
 	// 	csl::PlutusScript::from_bytes(hex_to_bytes(&double_encoded_script).unwrap()).unwrap();
-	// let mut plutus_list = csl::PlutusList::new();
-	// let plutus_data = csl::PlutusData::from_hex(&cnight_token_policy_id).unwrap();
-	// plutus_list.add(&plutus_data);
-	// // plutus_list.add(&"");
-	// let bytes = apply_params_to_plutus_script(&plutus_list, plutus_script)?.to_bytes();
 
-	// 1. Create PlutusData for each parameter
-	let policy_id_bytes = hex::decode(&cnight_token_policy_id).unwrap();
-	let policy_id_data = PlutusData::new_bytes(policy_id_bytes);
+	// // 1. Create PlutusData for each parameter
+	// let policy_id_bytes = hex::decode(&cnight_token_policy_id).unwrap();
+	// let policy_id_data = PlutusData::new_bytes(policy_id_bytes);
 
-	let empty_data = PlutusData::new_bytes(vec![]);
+	// let empty_data = PlutusData::new_bytes(vec![]);
 
-	// 2. Create a PlutusData array
-	let mut params_array = whisky::csl::PlutusList::new();
-	params_array.add(&policy_id_data);
-	params_array.add(&empty_data);
+	// // 2. Create a PlutusData array
+	// let mut params_array = whisky::csl::PlutusList::new();
+	// params_array.add(&policy_id_data);
+	// params_array.add(&empty_data);
 
-	let params_data = PlutusData::new_list(&params_array);
+	// let script = whisky::apply_params_to_plutus_script(&params_array, plutus_script);
+	// println!("Redemption script after applying params: {}", &script.clone().unwrap().to_hex());
+	// let redemption_policy_id = get_redemption_policy_id(&script.clone().unwrap().to_hex());
+	// println!("Redemption policy ID: {}", redemption_policy_id);
 
-	// 3. Encode to CBOR bytes
-	let params_bytes = params_data.to_bytes(); // This is &[u8]
+	println!("RADOoooooOOOOO...");
 
-	// 4. Pass to uplc::tx::apply_params_to_script
-	let script_bytes = hex::decode(&redemption_compiled_code).unwrap();
-	let parametrized_script =
-		uplc::tx::apply_params_to_script(&params_bytes, &script_bytes).unwrap();
-	let parametrized_script_hex = hex::encode(parametrized_script);
+	let plutus_data2 = csl::PlutusData::from_hex(&cnight_token_policy_id).unwrap();
+	// let cnight_json = serde_json::json!({
+	// 	"constructor": 0,
+	// 	"fields": [
+	// 		{ "bytes": cnight_token_policy_id },
+	// 		{ "bytes": "" }
+	// 	]
+	// });
+	let cnight_json = serde_json::json!({ "bytes": cnight_token_policy_id });
+	let empty_data = serde_json::json!({ "bytes": "" });
+	let param = serde_json::to_string(&cnight_json).unwrap();
+	// let plutus_data3 =
+	// 	csl::PlutusData::from_json(&param, csl::PlutusDatumSchema::DetailedSchema).unwrap();
+	// println!("Plutus data from cnight token policy id (method 1): {}", plutus_data3.to_hex());
+	// println!("Plutus data from cnight token policy id: {}", plutus_data2.to_hex());
+	// println!("Plutus data CBOR bytes: {}", policy_id_data.to_hex());
 
-	println!("Parametrized script hex: {}", parametrized_script_hex);
 
-	let double_encoded_script =
-		apply_double_cbor_encoding(&parametrized_script_hex).unwrap();
-	println!("Double encoded script: {}", double_encoded_script);
+	let params_to_apply: &[&str] = &[&serde_json::to_string(&cnight_json).unwrap(), &serde_json::to_string(&empty_data).unwrap()];
+	// let mut items: Vec<&str> = Vec::new();
+
+	// // Add values
+	// items.push(&cnight_token_policy_id);
+	// items.push(vec![]);
+
+	// // Convert to slice when needed
+	// let slice: &[&str] = &items;
+	let script3 = whisky::apply_params_to_script(
+		&redemption_compiled_code,
+		&params_to_apply,
+		BuilderDataType::JSON,
+	);
+	println!("Redemption script after applying params (method 3): {}", script3.clone().unwrap());
+	let redemption_policy_id3 = get_redemption_policy_id(&script3.clone().unwrap());
+	println!("Redemption policy ID: {}", redemption_policy_id3);
+
+	// println!("RADOoooooOOOOO...");
+
+	// // 1. Create PlutusData for each parameter
+	// let policy_id_bytes = hex::decode(&cnight_token_policy_id).unwrap();
+	// let policy_id_data = PlutusData::new_bytes(policy_id_bytes);
+
+	// let empty_data = PlutusData::new_bytes(vec![]);
+
+	// // 2. Create a PlutusData array
+	// let mut params_array = whisky::csl::PlutusList::new();
+	// params_array.add(&policy_id_data);
+	// params_array.add(&empty_data);
+
+	// let params_data = PlutusData::new_list(&params_array);
+
+	// // 3. Encode to CBOR bytes
+	// let params_bytes = params_data.to_bytes(); // This is &[u8]
+
+	// // 4. Pass to uplc::tx::apply_params_to_script
+	// let script_bytes = hex::decode(&redemption_compiled_code).unwrap();
+	// let parametrized_script =
+	// 	uplc::tx::apply_params_to_script(&params_bytes, &script_bytes).unwrap();
+	// let parametrized_script_hex = hex::encode(parametrized_script);
+
+	// println!("Parametrized script hex: {}", parametrized_script_hex);
+
+	// let double_encoded_script = apply_double_cbor_encoding(&parametrized_script_hex).unwrap();
+	// println!("Double encoded script: {}", double_encoded_script);
+
+	// let redemption_policy_id2 = get_redemption_policy_id(&double_encoded_script.clone());
+	// println!("Redemption policy ID: {}", redemption_policy_id2);
+
+
 
 	// let mut plutus_list = csl::PlutusList::new();
 	// let plutus_data = csl::PlutusData::from_hex(&cnight_token_policy_id).unwrap();
