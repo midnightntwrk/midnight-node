@@ -2,14 +2,14 @@ use parity_scale_codec::Decode;
 use sp_core::H256;
 use sp_mmr_primitives::EncodableOpaqueLeaf;
 
-use crate::{BlockNumber, Error, LeafExtra, MmrProof};
+use crate::{BeefyIdsWithStakes, BlockNumber, Error, MmrProof};
 
 pub type ExtraData = Vec<u8>;
 pub type MmrLeaf = sp_consensus_beefy::mmr::MmrLeaf<BlockNumber, H256, H256, ExtraData>;
 
-pub fn extract_leaf_extra_from_mmr_proof(mmr_proof: &MmrProof) -> Result<LeafExtra, Error> {
+pub fn get_beefy_ids_with_stakes(mmr_proof: &MmrProof) -> Result<BeefyIdsWithStakes, Error> {
 	let leaf = extract_leaf(mmr_proof)?;
-	extract_leaf_extra_from_mmr_leaf(leaf)
+	get_beefy_ids_with_stakes_from_mmr_leaf(leaf)
 }
 
 /// Get the leaves from the mmr_proof. The generated proof is mostly for 1 block;
@@ -28,7 +28,7 @@ fn extract_leaf(mmr_proof: &MmrProof) -> Result<MmrLeaf, Error> {
 	Decode::decode(&mut &leaf_as_bytes[..]).map_err(Error::Codec)
 }
 
-fn extract_leaf_extra_from_mmr_leaf(mmr_leaf: MmrLeaf) -> Result<LeafExtra, Error> {
+fn get_beefy_ids_with_stakes_from_mmr_leaf(mmr_leaf: MmrLeaf) -> Result<BeefyIdsWithStakes, Error> {
 	let leaf_extra = mmr_leaf.leaf_extra;
 	Decode::decode(&mut &leaf_extra[..]).map_err(Error::Codec)
 }
@@ -39,7 +39,7 @@ mod test {
 
 	use crate::{
 		BeefyId,
-		mmr::{MmrLeaf, extract_leaf_extra_from_mmr_leaf},
+		mmr::{MmrLeaf, get_beefy_ids_with_stakes_from_mmr_leaf},
 	};
 
 	const HEX_SCALE_ENCODED_LEAVES: &str = "006000000039a01a91078fef3e0aa8c92c6dee64b9255cb7c666fc340b5e66db5ec00fd5a6010000000000000004000000a33c1baaa379963ee43c3a7983a3157080c32a462a9774f1fe6d2f0480428e5ca804020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a10100000000000000";
@@ -55,8 +55,8 @@ mod test {
 	fn test_decode_leaf_extra() {
 		let mmr_leaf = decode_data::<MmrLeaf>(HEX_SCALE_ENCODED_LEAVES);
 
-		let leaves_extra =
-			extract_leaf_extra_from_mmr_leaf(mmr_leaf).expect("failed to extract leaf extra");
+		let leaves_extra = get_beefy_ids_with_stakes_from_mmr_leaf(mmr_leaf)
+			.expect("failed to extract leaf extra");
 
 		assert_eq!(leaves_extra.len(), 1);
 

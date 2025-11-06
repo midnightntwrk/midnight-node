@@ -9,7 +9,7 @@ use subxt::{
 	},
 };
 
-use crate::{BlockNumber, Error, MmrProof, mmr::extract_leaf_extra_from_mmr_proof};
+use crate::{BlockNumber, Error, MmrProof, mmr::get_beefy_ids_with_stakes};
 
 pub type BlockHash = sp_core::H256;
 pub type BeefySignedCommitment = sp_consensus_beefy::SignedCommitment<BlockNumber, EcdsaSignature>;
@@ -66,7 +66,7 @@ impl Relayer {
 		println!("Get MMR Proof: {mmr_proof:?}");
 
 		// Only need the leaf extra
-		let _leaf = extract_leaf_extra_from_mmr_proof(&mmr_proof)?;
+		let _leaf = get_beefy_ids_with_stakes(&mmr_proof)?;
 
 		Ok(())
 	}
