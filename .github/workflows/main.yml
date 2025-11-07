@@ -67,6 +67,9 @@ jobs:
       - name: Run build
         id: export
         run: |
+          # Free disk space
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
