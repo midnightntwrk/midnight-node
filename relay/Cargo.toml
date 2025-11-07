@@ -13,6 +13,7 @@ sp-mmr-primitives = { workspace = true, default-features = true }
 
 midnight-node-metadata = { workspace = true, default-features = true }
 
+pallas = "0.33.0"
 clap = { workspace = true, default-features = true, features = ["derive", "env"] }
 hex = { workspace = true, default-features = true }
 rs_merkle = { git = "https://github.com/midnightntwrk/rs-merkle.git", rev = "7c997a5"}

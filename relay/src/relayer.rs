@@ -12,7 +12,8 @@ use subxt::{
 
 use crate::{
 	BeefySignedCommitment, BeefyValidatorSet, BlockNumber, Error, MmrProof,
-	authorities::AuthoritiesProof, helper::MnMetaConversion, mmr::get_beefy_ids_with_stakes,
+	cardano_encoding::{RelayChainProof, ToPlutusData},
+	helper::{HexExt, MnMetaConversion},
 	mn_meta,
 };
 
@@ -70,14 +71,19 @@ impl Relayer {
 		let mmr_proof = self.get_mmr_proof(block_to_query, best_block, at_block_hash).await?;
 		println!("Get MMR Proof: {mmr_proof:?}");
 
-		// retrieve necessary data in creating the AuthoritiesProof
+		// retrieve necessary data in creating the proof
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+		println!("Get Validator Set: {validator_set:?}");
 
-		// Only need the leaf extra
-		let mut leaf_extra = get_beefy_ids_with_stakes(&mmr_proof)?;
+		// generate the proof
+		let relay_chain_proof =
+			RelayChainProof::generate(beef_signed_commitment, mmr_proof, validator_set)?;
 
-		let _authorities_proof =
-			AuthoritiesProof::try_new(&beef_signed_commitment, &validator_set, &mut leaf_extra)?;
+		// display the proofs
+		let plutus_data = relay_chain_proof.to_plutus_data();
+
+		println!("RelaychainProof plutus: {}", plutus_data.as_hex());
+		println!("{relay_chain_proof:#?}");
 
 		Ok(())
 	}
