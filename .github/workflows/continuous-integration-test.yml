@@ -59,4 +59,5 @@ jobs:
         with:
           github-token: ${{ github.token }}
           file: test-artifacts/tests.lcov
+          base-path: /home/runner/work/midnight-node/midnight-node
           format: lcov
