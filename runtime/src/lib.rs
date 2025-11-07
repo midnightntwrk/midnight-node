@@ -790,7 +790,6 @@ impl pallet_block_rewards::Config for Runtime {
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
-	type WeightInfo = pallet_midnight::weights::SubstrateWeight<Runtime>;
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
@@ -1557,9 +1556,13 @@ impl_runtime_apis! {
 			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
 		}
 
-		fn get_native_token_identifier() -> (Vec<u8>, Vec<u8>) {
+		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>) {
 			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
+		}
+
+		fn get_auth_token_asset_name() -> Vec<u8> {
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Runtime>::get().into_inner()
 		}
 	}
 
