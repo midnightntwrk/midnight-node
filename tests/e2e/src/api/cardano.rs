@@ -1,4 +1,4 @@
-use crate::cfg::*;
+use crate::cfg::{self, *};
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::{
 	jsonrpsee::client_for_url, jsonrpsee::OgmiosClients, query_ledger_state::QueryLedgerState,
@@ -277,6 +277,7 @@ pub async fn deregister(
 pub fn create_wallet() -> Wallet {
 	let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
 	let phrase = mnemonic.phrase();
+	println!("Generated mnemonic phrase: {}", phrase);
 	Wallet::new_mnemonic(phrase).unwrap()
 }
 
@@ -586,8 +587,12 @@ pub async fn mint_tokens(
 		vec![Asset::new_from_str("lovelace", "1500000"), Asset::new_from_str(policy_id, amount)];
 
 	let mut tx_builder = whisky::TxBuilder::new_core();
+	let network = Network::Custom(get_local_env_cost_models());
+	let cfg = load_config();
+	if cfg.env.as_deref() == Some("local") {
+		tx_builder.network(network.clone());
+	}
 	tx_builder
-		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
 		.tx_in(&input_tx_hash, input_index.into(), &input_assets, &payment_addr)
 		.tx_in_collateral(
