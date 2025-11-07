@@ -123,6 +123,12 @@ pub struct ContractMaintenanceArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
+	/// Seed for the current committee. Accepts multiple
+	#[arg(long = "commitee-seed", value_parser = cli::wallet_seed_decode)]
+	pub commitee_seeds: Vec<WalletSeed>,
+	/// Seed for the new committee. Accepts multiple
+	#[arg(long = "new-commitee-seed", value_parser = cli::wallet_seed_decode)]
+	pub new_commitee_seeds: Vec<WalletSeed>,
 	/// File to read the contract address from
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,

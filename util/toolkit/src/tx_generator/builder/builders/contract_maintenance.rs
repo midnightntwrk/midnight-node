@@ -12,7 +12,9 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{BuildIntent, ContractAddress, WalletSeed};
+use midnight_node_ledger_helpers::{
+	BuildIntent, ContractAddress, SigningKey, UnshieldedWallet, WalletSeed,
+};
 use std::{convert::Infallible, sync::Arc};
 
 use crate::{
@@ -20,7 +22,7 @@ use crate::{
 		BuildContractAction, BuildInput, BuildOutput, BuildTxs, ContractMaintenanceAuthorityInfo,
 		DefaultDB, DeserializedTransactionsWithContext, IntentInfo, MaintenanceUpdateInfo,
 		OfferInfo, ProofProvider, ProofType, SignatureType, TransactionWithContext, UpdateInfo,
-		VerifyingKey, Wallet,
+		Wallet,
 	},
 	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, CreateIntentInfo, IntentToFile},
@@ -28,7 +30,8 @@ use crate::{
 
 #[allow(dead_code)]
 pub struct ContractMaintenanceBuilder {
-	committee: Vec<VerifyingKey>,
+	current_committee: Vec<SigningKey>,
+	new_committee: Vec<SigningKey>,
 	threshold: u32,
 	counter: u32,
 	funding_seed: String,
@@ -38,8 +41,21 @@ pub struct ContractMaintenanceBuilder {
 
 impl ContractMaintenanceBuilder {
 	pub fn new(args: ContractMaintenanceArgs) -> Self {
+		let current_committee = args
+			.commitee_seeds
+			.iter()
+			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
+			.collect();
+
+		let new_committee = args
+			.new_commitee_seeds
+			.iter()
+			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
+			.collect();
+
 		Self {
-			committee: vec![],
+			current_committee,
+			new_committee,
 			threshold: args.threshold,
 			counter: args.counter,
 			funding_seed: args.funding_seed,
@@ -68,7 +84,8 @@ impl CreateIntentInfo for ContractMaintenanceBuilder {
 
 		// - Contract Calls
 		let update = UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
-			committee: vec![],
+			current_committee: self.current_committee.clone(),
+			new_committee: self.new_committee.clone(),
 			threshold: self.threshold,
 			counter: self.counter + 1,
 		});

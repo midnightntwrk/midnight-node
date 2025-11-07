@@ -17,7 +17,7 @@ use std::{any::Any, sync::Arc};
 use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
 	Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker, Resolver, ResultModeGather,
-	ResultModeVerify, Signature, Sp, StdRng, Transcripts,
+	ResultModeVerify, SegmentId, Signature, Sp, StdRng, Transcripts,
 };
 
 // Re-export types needed by submodules
@@ -85,5 +85,6 @@ pub trait BuildContractAction<D: DB + Clone>: Send + Sync {
 		rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 }

@@ -16,12 +16,13 @@ use std::sync::Arc;
 
 use super::super::{
 	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, DB, Intent, LedgerContext,
-	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SingleUpdate, StdRng,
-	VerifyingKey,
+	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, SegmentId, Signature, SigningKey,
+	SingleUpdate, StdRng,
 };
 
 pub struct ContractMaintenanceAuthorityInfo {
-	pub committee: Vec<VerifyingKey>,
+	pub current_committee: Vec<SigningKey>,
+	pub new_committee: Vec<SigningKey>,
 	pub threshold: u32,
 	pub counter: u32,
 }
@@ -40,17 +41,21 @@ pub struct MaintenanceUpdateInfo {
 impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 	async fn build(
 		&mut self,
-		_rng: &mut StdRng,
+		rng: &mut StdRng,
 		_context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let mut signers = vec![];
+
 		let updates = self
 			.updates
 			.iter()
 			.map(|update| match update {
 				UpdateInfo::ReplaceAuthority(info) => {
+					signers.extend_from_slice(&info.current_committee);
 					SingleUpdate::ReplaceAuthority(ContractMaintenanceAuthority {
-						committee: info.committee.to_vec(),
+						committee: info.new_committee.iter().map(|s| s.verifying_key()).collect(),
 						threshold: info.threshold,
 						counter: info.counter,
 					})
@@ -58,7 +63,14 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 			})
 			.collect();
 
-		let update = MaintenanceUpdate::new(self.address, updates, self.counter);
+		let mut update = MaintenanceUpdate::new(self.address, updates, self.counter);
+
+		// Sign with existing committee
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		for (idx, key) in signers.iter().enumerate() {
+			let signature = key.sign(rng, &data_to_sign);
+			update = update.add_signature(idx as u32, signature)
+		}
 
 		intent.add_maintenance_update(update)
 	}

@@ -144,6 +144,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenanc
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
+    --commitee-seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --new-commitee-seed 1000000000000000000000000000000000000000000000000000000000000001 \
     --rng-seed 0000000000000000000000000000000000000000000000000000000000000001 \
     --contract-address "$contract_address" \
     --dest-file "/out/$maintenance_tx_filename" \

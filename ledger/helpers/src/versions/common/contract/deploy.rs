@@ -16,7 +16,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use super::super::{
 	BuildContractAction, Contract, DB, Intent, LedgerContext, PedersenRandomness,
-	ProofPreimageMarker, Signature, StdRng,
+	ProofPreimageMarker, SegmentId, Signature, StdRng,
 };
 
 pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
@@ -31,6 +31,7 @@ impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for ContractDeployInf
 		rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;
