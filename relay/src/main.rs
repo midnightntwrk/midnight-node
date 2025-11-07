@@ -2,6 +2,7 @@
 
 mod authorities;
 mod beefy_keys;
+mod cardano_encoding;
 mod error;
 mod helper;
 mod mmr;

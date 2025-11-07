@@ -1,8 +1,10 @@
+use std::fmt::Debug;
+
 use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
 use sp_core::keccak_256;
 
-use crate::{BeefyIdWithStake, BeefyIdsWithStakes, BeefySignedCommitment, Error};
+use crate::{BeefyIdWithStake, BeefyIdsWithStakes, BeefySignedCommitment, Error, helper::HexExt};
 
 pub type Hash = [u8; 32];
 pub type RootHash = sp_core::H256;
@@ -81,7 +83,7 @@ fn prep_merkle_leaves(
 		.enumerate()
 		.map(|(idx, v)| {
 			let keccak = prep_leaf_hash(v, beefy_ids_and_stakes);
-			println!("V({idx}): ecdsa: {:?} keccak: {}", v, hex::encode(keccak));
+			println!("V({idx}): ecdsa: {:?} keccak: {}", v, keccak.as_hex());
 
 			keccak
 		})
@@ -175,6 +177,7 @@ mod test {
 		authorities::{
 			collect_signature_indices, get_leaf_data, prep_leaf_hash, prep_merkle_leaves,
 		},
+		helper::HexExt,
 	};
 
 	const ECDSA_ALICE: &str = "KW39r9CJjAVzmkf9zQ4YDb2hqfAVGdRqn53eRqyruqpxAP5YL";
@@ -247,12 +250,11 @@ mod test {
 		let mut extra_data = sample_extra_data();
 
 		let result = prep_leaf_hash(&get_ecdsa(ECDSA_CHARLIE), &mut extra_data);
-		let hex_encoded_result = hex::encode(&result);
-		assert_eq!(hex_encoded_result, EXPECTED_CHARLIE_3_STAKE);
+		assert_eq!(result.as_hex(), EXPECTED_CHARLIE_3_STAKE);
 
 		let result = prep_leaf_hash(&get_ecdsa(ECDSA_ALICE), &mut extra_data);
-		let hex_encoded_result = hex::encode(&result);
-		assert_eq!(hex_encoded_result, EXPECTED_ALICE_1_STAKE);
+
+		assert_eq!(result.as_hex(), EXPECTED_ALICE_1_STAKE);
 	}
 
 	#[test]
@@ -278,7 +280,7 @@ mod test {
 
 		let mut extra_data = sample_extra_data();
 
-		let keccak_hashes = prep_merkle_leaves(&validators, &mut extra_data);
+		let keccak_hashes = prep_merkle_leaves(validators, &mut extra_data);
 		assert_eq!(keccak_hashes.len(), 4);
 
 		let alice_stake_decoded =
