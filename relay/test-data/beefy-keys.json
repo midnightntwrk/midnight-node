@@ -1,0 +1,12 @@
+[
+  {
+    "suri": "//Alice",
+    "pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
+    "node_url": "ws://localhost:9933"
+  },
+  {
+    "suri": "//Bob",
+    "pub_key": "0x0390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f27",
+    "node_url": "ws://localhost:9934"
+  }
+]
