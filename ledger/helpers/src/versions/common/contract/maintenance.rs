@@ -44,7 +44,7 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		rng: &mut StdRng,
 		_context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-		segment_id: SegmentId,
+		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let mut signers = vec![];
 
@@ -66,7 +66,7 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		let mut update = MaintenanceUpdate::new(self.address, updates, self.counter);
 
 		// Sign with existing committee
-		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let data_to_sign = update.data_to_sign();
 		for (idx, key) in signers.iter().enumerate() {
 			let signature = key.sign(rng, &data_to_sign);
 			update = update.add_signature(idx as u32, signature)

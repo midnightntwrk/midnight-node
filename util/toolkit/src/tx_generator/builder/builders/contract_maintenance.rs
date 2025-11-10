@@ -13,9 +13,10 @@
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildIntent, ContractAddress, SigningKey, UnshieldedWallet, WalletSeed,
+	BuildIntent, ContractAddress, ContractMaintenanceAuthority, SigningKey, UnshieldedWallet,
+	VerifyingKey, WalletSeed, serialize_untagged,
 };
-use std::{convert::Infallible, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
 	builder::{
@@ -110,9 +111,57 @@ impl CreateIntentInfo for ContractMaintenanceBuilder {
 	}
 }
 
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ContractMaintenanceBuilderError {
+	#[error("committee provided {0:?} is not a subset of the contract committee {1:?}")]
+	ProvidedCommitteeNotSubset(Vec<String>, Vec<String>),
+	#[error(
+		"not enough committee members provided. Provided {0} < Threshold {1}. Contract commitee: {2:?}"
+	)]
+	ThresholdMissed(usize, usize, Vec<String>),
+	#[error("contract missing")]
+	ContractNotPresent(ContractAddress),
+}
+
+fn check_committee(
+	provided_committee: &[VerifyingKey],
+	authority: &ContractMaintenanceAuthority,
+) -> Result<(), ContractMaintenanceBuilderError> {
+	if !provided_committee.iter().all(|c| authority.committee.contains(&c)) {
+		let provided_committee_display: Vec<String> = provided_committee
+			.iter()
+			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
+			.collect();
+		let current_committee_display: Vec<String> = authority
+			.committee
+			.iter()
+			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
+			.collect();
+		return Err(ContractMaintenanceBuilderError::ProvidedCommitteeNotSubset(
+			provided_committee_display,
+			current_committee_display,
+		));
+	}
+
+	if provided_committee.len() < authority.threshold as usize {
+		let current_committee_display: Vec<String> = authority
+			.committee
+			.iter()
+			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
+			.collect();
+		return Err(ContractMaintenanceBuilderError::ThresholdMissed(
+			provided_committee.len(),
+			authority.threshold as usize,
+			current_committee_display,
+		));
+	}
+
+	Ok(())
+}
+
 #[async_trait]
 impl BuildTxs for ContractMaintenanceBuilder {
-	type Error = Infallible;
+	type Error = ContractMaintenanceBuilderError;
 
 	async fn build_txs_from(
 		&self,
@@ -120,7 +169,22 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+
+		let authority = context.with_ledger_state(|ref_state| {
+			Ok(ref_state
+				.index(self.contract_address)
+				.ok_or_else(|| {
+					ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
+				})?
+				.maintenance_authority
+				.clone())
+		})?;
+
+		let provided_committee: Vec<VerifyingKey> =
+			self.current_committee.iter().map(|s| s.verifying_key()).collect();
+
+		check_committee(&provided_committee, &authority)?;
 
 		// - Intents
 		let intent_info = self.create_intent_info();
