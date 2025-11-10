@@ -148,8 +148,7 @@ that we are still in the process of being release. As such:
 [Decisions](docs/decisions)
 
 - [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
-- [Rust Installation](docs/rust-setup.md) - Complete setup including GitHub access, Nix, and Direnv
-- [Configuration](docs/config.md) - Node configuration options
+- [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
