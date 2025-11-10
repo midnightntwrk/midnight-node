@@ -193,14 +193,16 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Partially failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
 						);
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {failure:?} of applying tx 0x{hash} \nto update Local Ledger State"
 						);
 						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
@@ -211,8 +213,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match tx_context.ref_state.apply_system_tx(tx, block_context.tblock) {
 					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {err:#?}\nof applying system tx {tx:#?}\nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {err:?} of applying system tx {hash} to update Local Ledger State"
 						);
 						(tx_context.ref_state.clone(), vec![], vec![], cost)
 					},
