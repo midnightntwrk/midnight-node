@@ -18,6 +18,7 @@ members = [
     "util/documented",
     "util/upgrader",
     "tests/e2e",
+    "relay",
     "docs",
 ]
 package = { license-file = "LICENSE" }
