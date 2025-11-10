@@ -1,0 +1,13 @@
+[package]
+name = "midnight-beefy-relay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+subxt = { workspace = true, default-features = true }
+
+clap = { workspace = true, default-features = true, features = ["derive", "env"] }
+serde = { workspace = true, default-features = true }
+serde_json = { workspace = true, default-features = true }
+thiserror = { workspace = true, default-features = true }
+tokio = { workspace = true, default-features = true, features = ["time", "rt-multi-thread"]}

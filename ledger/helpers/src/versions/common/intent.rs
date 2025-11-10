@@ -159,7 +159,8 @@ impl<D: DB + Clone> IntentCustom<D> {
 		(guaranteed_effects, fallible_effects)
 	}
 
-	pub fn get_resolver(parent_dir: String) -> Result<Resolver, std::io::Error> {
+	pub fn get_resolver(artifact_dirs: &[String]) -> Result<Resolver, std::io::Error> {
+		let artifact_dirs = artifact_dirs.to_vec();
 		Ok(Resolver::new(
 			PUBLIC_PARAMS.clone(),
 			DustResolver(MidnightDataProvider::new(
@@ -168,23 +169,27 @@ impl<D: DB + Clone> IntentCustom<D> {
 				DUST_EXPECTED_FILES.to_owned(),
 			)?),
 			Box::new(move |KeyLocation(loc)| {
-				let sync_block = || {
+				let artifact_dirs = artifact_dirs.to_vec();
+				let sync_block = move || {
 					let read_file = |dir, ext| {
-						let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
-						match std::fs::read(&path) {
-							Err(e) if e.kind() == io::ErrorKind::NotFound => {
-								println!("Resolver: missing key at path {path}");
-								Ok(None)
-							},
-							Err(e) => {
-								println!("Resolver: error reading key at path {path}: {e}");
-								Err(e)
-							},
-							Ok(v) => {
-								println!("Resolver: found key at path {path}");
-								Ok(Some(v))
-							},
+						for parent_dir in &artifact_dirs {
+							let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
+							match std::fs::read(&path) {
+								Err(e) if e.kind() == io::ErrorKind::NotFound => {
+									println!("Resolver: missing key at path {path}");
+									continue;
+								},
+								Err(e) => {
+									println!("Resolver: error reading key at path {path}: {e}");
+									return Err(e);
+								},
+								Ok(v) => {
+									println!("Resolver: found key at path {path}");
+									return Ok(Some(v));
+								},
+							}
 						}
+						Ok(None)
 					};
 					let Some(prover_key) = read_file("keys", "prover")? else {
 						println!("WARN: prover key not created");

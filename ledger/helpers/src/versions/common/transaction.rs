@@ -217,6 +217,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = self.pay_fees(tx, now, ttl).await?;
 		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+		println!("post-proof tx: {tx:#?}");
 		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 		Ok(tx)
 	}
