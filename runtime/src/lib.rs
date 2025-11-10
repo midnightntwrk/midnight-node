@@ -83,8 +83,8 @@ use sp_runtime::traits::{Convert, Keccak256};
 use sp_runtime::{
 	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
-		AccountIdLookup, ConvertInto, BlakeTwo256, Block as BlockT, Get, IdentifyAccount, NumberFor, OpaqueKeys,
-		Verify,
+		AccountIdLookup, BlakeTwo256, Block as BlockT, ConvertInto, Get, IdentifyAccount,
+		NumberFor, OpaqueKeys, Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 };
@@ -92,11 +92,11 @@ pub use sp_runtime::{Perbill, Permill};
 #[allow(deprecated)]
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
+use crate::currency::CurrencyWaiver;
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
-use crate::currency::CurrencyWaiver;
 
 // Make the WASM binary available.
 #[cfg(feature = "std")]
