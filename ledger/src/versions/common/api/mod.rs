@@ -12,8 +12,9 @@
 // limitations under the License.
 
 use super::{
-	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
+	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
+	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
+	zswap_local,
 };
 
 use super::LOG_TARGET;
@@ -21,10 +22,8 @@ pub use super::types::{self, DeserializationError, LedgerApiError, Serialization
 
 use base_crypto_local::hash::HashOutput;
 use coin_structure_local::coin::UserAddress as UserAddressLedger;
-use ledger_storage::arena::TypedArenaKey;
-use ledger_storage_local::{WellBehavedHasher, db::DB};
-use midnight_serialize::Tagged;
-use midnight_serialize_local::Deserializable;
+use ledger_storage_local::{WellBehavedHasher, arena::TypedArenaKey, db::DB};
+use midnight_serialize_local::{Deserializable, Tagged};
 
 pub mod ledger;
 mod transaction;
@@ -34,6 +33,7 @@ pub(crate) type LedgerParameters = mn_ledger_local::structure::LedgerParameters;
 pub(crate) type ContractState<D> = onchain_runtime_local::state::ContractState<D>;
 pub(crate) type ZswapState<D> = zswap_local::ledger::State<D>;
 pub(crate) type ContractAddress = coin_structure_local::contract::ContractAddress;
+pub(crate) type DustPublicKey = mn_ledger_local::dust::DustPublicKey;
 pub(crate) type UserAddress = coin_structure_local::coin::UserAddress;
 pub(crate) type OutputInstructionUnshielded =
 	mn_ledger_local::structure::OutputInstructionUnshielded;
@@ -62,6 +62,12 @@ impl SerializableError for ContractAddress {
 impl DeserializableError for ContractAddress {
 	fn error() -> DeserializationError {
 		DeserializationError::ContractAddress
+	}
+}
+
+impl DeserializableError for DustPublicKey {
+	fn error() -> DeserializationError {
+		DeserializationError::DustPublicKey
 	}
 }
 
@@ -165,7 +171,7 @@ impl Api {
 	where
 		T: midnight_serialize_local::Serializable + SerializableError + Tagged + 'static,
 	{
-		let size = midnight_serialize_local::Serializable::serialized_size(value);
+		let size = midnight_serialize_local::tagged_serialized_size(value);
 		let mut bytes = Vec::with_capacity(size);
 		let error = LedgerApiError::Serialization(<T as SerializableError>::error());
 

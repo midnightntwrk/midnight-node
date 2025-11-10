@@ -17,12 +17,10 @@ use config::{Config, ConfigError, Environment, File, FileFormat};
 use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
-	networks::{
-		CustomNetwork, InitialAuthorityData, InitialFederedatedAuthority, MainChainScripts,
-		UndeployedNetwork,
-	},
+	networks::{CustomNetwork, InitialAuthorityData, MainChainScripts, UndeployedNetwork},
 };
-use midnight_primitives_native_token_observation::TokenObservationConfig;
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
 
@@ -116,13 +114,13 @@ impl SubstrateCli for Cfg {
 				let initial_authorities =
 					InitialAuthorityData::load_from_pc_chain_config(&pc_chain_config);
 
-				let cngd_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_cngd_config.as_ref().unwrap(),
+				let cnight_genesis_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_cnight_genesis.as_ref().unwrap(),
 				)
-				.map_err(|e| format!("failed to read cngd config: {e}"))?;
+				.map_err(|e| format!("failed to read cnight-genesis: {e}"))?;
 
-				let cngd_config: TokenObservationConfig = serde_json::from_str(&cngd_config_str)
-					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
+				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
+					.map_err(|e| format!("failed to read cnight-genesis as json: {e}"))?;
 
 				let main_chain_scripts =
 					MainChainScripts::load_from_pc_chain_config(&pc_chain_config);
@@ -137,36 +135,22 @@ impl SubstrateCli for Cfg {
 				)
 				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
 
-				let federated_authority_config: serde_json::Value =
+				let federated_authority_config: FederatedAuthorityObservationConfig =
 					serde_json::from_str(&federated_authority_config_str).map_err(|e| {
-						format!("failed to read federated_authority_config as json: {e}")
+						format!("failed to parse FederatedAuthorityObservationConfig: {e}")
 					})?;
-
-				let council_membership =
-					InitialFederedatedAuthority::load_from_federated_authority_config(
-						&federated_authority_config,
-						"council",
-					);
-
-				let technical_committee_membership =
-					InitialFederedatedAuthority::load_from_federated_authority_config(
-						&federated_authority_config,
-						"technical_committee",
-					);
 
 				let network: CustomNetwork = CustomNetwork {
 					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
 					id: self.chain_spec_cfg.chainspec_id.as_ref().unwrap().clone(),
-					network_id: self.chain_spec_cfg.chainspec_network_id.unwrap(),
 					genesis_block,
 					genesis_state,
 					initial_authorities,
-					cngd_config,
+					cnight_genesis,
 					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
-					council_membership,
-					technical_committee_membership,
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
+					federated_authority_config,
 				};
 				chain_config(network)
 			},

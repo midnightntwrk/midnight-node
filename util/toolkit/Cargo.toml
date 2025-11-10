@@ -16,12 +16,11 @@ hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 
 [dependencies]
-mn-ledger = { workspace = true, features = [ "proving" ] }
-midnight-node-ledger-helpers.workspace = true
+midnight-node-ledger-helpers = { workspace = true, features = [ "std", "can-panic" ] }
 midnight-node-metadata.workspace = true
 subxt.workspace = true
 tokio.workspace = true
-hex = "0.4.3"
+hex = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand.workspace = true
@@ -32,7 +31,6 @@ indicatif = "0.17.8"
 console = "0.15.8"
 bincode = "1.3.3"
 backoff = { version = "0.4.0", features = ["tokio"] }
-bech32 = "0.11.0"
 log = { workspace = true, features = ["kv"] }
 structured-logger = "1.0.3"
 async-trait = "0.1.87"

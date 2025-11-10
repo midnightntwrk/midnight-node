@@ -1,8 +1,8 @@
 # Midnight Network Tools
 
-A flexible set of tools for launching **well-known networks, custom networks, and dynamic local environments**, as well as **performing state changes** against those networks (image upgrades now, runtime upgrades and hard forks coming soon).  
+A flexible set of tools for launching **well-known networks, custom networks, and dynamic local environments**, as well as **performing state changes** against those networks (image upgrades now, runtime upgrades and hard forks coming soon).
 
-This project provides a unified way to spin up Midnight resources for development, testing, and experimentation.  
+This project provides a unified way to spin up Midnight resources for development, testing, and experimentation.
 
 ---
 
@@ -51,6 +51,10 @@ npm run stop:testnet-02
 npm run stop:node-dev-01
 ```
 
+### Fork Testing
+
+See [fork-testing.md](../docs/fork-testing.md)
+
 ### Local Environment
 
 In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.
@@ -76,11 +80,13 @@ earthly +start-local-env-latest
 ```
 
 Or specify a released node image:
+
 ```bash
 earthly +start-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 ```
 
 You can also use npm scripts:
+
 ```bash
 npm run run:local-env
 npm run run:local-env-with-indexer
@@ -89,10 +95,13 @@ npm run run:local-env-with-indexer
 Stopping the environment
 
 When stopping, volumes must also be wiped (persistent state is not supported yet).
+
 ```bash
 earthly +stop-local-env-latest
 ```
+
 # or
+
 ```bash
 earthly +stop-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 ```

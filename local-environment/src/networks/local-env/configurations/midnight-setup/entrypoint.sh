@@ -193,7 +193,7 @@ fi
 
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:2]' > /tmp/pc-chain-config-qanet.json
+cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
 
 jq 'env as $env | . + {
   "chain_parameters": {
@@ -214,8 +214,8 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNGD_CONFIG=res/qanet/cngd-config.json
-export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/qanet/federated-authority-config.json
+export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
+export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/dev/federated-authority-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 

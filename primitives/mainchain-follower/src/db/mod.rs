@@ -11,8 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod queries;
+pub mod queries;
 mod types;
 
-pub use queries::*;
+pub use queries::cnight_observation::*;
+pub use queries::federated_authority_observation::*;
 pub use types::*;

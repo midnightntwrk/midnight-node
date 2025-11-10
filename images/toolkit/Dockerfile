@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 # ntp to keep correct time
 # curl to enable compose healthchecks
 RUN apt-get update -qq \
@@ -15,10 +15,15 @@ COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+ENV MIDNIGHT_PP=/.cache/midnight/zk-params
+ENV MN_SYNC_CACHE=/.cache/sync
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
-RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-RUN rm -rf /node
+RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version && \
+  rm -rf /node
+COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
-ENTRYPOINT ["/midnight-node-toolkit"]
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
+USER appuser
+ENTRYPOINT ["/entrypoint.sh"]

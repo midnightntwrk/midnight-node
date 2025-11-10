@@ -89,17 +89,6 @@ pub struct BlockContext {
 	pub parent_block_hash: Vec<u8>,
 }
 
-#[cfg(feature = "test-utils")]
-impl From<midnight_node_ledger_helpers::BlockContext> for BlockContext {
-	fn from(value: midnight_node_ledger_helpers::BlockContext) -> Self {
-		Self {
-			tblock: value.tblock.to_secs(),
-			tblock_err: value.tblock_err,
-			parent_block_hash: value.parent_block_hash.0.to_vec(),
-		}
-	}
-}
-
 impl Default for BlockContext {
 	fn default() -> Self {
 		BlockContext { tblock: 0, tblock_err: 0, parent_block_hash: vec![0u8; 32] }

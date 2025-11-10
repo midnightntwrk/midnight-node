@@ -75,13 +75,13 @@ pub fn get_config(name: &str) -> Option<String> {
 }
 
 // Well-known values for live Cardano testnet preview resources.
-pub mod native_token_observation_consts {
+pub mod cnight_observation_consts {
 	// Redemption Validator address
 	pub const TEST_CNIGHT_REDEMPTION_VALIDATOR_ADDRESS: &str =
 		"addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4";
 	// Mapping Validator address
 	pub const TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS: &str =
-		"addr_test1wral0lzw5kpjytmw0gmsdcgctx09au24nt85zma38py8g3crwvpwe";
+		"addr_test1wp5ac30f95jxl6hj85d40h7rkyen6ksy3r8adqwcrr4xkncremdyk";
 	// Known native asset policy id for test cNIGHT
 	pub const TEST_CNIGHT_CURRENCY_POLICY_ID: [u8; 28] =
 		hex_literal::hex!("03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414");

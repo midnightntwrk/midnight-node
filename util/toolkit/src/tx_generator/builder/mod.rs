@@ -27,6 +27,7 @@ use crate::{
 		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
 		SourceTransactions,
 	},
+	tx_generator::builder::builders::RegisterDustAddressBuilder,
 };
 
 pub mod builders;
@@ -70,14 +71,16 @@ pub struct ContractDeployArgs {
 pub struct CustomContractArgs {
 	#[clap(flatten)]
 	pub info: ContractDeployArgs,
-	/// The directory containing:
-	///  * intent directory, containing serialized intent files
-	///  * directories with files for the Resolver
-	#[arg(short, long)]
-	pub compiled_contract_dir: String,
+	/// The directory containing directories with key files for the Resolver. Accepts multiple
+	#[arg(short, long = "compiled-contract-dir")]
+	pub compiled_contract_dirs: Vec<String>,
 	/// Intent file to include in the transaction. Accepts multiple
 	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,
+	/// Input Unshielded UTXOs to include in the transaction. Accepts multiple. UTXOs must be
+	/// present in wallet of funding-seed.
+	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
+	pub utxo_inputs: Vec<UtxoId>,
 	/// Zswap State file containing coin info
 	#[arg(long)]
 	pub zswap_state_file: Option<String>,
@@ -101,7 +104,6 @@ pub struct ContractCallArgs {
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -129,7 +131,6 @@ pub struct ContractMaintenanceArgs {
 	#[arg(long, default_value = "0")]
 	pub counter: u32,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -157,7 +158,6 @@ pub struct BatchesArgs {
 	#[arg(long)]
 	pub concurrency: Option<usize>,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -165,9 +165,23 @@ pub struct BatchesArgs {
 	/// Coin amount per transaction
 	#[arg(short, long, default_value_t = 100)]
 	pub coin_amount: u128,
+	/// Type of shielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<ShieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub shielded_token_type: ShieldedTokenType,
 	/// Initial unshielded offer amount
 	#[arg(short, long, default_value_t = 10_000)]
 	pub initial_unshielded_intent_value: u128,
+	/// Type of unshielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<UnshieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub unshielded_token_type: UnshieldedTokenType,
 	/// Enable Shielded transfers in batches
 	#[arg(long)]
 	pub enable_shielded: bool,
@@ -179,15 +193,46 @@ pub struct SingleTxArgs {
 	/// Amount to send to each shielded wallet
 	#[arg(long)]
 	pub shielded_amount: Option<u128>,
+	/// Type of shielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<ShieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub shielded_token_type: ShieldedTokenType,
 	/// Amount to send to each unshielded wallet
 	#[arg(long)]
 	pub unshielded_amount: Option<u128>,
+	/// Type of unshielded token to send
+	#[arg(
+		long,
+		value_parser = cli::token_decode::<UnshieldedTokenType>,
+		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+	)]
+	pub unshielded_token_type: UnshieldedTokenType,
 	/// Seed for source wallet
 	#[arg(long)]
 	pub source_seed: String,
 	/// Destination address, both shielded and unshielded
 	#[arg(long, required = true)]
 	pub destination_address: Vec<WalletAddress>,
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+}
+#[derive(Args, Clone, Debug)]
+pub struct RegisterDustAddressArgs {
+	/// Seed for source wallet
+	#[arg(long)]
+	pub wallet_seed: String,
+	/// Seed for funding wallet
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -215,6 +260,7 @@ pub enum Builder {
 	ClaimRewards(ClaimRewardsArgs),
 	/// Send single transaction with one-or-many outputs
 	SingleTx(SingleTxArgs),
+	RegisterDustAddress(RegisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
 	Migrate,
@@ -287,6 +333,7 @@ impl Builder {
 			Builder::ContractCustom(args) => constr(CustomContractBuilder::new(args)),
 			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
 			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
+			Builder::RegisterDustAddress(args) => constr(RegisterDustAddressBuilder::new(args)),
 			Builder::Send => constr(DoNothingBuilder::new()),
 			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		}
@@ -355,7 +402,6 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 		&mut self,
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-		_network_id: NetworkId,
 		// the directory where to save the file
 		dir: &str,
 		// partial name of the file

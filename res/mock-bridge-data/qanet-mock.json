@@ -182,8 +182,8 @@
     ],
     "nonce": "0x1234",
     "d_parameter": {
-      "registered": 100,
-      "permissioned": 1100
+      "registered": 25,
+      "permissioned": 275
     }
   }
 ]

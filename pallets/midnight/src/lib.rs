@@ -19,8 +19,6 @@
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
-pub mod weights;
-
 mod runtime_api;
 pub use runtime_api::*;
 
@@ -41,14 +39,10 @@ pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use crate::weights::WeightInfo;
-	use frame_support::{
-		pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto,
-		weights::constants::WEIGHT_REF_TIME_PER_SECOND,
-	};
+	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
-	use scale_info::prelude::vec::Vec;
+	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
@@ -101,10 +95,8 @@ pub mod pallet {
 	#[cfg(hardfork_test)]
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(100);
 
-	pub const FIXED_MN_TRANSACTION_WEIGHT: Weight =
-		Weight::from_parts(WEIGHT_REF_TIME_PER_SECOND / 1000, 0);
-	pub const EXTRA_WEIGHT_PER_CONTRACT_CALL: Weight = Weight::from_parts(0, 0);
-	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(0, 0);
+	// Manually add ~1% of block weight
+	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
 	#[pallet::pallet]
 	#[pallet::storage_version(STORAGE_VERSION)]
@@ -113,7 +105,7 @@ pub mod pallet {
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
 	pub struct GenesisConfig<T: Config> {
-		pub network_id: u8,
+		pub network_id: String,
 		pub genesis_state_key: Vec<u8>,
 		#[serde(skip)]
 		pub _config: PhantomData<T>,
@@ -122,16 +114,13 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			Pallet::<T>::initialize_state(self.network_id, &self.genesis_state_key);
+			Pallet::<T>::initialize_state(&self.network_id, &self.genesis_state_key);
 		}
 	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_timestamp::Config {
-		/// Information on runtime weights.
-		type WeightInfo: WeightInfo;
-
 		/// Block reward getter.
 		type BlockReward: Get<(u128, Option<LedgerTypes::Hash>)>;
 
@@ -142,7 +131,7 @@ pub mod pallet {
 	// The pallet's runtime storage items.
 	// https://docs.substrate.io/main-docs/build/runtime-storage/
 	pub type StateKeyLength = ConstU32<128>;
-	type MaxNetworkIdLength = ConstU32<1>;
+	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
 	// Learn more about declaring storage items:
@@ -157,22 +146,7 @@ pub mod pallet {
 
 	#[pallet::type_value]
 	pub fn DefaultWeight() -> Weight {
-		FIXED_MN_TRANSACTION_WEIGHT
-	}
-
-	#[pallet::type_value]
-	pub fn DefaultContractCallWeight() -> Weight {
-		EXTRA_WEIGHT_PER_CONTRACT_CALL
-	}
-
-	#[pallet::type_value]
-	pub fn DefaultTransactionSizeWeight() -> Weight {
 		EXTRA_WEIGHT_TX_SIZE
-	}
-
-	#[pallet::type_value]
-	pub fn DefaultSafeMode() -> bool {
-		true
 	}
 
 	#[pallet::type_value]
@@ -181,21 +155,16 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	#[pallet::getter(fn configurable_weight)]
-	pub type ConfigurableWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
-
-	#[pallet::storage]
-	#[pallet::getter(fn configurable_contract_call_weight)]
-	pub type ConfigurableContractCallWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultContractCallWeight>;
-
-	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
+		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
-	pub type SafeMode<T> = StorageValue<_, bool, ValueQuery, DefaultSafeMode>;
+	pub type ConfigurableOnInitializeWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
+
+	#[pallet::storage]
+	pub type ConfigurableOnRuntimeUpgradeWeight<T> =
+		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
@@ -290,6 +259,8 @@ pub mod pallet {
 		FeeCalculationError,
 		#[codec(index = 10)]
 		HostApiError,
+		#[codec(index = 11)]
+		NetworkIdNotString,
 	}
 	// grcov-excl-stop
 
@@ -319,7 +290,7 @@ pub mod pallet {
 
 			LedgerApi::pre_fetch_storage(&state_key).expect("Failed to pre-fetch storage");
 
-			<T as Config>::WeightInfo::on_finalize()
+			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
@@ -354,6 +325,8 @@ pub mod pallet {
 						let state_key: BoundedVec<_, _> =
 							new_state_key.try_into().expect("New state key size out of boundaries");
 						StateKey::<T>::put(state_key);
+
+						LedgerApi::flush_storage();
 					},
 					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
 				};
@@ -367,7 +340,7 @@ pub mod pallet {
 				LedgerApi::set_default_storage();
 			}
 			// TODO: Benchmark Weight in case of a real hard-fork
-			Weight::zero()
+			ConfigurableOnRuntimeUpgradeWeight::<T>::get()
 		}
 	}
 
@@ -378,16 +351,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight({
-                if SafeMode::<T>::get() {
-                    ConfigurableWeight::<T>::get()
-                } else {
-                    // TODO: Now that we always revalidate txs, we don't want to validate the tx again to calculate the Weight
-                    //       Weight calculation and benchmarks should be revisited anyway once new Ledger's Cost Model is finished.
-                    //       Deleted code can be checked in: https://github.com/midnightntwrk/midnight-node/pull/1054
-                    ConfigurableWeight::<T>::get()
-                }
-            })]
+		#[pallet::weight(ConfigurableTransactionSizeWeight::<T>::get())]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
@@ -449,15 +413,6 @@ pub mod pallet {
 
 		#[pallet::call_index(1)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring weights - for testing transaction throughput on devnets only.
-		pub fn set_mn_tx_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
-			ensure_root(origin)?;
-			ConfigurableWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(2)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		pub fn override_d_parameter(
 			origin: OriginFor<T>,
 			d_parameter_override: Option<(u16, u16)>,
@@ -467,33 +422,12 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(3)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring contract call weights
-		pub fn set_contract_call_weight(
-			origin: OriginFor<T>,
-			new_weight: Weight,
-		) -> DispatchResult {
-			ensure_root(origin)?;
-			ConfigurableContractCallWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(4)]
+		#[pallet::call_index(2)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		// A system transaction for configuring contract call weights
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
 			ensure_root(origin)?;
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
-			Ok(())
-		}
-
-		#[pallet::call_index(5)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		// A system transaction for configuring safe mode
-		pub fn set_safe_mode(origin: OriginFor<T>, mode: bool) -> DispatchResult {
-			ensure_root(origin)?;
-			SafeMode::<T>::set(mode);
 			Ok(())
 		}
 	}
@@ -530,14 +464,17 @@ pub mod pallet {
 
 	// grcov-excl-start
 	impl<T: Config> Pallet<T> {
-		pub fn initialize_state(network_id: u8, state_key: &[u8]) {
+		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
 			let genesis_state_key: BoundedVec<_, _> =
 				state_key.to_vec().try_into().expect("Genesis state key size out of boundaries");
 			StateKey::<T>::put(genesis_state_key);
 
-			let network_id: BoundedVec<_, _> =
-				Vec::from([network_id]).try_into().expect("Network Id size out of boundaries");
+			let network_id: BoundedVec<_, _> = network_id
+				.as_bytes()
+				.to_vec()
+				.try_into()
+				.expect("Network Id size out of boundaries");
 			NetworkId::<T>::put(network_id);
 		}
 
@@ -557,10 +494,10 @@ pub mod pallet {
 		}
 
 		// grcov-excl-start
-		pub fn get_network_id() -> Vec<u8> {
+		pub fn get_network_id() -> String {
 			match <NetworkId<T>>::get() {
-				None => Vec::new(),
-				Some(name) => name.into(),
+				None => String::new(),
+				Some(name) => String::from_utf8(name.to_vec()).expect("NetworkId is not a String"),
 			}
 		}
 

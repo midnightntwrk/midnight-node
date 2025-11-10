@@ -57,7 +57,11 @@ export async function imageUpgrade(
   console.log(`Ensuring network is up with starting tag ${fromTag}`);
   env[imageEnvVar] = fromTag;
 
-  await run(namespace, { profiles: opts.profiles, envFile: opts.envFile });
+  await run(namespace, {
+    profiles: opts.profiles,
+    envFile: opts.envFile,
+    fromSnapshot: opts.fromSnapshot,
+  });
 
   const composeFile = resolveNetworkCompose(namespace);
   const services = opts.services ?? (await listServices(composeFile, env));

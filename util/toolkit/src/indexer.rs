@@ -39,7 +39,10 @@ use tokio::{
 
 use crate::{
 	hash_to_str,
-	indexer::runtimes::{MidnightMetadata, MidnightMetadata0_17_0, RuntimeVersion},
+	indexer::runtimes::{
+		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
+		MidnightMetadata0_18_1, RuntimeVersion,
+	},
 	serde_def::{self, SourceBlockTransactions},
 };
 
@@ -107,7 +110,7 @@ impl IndexerHandle {
 		let _ = self
 			.stop_chan
 			.send(true)
-			.inspect_err(|e| println!("failed to send stop signal: {e}"));
+			.inspect_err(|e| eprintln!("failed to send stop signal: {e}"));
 		self.task_handle.await??;
 		Ok(())
 	}
@@ -152,7 +155,7 @@ where
 
 		let dir = Self::dir();
 		if std::fs::create_dir_all(&dir).is_err() {
-			println!("Failed to create sync cache dir {}", dir);
+			eprintln!("Failed to create sync cache dir {}", dir);
 			return Ok(default);
 		}
 
@@ -160,12 +163,12 @@ where
 
 		let data: Option<SyncCache<S, P>> = std::fs::File::open(&cache_filename)
 			.map(|f| {
-				println!("sync cache detected, loading...");
+				eprintln!("sync cache detected, loading...");
 				match bincode::deserialize_from(&f) {
 					Ok(cache) => Some(cache),
 					Err(e) => {
-						println!("error reading sync file: {:?}", e);
-						println!("will attempt to delete");
+						eprintln!("error reading sync file: {:?}", e);
+						eprintln!("will attempt to delete");
 						None
 					},
 				}
@@ -200,7 +203,7 @@ where
 		let s = bincode::serialize(self).unwrap();
 		match std::fs::write(Self::filename(self.genesis), s) {
 			Ok(_) => (),
-			Err(e) => println!("failed to write sync cache: {}", e),
+			Err(e) => eprintln!("failed to write sync cache: {}", e),
 		}
 	}
 }
@@ -254,7 +257,7 @@ where
 			match rx_start.await {
 				Ok(_) => Ok(IndexerHandle { task_handle: handle, stop_chan: tx_stop }),
 				Err(e) => {
-					println!("{:?}", handle.await);
+					eprintln!("{:?}", handle.await);
 					Err(IndexerError::StartFailed(e.to_string()))
 				},
 			}
@@ -284,6 +287,15 @@ where
 		match version_number {
 			RuntimeVersion::V0_17_0 => {
 				self.process_block_with_protocol::<MidnightMetadata0_17_0>(block).await
+			},
+			RuntimeVersion::V0_17_1 => {
+				self.process_block_with_protocol::<MidnightMetadata0_17_1>(block).await
+			},
+			RuntimeVersion::V0_18_0 => {
+				self.process_block_with_protocol::<MidnightMetadata0_18_0>(block).await
+			},
+			RuntimeVersion::V0_18_1 => {
+				self.process_block_with_protocol::<MidnightMetadata0_18_1>(block).await
 			},
 		}
 	}
@@ -370,7 +382,7 @@ where
 
 		let mut mn_block = retry(ExponentialBackoff::default(), || async {
 			self.clone().fetch_midnight_block(start_hash).await.map_err(|e| {
-				println!("rpc fetch failed, retrying: {e}");
+				eprintln!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})
 		})
@@ -400,7 +412,7 @@ where
 
 			mn_block = retry(ExponentialBackoff::default(), || async {
 				self.clone().fetch_midnight_block(parent_block_hash).await.map_err(|e| {
-					println!("rpc fetch failed, retrying: {e}");
+					eprintln!("rpc fetch failed, retrying: {e}");
 					backoff::Error::transient(e)
 				})
 			})
@@ -494,7 +506,7 @@ where
 			let _b = rx.recv().await.unwrap();
 			processed += 1;
 			if start.elapsed() > Duration::from_secs(1) {
-				println!("speed: {processed} per sec ({r}/{total})");
+				eprintln!("speed: {processed} per sec ({r}/{total})");
 				start = std::time::Instant::now();
 				processed = 0;
 			}
@@ -525,7 +537,7 @@ where
 		let num_blocks_to_fetch =
 			u64::from(latest_block.number()) - cache.until.map(|u| u.1).unwrap_or(0);
 
-		println!(
+		eprintln!(
 			"fetching {} -> {}",
 			hash_to_str(latest_block.hash()),
 			cache.until.map(|u| hash_to_str(u.0)).unwrap_or("genesis".to_string())
@@ -555,7 +567,7 @@ where
 			num_txs = s.blocks.iter().map(|b| b.transactions.len()).sum::<usize>();
 		}
 
-		println!(
+		eprintln!(
 			"finished syncing {} transactions from {} blocks in {:.2}s. New blocks: {}, New txs: {}, Cached blocks: {}",
 			num_txs,
 			latest_block.number(),
@@ -570,7 +582,7 @@ where
 			let num_blocks_synced = self.state.lock().await.blocks.len();
 			let _ = tx_start
 				.send(num_blocks_synced)
-				.inspect_err(|e| println!("Sender dropped: {e}"));
+				.inspect_err(|e| eprintln!("Sender dropped: {e}"));
 		}
 
 		loop {

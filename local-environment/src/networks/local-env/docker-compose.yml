@@ -246,7 +246,7 @@ services:
     profiles: ["withindexer"]
     container_name: postgres-indexer
     platform: linux/amd64
-    image: "postgres:17.1-alpine"
+    image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
     restart: "always"
     volumes:
       - postgres-indexer-data:/var/lib/postgresql/data
@@ -296,7 +296,7 @@ services:
       CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "120000"
+      MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -331,7 +331,7 @@ services:
       CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "120000"
+      MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -365,7 +365,7 @@ services:
       CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "120000"
+      MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -401,7 +401,7 @@ services:
       CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "120000"
+      MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -437,7 +437,7 @@ services:
       CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "120000"
+      MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:

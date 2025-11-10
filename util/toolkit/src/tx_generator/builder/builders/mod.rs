@@ -18,6 +18,7 @@ mod contract_custom;
 mod contract_deploy;
 mod contract_maintenance;
 mod do_nothing;
+mod register_dust_address;
 mod replace_initial_tx;
 pub mod single_tx;
 
@@ -28,4 +29,5 @@ pub use contract_custom::*;
 pub use contract_deploy::*;
 pub use contract_maintenance::*;
 pub use do_nothing::*;
+pub use register_dust_address::*;
 pub use replace_initial_tx::*;
