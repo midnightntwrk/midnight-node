@@ -21,7 +21,7 @@ cargo build          # Build debug binary
 cargo build --release # Build release binary
 ```
 
-**Why cargo?** Earthly will recompile the entire project each time, making it very slow for iterative development. Cargo's incremental compilation is much faster.
+**Why cargo?** Earthly check will recompile only the code in the repo - all the deps are precompiled so it's not very slow, just slower. Cargo's incremental compilation is much faster for iterative development.
 
 ### Use Earthly For:
 - Building Docker images
@@ -75,8 +75,7 @@ cargo test --test integration_test_name
 
 ```bash
 # Before committing, run these checks
-cargo check          # Fast type checking
-cargo clippy         # Lints and warnings
+cargo clippy         # Lints and warnings (includes type checking)
 cargo fmt            # Format code
 cargo test           # Run tests
 ```
@@ -89,16 +88,18 @@ When upgrading the midnight-ledger dependency:
 
 ```bash
 # Edit Cargo.toml files with new ledger version
-# Then check for compilation errors
+# Then check for compilation errors and update lock file
 cargo check
 ```
 
 ### Step 2: Fix Compilation Errors
 
 Common issues during ledger upgrades:
-- API changes in LedgerState
-- New required trait implementations
-- Changed type signatures
+- `LedgerState::apply_intent()` signature changes (e.g., new parameters added)
+- New trait requirements on types (e.g., `impl Serialize for RuntimeTransaction`)
+- Changed return types (e.g., `Result<T, E>` where error type `E` has changed)
+- New fields in structs that need initialization (e.g., `TransactionContext` gains new fields)
+- Method renames or moves to different modules (e.g., functions moving from `ledger::api` to `ledger::core`)
 
 ### Step 3: Rebuild Metadata
 
@@ -106,7 +107,11 @@ Common issues during ledger upgrades:
 earthly -P +rebuild-metadata
 ```
 
-This regenerates the runtime metadata that clients use to interact with the node.
+This regenerates the runtime metadata that clients use to interact with the node. This needs to be re-run when:
+- Pallet storage items change
+- Extrinsic (callable functions) signatures change
+- Runtime APIs are added or modified
+- Custom types used in the runtime interface change
 
 ### Step 4: Rebuild Genesis (if needed)
 
@@ -118,6 +123,8 @@ Required when:
 - Runtime storage format changes
 - New pallets are added
 - Genesis configuration changes
+
+The output of this will be a chain spec file which contains the hex of the genesis.
 
 ### Step 5: Run Tests
 
