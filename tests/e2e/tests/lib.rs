@@ -355,7 +355,9 @@ async fn cnight_produces_dust() {
 	let bech32_address = get_cardano_address_as_bech32(&cardano_wallet);
 	println!("New Cardano wallet created: {:?}", bech32_address);
 
-	let dust_hex = "7324116f33ecce4b8d066c35e6a84076b48bb39a6234fb7cbbdbe73438df8ea216";
+	// let dust_hex = "7324116f33ecce4b8d066c35e6a84076b48bb39a6234fb7cbbdbe73438df8ea216";
+	let dust_hex = new_dust_hex(33);
+	let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
 	println!("Registering Cardano wallet {} with DUST address {}", bech32_address, dust_hex);
 
 	let collateral_utxo = make_collateral(&bech32_address).await;

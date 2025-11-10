@@ -226,8 +226,10 @@ pub async fn deregister(
 	println!("Mapping validator script hash: {:?}", script_hash);
 
 	let mut tx_builder = whisky::TxBuilder::new_core();
+	if cfg.env.as_deref() == Some("local") {
+		tx_builder.network(network.clone());
+	}
 	tx_builder
-		.network(network.clone())
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
 		.tx_in(
 			&hex::encode(tx_in.transaction.id),
