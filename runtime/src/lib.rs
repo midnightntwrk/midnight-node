@@ -83,7 +83,7 @@ use sp_runtime::traits::{Convert, Keccak256};
 use sp_runtime::{
 	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
-		AccountIdLookup, BlakeTwo256, Block as BlockT, Get, IdentifyAccount, NumberFor, OpaqueKeys,
+		AccountIdLookup, ConvertInto, BlakeTwo256, Block as BlockT, Get, IdentifyAccount, NumberFor, OpaqueKeys,
 		Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
@@ -96,6 +96,7 @@ use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
+use crate::currency::CurrencyWaiver;
 
 // Make the WASM binary available.
 #[cfg(feature = "std")]
@@ -677,6 +678,8 @@ impl pallet_partner_chains_session::Config for Runtime {
 	type SessionManager = ValidatorManagementSessionManager<Runtime>;
 	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = opaque::SessionKeys;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -1023,6 +1026,8 @@ mod runtime {
 	pub type Sudo = pallet_sudo::Pallet<Runtime>;
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+	#[runtime::pallet_index(9)]
+	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
 	//BlockRewards: pallet_block_rewards = 9,
 
@@ -1060,9 +1065,6 @@ mod runtime {
 	#[runtime::pallet_index(23)]
 	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
 
-	// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
-	#[runtime::pallet_index(30)]
-	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
@@ -1417,7 +1419,6 @@ impl_runtime_apis! {
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
 			list_benchmarks!(list, extra);
