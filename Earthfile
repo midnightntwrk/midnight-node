@@ -98,6 +98,7 @@ subxt-base:
     FROM rust:1.90-trixie
     # Install Docker for Trixie-based targets that need it
     RUN apt-get update && \
+        apt-get upgrade && \
         apt-get install -y ca-certificates curl && \
         install -m 0755 -d /etc/apt/keyrings && \
         curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -469,6 +470,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
+        apt-get upgrade && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
