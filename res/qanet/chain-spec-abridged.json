@@ -233,13 +233,13 @@
             },
             "observed_utxos": {
               "start": {
-                "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "block_number": 0,
                 "block_timestamp": 0,
                 "tx_index_in_block": 0
               },
               "end": {
-                "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "block_number": 0,
                 "block_timestamp": 0,
                 "tx_index_in_block": 0
@@ -249,7 +249,7 @@
             "mappings": {},
             "utxo_owners": {},
             "next_cardano_position": {
-              "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+              "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
               "block_number": 0,
               "block_timestamp": 0,
               "tx_index_in_block": 0
@@ -396,6 +396,12 @@
             "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw",
             "5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL"
           ]
+        },
+        "federatedAuthorityObservation": {
+          "councilAddress": "addr_test1wrqsrj8s6f4kuk60yrm59eqx7l4z4acyquwf0wzkqs5v5hszzzjq8",
+          "councilPolicyId": "0xc101c8f0d26b6e5b4f20f742e406f7ea2af704071c97b8560428ca5e",
+          "technicalCommitteeAddress": "addr_test1wzc5qcwg9kkwhnk9n9wdrffag6nfzawrv6zhkwxakfwumgq05ny0a",
+          "technicalCommitteePolicyId": "0xb14061c82dacebcec5995cd1a53d46a69175c366857b38ddb25dcda0"
         }
       }
     }
