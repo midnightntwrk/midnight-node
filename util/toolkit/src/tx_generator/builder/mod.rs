@@ -71,11 +71,9 @@ pub struct ContractDeployArgs {
 pub struct CustomContractArgs {
 	#[clap(flatten)]
 	pub info: ContractDeployArgs,
-	/// The directory containing:
-	///  * intent directory, containing serialized intent files
-	///  * directories with files for the Resolver
-	#[arg(short, long)]
-	pub compiled_contract_dir: String,
+	/// The directory containing directories with key files for the Resolver. Accepts multiple
+	#[arg(short, long = "compiled-contract-dir")]
+	pub compiled_contract_dirs: Vec<String>,
 	/// Intent file to include in the transaction. Accepts multiple
 	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,

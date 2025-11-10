@@ -317,6 +317,36 @@ rebuild-genesis-state:
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
+    RUN mkdir -p /res/test-data/contract/mint \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public \
+                ) \
+                -c /toolkit-js/mint/mint.config.ts \
+                --output-intent /res/test-data/contract/mint/deploy.bin \
+                --output-private-state /res/test-data/contract/mint/initial_state.json \
+                --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --intent-file /res/test-data/contract/mint/deploy.bin \
+                --compiled-contract-dir /toolkit-js/mint/out \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/mint/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
+                --dest-file /res/test-data/contract/mint/contract_state.mn \
+        ; fi
     IF [ "$GENERATE_TEST_TXS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
     END
@@ -328,6 +358,7 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
