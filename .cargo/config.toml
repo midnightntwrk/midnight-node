@@ -1,5 +1,9 @@
 [net]
 git-fetch-with-cli = true
+retry = 10
+
+[http]
+timeout = 60
 
 [registries.crates-io]
 protocol = "sparse"

@@ -71,11 +71,9 @@ pub struct ContractDeployArgs {
 pub struct CustomContractArgs {
 	#[clap(flatten)]
 	pub info: ContractDeployArgs,
-	/// The directory containing:
-	///  * intent directory, containing serialized intent files
-	///  * directories with files for the Resolver
-	#[arg(short, long)]
-	pub compiled_contract_dir: String,
+	/// The directory containing directories with key files for the Resolver. Accepts multiple
+	#[arg(short, long = "compiled-contract-dir")]
+	pub compiled_contract_dirs: Vec<String>,
 	/// Intent file to include in the transaction. Accepts multiple
 	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,
@@ -106,7 +104,6 @@ pub struct ContractCallArgs {
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -134,7 +131,6 @@ pub struct ContractMaintenanceArgs {
 	#[arg(long, default_value = "0")]
 	pub counter: u32,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
@@ -162,7 +158,6 @@ pub struct BatchesArgs {
 	#[arg(long)]
 	pub concurrency: Option<usize>,
 	#[arg(
-        short,
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]

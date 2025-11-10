@@ -6993,6 +6993,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-beefy-relay"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "subxt 0.44.0",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "midnight-circuits"
 version = "4.0.0"
 source = "git+https://github.com/midnightntwrk/midnight-zk?tag=midnight-circuits-v4.0.0#38fc75a755238762fe10884107d6a1570edc6096"
@@ -7137,7 +7149,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -7336,7 +7348,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "subxt 0.44.0",
 ]
