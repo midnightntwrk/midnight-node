@@ -1,6 +1,7 @@
 name: +audit (cargo deny + npm audit)
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   push:
