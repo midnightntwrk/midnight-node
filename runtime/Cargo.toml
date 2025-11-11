@@ -186,7 +186,8 @@ runtime-benchmarks = [
     "sp-runtime/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
-    "pallet-governed-map/runtime-benchmarks"
+    "pallet-governed-map/runtime-benchmarks",
+    "pallet-session-validator-management/runtime-benchmarks",
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",

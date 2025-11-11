@@ -83,8 +83,8 @@ use sp_runtime::traits::{Convert, Keccak256};
 use sp_runtime::{
 	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
-		AccountIdLookup, BlakeTwo256, Block as BlockT, ConvertInto, Get, IdentifyAccount,
-		NumberFor, OpaqueKeys, Verify,
+		AccountIdLookup, BlakeTwo256, Block as BlockT, Get, IdentifyAccount, NumberFor, OpaqueKeys,
+		Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 };
@@ -723,6 +723,8 @@ impl pallet_session_validator_management::Config for Runtime {
 	type CommitteeMember = CommitteeMember<CrossChainPublic, SessionKeys>;
 
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 pub struct LogBeneficiaries;
@@ -1127,7 +1129,7 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
-		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
+		[pallet_session_validator_management, SessionCommitteeManagement]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
@@ -1437,11 +1439,10 @@ impl_runtime_apis! {
 
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
+			// use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
 			impl baseline::Config for Runtime {}
-			impl pallet_session_validator_management_benchmarking::Config for Runtime {}
 
 			use frame_support::traits::WhitelistedStorageKeys;
 			let whitelist: Vec<TrackedStorageKey> = AllPalletsWithSystem::whitelisted_storage_keys();

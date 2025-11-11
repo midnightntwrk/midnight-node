@@ -11,8 +11,7 @@ use frame_support::{
 		},
 		tokens::imbalance::TryMerge,
 		tokens::{
-			DepositConsequence, Fortitude, Precision, Preservation, Provenance, Restriction,
-			WithdrawConsequence,
+			DepositConsequence, Fortitude, Precision, Preservation, Provenance, WithdrawConsequence,
 		},
 	},
 };
@@ -289,7 +288,7 @@ impl<AccountId> FungibleMutateHold<AccountId> for CurrencyWaiver {
 }
 
 impl<AccountId> FungibleUnbalanced<AccountId> for CurrencyWaiver {
-	fn handle_dust(dust: frame_support::traits::fungible::Dust<AccountId, Self>) {
+	fn handle_dust(_: frame_support::traits::fungible::Dust<AccountId, Self>) {
 		// Do nothing
 	}
 	fn write_balance(
@@ -312,9 +311,9 @@ impl<AccountId> FungibleUnbalanced<AccountId> for CurrencyWaiver {
 
 impl<AccountId> FungibleUnbalancedHold<AccountId> for CurrencyWaiver {
 	fn set_balance_on_hold(
-		reason: &Self::Reason,
-		who: &AccountId,
-		amount: Self::Balance,
+		_: &Self::Reason,
+		_: &AccountId,
+		_: Self::Balance,
 	) -> sp_runtime::DispatchResult {
 		Ok(())
 	}
