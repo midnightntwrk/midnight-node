@@ -1,6 +1,7 @@
 name: Check PR Description for Link
 
 on:
+  merge_group:
   pull_request:
     types: [opened, edited]
 

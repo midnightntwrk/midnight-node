@@ -458,6 +458,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
+        apt-get upgrade && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
