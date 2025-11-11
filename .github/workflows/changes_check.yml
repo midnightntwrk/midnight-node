@@ -30,7 +30,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            echo "labels=${{ toJSON(github.event.pull_request.labels.*.name) }}" >> $GITHUB_OUTPUT
+            echo 'labels=${{ toJSON(github.event.pull_request.labels.*.name) }}' >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" == "merge_group" ]; then
             # Extract PR number from merge group head ref (format: refs/heads/gh-readonly-queue/main/pr-123-...)
             PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
