@@ -44,16 +44,31 @@ earthly doc                    # List all available targets
 
 ### Starting Development
 
-```bash
-# Option 1: Using Nix (recommended)
-nix develop
+**Step 1: Install Prerequisites**
 
-# Option 2: Using direnv (automatic)
+Choose one:
+
+```bash
+# Option A: Manual installation
+# Install rustup and earthly following docs/rust-setup.md
+
+# Option B: Use Nix (provides everything automatically)
+nix develop
+```
+
+**Step 2: Load Environment Variables**
+
+Choose one:
+
+```bash
+# Option A: Using direnv (automatic)
 cd /path/to/midnight-node  # direnv loads .envrc automatically
 
-# Option 3: Manual
+# Option B: Manual
 source .envrc
 ```
+
+Note: If you chose Nix in Step 1, you still need to choose an environment loading method from Step 2.
 
 ### Running Tests
 
