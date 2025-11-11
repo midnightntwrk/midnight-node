@@ -116,8 +116,20 @@ get-metadata:
     DO github.com/EarthBuild/lib+INSTALL_DIND
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
-          sleep 5 && \
-          subxt metadata -f bytes > /metadata.scale && \
+          echo "Waiting for node to be ready..." && \
+          for i in $(seq 1 30); do \
+            if subxt metadata -f bytes > /metadata.scale 2>/dev/null; then \
+              echo "Node ready after ${i} attempts"; \
+              break; \
+            fi; \
+            if [ $i -eq 30 ]; then \
+              echo "ERROR: Node failed to start within 30 seconds"; \
+              docker logs $(docker ps -q --filter ancestor=localhost/node:latest) || true; \
+              exit 1; \
+            fi; \
+            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
+            sleep 1; \
+          done && \
           docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
     END
     SAVE ARTIFACT /metadata.scale
@@ -612,8 +624,20 @@ check-metadata:
 
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
-          sleep 5 && \
-          subxt metadata -f bytes > /image_metadata.scale && \
+          echo "Waiting for node to be ready..." && \
+          for i in $(seq 1 30); do \
+            if subxt metadata -f bytes > /image_metadata.scale 2>/dev/null; then \
+              echo "Node ready after ${i} attempts"; \
+              break; \
+            fi; \
+            if [ $i -eq 30 ]; then \
+              echo "ERROR: Node failed to start within 30 seconds"; \
+              docker logs $(docker ps -q --filter ancestor=${NODE_IMAGE}) || true; \
+              exit 1; \
+            fi; \
+            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
+            sleep 1; \
+          done && \
           docker kill $(docker ps -q --filter ancestor=${NODE_IMAGE})
     END
     COPY metadata/static/midnight_metadata.scale repo_metadata.scale
