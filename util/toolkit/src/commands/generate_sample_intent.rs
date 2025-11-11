@@ -5,7 +5,7 @@ use midnight_node_toolkit::{
 		TxGenerator,
 		builder::{
 			ContractCall, IntentToFile,
-			builders::{ContractCallBuilder, ContractDeployBuilder, ContractMaintenanceBuilder},
+			builders::{ContractCallBuilder, ContractDeployBuilder},
 		},
 		source::Source,
 	},
@@ -35,9 +35,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 		match args.contract_call.clone() {
 			ContractCall::Deploy(args) => (Box::new(ContractDeployBuilder::new(args)), "deploy"),
 			ContractCall::Call(args) => (Box::new(ContractCallBuilder::new(args)), "call"),
-			ContractCall::Maintenance(args) => {
-				(Box::new(ContractMaintenanceBuilder::new(args)), "maintenance")
-			},
+			ContractCall::Maintenance(_args) => panic!("not implemented for Maintenance"),
 		};
 	let mut builder = builder_and_contract_type.0;
 	let partial_file_name = builder_and_contract_type.1;

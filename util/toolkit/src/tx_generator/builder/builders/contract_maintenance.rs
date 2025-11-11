@@ -13,10 +13,11 @@
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildIntent, ContractAddress, ContractMaintenanceAuthority, SigningKey, UnshieldedWallet,
-	VerifyingKey, WalletSeed, serialize_untagged,
+	BuildIntent, ContractAddress, ContractMaintenanceAuthority,
+	ContractOperationVersionedVerifierKey, EntryPointBuf, SigningKey, UnshieldedWallet,
+	VerifyingKey, WalletSeed, deserialize, serialize_untagged,
 };
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
 	builder::{
@@ -26,14 +27,15 @@ use crate::{
 		Wallet,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs, CreateIntentInfo, IntentToFile},
+	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs},
 };
 
-#[allow(dead_code)]
 pub struct ContractMaintenanceBuilder {
 	current_committee: Vec<SigningKey>,
 	new_committee: Vec<SigningKey>,
-	threshold: u32,
+	upsert_entrypoints: Vec<PathBuf>,
+	remove_entrypoints: Vec<String>,
+	threshold: Option<u32>,
 	counter: u32,
 	funding_seed: String,
 	contract_address: ContractAddress,
@@ -42,14 +44,24 @@ pub struct ContractMaintenanceBuilder {
 
 impl ContractMaintenanceBuilder {
 	pub fn new(args: ContractMaintenanceArgs) -> Self {
-		let current_committee = args
-			.commitee_seeds
+		let ContractMaintenanceArgs {
+			funding_seed,
+			authority_seeds: commitee_seeds,
+			new_authority_seeds: new_commitee_seeds,
+			contract_address,
+			threshold,
+			upsert_entrypoints,
+			remove_entrypoints,
+			counter,
+			rng_seed,
+		} = args;
+
+		let current_committee = commitee_seeds
 			.iter()
 			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
 			.collect();
 
-		let new_committee = args
-			.new_commitee_seeds
+		let new_committee = new_commitee_seeds
 			.iter()
 			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
 			.collect();
@@ -57,17 +69,19 @@ impl ContractMaintenanceBuilder {
 		Self {
 			current_committee,
 			new_committee,
-			threshold: args.threshold,
-			counter: args.counter,
-			funding_seed: args.funding_seed,
-			contract_address: args.contract_address,
-			rng_seed: args.rng_seed,
+			upsert_entrypoints,
+			remove_entrypoints,
+			threshold,
+			counter,
+			funding_seed,
+			contract_address,
+			rng_seed,
 		}
 	}
 }
 
-#[async_trait]
-impl IntentToFile for ContractMaintenanceBuilder {}
+// #[async_trait]
+// impl IntentToFile for ContractMaintenanceBuilder {}
 
 impl BuildTxsExt for ContractMaintenanceBuilder {
 	fn funding_seed(&self) -> WalletSeed {
@@ -79,22 +93,38 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 	}
 }
 
-impl CreateIntentInfo for ContractMaintenanceBuilder {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
+impl ContractMaintenanceBuilder {
+	fn create_intent_info(
+		&self,
+		entrypoints_to_remove: Vec<EntryPointBuf>,
+		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
+	) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for Maintenance");
 
+		let mut updates = vec![];
+
+		for entrypoint in entrypoints_to_remove {
+			updates.push(UpdateInfo::VerifierKeyRemove(entrypoint));
+		}
+
+		for (entrypoint, key) in entrypoints_to_insert {
+			updates.push(UpdateInfo::VerifierKeyInsert(entrypoint, key));
+		}
+
 		// - Contract Calls
-		let update = UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
-			current_committee: self.current_committee.clone(),
-			new_committee: self.new_committee.clone(),
-			threshold: self.threshold,
-			counter: self.counter + 1,
-		});
+		if self.new_committee.len() > 0 {
+			updates.push(UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
+				current_committee: self.current_committee.clone(),
+				new_committee: self.new_committee.clone(),
+				threshold: self.threshold.unwrap_or(self.new_committee.len() as u32),
+				counter: self.counter + 1,
+			}));
+		}
 
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
 				address: self.contract_address,
-				updates: vec![update],
+				updates,
 				counter: self.counter,
 			});
 
@@ -111,7 +141,7 @@ impl CreateIntentInfo for ContractMaintenanceBuilder {
 	}
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ContractMaintenanceBuilderError {
 	#[error("committee provided {0:?} is not a subset of the contract committee {1:?}")]
 	ProvidedCommitteeNotSubset(Vec<String>, Vec<String>),
@@ -121,6 +151,16 @@ pub enum ContractMaintenanceBuilderError {
 	ThresholdMissed(usize, usize, Vec<String>),
 	#[error("contract missing")]
 	ContractNotPresent(ContractAddress),
+	#[error("attempting to remove an entrypoint that doesn't exist")]
+	RemovingMissingEntrypoint(String),
+	#[error("failed to load keyfile")]
+	VerifierKeyLoadError(std::io::Error),
+	#[error("failed to deserialize path")]
+	DeserializationError(PathBuf, std::io::Error),
+	#[error("invalid key-file name - must be <entrypoint>.verifier")]
+	InvalidVerifierKeyName(PathBuf),
+	#[error("arguments given result in no change to contract")]
+	NoChange,
 }
 
 fn check_committee(
@@ -171,23 +211,67 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
 
-		let authority = context.with_ledger_state(|ref_state| {
+		let contract_state = context.with_ledger_state(|ref_state| {
 			Ok(ref_state
 				.index(self.contract_address)
 				.ok_or_else(|| {
 					ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
 				})?
-				.maintenance_authority
 				.clone())
 		})?;
 
 		let provided_committee: Vec<VerifyingKey> =
 			self.current_committee.iter().map(|s| s.verifying_key()).collect();
 
-		check_committee(&provided_committee, &authority)?;
+		check_committee(&provided_committee, &contract_state.maintenance_authority)?;
+
+		// Check remove entrypoints
+		let mut entrypoints_to_remove: Vec<_> = self
+			.remove_entrypoints
+			.iter()
+			.map(|e| EntryPointBuf(e.as_bytes().into()))
+			.collect();
+		let existing_entrypoints: Vec<_> = contract_state.operations.keys().collect();
+		for entrypoint in &entrypoints_to_remove {
+			if !existing_entrypoints.contains(entrypoint) {
+				return Err(ContractMaintenanceBuilderError::RemovingMissingEntrypoint(
+					String::from_utf8_lossy(&entrypoint.0).to_string(),
+				));
+			}
+		}
+
+		let mut entrypoints_to_insert = vec![];
+
+		for p in &self.upsert_entrypoints {
+			if p.extension().map(|s| s.as_encoded_bytes()) != Some(b"verifier") {
+				return Err(ContractMaintenanceBuilderError::InvalidVerifierKeyName(p.clone()));
+			}
+			let entrypoint = p
+				.file_stem()
+				.map(|e| EntryPointBuf(e.as_encoded_bytes().into()))
+				.ok_or(ContractMaintenanceBuilderError::InvalidVerifierKeyName(p.clone()))?;
+
+			let key_bytes =
+				std::fs::read(&p).map_err(ContractMaintenanceBuilderError::VerifierKeyLoadError)?;
+
+			let key: ContractOperationVersionedVerifierKey = deserialize(&mut &key_bytes[..])
+				.map_err(|e| ContractMaintenanceBuilderError::DeserializationError(p.clone(), e))?;
+
+			if existing_entrypoints.contains(&entrypoint) {
+				entrypoints_to_remove.push(entrypoint.clone());
+			}
+			entrypoints_to_insert.push((entrypoint, key));
+		}
+
+		if entrypoints_to_remove.is_empty()
+			&& entrypoints_to_insert.is_empty()
+			&& self.new_committee.is_empty()
+		{
+			return Err(ContractMaintenanceBuilderError::NoChange);
+		}
 
 		// - Intents
-		let intent_info = self.create_intent_info();
+		let intent_info = self.create_intent_info(entrypoints_to_remove, entrypoints_to_insert);
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input

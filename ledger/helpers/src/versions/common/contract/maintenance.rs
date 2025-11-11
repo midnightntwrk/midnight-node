@@ -15,7 +15,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use super::super::{
-	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, DB, Intent, LedgerContext,
+	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
 	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, SegmentId, Signature, SigningKey,
 	SingleUpdate, StdRng,
 };
@@ -28,7 +29,9 @@ pub struct ContractMaintenanceAuthorityInfo {
 }
 
 pub enum UpdateInfo {
-	ReplaceAuthority(ContractMaintenanceAuthorityInfo), // TODO: the rest of Updates
+	ReplaceAuthority(ContractMaintenanceAuthorityInfo),
+	VerifierKeyRemove(EntryPointBuf),
+	VerifierKeyInsert(EntryPointBuf, ContractOperationVersionedVerifierKey),
 }
 
 pub struct MaintenanceUpdateInfo {
@@ -59,6 +62,12 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 						threshold: info.threshold,
 						counter: info.counter,
 					})
+				},
+				UpdateInfo::VerifierKeyRemove(k) => {
+					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V2)
+				},
+				UpdateInfo::VerifierKeyInsert(k, new_key) => {
+					SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())
 				},
 			})
 			.collect();

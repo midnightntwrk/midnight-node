@@ -21,10 +21,18 @@ set -euxo pipefail
 
 NODE_IMAGE="${1:-ghcr.io/midnight-ntwrk/midnight-node:0.18.0-rc.3}"
 TOOLKIT_IMAGE="${2:-ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.18.0-rc.3}"
+MODE="${3:-JS}"
+
+# Validate MODE
+if [[ "$MODE" != "JS" && "$MODE" != "RUST" ]]; then
+    echo "Error: MODE must be either 'JS' or 'RUST' (current value: '$MODE')" >&2
+    exit 1
+fi
 
 echo "🐛 Reproducing Maintenance Transaction Bug"
 echo "📋 NODE_IMAGE: $NODE_IMAGE"
 echo "📋 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
+echo "Running with MODE=$MODE"
 echo ""
 
 # Ensure Docker network exists
@@ -79,26 +87,48 @@ echo ""
 echo "📝 Step 1: Deploy a contract..."
 echo "=================================="
 echo "Generate deploy intent"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
-    generate-intent deploy -c /toolkit-js/contract/contract.config.ts \
-    --coin-public "$coin_public" \
-    --output-intent "/out/deploy.bin" \
-    --output-private-state "/out/initial_state.json" \
-    --output-zswap-state "/out/temp.json" \
-    20
 
-echo "Generate deploy tx"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
-    send-intent \
-    --intent-file "/out/deploy.bin" \
-    --compiled-contract-dir contract/managed/counter \
-    --to-bytes --dest-file "/out/$deploy_tx_filename"
+# Add your script logic here based on MODE
+case "$MODE" in
+    JS)
+        echo "Deploying a contract with Toolkit-JS..."
+
+        docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
+            -e RESTORE_OWNER="$(id -u):$(id -g)" \
+            -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+            "$TOOLKIT_IMAGE" \
+            generate-intent deploy -c /toolkit-js/contract/contract.config.ts \
+            --coin-public "$coin_public" \
+            --authority-seed 0000000000000000000000000000000000000000000000000000000000000001 \
+            --output-intent "/out/deploy.bin" \
+            --output-private-state "/out/initial_state.json" \
+            --output-zswap-state "/out/temp.json" \
+            20
+
+        echo "Generate deploy tx"
+        docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
+            -e RESTORE_OWNER="$(id -u):$(id -g)" \
+            -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+            "$TOOLKIT_IMAGE" \
+            send-intent \
+            --intent-file "/out/deploy.bin" \
+            --compiled-contract-dir contract/managed/counter \
+            --to-bytes --dest-file "/out/$deploy_tx_filename"
+        ;;
+    RUST)
+        echo "Deploying a contract with Rust..."
+
+        docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
+            -e RESTORE_OWNER="$(id -u):$(id -g)" \
+            -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+            "$TOOLKIT_IMAGE" \
+            generate-txs contract-simple deploy \
+            --funding-seed 0000000000000000000000000000000000000000000000000000000000000001 \
+            --rng-seed 0000000000000000000000000000000000000000000000000000000000000001 \
+            --dest-file "/out/$deploy_tx_filename" \
+            --to-bytes
+        ;;
+esac
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
@@ -144,8 +174,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenanc
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
-    --commitee-seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    --new-commitee-seed 1000000000000000000000000000000000000000000000000000000000000001 \
+    --authority-seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
     --rng-seed 0000000000000000000000000000000000000000000000000000000000000001 \
     --contract-address "$contract_address" \
     --dest-file "/out/$maintenance_tx_filename" \
