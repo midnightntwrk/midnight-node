@@ -355,13 +355,10 @@ pub mod pallet {
 			let fed_auth_data = Self::get_data_from_inherent_data(data).unwrap_or_default()?;
 
 			let council_authorities =
-				Self::decode_auth_accounts(fed_auth_data.council_authorities, "council").ok()?;
+				Self::decode_auth_accounts(fed_auth_data.council_authorities).ok()?;
 
-			let technical_committee_authorities = Self::decode_auth_accounts(
-				fed_auth_data.technical_committee_authorities,
-				"technical committee",
-			)
-			.ok()?;
+			let technical_committee_authorities =
+				Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities).ok()?;
 
 			if !council_authorities.is_empty() && !technical_committee_authorities.is_empty() {
 				Some(Call::reset_members { council_authorities, technical_committee_authorities })
@@ -380,11 +377,8 @@ pub mod pallet {
 		) -> Result<(), Self::Error> {
 			// Validate the federated authority data from inherent
 			if let Some(fed_auth_data) = Self::get_data_from_inherent_data(data)? {
-				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities, "council")?;
-				let _ = Self::decode_auth_accounts(
-					fed_auth_data.technical_committee_authorities,
-					"technical committee",
-				)?;
+				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities)?;
+				let _ = Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities)?;
 			}
 
 			Ok(())
@@ -402,7 +396,6 @@ pub mod pallet {
 		/// Transform `Vec<(AuthorityMemberPublicKey, MainchainMember)>` into `Vec<(T::AccountId, MainchainMember)>`
 		fn decode_auth_accounts(
 			auth_data: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
-			body: &'static str,
 		) -> Result<Vec<(T::AccountId, MainchainMember)>, InherentError> {
 			auth_data
 				.into_iter()
@@ -412,7 +405,7 @@ pub mod pallet {
 						.map_err(|_| {
 							log::error!(
 								target: "federated-authority-observation",
-								"Failed to decode {body:?} authority key: {:?}",
+								"Failed to decode authority key: {:?}",
 								key.0
 							);
 							InherentError::DecodeFailed

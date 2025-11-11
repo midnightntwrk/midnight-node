@@ -182,11 +182,11 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 				// Extract 28 bytes for MainchainMember by skipping first 4 bytes
 				if key_bytes.len() != 32 {
-					log::warn!(
-						"Expected 32 bytes for Cardano public key hash, got {}. Skipping.",
+					return Err(format!(
+						"Expected 32 bytes for Cardano public key hash, got {}",
 						key_bytes.len()
-					);
-					continue;
+					)
+					.into());
 				}
 				let mainchain_member_bytes = &key_bytes[4..32];
 				let mainchain_member = {
@@ -223,11 +223,11 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 				// Sr25519 public keys are exactly 32 bytes
 				if sr25519_key_data.len() != 32 {
-					log::warn!(
-						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+					return Err(format!(
+						"Expected 32 bytes for Sr25519 public key, got {}.",
 						sr25519_key_data.len()
-					);
-					continue;
+					)
+					.into());
 				}
 
 				authority_members
