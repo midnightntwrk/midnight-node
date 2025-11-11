@@ -336,6 +336,16 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.federated_authority_config()
 				.technical_committee
 				.policy_id,
+			council_members_mainchain: genesis
+				.federated_authority_config()
+				.council
+				.members_mainchain
+				.clone(),
+			technical_committee_members_mainchain: genesis
+				.federated_authority_config()
+				.technical_committee
+				.members_mainchain
+				.clone(),
 			..Default::default()
 		},
 	};
