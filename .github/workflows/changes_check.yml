@@ -29,12 +29,12 @@ jobs:
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             # Fetch labels fresh using gh CLI - always safe
-            LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels --jq -c '[.labels[].name]')
+            LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" == "merge_group" ]; then
             PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
             echo "number=$PR_NUM" >> $GITHUB_OUTPUT
-            LABELS=$(gh pr view "$PR_NUM" --json labels --jq -c '[.labels[].name]')
+            LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> $GITHUB_OUTPUT
           fi
         env:
