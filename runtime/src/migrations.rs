@@ -34,36 +34,12 @@ where
 
 		// Get the sudo account from storage
 		if let Some(sudo_account) = pallet_sudo::Key::<T>::get() {
-			let account_info = frame_system::Pallet::<T>::account(&sudo_account);
-			let current_sufficients = account_info.sufficients;
+			frame_system::Pallet::<T>::inc_sufficients(&sudo_account);
 
-			// Increment sufficients until it reaches 2
-			if current_sufficients < 2 {
-				let increments_needed = 2 - current_sufficients;
+			log::info!("✅ Incremented sufficients for sudo account: {:?}", sudo_account);
 
-				for _ in 0..increments_needed {
-					frame_system::Pallet::<T>::inc_sufficients(&sudo_account);
-				}
-
-				log::info!(
-					"✅ Incremented sufficients for sudo account: {:?} (from {} to 2)",
-					sudo_account,
-					current_sufficients
-				);
-
-				// Weight: 1 read (sudo key) + 1 read (account info) + N writes (account info)
-				// Each inc_sufficients does a read+write, so we account for all of them
-				T::DbWeight::get().reads_writes(2, increments_needed as u64)
-			} else {
-				log::info!(
-					"ℹ️ Sudo account {:?} already has {} sufficients (>= 2), no increment needed",
-					sudo_account,
-					current_sufficients
-				);
-
-				// Weight: 1 read (sudo key) + 1 read (account info)
-				T::DbWeight::get().reads(2)
-			}
+			// Weight: 1 read (sudo key) + 1 read + 1 write (inc_sufficients)
+			T::DbWeight::get().reads_writes(2, 1)
 		} else {
 			log::warn!("⚠️ No sudo account found, skipping migration");
 			T::DbWeight::get().reads(1)
@@ -104,25 +80,9 @@ where
 				let old_sufficients = u32::decode(&mut &state[..])
 					.map_err(|_| TryRuntimeError::Other("Failed to decode old sufficients"))?;
 
-				// Verify that sufficients is now at least 2
-				if new_sufficients < 2 {
-					return Err(TryRuntimeError::Other(
-						"Sufficients did not reach 2 after migration",
-					));
-				}
-
-				// If it was already >= 2, it should not have changed
-				if old_sufficients >= 2 && new_sufficients != old_sufficients {
-					return Err(TryRuntimeError::Other(
-						"Sufficients changed when it was already >= 2",
-					));
-				}
-
-				// If it was < 2, it should now be exactly 2
-				if old_sufficients < 2 && new_sufficients != 2 {
-					return Err(TryRuntimeError::Other(
-						"Sufficients should be exactly 2 after migration",
-					));
+				// Verify that sufficients increased by exactly 1
+				if new_sufficients != old_sufficients + 1 {
+					return Err(TryRuntimeError::Other("Sufficients did not increase by 1"));
 				}
 
 				log::info!(
