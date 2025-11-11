@@ -49,6 +49,7 @@ pub use frame_support::{
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
+use midnight_primitives::BridgeRecipient;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
@@ -74,6 +75,7 @@ use sp_consensus_beefy::{
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_governed_map::MainChainScriptsV1;
+use sp_partner_chains_bridge::{BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts};
 
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
@@ -964,6 +966,16 @@ impl pallet_federated_authority_observation::Config for Runtime {
 
 pub struct MidnightTokenTransferHandler;
 
+parameter_types! {
+	pub const BridgeMaxTransfersPerBlock: u32 = 256;
+}
+
+impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for MidnightTokenTransferHandler {
+	fn handle_incoming_transfer(_transfer: BridgeTransferV1<BridgeRecipient>) {
+		todo!("Bridge token transfer handling is not implemented yet");
+	}
+}
+
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
@@ -983,6 +995,16 @@ impl pallet_governed_map::Config for Runtime {
 	type OnGovernedMappingChange = ();
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
+}
+
+impl pallet_partner_chains_bridge::Config for Runtime {
+	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
+	type Recipient = BridgeRecipient;
+	type TransferHandler = MidnightTokenTransferHandler;
+	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
+	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
 }
@@ -1069,6 +1091,9 @@ mod runtime {
 
 	#[runtime::pallet_index(31)]
 	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
+
+	#[runtime::pallet_index(32)]
+	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]
@@ -1193,6 +1218,24 @@ impl_runtime_apis! {
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
+		}
+	}
+
+	impl sp_partner_chains_bridge::TokenBridgeIDPRuntimeApi<Block> for Runtime {
+		fn get_pallet_version() -> u32 {
+			Bridge::get_pallet_version()
+		}
+
+		fn get_main_chain_scripts() -> Option<BridgeMainChainScripts> {
+			Bridge::get_main_chain_scripts()
+		}
+
+		fn get_max_transfers_per_block() -> u32 {
+			Bridge::get_max_transfers_per_block()
+		}
+
+		fn get_last_data_checkpoint() -> Option<BridgeDataCheckpoint> {
+			Bridge::get_data_checkpoint()
 		}
 	}
 

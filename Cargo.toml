@@ -21,7 +21,13 @@ members = [
     "relay",
     "docs",
 ]
-package = { license-file = "LICENSE" }
+[workspace.package]
+license-file = "LICENSE"
+edition = "2024"
+version = "0.1.0"
+authors = ["Midnight Foundation"]
+homepage = "https://midnight.network"
+repository = "https://github.com/midnightntwrk/mn4"
 
 # Same lint list as polkadot-sdk
 [workspace.lints.clippy]
@@ -101,15 +107,16 @@ partner-chains-mock-data-sources = { default-features = false, git = "https://gi
 db-sync-sqlx = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 cardano-serialization-lib = { default-features = false, version = "^14.1.1" }
 substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
+envy = { version = "0.4.2" }
 
 pallet-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 
 pallet-sidechain-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-#sp-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+sp-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 
 pallet-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-#pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 
 sp-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }

@@ -78,6 +78,7 @@ midnight-node-ledger = { workspace = true, default-features = true }
 midnight-node-ledger-helpers = {workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
+midnight-primitives = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
@@ -98,8 +99,8 @@ authority-selection-inherents.workspace = true
 #sp-block-rewards = { workspace = true, optional = true }
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
-partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map"] }
-partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map"] }
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map", "bridge"] }
+partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map", "bridge"] }
 pallet-session-validator-management-rpc.workspace = true
 pallet-sidechain-rpc.workspace = true
 pallet-governed-map.workspace = true
@@ -112,6 +113,7 @@ sp-session-validator-management-query.workspace = true
 sp-governed-map.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true
+sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
 sp-inherents.workspace = true
@@ -127,7 +129,6 @@ documented.workspace = true
 shell-words = "1.1.0"
 derive-new.workspace = true
 
-#sp-partner-chains-bridge = { workspace = true, default-features = true }
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
 

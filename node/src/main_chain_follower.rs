@@ -14,21 +14,23 @@
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
-	BlockDataSourceImpl, CandidatesDataSourceImpl, DbSyncBlockDataSourceConfig,
-	GovernedMapDataSourceCachedImpl, McFollowerMetrics, McHashDataSourceImpl,
-	SidechainRpcDataSourceImpl,
+	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
+	DbSyncBlockDataSourceConfig, GovernedMapDataSourceCachedImpl, McFollowerMetrics,
+	McHashDataSourceImpl, SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
 	AuthoritySelectionDataSourceMock, BlockDataSourceMock, GovernedMapDataSourceMock,
-	McHashDataSourceMock, SidechainRpcDataSourceMock,
+	McHashDataSourceMock, SidechainRpcDataSourceMock, TokenBridgeDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_governed_map::GovernedMapDataSource;
+use sp_partner_chains_bridge::TokenBridgeDataSource;
 
 use super::cfg::midnight_cfg::MidnightCfg;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
+use midnight_primitives::BridgeRecipient;
 use std::{error::Error, str::FromStr as _, sync::Arc};
 
 use midnight_primitives_mainchain_follower::{
@@ -49,6 +51,7 @@ pub struct DataSources {
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	pub federated_authority_observation:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	pub bridge: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
@@ -93,11 +96,13 @@ pub async fn create_mock_data_sources(
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
 		),
+		bridge: Arc::new(TokenBridgeDataSourceMock::<BridgeRecipient>::new()),
 	})
 }
 
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
+pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
 
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
@@ -170,10 +175,16 @@ pub async fn create_cached_data_sources(
 				pool.clone(),
 				metrics_opt.clone(),
 				GOVERNED_MAP_CACHE_SIZE,
-				block,
+				block.clone(),
 			)
 			.await?,
 		),
+		bridge: Arc::new(CachedTokenBridgeDataSourceImpl::new(
+			pool.clone(),
+			metrics_opt.clone(),
+			block,
+			BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
+		)),
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt, 1000),
 		),
