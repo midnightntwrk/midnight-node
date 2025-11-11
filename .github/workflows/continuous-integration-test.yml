@@ -14,6 +14,9 @@ jobs:
     name: Run tests
     # 16 core machines seem to have gone walkabout.
     runs-on: ubuntu-latest-16-core-x64
+    permissions:
+      contents: read
+      pull-requests: write
     env:
       FORCE_COLOR: 1
     steps:
@@ -51,3 +54,11 @@ jobs:
         with:
           name: Lcov Coverage Report
           path: test-artifacts/tests.lcov
+
+      - name: Coveralls
+        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
+        with:
+          github-token: ${{ github.token }}
+          file: test-artifacts/tests.lcov
+          base-path: /home/runner/work/midnight-node/midnight-node
+          format: lcov
