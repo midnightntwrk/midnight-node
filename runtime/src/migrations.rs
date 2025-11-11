@@ -34,11 +34,13 @@ where
 
 		// Get the sudo account from storage
 		if let Some(sudo_account) = pallet_sudo::Key::<T>::get() {
-			frame_system::Pallet::<T>::inc_sufficients(&sudo_account);
+			frame_system::Account::<T>::mutate(&sudo_account, |account_info| {
+				account_info.sufficients = 1000;
+			});
 
-			log::info!("✅ Incremented sufficients for sudo account: {:?}", sudo_account);
+			log::info!("✅ Set sufficients to 1000 for sudo account: {:?}", sudo_account);
 
-			// Weight: 1 read (sudo key) + 1 read + 1 write (inc_sufficients)
+			// Weight: 1 read (sudo key) + 1 read + 1 write (account info)
 			T::DbWeight::get().reads_writes(2, 1)
 		} else {
 			log::warn!("⚠️ No sudo account found, skipping migration");
@@ -80,9 +82,9 @@ where
 				let old_sufficients = u32::decode(&mut &state[..])
 					.map_err(|_| TryRuntimeError::Other("Failed to decode old sufficients"))?;
 
-				// Verify that sufficients increased by exactly 1
-				if new_sufficients != old_sufficients + 1 {
-					return Err(TryRuntimeError::Other("Sufficients did not increase by 1"));
+				// Verify that sufficients is now 1000
+				if new_sufficients != 1000 {
+					return Err(TryRuntimeError::Other("Sufficients is not 1000 after migration"));
 				}
 
 				log::info!(
