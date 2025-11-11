@@ -25,20 +25,20 @@ jobs:
 
       - name: Get PR details
         id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            echo 'labels=${{ toJSON(github.event.pull_request.labels.*.name) }}' >> $GITHUB_OUTPUT
+            # Fetch labels fresh using gh CLI - always safe
+            LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels --jq -c '[.labels[].name]')
+            echo "labels=$LABELS" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" == "merge_group" ]; then
-            # Extract PR number from merge group head ref (format: refs/heads/gh-readonly-queue/main/pr-123-...)
             PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
             echo "number=$PR_NUM" >> $GITHUB_OUTPUT
-            # Fetch PR labels using GitHub CLI
-            LABELS=$(gh pr view "$PR_NUM" --json labels --jq '[.labels[].name]')
+            LABELS=$(gh pr view "$PR_NUM" --json labels --jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> $GITHUB_OUTPUT
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check changes can be rendered
         run: docker run -v "$PWD/changes:/changes" ghcr.io/midnight-ntwrk/season:0.3.1 build /changes
