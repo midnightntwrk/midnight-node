@@ -58,6 +58,19 @@ brew update
 brew install openssl
 ```
 
+#### LLVM for WASM compilation
+
+The default XCode installation of LLVM does not support WASM build targets. Please install LLVM via Homebrew:
+
+```bash
+brew install llvm
+```
+
+The `.envrc` file will automatically configure the necessary environment variables (`PATH`, `LDFLAGS`, `CPPFLAGS`) when you `cd` into the repository. If LLVM is not installed, you'll see a warning message:
+
+> **Note:** If not using direnv (see [Prerequisites](../README.md#prerequisites)), you'll need to manually configure the environment variables shown in `.envrc`.
+
+
 ### Windows
 
 **_PLEASE NOTE:_** Native Windows development of PolkadotSDK is _not_ very well supported! It is _highly_
