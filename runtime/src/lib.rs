@@ -92,6 +92,7 @@ pub use sp_runtime::{Perbill, Permill};
 #[allow(deprecated)]
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
+use crate::currency::CurrencyWaiver;
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
@@ -678,6 +679,8 @@ impl pallet_partner_chains_session::Config for Runtime {
 	type SessionManager = ValidatorManagementSessionManager<Runtime>;
 	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = opaque::SessionKeys;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -721,6 +724,8 @@ impl pallet_session_validator_management::Config for Runtime {
 	type CommitteeMember = CommitteeMember<CrossChainPublic, SessionKeys>;
 
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 pub struct LogBeneficiaries;
@@ -1024,6 +1029,8 @@ mod runtime {
 	pub type Sudo = pallet_sudo::Pallet<Runtime>;
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+	#[runtime::pallet_index(30)]
+	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
 	//BlockRewards: pallet_block_rewards = 9,
 
@@ -1061,9 +1068,6 @@ mod runtime {
 	#[runtime::pallet_index(23)]
 	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
 
-	// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
-	#[runtime::pallet_index(30)]
-	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
@@ -1133,7 +1137,7 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
-		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
+		[pallet_session_validator_management, SessionCommitteeManagement]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
@@ -1425,7 +1429,6 @@ impl_runtime_apis! {
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
 			list_benchmarks!(list, extra);
@@ -1444,11 +1447,9 @@ impl_runtime_apis! {
 
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
 			impl baseline::Config for Runtime {}
-			impl pallet_session_validator_management_benchmarking::Config for Runtime {}
 
 			use frame_support::traits::WhitelistedStorageKeys;
 			let whitelist: Vec<TrackedStorageKey> = AllPalletsWithSystem::whitelisted_storage_keys();

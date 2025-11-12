@@ -69,12 +69,11 @@ frame-system-benchmarking = { workspace = true, optional = true }
 authority-selection-inherents.workspace = true
 #pallet-block-rewards.workspace = true
 #sp-block-rewards.workspace = true
-pallet-partner-chains-session.workspace = true
 #pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
-pallet-session-validator-management-benchmarking = { workspace = true, optional = true }
+pallet-partner-chains-session.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots.workspace = true
 
@@ -158,9 +157,8 @@ std = [
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
-    "pallet-partner-chains-session/std",
     "pallet-session-validator-management/std",
-    "pallet-session-validator-management-benchmarking?/std",
+    "pallet-partner-chains-session/std",
     "pallet-tx-pause/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
@@ -186,10 +184,10 @@ runtime-benchmarks = [
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
-    "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
-    "pallet-governed-map/runtime-benchmarks"
+    "pallet-governed-map/runtime-benchmarks",
+    "pallet-session-validator-management/runtime-benchmarks",
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",
