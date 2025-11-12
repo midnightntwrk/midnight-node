@@ -191,7 +191,7 @@ pub mod pallet {
 				Vec<_>,
 			) = technical_committee_authorities.into_iter().unzip();
 
-			// Reset Council members if provided
+			// Prepare Council members
 			let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
 				BoundedVec::try_from(council_account_ids.clone())
 					.map_err(|_| Error::<T>::TooManyMembers)?;
@@ -207,21 +207,36 @@ pub mod pallet {
 			let council_members_have_changed =
 				council_current_members.as_slice() != council_members.as_slice();
 
-			// Prepare council mainchain members
+			// Prepare Council mainchain members
 			let council_mainchain_members: BoundedVec<MainchainMember, T::CouncilMaxMembers> =
 				BoundedVec::try_from(council_mainchain_members.clone())
 					.map_err(|_| Error::<T>::TooManyMembers)?;
 
-			// Only if Council membership has changed
+			// Make sure an empty set of mainchain members is not allowed
+			ensure!(!council_mainchain_members.is_empty(), Error::<T>::EmptyMembers);
+
+			let council_current_mainchain_members = CouncilMainchainMembers::<T>::get();
+
+			let council_mainchain_members_have_changed =
+				council_current_mainchain_members != council_mainchain_members;
+
+			// If Council membership has changed
 			if council_members_have_changed {
 				T::CouncilMembershipHandler::set_members_sorted(
 					&council_members[..],
 					&council_current_members,
 				);
+			}
 
-				// Update mainchain members storage
+			// If Council mainchain membership has changed
+			if council_mainchain_members_have_changed {
 				CouncilMainchainMembers::<T>::put(&council_mainchain_members);
+			}
 
+			let council_has_changed =
+				council_members_have_changed || council_mainchain_members_have_changed;
+
+			if council_has_changed {
 				Self::deposit_event(Event::<T>::CouncilMembersReset {
 					members: council_members,
 					members_mainchain: council_mainchain_members,
@@ -234,7 +249,7 @@ pub mod pallet {
 					));
 			}
 
-			// Reset Technical Committee members if provided
+			// Prepare Technical Committee members
 			let mut technical_committee_members: BoundedVec<
 				T::AccountId,
 				T::TechnicalCommitteeMaxMembers,
@@ -248,7 +263,8 @@ pub mod pallet {
 			let technical_committee_current_members =
 				T::TechnicalCommitteeMembershipHandler::sorted_members();
 
-			let technical_committee_has_changed = technical_committee_current_members.as_slice()
+			let technical_committee_members_have_changed = technical_committee_current_members
+				.as_slice()
 				!= technical_committee_members.as_slice();
 
 			// Prepare technical committee mainchain members
@@ -258,18 +274,34 @@ pub mod pallet {
 			> = BoundedVec::try_from(technical_committee_mainchain_members.clone())
 				.map_err(|_| Error::<T>::TooManyMembers)?;
 
-			// Only if Technical Committee membership has changed
-			if technical_committee_has_changed {
+			// Make sure an empty set of mainchain members is not allowed
+			ensure!(!technical_committee_mainchain_members.is_empty(), Error::<T>::EmptyMembers);
+
+			let technical_committee_current_mainchain_members =
+				TechnicalCommitteeMainchainMembers::<T>::get();
+
+			let technical_committee_mainchain_members_have_changed =
+				technical_committee_current_mainchain_members
+					!= technical_committee_mainchain_members;
+
+			// If Technical Committee membership has changed
+			if technical_committee_members_have_changed {
 				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
 					&technical_committee_members[..],
 					&technical_committee_current_members,
 				);
+			}
 
-				// Update mainchain members storage
+			if technical_committee_mainchain_members_have_changed {
 				TechnicalCommitteeMainchainMembers::<T>::put(
 					&technical_committee_mainchain_members,
 				);
+			}
 
+			let technical_committee_has_changed = technical_committee_members_have_changed
+				|| technical_committee_mainchain_members_have_changed;
+
+			if technical_committee_has_changed {
 				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
 					members: technical_committee_members,
 					members_mainchain: technical_committee_mainchain_members,
@@ -284,7 +316,7 @@ pub mod pallet {
 			}
 
 			// If nothing changed, return correct weight
-			if !council_members_have_changed && !technical_committee_has_changed {
+			if !council_has_changed && !technical_committee_has_changed {
 				actual_weight = T::WeightInfo::reset_members_none(
 					council_account_ids.len() as u32,
 					technical_committee_account_ids.len() as u32,

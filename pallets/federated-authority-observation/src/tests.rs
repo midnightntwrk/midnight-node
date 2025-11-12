@@ -37,27 +37,20 @@ fn with_mainchain_members(account_ids: &[u64]) -> Vec<(u64, MainchainMember)> {
 }
 
 // Helper function to create inherent data
-fn create_inherent_data(council: Vec<u64>, technical_committee: Vec<u64>) -> InherentData {
+fn create_inherent_data(
+	council: Vec<(u64, MainchainMember)>,
+	technical_committee: Vec<(u64, MainchainMember)>,
+) -> InherentData {
 	let mut inherent_data = InherentData::new();
 
 	let council_keys: Vec<(AuthorityMemberPublicKey, MainchainMember)> = council
-		.iter()
-		.enumerate()
-		.map(|(i, id)| {
-			let mut mainchain_bytes = [0u8; 28];
-			mainchain_bytes[0] = i as u8;
-			(AuthorityMemberPublicKey(id.encode()), PolicyId(mainchain_bytes))
-		})
+		.into_iter()
+		.map(|(id, mainchain_member)| (AuthorityMemberPublicKey(id.encode()), mainchain_member))
 		.collect();
 
 	let tc_keys: Vec<(AuthorityMemberPublicKey, MainchainMember)> = technical_committee
-		.iter()
-		.enumerate()
-		.map(|(i, id)| {
-			let mut mainchain_bytes = [0u8; 28];
-			mainchain_bytes[0] = (i + 100) as u8;
-			(AuthorityMemberPublicKey(id.encode()), PolicyId(mainchain_bytes))
-		})
+		.into_iter()
+		.map(|(id, mainchain_member)| (AuthorityMemberPublicKey(id.encode()), mainchain_member))
 		.collect();
 
 	let fed_auth_data = FederatedAuthorityData {
@@ -264,7 +257,10 @@ fn create_inherent_works_when_council_changes() {
 		));
 
 		// Now create inherent with different members
-		let inherent_data = create_inherent_data(new_council.clone(), new_tc.clone());
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&new_council),
+			with_mainchain_members(&new_tc),
+		);
 
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 		assert!(call.is_some(), "Should create inherent when members change");
@@ -299,7 +295,10 @@ fn create_inherent_with_same_members_emits_no_events() {
 		System::reset_events();
 
 		// Create inherent data with same members
-		let inherent_data = create_inherent_data(council_members, tc_members);
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&council_members),
+			with_mainchain_members(&tc_members),
+		);
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 
 		// Call is created but should not emit events when dispatched since members are the same
@@ -330,7 +329,10 @@ fn create_inherent_works_when_only_council_changes() {
 		));
 
 		// Create inherent with changed council but same TC
-		let inherent_data = create_inherent_data(new_council.clone(), tc_members.clone());
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&new_council),
+			with_mainchain_members(&tc_members),
+		);
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 
 		assert!(call.is_some(), "Should create inherent when council changes");
@@ -366,7 +368,10 @@ fn create_inherent_works_when_only_technical_committee_changes() {
 		));
 
 		// Create inherent with same council but changed TC
-		let inherent_data = create_inherent_data(council_members.clone(), new_tc.clone());
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&council_members),
+			with_mainchain_members(&new_tc),
+		);
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 
 		assert!(call.is_some(), "Should create inherent when TC changes");
@@ -493,7 +498,10 @@ fn inherent_check_validates_data() {
 		));
 
 		// Create inherent data with different members
-		let inherent_data = create_inherent_data(new_council, new_tc);
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&new_council),
+			with_mainchain_members(&new_tc),
+		);
 		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
 
 		assert!(call.is_some());
