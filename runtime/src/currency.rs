@@ -300,7 +300,7 @@ impl<AccountId> FungibleUnbalanced<AccountId> for CurrencyWaiver {
 		>,
 		sp_runtime::DispatchError,
 	> {
-		todo!()
+		Ok(Some(0))
 	}
 	fn set_total_issuance(
 		_: <Self as frame_support::traits::fungible::Inspect<AccountId>>::Balance,
