@@ -64,13 +64,19 @@ where
 	R::Api: MmrApi<B, MmrRootHash, NumberFor<B>> + BeefStakesApi<B>,
 {
 	fn payload(&self, header: &B::Header) -> Option<Payload> {
+		log::info!("Generating Beefy Payload:");
 		let mmr_root = self.mmr_root_from_digest_or_runtime(header);
 
 		mmr_root
 			.and_then(|root| {
+				log::info!("Generating Beefy Payload:: MMR ROOT:{root}");
 				// extract the BeefStakes, attach with the root
 				// and recreate the Payload of (MMR Root, BeefStakes)
-				self.get_beef_stakes(header).map(|beef_stakes| (root, beef_stakes).encode())
+				self.get_beef_stakes(header).map(|beef_stakes| {
+					log::info!("Generating Beefy Payload:: BEEFSTAKES: {beef_stakes:#?}");
+
+					(root, beef_stakes).encode()
+				})
 			})
 			.map(|encoded| Payload::from_single_entry(MMR_ROOT_AND_STAKES_ID, encoded))
 	}

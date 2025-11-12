@@ -1,7 +1,7 @@
 //! Extension of Custom Implementations related to Beefy and Mmr
 
-use core::marker::PhantomData;
 use crate::{CrossChainPublic, Runtime};
+use core::marker::PhantomData;
 
 use authority_selection_inherents::CommitteeMember;
 
@@ -48,16 +48,16 @@ pub struct AuthoritiesProvider<T> {
 /// An api to be used and accessed by the Node
 sp_api::decl_runtime_apis! {
 	pub trait BeefStakesApi {
-        /// Returns a tuple of the (Current BeefStakes, Next BeefStakes)
+		/// Returns a tuple of the (Current BeefStakes, Next BeefStakes)
 		fn beef_stakes() -> DoubleBeefStakes<Runtime>;
 	}
 }
 
 /// Collects the BeefStakes for both the current validator set and the next validator set
-/// Returns a tuple of the (Current BeefStakes, Next BeefStakes) 
+/// Returns a tuple of the (Current BeefStakes, Next BeefStakes)
 pub fn collect_beef_stakes() -> DoubleBeefStakes<Runtime> {
-    // Similar set of validators of pallet beefy fn validator_set();
-    // the benefit of this is being an unwrapped value of Vec<Public>
+	// Similar set of validators of pallet beefy fn validator_set();
+	// the benefit of this is being an unwrapped value of Vec<Public>
 	let current_validators = pallet_beefy::pallet::Authorities::<Runtime>::get().to_vec();
 
 	let current_committee = SessionValidatorMngPallet::<Runtime>::current_committee_storage();
@@ -123,9 +123,6 @@ pub fn compute_beef_stakes(
 			CommitteeMember::Permissioned { id, .. } => {
 				// convert to beefy
 				let committee_id = xchain_public_to_beefy(id.clone());
-				log::info!(
-					"XXXXXXXXXXXXXXXXXXXXXXXXXXXX compute_beef_stakes: BEEFY: {committee_id}"
-				);
 				if committee_id == validator {
 					beefy_with_stakes.push((
 						committee_id,
