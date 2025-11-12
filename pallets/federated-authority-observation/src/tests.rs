@@ -36,6 +36,20 @@ fn with_mainchain_members(account_ids: &[u64]) -> Vec<(u64, MainchainMember)> {
 		.collect()
 }
 
+// Helper function to create mainchain members with different policy IDs
+fn with_different_mainchain_members(account_ids: &[u64]) -> Vec<(u64, MainchainMember)> {
+	let offset = 100u8;
+	account_ids
+		.iter()
+		.enumerate()
+		.map(|(i, &id)| {
+			let mut bytes = [0u8; 28];
+			bytes[0] = (i as u8) + offset;
+			(id, PolicyId(bytes))
+		})
+		.collect()
+}
+
 // Helper function to create inherent data
 fn create_inherent_data(
 	council: Vec<(u64, MainchainMember)>,
@@ -386,6 +400,146 @@ fn create_inherent_works_when_only_technical_committee_changes() {
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), new_tc);
 		assert_eq!(pallet_collective::Members::<Test, CouncilCollective>::get(), council_members);
 		assert_eq!(pallet_collective::Members::<Test, TechnicalCommitteeCollective>::get(), new_tc);
+	});
+}
+
+#[test]
+fn reset_members_emits_event_when_only_council_mainchain_members_change() {
+	new_test_ext().execute_with(|| {
+		let council_members = vec![1, 2, 3];
+		let tc_members = vec![4, 5, 6];
+
+		// Initialize with some members first
+		assert_ok!(FederatedAuthorityObservation::reset_members(
+			frame_system::RawOrigin::None.into(),
+			with_mainchain_members(&council_members),
+			with_mainchain_members(&tc_members),
+		));
+
+		// Reset events
+		System::reset_events();
+
+		// Create inherent with same account IDs but different mainchain members for council only
+		let inherent_data = create_inherent_data(
+			with_different_mainchain_members(&council_members),
+			with_mainchain_members(&tc_members),
+		);
+		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
+
+		assert!(call.is_some(), "Should create inherent when council mainchain members change");
+
+		if let Some(call) = call {
+			let runtime_call = RuntimeCall::FederatedAuthorityObservation(call);
+			assert_ok!(runtime_call.dispatch(frame_system::RawOrigin::None.into()));
+		}
+
+		// Should emit only CouncilMembersReset event
+		let events = System::events();
+		assert_eq!(events.len(), 1);
+		assert!(matches!(
+			events[0].event,
+			RuntimeEvent::FederatedAuthorityObservation(Event::CouncilMembersReset { .. })
+		));
+
+		// Account members should remain the same
+		assert_eq!(CouncilMembership::members().to_vec(), council_members);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
+	});
+}
+
+#[test]
+fn reset_members_emits_event_when_only_tc_mainchain_members_change() {
+	new_test_ext().execute_with(|| {
+		let council_members = vec![1, 2, 3];
+		let tc_members = vec![4, 5, 6];
+
+		// Initialize with some members first
+		assert_ok!(FederatedAuthorityObservation::reset_members(
+			frame_system::RawOrigin::None.into(),
+			with_mainchain_members(&council_members),
+			with_mainchain_members(&tc_members),
+		));
+
+		// Reset events
+		System::reset_events();
+
+		// Create inherent with same account IDs but different mainchain members for TC only
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&council_members),
+			with_different_mainchain_members(&tc_members),
+		);
+		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
+
+		assert!(call.is_some(), "Should create inherent when TC mainchain members change");
+
+		if let Some(call) = call {
+			let runtime_call = RuntimeCall::FederatedAuthorityObservation(call);
+			assert_ok!(runtime_call.dispatch(frame_system::RawOrigin::None.into()));
+		}
+
+		// Should emit only TechnicalCommitteeMembersReset event
+		let events = System::events();
+		assert_eq!(events.len(), 1);
+		assert!(matches!(
+			events[0].event,
+			RuntimeEvent::FederatedAuthorityObservation(
+				Event::TechnicalCommitteeMembersReset { .. }
+			)
+		));
+
+		// Account members should remain the same
+		assert_eq!(CouncilMembership::members().to_vec(), council_members);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
+	});
+}
+
+#[test]
+fn reset_members_emits_both_events_when_both_mainchain_members_change() {
+	new_test_ext().execute_with(|| {
+		let council_members = vec![1, 2, 3];
+		let tc_members = vec![4, 5, 6];
+
+		// Initialize with some members first
+		assert_ok!(FederatedAuthorityObservation::reset_members(
+			frame_system::RawOrigin::None.into(),
+			with_mainchain_members(&council_members),
+			with_mainchain_members(&tc_members),
+		));
+
+		// Reset events
+		System::reset_events();
+
+		// Create inherent with same account IDs but different mainchain members for both
+		let inherent_data = create_inherent_data(
+			with_different_mainchain_members(&council_members),
+			with_different_mainchain_members(&tc_members),
+		);
+		let call = FederatedAuthorityObservation::create_inherent(&inherent_data);
+
+		assert!(call.is_some(), "Should create inherent when both mainchain members change");
+
+		if let Some(call) = call {
+			let runtime_call = RuntimeCall::FederatedAuthorityObservation(call);
+			assert_ok!(runtime_call.dispatch(frame_system::RawOrigin::None.into()));
+		}
+
+		// Should emit both events
+		let events = System::events();
+		assert_eq!(events.len(), 2);
+		assert!(matches!(
+			events[0].event,
+			RuntimeEvent::FederatedAuthorityObservation(Event::CouncilMembersReset { .. })
+		));
+		assert!(matches!(
+			events[1].event,
+			RuntimeEvent::FederatedAuthorityObservation(
+				Event::TechnicalCommitteeMembersReset { .. }
+			)
+		));
+
+		// Account members should remain the same
+		assert_eq!(CouncilMembership::members().to_vec(), council_members);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
 	});
 }
 
