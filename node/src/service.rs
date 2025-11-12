@@ -662,7 +662,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			notification_service: beefy_notification_service,
 			_phantom: core::marker::PhantomData::<Block>,
 		};
-		let payload_provider = sp_consensus_beefy::mmr::MmrRootProvider::new(client.clone());
+		let payload_provider = crate::payload::RootAndBeefStakesProvider::new(client.clone());
 		let beefy_params = sc_consensus_beefy::BeefyParams {
 			client: client.clone(),
 			backend: backend.clone(),

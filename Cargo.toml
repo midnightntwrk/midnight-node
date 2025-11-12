@@ -129,6 +129,9 @@ sp-partner-chains-consensus-aura = { default-features = false, git = "https://gi
 sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0"  }
 pallet-partner-chains-session = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.0", features = ["pallet-session-compat"]  }
 # Substrate dependencies
+
+## For generating merkle root logic in the Runtime
+binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 pallet-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 pallet-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
 pallet-beefy-mmr = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2506-2" }
