@@ -96,6 +96,7 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 impl ContractMaintenanceBuilder {
 	fn create_intent_info(
 		&self,
+		committee: Vec<SigningKey>,
 		entrypoints_to_remove: Vec<EntryPointBuf>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB>> {
@@ -122,7 +123,7 @@ impl ContractMaintenanceBuilder {
 
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
-				committee: self.current_committee.clone(),
+				committee,
 				address: self.contract_address,
 				updates,
 				counter: self.counter,
@@ -220,10 +221,21 @@ impl BuildTxs for ContractMaintenanceBuilder {
 				.clone())
 		})?;
 
-		let provided_committee: Vec<VerifyingKey> =
-			self.current_committee.iter().map(|s| s.verifying_key()).collect();
+		let mut committee = self.current_committee.clone();
 
-		check_committee(&provided_committee, &contract_state.maintenance_authority)?;
+		let funding_signing_key =
+			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
+		if contract_state
+			.maintenance_authority
+			.committee
+			.contains(&funding_signing_key.verifying_key())
+		{
+			committee.push(funding_signing_key);
+		}
+
+		let committee_verifying_keys: Vec<_> =
+			committee.iter().map(|s| s.verifying_key()).collect();
+		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
 
 		// Check remove entrypoints
 		let mut entrypoints_to_remove: Vec<_> = self
@@ -272,7 +284,8 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		}
 
 		// - Intents
-		let intent_info = self.create_intent_info(entrypoints_to_remove, entrypoints_to_insert);
+		let intent_info =
+			self.create_intent_info(committee, entrypoints_to_remove, entrypoints_to_insert);
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
