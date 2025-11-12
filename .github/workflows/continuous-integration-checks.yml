@@ -1,6 +1,7 @@
 name: +check (format + lint)
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   push:

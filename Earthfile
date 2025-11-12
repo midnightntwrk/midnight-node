@@ -94,21 +94,8 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/seeds-aws.json AS LOCAL secrets/$NETWORK-seeds-aws.json
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
-subxt-base:
-    FROM rust:1.90-trixie
-    # Install Docker for Trixie-based targets that need it
-    RUN apt-get update && \
-        apt-get install -y ca-certificates curl && \
-        install -m 0755 -d /etc/apt/keyrings && \
-        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
-        chmod a+r /etc/apt/keyrings/docker.asc && \
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | \
-        tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-        apt-get update && \
-        apt-get install -y docker-ce docker-ce-cli containerd.io
-
 subxt:
-    FROM +subxt-base
+    FROM rust:1.90-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -126,10 +113,23 @@ get-metadata:
     ARG METADATA_IMAGE_NAME="localhost/node:latest"
     ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
-          sleep 5 && \
-          subxt metadata -f bytes > /metadata.scale && \
+          echo "Waiting for node to be ready..." && \
+          for i in $(seq 1 30); do \
+            if subxt metadata -f bytes > /metadata.scale 2>/dev/null; then \
+              echo "Node ready after ${i} attempts"; \
+              break; \
+            fi; \
+            if [ $i -eq 30 ]; then \
+              echo "ERROR: Node failed to start within 30 seconds"; \
+              docker logs $(docker ps -q --filter ancestor=localhost/node:latest) || true; \
+              exit 1; \
+            fi; \
+            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
+            sleep 1; \
+          done && \
           docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
     END
     SAVE ARTIFACT /metadata.scale
@@ -137,6 +137,7 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
@@ -316,6 +317,36 @@ rebuild-genesis-state:
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
+    RUN mkdir -p /res/test-data/contract/mint \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public \
+                ) \
+                -c /toolkit-js/mint/mint.config.ts \
+                --output-intent /res/test-data/contract/mint/deploy.bin \
+                --output-private-state /res/test-data/contract/mint/initial_state.json \
+                --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --intent-file /res/test-data/contract/mint/deploy.bin \
+                --compiled-contract-dir /toolkit-js/mint/out \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/mint/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
+                --dest-file /res/test-data/contract/mint/contract_state.mn \
+        ; fi
     IF [ "$GENERATE_TEST_TXS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
     END
@@ -327,6 +358,7 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -438,6 +470,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
+        apt-get upgrade && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
@@ -505,7 +538,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests .
+        metadata rustfmt.toml util tests relay .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -575,7 +608,7 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests .
+    	metadata rustfmt.toml util tests relay .
 
     RUN cargo fmt --all -- --check
 
@@ -591,8 +624,20 @@ check-metadata:
 
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
-          sleep 5 && \
-          subxt metadata -f bytes > /image_metadata.scale && \
+          echo "Waiting for node to be ready..." && \
+          for i in $(seq 1 30); do \
+            if subxt metadata -f bytes > /image_metadata.scale 2>/dev/null; then \
+              echo "Node ready after ${i} attempts"; \
+              break; \
+            fi; \
+            if [ $i -eq 30 ]; then \
+              echo "ERROR: Node failed to start within 30 seconds"; \
+              docker logs $(docker ps -q --filter ancestor=${NODE_IMAGE}) || true; \
+              exit 1; \
+            fi; \
+            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
+            sleep 1; \
+          done && \
           docker kill $(docker ps -q --filter ancestor=${NODE_IMAGE})
     END
     COPY metadata/static/midnight_metadata.scale repo_metadata.scale
@@ -682,7 +727,7 @@ build-normal:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests .
+    ledger node pallets primitives metadata res runtime util tests relay .
 
     ARG NATIVEARCH
 
@@ -713,7 +758,7 @@ build-fork:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives res metadata runtime util tests .
+    ledger node pallets primitives res metadata runtime util tests relay .
 
     ARG NATIVEARCH
 

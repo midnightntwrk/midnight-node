@@ -7,6 +7,7 @@ permissions:
   pull-requests: write # to comment on or label PRs
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   push:

@@ -19,6 +19,7 @@ use super::super::{
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
+use itertools::Itertools;
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 #[cfg(feature = "can-panic")]
 use std::str::FromStr;
@@ -49,10 +50,13 @@ pub enum WalletSeedError {
 	InvalidLength(usize),
 	#[error("{0}")]
 	InvalidMnemonic(#[from] bip39::Error),
+	#[error("lazy hex must only contain one '..'")]
+	LazyHexTwoPartsOnly,
+	#[error("lazy hex length too long")]
+	LazyHexLengthTooLong(usize),
 }
 
 impl WalletSeed {
-	#[cfg(feature = "can-panic")]
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
 		match bytes.len() {
@@ -60,6 +64,32 @@ impl WalletSeed {
 			32 => Ok(Self::Medium(bytes.try_into().unwrap())),
 			64 => Ok(Self::Long(bytes.try_into().unwrap())),
 			len => Err(WalletSeedError::InvalidLength(len)),
+		}
+	}
+
+	/// Allow decoding from seeds in the form e.g. 00..01
+	/// Works for Medium and Long seeds only
+	pub fn try_from_lazy_hex(value: &str) -> Result<Self, WalletSeedError> {
+		let parts: Vec<_> = value.split("..").collect();
+		if parts.len() != 2 {
+			return Err(WalletSeedError::LazyHexTwoPartsOnly);
+		}
+
+		let mut seed = hex::decode(parts[0])?;
+		let seed_tail = hex::decode(parts[1])?;
+
+		let total_len = seed.len() + seed_tail.len();
+
+		let extend_to = |l| {
+			seed.extend(std::iter::repeat_n(0, l - total_len));
+			seed.extend(&seed_tail);
+			seed
+		};
+
+		match total_len {
+			l if l <= 32 => Ok(Self::Medium(extend_to(32).try_into().unwrap())),
+			l if l <= 64 => Ok(Self::Long(extend_to(64).try_into().unwrap())),
+			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
 		}
 	}
 
@@ -83,13 +113,35 @@ impl From<[u8; 32]> for WalletSeed {
 	}
 }
 
-#[cfg(feature = "can-panic")]
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum WalletSeedParseError {
+	#[error("failed to parse as any type: hex: {0}, lazy_hex: {1}, mnemonic: {2}")]
+	FailedToParseAny(WalletSeedError, WalletSeedError, WalletSeedError),
+}
+
 impl FromStr for WalletSeed {
-	type Err = WalletSeedError;
+	type Err = WalletSeedParseError;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let s = s.trim();
-		if let Ok(seed) = Self::try_from_hex_str(s) { Ok(seed) } else { Self::try_from_mnemonic(s) }
+
+		let mut errs = vec![];
+
+		match Self::try_from_hex_str(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+		match Self::try_from_lazy_hex(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+		match Self::try_from_mnemonic(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+
+		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
+		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
 	}
 }
 
@@ -452,6 +504,7 @@ where
 #[cfg(test)]
 mod tests {
 	use crate::WalletSeed;
+	use crate::{WalletSeedError, WalletSeedParseError};
 
 	#[test]
 	fn should_decode_wallet_seeds_in_different_formats() {
@@ -460,5 +513,23 @@ mod tests {
 		let hex = "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9";
 		let hex_seed: WalletSeed = hex.parse().unwrap();
 		assert_eq!(mnemonic_seed, hex_seed);
+	}
+
+	#[test]
+	fn try_from_lazy_hex() {
+		let lazy_hex = "0002..1101";
+		let lazy_seed: WalletSeed = lazy_hex.parse().unwrap();
+		let hex = "0002000000000000000000000000000000000000000000000000000000001101";
+		let hex_seed: WalletSeed = hex.parse().unwrap();
+		assert_eq!(lazy_seed, hex_seed);
+	}
+
+	#[test]
+	fn lazy_hex_invalid() {
+		let lazy_hex = "000..01";
+		assert!(matches!(
+			lazy_hex.parse::<WalletSeed>(),
+			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
+		));
 	}
 }

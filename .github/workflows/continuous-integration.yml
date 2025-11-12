@@ -7,6 +7,7 @@ env:
   AWS_EKS_CLUSTER_NAME: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   workflow_dispatch:

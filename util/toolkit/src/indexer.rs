@@ -41,7 +41,7 @@ use crate::{
 	hash_to_str,
 	indexer::runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
-		RuntimeVersion,
+		MidnightMetadata0_18_1, RuntimeVersion,
 	},
 	serde_def::{self, SourceBlockTransactions},
 };
@@ -293,6 +293,9 @@ where
 			},
 			RuntimeVersion::V0_18_0 => {
 				self.process_block_with_protocol::<MidnightMetadata0_18_0>(block).await
+			},
+			RuntimeVersion::V0_18_1 => {
+				self.process_block_with_protocol::<MidnightMetadata0_18_1>(block).await
 			},
 		}
 	}
