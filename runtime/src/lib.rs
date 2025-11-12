@@ -114,6 +114,7 @@ pub mod authorship;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+mod migrations;
 mod session_manager;
 
 use check_call_filter::CheckCallFilter;
@@ -1114,7 +1115,14 @@ pub type Executive = frame_executive::Executive<
 	frame_system::ChainContext<Runtime>,
 	Runtime,
 	AllPalletsWithSystem,
+	Migrations,
 >;
+
+/// Migrations to apply on runtime upgrade.
+pub type Migrations = (
+	// unreleased
+	migrations::IncrementSudoSufficients<Runtime>,
+);
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benches {
