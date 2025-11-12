@@ -155,7 +155,7 @@ pub struct ContractMaintenanceArgs {
 	#[arg(long = "upsert-entrypoint")]
 	pub upsert_entrypoints: Vec<PathBuf>,
 	/// Name of Contract entrypoint to remove. Accepts multiple
-	#[arg(long)]
+	#[arg(long = "remove-entrypoint")]
 	pub remove_entrypoints: Vec<String>,
 	/// Counter for Maintenance ReplaceAthority
 	#[arg(long, default_value = "0")]

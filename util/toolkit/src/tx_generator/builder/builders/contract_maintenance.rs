@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildIntent, ContractAddress, ContractMaintenanceAuthority,
 	ContractOperationVersionedVerifierKey, EntryPointBuf, SigningKey, UnshieldedWallet,
-	VerifyingKey, WalletSeed, deserialize, serialize_untagged,
+	VerifierKey, VerifyingKey, WalletSeed, deserialize, serialize_untagged,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -114,7 +114,6 @@ impl ContractMaintenanceBuilder {
 		// - Contract Calls
 		if self.new_committee.len() > 0 {
 			updates.push(UpdateInfo::ReplaceAuthority(ContractMaintenanceAuthorityInfo {
-				current_committee: self.current_committee.clone(),
 				new_committee: self.new_committee.clone(),
 				threshold: self.threshold.unwrap_or(self.new_committee.len() as u32),
 				counter: self.counter + 1,
@@ -123,6 +122,7 @@ impl ContractMaintenanceBuilder {
 
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(MaintenanceUpdateInfo {
+				committee: self.current_committee.clone(),
 				address: self.contract_address,
 				updates,
 				counter: self.counter,
@@ -254,13 +254,14 @@ impl BuildTxs for ContractMaintenanceBuilder {
 			let key_bytes =
 				std::fs::read(&p).map_err(ContractMaintenanceBuilderError::VerifierKeyLoadError)?;
 
-			let key: ContractOperationVersionedVerifierKey = deserialize(&mut &key_bytes[..])
+			let key: VerifierKey = deserialize(&mut &key_bytes[..])
 				.map_err(|e| ContractMaintenanceBuilderError::DeserializationError(p.clone(), e))?;
 
 			if existing_entrypoints.contains(&entrypoint) {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
-			entrypoints_to_insert.push((entrypoint, key));
+			entrypoints_to_insert
+				.push((entrypoint, ContractOperationVersionedVerifierKey::V2(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()

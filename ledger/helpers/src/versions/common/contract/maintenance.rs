@@ -22,7 +22,6 @@ use super::super::{
 };
 
 pub struct ContractMaintenanceAuthorityInfo {
-	pub current_committee: Vec<SigningKey>,
 	pub new_committee: Vec<SigningKey>,
 	pub threshold: u32,
 	pub counter: u32,
@@ -36,6 +35,7 @@ pub enum UpdateInfo {
 
 pub struct MaintenanceUpdateInfo {
 	pub address: ContractAddress,
+	pub committee: Vec<SigningKey>,
 	pub updates: Vec<UpdateInfo>,
 	pub counter: u32,
 }
@@ -49,14 +49,11 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
-		let mut signers = vec![];
-
 		let updates = self
 			.updates
 			.iter()
 			.map(|update| match update {
 				UpdateInfo::ReplaceAuthority(info) => {
-					signers.extend_from_slice(&info.current_committee);
 					SingleUpdate::ReplaceAuthority(ContractMaintenanceAuthority {
 						committee: info.new_committee.iter().map(|s| s.verifying_key()).collect(),
 						threshold: info.threshold,
@@ -76,7 +73,7 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 
 		// Sign with existing committee
 		let data_to_sign = update.data_to_sign();
-		for (idx, key) in signers.iter().enumerate() {
+		for (idx, key) in self.committee.iter().enumerate() {
 			let signature = key.sign(rng, &data_to_sign);
 			update = update.add_signature(idx as u32, signature)
 		}
