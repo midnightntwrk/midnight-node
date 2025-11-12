@@ -17,7 +17,7 @@ use std::sync::Arc;
 use super::super::{
 	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
-	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, SegmentId, Signature, SigningKey,
+	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SigningKey,
 	SingleUpdate, StdRng,
 };
 
@@ -47,7 +47,6 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		rng: &mut StdRng,
 		_context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let updates = self
 			.updates

@@ -16,7 +16,7 @@ use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use super::super::{
 	BuildContractAction, Contract, ContractAddress, DB, Intent, LedgerContext, PedersenRandomness,
-	ProofPreimage, ProofPreimageMarker, SegmentId, Signature, StdRng,
+	ProofPreimage, ProofPreimageMarker, Signature, StdRng,
 };
 
 pub struct CallInfo<C: Contract<D>, D: DB + Clone> {
@@ -34,7 +34,6 @@ impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
 		rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;

@@ -59,7 +59,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 		let mut intent = Intent::<Signature, _, _, _>::empty(rng, ttl);
 
 		for action in self.actions.iter_mut() {
-			intent = action.build(rng, context.clone(), &intent, segment_id).await;
+			intent = action.build(rng, context.clone(), &intent).await;
 		}
 
 		let mut guaranteed_signing_keys = Vec::default();
@@ -240,7 +240,6 @@ impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
 		_rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-		_segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let mut actions = intent.actions.clone();
 

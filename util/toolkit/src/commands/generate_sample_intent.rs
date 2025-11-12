@@ -74,8 +74,12 @@ mod test {
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");
-		let deploy_args =
-			ContractDeployArgs { funding_seed: FUNDING_SEED.to_string(), rng_seed: Some(rng_seed) };
+		let deploy_args = ContractDeployArgs {
+			funding_seed: FUNDING_SEED.to_string(),
+			authority_seeds: vec![],
+			authority_threshold: None,
+			rng_seed: Some(rng_seed),
+		};
 
 		let contract_call = ContractCall::Deploy(deploy_args);
 
