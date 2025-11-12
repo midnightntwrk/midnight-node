@@ -94,22 +94,8 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/seeds-aws.json AS LOCAL secrets/$NETWORK-seeds-aws.json
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
-subxt-base:
-    FROM rust:1.90-trixie
-    # Install Docker for Trixie-based targets that need it
-    RUN apt-get update && \
-        apt-get upgrade && \
-        apt-get install -y ca-certificates curl && \
-        install -m 0755 -d /etc/apt/keyrings && \
-        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
-        chmod a+r /etc/apt/keyrings/docker.asc && \
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | \
-        tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-        apt-get update && \
-        apt-get install -y docker-ce docker-ce-cli containerd.io
-
 subxt:
-    FROM +subxt-base
+    FROM rust:1.90-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -127,6 +113,7 @@ get-metadata:
     ARG METADATA_IMAGE_NAME="localhost/node:latest"
     ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
           echo "Waiting for node to be ready..." && \
@@ -150,6 +137,7 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
