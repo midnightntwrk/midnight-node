@@ -11,13 +11,15 @@ use midnight_node_runtime::beefy::{BeefStakesApi, DoubleBeefStakes};
 use parity_scale_codec::Encode;
 use sp_api::ProvideRuntimeApi;
 use sp_consensus_beefy::{
-	BeefyPayloadId, MmrRootHash, Payload, PayloadProvider, mmr::find_mmr_root_digest,
+	BeefyPayloadId, MmrRootHash, Payload, PayloadProvider, known_payloads,
+	mmr::find_mmr_root_digest,
 };
 use sp_mmr_primitives::MmrApi;
 use sp_runtime::traits::{Block, Header, NumberFor};
 
 /// Id to identify this custom payload
-pub const MMR_ROOT_AND_STAKES_ID: BeefyPayloadId = *b"ms";
+pub const CURR_BEEF_STAKES_ID: BeefyPayloadId = *b"cs";
+pub const NEXT_BEEF_STAKES_ID: BeefyPayloadId = *b"ns";
 
 pub struct RootAndBeefStakesProvider<B, R> {
 	runtime: Arc<R>,
@@ -64,20 +66,30 @@ where
 	R::Api: MmrApi<B, MmrRootHash, NumberFor<B>> + BeefStakesApi<B>,
 {
 	fn payload(&self, header: &B::Header) -> Option<Payload> {
-		log::info!("Generating Beefy Payload:");
-		let mmr_root = self.mmr_root_from_digest_or_runtime(header);
+		log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX Generating Beefy Payload:");
 
-		mmr_root
-			.and_then(|root| {
-				log::info!("Generating Beefy Payload:: MMR ROOT:{root}");
-				// extract the BeefStakes, attach with the root
-				// and recreate the Payload of (MMR Root, BeefStakes)
-				self.get_beef_stakes(header).map(|beef_stakes| {
-					log::info!("Generating Beefy Payload:: BEEFSTAKES: {beef_stakes:#?}");
+		// get the mmr root
+		let mmr_root = self.mmr_root_from_digest_or_runtime(header)?;
 
-					(root, beef_stakes).encode()
-				})
-			})
-			.map(|encoded| Payload::from_single_entry(MMR_ROOT_AND_STAKES_ID, encoded))
+		let mut payload =
+			Payload::from_single_entry(known_payloads::MMR_ROOT_ID, mmr_root.encode());
+
+		// get the current and next beef stakes
+		let (current_beef_stakes, next_beef_stakes) = self.get_beef_stakes(header)?;
+
+		// push to payload
+		log::info!(
+			"XXXXXXXXXXXXXXXXXXXXXXXXXXXX Pushing current beefy stakes to payload: {:?}",
+			current_beef_stakes
+		);
+		payload.push_raw(CURR_BEEF_STAKES_ID, current_beef_stakes.encode());
+
+		log::info!(
+			"XXXXXXXXXXXXXXXXXXXXXXXXXXXX Pushing next beefy stakes to payload: {:?}",
+			next_beef_stakes
+		);
+		payload.push_raw(NEXT_BEEF_STAKES_ID, next_beef_stakes.encode());
+
+		Some(payload)
 	}
 }
