@@ -5,7 +5,9 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress, WalletSeed};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
+};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
@@ -223,9 +225,13 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let authority_seed = args.authority_seed.map(|s| s.as_bytes().encode_hex::<String>());
-		if let Some(ref seed) = authority_seed {
-			cmd_args.extend_from_slice(&["--signing", seed]);
+		let signing_key = args.authority_seed.map(|s| {
+			serialize_untagged(UnshieldedWallet::default(s).signing_key())
+				.unwrap()
+				.encode_hex::<String>()
+		});
+		if let Some(ref key) = signing_key {
+			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
