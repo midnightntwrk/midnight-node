@@ -292,6 +292,7 @@ pub mod pallet {
 				);
 			}
 
+			// If Technical Committee mainchain membership has changed
 			if technical_committee_mainchain_members_have_changed {
 				TechnicalCommitteeMainchainMembers::<T>::put(
 					&technical_committee_mainchain_members,

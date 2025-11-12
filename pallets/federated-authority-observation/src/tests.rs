@@ -11,7 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{Error, Event, MainchainMember, mock::*};
+use crate::{
+	CouncilMainchainMembers, Error, Event, MainchainMember, TechnicalCommitteeMainchainMembers,
+	mock::*,
+};
 use core::str::FromStr;
 use frame_support::inherent::ProvideInherent;
 use frame_support::{BoundedVec, assert_noop, assert_ok};
@@ -444,6 +447,21 @@ fn reset_members_emits_event_when_only_council_mainchain_members_change() {
 		// Account members should remain the same
 		assert_eq!(CouncilMembership::members().to_vec(), council_members);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
+
+		// Mainchain members should be updated for council
+		let stored_council_mainchain = CouncilMainchainMembers::<Test>::get().into_inner();
+		let expected_council_mainchain: Vec<MainchainMember> =
+			with_different_mainchain_members(&council_members)
+				.into_iter()
+				.map(|(_, mc)| mc)
+				.collect();
+		assert_eq!(stored_council_mainchain, expected_council_mainchain);
+
+		// TC mainchain members should remain the same
+		let stored_tc_mainchain = TechnicalCommitteeMainchainMembers::<Test>::get().into_inner();
+		let expected_tc_mainchain: Vec<MainchainMember> =
+			with_mainchain_members(&tc_members).into_iter().map(|(_, mc)| mc).collect();
+		assert_eq!(stored_tc_mainchain, expected_tc_mainchain);
 	});
 }
 
@@ -490,6 +508,21 @@ fn reset_members_emits_event_when_only_tc_mainchain_members_change() {
 		// Account members should remain the same
 		assert_eq!(CouncilMembership::members().to_vec(), council_members);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
+
+		// Council mainchain members should remain the same
+		let stored_council_mainchain = CouncilMainchainMembers::<Test>::get().into_inner();
+		let expected_council_mainchain: Vec<MainchainMember> =
+			with_mainchain_members(&council_members).into_iter().map(|(_, mc)| mc).collect();
+		assert_eq!(stored_council_mainchain, expected_council_mainchain);
+
+		// Mainchain members should be updated for TC
+		let stored_tc_mainchain = TechnicalCommitteeMainchainMembers::<Test>::get().into_inner();
+		let expected_tc_mainchain: Vec<MainchainMember> =
+			with_different_mainchain_members(&tc_members)
+				.into_iter()
+				.map(|(_, mc)| mc)
+				.collect();
+		assert_eq!(stored_tc_mainchain, expected_tc_mainchain);
 	});
 }
 
@@ -540,6 +573,23 @@ fn reset_members_emits_both_events_when_both_mainchain_members_change() {
 		// Account members should remain the same
 		assert_eq!(CouncilMembership::members().to_vec(), council_members);
 		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
+
+		// Both mainchain members should be updated
+		let stored_council_mainchain = CouncilMainchainMembers::<Test>::get().into_inner();
+		let expected_council_mainchain: Vec<MainchainMember> =
+			with_different_mainchain_members(&council_members)
+				.into_iter()
+				.map(|(_, mc)| mc)
+				.collect();
+		assert_eq!(stored_council_mainchain, expected_council_mainchain);
+
+		let stored_tc_mainchain = TechnicalCommitteeMainchainMembers::<Test>::get().into_inner();
+		let expected_tc_mainchain: Vec<MainchainMember> =
+			with_different_mainchain_members(&tc_members)
+				.into_iter()
+				.map(|(_, mc)| mc)
+				.collect();
+		assert_eq!(stored_tc_mainchain, expected_tc_mainchain);
 	});
 }
 
