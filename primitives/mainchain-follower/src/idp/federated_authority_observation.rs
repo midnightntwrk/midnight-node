@@ -54,12 +54,14 @@ impl FederatedAuthorityInherentDataProvider {
 			address: council_address,
 			policy_id: council_policy_id,
 			members: vec![],
+			members_mainchain: vec![],
 		};
 
 		let technical_committee = AuthBodyConfig {
 			address: technical_committee_address,
 			policy_id: technical_committee_policy_id,
 			members: vec![],
+			members_mainchain: vec![],
 		};
 
 		let config = FederatedAuthorityObservationConfig { council, technical_committee };
