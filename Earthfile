@@ -591,13 +591,15 @@ check-rust-prepare:
     RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
-    FROM +check-rust-prepare
+    FROM +prep
+    # chef not currently working.
+    # FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay .
+    # COPY --keep-ts --dir \
+    #     Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+    #     ledger LICENSE node pallets primitives README.md res runtime \
+    # 	metadata rustfmt.toml util tests relay .
 
     RUN cargo fmt --all -- --check
 
