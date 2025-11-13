@@ -123,7 +123,10 @@ use pallet_federated_authority::{
 };
 use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 
-use crate::beefy::{AuthoritiesProvider, DoubleBeefStakes, collect_beef_stakes};
+use crate::beefy::{
+	BeefStakes, compute_current_authority_set, compute_next_authority_set, current_beef_stakes,
+	next_beef_stakes,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -434,8 +437,7 @@ impl pallet_beefy::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
 	type MaxSetIdSessionEntries = ConstU64<0>;
-	// update AuthoritiesSet with (BeefyId, Stake)
-	type OnNewValidatorSet = AuthoritiesProvider<Runtime>;
+	type OnNewValidatorSet = BeefyMmrLeaf;
 	type AncestryHelper = BeefyMmrLeaf;
 	type WeightInfo = ();
 	type KeyOwnerProof = sp_core::Void;
@@ -1185,9 +1187,21 @@ impl_runtime_apis! {
 	}
 
 	// Collects the (Current BeefStakes, Next BeefStakes)
-	impl crate::beefy::BeefStakesApi<Block> for Runtime {
-		fn beef_stakes() -> DoubleBeefStakes<Runtime> {
-			collect_beef_stakes()
+	impl crate::beefy::BeefStakesApi<Block, Hash> for Runtime {
+		fn current_beef_stakes() -> BeefStakes<Self> {
+			current_beef_stakes()
+		}
+
+		fn next_beef_stakes() -> BeefStakes<Self> {
+			next_beef_stakes()
+		}
+
+		fn compute_current_authority_set(beef_stakes: BeefStakes<Self>) -> sp_consensus_beefy::mmr::BeefyAuthoritySet<Hash> {
+			compute_current_authority_set(beef_stakes)
+		}
+
+		fn compute_next_authority_set(beef_stakes: BeefStakes<Self>) -> sp_consensus_beefy::mmr::BeefyAuthoritySet<Hash> {
+			compute_next_authority_set(beef_stakes)
 		}
 	}
 
