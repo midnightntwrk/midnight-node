@@ -356,15 +356,30 @@ pub mod pallet {
 				utxo_index: header.utxo_index.0,
 			};
 
+			let previous_registration = Self::get_registration(&cardano_reward_address);
+
 			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 			mappings.push(new_reg.clone());
 			Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 
-			if mappings.len() == 1 {
+			let is_valid = Self::is_registered(&cardano_reward_address);
+
+			// Adding a mapping will result in a registration if there were previously no mappings
+			if previous_registration.is_none() && is_valid {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_reward_address,
 					dust_public_key,
-				}));
+				}))
+			}
+
+			// If we previously had a valid registration, then had the amount of mappings now exceeds 1, we've had a Deregistration
+			if let Some(previous_dust_public_key) = previous_registration
+				&& !is_valid
+			{
+				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
+					cardano_reward_address,
+					dust_public_key: previous_dust_public_key,
+				}))
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(new_reg));
