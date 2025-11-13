@@ -75,7 +75,9 @@ use sp_consensus_beefy::{
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_governed_map::MainChainScriptsV1;
-use sp_partner_chains_bridge::{BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts};
+use sp_partner_chains_bridge::{
+	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
+};
 
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
@@ -971,9 +973,11 @@ parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
 
-impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for MidnightTokenTransferHandler {
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<BridgeRecipient>) {
-		todo!("Bridge token transfer handling is not implemented yet");
+impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
+	for MidnightTokenTransferHandler
+{
+	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+		log::debug!("Bridge token transfer received {:?}", transfer);
 	}
 }
 
@@ -1006,8 +1010,6 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type TransferHandler = MidnightTokenTransferHandler;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

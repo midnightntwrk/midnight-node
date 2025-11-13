@@ -28,9 +28,9 @@ use sp_governed_map::GovernedMapDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 
 use super::cfg::midnight_cfg::MidnightCfg;
+use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
-use midnight_primitives::BridgeRecipient;
 use std::{error::Error, str::FromStr as _, sync::Arc};
 
 use midnight_primitives_mainchain_follower::{
