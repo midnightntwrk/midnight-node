@@ -86,6 +86,46 @@ jobs:
           name: Wasm Runtime and binaries
           path: test-artifacts-${{ matrix.arch }}/
 
+  hardfork:
+    name: Build hardfork images
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest-16-core-x64
+    env:
+      FORCE_COLOR: 1
+    outputs:
+      sha: ${{ steps.get_sha.outputs.sha }}
+    steps:
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+          allow-privileged: true
+
+      - name: Checkout node repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
+
+      - name: Get current commit SHA
+        id: get_sha
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Run build
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-images
+
   check-unused-deps:
     name: Check Unused Dependencies
     runs-on: ubuntu-latest
@@ -166,7 +206,9 @@ jobs:
 
   hardfork-e2e:
     name: Hardfork E2E
-    needs: run
+    needs:
+      - run
+      - hardfork
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

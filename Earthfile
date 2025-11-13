@@ -679,9 +679,7 @@ build-prepare:
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-
-# build creates production ready binaries
-build:
+hardforkbuild:
     ARG NATIVEARCH
 
     FROM +build-prepare
@@ -700,12 +698,13 @@ build:
     SAVE ARTIFACT /artifacts-$NATIVEARCH
 
 build-normal:
-    FROM +build-prepare
+    # FROM +build-prepare
+    FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    # COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    # ledger node pallets primitives metadata res runtime util tests relay .
 
     ARG NATIVEARCH
 
@@ -719,8 +718,7 @@ build-normal:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    RUN \
-        cargo build --workspace --locked --release
+    RUN cargo build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -731,12 +729,12 @@ build-normal:
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-fork:
-    FROM +build-prepare
+    FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives res metadata runtime util tests relay .
+    # COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    # ledger node pallets primitives res metadata runtime util tests relay .
 
     ARG NATIVEARCH
 
@@ -888,9 +886,9 @@ hardfork-test-upgrader-image:
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
     USER root
 
-    COPY +build/artifacts-$NATIVEARCH/upgrader /
-    COPY +build/artifacts-$NATIVEARCH/test/* /
-    COPY +build/artifacts-$NATIVEARCH/rollback/* /
+    COPY +hardforkbuild/artifacts-$NATIVEARCH/upgrader /
+    COPY +hardforkbuild/artifacts-$NATIVEARCH/test/* /
+    COPY +hardforkbuild/artifacts-$NATIVEARCH/rollback/* /
 
     LET NODE_VERSION = "$(cat node_version)"
 
@@ -1161,5 +1159,8 @@ node-e2e-test:
 images:
     FROM scratch
     BUILD +node-image
-    BUILD +hardfork-test-upgrader-image
     BUILD +toolkit-image
+
+hardfork-images:
+    FROM scratch
+    BUILD +hardfork-test-upgrader-image
