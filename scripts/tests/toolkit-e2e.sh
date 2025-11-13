@@ -85,11 +85,18 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tem
     --rng-seed "$RNG_SEED" \
     --contract-address "$contract_address"
 
-# Send just unshielded
+echo "Sending just unshielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
     --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
     --unshielded-amount 10 \
-    --destination-address mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804
+    --destination-address mn_addr_undeployed1na9c5lvmj6rvwkwkuq7vsqvyjcx74tg0th0vevrcluatxq02h9gsjtnn9j
+
+echo "Sending just shielded tokens..."
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
+    generate-txs single-tx \
+    --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --shielded-amount 10 \
+    --destination-address mn_shield-addr_undeployed12ch04fxzmmcfsy7nvy2894pfsm7smxrvzdkmc0scw6vshjrw5pkqxqyxd4ythchgl47ma2qp04703dpkwzkxtkxea7053xsyyunuvlxzp5fn43u5
 
 echo "✅ Toolkit E2E"
