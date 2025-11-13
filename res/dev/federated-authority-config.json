@@ -5,6 +5,10 @@
         "members": [
             "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22",
             "0x306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20"
+        ],
+        "members_mainchain": [
+            "d390ef0f34b32040dc4e9d65a05c609310e06d78ea7a96746326f870",
+            "1985f4819b7c4ef72207aa6f923ddd572e30d24da7253907ade9500e"
         ]
     },
     "technical_committee": {
@@ -13,6 +17,10 @@
         "members": [
             "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
             "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"
+        ],
+        "members_mainchain": [
+            "d4a36042b35d53d44414099ec60e9706ce67ac9058b6ca12de4dc253",
+            "c8675a815cea6702583ae738abf7fd50e21e499bdedb5a9962b42e78"
         ]
     }
 }

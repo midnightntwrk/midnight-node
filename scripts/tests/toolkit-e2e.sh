@@ -70,7 +70,8 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tem
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --rng-seed "$RNG_SEED" \
-    --contract-address "$contract_address"
+    --contract-address "$contract_address" \
+    --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network container:midnight-node-tx "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \

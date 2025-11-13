@@ -19,7 +19,7 @@ use builders::{
 };
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::*;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
@@ -60,6 +60,12 @@ pub struct ContractDeployArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
+	/// Seed for the contract committee. Accepts multiple
+	#[arg(long = "authority-seed", value_parser = cli::wallet_seed_decode)]
+	pub authority_seeds: Vec<WalletSeed>,
+	/// Authority committee threshold. Default == authority_seeds.len()
+	#[arg(long)]
+	pub authority_threshold: Option<u32>,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -69,13 +75,21 @@ pub struct ContractDeployArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct CustomContractArgs {
-	#[clap(flatten)]
-	pub info: ContractDeployArgs,
-	/// The directory containing:
-	///  * intent directory, containing serialized intent files
-	///  * directories with files for the Resolver
-	#[arg(short, long)]
-	pub compiled_contract_dir: String,
+	/// Seed for the random number generator. Defaults to entropy source
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+	/// Seed for funding the transactions
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
+	/// The directory containing directories with key files for the Resolver. Accepts multiple
+	#[arg(short, long = "compiled-contract-dir")]
+	pub compiled_contract_dirs: Vec<String>,
 	/// Intent file to include in the transaction. Accepts multiple
 	#[arg(long = "intent-file")]
 	pub intent_files: Vec<String>,
@@ -123,12 +137,24 @@ pub struct ContractMaintenanceArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
+	/// Seed for the current contract authority. Accepts multiple
+	#[arg(long = "authority-seed", value_parser = cli::wallet_seed_decode)]
+	pub authority_seeds: Vec<WalletSeed>,
+	/// Seed for the new authority. Accepts multiple
+	#[arg(long = "new-authority-seed", value_parser = cli::wallet_seed_decode)]
+	pub new_authority_seeds: Vec<WalletSeed>,
 	/// File to read the contract address from
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
 	/// Threshold for Maintenance ReplaceAthority
-	#[arg(long, short, default_value = "1")]
-	pub threshold: u32,
+	#[arg(long)]
+	pub threshold: Option<u32>,
+	/// Path to verifier key for Contract entrypoint to update/insert. Accepts multiple
+	#[arg(long = "upsert-entrypoint")]
+	pub upsert_entrypoints: Vec<PathBuf>,
+	/// Name of Contract entrypoint to remove. Accepts multiple
+	#[arg(long = "remove-entrypoint")]
+	pub remove_entrypoints: Vec<String>,
 	/// Counter for Maintenance ReplaceAthority
 	#[arg(long, default_value = "0")]
 	pub counter: u32,
@@ -137,9 +163,6 @@ pub struct ContractMaintenanceArgs {
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
 	pub rng_seed: Option<[u8; 32]>,
-	/// Transaction fee value
-	#[arg(short, long, default_value_t = 1_300_000)]
-	pub fee: u128,
 }
 
 #[derive(Args, Clone, Debug)]

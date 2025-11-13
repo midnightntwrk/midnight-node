@@ -1,0 +1,14 @@
+#toolkit
+# Allow padding input seeds with zeros using `..`
+
+Useful to reduce length of cli args
+
+e.g:
+
+- `10..01` becomes `1000000000000000000000000000000000000000000000000000000000000001`
+- `..01` becomes `0000000000000000000000000000000000000000000000000000000000000001`
+
+etc.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/246
+Ticket: https://shielded.atlassian.net/browse/PM-19957
