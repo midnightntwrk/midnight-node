@@ -21,13 +21,6 @@ set -euxo pipefail
 
 NODE_IMAGE="${1:-ghcr.io/midnight-ntwrk/midnight-node:0.18.0-rc.3}"
 TOOLKIT_IMAGE="${2:-ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.18.0-rc.3}"
-MODE="${3:-JS}"
-
-# Validate MODE
-if [[ "$MODE" != "JS" && "$MODE" != "RUST" ]]; then
-    echo "Error: MODE must be either 'JS' or 'RUST' (current value: '$MODE')" >&2
-    exit 1
-fi
 
 echo "📋 NODE_IMAGE: $NODE_IMAGE"
 echo "📋 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
