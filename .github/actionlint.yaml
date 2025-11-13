@@ -3,6 +3,7 @@ self-hosted-runner:
     - ubuntu-latest-8-core-x64
     - ubuntu-latest-16-core-x64
     - ubuntu-latest-8-core-arm64
+    - ubuntu-slim  # This is actually a public github runner https://github.com/raven-actions/actionlint/issues/44
 
 paths:
   .github/workflows/*.{yml,yaml}:

@@ -1,3 +1,5 @@
+[![GitHub branch check runs](https://img.shields.io/github/check-runs/midnightntwrk/midnight-node/main?label=main%20branch%20status)](https://github.com/midnightntwrk/midnight-node/actions?query=branch%3Amain)
+
 # Overview
 
 <!-- Describe your changes briefly here, with some context as to why this is needed. -->
