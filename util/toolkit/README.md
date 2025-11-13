@@ -29,8 +29,8 @@ These scripts demonstrate real usage patterns and suggested best-practices for t
 | Builds Node genesis                                                  | ✅       |
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
+| Contract Maintenance - updating authority + verifier keys            | ✅       |
 | DUST registration command                                            | 🚧       |
-| Contract Maintenance - updating authority + verifier keys            | 🚧       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
@@ -214,15 +214,19 @@ written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
 
-#### Generate Maintenance Update (Built-in)
+#### Generate Maintenance Update
 
-**Note:** These commands use a simple test contract built into the toolkit. For custom contracts, see the **Custom Contracts** section below
+Works with either the built-in contract or custom contracts.
 
-- Query from chain, generate, and send to chain:
+- Add a new `increment2` endpoint, update `increment` entypoint, remove the `decrement` entrypoint, and switch to a new authority.
 ```console
 $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple maintenance
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
+>   --remove-entrypoint decrement \
+>   --upsert-entrypoint ../toolkit-js/contract/managed/counter/keys/increment.verifier \
+>   --upsert-entrypoint ../toolkit-js/contract/managed/counter/keys/increment2.verifier \
+>   --authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
