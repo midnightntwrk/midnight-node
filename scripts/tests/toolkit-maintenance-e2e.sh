@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Script to reproduce the maintenance transaction signing bug
-# Bug: Maintenance transactions fail with ThresholdMissed error due to missing signature support
-# Issue: generate-txs contract-simple maintenance cannot add required signatures
-
 set -euxo pipefail
 
 NODE_IMAGE="${1:-ghcr.io/midnight-ntwrk/midnight-node:0.18.0-rc.3}"
