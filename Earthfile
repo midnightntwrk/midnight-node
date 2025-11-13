@@ -529,13 +529,9 @@ prep:
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay .
 
-    RUN rustup show
-    # This doesn't seem to prevent the downloading at a later point, but
-    # for now this is ok as there's only one compile task dependent on this.
-    # RUN cargo fetch --locked \
-    #   --target aarch64-unknown-linux-gnu \
-    #   --target x86_64-unknown-linux-gnu \
-    #   --target wasm32v1-none
+    RUN rustup show && cargo fetch
+
+
     SAVE IMAGE --cache-hint
 
 # prepares the toolkit-js, in time for testing
@@ -681,18 +677,19 @@ build-prepare:
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
+# produces upgrader binary, test and rollback runtimes for hardfork testing
 hardforkbuild:
     ARG NATIVEARCH
 
     FROM +build-prepare
     WAIT
-        BUILD +build-normal
+        BUILD +build-upgrader
         BUILD +build-fork
         BUILD +build-undo
     END
 
     RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
 
@@ -730,6 +727,16 @@ build-normal:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
+build-upgrader:
+    FROM +prep
+    ARG NATIVEARCH
+
+    RUN cargo build -p upgrader --locked --release \
+      && mkdir -p /artifacts-$NATIVEARCH \
+      && mv /target/release/upgrader /artifacts-$NATIVEARCH
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
+
 build-fork:
     FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
@@ -744,20 +751,21 @@ build-fork:
 
     # Hardfork build
     # NOTE: We're NOT doing -p midnight-node-runtime - building the workspace is faster as it caches better.
-    RUN HARDFORK_TEST=1 cargo build --workspace  --locked --release
+    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-undo:
-    FROM +build-normal
+    FROM +prep
+    # FROM +build-normal
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
-    RUN rm -Rf /target/release/build/midnight-node-runtime-*
+    # RUN rm -Rf /target/release/build/midnight-node-runtime-*
     # Rollback build
-    RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
+    RUN HARDFORK_TEST_ROLLBACK=1 cargo build -p midnight-node-runtime --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
         /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
 
