@@ -29,11 +29,8 @@ if [[ "$MODE" != "JS" && "$MODE" != "RUST" ]]; then
     exit 1
 fi
 
-echo "🐛 Reproducing Maintenance Transaction Bug"
 echo "📋 NODE_IMAGE: $NODE_IMAGE"
 echo "📋 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
-echo "Running with MODE=$MODE"
-echo ""
 
 # Ensure Docker network exists
 docker network create midnight-net-maintenance-bug || true
