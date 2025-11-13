@@ -36,6 +36,11 @@ jobs:
       - name: Merge Conflict Finder
         uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
+      - name: Run prek # Runs conditions set in .pre-commit-config.yaml
+        uses: j178/prek-action@v1
+        with:
+          extra_args: '--all-files'
+
       - name: Run build
         run: |
           . ./.envrc && earthly --ci +check
