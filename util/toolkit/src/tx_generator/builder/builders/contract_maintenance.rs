@@ -219,19 +219,21 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		})?;
 
 		let mut committee = self.current_committee.clone();
+		let mut committee_verifying_keys: Vec<_> =
+			committee.iter().map(|s| s.verifying_key()).collect();
 
 		let funding_signing_key =
 			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
-		if contract_state
-			.maintenance_authority
-			.committee
-			.contains(&funding_signing_key.verifying_key())
+		if !committee_verifying_keys.contains(&funding_signing_key.verifying_key())
+			&& contract_state
+				.maintenance_authority
+				.committee
+				.contains(&funding_signing_key.verifying_key())
 		{
-			committee.push(funding_signing_key);
+			committee.push(funding_signing_key.clone());
+			committee_verifying_keys.push(funding_signing_key.verifying_key());
 		}
 
-		let committee_verifying_keys: Vec<_> =
-			committee.iter().map(|s| s.verifying_key()).collect();
 		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
 
 		// Check remove entrypoints
