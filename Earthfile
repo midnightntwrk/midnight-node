@@ -243,6 +243,7 @@ rebuild-genesis-state:
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${NETWORK}.mn) \
+                --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
             && cp out/contract*.mn /res/test-contract \
         ; fi
 
