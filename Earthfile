@@ -529,8 +529,8 @@ prep:
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay .
 
-    RUN rustup show && cargo fetch
-
+    RUN rustup show
+    # Any cargo fetch used here is ignored and downloaded again.
 
     SAVE IMAGE --cache-hint
 
@@ -680,7 +680,7 @@ build-prepare:
 hardforkbuild:
     ARG NATIVEARCH
 
-    FROM +build-prepare
+    # FROM +build-prepare
     WAIT
         BUILD +build-upgrader
         BUILD +build-fork
