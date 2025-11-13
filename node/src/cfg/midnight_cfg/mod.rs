@@ -83,6 +83,9 @@ pub struct MidnightCfg {
 
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
+
+	/// Allow no-TLS connection upon failure
+	pub allow_non_ssl: bool,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {

@@ -107,6 +107,7 @@ pub async fn create_cached_data_sources(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		std::time::Duration::from_secs(30),
+		cfg.allow_non_ssl,
 	)
 	.await?;
 
@@ -189,6 +190,7 @@ pub async fn create_cnight_observation_data_source(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		std::time::Duration::from_secs(30),
+		cfg.allow_non_ssl,
 	)
 	.await?;
 
@@ -203,8 +205,14 @@ pub async fn create_cnight_observation_data_source(
 async fn get_connection(
 	connection_string: &str,
 	acquire_timeout: std::time::Duration,
+	allow_non_ssl: bool,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let connect_options = sqlx::postgres::PgConnectOptions::from_str(connection_string)?;
+	let connect_options =
+		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
+			sqlx::postgres::PgSslMode::Prefer
+		} else {
+			sqlx::postgres::PgSslMode::Require
+		});
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(5)
 		.acquire_timeout(acquire_timeout)
