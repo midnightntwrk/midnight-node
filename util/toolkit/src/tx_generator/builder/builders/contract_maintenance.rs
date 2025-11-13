@@ -80,9 +80,6 @@ impl ContractMaintenanceBuilder {
 	}
 }
 
-// #[async_trait]
-// impl IntentToFile for ContractMaintenanceBuilder {}
-
 impl BuildTxsExt for ContractMaintenanceBuilder {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
