@@ -7,6 +7,7 @@ env:
   AWS_EKS_CLUSTER_NAME: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   workflow_dispatch:
@@ -16,7 +17,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
   run:
@@ -380,7 +381,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   build-indexer-images:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     runs-on: ubuntu-latest-16-core-x64
     permissions:
       pull-requests: write
@@ -496,7 +497,7 @@ jobs:
 
   local-environment-tests:
     name: Local Environment Tests
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
     runs-on: ubuntu-latest-16-core-x64
     permissions:
@@ -547,7 +548,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ephemeral-environment-tests:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     # needs:
     #   - hardfork-e2e
     #   - ledger-rollback-e2e

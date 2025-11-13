@@ -117,6 +117,7 @@ pub mod authorship;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+mod migrations;
 mod session_manager;
 
 use check_call_filter::CheckCallFilter;
@@ -1050,7 +1051,7 @@ mod runtime {
 	pub type Sudo = pallet_sudo::Pallet<Runtime>;
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
-	#[runtime::pallet_index(9)]
+	#[runtime::pallet_index(30)]
 	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
 	//BlockRewards: pallet_block_rewards = 9,
@@ -1143,7 +1144,14 @@ pub type Executive = frame_executive::Executive<
 	frame_system::ChainContext<Runtime>,
 	Runtime,
 	AllPalletsWithSystem,
+	Migrations,
 >;
+
+/// Migrations to apply on runtime upgrade.
+pub type Migrations = (
+	// unreleased
+	migrations::IncrementSudoSufficients<Runtime>,
+);
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benches {
@@ -1482,7 +1490,6 @@ impl_runtime_apis! {
 
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			// use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
 			impl baseline::Config for Runtime {}
