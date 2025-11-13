@@ -680,6 +680,7 @@ build-prepare:
 hardforkbuild:
     ARG NATIVEARCH
 
+    FROM scratch
     # FROM +build-prepare
     WAIT
         BUILD +build-upgrader
