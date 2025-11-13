@@ -49,7 +49,7 @@ pub trait LedgerBridge {
 
 	fn drop_default_storage(&mut self) {
 		// Do nothing. No DB exists prior this version.
-		// Method should exist though to easiy reuse runtimes between
+		// Method should exist though to easily reuse runtimes between
 		// hard-fork and no hard-fork versions.
 	}
 
@@ -252,6 +252,7 @@ pub trait LedgerBridge {
 	}
 }
 
+#[cfg(feature = "std")]
 #[runtime_interface]
 pub trait LedgerBridgeHf {
 	fn set_default_storage(&mut self) {

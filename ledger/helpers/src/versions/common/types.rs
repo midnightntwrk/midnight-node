@@ -11,23 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::super::{
-	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
-	ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
-	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
-	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
-};
 use bip39::Mnemonic;
-use derive_where::derive_where;
-use itertools::Itertools;
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+
+#[cfg(feature = "std")]
+use {
+	super::super::{
+		ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
+		ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
+		SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
+		deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	}
+	derive_where::derive_where,
+	itertools::Itertools,
+	rand::{Rng, RngCore, SeedableRng, rngs::SmallRng},
+	std::{
+		collections::HashMap,
+		marker::PhantomData,
+		time::{SystemTime, UNIX_EPOCH},
+	}
+}
+
 #[cfg(feature = "can-panic")]
-use std::str::FromStr;
-use std::{
-	collections::HashMap,
-	marker::PhantomData,
-	time::{SystemTime, UNIX_EPOCH},
-};
+use core::str::FromStr;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum WalletSeed {
@@ -45,7 +50,7 @@ impl Default for WalletSeed {
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum WalletSeedError {
 	#[error("{0}")]
-	InvalidHex(#[from] hex::FromHexError),
+	InvalidHex(hex::FromHexError),
 	#[error("expected 16, 32, or 64 bytes; got {0}")]
 	InvalidLength(usize),
 	#[error("{0}")]
@@ -54,6 +59,12 @@ pub enum WalletSeedError {
 	LazyHexTwoPartsOnly,
 	#[error("lazy hex length too long")]
 	LazyHexLengthTooLong(usize),
+}
+
+impl From<hex::FromHexError> for WalletSeedError {
+	fn from(value: hex::FromHexError) -> Self {
+		Self::InvalidHex(value)
+	}
 }
 
 impl WalletSeed {
@@ -119,6 +130,7 @@ pub enum WalletSeedParseError {
 	FailedToParseAny(WalletSeedError, WalletSeedError, WalletSeedError),
 }
 
+#[cfg(feature = "can-panic")]
 impl FromStr for WalletSeed {
 	type Err = WalletSeedParseError;
 
@@ -147,6 +159,7 @@ impl FromStr for WalletSeed {
 
 pub type MaintenanceCounter = u32;
 
+#[cfg(feature = "std")]
 #[derive(Default, Clone)]
 pub struct MaintenanceUpdateBuilder {
 	pub num_contract_replace_auth: u32,
@@ -156,6 +169,7 @@ pub struct MaintenanceUpdateBuilder {
 	pub addresses_vec: Vec<ContractAddress>,
 }
 
+#[cfg(feature = "std")]
 impl MaintenanceUpdateBuilder {
 	pub fn new(
 		num_contract_replace_auth: u32,
@@ -198,6 +212,7 @@ pub enum ContractType {
 	// MicroDao,
 }
 
+#[cfg(feature = "std")]
 #[derive(Debug, Clone)]
 pub struct ZswapContractAddresses {
 	pub outputs: Option<Vec<ContractAddress>>,
@@ -209,6 +224,7 @@ pub enum WalletKind {
 	NoLegacy,
 }
 
+#[cfg(feature = "std")]
 pub type Transcripts<D> = (Option<Transcript<D>>, Option<Transcript<D>>);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -226,6 +242,7 @@ impl From<Segment> for u16 {
 	}
 }
 
+#[cfg(feature = "std")]
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
@@ -238,6 +255,7 @@ pub struct StorableSyntheticCost<D: DB> {
 	_marker: PhantomData<D>,
 }
 
+#[cfg(feature = "std")]
 impl<D: DB> StorableSyntheticCost<D> {
 	pub fn zero() -> Self {
 		Self {
@@ -251,6 +269,7 @@ impl<D: DB> StorableSyntheticCost<D> {
 	}
 }
 
+#[cfg(feature = "std")]
 impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
 	fn from(value: SyntheticCost) -> Self {
 		Self {
@@ -263,6 +282,8 @@ impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
 		}
 	}
 }
+
+#[cfg(feature = "std")]
 impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
 	fn from(value: StorableSyntheticCost<D>) -> Self {
 		Self {
@@ -275,6 +296,7 @@ impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
 	}
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TransactionWithContext<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
 where
@@ -285,6 +307,7 @@ where
 	pub block_context: BlockContext,
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -321,6 +344,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -336,6 +360,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -351,6 +376,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Tagged for TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -368,6 +394,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)] // Transaction has the same thing internally
 pub enum SerdeTransaction<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
@@ -378,6 +405,7 @@ where
 	System(SystemTransaction),
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> SerdeTransaction<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -413,6 +441,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for SerdeTransaction<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -439,6 +468,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for SerdeTransaction<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -456,6 +486,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Serialize for SerdeTransaction<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -471,6 +502,7 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
 impl<'a, S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Deserialize<'a>
 	for SerdeTransaction<S, P, D>
 where

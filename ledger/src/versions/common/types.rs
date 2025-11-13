@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg_attr(not(feature = "std"), no_std)]
-
 use frame_support::PalletError;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info_derive::TypeInfo;

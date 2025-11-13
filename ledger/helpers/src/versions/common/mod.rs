@@ -148,6 +148,7 @@ pub use {
 pub use types::*;
 
 /// Serializes a mn_ledger::serialize-able type into bytes
+#[cfg(feature = "std")]
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);
 	let mut bytes = Vec::with_capacity(size);
@@ -156,6 +157,7 @@ pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io
 }
 
 /// Deserializes a mn_ledger::serialize-able type from bytes
+#[cfg(feature = "std")]
 pub fn deserialize_untagged<T: Deserializable + Tagged>(
 	mut bytes: impl std::io::Read,
 ) -> Result<T, std::io::Error> {

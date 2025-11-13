@@ -61,7 +61,8 @@ std = [
 	"ledger-storage-hf",
 	"transient-crypto-hf",
 	"zswap-hf",
-    "zkir-hf"
+    "zkir-hf",
+	"hex/std"
 ]
 erase-proof = []
 test-utils = []
