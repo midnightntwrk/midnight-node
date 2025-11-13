@@ -13,9 +13,8 @@ use pallet_session_validator_management::{
 	CommitteeInfo, Config as SessionValidatorMngConfig, Pallet as SessionValidatorMngPallet,
 };
 use sp_consensus_beefy::{
-	OnNewValidatorSet, ValidatorSet, ValidatorSetId,
-	ecdsa_crypto::AuthorityId,
-	mmr::{BeefyAuthoritySet, BeefyDataProvider},
+	OnNewValidatorSet, ValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId,
+	mmr::BeefyAuthoritySet,
 };
 
 use sp_runtime::traits::Convert;
@@ -45,7 +44,7 @@ pub struct AuthoritiesProvider<T> {
 	_phantom: PhantomData<T>,
 }
 
-/// An api to be used and accessed by the Node
+// An api to be used and accessed by the Node
 sp_api::decl_runtime_apis! {
 	pub trait BeefStakesApi {
 		/// Returns a tuple of the (Current BeefStakes, Next BeefStakes)
@@ -66,7 +65,11 @@ pub fn collect_beef_stakes() -> DoubleBeefStakes<Runtime> {
 
 	let next_validators = pallet_beefy::pallet::NextAuthorities::<Runtime>::get().to_vec();
 	let next_beefy_stakes = match SessionValidatorMngPallet::<Runtime>::next_committee_storage() {
-		Some(next_committee) => compute_beef_stakes(next_validators, next_committee),
+		Some(next_committee) => {
+			log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX NEXT VALIDATORS: {next_validators:?}");
+
+			compute_beef_stakes(next_validators, next_committee)
+		},
 		None => {
 			log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX No Next Committee");
 			Vec::new()
@@ -81,7 +84,8 @@ impl OnNewValidatorSet<BeefyIdOf<Runtime>> for AuthoritiesProvider<Runtime> {
 		validator_set: &ValidatorSet<BeefyIdOf<Runtime>>,
 		next_validator_set: &ValidatorSet<BeefyIdOf<Runtime>>,
 	) {
-		log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX Updating Beefy MMR New Authorities....");
+		log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX VALIDATOR SET: {validator_set:?}");
+		log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX NEXT VALIDATOR SET: {next_validator_set:?}");
 
 		let current_committee = SessionValidatorMngPallet::<Runtime>::current_committee_storage();
 
@@ -101,6 +105,10 @@ impl OnNewValidatorSet<BeefyIdOf<Runtime>> for AuthoritiesProvider<Runtime> {
 				"XXXXXXXXXXXXXXXXXXXXXXXXXXXX Updating Beefy MMR NEXT Authorities: {next_authority_set:?}"
 			);
 			pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::put(&next_authority_set);
+		} else {
+			log::warn!(
+				"XXXXXXXXXXXXXXXXXXXXXXXXXXXX NO NEXT COMMITTEE FOUND, CANNOT UPDATE THE NEXT AUTHORITIES"
+			);
 		}
 
 		log::info!(
@@ -119,6 +127,7 @@ pub fn compute_beef_stakes(
 	let mut beefy_with_stakes = Vec::new();
 
 	for validator in validators {
+		log::info!("XXXXXXXXXXXXXXXXXXXXXXXXXXXX Check if Validator({validator}): in committee:");
 		let position = committee_members.iter().position(|elem| match elem {
 			CommitteeMember::Permissioned { id, .. } => {
 				// convert to beefy
@@ -129,7 +138,6 @@ pub fn compute_beef_stakes(
 						// default stake
 						1,
 					));
-
 					// remove from the list
 					true
 				} else {
@@ -141,6 +149,11 @@ pub fn compute_beef_stakes(
 
 		if let Some(pos) = position {
 			let _ = committee_members.remove(pos);
+		} else {
+			log::info!(
+				"XXXXXXXXXXXXXXXXXXXXXXXXXXXX No match found for Validator({validator}), set stake to 0"
+			);
+			beefy_with_stakes.push((validator, 0));
 		}
 	}
 

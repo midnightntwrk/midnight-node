@@ -133,9 +133,19 @@ bob_sidechain_vkey=$(cat /midnight-nodes/midnight-node-2/keys/sidechain.vkey)
 bob_aura_vkey=$(cat /midnight-nodes/midnight-node-2/keys/aura.vkey)
 bob_grandpa_vkey=$(cat /midnight-nodes/midnight-node-2/keys/grandpa.vkey)
 
+charlie_sidechain_vkey=$(cat /midnight-nodes/midnight-node-3/keys/sidechain.vkey)
+charlie_aura_vkey=$(cat /midnight-nodes/midnight-node-3/keys/aura.vkey)
+charlie_grandpa_vkey=$(cat /midnight-nodes/midnight-node-3/keys/grandpa.vkey)
+
+dave_sidechain_vkey=$(cat /midnight-nodes/midnight-node-4/keys/sidechain.vkey)
+dave_aura_vkey=$(cat /midnight-nodes/midnight-node-4/keys/aura.vkey)
+dave_grandpa_vkey=$(cat /midnight-nodes/midnight-node-4/keys/grandpa.vkey)
+
 cat <<EOF > permissioned_candidates.csv
 $alice_sidechain_vkey:$alice_aura_vkey:$alice_grandpa_vkey
 $bob_sidechain_vkey:$bob_aura_vkey:$bob_grandpa_vkey
+$charlie_sidechain_vkey:$charlie_aura_vkey:$charlie_grandpa_vkey
+$dave_sidechain_vkey:$dave_aura_vkey:$dave_grandpa_vkey
 EOF
 
 ./midnight-node smart-contracts upsert-permissioned-candidates \
@@ -150,44 +160,44 @@ else
     exit 1
 fi
 
-echo "Inserting registered candidate Dave..."
+echo "Inserting registered candidate Eve..."
 
-# Prepare Dave registration values
-dave_utxo=$(cat /shared/dave.utxo)
-dave_mainchain_signing_key=$(jq -r '.cborHex | .[4:]' /midnight-nodes/midnight-node-4/keys/cold.skey)
-dave_sidechain_signing_key=$(cat /midnight-nodes/midnight-node-4/keys/sidechain.skey)
+# Prepare Eve registration values
+eve_utxo=$(cat /shared/eve.utxo)
+eve_mainchain_signing_key=$(jq -r '.cborHex | .[4:]' /midnight-nodes/midnight-node-5/keys/cold.skey)
+eve_sidechain_signing_key=$(cat /midnight-nodes/midnight-node-5/keys/sidechain.skey)
 
-# Process registration signatures for Dave
-dave_output=$(./midnight-node registration-signatures \
+# Process registration signatures for Eve
+eve_output=$(./midnight-node registration-signatures \
     --genesis-utxo $GENESIS_UTXO \
-    --mainchain-signing-key $dave_mainchain_signing_key \
-    --sidechain-signing-key $dave_sidechain_signing_key \
-    --registration-utxo $dave_utxo)
+    --mainchain-signing-key $eve_mainchain_signing_key \
+    --sidechain-signing-key $eve_sidechain_signing_key \
+    --registration-utxo $eve_utxo)
 
-echo "Dave registration signatures output:"
-echo "$dave_output"
-# Extract signatures and keys from Dave output
-dave_spo_public_key=$(echo "$dave_output" | jq -r ".spo_public_key")
-dave_spo_signature=$(echo "$dave_output" | jq -r ".spo_signature")
-dave_sidechain_public_key=$(echo "$dave_output" | jq -r ".sidechain_public_key")
-dave_sidechain_signature=$(echo "$dave_output" | jq -r ".sidechain_signature")
-dave_aura_vkey=$(cat /midnight-nodes/midnight-node-4/keys/aura.vkey)
-dave_grandpa_vkey=$(cat /midnight-nodes/midnight-node-4/keys/grandpa.vkey)
+echo "Eve registration signatures output:"
+echo "$eve_output"
+# Extract signatures and keys from Eve output
+eve_spo_public_key=$(echo "$eve_output" | jq -r ".spo_public_key")
+eve_spo_signature=$(echo "$eve_output" | jq -r ".spo_signature")
+eve_sidechain_public_key=$(echo "$eve_output" | jq -r ".sidechain_public_key")
+eve_sidechain_signature=$(echo "$eve_output" | jq -r ".sidechain_signature")
+eve_aura_vkey=$(cat /midnight-nodes/midnight-node-5/keys/aura.vkey)
+eve_grandpa_vkey=$(cat /midnight-nodes/midnight-node-5/keys/grandpa.vkey)
 
-# Register Dave
+# Register Eve
 ./midnight-node smart-contracts register \
     --genesis-utxo $GENESIS_UTXO \
-    --spo-public-key $dave_spo_public_key \
-    --spo-signature $dave_spo_signature \
-    --sidechain-public-keys $dave_sidechain_public_key:$dave_aura_vkey:$dave_grandpa_vkey \
-    --sidechain-signature $dave_sidechain_signature \
-    --registration-utxo $dave_utxo \
-    --payment-key-file /midnight-nodes/midnight-node-4/keys/payment.skey
+    --spo-public-key $eve_spo_public_key \
+    --spo-signature $eve_spo_signature \
+    --sidechain-public-keys $eve_sidechain_public_key:$eve_aura_vkey:$eve_grandpa_vkey \
+    --sidechain-signature $eve_sidechain_signature \
+    --registration-utxo $eve_utxo \
+    --payment-key-file /midnight-nodes/midnight-node-5/keys/payment.skey
 
 if [ $? -eq 0 ]; then
-    echo "Registered candidate Dave inserted successfully!"
+    echo "Registered candidate Eve inserted successfully!"
 else
-    echo "Registration for Dave failed."
+    echo "Registration for Eve failed."
     exit 1
 fi
 

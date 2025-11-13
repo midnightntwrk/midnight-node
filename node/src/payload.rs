@@ -70,10 +70,6 @@ where
 
 		// get the mmr root
 		let mmr_root = self.mmr_root_from_digest_or_runtime(header)?;
-
-		let mut payload =
-			Payload::from_single_entry(known_payloads::MMR_ROOT_ID, mmr_root.encode());
-
 		// get the current and next beef stakes
 		let (current_beef_stakes, next_beef_stakes) = self.get_beef_stakes(header)?;
 
@@ -82,14 +78,15 @@ where
 			"XXXXXXXXXXXXXXXXXXXXXXXXXXXX Pushing current beefy stakes to payload: {:?}",
 			current_beef_stakes
 		);
-		payload.push_raw(CURR_BEEF_STAKES_ID, current_beef_stakes.encode());
-
 		log::info!(
 			"XXXXXXXXXXXXXXXXXXXXXXXXXXXX Pushing next beefy stakes to payload: {:?}",
 			next_beef_stakes
 		);
-		payload.push_raw(NEXT_BEEF_STAKES_ID, next_beef_stakes.encode());
 
-		Some(payload)
+		Some(
+			Payload::from_single_entry(known_payloads::MMR_ROOT_ID, mmr_root.encode())
+				.push_raw(CURR_BEEF_STAKES_ID, current_beef_stakes.encode())
+				.push_raw(NEXT_BEEF_STAKES_ID, next_beef_stakes.encode()),
+		)
 	}
 }
