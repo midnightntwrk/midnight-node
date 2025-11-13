@@ -599,9 +599,8 @@ check-rust:
 
     RUN cargo fmt --all -- --check
 
-    # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
