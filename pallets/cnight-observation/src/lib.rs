@@ -402,10 +402,10 @@ pub mod pallet {
 			let registration = Self::get_registration(&cardano_reward_address);
 
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
-			if !was_valid && let Some(dust_public_key) = registration {
+			if !was_valid && let Some(registered_dust_public_key) = registration {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_reward_address,
-					dust_public_key,
+					dust_public_key: registered_dust_public_key,
 				}))
 			}
 
