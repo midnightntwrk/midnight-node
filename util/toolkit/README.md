@@ -226,15 +226,6 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
-- Query fom chain, generate, and save as a serialized intent file:
-```console
-$ midnight-node-toolkit generate-sample-intent --dry-run
->   --dest-dir "artifacts/intents"
->   maintenance
->   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
->   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
-...
-```
 Rest of examples similar to Generate Deploy Contract
 
 #### Generate Contract Call (Built-in)
