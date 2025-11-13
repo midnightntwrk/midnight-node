@@ -345,12 +345,6 @@
             "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw",
             "5Ccq3orDeKH45yhdk8KxiRwbZEoUkZ23nRiwWuLGHteAptRS"
           ]
-        },
-        "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wzfyqq9n68cgfdjettkd8fgpayvpnuz3ya4asf2kve2c9ng75xp80",
-          "councilPolicyId": "0x924000b3d1f084b6595aecd3a501e91819f051276bd82556665582cd",
-          "technicalCommitteeAddress": "addr_test1wptuj9mtzjf0l6yx3f3pjw7vlg64auauwnn6wqa40yzcpzgjhvrpy",
-          "technicalCommitteePolicyId": "0x57c9176b1492ffe8868a62193bccfa355ef3bc74e7a703b579058089"
         }
       }
     }

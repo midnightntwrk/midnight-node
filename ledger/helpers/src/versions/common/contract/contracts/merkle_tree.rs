@@ -23,7 +23,8 @@ use super::super::{
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
 	KeyLocation, LedgerContext, MerkleTree, Op, PreTranscript, QueryContext, Resolver,
 	ResultModeGather, ResultModeVerify, Rng, Sp, StateValue, StdRng, Transcripts,
-	ValueReprAlignedValue, key, leaf_hash, partition_transcripts, stval, verifier_key,
+	ValueReprAlignedValue, VerifyingKey, key, leaf_hash, partition_transcripts, stval,
+	verifier_key,
 };
 
 #[cfg(feature = "test-utils")]
@@ -70,7 +71,12 @@ impl Default for MerkleTreeContract {
 
 #[async_trait]
 impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
-	async fn deploy(&self, rng: &mut StdRng) -> ContractDeploy<D> {
+	async fn deploy(
+		&self,
+		commitee: &[VerifyingKey],
+		commitee_threshold: u32,
+		rng: &mut StdRng,
+	) -> ContractDeploy<D> {
 		let root = MerkleTree::<()>::blank(10).root();
 		let store_op = ContractOperation::new(verifier_key(self.resolver, "store").await);
 		let check_op = ContractOperation::new(verifier_key(self.resolver, "check").await);
@@ -81,8 +87,8 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 				.insert(b"store"[..].into(), store_op.clone())
 				.insert(b"check"[..].into(), check_op.clone()),
 			maintenance_authority: ContractMaintenanceAuthority {
-				committee: vec![],
-				threshold: 0,
+				committee: commitee.to_vec(),
+				threshold: commitee_threshold,
 				counter: 0,
 			},
 			balance: HashMap::new(),

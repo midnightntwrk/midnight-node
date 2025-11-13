@@ -25,8 +25,8 @@ pub use super::super::{
 	ChargedState, ContractMaintenanceAuthority, ContractState, DUST_EXPECTED_FILES, DustResolver,
 	EntryPointBuf, FetchMode, HashMapStorage, HistoricMerkleTree_check_root,
 	HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue, ValueReprAlignedValue, key,
-	leaf_hash, partition_transcripts, stval, verifier_key,
+	PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue, ValueReprAlignedValue,
+	VerifyingKey, key, leaf_hash, partition_transcripts, stval, verifier_key,
 };
 
 #[cfg(feature = "test-utils")]
@@ -44,7 +44,12 @@ pub use maintenance::*;
 
 #[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {
-	async fn deploy(&self, rng: &mut StdRng) -> ContractDeploy<D>;
+	async fn deploy(
+		&self,
+		commitee: &[VerifyingKey],
+		commitee_threshold: u32,
+		rng: &mut StdRng,
+	) -> ContractDeploy<D>;
 
 	fn resolver(&self) -> &'static Resolver;
 

@@ -16,7 +16,7 @@ on:
   schedule:
     - cron: "0 0 * * *" # run daily at midnight UTC
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
 jobs:
   build:

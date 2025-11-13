@@ -399,18 +399,17 @@ pub mod pallet {
 				Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 			}
 
-			let registration = Self::get_registration(&cardano_reward_address);
-
+			let is_valid = Self::is_registered(&cardano_reward_address);
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
-			if !was_valid && let Some(registered_dust_public_key) = registration {
+			if !was_valid && is_valid {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_reward_address,
-					dust_public_key: registered_dust_public_key,
+					dust_public_key,
 				}))
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
-			if was_valid && registration.is_none() {
+			if was_valid && !is_valid {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
 					cardano_reward_address,
 					dust_public_key,

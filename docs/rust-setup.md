@@ -2,64 +2,137 @@
 title: Installation
 ---
 
-## Prerequisites
 
-Midnight-node is built with the Rust programming language on top of Polkadot SDK.
+## Build dependencies
 
-For detailed installation instructions for Rust and Polkadot SDK dependencies, please refer to the official Polkadot SDK documentation:
+### Ubuntu/Debian
 
-**[Install Polkadot SDK Dependencies](https://docs.polkadot.com/develop/parachains/install-polkadot-sdk/)**
+Use a terminal shell to execute the following commands:
 
-This guide covers all the necessary build dependencies for different operating systems (Ubuntu, macOS, Windows via WSL, etc.).
+```bash
+sudo apt update
+# May prompt for location information
+sudo apt install -y git clang curl libssl-dev llvm libudev-dev
+```
 
-## Rust Toolchain
+### Arch Linux
 
-This repository includes a `rust-toolchain.toml` file that specifies the exact Rust version to use. The toolchain will be automatically installed when you run any `cargo` command.
+Run these commands from a terminal:
 
-To verify your Rust installation:
+```bash
+pacman -Syu --needed --noconfirm curl git clang
+```
+
+### Fedora
+
+Run these commands from a terminal:
+
+```bash
+sudo dnf update
+sudo dnf install clang curl git openssl-devel
+```
+
+### OpenSUSE
+
+Run these commands from a terminal:
+
+```bash
+sudo zypper install clang curl git openssl-devel llvm-devel libudev-devel
+```
+
+### macOS
+
+> **Apple M1 ARM**
+> If you have an Apple M1 ARM system on a chip, make sure that you have Apple Rosetta 2
+> installed through `softwareupdate --install-rosetta`. This is only needed to run the
+> `protoc` tool during the build. The build itself and the target binaries would remain native.
+
+Open the Terminal application and execute the following commands:
+
+```bash
+# Install Homebrew if necessary https://brew.sh/
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+
+# Make sure Homebrew is up-to-date, install openssl
+brew update
+brew install openssl
+```
+
+### Windows
+
+**_PLEASE NOTE:_** Native Windows development of PolkadotSDK is _not_ very well supported! It is _highly_
+recommend to use [Windows Subsystem Linux](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
+(WSL) and follow the instructions for [Ubuntu/Debian](#ubuntudebian).
+
+## Rust developer environment
+
+This guide uses <https://rustup.rs> installer and the `rustup` tool to manage the Rust toolchain.
+First install and configure `rustup`:
+
+```bash
+# Install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Configure
+source ~/.cargo/env
+```
+
+Configure the Rust toolchain to default to the latest stable version, add nightly and the nightly wasm target:
+
+```bash
+rustup default stable
+rustup update
+rustup update nightly
+rustup target add wasm32v1-none --toolchain nightly
+```
+
+## Troubleshooting PolkadotSDK builds
+
+Sometimes you can't get the PolkadotSDK node template
+to compile out of the box. Here are some tips to help you work through that.
+
+### Rust configuration check
+
+To see what Rust toolchain you are presently using, run:
 
 ```bash
 rustup show
 ```
 
-## Midnight-Specific Setup
+This will show something like this (Ubuntu example) output:
 
-### Direnv (Optional)
+```text
+Default host: x86_64-unknown-linux-gnu
+rustup home:  /home/user/.rustup
 
-The repository includes an `.envrc` file for environment configuration. You can use direnv to automatically load environment variables:
+installed toolchains
+--------------------
 
-```bash
-# Install direnv
-# macOS:
-brew install direnv
+stable-x86_64-unknown-linux-gnu (default)
+nightly-2020-10-06-x86_64-unknown-linux-gnu
+nightly-x86_64-unknown-linux-gnu
 
-# Ubuntu/Debian:
-sudo apt install direnv
+installed targets for active toolchain
+--------------------------------------
 
-# Add to your shell (~/.bashrc or ~/.zshrc)
-eval "$(direnv hook bash)"  # or zsh, fish, etc.
+wasm32v1-none
+x86_64-unknown-linux-gnu
 
-# Allow direnv in the repository
-cd /path/to/midnight-node
-direnv allow
+active toolchain
+----------------
+
+stable-x86_64-unknown-linux-gnu (default)
+rustc 1.50.0 (cb75ad5db 2021-02-10)
 ```
 
-**Manual alternative:** If you don't want to use direnv, source `.envrc` manually before running commands:
+As you can see above, the default toolchain is stable, and the
+`nightly-x86_64-unknown-linux-gnu` toolchain as well as its `wasm32v1-none` target is installed.
+You also see that `nightly-2020-10-06-x86_64-unknown-linux-gnu` is installed, but is not used unless explicitly defined as illustrated in the [specify your nightly version](#specifying-nightly-version)
+section.
 
-```bash
-source .envrc
-cargo check
-cargo test
-```
+### WebAssembly compilation
 
-## Verify Setup
+Substrate uses [WebAssembly](https://webassembly.org) (Wasm) to produce portable blockchain
+runtimes. You will need to configure your Rust compiler to use
+[`nightly` builds](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html) to allow you to
+compile Substrate runtime code to the Wasm target.
 
-After completing the setup, verify everything works:
-
-```bash
-# Check cargo commands work
-cargo check
-
-# Check earthly is available
-earthly --version
-```
