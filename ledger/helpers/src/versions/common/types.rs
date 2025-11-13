@@ -16,20 +16,23 @@ use bip39::Mnemonic;
 #[cfg(feature = "std")]
 use {
 	super::super::{
-		ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
-		ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
-		SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
-		deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
-	}
+		ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput,
+		Loader, ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction,
+		Storable, SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction,
+		TransactionHash, Transcript, deserialize, mn_ledger_serialize as serialize,
+		mn_ledger_storage as storage,
+	},
 	derive_where::derive_where,
-	itertools::Itertools,
 	rand::{Rng, RngCore, SeedableRng, rngs::SmallRng},
 	std::{
 		collections::HashMap,
 		marker::PhantomData,
 		time::{SystemTime, UNIX_EPOCH},
-	}
-}
+	},
+};
+
+#[cfg(feature = "can-panic")]
+use itertools::Itertools;
 
 #[cfg(feature = "can-panic")]
 use core::str::FromStr;

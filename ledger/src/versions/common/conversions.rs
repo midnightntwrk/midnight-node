@@ -12,10 +12,12 @@
 // limitations under the License.
 
 use super::{
-	super::common::BlockContext,
 	ledger_storage_local, mn_ledger_local,
 	types::{InvalidError, MalformedError, SystemTransactionError},
 };
+
+#[cfg(all(feature = "std", feature = "test-utils"))]
+use super::super::common::BlockContext;
 use ledger_storage_local::db::DB;
 use mn_ledger_local::error::{
 	MalformedTransaction, SystemTransactionError as LedgerSystemTransactionError,
