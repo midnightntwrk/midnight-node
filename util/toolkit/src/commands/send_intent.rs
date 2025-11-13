@@ -53,7 +53,7 @@ mod test {
 	use crate::{Cli, run_command};
 	use clap::Parser;
 	use midnight_node_toolkit::cli_parsers::hex_str_decode;
-	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
 	use std::fs;
 	use tempfile::tempdir;
 
@@ -106,11 +106,10 @@ mod test {
 		};
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");
-		let info =
-			ContractDeployArgs { funding_seed: FUNDING_SEED.to_string(), rng_seed: Some(rng_seed) };
 
 		let contract_args = CustomContractArgs {
-			info,
+			funding_seed: FUNDING_SEED.to_string(),
+			rng_seed: Some(rng_seed),
 			compiled_contract_dirs: vec![compiled_contract_dir.to_string()],
 			intent_files: vec![intent_file],
 			utxo_inputs: vec![],
