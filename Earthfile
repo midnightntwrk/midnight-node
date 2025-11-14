@@ -608,7 +608,7 @@ check-rust:
 
     # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    # RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
 
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \

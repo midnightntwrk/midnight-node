@@ -28,6 +28,12 @@ std = [
     "scale-info/std",
     "parity-scale-codec/std",
     "midnight-primitives/std",
+    "pallet-cnight-observation/std",
+    "sidechain-domain/std",
+    "pallet-midnight/std",
+    "pallet-midnight-system/std",
+    "pallet-timestamp/std",
+    "midnight-node-res/std"
 ]
 
 [package.metadata.cargo-shear]

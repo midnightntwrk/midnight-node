@@ -16,7 +16,7 @@ chain-spec = [
     "sp-core/std",
     "sc-service",
     "sp-session-validator-management",
-    "sp-governed-map",
+    "sp-governed-map/std",
     "sidechain-domain"
 ]
 test = ["chain-spec"]
@@ -28,7 +28,7 @@ hex.workspace = true
 midnight-serialize.workspace = true
 hex-literal.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["alloc"] }
 sp-core = { workspace = true, optional = true }
 sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
