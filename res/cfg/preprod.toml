@@ -1,0 +1,11 @@
+chain = "res/preprod/chain-spec-raw.json"
+base_path = "node/chain"
+
+chainspec_name = "Midnight Preprod"
+chainspec_id = "midnight_preprod"
+chainspec_genesis_state = "res/genesis/genesis_state_preprod.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_preprod.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/preprod/pc-chain-config.json"
+chainspec_cnight_genesis = "res/preprod/cnight-genesis.json"
+chainspec_federated_authority_config = "res/preprod/federated-authority-config.json"
