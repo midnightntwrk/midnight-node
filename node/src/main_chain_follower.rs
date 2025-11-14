@@ -51,6 +51,12 @@ pub struct DataSources {
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 }
 
+#[derive(Clone)]
+pub struct DbPoolCfg {
+	acquire_timeout: std::time::Duration,
+	max_connections: u32,
+}
+
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cfg: MidnightCfg,
 	metrics_opt: Option<McFollowerMetrics>,
@@ -99,26 +105,27 @@ pub async fn create_mock_data_sources(
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
 
+// FIXME: these should almost certainly be Cfg in MidnightCfg, so users can tweak as needed
+const CANDIDATES_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const SIDECHAIN_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const MC_HASH_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const GOVERNED_MAP_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
 	metrics_opt: Option<McFollowerMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
-	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
-			.ok_or(missing("db_sync_postgres_connection_string"))?,
-		std::time::Duration::from_secs(30),
-	)
-	.await?;
-
-	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
-	sqlx::query(
-		r#"
-			CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
-			ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
-		"#,
-	)
-	.execute(&pool)
-	.await?;
+	let postgres_uri = &cfg
+		.db_sync_postgres_connection_string
+		.ok_or(missing("db_sync_postgres_connection_string"))?;
 
 	let db_sync_block_data_source_config = DbSyncBlockDataSourceConfig {
 		cardano_security_parameter: cfg
@@ -142,41 +149,77 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let block = Arc::new(BlockDataSourceImpl::from_config(
-		pool.clone(), // cfg.mc_epoch_duration_millis
-		db_sync_block_data_source_config.clone(),
-		&mc,
-	));
+	let candidates_pool = get_connection(postgres_uri, CANDIDATES_POOL_CFG).await?;
+
+	// All these pools are connections to the same database, so we can use any pool to create the index
+	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
+	sqlx::query(
+		r#"
+			CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
+			ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
+		"#,
+	)
+	.execute(&candidates_pool)
+	.await?;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(pool.clone(), metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
+	let sidechain_pool = get_connection(postgres_uri, SIDECHAIN_POOL_CFG).await?;
+	let sidechain_block_data_source = BlockDataSourceImpl::from_config(
+		sidechain_pool,
+		db_sync_block_data_source_config.clone(),
+		&mc,
+	);
+	let sidechain_rpc =
+		SidechainRpcDataSourceImpl::new(Arc::new(sidechain_block_data_source), metrics_opt.clone());
+
+	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG).await?;
+	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
+		mc_hash_pool,
+		db_sync_block_data_source_config.clone(),
+		&mc,
+	);
+	let mc_hash =
+		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), metrics_opt.clone());
+
+	let cnight_observation_pool = get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG).await?;
+	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
+		cnight_observation_pool,
+		metrics_opt.clone(),
+		1000,
+	);
+
+	let governed_map_pool = get_connection(postgres_uri, GOVERNED_MAP_POOL_CFG).await?;
+	let governed_map_block_data_source = BlockDataSourceImpl::from_config(
+		governed_map_pool.clone(),
+		db_sync_block_data_source_config.clone(),
+		&mc,
+	);
+	let governed_map = GovernedMapDataSourceCachedImpl::new(
+		governed_map_pool,
+		metrics_opt.clone(),
+		GOVERNED_MAP_CACHE_SIZE,
+		Arc::new(governed_map_block_data_source),
+	)
+	.await?;
+
+	let federated_authorty_observation_pool =
+		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG).await?;
+	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
+		federated_authorty_observation_pool,
+		metrics_opt,
+		1000,
+	);
 	Ok(DataSources {
-		sidechain_rpc: Arc::new(SidechainRpcDataSourceImpl::new(
-			block.clone(),
-			metrics_opt.clone(),
-		)),
-		mc_hash: Arc::new(McHashDataSourceImpl::new(block.clone(), metrics_opt.clone())),
+		sidechain_rpc: Arc::new(sidechain_rpc),
+		mc_hash: Arc::new(mc_hash),
 		authority_selection: Arc::new(candidates_data_source_cached),
-		cnight_observation: Arc::new(MidnightCNightObservationDataSourceImpl::new(
-			pool.clone(),
-			metrics_opt.clone(),
-			1000,
-		)),
-		governed_map: Arc::new(
-			GovernedMapDataSourceCachedImpl::new(
-				pool.clone(),
-				metrics_opt.clone(),
-				GOVERNED_MAP_CACHE_SIZE,
-				block,
-			)
-			.await?,
-		),
-		federated_authority_observation: Arc::new(
-			FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt, 1000),
-		),
+		cnight_observation: Arc::new(cnight_observation),
+		governed_map: Arc::new(governed_map),
+		federated_authority_observation: Arc::new(federated_authority_observation),
 	})
 }
 
@@ -188,26 +231,22 @@ pub async fn create_cnight_observation_data_source(
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
-		std::time::Duration::from_secs(30),
+		CNIGHT_OBSERVATION_POOL_CFG,
 	)
 	.await?;
 
-	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(
-		pool.clone(),
-		metrics_opt.clone(),
-		1000,
-	)))
+	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
 }
 
 // Copied from internal utility in partner-chains-db-sync-data-sources
 async fn get_connection(
 	connection_string: &str,
-	acquire_timeout: std::time::Duration,
+	pool_cfg: DbPoolCfg,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
 	let connect_options = sqlx::postgres::PgConnectOptions::from_str(connection_string)?;
 	let pool = sqlx::postgres::PgPoolOptions::new()
-		.max_connections(5)
-		.acquire_timeout(acquire_timeout)
+		.max_connections(pool_cfg.max_connections)
+		.acquire_timeout(pool_cfg.acquire_timeout)
 		.connect_with(connect_options.clone())
 		.await
 		.map_err(|e| {
