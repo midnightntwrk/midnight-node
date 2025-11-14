@@ -1,0 +1,20 @@
+{
+    "council": {
+        "address": "addr_test1wr59xjxnctrcnyjm8mtfnjjn00saptt0jpc2w3p2tnk784qruvy77",
+        "policy_id": "e85348d3c2c789925b3ed699ca537be1d0ad6f9070a7442a5cede3d4",
+        "members": [
+            "0xcccd6dbd01b95948f56bb84ad441f29608b12b3694a2a71ce4ba0fa8c07f7f4b",
+            "0x12165fdd275029f4812daa0ba8bf416aea14c62db1e4223ff427b81f50ccac61",
+            "0x0e2ef42425883ac46002962a5201ea7bbbe40dc8d8542ec148d3ff32d5bbd71b"
+        ]
+    },
+    "technical_committee": {
+        "address": "addr_test1wq02xjyl3vl9qvyz5s4l9ejhpwmae23n22hhx2kk32sdaxcqq60nv",
+        "policy_id": "1ea3489f8b3e503082a42bf2e6570bb7dcaa3352af732ad68aa0de9b",
+        "members": [
+            "0xde2306334193be59122367e5a774769e59de84baacfd8e136fba8e18dbcd0833",
+            "0x8c457a4b2383443ff5b30420aea92bfca65971fd0b76d21715529e4e8192be1d",
+            "0xf6aa16d4c6892575af371fd14e1e40a7c4675876e8f331e2e2466a28e950765f"
+        ]
+    }
+}

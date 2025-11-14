@@ -1,0 +1,33 @@
+{
+  "addresses": {
+    "mapping_validator_address": "PREPROD_MAPPING_VALIDATOR_ADDRESS_PLACEHOLDER",
+    "redemption_validator_address": "PREPROD_REDEMPTION_VALIDATOR_ADDRESS_PLACEHOLDER",
+    "auth_token_asset_name": "",
+    "cnight_policy_id": "PREPROD_CNIGHT_POLICY_ID_PLACEHOLDER",
+    "cnight_asset_name": ""
+  },
+  "observed_utxos": {
+    "start": {
+      "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "block_number": 0,
+      "block_timestamp": 0,
+      "tx_index_in_block": 0
+    },
+    "end": {
+      "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "block_number": 0,
+      "block_timestamp": 0,
+      "tx_index_in_block": 0
+    },
+    "utxos": []
+  },
+  "mappings": {},
+  "utxo_owners": {},
+  "next_cardano_position": {
+    "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "block_number": 0,
+    "block_timestamp": 0,
+    "tx_index_in_block": 0
+  },
+  "system_tx": null
+}

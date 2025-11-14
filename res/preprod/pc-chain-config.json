@@ -1,0 +1,113 @@
+{
+  "bootnodes": [
+    "/dns/preprod/tcp/30333/p2p/PREPROD_BOOTNODE_1_PEER_ID_PLACEHOLDER"
+  ],
+  "chain_parameters": {
+    "genesis_utxo": "PREPROD_GENESIS_UTXO_PLACEHOLDER"
+  },
+  "initial_governance": {
+    "authorities": [
+      "PREPROD_GOVERNANCE_AUTHORITY_1_PLACEHOLDER"
+    ],
+    "threshold": 1
+  },
+  "cardano": {
+    "security_parameter": 2160,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 432000000,
+    "first_epoch_timestamp_millis": 1655769600000,
+    "slot_duration_millis": 1000
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "PREPROD_COMMITTEE_CANDIDATES_ADDRESS_PLACEHOLDER",
+    "d_parameter_policy_id": "PREPROD_D_PARAMETER_POLICY_ID_PLACEHOLDER",
+    "permissioned_candidates_policy_id": "PREPROD_PERMISSIONED_CANDIDATES_POLICY_ID_PLACEHOLDER",
+    "bridge": {
+      "illiquid_circulation_supply_validator_address": "PREPROD_BRIDGE_VALIDATOR_ADDRESS_PLACEHOLDER",
+      "asset": {
+        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+        "asset_name": "0x"
+      }
+    },
+    "governed_map": {
+      "validator_address": "PREPROD_GOVERNED_MAP_VALIDATOR_ADDRESS_PLACEHOLDER",
+      "policy_id": "PREPROD_GOVERNED_MAP_POLICY_ID_PLACEHOLDER"
+    }
+  },
+  "initial_permissioned_candidates": [
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_1_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_1_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_1_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_1_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_2_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_2_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_2_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_2_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_3_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_3_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_3_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_3_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_4_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_4_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_4_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_4_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_5_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_5_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_5_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_5_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_6_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_6_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_6_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_6_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_7_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_7_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_7_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_7_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_8_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_8_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_8_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_8_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_9_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_9_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_9_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_9_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_10_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_10_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_10_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_10_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_11_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_11_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_11_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_11_BEEFY_KEY_PLACEHOLDER"
+    },
+    {
+      "aura_pub_key": "PREPROD_VALIDATOR_12_AURA_KEY_PLACEHOLDER",
+      "grandpa_pub_key": "PREPROD_VALIDATOR_12_GRANDPA_KEY_PLACEHOLDER",
+      "sidechain_pub_key": "PREPROD_VALIDATOR_12_SIDECHAIN_KEY_PLACEHOLDER",
+      "beefy_pub_key": "PREPROD_VALIDATOR_12_BEEFY_KEY_PLACEHOLDER"
+    }
+  ]
+}

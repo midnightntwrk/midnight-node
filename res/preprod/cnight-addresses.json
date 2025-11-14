@@ -1,0 +1,7 @@
+{
+    "mapping_validator_address": "PREPROD_MAPPING_VALIDATOR_ADDRESS_PLACEHOLDER",
+    "redemption_validator_address": "PREPROD_REDEMPTION_VALIDATOR_ADDRESS_PLACEHOLDER",
+    "auth_token_asset_name": "",
+    "cnight_policy_id": "PREPROD_CNIGHT_POLICY_ID_PLACEHOLDER",
+    "cnight_asset_name": ""
+}
