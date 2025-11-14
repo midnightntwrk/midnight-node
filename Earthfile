@@ -902,7 +902,9 @@ hardfork-test-upgrader-image:
     COPY +hardforkbuild/artifacts-$NATIVEARCH/test/* /
     COPY +hardforkbuild/artifacts-$NATIVEARCH/rollback/* /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    COPY node/Cargo.toml /node/
+    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
+    # LET NODE_VERSION = "$(cat node_version)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
