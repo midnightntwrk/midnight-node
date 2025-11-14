@@ -886,6 +886,7 @@ async fn removing_excessive_registrations() {
         .await
         .expect("Failed to fund a wallet");
 
+    // Deregister the first mapping, so the second mapping should be active from deregistration the first one
     let deregister_tx = cardano_client
         .deregister(&tx_in_for_deregister, &register_tx, &collateral_utxo)
         .await
