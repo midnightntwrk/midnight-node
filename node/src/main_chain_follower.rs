@@ -202,7 +202,7 @@ pub async fn create_cached_data_sources(
 		governed_map_pool,
 		metrics_opt.clone(),
 		GOVERNED_MAP_CACHE_SIZE,
-		governed_map_block_data_source,
+		Arc::new(governed_map_block_data_source),
 	)
 	.await?;
 
