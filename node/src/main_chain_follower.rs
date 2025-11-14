@@ -174,7 +174,7 @@ pub async fn create_cached_data_sources(
 		&mc,
 	);
 	let sidechain_rpc =
-		SidechainRpcDataSourceImpl::new(sidechain_block_data_source, metrics_opt.clone());
+		SidechainRpcDataSourceImpl::new(Arc::new(sidechain_block_data_source), metrics_opt.clone());
 
 	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG).await?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
@@ -182,21 +182,27 @@ pub async fn create_cached_data_sources(
 		db_sync_block_data_source_config.clone(),
 		&mc,
 	);
-	let mc_hash = McHashDataSourceImpl::new(mc_hash_block_data_source, metrics_opt.clone());
+	let mc_hash =
+		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), metrics_opt.clone());
 
 	let cnight_observation_pool = get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG).await?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
-		midnight_cnight_observation_pool,
+		cnight_observation_pool,
 		metrics_opt.clone(),
 		1000,
 	);
 
 	let governed_map_pool = get_connection(postgres_uri, GOVERNED_MAP_POOL_CFG).await?;
+	let governed_map_block_data_source = BlockDataSourceImpl::from_config(
+		governed_map_pool.clone(),
+		db_sync_block_data_source_config.clone(),
+		&mc,
+	);
 	let governed_map = GovernedMapDataSourceCachedImpl::new(
 		governed_map_pool,
 		metrics_opt.clone(),
 		GOVERNED_MAP_CACHE_SIZE,
-		block,
+		governed_map_block_data_source,
 	)
 	.await?;
 
@@ -225,15 +231,11 @@ pub async fn create_cnight_observation_data_source(
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
-		std::time::Duration::from_secs(30),
+		CNIGHT_OBSERVATION_POOL_CFG,
 	)
 	.await?;
 
-	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(
-		pool.clone(),
-		metrics_opt.clone(),
-		1000,
-	)))
+	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
 }
 
 // Copied from internal utility in partner-chains-db-sync-data-sources
