@@ -717,7 +717,6 @@ async fn alice_cannot_deregister_bob() {
 }
 
 #[tokio::test]
-#[ignore = "See bugs https://shielded.atlassian.net/browse/PM-20229, https://shielded.atlassian.net/browse/PM-20275"]
 async fn removing_excessive_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
