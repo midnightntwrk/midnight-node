@@ -12,12 +12,12 @@
     "threshold": 1
   },
   "cardano": {
-    "security_parameter": 2160,
+    "security_parameter": 432,
     "active_slots_coeff": 0.05,
     "first_epoch_number": 0,
     "first_slot_number": 0,
-    "epoch_duration_millis": 432000000,
-    "first_epoch_timestamp_millis": 1655769600000,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000,
     "slot_duration_millis": 1000
   },
   "cardano_addresses": {
