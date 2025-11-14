@@ -1,6 +1,6 @@
 {
   "bootnodes": [
-    "/dns/preprod/tcp/30333/p2p/PREPROD_BOOTNODE_1_PEER_ID_PLACEHOLDER"
+    "/dns/preprod/tcp/30333/p2p/12D3KooWDU3ydya1JaGttYuorL2e6EnZrEBzmWH1fGef1NnsSmtF"
   ],
   "chain_parameters": {
     "genesis_utxo": "PREPROD_GENESIS_UTXO_PLACEHOLDER"
@@ -38,76 +38,64 @@
   },
   "initial_permissioned_candidates": [
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_1_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_1_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_1_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_1_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0xde2306334193be59122367e5a774769e59de84baacfd8e136fba8e18dbcd0833",
+      "grandpa_pub_key": "0x1bce1ca17ca250a2ccb4964573cc9a8650e390c38b0a6963b5307f9e5fc3f9fe",
+      "sidechain_pub_key": "0x027576a87c347dadcf62edd2f1a879daaffd8affebdd129a54ae01e4eaff269a6e",
+      "beefy_pub_key": "0x027576a87c347dadcf62edd2f1a879daaffd8affebdd129a54ae01e4eaff269a6e"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_2_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_2_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_2_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_2_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0x8c457a4b2383443ff5b30420aea92bfca65971fd0b76d21715529e4e8192be1d",
+      "grandpa_pub_key": "0x0235a9e06d7eefef4c0bd23b57d6516fc99692e51c14f9d019f517aebe7150d0",
+      "sidechain_pub_key": "0x022514d4b4134138f4579409897f67ac22923bf3422784d4b54dc9d03bf22f2a45",
+      "beefy_pub_key": "0x022514d4b4134138f4579409897f67ac22923bf3422784d4b54dc9d03bf22f2a45"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_3_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_3_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_3_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_3_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0xf6aa16d4c6892575af371fd14e1e40a7c4675876e8f331e2e2466a28e950765f",
+      "grandpa_pub_key": "0x5533a50ebb042a4137c2d1e5be6867cc860e3cf0ce8a83b8d862733c216c7e0d",
+      "sidechain_pub_key": "0x03b9c08e5e563b8480d505297e8113c87e3b5c5b676b03fa795d5a48de3b1ae3e3",
+      "beefy_pub_key": "0x03b9c08e5e563b8480d505297e8113c87e3b5c5b676b03fa795d5a48de3b1ae3e3"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_4_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_4_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_4_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_4_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0xcccd6dbd01b95948f56bb84ad441f29608b12b3694a2a71ce4ba0fa8c07f7f4b",
+      "grandpa_pub_key": "0x0d1a7725715dada86797150e28caa848eb67ab4ddb938f2de14bad9f7f5de222",
+      "sidechain_pub_key": "0x02138dee2cb4966a3836331b79a80c84cb5dc1899af6f577711e2d514ff7279fd9",
+      "beefy_pub_key": "0x02138dee2cb4966a3836331b79a80c84cb5dc1899af6f577711e2d514ff7279fd9"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_5_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_5_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_5_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_5_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0x12165fdd275029f4812daa0ba8bf416aea14c62db1e4223ff427b81f50ccac61",
+      "grandpa_pub_key": "0x9a8a4f0d16a1ca620765c65b176d5ac7cb4a53da5028263809ce3b9b782f243c",
+      "sidechain_pub_key": "0x03f07fcb3a460d7dc6aa9525c476effb49d95fce4a8a41cfb2fb6afc2573a32d6b",
+      "beefy_pub_key": "0x03f07fcb3a460d7dc6aa9525c476effb49d95fce4a8a41cfb2fb6afc2573a32d6b"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_6_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_6_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_6_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_6_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0x0e2ef42425883ac46002962a5201ea7bbbe40dc8d8542ec148d3ff32d5bbd71b",
+      "grandpa_pub_key": "0xb22e3803270bc87d38c63f88c2fa16d546591d011d98db9d1ea58903eb3260ca",
+      "sidechain_pub_key": "0x02aeedbf328a26d872cb7ecbb8352b1ad7451a384379e602d17cf4114847c9b19d",
+      "beefy_pub_key": "0x02aeedbf328a26d872cb7ecbb8352b1ad7451a384379e602d17cf4114847c9b19d"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_7_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_7_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_7_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_7_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0x168fbc39d9e1e697484918a400a4eef096353085e5f5057e75b1101af585a158",
+      "grandpa_pub_key": "0xb32b2b08a74099b170c5e9744912d98454011b1f8de0ee70f2c422c6861cdace",
+      "sidechain_pub_key": "0x03f983b91685b9ca36e2032041b8f97f7a8de717c0d610fe4f25dd226c640d4417",
+      "beefy_pub_key": "0x03f983b91685b9ca36e2032041b8f97f7a8de717c0d610fe4f25dd226c640d4417"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_8_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_8_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_8_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_8_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0xfaea12ba4222b542abd9a9024aad8e42e55acf2045a386ba98abc3b86371dc14",
+      "grandpa_pub_key": "0x6ec6705be4d119a27a466e05680c5fead39a65fccbb283a13c32db462e12eb6c",
+      "sidechain_pub_key": "0x02e7e787caca0cf41f5e7a650569c5e5777e3d8257f82ccf826bec0507add2115d",
+      "beefy_pub_key": "0x02e7e787caca0cf41f5e7a650569c5e5777e3d8257f82ccf826bec0507add2115d"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_9_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_9_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_9_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_9_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0xae6ee23c8eb9d5b38fe073f4b5520c4a036b86a1377723bda88165f2c5483338",
+      "grandpa_pub_key": "0x23715374d64eb47b25e7be527e64c04b21625429ea96c46eb1406c8172e4cb9b",
+      "sidechain_pub_key": "0x039949c752e7f8bd2e995b4cc1ce46b27cd054a09186ce3a7302e7673bbc27be24",
+      "beefy_pub_key": "0x039949c752e7f8bd2e995b4cc1ce46b27cd054a09186ce3a7302e7673bbc27be24"
     },
     {
-      "aura_pub_key": "PREPROD_VALIDATOR_10_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_10_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_10_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_10_BEEFY_KEY_PLACEHOLDER"
-    },
-    {
-      "aura_pub_key": "PREPROD_VALIDATOR_11_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_11_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_11_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_11_BEEFY_KEY_PLACEHOLDER"
-    },
-    {
-      "aura_pub_key": "PREPROD_VALIDATOR_12_AURA_KEY_PLACEHOLDER",
-      "grandpa_pub_key": "PREPROD_VALIDATOR_12_GRANDPA_KEY_PLACEHOLDER",
-      "sidechain_pub_key": "PREPROD_VALIDATOR_12_SIDECHAIN_KEY_PLACEHOLDER",
-      "beefy_pub_key": "PREPROD_VALIDATOR_12_BEEFY_KEY_PLACEHOLDER"
+      "aura_pub_key": "0x3612abc1c52d79b656f98cf16655bd689c012a4d98d656c696d7fd7bdf596458",
+      "grandpa_pub_key": "0xa89f442106845d5f98ab8e46d2c9c7f8478774eac2797f466432cb0c1b9dca12",
+      "sidechain_pub_key": "0x030bbc467c8a86ab626f8172130c5366ed3f1b220ff4fd1d75f085a38685896ed7",
+      "beefy_pub_key": "0x030bbc467c8a86ab626f8172130c5366ed3f1b220ff4fd1d75f085a38685896ed7"
     }
   ]
 }
