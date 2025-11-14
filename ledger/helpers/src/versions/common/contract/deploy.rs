@@ -16,11 +16,13 @@ use std::{marker::PhantomData, sync::Arc};
 
 use super::super::{
 	BuildContractAction, Contract, DB, Intent, LedgerContext, PedersenRandomness,
-	ProofPreimageMarker, Signature, StdRng,
+	ProofPreimageMarker, Signature, StdRng, VerifyingKey,
 };
 
 pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
 	pub type_: C,
+	pub committee: Vec<VerifyingKey>,
+	pub committee_threshold: u32,
 	pub _marker: PhantomData<D>,
 }
 
@@ -35,7 +37,8 @@ impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for ContractDeployInf
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;
 
-		let contract_deploy = self.type_.deploy(rng).await;
+		let contract_deploy =
+			self.type_.deploy(&self.committee, self.committee_threshold, rng).await;
 
 		println!("CONTRACT ADDRESS: {:?}", contract_deploy.address());
 
