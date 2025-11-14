@@ -933,7 +933,7 @@ audit-yarn:
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --audit-level high
+    RUN --no-cache yarn npm audit --severity high
 
 audit-local-environment:
     BUILD +audit-npm --DIRECTORY=local-environment/
