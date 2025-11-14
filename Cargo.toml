@@ -128,6 +128,8 @@ pallet-partner-chains-session = { default-features = false, git = "https://githu
 sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
 sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
 # Substrate dependencies
+
+binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-beefy-mmr = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }

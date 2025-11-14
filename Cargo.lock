@@ -7368,6 +7368,7 @@ name = "midnight-node-runtime"
 version = "0.2.3"
 dependencies = [
  "authority-selection-inherents",
+ "binary-merkle-tree",
  "frame-benchmarking",
  "frame-executive",
  "frame-storage-access-test-runtime",

@@ -15,6 +15,7 @@ log.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 
+binary-merkle-tree.workspace = true
 frame-support.workspace = true
 frame-system.workspace = true
 frame-try-runtime = { workspace = true, optional = true }
@@ -101,6 +102,7 @@ frame-storage-access-test-runtime = { workspace = true, optional = true, default
 [features]
 default = ["std"]
 std = [
+    "binary-merkle-tree/std",
     "authority-selection-inherents/std",
     "frame-try-runtime?/std",
     "frame-system-benchmarking?/std",
