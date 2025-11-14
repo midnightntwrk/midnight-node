@@ -28,17 +28,13 @@ use sp_std::vec::Vec;
 #[cfg(feature = "std")]
 type Database = ledger_storage::db::ParityDb;
 
-// TODO: hard fork
 #[cfg(feature = "std")]
-// type DatabaseHF = ledger_storage::db::ParityDb;
 type DatabaseHF = ledger_storage_hf::db::ParityDb;
 
 #[cfg(feature = "std")]
 type Signature = base_crypto::signatures::Signature;
 
-// TODO: hard fork
 #[cfg(feature = "std")]
-// type SignatureHF = base_crypto::signatures::Signature;
 type SignatureHF = base_crypto_hf::signatures::Signature;
 
 #[runtime_interface]

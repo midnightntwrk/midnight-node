@@ -39,6 +39,7 @@ std = [
     "sp-runtime/std",
     "sidechain-domain/std",
     "midnight-primitives-federated-authority-observation/std",
+    "midnight-primitives-cnight-observation/std",
     "async-trait",
     "sp-inherents/std",
     "scale-info/std",

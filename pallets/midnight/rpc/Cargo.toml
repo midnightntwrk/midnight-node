@@ -8,16 +8,21 @@ license-file.workspace = true
 
 [dependencies]
 jsonrpsee  = { workspace = true, features = [ "client", "server", "macros" ] }
-serde     .workspace = true
+serde.workspace = true
 hex.workspace = true
-
 sc-client-api.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
 sp-blockchain.workspace = true
 pallet-midnight.workspace = true
 
-[dev-dependencies]
+[features]
+default = ["std"]
+std = [
+    "sp-api/std",
+    "sp-runtime/std",
+    "pallet-midnight/std"
+]
 
 [lints]
 workspace = true

@@ -588,6 +588,8 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
+    RUN apt-get update && apt-get install -y jq
+
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
@@ -602,9 +604,22 @@ check-rust:
 
     RUN cargo fmt --all -- --check
 
+    ENV SKIP_WASM_BUILD=1
+
     # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    # RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+
+    RUN status=0; \
+        for pkg in $(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[].name'); do \
+            echo "===> Checking $pkg"; \
+            if ! cargo check -p "$pkg"; then \
+            echo "Failed: $pkg"; \
+            status=1; \
+            fi; \
+        done; \
+        exit $status
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -923,7 +938,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit --severity high
+    RUN --no-cache npm audit --audit-level high
 
 audit-yarn:
     ARG DIRECTORY

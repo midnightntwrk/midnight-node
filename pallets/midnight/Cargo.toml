@@ -20,7 +20,7 @@ frame-benchmarking = { workspace = true, optional = true}
 
 frame-support.workspace = true
 frame-system.workspace = true
-midnight-node-ledger = { default-features = false, workspace = true }
+midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
 sp-std.workspace = true
 sp-api.workspace = true
