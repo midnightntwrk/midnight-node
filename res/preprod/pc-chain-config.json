@@ -3,37 +3,37 @@
     "/dns/preprod/tcp/30333/p2p/12D3KooWDU3ydya1JaGttYuorL2e6EnZrEBzmWH1fGef1NnsSmtF"
   ],
   "chain_parameters": {
-    "genesis_utxo": "PREPROD_GENESIS_UTXO_PLACEHOLDER"
+    "genesis_utxo": "7177988904dc53037187962ecdbcb5dd245ac5c3e220a2122df81fea7c604eea#1"
   },
   "initial_governance": {
     "authorities": [
-      "PREPROD_GOVERNANCE_AUTHORITY_1_PLACEHOLDER"
+      "0xf50d4250ef32d62516433c1db13b3e6f73b1570fe1747dd493c4ba28"
     ],
     "threshold": 1
   },
   "cardano": {
     "security_parameter": 2160,
     "active_slots_coeff": 0.05,
-    "first_epoch_number": 0,
-    "first_slot_number": 0,
+    "first_epoch_number": 4,
+    "first_slot_number": 86400,
     "epoch_duration_millis": 432000000,
     "first_epoch_timestamp_millis": 1655769600000,
     "slot_duration_millis": 1000
   },
   "cardano_addresses": {
-    "committee_candidates_address": "PREPROD_COMMITTEE_CANDIDATES_ADDRESS_PLACEHOLDER",
-    "d_parameter_policy_id": "PREPROD_D_PARAMETER_POLICY_ID_PLACEHOLDER",
-    "permissioned_candidates_policy_id": "PREPROD_PERMISSIONED_CANDIDATES_POLICY_ID_PLACEHOLDER",
+    "committee_candidates_address": "addr_test1wrq0lldlvfdgay9tsdvpe2m5qk29e9g4ktzky7wz3nrmygcty5y4c",
+    "d_parameter_policy_id": "0x3c0d30f4aace7d53243371bd30c0ca1f36b033d9d39734709770c172",
+    "permissioned_candidates_policy_id": "0xf98fd74a9f2a38517be40cd8e81098a82103cabe140fc19a3f18ed41",
     "bridge": {
-      "illiquid_circulation_supply_validator_address": "PREPROD_BRIDGE_VALIDATOR_ADDRESS_PLACEHOLDER",
+      "illiquid_circulation_supply_validator_address": "addr_test1wq8vp65petn7n65gd8r8tvmxk4nstm9uxk8qxal5kytzgtgtzeaeq",
       "asset": {
         "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
         "asset_name": "0x"
       }
     },
     "governed_map": {
-      "validator_address": "PREPROD_GOVERNED_MAP_VALIDATOR_ADDRESS_PLACEHOLDER",
-      "policy_id": "PREPROD_GOVERNED_MAP_POLICY_ID_PLACEHOLDER"
+      "validator_address": "addr_test1wz6ehdggmynhnwyq3c40763w0jwwquzmvx7yrupys3dmz7smprat8",
+      "policy_id": "0xdd818a9264a8cb86989fe04c3791058277e4004a1a7955e2f80a3e25"
     }
   },
   "initial_permissioned_candidates": [
