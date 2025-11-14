@@ -82,6 +82,8 @@ pub enum IndexerError {
 	InvalidProtocolVersion(parity_scale_codec::Error),
 	#[error("indexer received a block made with unsupported node version {0}")]
 	UnsupportedBlockVersion(u32),
+	#[error("block {0} not found")]
+	BlockNotFound(u32),
 }
 
 struct InternalState<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send>
@@ -122,6 +124,7 @@ impl From<ClientError> for IndexerError {
 			ClientError::SubxtError(err) => Self::SubxtError(err),
 			ClientError::RpcClientError(err) => Self::RpcClientError(err),
 			ClientError::UnsupportedNetworkId(bytes) => Self::UnsupportedNetworkId(bytes),
+			ClientError::BlockHashNotFound(block_num) => Self::BlockNotFound(block_num),
 		}
 	}
 }
@@ -131,7 +134,7 @@ struct SyncCache<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB>>
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	genesis: HashFor<MidnightNodeClientConfig>,
+	block_one: HashFor<MidnightNodeClientConfig>,
 	/// Block hash and number
 	until: Option<(HashFor<MidnightNodeClientConfig>, u64)>,
 	#[serde(with = "serde_def::block_vec")]
@@ -146,12 +149,12 @@ where
 		std::env::var("MN_SYNC_CACHE").unwrap_or(".sync_cache".to_string())
 	}
 
-	fn filename(genesis: HashFor<MidnightNodeClientConfig>) -> PathBuf {
-		Path::new(&Self::dir()).join(format!("{}.bin", hash_to_str(genesis)))
+	fn filename(block_one: HashFor<MidnightNodeClientConfig>) -> PathBuf {
+		Path::new(&Self::dir()).join(format!("{}.bin", hash_to_str(block_one)))
 	}
 
-	pub fn load(genesis: HashFor<MidnightNodeClientConfig>) -> Result<Self, IndexerError> {
-		let default = SyncCache { genesis, until: None, blocks: Vec::new() };
+	pub fn load(block_one: HashFor<MidnightNodeClientConfig>) -> Result<Self, IndexerError> {
+		let default = SyncCache { block_one, until: None, blocks: Vec::new() };
 
 		let dir = Self::dir();
 		if std::fs::create_dir_all(&dir).is_err() {
@@ -159,7 +162,7 @@ where
 			return Ok(default);
 		}
 
-		let cache_filename = Self::filename(genesis);
+		let cache_filename = Self::filename(block_one);
 
 		let data: Option<SyncCache<S, P>> = std::fs::File::open(&cache_filename)
 			.map(|f| {
@@ -201,7 +204,7 @@ where
 	fn save_to_file(&self) {
 		// Attempt to write to file
 		let s = bincode::serialize(self).unwrap();
-		match std::fs::write(Self::filename(self.genesis), s) {
+		match std::fs::write(Self::filename(self.block_one), s) {
 			Ok(_) => (),
 			Err(e) => eprintln!("failed to write sync cache: {}", e),
 		}
@@ -528,8 +531,8 @@ where
 		let mut blocks_sub = self.node_client.api.blocks().subscribe_finalized().await?;
 
 		// Load sync cache
-		let genesis_hash = self.node_client.rpc.genesis_hash().await?;
-		let mut cache = SyncCache::load(genesis_hash)?;
+		let block_one_hash = self.node_client.get_block_one_hash().await?;
+		let mut cache = SyncCache::load(block_one_hash)?;
 
 		// First, index everything from current block to genesis i.e. sync
 		let latest_block = self.node_client.api.blocks().at_latest().await?;

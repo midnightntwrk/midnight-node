@@ -172,6 +172,8 @@ mod tests {
 	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Deploy(ContractDeployArgs {
 					funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+                    authority_seeds: vec![],
+                    authority_threshold: None,
 					rng_seed: None,
 					})
 	), ["genesis/genesis_block_undeployed.mn"]) =>
