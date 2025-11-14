@@ -938,7 +938,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit --severity high
+    RUN --no-cache npm audit --audit-level high
 
 audit-yarn:
     ARG DIRECTORY
@@ -948,7 +948,7 @@ audit-yarn:
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --severity high
+    RUN --no-cache yarn npm audit --audit-level high
 
 audit-local-environment:
     BUILD +audit-npm --DIRECTORY=local-environment/
