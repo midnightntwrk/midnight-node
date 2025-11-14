@@ -903,7 +903,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit --severity high
+    RUN --no-cache npm audit --audit-level high
 
 audit-yarn:
     ARG DIRECTORY
