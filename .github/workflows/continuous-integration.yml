@@ -124,7 +124,7 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-images
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-test-upgrader-image
 
   check-unused-deps:
     name: Check Unused Dependencies

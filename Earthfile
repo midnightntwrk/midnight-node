@@ -1172,7 +1172,3 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
-
-hardfork-images:
-    FROM scratch
-    BUILD +hardfork-test-upgrader-image
