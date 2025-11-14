@@ -21,7 +21,6 @@ use bip39::Mnemonic;
 use derive_where::derive_where;
 use itertools::Itertools;
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
-#[cfg(feature = "can-panic")]
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
