@@ -1,0 +1,69 @@
+name: Notify Indexer on Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-indexer:
+    name: Notify indexer of new release
+    runs-on: ubuntu-latest
+    # Only notify for non-draft releases
+    if: "!github.event.release.prerelease && !github.event.release.draft"
+
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Check if metadata.scale exists in release assets
+        id: check_metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
+          # List release assets
+          echo "Checking for metadata.scale in release $TAG..."
+          gh release view "$TAG" --repo midnightntwrk/midnight-node --json assets -q '.assets[].name' > /tmp/assets.txt
+
+          if grep -q "metadata.scale" /tmp/assets.txt; then
+            echo "metadata_exists=true" >> "$GITHUB_OUTPUT"
+            # Get the download URL
+            METADATA_URL=$(gh release view "$TAG" --repo midnightntwrk/midnight-node --json assets -q '.assets[] | select(.name == "metadata.scale") | .url')
+            echo "metadata_url=$METADATA_URL" >> "$GITHUB_OUTPUT"
+            echo "metadata.scale found in release assets"
+          else
+            echo "metadata_exists=false" >> "$GITHUB_OUTPUT"
+            echo "metadata_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::metadata.scale not found in release assets - indexer integration may need manual metadata download"
+          fi
+
+      - name: Dispatch to midnight-indexer
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        with:
+          token: ${{ secrets.INDEXER_DISPATCH_TOKEN }}
+          repository: midnightntwrk/midnight-indexer
+          event-type: node-release-published
+          client-payload: |
+            {
+              "version": "${{ steps.version.outputs.tag }}",
+              "metadata_url": "${{ steps.check_metadata.outputs.metadata_url }}",
+              "release_url": "${{ github.event.release.html_url }}",
+              "release_name": "${{ github.event.release.name }}",
+              "release_body": ${{ toJSON(github.event.release.body) }}
+            }
+
+      - name: Summary
+        run: |
+          echo "### Release Notification Sent" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Release**: ${{ steps.version.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Release URL**: ${{ github.event.release.html_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Metadata**: ${{ steps.check_metadata.outputs.metadata_exists == 'true' && 'Available' || 'Not in release assets' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Indexer Notification**: Dispatched to midnight-indexer repo" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The midnight-indexer repository will automatically create an integration PR." >> "$GITHUB_STEP_SUMMARY"
