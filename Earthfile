@@ -343,12 +343,13 @@ rebuild-genesis-state-qanet:
         --NETWORK=qanet \
         --GENERATE_TEST_TXS=false
 
-# rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
         --NETWORK=preview \
         --GENERATE_TEST_TXS=false
 
+# rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preprod:
     BUILD +rebuild-genesis-state \
         --NETWORK=preprod \
