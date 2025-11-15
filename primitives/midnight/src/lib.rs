@@ -15,9 +15,10 @@
 
 use hex_literal::hex;
 use midnight_node_ledger::types::{BlockContext, Hash, Tx, active_version::LedgerApiError};
-use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
+use sp_runtime::RuntimeDebug;
 use sp_std::vec::Vec;
 
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
@@ -54,6 +55,110 @@ pub enum TransactionTypeV2 {
 	MidnightTx(sp_std::vec::Vec<u8>, Result<Tx, LedgerApiError>),
 	TimestampTx(u64),
 	UnknownTx,
+}
+
+pub use bridge::{BridgeRecipient, BridgeRecipientError, BridgeRecipientMaxLen};
+
+pub mod bridge {
+	use super::*;
+	use sp_core::{Get, H256, bounded::BoundedVec, crypto::UncheckedFrom};
+	use sp_std::{ops::Deref, vec::Vec};
+
+	/// Maximum length (bytes) of a Midnight recipient encoded in the bridge datum.
+	pub const BRIDGE_RECIPIENT_MAX_BYTES: u32 = 32;
+
+	/// Type-level constant used to bound bridge recipient length.
+	pub struct BridgeRecipientMaxLen;
+
+	impl Get<u32> for BridgeRecipientMaxLen {
+		fn get() -> u32 {
+			BRIDGE_RECIPIENT_MAX_BYTES
+		}
+	}
+
+	/// Error type returned when bridge recipient bytes cannot be converted.
+	#[derive(Clone, Copy, PartialEq, Eq, RuntimeDebug)]
+	pub enum BridgeRecipientError {
+		/// The encoded recipient exceeds the configured byte limit.
+		TooLong,
+	}
+
+	/// Recipient type used by the bridge pallet and inherent data provider.
+	#[derive(
+		Clone,
+		PartialEq,
+		Eq,
+		Encode,
+		Decode,
+		DecodeWithMemTracking,
+		MaxEncodedLen,
+		TypeInfo,
+		RuntimeDebug,
+		Default,
+	)]
+	#[scale_info(skip_type_params(BridgeRecipientMaxLen))]
+	pub struct BridgeRecipient(pub BoundedVec<u8, BridgeRecipientMaxLen>);
+
+	impl BridgeRecipient {
+		/// Returns the raw bytes.
+		pub fn as_bytes(&self) -> &[u8] {
+			self.0.as_slice()
+		}
+
+		/// Consumes the recipient and returns the bounded vector backing it.
+		pub fn into_inner(self) -> BoundedVec<u8, BridgeRecipientMaxLen> {
+			self.0
+		}
+	}
+
+	impl Deref for BridgeRecipient {
+		type Target = [u8];
+
+		fn deref(&self) -> &Self::Target {
+			self.as_bytes()
+		}
+	}
+
+	impl AsRef<[u8]> for BridgeRecipient {
+		fn as_ref(&self) -> &[u8] {
+			self.as_bytes()
+		}
+	}
+
+	impl TryFrom<&[u8]> for BridgeRecipient {
+		type Error = BridgeRecipientError;
+
+		fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(value.to_vec())
+				.map(BridgeRecipient)
+				.map_err(|_| BridgeRecipientError::TooLong)
+		}
+	}
+
+	impl TryFrom<Vec<u8>> for BridgeRecipient {
+		type Error = BridgeRecipientError;
+
+		fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(value)
+				.map(BridgeRecipient)
+				.map_err(|_| BridgeRecipientError::TooLong)
+		}
+	}
+
+	impl UncheckedFrom<H256> for BridgeRecipient {
+		fn unchecked_from(value: H256) -> Self {
+			let bytes = value.as_bytes();
+			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(bytes.to_vec())
+				.map(BridgeRecipient)
+				.expect("H256 length fits within bridge recipient bounds; qed")
+		}
+	}
+
+	impl From<BridgeRecipient> for Vec<u8> {
+		fn from(value: BridgeRecipient) -> Self {
+			value.0.into()
+		}
+	}
 }
 
 pub mod well_known_keys {

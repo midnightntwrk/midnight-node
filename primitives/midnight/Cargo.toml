@@ -10,6 +10,7 @@ hex-literal = { workspace = true, default-features = false }
 scale-info = { workspace = true, features = ["derive"] }
 sp-std.workspace = true
 sp-runtime.workspace = true
+sp-core.workspace = true
 parity-scale-codec.workspace = true
 midnight-node-ledger.workspace = true
 
@@ -20,5 +21,6 @@ std = [
     "scale-info/std",
     "sp-std/std",
     "sp-runtime/std",
+    "sp-core/std",
     "midnight-node-ledger/std",
 ]
