@@ -155,7 +155,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 				let cli = Cli::parse();
 
-				run_command(cli.command).await
+				let res = run_command(cli.command).await;
+
+				if let Err(ref e) = res {
+					println!("{e}");
+				}
+
+				return res;
 			})
 	}));
 

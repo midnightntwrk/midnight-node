@@ -16,9 +16,10 @@ use cardano_serialization_lib::PlutusData;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
+	MainchainMember,
 };
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
-use sidechain_domain::McBlockHash;
+use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
 
 #[derive(new)]
@@ -131,12 +132,16 @@ impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
 	///
 	/// Expected format: `[total_signers: Int, [...(CborBytes, Sr25519Keys)]]`
-	/// where Sr25519Keys is a 32-byte public key
+	/// where the map key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
+	/// and Sr25519Keys is a 32-byte public key
 	///
-	/// Returns a vector of AuthorityMemberPublicKey
+	/// Returns a vector of tuples (AuthorityMemberPublicKey, MainchainMember)
 	fn decode_governance_datum(
 		datum: &PlutusData,
-	) -> Result<Vec<AuthorityMemberPublicKey>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<
+		Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+		Box<dyn std::error::Error + Send + Sync>,
+	> {
 		// Try to parse as a Vec of `PlutusData`
 		// We use a Vec here because the `get` method on `PlutusList` can panic
 		let list: Vec<PlutusData> = datum
@@ -156,7 +161,7 @@ impl FederatedAuthorityObservationDataSourceImpl {
 		// The Multisig type with @list annotation encodes the signers field as a map
 		let members_data = list.get(1).ok_or("Expected index 1 to exist in the list")?;
 
-		let mut authority_keys = Vec::new();
+		let mut authority_members = Vec::new();
 
 		// Try to parse as a map (Pairs<NativeScriptSigner, Sr25519PubKey>)
 		if let Some(members_map) = members_data.as_map() {
@@ -164,6 +169,31 @@ impl FederatedAuthorityObservationDataSourceImpl {
 			let keys: Vec<PlutusData> = members_map.keys().into_iter().cloned().collect();
 			for i in 0..keys.len() {
 				let key = keys.get(i).ok_or("Index {i:?} not found in members_map keys")?;
+
+				// Extract the Cardano public key hash from the map key
+				// The key is CBOR-encoded (32 bytes), we need to ditch the first 4 bytes
+				let key_bytes = match key.as_bytes() {
+					Some(bytes) => bytes,
+					None => {
+						log::warn!("Map key at index {} is not bytes, skipping", i);
+						continue;
+					},
+				};
+
+				// Extract 28 bytes for MainchainMember by skipping first 4 bytes
+				if key_bytes.len() != 32 {
+					return Err(format!(
+						"Expected 32 bytes for Cardano public key hash, got {}",
+						key_bytes.len()
+					)
+					.into());
+				}
+				let mainchain_member_bytes = &key_bytes[4..32];
+				let mainchain_member = {
+					let mut bytes = [0u8; 28];
+					bytes.copy_from_slice(mainchain_member_bytes);
+					PolicyId(bytes)
+				};
 
 				// Get the value for this key
 				// PlutusMapValues is a collection of PlutusData elements
@@ -193,19 +223,20 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 				// Sr25519 public keys are exactly 32 bytes
 				if sr25519_key_data.len() != 32 {
-					log::warn!(
-						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+					return Err(format!(
+						"Expected 32 bytes for Sr25519 public key, got {}.",
 						sr25519_key_data.len()
-					);
-					continue;
+					)
+					.into());
 				}
 
-				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
+				authority_members
+					.push((AuthorityMemberPublicKey(sr25519_key_data.to_vec()), mainchain_member));
 			}
 		} else {
 			return Err("Expected second element to be a map".into());
 		}
 
-		Ok(authority_keys)
+		Ok(authority_members)
 	}
 }

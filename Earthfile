@@ -94,22 +94,8 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/seeds-aws.json AS LOCAL secrets/$NETWORK-seeds-aws.json
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
-subxt-base:
-    FROM rust:1.90-trixie
-    # Install Docker for Trixie-based targets that need it
-    RUN apt-get update && \
-        apt-get upgrade && \
-        apt-get install -y ca-certificates curl && \
-        install -m 0755 -d /etc/apt/keyrings && \
-        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
-        chmod a+r /etc/apt/keyrings/docker.asc && \
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" | \
-        tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-        apt-get update && \
-        apt-get install -y docker-ce docker-ce-cli containerd.io
-
 subxt:
-    FROM +subxt-base
+    FROM rust:1.90-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -127,22 +113,12 @@ get-metadata:
     ARG METADATA_IMAGE_NAME="localhost/node:latest"
     ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
+    COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
-          echo "Waiting for node to be ready..." && \
-          for i in $(seq 1 30); do \
-            if subxt metadata -f bytes > /metadata.scale 2>/dev/null; then \
-              echo "Node ready after ${i} attempts"; \
-              break; \
-            fi; \
-            if [ $i -eq 30 ]; then \
-              echo "ERROR: Node failed to start within 30 seconds"; \
-              docker logs $(docker ps -q --filter ancestor=localhost/node:latest) || true; \
-              exit 1; \
-            fi; \
-            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
-            sleep 1; \
-          done && \
+          check-health.sh -t 30 -u http://localhost:9944 && \
+          subxt metadata -f bytes > /metadata.scale && \
           docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
     END
     SAVE ARTIFACT /metadata.scale
@@ -150,6 +126,7 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
@@ -255,6 +232,7 @@ rebuild-genesis-state:
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${NETWORK}.mn) \
+                --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
             && cp out/contract*.mn /res/test-contract \
         ; fi
 
@@ -633,23 +611,12 @@ check-metadata:
     ARG NODE_IMAGE
     FROM +subxt
     DO github.com/EarthBuild/lib+INSTALL_DIND
+    COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
-          echo "Waiting for node to be ready..." && \
-          for i in $(seq 1 30); do \
-            if subxt metadata -f bytes > /image_metadata.scale 2>/dev/null; then \
-              echo "Node ready after ${i} attempts"; \
-              break; \
-            fi; \
-            if [ $i -eq 30 ]; then \
-              echo "ERROR: Node failed to start within 30 seconds"; \
-              docker logs $(docker ps -q --filter ancestor=${NODE_IMAGE}) || true; \
-              exit 1; \
-            fi; \
-            echo "Attempt $i/30: Node not ready, waiting 1 second..."; \
-            sleep 1; \
-          done && \
+          check-health.sh -t 30 -u http://localhost:9944 && \
+          subxt metadata -f bytes > /image_metadata.scale && \
           docker kill $(docker ps -q --filter ancestor=${NODE_IMAGE})
     END
     COPY metadata/static/midnight_metadata.scale repo_metadata.scale
@@ -956,7 +923,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit --severity high
+    RUN --no-cache npm audit --audit-level high
 
 audit-yarn:
     ARG DIRECTORY
@@ -1060,10 +1027,6 @@ local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
-    RUN sed -i \
-        -e 's|node_url = "ws://127.0.0.1:9933"|node_url = "ws://172.17.0.1:9933"|' \
-        -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
-        tests/e2e/src/cfg/local/config.toml
     WORKDIR tests/e2e
     RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
 

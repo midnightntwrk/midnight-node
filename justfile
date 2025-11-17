@@ -17,6 +17,10 @@ toolkit-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit E2E test completed successfully."
 
+toolkit-maintenance-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-maintenance-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Maintenance E2E test completed successfully."
+
 toolkit-contracts-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-contracts-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Contracts E2E test completed successfully."
