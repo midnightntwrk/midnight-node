@@ -1,4 +1,4 @@
-FROM debian:trixie-slim
+FROM debian:bookworm-slim
 
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1

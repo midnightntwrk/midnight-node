@@ -166,7 +166,7 @@ services:
   # NOTE: Don't do this in production! Secret files should be mounted instead.
   # https://docs.docker.com/engine/swarm/secrets/#use-secrets-in-compose
   generate-secrets:
-    image: "debian:trixie-slim"
+    image: "debian:bookworm-slim"
     volumes:
       - boot-node-secrets:/secrets/boot-node
       - node-0-secrets:/secrets/node-0

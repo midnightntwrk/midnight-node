@@ -109,7 +109,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.90-trixie
+    FROM rust:1.90-bookworm
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -162,7 +162,7 @@ rebuild-sqlx:
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
     # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 node:22-trixie
+    FROM --platform=linux/amd64 node:22-bookworm
     # renovate: datasource=npm packageName=aiken-lang/aiken
     ENV aiken_version=1.1.19
     RUN npm install -g @aiken-lang/aiken@${aiken_version}
@@ -440,7 +440,7 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.90-trixie
+    FROM rust:1.90-bookworm
 
     # Install build dependencies
     RUN apt-get update -qq && \
@@ -455,11 +455,11 @@ node-ci-image-single-platform:
         pkg-config \
         grcov \
         openssh-client \
-        # gcc-aarch64-linux-gnu \
-        # libc6-dev-arm64-cross \
-        # gcc-x86-64-linux-gnu \
-        # crossbuild-essential-amd64 \
-        # libc6-amd64-cross
+        gcc-aarch64-linux-gnu \
+        libc6-dev-arm64-cross \
+        gcc-x86-64-linux-gnu \
+        crossbuild-essential-amd64 \
+        libc6-amd64-cross
 
     RUN rustup target add wasm32v1-none aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
@@ -525,7 +525,7 @@ prep:
 # prepares the toolkit-js, in time for testing
 toolkit-js-prep:
     ARG NATIVEARCH
-    FROM node:22-trixie
+    FROM node:22-bookworm
 
     COPY util/toolkit-js toolkit-js
     ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
@@ -899,7 +899,7 @@ audit-rust:
 
 audit-npm:
     ARG DIRECTORY
-    FROM node:22-trixie
+    FROM node:22-bookworm
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
@@ -907,7 +907,7 @@ audit-npm:
 
 audit-yarn:
     ARG DIRECTORY
-    FROM node:22-trixie
+    FROM node:22-bookworm
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
