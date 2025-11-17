@@ -60,7 +60,7 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951 #v2.62.33
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 #v2.62.49
         with:
           tool: just
 
@@ -145,7 +145,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951 #v2.62.33
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 #v2.62.49
         with:
           tool: just
 
@@ -223,7 +223,7 @@ jobs:
     steps:
       # QEMU is currently required as compactc doesn't have a linux arm64 build of compactc.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
           image: tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6 # latest
           platforms: "amd64"
