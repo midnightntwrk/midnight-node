@@ -783,12 +783,7 @@ node-image:
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version && \
-        if [ ! -s /version ]; then \
-            echo "ERROR: Failed to extract version from midnight-node binary" >&2; \
-            ./midnight-node --version >&2 || true; \
-            exit 1; \
-        fi
+    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
