@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 # ntp to keep correct time
 # curl to enable compose healthchecks
 RUN apt-get update -qq \
