@@ -221,15 +221,14 @@ pub async fn create_cached_data_sources(
 		1000,
 	);
 
-	let bridge_pool =
-		get_connection(postgres_uri, BRIDGE_POOL_CFG).await?;
+	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG).await?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
-			bridge_pool,
-			metrics_opt,
-			sidechain_block_data_source,
-			BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
-		);
+		bridge_pool,
+		metrics_opt,
+		sidechain_block_data_source,
+		BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
+	);
 
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
