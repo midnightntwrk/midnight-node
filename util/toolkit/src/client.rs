@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use subxt::backend::legacy::rpc_methods::BlockNumber;
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
@@ -68,6 +69,13 @@ impl MidnightNodeClient {
 		let state_key = storage.fetch(&storage_query).await?;
 		Ok(state_key.map(|bounded| bounded.0))
 	}
+
+	pub async fn get_block_one_hash(
+		&self,
+	) -> Result<HashFor<MidnightNodeClientConfig>, ClientError> {
+		let hash = self.rpc.chain_get_block_hash(Some(BlockNumber::Number(1))).await?;
+		hash.ok_or_else(|| ClientError::BlockHashNotFound(1))
+	}
 }
 
 #[derive(Error, Debug)]
@@ -78,4 +86,6 @@ pub enum ClientError {
 	RpcClientError(#[from] subxt::ext::subxt_rpcs::Error),
 	#[error("midnight node client received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
+	#[error("failed to get block hash for block {0}")]
+	BlockHashNotFound(u32),
 }

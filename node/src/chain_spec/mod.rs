@@ -185,7 +185,7 @@ pub fn get_chainspec_extrinsics(
 		let cnight_extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::CNightObservation(
 			CNightObservationCall::process_tokens {
 				utxos: observed_utxos_cnight.utxos.clone(),
-				next_cardano_position: observed_utxos_cnight.end,
+				next_cardano_position: observed_utxos_cnight.end.clone(),
 			},
 		));
 		extrinsics.push(hex::encode(cnight_extrinsic.encode()));
@@ -336,6 +336,16 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.federated_authority_config()
 				.technical_committee
 				.policy_id,
+			council_members_mainchain: genesis
+				.federated_authority_config()
+				.council
+				.members_mainchain
+				.clone(),
+			technical_committee_members_mainchain: genesis
+				.federated_authority_config()
+				.technical_committee
+				.members_mainchain
+				.clone(),
 			..Default::default()
 		},
 	};

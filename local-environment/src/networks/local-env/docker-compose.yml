@@ -246,7 +246,7 @@ services:
     profiles: ["withindexer"]
     container_name: postgres-indexer
     platform: linux/amd64
-    image: "postgres:17.1-alpine"
+    image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
     restart: "always"
     volumes:
       - postgres-indexer-data:/var/lib/postgresql/data

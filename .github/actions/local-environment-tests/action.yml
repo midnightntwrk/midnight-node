@@ -75,12 +75,6 @@ runs:
 #        just-command: indexer-api-e2e
 #        ghcr-password: ${{ inputs.ghcr-password }}
 
-    - name: rust e2e tests
-      id: rust-e2e-tests
-      run: |
-        earthly +local-env-rust-e2e
-      shell: bash
-
     - name: e2e tests
       id: e2e-tests
       run: earthly +local-env-e2e

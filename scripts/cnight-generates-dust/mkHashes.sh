@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Network = testnet
-export CARDANO_NODE_NETWORK_ID=2
+export CARDANO_NODE_NETWORK_ID=42
 
 # A single token must be attached to a valid registration.  Assume empty asset
 # name
@@ -30,5 +30,5 @@ echo "Authentication token Policy ID: `cat auth_token.hash`"
 
 # Address to observe for registrations
 cardano-cli address build \
-   --payment-script-file mapping_validator.plutus > mapping_validator.addr
+   --payment-script-file auth_token_policy.plutus > mapping_validator.addr
 echo "Mapping validator address     : `cat mapping_validator.addr`"

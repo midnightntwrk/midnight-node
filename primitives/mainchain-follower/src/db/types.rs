@@ -20,6 +20,7 @@ use db_sync_sqlx::{
 };
 use midnight_primitives_cnight_observation::CardanoPosition;
 
+use sidechain_domain::McBlockHash;
 use sqlx::error::BoxDynError;
 use sqlx::postgres::PgTypeInfo;
 use sqlx::types::JsonValue;
@@ -68,7 +69,7 @@ pub struct Block {
 impl From<Block> for CardanoPosition {
 	fn from(b: Block) -> Self {
 		CardanoPosition {
-			block_hash: b.hash,
+			block_hash: McBlockHash(b.hash),
 			block_number: b.block_number.0,
 			block_timestamp: b.time.and_utc().into(),
 			tx_index_in_block: b.tx_count as u32,

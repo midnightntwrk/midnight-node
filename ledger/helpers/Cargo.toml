@@ -6,25 +6,25 @@ license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
-mn-ledger = { workspace = true, features = ["proving", "test-utilities"], optional = true }
-base-crypto = { workspace = true, optional = true }
-coin-structure = { workspace = true, optional = true }
-onchain-runtime = { workspace = true, optional = true }
-midnight-serialize = { workspace = true, optional = true }
-ledger-storage = { workspace = true, optional = true }
-transient-crypto = { workspace = true, optional = true }
-zswap = { workspace = true, optional = true }
-zkir = { workspace = true, optional = true }
+mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
+base-crypto = { workspace = true }
+coin-structure = { workspace = true }
+onchain-runtime = { workspace = true }
+midnight-serialize = { workspace = true }
+ledger-storage = { workspace = true }
+transient-crypto = { workspace = true }
+zswap = { workspace = true }
+zkir = { workspace = true }
 
-mn-ledger-hf = { workspace = true, features = ["proving", "test-utilities"], optional = true }
-base-crypto-hf = { workspace = true, optional = true }
-coin-structure-hf = { workspace = true, optional = true }
-onchain-runtime-hf = { workspace = true, optional = true }
-midnight-serialize-hf = { workspace = true, optional = true }
-ledger-storage-hf = { workspace = true, optional = true }
-transient-crypto-hf = { workspace = true, optional = true }
-zswap-hf = { workspace = true, optional = true }
-zkir-hf = { workspace = true, optional = true }
+mn-ledger-hf = { workspace = true, features = ["proving", "test-utilities"] }
+base-crypto-hf = { workspace = true }
+coin-structure-hf = { workspace = true }
+onchain-runtime-hf = { workspace = true }
+midnight-serialize-hf = { workspace = true }
+ledger-storage-hf = { workspace = true }
+transient-crypto-hf = { workspace = true }
+zswap-hf = { workspace = true }
+zkir-hf = { workspace = true }
 
 rand = { workspace = true, features = ["small_rng"] }
 lazy_static.workspace = true
@@ -41,27 +41,7 @@ bip39 = "2.0.0"
 toml.workspace = true
 
 [features]
-default = ["std"]
+default = []
 can-panic = []
-std = [
-	"mn-ledger",
-	"base-crypto",
-	"coin-structure",
-	"onchain-runtime",
-	"midnight-serialize",
-	"ledger-storage",
-	"transient-crypto",
-	"zswap",
-    "zkir",
-	"mn-ledger-hf",
-	"base-crypto-hf",
-	"coin-structure-hf",
-	"onchain-runtime-hf",
-	"midnight-serialize-hf",
-	"ledger-storage-hf",
-	"transient-crypto-hf",
-	"zswap-hf",
-    "zkir-hf"
-]
 erase-proof = []
 test-utils = []

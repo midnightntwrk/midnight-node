@@ -2,10 +2,15 @@
   "constructor": 0,
   "fields": [
     {
-      "bytes": ""
+      "constructor": 0,
+      "fields": [
+        {
+          "bytes": "db580b78dfe6ae1dac9370bd6910e32eea87897c81b7af4a07ee3aae"
+        }
+      ]
     },
     {
-      "bytes": "17"
+      "bytes": "73afbe856ba65bb0868b7421c7306afe5278240a8913a23dcd2717de48f2464825"
     }
   ]
 }

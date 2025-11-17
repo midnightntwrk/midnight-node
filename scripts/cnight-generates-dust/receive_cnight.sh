@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Network = testnet
-export CARDANO_NODE_NETWORK_ID=2
+export CARDANO_NODE_NETWORK_ID=42
 
 # pass "alice" or "bob" as parameter to this script
 

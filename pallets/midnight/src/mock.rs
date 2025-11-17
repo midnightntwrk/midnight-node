@@ -101,7 +101,6 @@ impl Get<BlockReward> for LedgerBlockReward {
 }
 
 impl pallet_midnight::Config for Test {
-	type WeightInfo = ();
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }

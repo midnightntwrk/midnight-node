@@ -16,22 +16,44 @@ use crate::{
 		BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt,
 		ContractDeployInfo, DefaultDB, DeserializedTransactionsWithContext, IntentInfo,
 		IntentToFile, MerkleTreeContract, OfferInfo, ProofProvider, ProofType, SignatureType,
-		TransactionWithContext, Wallet, WalletSeed,
+		TransactionWithContext, VerifyingKey, Wallet, WalletSeed,
 	},
 	serde_def::SourceTransactions,
 	tx_generator::builder::{ContractDeployArgs, CreateIntentInfo},
 };
 use async_trait::async_trait;
+use midnight_node_ledger_helpers::UnshieldedWallet;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder {
 	funding_seed: String,
+	committee: Vec<VerifyingKey>,
+	committee_threshold: u32,
 	rng_seed: Option<[u8; 32]>,
 }
 
 impl ContractDeployBuilder {
 	pub fn new(args: ContractDeployArgs) -> Self {
-		Self { funding_seed: args.funding_seed, rng_seed: args.rng_seed }
+		let ContractDeployArgs {
+			funding_seed,
+			authority_seeds: mut committee_seeds,
+			authority_threshold: committee_threshold,
+			rng_seed,
+		} = args;
+
+		// Set the funding seed as the committee if none is passed
+		if committee_seeds.is_empty() {
+			committee_seeds = vec![Wallet::<DefaultDB>::wallet_seed_decode(&funding_seed)];
+		}
+
+		let committee: Vec<_> = committee_seeds
+			.iter()
+			.map(|s| UnshieldedWallet::default(*s).signing_key().verifying_key().clone())
+			.collect();
+
+		let committee_threshold = committee_threshold.unwrap_or_else(|| committee.len() as u32);
+
+		Self { funding_seed, committee, committee_threshold, rng_seed }
 	}
 }
 
@@ -52,7 +74,12 @@ impl CreateIntentInfo for ContractDeployBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
 		println!("Create intent info for contract deploy");
 		let deploy_contract: Box<dyn BuildContractAction<DefaultDB>> =
-			Box::new(ContractDeployInfo { type_: MerkleTreeContract::new(), _marker: PhantomData });
+			Box::new(ContractDeployInfo {
+				type_: MerkleTreeContract::new(),
+				committee: self.committee.clone(),
+				committee_threshold: self.committee_threshold,
+				_marker: PhantomData,
+			});
 
 		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![deploy_contract];
 

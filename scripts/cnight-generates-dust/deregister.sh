@@ -14,22 +14,24 @@
 # limitations under the License.
 
 # Network = testnet
-export CARDANO_NODE_NETWORK_ID=2
+export CARDANO_NODE_NETWORK_ID=42
 
 # pass "alice" or "bob" as parameter to this script
 
 # Get the collateral UTxO
-COLLATERAL=$(< collateral-$1.utxo)
+COLLATERAL=ea22bb7b5f8787dc31985fd86d3d209459018180486074165e29401705de8795#0
 
 # Pick the first UTxO on the wallet that is not a collateral.
 # THIS IS VERY ERROR PRONE AND I EXPECT IT TO BREAK EVENTUALLY
-UTXO=$(cardano-cli conway query utxo --address $(< payment-$1.addr) --output-json | jq -r 'keys' | jq '.[]' | grep -v $COLLATERAL | head -n1 | tr -d '"')
+UTXO=52956f41579e93d8fb12847476915b2f33e4bb5e494d6e0843822b5d7544e93a#1
 
 # This needs to be entered manually.  UTxO to spend can be obtained from
 # cardanoscan.io or remembered from a registration transaction.  NOTE: at the
 # moment smart contracts are just stubs, so it is possible for Alice to
 # deregister Bob and vice versa.
-REGISTRATION_UTXO=2f20ab66106104478df2c57e5f86c295840df75ff136ed1d9af6d2da0c52b97b#0
+REGISTRATION_UTXO=52956f41579e93d8fb12847476915b2f33e4bb5e494d6e0843822b5d7544e93a#0
+
+USER_PKH=$(cardano-cli address key-hash --payment-verification-key-file payment-$1.vkey)
 
 rm deregister-$1.tx 2>/dev/null
 rm deregister-$1-signed.tx 2>/dev/null
@@ -38,14 +40,15 @@ rm deregister-$1-signed.tx 2>/dev/null
 cardano-cli conway transaction build \
   --tx-in $UTXO \
   --tx-in $REGISTRATION_UTXO \
-  --tx-in-script-file mapping_validator.plutus \
+  --tx-in-script-file auth_token_policy.plutus \
   --tx-in-redeemer-value "{}" \
-  --tx-out $(< payment-$1.addr)+"20000000" \
+  --tx-out $(< payment-$1.addr)+"2000000" \
   --tx-in-collateral $COLLATERAL \
   --mint="-1 $(< auth_token.hash)" \
   --mint-script-file auth_token_policy.plutus \
   --mint-redeemer-file deregister_red.json  \
   --change-address $(< payment-$1.addr) \
+  --required-signer-hash $USER_PKH \
   --out-file deregister-$1.tx || exit
 
 # Sign and submit

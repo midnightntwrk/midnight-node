@@ -1,12 +1,13 @@
 name: +audit (cargo deny + npm audit)
 
 on:
+  merge_group:
   pull_request:
     branches: ["**"]
   push:
     branches: ["main"]
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
   run:

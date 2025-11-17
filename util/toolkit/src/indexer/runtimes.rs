@@ -18,6 +18,7 @@ pub enum RuntimeVersion {
 	V0_17_0,
 	V0_17_1,
 	V0_18_0,
+	V0_18_1,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = IndexerError;
@@ -26,6 +27,7 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_017_000 => Ok(Self::V0_17_0),
 			000_017_001 => Ok(Self::V0_17_1),
 			000_018_000 => Ok(Self::V0_18_0),
+			000_018_001 => Ok(Self::V0_18_1),
 			_ => Err(IndexerError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -120,6 +122,12 @@ impl_midnight_metadata!(
 	MidnightMetadata0_18_0,
 	mn_meta_0_18_0,
 	midnight_node_metadata::midnight_metadata_0_18_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata0_18_1,
+	mn_meta_0_18_1,
+	midnight_node_metadata::midnight_metadata_0_18_1
 );
 
 // Manually implement 0.17.0

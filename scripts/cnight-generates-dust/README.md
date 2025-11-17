@@ -32,9 +32,9 @@ Test procedure:
 
   1. Create wallet using `mkWallets.sh`.
 
-  2. Modify `datum-alice.json` to include Base16-encoded wallet address returned
-     by `mkWallets.sh`.  Put it into the first `bytes` field.  Do the same for
-     Bob.  NOTE: DUST address field in both datums is garbage at the moment.
+  2. Modify `datum-alice.json` to include key-hash wallet address returned
+     by `mkWallets.sh`. Put it into the first `bytes` field.  Do the same for
+     Bob. The second `bytes` field contains DUST public key for seeds 0..10 (alice) and 0..11 (bob) (33 bytes)
 
   3. Add funds to wallets, e.f. from [faucet](https://docs.cardano.org/cardano-testnets/tools/faucet)
 
