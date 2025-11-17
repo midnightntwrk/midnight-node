@@ -12,7 +12,7 @@ sidechain-domain.workspace = true
 midnight-primitives.workspace = true
 midnight-primitives-mainchain-follower.workspace = true
 midnight-primitives-cnight-observation.workspace = true
-midnight-node-ledger = { default-features = false, workspace = true }
+midnight-node-ledger.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 log.workspace = true
