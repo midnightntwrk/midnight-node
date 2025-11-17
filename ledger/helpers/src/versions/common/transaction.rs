@@ -330,6 +330,15 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			ctime: now,
 		}));
 		stx.intents = stx.intents.insert(segment_id, intent);
+
+		// Re-compute the binding randomness
+		// if we inserted an intent, we need to do this to avoid a Pedersen check error
+		*tx = Transaction::new(
+			stx.network_id.clone(),
+			stx.intents.clone(),
+			stx.guaranteed_coins.as_ref().map(|c| (**c).clone()),
+			stx.fallible_coins.iter().map(|sp| (*sp.0, (*sp.1).clone())).collect(),
+		);
 	}
 
 	fn gather_dust_spends(

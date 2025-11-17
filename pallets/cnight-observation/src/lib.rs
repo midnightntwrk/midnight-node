@@ -356,15 +356,30 @@ pub mod pallet {
 				utxo_index: header.utxo_index.0,
 			};
 
+			let previous_registration = Self::get_registration(&cardano_reward_address);
+
 			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 			mappings.push(new_reg.clone());
 			Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 
-			if mappings.len() == 1 {
+			let is_registered = Self::is_registered(&cardano_reward_address);
+
+			// Adding a mapping will result in a registration if there were previously no mappings
+			if previous_registration.is_none() && is_registered {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_reward_address,
 					dust_public_key,
-				}));
+				}))
+			}
+
+			// If we previously had a valid registration, and now the amount of mappings now exceeds 1, we've had a Deregistration
+			if let Some(previous_dust_public_key) = previous_registration
+				&& !is_registered
+			{
+				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
+					cardano_reward_address,
+					dust_public_key: previous_dust_public_key,
+				}))
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(new_reg));
@@ -381,7 +396,7 @@ pub mod pallet {
 				utxo_index: header.utxo_index.0,
 			};
 
-			let was_valid = Self::is_registered(&cardano_reward_address);
+			let was_registered = Self::is_registered(&cardano_reward_address);
 			let mut mappings = Mappings::<T>::get(cardano_reward_address);
 
 			if let Some(index) = mappings.iter().position(|x| x == &reg_entry) {
@@ -399,17 +414,18 @@ pub mod pallet {
 				Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 			}
 
-			let is_valid = Self::is_registered(&cardano_reward_address);
+			let registration = Self::get_registration(&cardano_reward_address);
+
 			// A removal of a mapping can be done in the case of an invalid registration, making the mapping a valid registration.
-			if !was_valid && is_valid {
+			if !was_registered && let Some(registered_dust_public_key) = registration {
 				Self::deposit_event(Event::<T>::Registration(Registration {
 					cardano_reward_address,
-					dust_public_key,
+					dust_public_key: registered_dust_public_key,
 				}))
 			}
 
 			// If we previously had a valid registration, then had the amount of mappings brought to 0, we've had a Deregistration
-			if was_valid && !is_valid {
+			if was_registered && registration.is_none() {
 				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
 					cardano_reward_address,
 					dust_public_key,
