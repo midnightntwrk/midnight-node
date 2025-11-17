@@ -198,10 +198,16 @@ where
 
 		let mut utxos = tx.unshielded_utxos();
 
-		if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
+		let operations = if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
 			// Remove from `utxos` the `segments` that failed
 			utxos.remove_failed_segments(&segments);
-		}
+
+			// Filter failed `segments` from our `operations`
+			tx.calls_and_deploys(Some(segments.keys().copied().collect()))
+		} else {
+			// We don't want to filter any `segments`
+			tx.calls_and_deploys(None)
+		};
 
 		let (utxo_outputs, utxo_inputs) =
 			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
@@ -218,7 +224,7 @@ where
 			unshielded_utxos_spent: utxo_inputs,
 		};
 
-		for op in tx.calls_and_deploys() {
+		for op in operations {
 			match op {
 				TransactionOperation::Call { address, .. } => {
 					event.call_addresses.push(api.tagged_serialize(&address)?);
@@ -335,7 +341,7 @@ where
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
-		let operations = tx.calls_and_deploys().try_fold(Vec::new(), |mut acc, cd| {
+		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
 			let a = match cd {
 				TransactionOperation::Call { address, entry_point } => {
 					Op::Call { address: api.tagged_serialize(&address)?, entry_point }
