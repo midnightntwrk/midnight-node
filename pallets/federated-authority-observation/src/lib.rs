@@ -25,6 +25,7 @@ use frame_support::{
 use frame_system::pallet_prelude::*;
 use midnight_primitives_federated_authority_observation::{
 	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER, InherentError,
+	MainchainMember,
 };
 pub use pallet::*;
 use sidechain_domain::{MainchainAddress, PolicyId};
@@ -66,6 +67,16 @@ pub mod pallet {
 	/// Policy ID for Technical Committee members on Cardano
 	pub type MainChainTechnicalCommitteePolicyId<T: Config> = StorageValue<_, PolicyId, ValueQuery>;
 
+	#[pallet::storage]
+	/// Mainchain member identifiers for Council members
+	pub type CouncilMainchainMembers<T: Config> =
+		StorageValue<_, BoundedVec<MainchainMember, T::CouncilMaxMembers>, ValueQuery>;
+
+	#[pallet::storage]
+	/// Mainchain member identifiers for Technical Committee members
+	pub type TechnicalCommitteeMainchainMembers<T: Config> =
+		StorageValue<_, BoundedVec<MainchainMember, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
+
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// The MAX number of members for the Council
@@ -96,6 +107,8 @@ pub mod pallet {
 		pub council_policy_id: PolicyId,
 		pub technical_committee_address: MainchainAddress,
 		pub technical_committee_policy_id: PolicyId,
+		pub council_members_mainchain: Vec<MainchainMember>,
+		pub technical_committee_members_mainchain: Vec<MainchainMember>,
 		#[serde(skip)]
 		pub _config: core::marker::PhantomData<T>,
 	}
@@ -109,6 +122,24 @@ pub mod pallet {
 			MainChainTechnicalCommitteePolicyId::<T>::set(
 				self.technical_committee_policy_id.clone(),
 			);
+
+			// Set mainchain members
+			let council_mainchain_members: BoundedVec<MainchainMember, T::CouncilMaxMembers> = self
+				.council_members_mainchain
+				.clone()
+				.try_into()
+				.expect("Council mainchain members exceeds max members");
+			CouncilMainchainMembers::<T>::set(council_mainchain_members);
+
+			let technical_committee_mainchain_members: BoundedVec<
+				MainchainMember,
+				T::TechnicalCommitteeMaxMembers,
+			> = self
+				.technical_committee_members_mainchain
+				.clone()
+				.try_into()
+				.expect("Technical committee mainchain members exceeds max members");
+			TechnicalCommitteeMainchainMembers::<T>::set(technical_committee_mainchain_members);
 		}
 	}
 
@@ -116,10 +147,14 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// Council members reset
-		CouncilMembersReset { members: BoundedVec<T::AccountId, T::CouncilMaxMembers> },
+		CouncilMembersReset {
+			members: BoundedVec<T::AccountId, T::CouncilMaxMembers>,
+			members_mainchain: BoundedVec<MainchainMember, T::CouncilMaxMembers>,
+		},
 		/// Technical Committee members reset
 		TechnicalCommitteeMembersReset {
 			members: BoundedVec<T::AccountId, T::TechnicalCommitteeMaxMembers>,
+			members_mainchain: BoundedVec<MainchainMember, T::TechnicalCommitteeMaxMembers>,
 		},
 	}
 
@@ -144,14 +179,21 @@ pub mod pallet {
 		#[allow(clippy::useless_conversion)]
 		pub fn reset_members(
 			origin: OriginFor<T>,
-			council_authorities: Vec<T::AccountId>,
-			technical_committee_authorities: Vec<T::AccountId>,
+			council_authorities: Vec<(T::AccountId, MainchainMember)>,
+			technical_committee_authorities: Vec<(T::AccountId, MainchainMember)>,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
 
-			// Reset Council members if provided
+			let (council_account_ids, council_mainchain_members): (Vec<_>, Vec<_>) =
+				council_authorities.into_iter().unzip();
+			let (technical_committee_account_ids, technical_committee_mainchain_members): (
+				Vec<_>,
+				Vec<_>,
+			) = technical_committee_authorities.into_iter().unzip();
+
+			// Prepare Council members
 			let mut council_members: BoundedVec<T::AccountId, T::CouncilMaxMembers> =
-				BoundedVec::try_from(council_authorities.clone())
+				BoundedVec::try_from(council_account_ids.clone())
 					.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
@@ -165,27 +207,53 @@ pub mod pallet {
 			let council_members_have_changed =
 				council_current_members.as_slice() != council_members.as_slice();
 
-			// Only if Council membership has changed
+			// Prepare Council mainchain members
+			let council_mainchain_members: BoundedVec<MainchainMember, T::CouncilMaxMembers> =
+				BoundedVec::try_from(council_mainchain_members.clone())
+					.map_err(|_| Error::<T>::TooManyMembers)?;
+
+			// Make sure an empty set of mainchain members is not allowed
+			ensure!(!council_mainchain_members.is_empty(), Error::<T>::EmptyMembers);
+
+			let council_current_mainchain_members = CouncilMainchainMembers::<T>::get();
+
+			let council_mainchain_members_have_changed =
+				council_current_mainchain_members != council_mainchain_members;
+
+			// If Council membership has changed
 			if council_members_have_changed {
 				T::CouncilMembershipHandler::set_members_sorted(
 					&council_members[..],
 					&council_current_members,
 				);
+			}
 
-				Self::deposit_event(Event::<T>::CouncilMembersReset { members: council_members });
+			// If Council mainchain membership has changed
+			if council_mainchain_members_have_changed {
+				CouncilMainchainMembers::<T>::put(&council_mainchain_members);
+			}
+
+			let council_has_changed =
+				council_members_have_changed || council_mainchain_members_have_changed;
+
+			if council_has_changed {
+				Self::deposit_event(Event::<T>::CouncilMembersReset {
+					members: council_members,
+					members_mainchain: council_mainchain_members,
+				});
 
 				actual_weight =
 					actual_weight.saturating_add(T::WeightInfo::reset_members_only_council(
-						council_authorities.len() as u32,
-						technical_committee_authorities.len() as u32,
+						council_account_ids.len() as u32,
+						technical_committee_account_ids.len() as u32,
 					));
 			}
 
-			// Reset Technical Committee members if provided
+			// Prepare Technical Committee members
 			let mut technical_committee_members: BoundedVec<
 				T::AccountId,
 				T::TechnicalCommitteeMaxMembers,
-			> = BoundedVec::try_from(technical_committee_authorities.clone())
+			> = BoundedVec::try_from(technical_committee_account_ids.clone())
 				.map_err(|_| Error::<T>::TooManyMembers)?;
 
 			// Make sure an empty set of members is not allowed
@@ -195,33 +263,64 @@ pub mod pallet {
 			let technical_committee_current_members =
 				T::TechnicalCommitteeMembershipHandler::sorted_members();
 
-			let technical_committee_has_changed = technical_committee_current_members.as_slice()
+			let technical_committee_members_have_changed = technical_committee_current_members
+				.as_slice()
 				!= technical_committee_members.as_slice();
 
-			// Only if Technical Committee membership has changed
-			if technical_committee_has_changed {
+			// Prepare technical committee mainchain members
+			let technical_committee_mainchain_members: BoundedVec<
+				MainchainMember,
+				T::TechnicalCommitteeMaxMembers,
+			> = BoundedVec::try_from(technical_committee_mainchain_members.clone())
+				.map_err(|_| Error::<T>::TooManyMembers)?;
+
+			// Make sure an empty set of mainchain members is not allowed
+			ensure!(!technical_committee_mainchain_members.is_empty(), Error::<T>::EmptyMembers);
+
+			let technical_committee_current_mainchain_members =
+				TechnicalCommitteeMainchainMembers::<T>::get();
+
+			let technical_committee_mainchain_members_have_changed =
+				technical_committee_current_mainchain_members
+					!= technical_committee_mainchain_members;
+
+			// If Technical Committee membership has changed
+			if technical_committee_members_have_changed {
 				T::TechnicalCommitteeMembershipHandler::set_members_sorted(
 					&technical_committee_members[..],
 					&technical_committee_current_members,
 				);
+			}
 
+			// If Technical Committee mainchain membership has changed
+			if technical_committee_mainchain_members_have_changed {
+				TechnicalCommitteeMainchainMembers::<T>::put(
+					&technical_committee_mainchain_members,
+				);
+			}
+
+			let technical_committee_has_changed = technical_committee_members_have_changed
+				|| technical_committee_mainchain_members_have_changed;
+
+			if technical_committee_has_changed {
 				Self::deposit_event(Event::<T>::TechnicalCommitteeMembersReset {
 					members: technical_committee_members,
+					members_mainchain: technical_committee_mainchain_members,
 				});
 
 				actual_weight = actual_weight.saturating_add(
 					T::WeightInfo::reset_members_only_technical_committee(
-						council_authorities.len() as u32,
-						technical_committee_authorities.len() as u32,
+						council_account_ids.len() as u32,
+						technical_committee_account_ids.len() as u32,
 					),
 				);
 			}
 
 			// If nothing changed, return correct weight
-			if !council_members_have_changed && !technical_committee_has_changed {
+			if !council_has_changed && !technical_committee_has_changed {
 				actual_weight = T::WeightInfo::reset_members_none(
-					council_authorities.len() as u32,
-					technical_committee_authorities.len() as u32,
+					council_account_ids.len() as u32,
+					technical_committee_account_ids.len() as u32,
 				);
 			}
 
@@ -289,13 +388,10 @@ pub mod pallet {
 			let fed_auth_data = Self::get_data_from_inherent_data(data).unwrap_or_default()?;
 
 			let council_authorities =
-				Self::decode_auth_accounts(fed_auth_data.council_authorities, "council").ok()?;
+				Self::decode_auth_accounts(fed_auth_data.council_authorities).ok()?;
 
-			let technical_committee_authorities = Self::decode_auth_accounts(
-				fed_auth_data.technical_committee_authorities,
-				"technical committee",
-			)
-			.ok()?;
+			let technical_committee_authorities =
+				Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities).ok()?;
 
 			if !council_authorities.is_empty() && !technical_committee_authorities.is_empty() {
 				Some(Call::reset_members { council_authorities, technical_committee_authorities })
@@ -314,11 +410,8 @@ pub mod pallet {
 		) -> Result<(), Self::Error> {
 			// Validate the federated authority data from inherent
 			if let Some(fed_auth_data) = Self::get_data_from_inherent_data(data)? {
-				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities, "council")?;
-				let _ = Self::decode_auth_accounts(
-					fed_auth_data.technical_committee_authorities,
-					"technical committee",
-				)?;
+				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities)?;
+				let _ = Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities)?;
 			}
 
 			Ok(())
@@ -333,22 +426,23 @@ pub mod pallet {
 				.map_err(|_| InherentError::DecodeFailed)
 		}
 
-		/// Transform `AuthorityMemberPublicKey`` into `T::AccountId`
+		/// Transform `Vec<(AuthorityMemberPublicKey, MainchainMember)>` into `Vec<(T::AccountId, MainchainMember)>`
 		fn decode_auth_accounts(
-			auth_data: Vec<AuthorityMemberPublicKey>,
-			body: &'static str,
-		) -> Result<Vec<T::AccountId>, InherentError> {
+			auth_data: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+		) -> Result<Vec<(T::AccountId, MainchainMember)>, InherentError> {
 			auth_data
 				.into_iter()
-				.map(|key| {
-					T::AccountId::decode(&mut &key.0[..]).map_err(|_| {
-						log::error!(
-							target: "federated-authority-observation",
-							"Failed to decode {body:?} authority key: {:?}",
-							key.0
-						);
-						InherentError::DecodeFailed
-					})
+				.map(|(key, mainchain_member)| {
+					T::AccountId::decode(&mut &key.0[..])
+						.map(|account_id| (account_id, mainchain_member))
+						.map_err(|_| {
+							log::error!(
+								target: "federated-authority-observation",
+								"Failed to decode authority key: {:?}",
+								key.0
+							);
+							InherentError::DecodeFailed
+						})
 				})
 				.collect::<Result<Vec<_>, _>>()
 		}

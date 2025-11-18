@@ -6,7 +6,6 @@ use crate::{
 	},
 	serde_def::SourceTransactions,
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
-	tx_generator::builder::ContractDeployArgs,
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
@@ -46,7 +45,8 @@ pub struct CustomContractBuilder {
 impl CustomContractBuilder {
 	pub fn new(args: CustomContractArgs) -> Self {
 		let CustomContractArgs {
-			info: ContractDeployArgs { funding_seed, rng_seed },
+			funding_seed,
+			rng_seed,
 			compiled_contract_dirs,
 			intent_files,
 			utxo_inputs,

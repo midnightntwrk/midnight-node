@@ -5,7 +5,9 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
+};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
@@ -100,9 +102,9 @@ pub struct DeployArgs {
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
-	/// A public BIP-340 signing key, hex encoded.
-	#[arg(long)]
-	signing: Option<String>,
+	/// Contract maintenance authority seed.
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	authority_seed: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
@@ -145,8 +147,9 @@ pub struct SharedMaintainArgs {
 pub struct MaintainContractArgs {
 	#[command(flatten)]
 	shared: SharedMaintainArgs,
+	#[arg(value_parser = cli::wallet_seed_decode)]
 	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
-	new_signing: String,
+	new_authority: WalletSeed,
 }
 
 #[derive(Args, Debug)]
@@ -222,8 +225,13 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		if let Some(ref signing) = args.signing {
-			cmd_args.extend_from_slice(&["--signing", signing]);
+		let signing_key = args.authority_seed.map(|s| {
+			serialize_untagged(UnshieldedWallet::default(s).signing_key())
+				.unwrap()
+				.encode_hex::<String>()
+		});
+		if let Some(ref key) = signing_key {
+			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
@@ -314,16 +322,20 @@ impl ToolkitJs {
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		match &command {
-			MaintainCommand::Contract(args) => {
-				cmd_args.push(&args.new_signing);
+		let new_authority = match command {
+			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
+				Some(new_authority.as_bytes().encode_hex::<String>())
 			},
-			MaintainCommand::Circuit(args) => {
-				cmd_args.push(&args.circuit_id);
-				if let Some(vk_path) = &args.verifier {
-					cmd_args.push(&vk_path);
-				}
-			},
+			_ => None,
+		};
+		if let Some(ref new_authority) = new_authority {
+			cmd_args.push(new_authority)
+		}
+		if let MaintainCommand::Circuit(args) = &command {
+			cmd_args.push(&args.circuit_id);
+			if let Some(vk_path) = &args.verifier {
+				cmd_args.push(&vk_path);
+			}
 		}
 		self.execute_js(&cmd_args)?;
 		println!("written: {}", args.output_intent);
