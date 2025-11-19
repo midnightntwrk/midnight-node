@@ -179,7 +179,7 @@ rebuild-genesis-state:
                 "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002", \
                 "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003", \
                 "wallet-seed-3": "0000000000000000000000000000000000000000000000000000000000000004", \
-                "wallet-seed-4": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d",
+                "wallet-seed-4": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d" \
             }' > /secrets/genesis-seeds.json; \
         fi
 
