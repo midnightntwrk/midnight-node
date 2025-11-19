@@ -176,6 +176,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
+		should_skip_failed_segments: bool,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_processing_time = Instant::now();
@@ -203,7 +204,9 @@ where
 			utxos.remove_failed_segments(&segments);
 
 			// Filter failed `segments` from our `operations`
-			tx.calls_and_deploys(Some(segments.keys().copied().collect()))
+			tx.calls_and_deploys(
+				should_skip_failed_segments.then(|| segments.keys().copied().collect()),
+			)
 		} else {
 			// We don't want to filter any `segments`
 			tx.calls_and_deploys(None)
