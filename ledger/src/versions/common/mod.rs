@@ -199,18 +199,17 @@ where
 
 		let mut utxos = tx.unshielded_utxos();
 
-		let operations = if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
-			// Remove from `utxos` the `segments` that failed
-			utxos.remove_failed_segments(&segments);
+		let failed_segments =
+			if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
+				// Remove from `utxos` the `segments` that failed
+				utxos.remove_failed_segments(&segments);
+				Some(segments.keys().copied().collect())
+			} else {
+				None
+			};
 
-			// Filter failed `segments` from our `operations`
-			tx.calls_and_deploys(
-				should_skip_failed_segments.then(|| segments.keys().copied().collect()),
-			)
-		} else {
-			// We don't want to filter any `segments`
-			tx.calls_and_deploys(None)
-		};
+		let operations =
+			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
 
 		let (utxo_outputs, utxo_inputs) =
 			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
