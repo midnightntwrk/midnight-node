@@ -49,7 +49,7 @@ pub struct ShowTransactionArgs {
 }
 
 pub fn execute(args: ShowTransactionArgs) -> InnerReturnType {
-	if !args.from_bytes {
+	if args.from_bytes {
 		tx_from_bytes(args.src_file, args.with_context)
 	} else {
 		tx_from_file(args.src_file, args.with_context)
@@ -69,14 +69,22 @@ fn tx_from_bytes(src_file: String, with_context: bool) -> InnerReturnType {
 }
 
 fn tx_from_file(src_file: String, with_context: bool) -> InnerReturnType {
-	let bytes = std::fs::read(&src_file)?;
+	let file_content = std::fs::read(&src_file)?;
+	// Some IDEs auto-add an extra empty line at the end of the file
+	let tx_hex: String = String::from_utf8_lossy(&file_content)
+		.chars()
+		.filter(|c| c.is_ascii_hexdigit())
+		.collect();
+
+	let tx_bytes = hex::decode(&tx_hex)?;
+
 	Ok(ShowTransactionResult {
 		transaction: if with_context {
-			TransactionInfo::TransactionWithContext(deserialize(bytes.as_slice())?)
+			TransactionInfo::TransactionWithContext(deserialize(tx_bytes.as_slice())?)
 		} else {
-			TransactionInfo::Transaction(deserialize(bytes.as_slice())?)
+			TransactionInfo::Transaction(deserialize(tx_bytes.as_slice())?)
 		},
-		size: bytes.len(),
+		size: tx_bytes.len(),
 	})
 }
 
