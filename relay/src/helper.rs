@@ -8,6 +8,7 @@ use mn_meta::runtime_types::sp_consensus_beefy::{
 	ValidatorSet as MidnBeefyValidatorSet, ecdsa_crypto::Public as MidnBeefyPublic,
 };
 use pallas::codec::minicbor::to_vec;
+use subxt::utils::to_hex;
 
 pub trait HexExt {
 	fn as_hex(&self) -> String;
@@ -15,7 +16,7 @@ pub trait HexExt {
 
 impl HexExt for sp_core::Bytes {
 	fn as_hex(&self) -> String {
-		hex::encode(&self[..])
+		to_hex(&self[..])
 	}
 }
 
@@ -23,19 +24,19 @@ impl HexExt for pallas::ledger::primitives::PlutusData {
 	fn as_hex(&self) -> String {
 		let plutus_to_vec = to_vec(self).expect("should be able to convert to Vec<u8>");
 
-		hex::encode(&plutus_to_vec)
+		to_hex(&plutus_to_vec)
 	}
 }
 
 impl HexExt for Vec<u8> {
 	fn as_hex(&self) -> String {
-		hex::encode(self)
+		to_hex(self)
 	}
 }
 
 impl HexExt for [u8; 32] {
 	fn as_hex(&self) -> String {
-		hex::encode(self)
+		to_hex(self)
 	}
 }
 

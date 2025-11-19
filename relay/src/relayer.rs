@@ -69,19 +69,13 @@ impl Relayer {
 		// The commitment block number to create proof from
 		let block_to_query = beef_signed_commitment.commitment.block_number;
 
-		// Generate the mmr proof
-		let mmr_proof = self.get_mmr_proof(block_to_query, best_block, at_block_hash).await?;
-		println!("Get MMR Proof: {mmr_proof:?}");
-
 		// retrieve necessary data in creating the proof
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
 		println!("Get Validator Set: {validator_set:?}");
 
-		let authorities_proof = AuthoritiesProof::try_new(&beef_signed_commitment, &validator_set)?;
-		
 		// generate the proof
 		let relay_chain_proof =
-			RelayChainProof::generate(beef_signed_commitment, mmr_proof, validator_set)?;
+			RelayChainProof::generate(beef_signed_commitment, validator_set)?;
 
 		// display the proofs
 		let plutus_data = relay_chain_proof.to_plutus_data();

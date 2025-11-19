@@ -4,8 +4,8 @@
 use std::{fmt::Debug, ops::Deref as _};
 
 use crate::{
-	BeefyId, BeefySignedCommitment, BeefyValidatorSet, MmrProof, authorities::AuthoritiesProof,
-	helper::HexExt, mmr::get_beefy_ids_with_stakes,
+	BeefyId, BeefySignedCommitment, BeefyValidatorSet, authorities::AuthoritiesProof,
+	helper::HexExt,
 };
 
 use pallas::{
@@ -29,18 +29,20 @@ pub struct RelayChainProof {
 }
 
 impl RelayChainProof {
+	/// Returns the relaychain proof
+	/// 
+	/// # Arguments
+	/// * `beefy_signed_commitment` - the commitment file signed by majority of the authorities in beefy
+	/// * `validator_set` - the current active validators
 	pub fn generate(
 		beefy_signed_commitment: BeefySignedCommitment,
-		mmr_proof: MmrProof,
 		validator_set: BeefyValidatorSet,
 	) -> Result<Self, crate::error::Error> {
-		let mut beefy_ids_and_stakes = get_beefy_ids_with_stakes(&mmr_proof)?;
 
 		// generate proofs for each signer in the commitment, with the validator set as basis
 		let proof = AuthoritiesProof::try_new(
 			&beefy_signed_commitment,
-			&validator_set,
-			&mut beefy_ids_and_stakes,
+			&validator_set
 		)?;
 
 		Ok(RelayChainProof {
