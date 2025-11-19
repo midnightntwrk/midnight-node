@@ -53,7 +53,7 @@ mod test {
 	use crate::{Cli, run_command};
 	use clap::Parser;
 	use midnight_node_toolkit::cli_parsers::hex_str_decode;
-	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
 	use std::fs;
 	use tempfile::tempdir;
 
@@ -106,12 +106,11 @@ mod test {
 		};
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");
-		let info =
-			ContractDeployArgs { funding_seed: FUNDING_SEED.to_string(), rng_seed: Some(rng_seed) };
 
 		let contract_args = CustomContractArgs {
-			info,
-			compiled_contract_dir: compiled_contract_dir.to_string(),
+			funding_seed: FUNDING_SEED.to_string(),
+			rng_seed: Some(rng_seed),
+			compiled_contract_dirs: vec![compiled_contract_dir.to_string()],
 			intent_files: vec![intent_file],
 			utxo_inputs: vec![],
 			zswap_state_file: None,
@@ -128,37 +127,5 @@ mod test {
 
 		execute(args).await.expect("should work during sending");
 		assert!(fs::exists(output_file).expect("should_exist"));
-	}
-
-	#[tokio::test]
-	#[ignore = "due to ledger bug PM-19672, this doesn't work yet"]
-	async fn test_mint_tx() {
-		let out_dir = tempfile::tempdir().unwrap();
-
-		let toolkit_js_path = "../toolkit-js".to_string();
-		let compiled_contract_dir = format!("{toolkit_js_path}/mint/out");
-		let output_tx = out_dir.path().join("mint_tx.mn").to_string_lossy().to_string();
-
-		let args = vec![
-			"midnight-node-toolkit",
-			"send-intent",
-			"--src-file",
-			"../../res/genesis/genesis_block_undeployed.mn",
-			"./test-data/contract/mint/deploy_tx.mn",
-			"--intent-file",
-			"./test-data/contract/mint/mint.bin",
-			"--zswap-state-file",
-			"./test-data/contract/mint/mint_zswap.json",
-			"--compiled-contract-dir",
-			&compiled_contract_dir,
-			"--to-bytes",
-			"--dest-file",
-			&output_tx,
-		];
-
-		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
-
-		assert!(fs::exists(&output_tx).unwrap());
 	}
 }

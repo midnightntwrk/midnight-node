@@ -26,6 +26,18 @@ use sp_core::{ByteArray, sr25519};
 /// The inherent identifier for federated authority observation
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"faobsrve";
 
+/// Alias for mainchain member identifier (28 bytes PolicyId)
+pub type MainchainMember = PolicyId;
+
+/// Convert Ed25519 public key to MainchainMember by taking first 28 bytes
+#[cfg(feature = "std")]
+pub fn ed25519_to_mainchain_member(public: sp_core::ed25519::Public) -> MainchainMember {
+	let bytes = public.0;
+	let mut mainchain_bytes = [0u8; 28];
+	mainchain_bytes.copy_from_slice(&bytes[..28]);
+	PolicyId(mainchain_bytes)
+}
+
 /// Custom deserializer for vector of hex-encoded sr25519 public keys
 #[cfg(feature = "std")]
 fn vec_hex_to_vec_sr25519<'de, D>(
@@ -55,14 +67,13 @@ where
 pub struct AuthorityMemberPublicKey(pub Vec<u8>);
 
 /// Placeholder structure for federated authority data from main chain
-/// This will contain sr25519 public keys for federated authorities
+/// This will contain sr25519 public keys and mainchain member hashes for federated authorities
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]
-// #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct FederatedAuthorityData {
-	/// List of sr25519 authority public keys
-	pub council_authorities: Vec<AuthorityMemberPublicKey>,
-	/// List of sr25519 authority public keys
-	pub technical_committee_authorities: Vec<AuthorityMemberPublicKey>,
+	/// List of tuples (sr25519 authority public key, mainchain member hash)
+	pub council_authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+	/// List of tuples (sr25519 authority public key, mainchain member hash)
+	pub technical_committee_authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
 	/// Main chain block hash this data was observed at
 	pub mc_block_hash: McBlockHash,
 }
@@ -84,6 +95,22 @@ impl sp_inherents::IsFatalError for InherentError {
 	}
 }
 
+/// Custom deserializer for vector of hex-encoded mainchain member hashes (MainchainMember)
+#[cfg(feature = "std")]
+fn vec_hex_to_vec_mainchain_member<'de, D>(
+	deserializer: D,
+) -> Result<alloc::vec::Vec<MainchainMember>, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let strings: alloc::vec::Vec<alloc::string::String> =
+		alloc::vec::Vec::deserialize(deserializer)?;
+	strings
+		.into_iter()
+		.map(|s| MainchainMember::decode_hex(&s).map_err(serde::de::Error::custom))
+		.collect()
+}
+
 /// Configuration for observing a governance body
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +122,9 @@ pub struct AuthBodyConfig {
 	/// Initial members of this governance body (for genesis)
 	#[serde(deserialize_with = "vec_hex_to_vec_sr25519")]
 	pub members: Vec<sp_core::sr25519::Public>,
+	/// Initial mainchain member hashes (for genesis)
+	#[serde(deserialize_with = "vec_hex_to_vec_mainchain_member")]
+	pub members_mainchain: Vec<MainchainMember>,
 }
 
 /// Configuration for Federated Authority Observation

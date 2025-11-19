@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use sp_consensus_beefy::{VersionedFinalityProof, ecdsa_crypto::Signature as EcdsaSignature};
 use sp_core::Bytes;
 use subxt::{
@@ -7,7 +9,7 @@ use subxt::{
 		client::{RpcParams, RpcSubscription},
 		rpc_params,
 	},
-	runtime_api::Payload,
+	runtime_api::Payload as SubxtPayload
 };
 
 use crate::{
@@ -62,7 +64,7 @@ impl Relayer {
 			parity_scale_codec::Decode::decode(&mut &justification[..])?;
 
 		// Identifies whether using from best block, or the commitment's block hash
-		let (best_block, at_block_hash) = self.choose_params(&beef_signed_commitment).await?;
+		let (_best_block, at_block_hash) = self.choose_params(&beef_signed_commitment).await?;
 
 		// The commitment block number to create proof from
 		let block_to_query = beef_signed_commitment.commitment.block_number;
@@ -75,6 +77,8 @@ impl Relayer {
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
 		println!("Get Validator Set: {validator_set:?}");
 
+		let authorities_proof = AuthoritiesProof::try_new(&beef_signed_commitment, &validator_set)?;
+		
 		// generate the proof
 		let relay_chain_proof =
 			RelayChainProof::generate(beef_signed_commitment, mmr_proof, validator_set)?;
@@ -170,7 +174,7 @@ impl Relayer {
 	}
 
 	/// Helper function for querying via the runtime api
-	async fn runtime_api<T: Payload>(
+	async fn runtime_api<T: SubxtPayload>(
 		&self,
 		at_block_hash: Option<BlockHash>,
 		payload: T,

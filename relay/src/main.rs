@@ -5,7 +5,7 @@ mod beefy_keys;
 mod cardano_encoding;
 mod error;
 mod helper;
-mod mmr;
+mod justification;
 mod relayer;
 
 use clap::Parser;
@@ -24,8 +24,8 @@ pub type BeefySignedCommitment =
 	sp_consensus_beefy::SignedCommitment<BlockNumber, sp_consensus_beefy::ecdsa_crypto::Signature>;
 
 pub type BeefyId = sp_consensus_beefy::ecdsa_crypto::AuthorityId;
-pub type BeefyIdWithStake = (BeefyId, Stake);
-pub type BeefyIdsWithStakes = Vec<BeefyIdWithStake>;
+pub type BeefyStake = (BeefyId, u64);
+pub type BeefyStakes = Vec<BeefyStake>;
 
 /// BEEFY Relayer CLI
 #[derive(Parser, Debug)]

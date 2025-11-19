@@ -1,10 +1,13 @@
-use std::fmt::Debug;
+#![allow(dead_code)]
 
 use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
 use sp_core::keccak_256;
+use subxt::utils::to_hex;
 
-use crate::{BeefyIdWithStake, BeefyIdsWithStakes, BeefySignedCommitment, Error, helper::HexExt};
+use crate::{
+	BeefySignedCommitment, BeefyStake, BeefyStakes, Error, justification::BeefyStakesInfo,
+};
 
 pub type Hash = [u8; 32];
 pub type RootHash = sp_core::H256;
@@ -28,20 +31,19 @@ impl AuthoritiesProof {
 	/// # Arguments
 	/// * `beefy_signed_commitment` - the commitment file signed by majority of the authorities in beefy
 	/// * `validator_set` - the current active validators
-	/// * `extra_data` - contains all the beefy validators and their corresponding stakes
 	pub fn try_new(
 		beefy_signed_commitment: &BeefySignedCommitment,
 		validator_set: &ValidatorSet<EcdsaPublic>,
-		beefy_ids_and_stakes: &mut BeefyIdsWithStakes,
 	) -> Result<Self, Error> {
 		// collect signatures
 		let sig_indices = collect_signature_indices(beefy_signed_commitment, validator_set)?;
 
-		// extract only the validators
-		let ecdsa_validators = validator_set.validators();
+		let payload = &beefy_signed_commitment.commitment.payload;
+		let stakes_info = BeefyStakesInfo::try_from(payload)?;
+		println!("Beefy Stakes Info: {stakes_info:#?}");
 
-		// merge ecdsa validators and their respective stakes, then convert into keccak hashes
-		let keccak_hashes = prep_merkle_leaves(ecdsa_validators, beefy_ids_and_stakes);
+		// convert current stakes into keccak hashes
+		let keccak_hashes = prep_merkle_leaves(stakes_info.current_stakes);
 
 		// create the merkle tree
 		let tree = rs_merkle::MerkleTree::<KeccakHasher>::from_leaves(&keccak_hashes);
@@ -52,7 +54,7 @@ impl AuthoritiesProof {
 
 		let proof = tree.ordered_proof_tree(&sig_indices);
 
-		Ok(AuthoritiesProof { root, total_leaves: ecdsa_validators.len() as u32, proof })
+		Ok(AuthoritiesProof { root, total_leaves: validator_set.validators().len() as u32, proof })
 	}
 }
 
@@ -67,23 +69,19 @@ impl rs_merkle::Hasher for KeccakHasher {
 }
 
 /// Prepare the leaves to create the merkle tree
-/// This function will also update `beefy_ids_and_stakes`, to shorten the search on every call.
 ///
 /// # Arguments
 ///
-/// * `validator` - the beefy id value
-/// * `beefy_ids_and_stakes` - contains the beefy id/validator with its stake
-fn prep_merkle_leaves(
-	ecdsa_validators: &[EcdsaPublic],
-	beefy_ids_and_stakes: &mut BeefyIdsWithStakes,
-) -> Vec<Hash> {
+/// * `beefy_stakes` - contains the beefy ids/validators with their stakes
+fn prep_merkle_leaves(beefy_stakes: BeefyStakes) -> Vec<Hash> {
 	// pair up the validators with its stakes
-	ecdsa_validators
-		.iter()
+	beefy_stakes
+		.into_iter()
 		.enumerate()
-		.map(|(idx, v)| {
-			let keccak = prep_leaf_hash(v, beefy_ids_and_stakes);
-			println!("V({idx}): ecdsa: {:?} keccak: {}", v, keccak.as_hex());
+		.map(|(idx, beefy_stake)| {
+			let v = beefy_stake.0.clone();
+			let keccak = prep_leaf_hash(beefy_stake);
+			println!("V({idx}): ecdsa: {v:?} keccak: {}", to_hex(keccak.as_slice()));
 
 			keccak
 		})
@@ -91,24 +89,16 @@ fn prep_merkle_leaves(
 }
 
 /// Create Leaf hash using keccak, based on the tuple of validator and its stake.
-/// If there is no stake found for the validator, the default stake value will be 0
-///
-/// This function will also update `beefy_ids_and_stakes`, to shorten the search on every call.
 ///
 /// # Arguments
 ///
-/// * `validator` - the beefy id value
-/// * `beefy_ids_and_stakes` - contains the beefy id/validator with its stake
-fn prep_leaf_hash(validator: &EcdsaPublic, beefy_ids_and_stakes: &mut BeefyIdsWithStakes) -> Hash {
-	// if no stake found, give it a 0 by default
-	let leaf_data =
-		get_leaf_data(validator, beefy_ids_and_stakes).unwrap_or((validator.clone(), 0));
-
-	// convert validator to bytes
-	let mut data = leaf_data.0.into_inner().0.to_vec();
+/// * `beefy_stake` - contains the beefy id/validator with its stake
+fn prep_leaf_hash(beefy_stake: BeefyStake) -> Hash {
+	// convert public key to bytes
+	let mut data = beefy_stake.0.into_inner().0.to_vec();
 
 	// convert stake to bytes
-	let stake_bytes = leaf_data.1.to_be_bytes();
+	let stake_bytes = beefy_stake.1.to_le_bytes();
 
 	// append the validator bytes with the stake bytes
 	data.extend_from_slice(&stake_bytes);
@@ -116,34 +106,12 @@ fn prep_leaf_hash(validator: &EcdsaPublic, beefy_ids_and_stakes: &mut BeefyIdsWi
 	keccak_256(&data)
 }
 
-/// Find a match of the validator in the list of beefy ids, and return the stakes.
-/// This function will also update `beefy_ids_with_stakes`, to shorten the search on every call.
+/// Verify and collect all the indices (similar index position in the validator set) with signatures
 ///
 /// # Arguments
 ///
-/// * `validator` - the beefy id value
-/// * `beefy_ids_and_stakes` - contains the beefy id/validator with its stake
-fn get_leaf_data(
-	validator: &EcdsaPublic,
-	beefy_ids_and_stakes: &mut BeefyIdsWithStakes,
-) -> Option<BeefyIdWithStake> {
-	let mut chosen_idx = None;
-
-	for (index, xtra_data) in beefy_ids_and_stakes.iter().enumerate() {
-		// if found, remove from the list
-		if validator == &xtra_data.0 {
-			chosen_idx = Some(index);
-			break;
-		}
-	}
-
-	Some(
-		// remove from the list, as it has already been found
-		beefy_ids_and_stakes.remove(chosen_idx?),
-	)
-}
-
-/// Verify and collect all the indices (similar index position in the validator set) with signatures
+/// * `beefy_signed_commitment` - commitment file from the Beefy Justification
+/// * `validator_set` - the current validator set
 fn collect_signature_indices(
 	beefy_signed_commitment: &BeefySignedCommitment,
 	validator_set: &ValidatorSet<EcdsaPublic>,
@@ -168,36 +136,24 @@ fn collect_signature_indices(
 #[cfg(test)]
 mod test {
 	use super::Hash;
-	use parity_scale_codec::Decode;
 	use sp_consensus_beefy::ValidatorSetId;
-	use sp_core::crypto::Ss58Codec;
+	use sp_core::bytes::from_hex;
+	use subxt::utils::to_hex;
 
 	use crate::{
-		BeefyId, BeefyIdsWithStakes, BeefySignedCommitment, BeefyValidatorSet,
-		authorities::{
-			collect_signature_indices, get_leaf_data, prep_leaf_hash, prep_merkle_leaves,
-		},
-		helper::HexExt,
+		BeefySignedCommitment, BeefyStakes, BeefyValidatorSet,
+		authorities::{collect_signature_indices, prep_leaf_hash, prep_merkle_leaves},
+		helper::test::{ECDSA_ALICE, ECDSA_BOB, ECDSA_CHARLIE, ECDSA_DAVE, decode, get_ecdsa},
 	};
 
-	const ECDSA_ALICE: &str = "KW39r9CJjAVzmkf9zQ4YDb2hqfAVGdRqn53eRqyruqpxAP5YL";
-	const ECDSA_BOB: &str = "KWByAN7WfZABWS5AoWqxriRmF5f2jnDqy3rB5pfHLGkY93ibN";
-	const ECDSA_CHARLIE: &str = "KWBpGtyJLBkJERdZT1a1uu19c2uPpZm9nFd8SGtCfRUAT3Y4w";
-	const ECDSA_DAVE: &str = "KWCycezxoy7MWTTqA5JDKxJbqVMiNfqThKFhb5dTfsbNaGbrW";
-	const ECDSA_EVE: &str = "KW9NRAHXUXhBnu3j1AGzUXs2AuiEPCSjYe8oGan44nwvH5qKp";
-
-	const ENCODED_BEEFY_COMMITMENT: &str = "046d6880d2cdb932c91082bb0586eabba6aa4dd441b380e7d47a1270999280fd2247ddfd21000000000000000000000004d0040000000ce9f6db6b33ffcd1054b3f92d7fcdc7b80545a4f52be08466bbf36d75997cfc1b193a4de4c901f6b2a4446c447d228354336b466bb6ec4ddcf7b0db85c150677c016c0e79d739cdcbb0d0e78d6a0f44ad9a2333c9a61deb1083c501f3ce07ccbc5a0cc42b78f5a8665c3b714160c103af6a7f3d7502e7aa2c232f3906dc57ed96c40173124cca66ca103b705b3af70a3945d54535de9983794a7bb93356373e71da8a12342ddd9000cb49895d237111300d32790ac610fc327cccd0b8cffb6b8ae42e01";
+	const ENCODED_BEEFY_COMMITMENT: &str = "0x146362b00000000000000000040000007f0c9b27381104febfb4a6be51e8fc0f08ba70060531fc5fcf60dcbed1f4e5f96373950210020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a100000000000000000390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f2701000000000000000389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb010000000000000003bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c00000000000000006d68805d6013253f0020cdae55a436208887cbd691f9cf93278497fc5e10aae814c4d06e62b0010000000000000004000000a5d8a7ba3b85661890415507aed407f1b3e7f86c0133b195ac43612171f5daca6e73950210020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a101000000000000000390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f2700000000000000000389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb010000000000000003bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c000000000000000081040000000000000000000004d0040000000cb128f92056bf1af3f4762e80071a6f42c55dee9f9c5044fb45173a86325ebd8c53d2478e29685cb3dfe929f0f887129d36865a116573c66c4edfd83384d3a3bd01691f180f0ff53d3fde30c992ff4fb3cad2a01089c1885e11d72a507a0c08ce9d2a412c772ba4877775a6521bb4cdca1a8809a9b8df7116c9abe6c0d67df7dd40014b768e1b85bcd09e1d562c59a24b12cafc8d4bab0b11c92873631c0552bbe379005eafcf82f25ba800a57e3debea0069e106d4eb85b73d207631756d84c8d1fe01";
 
 	const EXPECTED_CHARLIE_3_STAKE: &str =
-		"6d925a8985217bc65f79b39af205ca61e3aae0381772a281a9a71c108d23a6a3";
+		"0x2d297d196ec83b90e18828db774fbee18d984cfee0fde6038fe1bb4d4d4ac96a";
 	const EXPECTED_ALICE_1_STAKE: &str =
-		"62ee9a00c1179f75310749f4aadd8b5cc6096e1b4092bc07b7014cacc9df007c";
+		"0x3b6cb1c06474ec7cf8cd27fa86009e7321d97a61257b8f5216e4c79161f928ca";
 
-	fn get_ecdsa(hex_key: &str) -> BeefyId {
-		BeefyId::from_ss58check(hex_key).expect("should be able to convert to beefyid")
-	}
-
-	fn sample_extra_data() -> BeefyIdsWithStakes {
+	fn sample_beef_stakes() -> BeefyStakes {
 		vec![
 			(get_ecdsa(ECDSA_ALICE), 1),
 			(get_ecdsa(ECDSA_BOB), 2),
@@ -218,48 +174,20 @@ mod test {
 			.expect("should be able to create a validator set")
 	}
 
-	fn sample_beefy_commitment() -> BeefySignedCommitment {
-		let hex_encoded = hex::decode(ENCODED_BEEFY_COMMITMENT).expect("failed to convert");
-
-		Decode::decode(&mut &hex_encoded[..]).expect("failed to decode BeefySignedCommitment")
-	}
-
-	#[test]
-	fn test_get_leaf_data() {
-		let mut extra_data = sample_extra_data();
-
-		let result =
-			get_leaf_data(&get_ecdsa(ECDSA_DAVE), &mut extra_data).expect("failed to find Dave");
-		assert_eq!(result.1, 4);
-
-		let result =
-			get_leaf_data(&get_ecdsa(ECDSA_BOB), &mut extra_data).expect("failed to find Bob");
-		assert_eq!(result.1, 2);
-
-		let result = get_leaf_data(&get_ecdsa(ECDSA_CHARLIE), &mut extra_data)
-			.expect("failed to find Charlie");
-		assert_eq!(result.1, 3);
-
-		// unknown data
-		let result = get_leaf_data(&get_ecdsa(ECDSA_EVE), &mut extra_data);
-		assert_eq!(result, None);
-	}
-
 	#[test]
 	fn test_prep_leaf_hash() {
-		let mut extra_data = sample_extra_data();
+		let result = prep_leaf_hash((get_ecdsa(ECDSA_CHARLIE), 3));
+		let hex_encoded_result = to_hex(result);
+		assert_eq!(hex_encoded_result, EXPECTED_CHARLIE_3_STAKE);
 
-		let result = prep_leaf_hash(&get_ecdsa(ECDSA_CHARLIE), &mut extra_data);
-		assert_eq!(result.as_hex(), EXPECTED_CHARLIE_3_STAKE);
-
-		let result = prep_leaf_hash(&get_ecdsa(ECDSA_ALICE), &mut extra_data);
-
-		assert_eq!(result.as_hex(), EXPECTED_ALICE_1_STAKE);
+		let result = prep_leaf_hash((get_ecdsa(ECDSA_ALICE), 1));
+		let hex_encoded_result = to_hex(result);
+		assert_eq!(hex_encoded_result, EXPECTED_ALICE_1_STAKE);
 	}
 
 	#[test]
 	fn test_collect_signature_indices() {
-		let beefy_commitment = sample_beefy_commitment();
+		let beefy_commitment: BeefySignedCommitment = decode(ENCODED_BEEFY_COMMITMENT);
 
 		let v_set = sample_validator_set(beefy_commitment.commitment.validator_set_id);
 
@@ -275,22 +203,19 @@ mod test {
 
 	#[test]
 	fn test_prep_merkle_leaves() {
-		let validator_set = sample_validator_set(0);
-		let validators = validator_set.validators();
+		let beef_stakes = sample_beef_stakes();
 
-		let mut extra_data = sample_extra_data();
-
-		let keccak_hashes = prep_merkle_leaves(validators, &mut extra_data);
+		let keccak_hashes = prep_merkle_leaves(beef_stakes);
 		assert_eq!(keccak_hashes.len(), 4);
 
 		let alice_stake_decoded =
-			hex::decode(EXPECTED_ALICE_1_STAKE).expect("failed to conver to bytes");
+			from_hex(EXPECTED_ALICE_1_STAKE).expect("failed to conver to bytes");
 		let alice_stake_decoded: Hash =
 			alice_stake_decoded.try_into().expect("failed to convert to sized array");
 		assert!(keccak_hashes.contains(&alice_stake_decoded));
 
 		let charlie_stake_decoded =
-			hex::decode(EXPECTED_CHARLIE_3_STAKE).expect("failed to conver to bytes");
+			from_hex(EXPECTED_CHARLIE_3_STAKE).expect("failed to conver to bytes");
 		let charlie_stake_decoded: Hash =
 			charlie_stake_decoded.try_into().expect("failed to convert to sized array");
 		assert!(keccak_hashes.contains(&charlie_stake_decoded));

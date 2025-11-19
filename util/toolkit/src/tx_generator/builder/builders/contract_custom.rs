@@ -6,7 +6,6 @@ use crate::{
 	},
 	serde_def::SourceTransactions,
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
-	tx_generator::builder::ContractDeployArgs,
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
@@ -36,7 +35,7 @@ pub enum CustomContractBuilderError {
 pub struct CustomContractBuilder {
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
-	artifacts_dir: String,
+	artifact_dirs: Vec<String>,
 	intent_files: Vec<String>,
 	utxo_inputs: Vec<UtxoId>,
 	zswap_state_file: Option<String>,
@@ -46,8 +45,9 @@ pub struct CustomContractBuilder {
 impl CustomContractBuilder {
 	pub fn new(args: CustomContractArgs) -> Self {
 		let CustomContractArgs {
-			info: ContractDeployArgs { funding_seed, rng_seed },
-			compiled_contract_dir,
+			funding_seed,
+			rng_seed,
+			compiled_contract_dirs,
 			intent_files,
 			utxo_inputs,
 			zswap_state_file,
@@ -56,7 +56,7 @@ impl CustomContractBuilder {
 		Self {
 			funding_seed,
 			rng_seed,
-			artifacts_dir: compiled_contract_dir,
+			artifact_dirs: compiled_contract_dirs,
 			intent_files,
 			utxo_inputs,
 			zswap_state_file,
@@ -82,7 +82,7 @@ impl CustomContractBuilder {
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
 		let boxed_resolver =
-			Box::new(IntentCustom::<DefaultDB>::get_resolver(self.artifacts_dir.clone()).unwrap());
+			Box::new(IntentCustom::<DefaultDB>::get_resolver(&self.artifact_dirs).unwrap());
 		let static_ref_resolver = Box::leak(boxed_resolver);
 
 		let mut actions: Vec<ContractAction<ProofPreimageMarker, DefaultDB>> = vec![];

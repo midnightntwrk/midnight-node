@@ -49,6 +49,7 @@ pub use frame_support::{
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
+use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
@@ -61,16 +62,15 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	DParameter, EpochNonce, MainchainAddress, PermissionedCandidateData, PolicyId,
-	RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey, StakeDelegation,
-	StakePoolPublicKey, UtxoId, byte_string::ByteString,
+	MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData, ScEpochNumber,
+	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_beefy::{
 	OpaqueKeyOwnershipProof,
 	ecdsa_crypto::{AuthorityId as BeefyId, Signature as BeefySignature},
-	mmr::{BeefyDataProvider, MmrLeafVersion},
+	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_governed_map::MainChainScriptsV1;
@@ -92,6 +92,7 @@ pub use sp_runtime::{Perbill, Permill};
 #[allow(deprecated)]
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
+use crate::currency::CurrencyWaiver;
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
@@ -111,9 +112,11 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
+pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+mod migrations;
 mod session_manager;
 
 use check_call_filter::CheckCallFilter;
@@ -122,6 +125,11 @@ use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
 use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
+
+use crate::beefy::{
+	compute_current_authority_set, compute_next_authority_set, current_beefy_stakes,
+	next_beefy_stakes,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -267,7 +275,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_018_000,
+	spec_version: 000_018_001,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -484,131 +492,11 @@ impl Convert<BeefyId, Vec<u8>> for RawBeefyId {
 	}
 }
 
-pub struct KeyAndStakeDataProvider;
-
-impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
-	/// Returns an encoded Vec<(BeefyId, StakeDelegation)>
-	fn extra_data() -> Vec<u8> {
-		// list of all validators
-		let validators = Session::validators_and_keys();
-
-		// list of all validators (in beefy)
-		let Some(beefy_validators) = Beefy::validator_set() else {
-			log::warn!(
-				target: "runtime:beefy_mmr",
-				"Beefy Validators is empty",
-			);
-
-			return vec![];
-		};
-		// Only concerned about the beefy validators
-		let beefy_ids = beefy_validators.validators();
-
-		// make sure beefy validators have the same number as the validators set in the session pallet
-		if validators.len() != beefy_ids.len() {
-			log::warn!(
-				target: "runtime:beefy_mmr",
-				"Not the same number of validators for  session({}) and beefy({})",
-				validators.len(),
-				beefy_ids.len()
-			);
-			return vec![];
-		}
-
-		// With the given validators, recreate a list of permissioned candidates
-		let mut permissioned_candidates = vec![];
-
-		for (idx, (_, session_keys)) in validators.iter().enumerate() {
-			// the SideChainPublicKey is ecdsa, same as beefy. For mocking purposes, we use the same value
-			let beefy = &beefy_ids[idx];
-			let Some(sidechain_public_key) =
-				convert_to_key::<sp_core::ecdsa::Public, SidechainPublicKey, _>(beefy)
-			else {
-				return vec![];
-			};
-
-			let candidate = PermissionedCandidateData {
-				sidechain_public_key,
-				keys: session_keys.clone().into(),
-			};
-
-			permissioned_candidates.push(candidate);
-		}
-
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let d_parameter = DParameter::new(6, 0);
-
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let sample_epoch: u16 = 0x1234;
-		let sample_epoch = sample_epoch.to_be_bytes();
-		let sample_epoch = sample_epoch.to_vec();
-
-		let epoch_nonce = EpochNonce(sample_epoch);
-
-		// mock an input
-		let input = AuthoritySelectionInputs {
-			d_parameter,
-			permissioned_candidates,
-			registered_candidates: vec![],
-			epoch_nonce,
-		};
-
-		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys, MaxAuthorities>(
-			Sidechain::genesis_utxo(),
-			input,
-			Runtime::current_epoch_number(),
-		) else {
-			return vec![];
-		};
-
-		let result = candidates
-			.into_iter()
-			.map(|member| match member {
-				CommitteeMember::Permissioned { id, keys: _ } =>
-				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
-				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
-				{
-					(
-						xchain_public_to_beefy(id),
-						// set to 0 for unfound stake delegation
-						StakeDelegation(1),
-					)
-				},
-				CommitteeMember::Registered { .. } => {
-					unreachable!("we have not mocked any registered candidates")
-				},
-			})
-			.collect::<Vec<(BeefyId, StakeDelegation)>>();
-
-		log::info!(
-			target: "runtime::beefy_mmr",
-			"Extra Data found of size {}",
-			result.len()
-		);
-
-		result.encode()
-	}
-}
-
-fn xchain_public_to_beefy(xchain_pub_key: CrossChainPublic) -> BeefyId {
-	let xchain_pub_key = xchain_pub_key.into_inner();
-	BeefyId::from(xchain_pub_key)
-}
-
-fn convert_to_key<KeyType: ByteArray, Out: From<KeyType>, T: ByteArray>(
-	pub_key: &T,
-) -> Option<Out> {
-	let pub_key_as_slice = pub_key.as_slice();
-	let new_key = KeyType::from_slice(pub_key_as_slice).ok()?;
-
-	Some(Out::from(new_key))
-}
-
 impl pallet_beefy_mmr::Config for Runtime {
 	type LeafVersion = LeafVersion;
 	type BeefyAuthorityToMerkleLeaf = RawBeefyId;
-	type LeafExtra = Vec<u8>; // default
-	type BeefyDataProvider = KeyAndStakeDataProvider;
+	type LeafExtra = Vec<u8>;
+	type BeefyDataProvider = ();
 	type WeightInfo = ();
 }
 
@@ -677,6 +565,8 @@ impl pallet_partner_chains_session::Config for Runtime {
 	type SessionManager = ValidatorManagementSessionManager<Runtime>;
 	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = opaque::SessionKeys;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -720,6 +610,8 @@ impl pallet_session_validator_management::Config for Runtime {
 	type CommitteeMember = CommitteeMember<CrossChainPublic, SessionKeys>;
 
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 pub struct LogBeneficiaries;
@@ -790,7 +682,6 @@ impl pallet_block_rewards::Config for Runtime {
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
-	type WeightInfo = pallet_midnight::weights::SubstrateWeight<Runtime>;
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
@@ -1024,6 +915,8 @@ mod runtime {
 	pub type Sudo = pallet_sudo::Pallet<Runtime>;
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+	#[runtime::pallet_index(30)]
+	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
 	//BlockRewards: pallet_block_rewards = 9,
 
@@ -1061,9 +954,6 @@ mod runtime {
 	#[runtime::pallet_index(23)]
 	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
 
-	// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
-	#[runtime::pallet_index(30)]
-	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
@@ -1115,7 +1005,14 @@ pub type Executive = frame_executive::Executive<
 	frame_system::ChainContext<Runtime>,
 	Runtime,
 	AllPalletsWithSystem,
+	Migrations,
 >;
+
+/// Migrations to apply on runtime upgrade.
+pub type Migrations = (
+	// unreleased
+	migrations::IncrementSudoSufficients<Runtime>,
+);
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benches {
@@ -1126,7 +1023,7 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
-		[pallet_session_validator_management, SessionValidatorManagementBench::<Runtime>]
+		[pallet_session_validator_management, SessionCommitteeManagement]
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
@@ -1302,6 +1199,33 @@ impl_runtime_apis! {
 		}
 	}
 
+	// Collects the (Current BeefyStakes, Next BeefyStakes)
+	impl midnight_primitives_beefy::BeefyStakesApi<Block, Hash, BeefyId> for Runtime {
+		/// Gets the current beefy stakes
+		fn current_beefy_stakes() -> BeefyStakes<BeefyId> {
+			current_beefy_stakes(None)
+		}
+
+		/// Gets the next beefy stakes
+		fn next_beefy_stakes() -> Option<BeefyStakes<BeefyId>> {
+			next_beefy_stakes(None)
+		}
+
+		/// Returns the authority set based on the current beef stakes
+		fn compute_current_authority_set(
+			beefy_stakes: BeefyStakes<BeefyId>,
+		) ->  BeefyAuthoritySet<Hash> {
+			compute_current_authority_set(beefy_stakes)
+		}
+
+		/// Returns the authority set based on the next beef stakes
+		fn compute_next_authority_set(
+			beefy_stakes: BeefyStakes<BeefyId>,
+		) -> BeefyNextAuthoritySet<Hash> {
+			compute_next_authority_set(beefy_stakes)
+		}
+	}
+
 	impl mmr::MmrApi<Block, Hash, BlockNumber> for Runtime {
 		fn mmr_root() -> Result<mmr::Hash, mmr::Error> {
 			Ok(Mmr::mmr_root())
@@ -1418,7 +1342,6 @@ impl_runtime_apis! {
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
 			list_benchmarks!(list, extra);
@@ -1437,11 +1360,9 @@ impl_runtime_apis! {
 
 			use frame_system_benchmarking::Pallet as SystemBench;
 			use baseline::Pallet as BaselineBench;
-			use pallet_session_validator_management_benchmarking::Pallet as SessionValidatorManagementBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
 			impl baseline::Config for Runtime {}
-			impl pallet_session_validator_management_benchmarking::Config for Runtime {}
 
 			use frame_support::traits::WhitelistedStorageKeys;
 			let whitelist: Vec<TrackedStorageKey> = AllPalletsWithSystem::whitelisted_storage_keys();

@@ -113,9 +113,11 @@ get-metadata:
     ARG METADATA_IMAGE_NAME="localhost/node:latest"
     ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
+    COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
     WITH DOCKER --load localhost/node:latest=+node-image
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
-          sleep 5 && \
+          check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /metadata.scale && \
           docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
     END
@@ -124,6 +126,7 @@ get-metadata:
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
@@ -229,6 +232,7 @@ rebuild-genesis-state:
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${NETWORK}.mn) \
+                --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
             && cp out/contract*.mn /res/test-contract \
         ; fi
 
@@ -303,6 +307,36 @@ rebuild-genesis-state:
                 --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
+    RUN mkdir -p /res/test-data/contract/mint \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public \
+                ) \
+                -c /toolkit-js/mint/mint.config.ts \
+                --output-intent /res/test-data/contract/mint/deploy.bin \
+                --output-private-state /res/test-data/contract/mint/initial_state.json \
+                --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --intent-file /res/test-data/contract/mint/deploy.bin \
+                --compiled-contract-dir /toolkit-js/mint/out \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/mint/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
+                --dest-file /res/test-data/contract/mint/contract_state.mn \
+        ; fi
     IF [ "$GENERATE_TEST_TXS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
     END
@@ -314,6 +348,7 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -425,6 +460,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
+        apt-get upgrade && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
@@ -552,6 +588,8 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
+    RUN apt-get update && apt-get install -y jq
+
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
@@ -566,19 +604,33 @@ check-rust:
 
     RUN cargo fmt --all -- --check
 
+    ENV SKIP_WASM_BUILD=1
+
     # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN SKIP_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+
+    RUN status=0; \
+        for pkg in $(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[].name'); do \
+            echo "===> Checking $pkg"; \
+            if ! cargo check -p "$pkg"; then \
+            echo "Failed: $pkg"; \
+            status=1; \
+            fi; \
+        done; \
+        exit $status
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
     FROM +subxt
     DO github.com/EarthBuild/lib+INSTALL_DIND
+    COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
     WITH DOCKER --pull $NODE_IMAGE
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
-          sleep 5 && \
+          check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /image_metadata.scale && \
           docker kill $(docker ps -q --filter ancestor=${NODE_IMAGE})
     END
@@ -886,7 +938,7 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
-    RUN --no-cache npm audit --severity high
+    RUN --no-cache npm audit --audit-level high
 
 audit-yarn:
     ARG DIRECTORY
@@ -990,10 +1042,6 @@ local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
-    RUN sed -i \
-        -e 's|node_url = "ws://127.0.0.1:9933"|node_url = "ws://172.17.0.1:9933"|' \
-        -e 's|ogmios_url = "ws://127.0.0.1:1337"|ogmios_url = "ws://172.17.0.1:1337"|' \
-        tests/e2e/src/cfg/local/config.toml
     WORKDIR tests/e2e
     RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
 

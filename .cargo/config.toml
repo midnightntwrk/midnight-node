@@ -7,6 +7,9 @@ timeout = 60
 
 [registries.crates-io]
 protocol = "sparse"
-  
+
 [profile.release]
 debug = true
+
+[alias]
+test-e2e-local = "test --test e2e_tests --no-default-features --features local -- --test-threads=1 --nocapture"

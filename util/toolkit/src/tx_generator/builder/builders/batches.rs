@@ -73,11 +73,13 @@ impl BatchesBuilder {
 		funding_seed: WalletSeed,
 		output_wallets: Vec<WalletSeed>,
 	) -> OfferInfo<DefaultDB> {
+		let total_coins_required = self.coin_amount * self.num_txs_per_batch as u128;
+
 		// Input info
 		let input_info = InputInfo {
 			origin: funding_seed,
 			token_type: self.shielded_token_type,
-			value: 1_000_000_000_000_000,
+			value: total_coins_required,
 		};
 
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
@@ -96,7 +98,6 @@ impl BatchesBuilder {
 			.collect();
 
 		// Calculate total coins amount required for future txs to match the spends of the funding wallet
-		let total_coins_required = self.coin_amount * self.num_txs_per_batch as u128;
 
 		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
 		let already_spent = input_info.min_match_coin(&funding_wallet.shielded.state).value;
