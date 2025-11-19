@@ -52,7 +52,7 @@ pub fn execute(args: ShowTransactionArgs) -> InnerReturnType {
 	if args.from_bytes {
 		tx_from_bytes(args.src_file, args.with_context)
 	} else {
-		tx_from_file(args.src_file, args.with_context)
+		tx_from_hex(args.src_file, args.with_context)
 	}
 }
 
@@ -68,13 +68,10 @@ fn tx_from_bytes(src_file: String, with_context: bool) -> InnerReturnType {
 	})
 }
 
-fn tx_from_file(src_file: String, with_context: bool) -> InnerReturnType {
+fn tx_from_hex(src_file: String, with_context: bool) -> InnerReturnType {
 	let file_content = std::fs::read(&src_file)?;
 	// Some IDEs auto-add an extra empty line at the end of the file
-	let tx_hex: String = String::from_utf8_lossy(&file_content)
-		.chars()
-		.filter(|c| c.is_ascii_hexdigit())
-		.collect();
+	let tx_hex = String::from_utf8(file_content)?.trim().to_string();
 
 	let tx_bytes = hex::decode(&tx_hex)?;
 
@@ -90,19 +87,19 @@ fn tx_from_file(src_file: String, with_context: bool) -> InnerReturnType {
 
 #[cfg(test)]
 mod test {
-	use super::{InnerReturnType, TransactionInfo, tx_from_file};
+	use super::{InnerReturnType, TransactionInfo, tx_from_bytes};
 	use test_case::test_case;
 
 	#[test_case(
 		"../../res/test-tx-deserialize/serialized_tx_no_context.mn",
 		false,
-		tx_from_file;
+		tx_from_bytes;
 		"transaction no context"
 	)]
 	#[test_case(
 		"../../res/test-tx-deserialize/serialized_tx_with_context.mn",
 		true,
-		tx_from_file;
+		tx_from_bytes;
 		"transaction with context"
 	)]
 	fn test_show_transaction_funcs<F>(src_file: &str, with_context: bool, func: F)
