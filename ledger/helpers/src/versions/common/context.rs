@@ -158,6 +158,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 		{
 			wallet.update_dust_from_block(&block_context);
 		}
+		// Update latest block context
+		*self.latest_block_context.lock().expect("error locking latest_block_context") =
+			Some(block_context.clone());
 	}
 
 	pub fn latest_block_context(&self) -> BlockContext {
@@ -254,10 +257,6 @@ impl<D: DB + Clone> LedgerContext<D> {
 		{
 			wallet.update_state_from_offers(&offers);
 		}
-
-		// Update latest block context
-		*self.latest_block_context.lock().expect("error locking latest_block_context") =
-			Some(block_context.clone());
 
 		*self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state") =
 			new_ledger_state;
