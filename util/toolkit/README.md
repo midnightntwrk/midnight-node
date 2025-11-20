@@ -465,7 +465,7 @@ Show deserialized result of a single transaction. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction
->   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
 
 Tx StandardTransaction {
 ...
@@ -479,7 +479,7 @@ Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction --with-context
->   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
 
 Tx TransactionWithContext {
 ...
