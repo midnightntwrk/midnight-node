@@ -176,6 +176,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
+		should_skip_failed_segments: bool,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_processing_time = Instant::now();
@@ -198,10 +199,17 @@ where
 
 		let mut utxos = tx.unshielded_utxos();
 
-		if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
-			// Remove from `utxos` the `segments` that failed
-			utxos.remove_failed_segments(&segments);
-		}
+		let failed_segments =
+			if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
+				// Remove from `utxos` the `segments` that failed
+				utxos.remove_failed_segments(&segments);
+				Some(segments.keys().copied().collect())
+			} else {
+				None
+			};
+
+		let operations =
+			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
 
 		let (utxo_outputs, utxo_inputs) =
 			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
@@ -218,7 +226,7 @@ where
 			unshielded_utxos_spent: utxo_inputs,
 		};
 
-		for op in tx.calls_and_deploys() {
+		for op in operations {
 			match op {
 				TransactionOperation::Call { address, .. } => {
 					event.call_addresses.push(api.tagged_serialize(&address)?);
@@ -335,7 +343,7 @@ where
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
-		let operations = tx.calls_and_deploys().try_fold(Vec::new(), |mut acc, cd| {
+		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
 			let a = match cd {
 				TransactionOperation::Call { address, entry_point } => {
 					Op::Call { address: api.tagged_serialize(&address)?, entry_point }
