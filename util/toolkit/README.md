@@ -324,7 +324,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 
 ```
 
@@ -333,7 +333,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+>   --contract-address 3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 >   --dest-file out/contract_state.bin
 ```
 
@@ -465,7 +465,7 @@ Show deserialized result of a single transaction. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction
->   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
 
 Tx StandardTransaction {
 ...
@@ -479,7 +479,7 @@ Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction --with-context
->   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
 
 Tx TransactionWithContext {
 ...
