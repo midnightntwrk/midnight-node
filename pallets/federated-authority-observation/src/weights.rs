@@ -109,7 +109,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			// Standard Error: 108_253
 			.saturating_add(Weight::from_parts(187_500, 0).saturating_mul(a.into()))
 			// Standard Error: 108_253
-			.saturating_add(Weight::from_parts(312_500, 0).saturating_mul(b.into()))
+			.saturating_add(Weight::from_parts(187_500, 0).saturating_mul(b.into()))
 			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 			.saturating_add(Weight::from_parts(0, 32).saturating_mul(a.into()))
@@ -280,7 +280,7 @@ impl WeightInfo for () {
 			// Standard Error: 108_253
 			.saturating_add(Weight::from_parts(187_500, 0).saturating_mul(a.into()))
 			// Standard Error: 108_253
-			.saturating_add(Weight::from_parts(312_500, 0).saturating_mul(b.into()))
+			.saturating_add(Weight::from_parts(187_500, 0).saturating_mul(b.into()))
 			.saturating_add(ParityDbWeight::get().reads(5_u64))
 			.saturating_add(ParityDbWeight::get().writes(5_u64))
 			.saturating_add(Weight::from_parts(0, 32).saturating_mul(a.into()))
