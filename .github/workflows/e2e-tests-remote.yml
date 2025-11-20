@@ -153,7 +153,7 @@ jobs:
           docker run --network host -e MN_SYNC_CACHE=/out/.sync_cache-${{ env.TEST_ENV }} -v $(pwd):/out ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ env.IMAGE_TAG }} generate-txs -s ${{ env.WS_URL }} --dest-file /out/res/test-contract/contract_tx_call_node-dev-01.mn --to-bytes contract-calls call --contract-address /out/res/test-contract/contract_address_devnet.mn
 
       - name: Upload sync cache
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: success() || failure()
         with:
           name: .sync_cache-${{ env.TEST_ENV }}
@@ -161,7 +161,7 @@ jobs:
           include-hidden-files: true
 
       - name: Upload generated contract txs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: test-contract
           path: ./res/test-contract/
@@ -229,7 +229,7 @@ jobs:
           . ./.envrc && earthly -P --ci --output --build-arg TEST_ENV="$TEST_ENV" --build-arg WS_URL="$WS_URL" +node-e2e-test-remote
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: success() || failure()
         with:
           name: Test Artifacts

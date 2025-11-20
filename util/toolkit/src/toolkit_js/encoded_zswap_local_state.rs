@@ -74,6 +74,11 @@ impl EncodedOutputInfo {
 				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
 			{
 				encryption_public_key = Some(wallet.enc_public_key);
+			} else {
+				println!(
+					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
+					hex::encode(&encoded_output.coin_info.nonce)
+				);
 			}
 		}
 

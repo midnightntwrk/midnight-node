@@ -18,6 +18,8 @@ pub mod pallet {
 
 	use super::*;
 
+	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
+
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
@@ -51,10 +53,19 @@ pub mod pallet {
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
+	#[pallet::type_value]
+	pub fn DefaultTransactionSizeWeight() -> Weight {
+		EXTRA_WEIGHT_TX_SIZE
+	}
+
+	#[pallet::storage]
+	pub type ConfigurableSystemTxWeight<T> =
+		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight({0})]
+		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
 		pub fn send_mn_system_transaction(
 			origin: OriginFor<T>,
 			midnight_system_tx: Vec<u8>,

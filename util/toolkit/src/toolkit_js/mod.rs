@@ -1,11 +1,13 @@
 use std::{io::BufRead, path::PathBuf};
 
 use clap::{
-	Args,
+	Args, Subcommand,
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{CoinPublicKey, ContractAddress};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
+};
 mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
 
@@ -48,6 +50,7 @@ impl From<PathBuf> for RelativePath {
 pub enum Command {
 	Deploy(DeployArgs),
 	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Maintain(MaintainCommand),
 }
 
 #[derive(Args, Debug)]
@@ -99,9 +102,9 @@ pub struct DeployArgs {
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
-	/// A public BIP-340 signing key, hex encoded.
-	#[arg(long)]
-	signing: Option<String>,
+	/// Contract maintenance authority seed.
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	authority_seed: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
@@ -113,6 +116,72 @@ pub struct DeployArgs {
 	output_zswap_state: RelativePath,
 	/// Arguments to pass to the contract constructor
 	constructor_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SharedMaintainArgs {
+	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
+	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	config: RelativePath,
+	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
+	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	contract_address: ContractAddress,
+	/// Target network
+	#[arg(long, default_value = "undeployed")]
+	network: String,
+	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
+	#[arg(long, value_parser = cli::coin_public_decode)]
+	coin_public: CoinPublicKey,
+	/// A public BIP-340 signing key, hex encoded.
+	#[arg(long)]
+	signing: Option<String>,
+	/// Input file containing the current on-chain circuit state
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	input_onchain_state: RelativePath,
+	/// The output file of the intent
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	output_intent: RelativePath,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainContractArgs {
+	#[command(flatten)]
+	shared: SharedMaintainArgs,
+	#[arg(value_parser = cli::wallet_seed_decode)]
+	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
+	new_authority: WalletSeed,
+}
+
+#[derive(Args, Debug)]
+pub struct MaintainCircuitArgs {
+	#[command(flatten)]
+	shared: SharedMaintainArgs,
+	/// Name of the circuit to maintain.
+	circuit_id: String,
+	/// The path to a public BIP-340 verifier key, hex encoded. Replaces the verifier key of the circuit.
+	/// If missing, removes the circuit instead.
+	#[arg(value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p).absolute()))]
+	verifier: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MaintainCommand {
+	Contract(MaintainContractArgs),
+	Circuit(MaintainCircuitArgs),
+}
+impl MaintainCommand {
+	fn name(&self) -> &'static str {
+		match self {
+			Self::Contract(_) => "contract",
+			Self::Circuit(_) => "circuit",
+		}
+	}
+	fn shared_args(&self) -> &SharedMaintainArgs {
+		match self {
+			Self::Contract(args) => &args.shared,
+			Self::Circuit(args) => &args.shared,
+		}
+	}
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -130,6 +199,7 @@ impl ToolkitJs {
 			Command::Circuit { args, input_zswap_state } => {
 				self.execute_ciruit(args, input_zswap_state)
 			},
+			Command::Maintain(command) => self.execute_maintain(command),
 		}
 	}
 
@@ -155,8 +225,13 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		if let Some(ref signing) = args.signing {
-			cmd_args.extend_from_slice(&["--signing", signing]);
+		let signing_key = args.authority_seed.map(|s| {
+			serialize_untagged(UnshieldedWallet::default(s).signing_key())
+				.unwrap()
+				.encode_hex::<String>()
+		});
+		if let Some(ref key) = signing_key {
+			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
@@ -217,6 +292,53 @@ impl ToolkitJs {
 			"written: {}, {}, {}",
 			args.output_intent, args.output_private_state, args.output_zswap_state
 		);
+		Ok(())
+	}
+
+	pub fn execute_maintain(&self, command: MaintainCommand) -> Result<(), ToolkitJsError> {
+		let args = command.shared_args();
+		let contract_address_str = hex::encode(args.contract_address.0.0);
+		println!("Executing maintain command");
+		let config = args.config.absolute();
+		let input_onchain_state = args.input_onchain_state.absolute();
+		let output_intent = args.output_intent.absolute();
+		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let mut cmd_args = vec![
+			"maintain",
+			command.name(),
+			"-c",
+			&config,
+			"--network",
+			&args.network,
+			"--coin-public",
+			&coin_public_key,
+			"--input",
+			&input_onchain_state,
+			"--output",
+			&output_intent,
+		];
+		if let Some(ref signing) = args.signing {
+			cmd_args.extend_from_slice(&["--signing", signing]);
+		}
+		// Add positional args
+		cmd_args.push(&contract_address_str);
+		let new_authority = match command {
+			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
+				Some(new_authority.as_bytes().encode_hex::<String>())
+			},
+			_ => None,
+		};
+		if let Some(ref new_authority) = new_authority {
+			cmd_args.push(new_authority)
+		}
+		if let MaintainCommand::Circuit(args) = &command {
+			cmd_args.push(&args.circuit_id);
+			if let Some(vk_path) = &args.verifier {
+				cmd_args.push(&vk_path);
+			}
+		}
+		self.execute_js(&cmd_args)?;
+		println!("written: {}", args.output_intent);
 		Ok(())
 	}
 
