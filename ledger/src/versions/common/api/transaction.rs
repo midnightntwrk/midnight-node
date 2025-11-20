@@ -252,11 +252,24 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 		self.0.identifiers()
 	}
 
-	pub(crate) fn calls_and_deploys(&self) -> impl Iterator<Item = Operation> + '_ {
+	/// Returns an iterator of `Operation`s from the transaction
+	///
+	/// Optionally, you can filter segments (failed segments, for example) by providing the segments IDs as `filtered_segments`
+	pub(crate) fn calls_and_deploys(
+		&self,
+		filter_segments: Option<Vec<u16>>,
+	) -> impl Iterator<Item = Operation> + '_ {
+		let filtered_segments = filter_segments.unwrap_or_default();
 		let actions = match &self.0 {
 			Tx::Standard(tx) => tx
 				.actions()
-				.map(|(_segment, call)| ContractActionExt::ContractAction(Box::new(call.clone())))
+				.filter_map(|(segment, call)| {
+					if filtered_segments.contains(&segment) {
+						None
+					} else {
+						Some(ContractActionExt::ContractAction(Box::new(call.clone())))
+					}
+				})
 				.collect(),
 			Tx::ClaimRewards(ClaimRewardsTransaction { value, .. }) => {
 				vec![ContractActionExt::ClaimRewards { value: *value }]
