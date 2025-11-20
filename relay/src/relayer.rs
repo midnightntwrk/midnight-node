@@ -9,7 +9,7 @@ use subxt::{
 		client::{RpcParams, RpcSubscription},
 		rpc_params,
 	},
-	runtime_api::Payload as SubxtPayload
+	runtime_api::Payload as SubxtPayload,
 };
 
 use crate::{
@@ -74,8 +74,7 @@ impl Relayer {
 		println!("Get Validator Set: {validator_set:?}");
 
 		// generate the proof
-		let relay_chain_proof =
-			RelayChainProof::generate(beef_signed_commitment, validator_set)?;
+		let relay_chain_proof = RelayChainProof::generate(beef_signed_commitment, validator_set)?;
 
 		// display the proofs
 		let plutus_data = relay_chain_proof.to_plutus_data();

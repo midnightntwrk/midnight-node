@@ -30,7 +30,7 @@ pub struct RelayChainProof {
 
 impl RelayChainProof {
 	/// Returns the relaychain proof
-	/// 
+	///
 	/// # Arguments
 	/// * `beefy_signed_commitment` - the commitment file signed by majority of the authorities in beefy
 	/// * `validator_set` - the current active validators
@@ -38,12 +38,8 @@ impl RelayChainProof {
 		beefy_signed_commitment: BeefySignedCommitment,
 		validator_set: BeefyValidatorSet,
 	) -> Result<Self, crate::error::Error> {
-
 		// generate proofs for each signer in the commitment, with the validator set as basis
-		let proof = AuthoritiesProof::try_new(
-			&beefy_signed_commitment,
-			&validator_set
-		)?;
+		let proof = AuthoritiesProof::try_new(&beefy_signed_commitment, &validator_set)?;
 
 		Ok(RelayChainProof {
 			signed_commitment: SignedCommitment::from_signed_commitment_and_validators(
