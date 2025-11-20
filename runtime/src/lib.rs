@@ -1540,7 +1540,7 @@ impl_runtime_apis! {
 			authority_selection_inherents::validate_stake(stake).err()
 		}
 		fn validate_permissioned_candidate_data(candidate: PermissionedCandidateData) -> Option<PermissionedCandidateDataError> {
-			validate_permissioned_candidate_data::<CrossChainKey>(candidate).err()
+			validate_permissioned_candidate_data::<opaque::SessionKeys>(candidate).err()
 		}
 	}
 
