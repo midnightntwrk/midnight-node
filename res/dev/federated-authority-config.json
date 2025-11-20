@@ -22,13 +22,5 @@
             "d4a36042b35d53d44414099ec60e9706ce67ac9058b6ca12de4dc253",
             "c8675a815cea6702583ae738abf7fd50e21e499bdedb5a9962b42e78"
         ]
-    },
-    "technical_committee": {
-        "address": "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2",
-        "policy_id": "f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28",
-        "members": [
-            "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-            "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"
-        ]
     }
 }
