@@ -66,9 +66,6 @@ impl Relayer {
 		// Identifies whether using from best block, or the commitment's block hash
 		let (_best_block, at_block_hash) = self.choose_params(&beef_signed_commitment).await?;
 
-		// The commitment block number to create proof from
-		let block_to_query = beef_signed_commitment.commitment.block_number;
-
 		// retrieve necessary data in creating the proof
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
 		println!("Get Validator Set: {validator_set:?}");
