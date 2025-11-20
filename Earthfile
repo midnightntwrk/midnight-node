@@ -170,8 +170,7 @@ rebuild-genesis-state:
     COPY --if-exists res/genesis/genesis_funding_wallets_${NETWORK}.txt funding_wallets.txt
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # wallet-seed-4 is the wallet Lace uses for testing.
-    # It was requested this was added to undeployed genesis state
+    # wallet-seed-3 is the wallet Lace uses for testing.
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
             echo '{ \
