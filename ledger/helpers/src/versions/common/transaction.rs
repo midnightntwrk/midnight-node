@@ -217,6 +217,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = self.pay_fees(tx, now, ttl).await?;
 		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+		println!("post-proof tx: {tx:#?}");
 		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 		Ok(tx)
 	}
@@ -329,6 +330,15 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			ctime: now,
 		}));
 		stx.intents = stx.intents.insert(segment_id, intent);
+
+		// Re-compute the binding randomness
+		// if we inserted an intent, we need to do this to avoid a Pedersen check error
+		*tx = Transaction::new(
+			stx.network_id.clone(),
+			stx.intents.clone(),
+			stx.guaranteed_coins.as_ref().map(|c| (**c).clone()),
+			stx.fallible_coins.iter().map(|sp| (*sp.0, (*sp.1).clone())).collect(),
+		);
 	}
 
 	fn gather_dust_spends(

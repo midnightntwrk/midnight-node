@@ -28,17 +28,13 @@ use sp_std::vec::Vec;
 #[cfg(feature = "std")]
 type Database = ledger_storage::db::ParityDb;
 
-// TODO: hard fork
 #[cfg(feature = "std")]
-// type DatabaseHF = ledger_storage::db::ParityDb;
 type DatabaseHF = ledger_storage_hf::db::ParityDb;
 
 #[cfg(feature = "std")]
 type Signature = base_crypto::signatures::Signature;
 
-// TODO: hard fork
 #[cfg(feature = "std")]
-// type SignatureHF = base_crypto::signatures::Signature;
 type SignatureHF = base_crypto_hf::signatures::Signature;
 
 #[runtime_interface]
@@ -93,6 +89,25 @@ pub trait LedgerBridge {
 			state_key,
 			tx,
 			block_context,
+			false,
+		)
+	}
+
+	#[version(2)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, latest::types::LedgerApiError>>
+	{
+		latest::Bridge::<Signature, Database>::apply_transaction(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			true,
 		)
 	}
 
@@ -324,6 +339,7 @@ pub trait LedgerBridgeHf {
 			state_key,
 			tx,
 			block_context,
+			true,
 		)
 	}
 
