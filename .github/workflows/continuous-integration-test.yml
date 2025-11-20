@@ -48,17 +48,16 @@ jobs:
           name: Test Report
           path: test-artifacts/html
 
+      - name: Coveralls
+        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
+        with:
+          github-token: ${{ github.token }}
+          file: test-artifacts/lcov.info
+          format: lcov
+
       - name: Upload lcov test report artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: success() || failure()
         with:
           name: Lcov Coverage Report
-          path: test-artifacts/tests.lcov
-
-      - name: Coveralls
-        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
-        with:
-          github-token: ${{ github.token }}
-          file: test-artifacts/tests.lcov
-          base-path: /home/runner/work/midnight-node/midnight-node
-          format: lcov
+          path: test-artifacts/locv.info
