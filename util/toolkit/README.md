@@ -324,7 +324,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 
 ```
 
@@ -333,7 +333,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+>   --contract-address 3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 >   --dest-file out/contract_state.bin
 ```
 
@@ -437,7 +437,8 @@ midnight-node-toolkit \
     --to-bytes \
     register-dust-address \
     --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
-    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --destination-dust "mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y"
 ```
 
 ---

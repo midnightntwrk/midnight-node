@@ -1,0 +1,27 @@
+[package]
+name = "midnight-primitives-beefy"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight Beefy Primitives"
+license-file.workspace = true
+
+
+[dependencies]
+parity-scale-codec.workspace = true
+
+sp-api.workspace = true
+sp-consensus-beefy.workspace = true 
+sp-runtime.workspace = true
+sp-std.workspace = true
+
+
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "sp-api/std",
+    "sp-consensus-beefy/std",
+    "sp-runtime/std",
+    "sp-std/std"
+]

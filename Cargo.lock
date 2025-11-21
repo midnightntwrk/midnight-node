@@ -7159,6 +7159,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ledger",
@@ -7369,6 +7370,7 @@ name = "midnight-node-runtime"
 version = "0.2.3"
 dependencies = [
  "authority-selection-inherents",
+ "binary-merkle-tree",
  "frame-benchmarking",
  "frame-executive",
  "frame-storage-access-test-runtime",
@@ -7379,6 +7381,7 @@ dependencies = [
  "frame-try-runtime",
  "log",
  "midnight-node-ledger",
+ "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "pallet-aura",
@@ -7605,6 +7608,17 @@ dependencies = [
  "midnight-node-ledger",
  "parity-scale-codec",
  "scale-info",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "midnight-primitives-beefy"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "sp-api",
+ "sp-consensus-beefy",
  "sp-runtime",
  "sp-std",
 ]
