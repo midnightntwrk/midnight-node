@@ -109,7 +109,12 @@ mod tests {
 	async fn check_balance_non_zero(seed: &str, src_files: Vec<String>) {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = DustBalanceArgs {
-			source: Source { src_url: None, fetch_concurrency: 1, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 1,
+				src_files: Some(src_files),
+				dust_warp: true,
+			},
 			seed,
 			dry_run: false,
 		};
