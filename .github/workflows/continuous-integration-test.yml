@@ -1,14 +1,14 @@
 name: +test
 
 on:
-  merge_group:
   pull_request:
     branches: ["**"]
   push:
     branches: ["main"]
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
+  
 jobs:
   run:
     name: Run tests
