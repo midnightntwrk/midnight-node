@@ -77,6 +77,7 @@ midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
 midnight-node-ledger-helpers = {workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
+midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }

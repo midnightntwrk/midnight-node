@@ -61,8 +61,8 @@ mod test {
 	// todo: need more samples
 	#[test_case::test_case(
         "../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
-"6d69646e696768743a636f6e74726163742d616464726573735b76325d3a67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870",
-        "67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870" ;
+"6d69646e696768743a636f6e74726163742d616464726573735b76325d3a66fbce1dc2168e7240ab09f65ea17bb7194a3c70f2f84737761439d85f271a81",
+        "66fbce1dc2168e7240ab09f65ea17bb7194a3c70f2f84737761439d85f271a81" ;
         "undeployed case"
     )]
 	fn test_contract_address(src_file: &str, tagged: &str, untagged: &str) {
