@@ -13,7 +13,7 @@ jobs:
   rebuild-metadata:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.pull_request && contains(github.event.comment.body, '/rebuild-metadata'))
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-metadata'))
     runs-on: ubuntu-latest-8-core-x64
     permissions:
       contents: write
@@ -71,40 +71,97 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      # TODO: Uncomment after testing
-      # - name: Setup Earthly
-      #   uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-      #   with:
-      #     version: v0.8.16
-      #     github-token: ${{ github.token }}
-      #     use-cache: false
-      #     allow-privileged: true
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+          allow-privileged: true
 
-      # - name: Login to GHCR
-      #   uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
-      #   with:
-      #     registry: ghcr.io
-      #     username: MidnightCI
-      #     password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      # TODO: Replace with actual rebuild-metadata command after testing
       - name: Run rebuild-metadata
         run: |
-          # Dummy action for testing commit/push
-          echo "Test change $(date)" >> metadata/static/test-file.txt
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          . ./.envrc && earthly -P +rebuild-metadata
 
       - name: Commit and push changes
-        run: |
-          git config --global user.name "MidnightCI"
-          git config --global user.email "ci@midnight.network"
-          if [ -n "$(git status --porcelain)" ]; then
-            git add metadata/static/
-            git commit --no-gpg-sign -m "chore: rebuild metadata"
-            git push origin ${{ steps.pr.outputs.ref }}
-            echo "CHANGES_MADE=true" >> $GITHUB_ENV
-          else
-            echo "CHANGES_MADE=false" >> $GITHUB_ENV
-          fi
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        id: commit
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Check if there are changes
+            const { execSync } = require('child_process');
+            const status = execSync('git status --porcelain').toString();
+
+            if (!status.trim()) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No changes to commit');
+              return;
+            }
+
+            // Get changed files in metadata/static/
+            const changedFiles = status.split('\n')
+              .filter(line => line.trim())
+              .map(line => line.substring(3))
+              .filter(file => file.startsWith('metadata/static/'));
+
+            if (changedFiles.length === 0) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No metadata changes to commit');
+              return;
+            }
+
+            // Prepare file additions
+            const additions = changedFiles.map(filePath => {
+              const contents = fs.readFileSync(filePath);
+              return {
+                path: filePath,
+                contents: contents.toString('base64')
+              };
+            });
+
+            // Get current HEAD
+            const headOid = execSync('git rev-parse HEAD').toString().trim();
+
+            // Create commit via GraphQL API
+            const result = await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit {
+                    oid
+                  }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: '${{ github.repository }}',
+                  branchName: '${{ steps.pr.outputs.ref }}'
+                },
+                message: {
+                  headline: 'chore: rebuild metadata'
+                },
+                expectedHeadOid: headOid,
+                fileChanges: {
+                  additions: additions
+                }
+              }
+            });
+
+            console.log('Commit created:', result.createCommitOnBranch.commit.oid);
+            core.exportVariable('CHANGES_MADE', 'true');
 
       - name: Post success comment
         if: env.CHANGES_MADE == 'true'
