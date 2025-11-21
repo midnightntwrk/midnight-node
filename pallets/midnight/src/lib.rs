@@ -232,6 +232,8 @@ pub mod pallet {
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
+		/// Dummy Event to test rebuild metadata
+		DummyEvent,
 	}
 
 	// Errors inform users that something went wrong.
