@@ -8,7 +8,6 @@ on:
       pr_number:
         description: 'PR number to rebuild metadata for'
         required: true
-  push:
 
 jobs:
   rebuild-metadata:
@@ -82,6 +81,7 @@ jobs:
         run: |
           git config --global user.name "MidnightCI"
           git config --global user.email "ci@midnight.network"
+          git config --global commit.gpgsign false
           if [ -n "$(git status --porcelain)" ]; then
             git add metadata/static/
             git commit -m "chore: rebuild metadata"
