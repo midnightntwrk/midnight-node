@@ -10,6 +10,7 @@ members = [
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
     "pallets/version",
+    "primitives/beefy",
     "primitives/midnight",
     "primitives/ledger",
     "res",
@@ -88,6 +89,7 @@ documented = { path = "util/documented", default-features = false }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
 midnight-primitives = { path = "primitives/midnight", default-features = false }
+midnight-primitives-beefy = { path = "primitives/beefy", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
@@ -128,6 +130,8 @@ pallet-partner-chains-session = { default-features = false, git = "https://githu
 sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
 sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
 # Substrate dependencies
+
+binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-beefy-mmr = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
