@@ -259,6 +259,11 @@ pub struct RegisterDustAddressArgs {
 	)]
 	pub funding_seed: String,
 	#[arg(
+		long,
+		value_parser = cli::wallet_address,
+	)]
+	pub destination_dust: Option<WalletAddress>,
+	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
