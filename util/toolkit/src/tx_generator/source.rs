@@ -45,8 +45,9 @@ pub struct Source {
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
-	/// Warp the timestamp to now rather than the previous block context. Useful if loading from
-	/// a genesis file, but may result in invalid proofs when connected to a live chain
+	/// Spend DUST with timestamp as system time rather than the previous block timestamp. Useful
+	/// if loading from a genesis file, but may result in invalid proofs when connected to a live
+	/// chain
 	#[arg(long, global = true)]
 	pub dust_warp: bool,
 }
