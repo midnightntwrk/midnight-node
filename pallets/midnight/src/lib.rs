@@ -217,7 +217,7 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event {
 		/// A contract was called.
-		ContractCall(CallDetails),
+ContractCall(CallDetails),
 		/// A contract has been deployed.
 		ContractDeploy(DeploymentDetails),
 		/// A transaction has been applied (both the guaranteed and conditional part).
