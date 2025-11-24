@@ -12,5 +12,7 @@ From @tkerber
 >
 > If my suspicion is correct, the fix would be to use the finalized block time in dust spend creation instead of wall clock time.
 
+The previous behaviour (using current time as DUST time) is still available via the `--dust-warp` flag. Using this flag, we are able to reproduce [PM-20611](https://shielded.atlassian.net/browse/PM-20611)
+
 Fixes: https://shielded.atlassian.net/browse/PM-20611
 PR: https://github.com/midnightntwrk/midnight-node/pull/286
