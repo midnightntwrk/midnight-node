@@ -49,4 +49,4 @@ runtime-benchmarks = [
     ]
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec", "log"]
+ignored = ["log"]
