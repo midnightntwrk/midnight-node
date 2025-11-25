@@ -232,8 +232,6 @@ pub mod pallet {
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
-		// Dummy event just to trigger a diff in the build spec
-		Dummy,
 	}
 
 	// Errors inform users that something went wrong.
