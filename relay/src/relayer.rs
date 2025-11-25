@@ -69,7 +69,7 @@ impl Relayer {
 
 		// retrieve necessary data in creating the proof
 		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
-		println!("Get Validator Set: {validator_set:?}");
+		log::trace!(target: BEEFY_LOG_TARGET, "🥩 Get Validator Set: {validator_set:?}");
 
 		// generate the proof
 		let relay_chain_proof = RelayChainProof::generate(beef_signed_commitment, validator_set)?;
@@ -77,8 +77,8 @@ impl Relayer {
 		// display the proofs
 		let plutus_data = relay_chain_proof.to_plutus_data();
 
-		println!("RelaychainProof plutus: {}", plutus_data.as_hex());
-		println!("{relay_chain_proof:#?}");
+		log::info!("🥩 RelaychainProof plutus: {}", plutus_data.as_hex());
+		log::info!(target: BEEFY_LOG_TARGET, "🥩 Relaychain: {relay_chain_proof:#?}");
 
 		Ok(())
 	}
