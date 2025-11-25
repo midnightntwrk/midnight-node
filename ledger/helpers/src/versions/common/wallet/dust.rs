@@ -130,6 +130,7 @@ struct DustAddress {
 	public_key: DustPublicKey,
 }
 
+#[derive(Debug)]
 pub enum DustAddressParseError {
 	DecodeError(bech32::DecodeError),
 	InvalidHrpPrefix,
