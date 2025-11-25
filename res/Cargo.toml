@@ -24,7 +24,6 @@ std = []
 runtime-benchmarks = []
 
 [dependencies]
-hex.workspace = true
 midnight-serialize.workspace = true
 hex-literal.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -38,12 +37,8 @@ midnight-primitives-federated-authority-observation = { workspace = true, option
 pallet-cnight-observation = { workspace = true, optional = true }
 
 [dev-dependencies]
-mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
-ledger-storage.workspace = true
-base-crypto.workspace = true
-midnight-serialize.workspace = true
-transient-crypto.workspace = true
 hex.workspace = true
+midnight-serialize.workspace = true
 toml.workspace = true
 
 [build-dependencies]
@@ -51,6 +46,3 @@ walkdir = "2"
 
 [lints]
 workspace = true
-
-[package.metadata.cargo-shear]
-ignored = ["midnight-transient-crypto", "midnight-ledger", "midnight-storage", "midnight-base-crypto"]

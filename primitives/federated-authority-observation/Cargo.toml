@@ -27,6 +27,3 @@ std = [
     "sp-core/std",
     "serde",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec"]

@@ -94,6 +94,3 @@ test-utils = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_runtime)'] }
-
-[package.metadata.cargo-shear]
-ignored = ["scale-info"]
