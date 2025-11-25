@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use midnight_primitives_beefy::BEEFY_LOG_TARGET;
 use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
 use sp_core::keccak_256;
@@ -40,7 +41,7 @@ impl AuthoritiesProof {
 
 		let payload = &beefy_signed_commitment.commitment.payload;
 		let stakes_info = BeefyStakesInfo::try_from(payload)?;
-		println!("Beefy Stakes Info: {stakes_info:#?}");
+		log::debug!(target: BEEFY_LOG_TARGET, "🥩 Beefy Stakes Info: {stakes_info:#?}");
 
 		// convert current stakes into keccak hashes
 		let keccak_hashes = prep_merkle_leaves(stakes_info.current_stakes);
@@ -81,7 +82,7 @@ fn prep_merkle_leaves(beefy_stakes: BeefyStakes) -> Vec<Hash> {
 		.map(|(idx, beefy_stake)| {
 			let v = beefy_stake.0.clone();
 			let keccak = prep_leaf_hash(beefy_stake);
-			println!("V({idx}): ecdsa: {v:?} keccak: {}", to_hex(keccak.as_slice()));
+			log::trace!(target: BEEFY_LOG_TARGET, "🥩 V({idx}): ecdsa: {v:?} keccak: {}", to_hex(keccak.as_slice()));
 
 			keccak
 		})

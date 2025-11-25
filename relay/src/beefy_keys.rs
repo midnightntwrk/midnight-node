@@ -1,10 +1,9 @@
 use std::{fs::File, io::BufReader};
 
+use midnight_primitives_beefy::BEEFY_KEY_TYPE;
 use subxt::{backend::rpc::RpcClient, ext::subxt_rpcs::rpc_params};
 
 use crate::Error;
-
-const BEEFY_KEY_TYPE: &str = "beef";
 
 /// Used for inserting keys to the keystore
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -37,7 +36,7 @@ impl BeefyKeyInfo {
 	async fn insert_key(self) {
 		match RpcClient::from_url(&self.node_url).await {
 			Ok(rpc) => self.insert_key_query(rpc).await,
-			Err(e) => println!("Warning: Failed to Connect to {}: {e:#?}", self.node_url),
+			Err(e) => log::warn!("Failed to connect to {}: {e:#?}", self.node_url),
 		}
 	}
 
@@ -46,18 +45,18 @@ impl BeefyKeyInfo {
 		let params = rpc_params![BEEFY_KEY_TYPE.to_string(), self.suri, self.pub_key.clone()];
 
 		if let Err(e) = rpc.request::<()>("author_insertKey", params).await {
-			println!("Warning: Failed to insert key({}): {e:?}", self.pub_key);
+			log::warn!("🥩 Failed to insert key({}): {e:?}", self.pub_key);
 			return;
 		}
 
-		println!("Added beefy key: {} to {}", self.pub_key, self.node_url);
+		log::info!("🥩 Added beefy key: {} to {}", self.pub_key, self.node_url);
 	}
 }
 
 /// Read beefy keys from the given file
 fn keys_from_file(key_file: &str) -> Result<Vec<BeefyKeyInfo>, Error> {
 	let file = File::open(key_file).map_err(|e| {
-		println!("WARNING: {e:#?}");
+		log::warn!("Failed to open {key_file}: {e:#?}");
 		Error::InvalidKeysFile(key_file.to_string())
 	})?;
 
@@ -65,7 +64,7 @@ fn keys_from_file(key_file: &str) -> Result<Vec<BeefyKeyInfo>, Error> {
 
 	// Read the JSON contents of the file as an instance of `User`.
 	serde_json::from_reader(reader).map_err(|e| {
-		println!("WARNING: {e:#?}");
+		log::warn!("Failed to read {key_file} as json: {e:#?}");
 		Error::JsonDecodeError(key_file.to_string())
 	})
 }

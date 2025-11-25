@@ -6988,7 +6988,10 @@ name = "midnight-beefy-relay"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "env_logger",
+ "log",
  "midnight-node-metadata",
+ "midnight-primitives-beefy",
  "mmr-rpc",
  "pallas",
  "parity-scale-codec",

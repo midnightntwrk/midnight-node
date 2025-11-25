@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use midnight_primitives_beefy::BEEFY_LOG_TARGET;
 use sp_consensus_beefy::{VersionedFinalityProof, ecdsa_crypto::Signature as EcdsaSignature};
 use sp_core::Bytes;
 use subxt::{
@@ -30,7 +31,7 @@ pub struct Relayer {
 
 impl Relayer {
 	pub async fn new(node_url: &str) -> Result<Self, Error> {
-		println!("Connecting to {node_url}");
+		log::info!("Connecting to {node_url}");
 
 		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(node_url).await?;
 
@@ -111,11 +112,11 @@ impl Relayer {
 
 		let at_block_hash = match &best_block {
 			None => {
-				println!("Cannot retrieve best block; try using Commitment block hash...");
+				log::debug!(target: BEEFY_LOG_TARGET, "🥩 Cannot retrieve best block; try using Commitment block hash...");
 				self.get_block_hash(commitment_block).await
 			},
 			Some(block_number) => {
-				println!("\nQuerying from the best block number: {block_number}");
+				log::debug!(target: BEEFY_LOG_TARGET, "🥩 Querying from the best block number: {block_number}");
 				None
 			},
 		};
@@ -143,7 +144,7 @@ impl Relayer {
 		match self.api.blocks().at_latest().await.map(|block| block.number()) {
 			Ok(block) => Some(block),
 			Err(e) => {
-				println!("WARNING: Failed to get best block number: {e:?}");
+				log::warn!("Failed to get best block number: {e:?}");
 				None
 			},
 		}
@@ -157,7 +158,7 @@ impl Relayer {
 		match self.rpc.request("chain_getBlockHash", params).await {
 			Ok(result) => result,
 			Err(e) => {
-				println!("WARNING: Failed to get block hash for block({block}: {e:?})");
+				log::warn!("Failed to get block hash for block({block}: {e:?})");
 				None
 			},
 		}

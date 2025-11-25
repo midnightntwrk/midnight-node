@@ -2,9 +2,10 @@ use std::{convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
-	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
+	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
+	WalletAddress,
 };
 
 use crate::{
@@ -18,11 +19,17 @@ pub struct RegisterDustAddressBuilder {
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
 	funding_seed: String,
+	destination_dust: Option<WalletAddress>,
 }
 
 impl RegisterDustAddressBuilder {
 	pub fn new(args: RegisterDustAddressArgs) -> Self {
-		Self { seed: args.wallet_seed, rng_seed: args.rng_seed, funding_seed: args.funding_seed }
+		Self {
+			seed: args.wallet_seed,
+			rng_seed: args.rng_seed,
+			funding_seed: args.funding_seed,
+			destination_dust: args.destination_dust,
+		}
 	}
 }
 
@@ -105,9 +112,17 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
 		context.with_wallet_from_seed(seed, |wallet| {
+			let destination_dust = self.destination_dust.clone().map_or(
+				wallet.dust.public_key,
+				|destination_dust_arg| {
+					DustWallet::<DefaultDB>::try_from(&destination_dust_arg)
+						.expect("failed to decode dust address")
+						.public_key
+				},
+			);
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
-				dust_address: Some(wallet.dust.public_key),
+				dust_address: Some(destination_dust),
 			});
 		});
 
