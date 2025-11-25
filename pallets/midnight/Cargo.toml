@@ -73,4 +73,4 @@ runtime-benchmarks = [
 try-runtime = ["frame-support/try-runtime"]
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec"]
+ignored = ["parity-scale-codec"]

@@ -217,4 +217,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec", "serde", "frame-storage-access-test-runtime"]
+ignored = ["serde", "frame-storage-access-test-runtime"]
