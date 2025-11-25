@@ -82,7 +82,7 @@ pub enum RegistrationDatumDecodeError {
 	CardanoCredentialInvalidScriptHash,
 	#[error("Dust address not bytes")]
 	DustAddressNotBytes,
-	#[error("Dust address invalid length (should be 33)")]
+	#[error("Dust address invalid length")]
 	DustAddressInvalidLength(usize),
 }
 
@@ -250,7 +250,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 impl MidnightCNightObservationDataSourceImpl {
 	fn decode_registration_datum(
 		datum: ConstrPlutusData,
-	) -> Result<(Credential, [u8; 33]), RegistrationDatumDecodeError> {
+	) -> Result<(Credential, DustPublicKeyBytes), RegistrationDatumDecodeError> {
 		// We use a Vec here because the `get` method on `PlutusList` can panic
 		let list: Vec<PlutusData> = datum.data().into_iter().cloned().collect();
 
@@ -285,8 +285,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		};
 
 		let dust_addr_length = dust_address.len();
-
-		let Ok(dust_address) = <[u8; 33]>::try_from(dust_address) else {
+		let Ok(dust_address) = <DustPublicKeyBytes>::try_from(dust_address) else {
 			return Err(RegistrationDatumDecodeError::DustAddressInvalidLength(dust_addr_length));
 		};
 
@@ -497,7 +496,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
-			let (credential, dust_address) = match Self::decode_registration_datum(constr) {
+			let (credential, dust_public_key) = match Self::decode_registration_datum(constr) {
 				Ok(pair) => pair,
 				Err(e) => {
 					log::error!("Failed to decode registration datum: {e:?} ({header:?})");
@@ -513,7 +512,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				header,
 				data: ObservedUtxoData::Registration(RegistrationData {
 					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
-					dust_public_key: DustPublicKeyBytes(dust_address),
+					dust_public_key,
 				}),
 			};
 
@@ -553,7 +552,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
-			let (credential, dust_address) = match Self::decode_registration_datum(constr) {
+			let (credential, dust_public_key) = match Self::decode_registration_datum(constr) {
 				Ok(pair) => pair,
 				Err(e) => {
 					log::error!("Failed to decode registration datum: {e:?} ({header:?})");
@@ -569,7 +568,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				header,
 				data: ObservedUtxoData::Deregistration(DeregistrationData {
 					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
-					dust_public_key: DustPublicKeyBytes(dust_address),
+					dust_public_key,
 				}),
 			};
 
