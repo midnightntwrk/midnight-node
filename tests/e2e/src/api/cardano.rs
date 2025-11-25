@@ -170,7 +170,7 @@ impl CardanoClient {
             Asset::new_from_str("lovelace", "2000000"),
             Asset::new_from_str(&auth_token_policy_id, "1"),
         ];
-        let minting_script = policies.auth_token_cbor;
+        let minting_script = policies.auth_token_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
 
         let mut tx_builder = TxBuilder::new_core();
@@ -224,9 +224,9 @@ impl CardanoClient {
         let payment_addr = self.address_as_bech32();
         let auth_token_policy_id = policies.auth_token_policy_id();
         let send_assets = vec![Asset::new_from_str("lovelace", "2000000")];
-        let minting_script = policies.auth_token_cbor.clone();
+        let minting_script = policies.auth_token_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
-        let mapping_validator_cbor = policies.auth_token_cbor;
+        let mapping_validator_cbor = policies.auth_token_cbor_double_encoding();
         let register_asset_tx_vector = Self::build_asset_vector(register_tx);
         println!("Register tx assets: {:?}", register_asset_tx_vector);
         let script_hash = whisky::get_script_hash(&mapping_validator_cbor, LanguageVersion::V2);
