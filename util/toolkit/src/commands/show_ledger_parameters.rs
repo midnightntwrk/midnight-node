@@ -1,0 +1,175 @@
+use clap::Args;
+use midnight_node_ledger_helpers::base_crypto::time::Duration;
+use midnight_node_ledger_helpers::mn_ledger::structure::INITIAL_PARAMETERS;
+use midnight_node_ledger_helpers::{
+	FeePrices, FixedPoint, LedgerParameters, deserialize, serialize,
+};
+
+#[derive(Args, Clone, Debug, Default)]
+pub struct ShowLedgerParametersArgs {
+	/// Base serialized ledger parameters, otherwise the default will be used.
+	#[arg(long)]
+	base_params: Option<String>,
+	#[arg(long)]
+	read_price_a: Option<u64>,
+	#[arg(long)]
+	read_price_b: Option<u64>,
+	#[arg(long)]
+	compute_price_a: Option<u64>,
+	#[arg(long)]
+	compute_price_b: Option<u64>,
+	#[arg(long)]
+	block_usage_price_a: Option<u64>,
+	#[arg(long)]
+	block_usage_price_b: Option<u64>,
+	#[arg(long)]
+	write_price_a: Option<u64>,
+	#[arg(long)]
+	write_price_b: Option<u64>,
+	#[arg(long)]
+	global_ttl: Option<i128>,
+	#[arg(long)]
+	cardano_to_midnight_bridge_fee_basis_points: Option<u32>,
+	#[arg(long)]
+	cost_dimension_min_ratio_a: Option<u64>,
+	#[arg(long)]
+	cost_dimension_min_ratio_b: Option<u64>,
+	#[arg(long)]
+	price_adjustment_a_parameter_a: Option<u64>,
+	#[arg(long)]
+	price_adjustment_a_parameter_b: Option<u64>,
+	#[arg(long)]
+	c_to_m_bridge_min_amount: Option<u128>,
+}
+
+#[derive(Debug)]
+pub struct LedgerParametersResult {
+	parameters: LedgerParameters,
+	serialized: String,
+}
+
+pub fn execute(args: ShowLedgerParametersArgs) -> LedgerParametersResult {
+	let base = args
+		.base_params
+		.map(|serialized_params| {
+			let bytes =
+				hex::decode(&serialized_params).expect("failed to decode ledger parameters");
+			let params: LedgerParameters =
+				deserialize(&mut &bytes[..]).expect("failed to deserialize ledger parameters");
+			params
+		})
+		.unwrap_or(INITIAL_PARAMETERS);
+	let parameters = LedgerParameters {
+		fee_prices: FeePrices {
+			read_price: match (args.read_price_a, args.read_price_b) {
+				(Some(read_price_a), Some(read_price_b)) => {
+					FixedPoint::from_u64_div(read_price_a, read_price_b)
+				},
+				_ => base.fee_prices.read_price,
+			},
+			compute_price: match (args.compute_price_a, args.compute_price_b) {
+				(Some(compute_price_a), Some(compute_price_b)) => {
+					FixedPoint::from_u64_div(compute_price_a, compute_price_b)
+				},
+				_ => base.fee_prices.compute_price,
+			},
+			block_usage_price: match (args.block_usage_price_a, args.block_usage_price_b) {
+				(Some(block_usage_price_a), Some(block_usage_price_b)) => {
+					FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
+				},
+				_ => base.fee_prices.block_usage_price,
+			},
+			write_price: match (args.write_price_a, args.write_price_b) {
+				(Some(write_price_a), Some(write_price_b)) => {
+					FixedPoint::from_u64_div(write_price_a, write_price_b)
+				},
+				_ => base.fee_prices.write_price,
+			},
+		},
+		global_ttl: args
+			.global_ttl
+			.map(|global_ttl| Duration::from_secs(global_ttl))
+			.unwrap_or(base.global_ttl),
+		cardano_to_midnight_bridge_fee_basis_points: args
+			.cardano_to_midnight_bridge_fee_basis_points
+			.unwrap_or(base.cardano_to_midnight_bridge_fee_basis_points),
+		cost_dimension_min_ratio: match (
+			args.cost_dimension_min_ratio_a,
+			args.cost_dimension_min_ratio_b,
+		) {
+			(Some(cost_dimension_min_ratio_a), Some(cost_dimension_min_ratio_b)) => {
+				FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b)
+			},
+			_ => base.cost_dimension_min_ratio,
+		},
+		price_adjustment_a_parameter: match (
+			args.price_adjustment_a_parameter_a,
+			args.price_adjustment_a_parameter_b,
+		) {
+			(Some(price_adjustment_a_parameter_a), Some(price_adjustment_a_parameter_b)) => {
+				FixedPoint::from_u64_div(
+					price_adjustment_a_parameter_a,
+					price_adjustment_a_parameter_b,
+				)
+			},
+			_ => base.price_adjustment_a_parameter,
+		},
+		c_to_m_bridge_min_amount: args
+			.c_to_m_bridge_min_amount
+			.unwrap_or(base.c_to_m_bridge_min_amount),
+		..base
+	};
+	let serialized =
+		hex::encode(serialize(&parameters).expect("failed to serialize ledger parameters"));
+	LedgerParametersResult { parameters, serialized }
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[test]
+	fn test_ledger_default_params() {
+		let default_params = ShowLedgerParametersArgs::default();
+		let result = execute(default_params.clone());
+
+		let initial_params = INITIAL_PARAMETERS;
+		let serialized =
+			hex::encode(serialize(&initial_params).expect("failed to serialize ledger parameters"));
+
+		assert_eq!(result.parameters, initial_params);
+		assert_eq!(result.serialized, serialized);
+	}
+
+	#[test]
+	fn test_ledger_params_override() {
+		let initial_params = INITIAL_PARAMETERS;
+		let initial_params_serialized =
+			hex::encode(serialize(&initial_params).expect("failed to serialize ledger parameters"));
+
+		let new_params = ShowLedgerParametersArgs {
+			c_to_m_bridge_min_amount: Some(2000),
+			..ShowLedgerParametersArgs::default()
+		};
+		let result_new_params = execute(new_params);
+		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
+		assert_ne!(result_new_params.parameters, initial_params);
+		assert_ne!(result_new_params.serialized, initial_params_serialized);
+	}
+
+	#[test]
+	fn test_base_ledger_params() {
+		let params = LedgerParameters { c_to_m_bridge_min_amount: 2000, ..INITIAL_PARAMETERS };
+		let base_params =
+			hex::encode(serialize(&params).expect("failed to serialize ledger parameters"));
+
+		let new_params = ShowLedgerParametersArgs {
+			cardano_to_midnight_bridge_fee_basis_points: Some(600),
+			base_params: Some(base_params),
+			..ShowLedgerParametersArgs::default()
+		};
+		let result_new_params = execute(new_params);
+		assert_eq!(result_new_params.parameters.cardano_to_midnight_bridge_fee_basis_points, 600);
+		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
+	}
+}

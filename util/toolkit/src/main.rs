@@ -22,7 +22,7 @@ use commands::{
 	random_address::{self, RandomAddressArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::{self, ShowAddressArgs},
-	show_ledger_params::{self, ShowLedgerParamsArgs},
+	show_ledger_parameters::{self, ShowLedgerParametersArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
@@ -87,7 +87,7 @@ enum Commands {
 	/// Show the address of a wallet using it's seed
 	ShowAddress(ShowAddressArgs),
 	/// Show the ledger parameters
-	ShowLedgerParams(ShowLedgerParamsArgs),
+	ShowLedgerParameters(ShowLedgerParametersArgs),
 	/// Show the seed of a wallet
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
@@ -233,8 +233,8 @@ pub(crate) async fn run_command(
 
 			Ok(())
 		},
-		Commands::ShowLedgerParams(args) => {
-			let result = show_ledger_params::execute(args);
+		Commands::ShowLedgerParameters(args) => {
+			let result = show_ledger_parameters::execute(args);
 			println!("{:#?}", result);
 			Ok(())
 		},
