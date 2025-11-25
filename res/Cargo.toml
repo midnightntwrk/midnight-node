@@ -39,7 +39,6 @@ pallet-cnight-observation = { workspace = true, optional = true }
 [dev-dependencies]
 midnight-serialize.workspace = true
 hex.workspace = true
-midnight-serialize.workspace = true
 toml.workspace = true
 
 [build-dependencies]
