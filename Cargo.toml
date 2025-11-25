@@ -17,7 +17,7 @@ members = [
     "runtime",
     "util/toolkit",
     "util/documented",
-    "util/ledger-params-updater",
+    "util/ledger-parameters-updater",
     "util/upgrader",
     "tests/e2e",
     "relay",
