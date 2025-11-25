@@ -21,6 +21,7 @@ pub mod get_tx_from_context;
 pub mod random_address;
 pub mod send_intent;
 pub mod show_address;
+pub mod show_ledger_params;
 pub mod show_seed;
 pub mod show_token_type;
 pub mod show_transaction;
