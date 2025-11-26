@@ -90,6 +90,7 @@ jobs:
           BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
           # Build release notes
+          export SEASON_GHCR_REGISTRY="midnightntwrk"
           export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_COMMIT"
           export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-node-toolkit:$SEASON_IMAGE_TAG_COMMIT"
           export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
