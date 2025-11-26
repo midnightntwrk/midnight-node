@@ -14,19 +14,21 @@
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
-	BlockDataSourceImpl, CandidatesDataSourceImpl, DbSyncBlockDataSourceConfig,
-	GovernedMapDataSourceCachedImpl, McFollowerMetrics, McHashDataSourceImpl,
-	SidechainRpcDataSourceImpl,
+	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
+	DbSyncBlockDataSourceConfig, GovernedMapDataSourceCachedImpl, McFollowerMetrics,
+	McHashDataSourceImpl, SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
 	AuthoritySelectionDataSourceMock, BlockDataSourceMock, GovernedMapDataSourceMock,
-	McHashDataSourceMock, SidechainRpcDataSourceMock,
+	McHashDataSourceMock, SidechainRpcDataSourceMock, TokenBridgeDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_governed_map::GovernedMapDataSource;
+use sp_partner_chains_bridge::TokenBridgeDataSource;
 
 use super::cfg::midnight_cfg::MidnightCfg;
+use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
 use std::{error::Error, str::FromStr as _, sync::Arc};
@@ -49,6 +51,7 @@ pub struct DataSources {
 	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	pub federated_authority_observation:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	pub bridge: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
 #[derive(Clone)]
@@ -99,11 +102,13 @@ pub async fn create_mock_data_sources(
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
 		),
+		bridge: Arc::new(TokenBridgeDataSourceMock::<BridgeRecipient>::new()),
 	})
 }
 
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
+pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
 
 // FIXME: these should almost certainly be Cfg in MidnightCfg, so users can tweak as needed
 const CANDIDATES_POOL_CFG: DbPoolCfg =
@@ -117,6 +122,8 @@ const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
 const GOVERNED_MAP_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const BRIDGE_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
 pub async fn create_cached_data_sources(
@@ -168,13 +175,13 @@ pub async fn create_cached_data_sources(
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
 	let sidechain_pool = get_connection(postgres_uri, SIDECHAIN_POOL_CFG).await?;
-	let sidechain_block_data_source = BlockDataSourceImpl::from_config(
+	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
 		&mc,
-	);
+	));
 	let sidechain_rpc =
-		SidechainRpcDataSourceImpl::new(Arc::new(sidechain_block_data_source), metrics_opt.clone());
+		SidechainRpcDataSourceImpl::new(sidechain_block_data_source.clone(), metrics_opt.clone());
 
 	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG).await?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
@@ -206,19 +213,30 @@ pub async fn create_cached_data_sources(
 	)
 	.await?;
 
-	let federated_authorty_observation_pool =
+	let federated_authority_observation_pool =
 		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG).await?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
-		federated_authorty_observation_pool,
-		metrics_opt,
+		federated_authority_observation_pool,
+		metrics_opt.clone(),
 		1000,
 	);
+
+	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG).await?;
+
+	let bridge = CachedTokenBridgeDataSourceImpl::new(
+		bridge_pool,
+		metrics_opt,
+		sidechain_block_data_source,
+		BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
+	);
+
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
 		authority_selection: Arc::new(candidates_data_source_cached),
 		cnight_observation: Arc::new(cnight_observation),
 		governed_map: Arc::new(governed_map),
+		bridge: Arc::new(bridge),
 		federated_authority_observation: Arc::new(federated_authority_observation),
 	})
 }

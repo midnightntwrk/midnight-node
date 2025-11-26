@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 use authority_selection_inherents::CommitteeMember;
 
-use midnight_primitives_beefy::BeefyStakes;
+use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStakes};
 use pallet_beefy_mmr::{Config as BeefyMmrConfig, Pallet as BeefyMmrPallet};
 use pallet_mmr::Config as MmrConfig;
 
@@ -25,8 +25,6 @@ type CommitteeInfoOf<T> = CommitteeInfo<
 	<T as SessionValidatorMngConfig>::CommitteeMember,
 	<T as SessionValidatorMngConfig>::MaxValidators,
 >;
-
-pub const BEEFY_LOG_TARGET: &str = "midnight-beefy";
 
 pub fn current_beefy_stakes(validators: Option<Vec<BeefyId>>) -> BeefyStakes<BeefyId> {
 	let current_validators = validators.unwrap_or(

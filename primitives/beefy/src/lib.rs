@@ -5,6 +5,11 @@ use sp_consensus_beefy::mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet};
 use sp_runtime::RuntimeAppPublic;
 use sp_std::vec::Vec;
 
+/// The key type for inserting Beefy keys into the keystore
+pub const BEEFY_KEY_TYPE: &str = "beef";
+
+pub const BEEFY_LOG_TARGET: &str = "midnight-beefy";
+
 /// The StakeDelegation
 pub type Stake = u64;
 pub type BeefyAuthoritySetOf<Hash> = BeefyAuthoritySet<Hash>;

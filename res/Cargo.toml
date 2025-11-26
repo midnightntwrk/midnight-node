@@ -37,8 +37,8 @@ midnight-primitives-federated-authority-observation = { workspace = true, option
 pallet-cnight-observation = { workspace = true, optional = true }
 
 [dev-dependencies]
-hex.workspace = true
 midnight-serialize.workspace = true
+hex.workspace = true
 toml.workspace = true
 
 [build-dependencies]
