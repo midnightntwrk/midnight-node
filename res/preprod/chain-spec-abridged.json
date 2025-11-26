@@ -208,7 +208,7 @@
         "cNightObservation": {
           "config": {
             "addresses": {
-              "mapping_validator_address": "addr_test1wp5ac30f95jxl6hj85d40h7rkyen6ksy3r8adqwcrr4xkncremdyk",
+              "mapping_validator_address": "addr_test1wpztklvv6scgyzne56ky0va0x5dmje56lf39eshxdha68rclu8fje",
               "auth_token_asset_name": "",
               "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
               "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
@@ -368,7 +368,17 @@
           "councilAddress": "addr_test1wr59xjxnctrcnyjm8mtfnjjn00saptt0jpc2w3p2tnk784qruvy77",
           "councilPolicyId": "0xe85348d3c2c789925b3ed699ca537be1d0ad6f9070a7442a5cede3d4",
           "technicalCommitteeAddress": "addr_test1wq02xjyl3vl9qvyz5s4l9ejhpwmae23n22hhx2kk32sdaxcqq60nv",
-          "technicalCommitteePolicyId": "0x1ea3489f8b3e503082a42bf2e6570bb7dcaa3352af732ad68aa0de9b"
+          "technicalCommitteePolicyId": "0x1ea3489f8b3e503082a42bf2e6570bb7dcaa3352af732ad68aa0de9b",
+          "councilMembersMainchain": [
+            "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
+            "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
+            "0x1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+          ],
+          "technicalCommitteeMembersMainchain": [
+            "0xb94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
+            "0xde14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
+            "0x1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+          ]
         }
       }
     }

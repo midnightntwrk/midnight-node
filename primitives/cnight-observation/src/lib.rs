@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use sp_api::decl_runtime_apis;
 
+use frame_support::{storage::bounded_vec::BoundedVec, traits::ConstU32};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sidechain_domain::{McBlockHash, McTxHash};
@@ -68,7 +69,6 @@ impl TryFrom<Vec<u8>> for CardanoRewardAddressBytes {
 	DecodeWithMemTracking,
 	TypeInfo,
 	MaxEncodedLen,
-	Copy,
 	Clone,
 	Eq,
 	PartialEq,
@@ -78,25 +78,27 @@ impl TryFrom<Vec<u8>> for CardanoRewardAddressBytes {
 	PartialOrd,
 	Ord,
 )]
-pub struct DustPublicKeyBytes(#[serde(with = "hex")] pub [u8; 33]);
+pub struct DustPublicKeyBytes(pub BoundedVec<u8, ConstU32<33>>);
 
 impl Default for DustPublicKeyBytes {
 	fn default() -> Self {
-		Self([0u8; 33])
+		Self(BoundedVec::new())
 	}
 }
 
 impl TryFrom<Vec<u8>> for DustPublicKeyBytes {
-	type Error = <[u8; 33] as TryFrom<Vec<u8>>>::Error;
+	type Error = <BoundedVec<u8, ConstU32<33>> as TryFrom<Vec<u8>>>::Error;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Ok(Self(value.try_into()?))
 	}
 }
 
-impl From<[u8; 33]> for DustPublicKeyBytes {
-	fn from(value: [u8; 33]) -> Self {
-		Self(value)
+impl TryFrom<&[u8]> for DustPublicKeyBytes {
+	type Error = <DustPublicKeyBytes as TryFrom<Vec<u8>>>::Error;
+
+	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+		value.to_vec().try_into()
 	}
 }
 
