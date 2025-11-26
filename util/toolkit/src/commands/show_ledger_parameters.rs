@@ -66,7 +66,7 @@ pub fn execute(
 ) -> Result<LedgerParametersResult, LedgerParametersError> {
 	let base = match args.base_params {
 		Some(serialized_params) => {
-			let bytes = hex::decode(&serialized_params)
+			let bytes = hex::decode(&serialized_params.replace("0x", ""))
 				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?;
 			let params: LedgerParameters = deserialize(&mut &bytes[..])
 				.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
