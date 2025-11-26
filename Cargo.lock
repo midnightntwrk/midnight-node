@@ -5993,26 +5993,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
-name = "ledger-parameters-updater"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "bip39",
- "clap",
- "env_logger",
- "hex",
- "log",
- "midnight-ledger 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
- "midnight-node-ledger-helpers",
- "parity-scale-codec",
- "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
- "subxt 0.44.0",
- "subxt-signer 0.44.0",
- "thiserror 1.0.69",
- "tokio",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.174"
 source = "registry+https://github.com/rust-lang/crates.io-index"
