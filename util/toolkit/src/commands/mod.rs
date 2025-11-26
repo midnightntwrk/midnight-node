@@ -27,5 +27,6 @@ pub mod show_token_type;
 pub mod show_transaction;
 pub mod show_viewing_key;
 pub mod show_wallet;
+pub mod update_ledger_parameters;
 
 pub mod generate_intent;

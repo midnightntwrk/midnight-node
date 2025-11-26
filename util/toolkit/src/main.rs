@@ -27,6 +27,7 @@ use commands::{
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
+	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use midnight_node_ledger_helpers::*;
 use std::{
@@ -104,6 +105,8 @@ enum Commands {
 	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
+	/// Update the ledger parameters
+	UpdateLedgerParameters(UpdateLedgerParametersArgs),
 	/// Get the version information
 	Version,
 }
@@ -236,6 +239,10 @@ pub(crate) async fn run_command(
 		Commands::ShowLedgerParameters(args) => {
 			let result = show_ledger_parameters::execute(args)?;
 			println!("{:#?}", result);
+			Ok(())
+		},
+		Commands::UpdateLedgerParameters(args) => {
+			update_ledger_parameters::execute(args).await?;
 			Ok(())
 		},
 		Commands::ShowSeed(args) => {
