@@ -31,11 +31,12 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-type UnprovenTransaction<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+pub type UnprovenTransaction<D> =
+	Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[cfg(not(feature = "erase-proof"))]
-type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
+pub type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
 #[cfg(feature = "erase-proof")]
-type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
+pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 

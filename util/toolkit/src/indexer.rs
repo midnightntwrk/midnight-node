@@ -11,7 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod fetch;
+pub mod fetch_storage;
 mod runtimes;
+
+pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
 
 use backoff::{ExponentialBackoff, future::retry};
 use futures::FutureExt;
@@ -41,7 +45,7 @@ use crate::{
 	hash_to_str,
 	indexer::runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
-		MidnightMetadata0_18_1, RuntimeVersion,
+		MidnightMetadata0_18_1, RuntimeVersion, RuntimeVersionError,
 	},
 	serde_def::{self, SourceBlockTransactions},
 };
@@ -78,10 +82,8 @@ pub enum IndexerError {
 	StopFailed(#[from] JoinError),
 	#[error("indexer received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
-	#[error("indexer received a block with invalid node version: {0}")]
-	InvalidProtocolVersion(parity_scale_codec::Error),
-	#[error("indexer received a block made with unsupported node version {0}")]
-	UnsupportedBlockVersion(u32),
+	#[error("RuntimeVersionError: {0}")]
+	RuntimeVersionError(#[from] RuntimeVersionError),
 	#[error("block {0} not found")]
 	BlockNotFound(u32),
 }

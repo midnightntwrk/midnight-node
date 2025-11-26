@@ -46,6 +46,8 @@ use crate::commands::{
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 };
 
+use midnight_node_toolkit::indexer::fetch::fetch_all;
+
 mod commands;
 mod utils;
 
@@ -103,6 +105,15 @@ enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Get the version information
 	Version,
+	/// Fetch
+	Fetch(FetchArgs),
+}
+
+#[derive(Args, Clone)]
+struct FetchArgs {
+	url: String,
+	num_workers: usize,
+	height: usize,
 }
 
 #[derive(Args)]
@@ -140,12 +151,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				// Initialize the logger.
 				structured_logger::Builder::with_level("info")
 					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::sink(),
+						tokio::io::stdout(),
 					))
-					.with_target_writer(
-						"midnight_node_toolkit*",
-						structured_logger::async_json::new_writer(tokio::io::stdout()),
-					)
+					//.with_target_writer(
+					//	"midnight_node_toolkit*",
+					//	structured_logger::async_json::new_writer(tokio::io::stdout()),
+					//)
 					.init();
 
 				// Initialize tracing (used by ledger to emit warnings)
@@ -296,6 +307,12 @@ pub(crate) async fn run_command(
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::Fetch(FetchArgs { url, num_workers, height }) => {
+			let start = std::time::Instant::now();
+			let blocks = fetch_all(&url, num_workers, height).await.unwrap();
+			println!("fetched {} blocks in {:.3} s", blocks.len(), start.elapsed().as_secs_f32());
 			Ok(())
 		},
 	}
