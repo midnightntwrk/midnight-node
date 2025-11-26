@@ -234,7 +234,7 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::ShowLedgerParameters(args) => {
-			let result = show_ledger_parameters::execute(args);
+			let result = show_ledger_parameters::execute(args)?;
 			println!("{:#?}", result);
 			Ok(())
 		},

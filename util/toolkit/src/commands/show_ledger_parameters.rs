@@ -4,6 +4,17 @@ use midnight_node_ledger_helpers::mn_ledger::structure::INITIAL_PARAMETERS;
 use midnight_node_ledger_helpers::{
 	FeePrices, FixedPoint, LedgerParameters, deserialize, serialize,
 };
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum LedgerParametersError {
+	#[error("failed to decode ledger parameters: {0}")]
+	DecodeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to deserialize ledger parameters: {0}")]
+	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to serialize ledger parameters: {0}")]
+	SerializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+}
 
 #[derive(Args, Clone, Debug, Default)]
 pub struct ShowLedgerParametersArgs {
@@ -44,21 +55,25 @@ pub struct ShowLedgerParametersArgs {
 
 #[derive(Debug)]
 pub struct LedgerParametersResult {
-	parameters: LedgerParameters,
-	serialized: String,
+	#[allow(dead_code)]
+	pub(crate) parameters: LedgerParameters,
+	#[allow(dead_code)]
+	pub(crate) serialized: String,
 }
 
-pub fn execute(args: ShowLedgerParametersArgs) -> LedgerParametersResult {
-	let base = args
-		.base_params
-		.map(|serialized_params| {
-			let bytes =
-				hex::decode(&serialized_params).expect("failed to decode ledger parameters");
-			let params: LedgerParameters =
-				deserialize(&mut &bytes[..]).expect("failed to deserialize ledger parameters");
+pub fn execute(
+	args: ShowLedgerParametersArgs,
+) -> Result<LedgerParametersResult, LedgerParametersError> {
+	let base = match args.base_params {
+		Some(serialized_params) => {
+			let bytes = hex::decode(&serialized_params)
+				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?;
+			let params: LedgerParameters = deserialize(&mut &bytes[..])
+				.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
 			params
-		})
-		.unwrap_or(INITIAL_PARAMETERS);
+		},
+		_ => INITIAL_PARAMETERS,
+	};
 	let parameters = LedgerParameters {
 		fee_prices: FeePrices {
 			read_price: match (args.read_price_a, args.read_price_b) {
@@ -119,9 +134,12 @@ pub fn execute(args: ShowLedgerParametersArgs) -> LedgerParametersResult {
 			.unwrap_or(base.c_to_m_bridge_min_amount),
 		..base
 	};
-	let serialized =
-		hex::encode(serialize(&parameters).expect("failed to serialize ledger parameters"));
-	LedgerParametersResult { parameters, serialized }
+	let serialized = hex::encode(
+		serialize(&parameters)
+			.map_err(|e| LedgerParametersError::SerializeLedgerParameters(e.into()))?,
+	);
+
+	Ok(LedgerParametersResult { parameters, serialized })
 }
 
 #[cfg(test)]
@@ -131,7 +149,7 @@ mod test {
 	#[test]
 	fn test_ledger_default_params() {
 		let default_params = ShowLedgerParametersArgs::default();
-		let result = execute(default_params.clone());
+		let result = execute(default_params.clone()).expect("failed to execute command");
 
 		let initial_params = INITIAL_PARAMETERS;
 		let serialized =
@@ -151,7 +169,7 @@ mod test {
 			c_to_m_bridge_min_amount: Some(2000),
 			..ShowLedgerParametersArgs::default()
 		};
-		let result_new_params = execute(new_params);
+		let result_new_params = execute(new_params).expect("failed to execute command");
 		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
 		assert_ne!(result_new_params.parameters, initial_params);
 		assert_ne!(result_new_params.serialized, initial_params_serialized);
@@ -168,7 +186,7 @@ mod test {
 			base_params: Some(base_params),
 			..ShowLedgerParametersArgs::default()
 		};
-		let result_new_params = execute(new_params);
+		let result_new_params = execute(new_params).expect("failed to execute command");
 		assert_eq!(result_new_params.parameters.cardano_to_midnight_bridge_fee_basis_points, 600);
 		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
 	}
