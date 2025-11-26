@@ -44,7 +44,7 @@ pub async fn execute_update(
 	signer: &Keypair,
 	parameters: &LedgerParameters,
 ) -> Result<(), LedgerParametersError> {
-	log::info!("Executing ledger parameters updated via federated authority.");
+	log::info!("Executing ledger parameters update via federated authority.");
 
 	// Create a new API client
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
@@ -64,7 +64,7 @@ pub async fn execute_update(
 	let send_system_tx_call = dynamic::tx(
 		"MidnightSystem",
 		"send_mn_system_transaction",
-		serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?,
+		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
 	);
 	let send_system_tx_call_value = send_system_tx_call.clone().into_value();
 
@@ -205,11 +205,12 @@ pub async fn execute_update(
 
 	// Verify the parameres update was successful
 	let mut success = false;
-	dbg!(&events);
 	for event in events.iter() {
 		let event = event?;
-		if event.pallet_name() == "System" && event.variant_name() == "CodeUpdated" {
-			log::info!("Code update success: {:?}", event);
+		if event.pallet_name() == "MidnightSystem"
+			&& event.variant_name() == "SystemTransactionApplied"
+		{
+			log::info!("MidnightSystem::SystemTransactionApplied");
 			success = true;
 			break;
 		}
