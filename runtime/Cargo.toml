@@ -44,7 +44,7 @@ sp-consensus-slots.workspace = true
 sp-core.workspace = true
 sp-genesis-builder.workspace = true
 sp-inherents.workspace = true
-#sp-partner-chains-bridge.workspace = true
+sp-partner-chains-bridge.workspace = true
 sp-offchain.workspace = true
 sp-runtime.workspace = true
 sp-session.workspace = true
@@ -70,7 +70,7 @@ frame-system-benchmarking = { workspace = true, optional = true }
 authority-selection-inherents.workspace = true
 #pallet-block-rewards.workspace = true
 #sp-block-rewards.workspace = true
-#pallet-partner-chains-bridge.workspace = true
+pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
@@ -87,6 +87,7 @@ midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
+midnight-primitives.workspace = true
 pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 
@@ -120,7 +121,7 @@ std = [
     "pallet-grandpa/std",
     "pallet-midnight/std",
     "pallet-mmr/std",
-    #"pallet-partner-chains-bridge/std",
+    "pallet-partner-chains-bridge/std",
     "pallet-version/std",
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
@@ -142,7 +143,7 @@ std = [
     "sp-consensus-slots/std",
     "sp-core/std",
     "sp-inherents/std",
-    #"sp-partner-chains-bridge/std",
+    "sp-partner-chains-bridge/std",
     "sp-offchain/std",
     "sp-runtime/std",
     "sp-session/std",
@@ -166,6 +167,7 @@ std = [
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
+    "midnight-primitives/std",
     "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
     "runtime-common/std"

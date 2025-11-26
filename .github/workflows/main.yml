@@ -291,25 +291,30 @@ jobs:
             ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
 
-          # Multi-arch latest
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
-
           # Toolkit manifests
           docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest \
+          # Push node manifests
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
+
+      - name: Create and push `latest-main` images
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest-main \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
-          # Push node manifests
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest-main
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main
 
       - name: Check if indexer is on main
         id: indexer-check
