@@ -7635,6 +7635,7 @@ dependencies = [
 name = "midnight-primitives-cnight-observation"
 version = "0.1.0"
 dependencies = [
+ "frame-support",
  "hex",
  "parity-scale-codec",
  "scale-info",
