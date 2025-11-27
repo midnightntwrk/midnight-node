@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use bip39::Mnemonic;
 use clap::Args;
 use subxt::{
 	OnlineClient, SubstrateConfig,
@@ -8,36 +7,24 @@ use subxt::{
 	tx::Payload,
 	utils::H256,
 };
-use subxt_signer::{SecretUri, SecretUriError, sr25519::Keypair};
+use subxt_signer::{SecretUri, SecretUriError, sr25519};
 use thiserror::Error;
 
 use midnight_node_ledger_helpers::{
-	deserialize,
+	Keypair, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction},
 	serialize,
 };
-
-pub fn get_signer(key_str: &str) -> Result<Keypair, LedgerParametersError> {
-	// Supports seed phrases
-	if key_str.contains('/') {
-		let uri = SecretUri::from_str(key_str)?;
-		Ok(Keypair::from_uri(&uri)?)
-	} else {
-		let phrase = Mnemonic::parse(key_str)?;
-		Ok(Keypair::from_phrase(&phrase, None)?)
-	}
-}
+use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Error, Debug)]
 pub enum LedgerParametersError {
 	#[error("Secret URI parse error: {0}")]
 	UriParseFailed(#[from] SecretUriError),
 	#[error("Subxt signer error: {0}")]
-	SubxtSignerError(#[from] subxt_signer::sr25519::Error),
+	SubxtSignerError(#[from] sr25519::Error),
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
-	#[error("BIP error: {0}")]
-	BipError(#[from] bip39::Error),
 	#[error("serialization error: {0}")]
 	SerializationError(std::io::Error),
 	#[error("Parameters update failed: Missing code updated event")]
@@ -59,8 +46,8 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: String,
 
 	/// Seed for applying the authorized update (can be any authority member)
-	#[arg(short, long, env, default_value = "//Alice")]
-	signer_key: String,
+	#[arg(short, long, env, default_value = "//Alice", value_parser = cli::keypair_from_str)]
+	signer_key: Keypair,
 
 	/// RPC URL for sending the update
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
@@ -68,7 +55,7 @@ pub struct UpdateLedgerParametersArgs {
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
-	let signer = get_signer(&args.signer_key)?;
+	let signer = args.signer_key;
 	let bytes = hex::decode(&args.parameters.replace("0x", ""))
 		.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?;
 	let parameters: LedgerParameters = deserialize(&mut &bytes[..])
@@ -83,13 +70,13 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	// Authority member keypairs
 	// Technical Committee members: Alice, Bob, Charlie
-	let alice = Keypair::from_uri(&SecretUri::from_str("//Alice")?)?;
-	let bob = Keypair::from_uri(&SecretUri::from_str("//Bob")?)?;
-	let _charlie = Keypair::from_uri(&SecretUri::from_str("//Charlie")?)?; // Reserved for optional 3rd vote
+	let alice = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Alice")?)?);
+	let bob = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Bob")?)?);
+	let _charlie = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Charlie")?)?); // Reserved for optional 3rd vote
 	// Council members: Dave, Eve, Ferdie
-	let dave = Keypair::from_uri(&SecretUri::from_str("//Dave")?)?;
-	let eve = Keypair::from_uri(&SecretUri::from_str("//Eve")?)?;
-	let _ferdie = Keypair::from_uri(&SecretUri::from_str("//Ferdie")?)?; // Reserved for optional 3rd vote
+	let dave = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Dave")?)?);
+	let eve = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Eve")?)?);
+	let _ferdie = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Ferdie")?)?); // Reserved for optional 3rd vote
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
@@ -132,7 +119,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let council_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&council_proposal, &dave)
+		.sign_and_submit_then_watch_default(&council_proposal, &dave.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -170,7 +157,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let tech_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&tech_proposal, &alice)
+		.sign_and_submit_then_watch_default(&tech_proposal, &alice.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -228,7 +215,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&close_motion_call, &signer)
+		.sign_and_submit_then_watch_default(&close_motion_call, &signer.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -274,7 +261,7 @@ async fn vote_on_proposal(
 	);
 
 	api.tx()
-		.sign_and_submit_then_watch_default(&vote_call, signer)
+		.sign_and_submit_then_watch_default(&vote_call, &signer.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -306,7 +293,7 @@ async fn close_proposal(
 	);
 
 	api.tx()
-		.sign_and_submit_then_watch_default(&close_call, signer)
+		.sign_and_submit_then_watch_default(&close_call, &signer.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;

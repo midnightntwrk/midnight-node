@@ -20,7 +20,6 @@ midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 midnight-node-metadata.workspace = true
 subxt.workspace = true
 subxt-signer.workspace = true
-bip39 = { version = "2.0.0", default-features = false }
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true, features = ["derive"] }
