@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use clap::Args;
 use subxt::{
 	OnlineClient, SubstrateConfig,
@@ -7,7 +5,6 @@ use subxt::{
 	tx::Payload,
 	utils::H256,
 };
-use subxt_signer::{SecretUri, SecretUriError, sr25519};
 use thiserror::Error;
 
 use midnight_node_ledger_helpers::{
@@ -19,10 +16,6 @@ use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Error, Debug)]
 pub enum LedgerParametersError {
-	#[error("Secret URI parse error: {0}")]
-	UriParseFailed(#[from] SecretUriError),
-	#[error("Subxt signer error: {0}")]
-	SubxtSignerError(#[from] sr25519::Error),
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
 	#[error("serialization error: {0}")]
@@ -52,6 +45,18 @@ pub struct UpdateLedgerParametersArgs {
 	/// RPC URL for sending the update
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
+
+	#[arg(short, long, env, default_value = "//Alice", value_parser = cli::keypair_from_str)]
+	technical_committee_member_1: Keypair,
+
+	#[arg(short, long, env, default_value = "//Bob", value_parser = cli::keypair_from_str)]
+	technical_committee_member_2: Keypair,
+
+	#[arg(short, long, env, default_value = "//Dave", value_parser = cli::keypair_from_str)]
+	council_member_1: Keypair,
+
+	#[arg(short, long, env, default_value = "//Eve", value_parser = cli::keypair_from_str)]
+	council_member_2: Keypair,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
@@ -69,14 +74,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(args.rpc_url).await?;
 
 	// Authority member keypairs
-	// Technical Committee members: Alice, Bob, Charlie
-	let alice = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Alice")?)?);
-	let bob = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Bob")?)?);
-	let _charlie = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Charlie")?)?); // Reserved for optional 3rd vote
-	// Council members: Dave, Eve, Ferdie
-	let dave = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Dave")?)?);
-	let eve = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Eve")?)?);
-	let _ferdie = Keypair(sr25519::Keypair::from_uri(&SecretUri::from_str("//Ferdie")?)?); // Reserved for optional 3rd vote
+	let tc_member_1 = args.technical_committee_member_1;
+	let tc_member_2 = args.technical_committee_member_2;
+	// Council members
+	let council_member_1 = args.council_member_1;
+	let council_member_2 = args.council_member_2;
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
@@ -119,7 +121,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let council_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&council_proposal, &dave.0)
+		.sign_and_submit_then_watch_default(&council_proposal, &council_member_1.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -132,17 +134,37 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		council_proposal_index
 	);
 
-	// Step 4: Council members vote (need 2 out of 3: Alice and Bob)
+	// Step 4: Council members vote
 	println!("Council members voting...");
-	vote_on_proposal(&api, &dave, "Council", council_proposal_hash, council_proposal_index, true)
-		.await?;
-	vote_on_proposal(&api, &eve, "Council", council_proposal_hash, council_proposal_index, true)
-		.await?;
-	// Charlie doesn't need to vote since we already have 2/3
+	vote_on_proposal(
+		&api,
+		&council_member_1,
+		"Council",
+		council_proposal_hash,
+		council_proposal_index,
+		true,
+	)
+	.await?;
+	vote_on_proposal(
+		&api,
+		&council_member_2,
+		"Council",
+		council_proposal_hash,
+		council_proposal_index,
+		true,
+	)
+	.await?;
 
 	// Step 5: Close Council proposal
 	println!("Closing Council proposal...");
-	close_proposal(&api, &dave, "Council", council_proposal_hash, council_proposal_index).await?;
+	close_proposal(
+		&api,
+		&council_member_1,
+		"Council",
+		council_proposal_hash,
+		council_proposal_index,
+	)
+	.await?;
 
 	// Step 6: Technical Committee proposes to approve the federated motion
 	println!("Technical Committee proposing federated motion approval...");
@@ -157,7 +179,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let tech_propose_events = api
 		.tx()
-		.sign_and_submit_then_watch_default(&tech_proposal, &alice.0)
+		.sign_and_submit_then_watch_default(&tech_proposal, &tc_member_1.0)
 		.await?
 		.wait_for_finalized_success()
 		.await?;
@@ -169,11 +191,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		tech_proposal_index
 	);
 
-	// Step 7: Technical Committee members vote (need 2 out of 3: Dave and Eve)
+	// Step 7: Technical Committee members vote
 	println!("Technical Committee members voting...");
 	vote_on_proposal(
 		&api,
-		&alice,
+		&tc_member_1,
 		"TechnicalCommittee",
 		tech_proposal_hash,
 		tech_proposal_index,
@@ -182,7 +204,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	.await?;
 	vote_on_proposal(
 		&api,
-		&bob,
+		&tc_member_2,
 		"TechnicalCommittee",
 		tech_proposal_hash,
 		tech_proposal_index,
@@ -193,8 +215,14 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	// Step 8: Close Technical Committee proposal
 	println!("Closing Technical Committee proposal...");
-	close_proposal(&api, &alice, "TechnicalCommittee", tech_proposal_hash, tech_proposal_index)
-		.await?;
+	close_proposal(
+		&api,
+		&tc_member_1,
+		"TechnicalCommittee",
+		tech_proposal_hash,
+		tech_proposal_index,
+	)
+	.await?;
 
 	println!("Federated authority motion approved by both councils!");
 

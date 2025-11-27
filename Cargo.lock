@@ -7472,7 +7472,6 @@ dependencies = [
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
  "structured-logger",
  "subxt 0.44.0",
- "subxt-signer 0.44.0",
  "tempfile",
  "test-case",
  "thiserror 1.0.69",
