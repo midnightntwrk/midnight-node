@@ -21,34 +21,49 @@ pub struct ShowLedgerParametersArgs {
 	/// Base serialized ledger parameters, otherwise the default will be used.
 	#[arg(long)]
 	base_params: Option<String>,
+	/// Ledger's `read_price_a` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b)
 	#[arg(long)]
 	read_price_a: Option<u64>,
+	/// Ledger's `read_price_b` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b)
 	#[arg(long)]
 	read_price_b: Option<u64>,
+	/// Ledger's `compute_price_a` parameter, used in FixedPoint::from_u64_div(compute_price_a, compute_price_b)
 	#[arg(long)]
 	compute_price_a: Option<u64>,
+	/// Ledger's `compute_price_b` parameter, used in FixedPoint::from_u64_div(compute_price_a, compute_price_b)
 	#[arg(long)]
 	compute_price_b: Option<u64>,
+	/// Ledger's `block_usage_price_a` parameter, used in FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
 	#[arg(long)]
 	block_usage_price_a: Option<u64>,
+	/// Ledger's `block_usage_price_b` parameter, used in FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
 	#[arg(long)]
 	block_usage_price_b: Option<u64>,
+	/// Ledger's `write_price_a` parameter, used in FixedPoint::from_u64_div(write_price_a, write_price_b)
 	#[arg(long)]
 	write_price_a: Option<u64>,
+	/// Ledger's `write_price_b` parameter, used as FixedPoint::from_u64_div(write_price_a, write_price_b)
 	#[arg(long)]
 	write_price_b: Option<u64>,
+	/// Ledger's `global_ttl` parameter
 	#[arg(long)]
 	global_ttl: Option<i128>,
+	/// Ledger's `cardano_to_midnight_bridge_fee_basis_points` parameter
 	#[arg(long)]
 	cardano_to_midnight_bridge_fee_basis_points: Option<u32>,
+	/// Ledger's `cost_dimension_min_ratio_a` parameter, used as FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b)
 	#[arg(long)]
 	cost_dimension_min_ratio_a: Option<u64>,
+	/// Ledger's `cost_dimension_min_ratio_b` parameter, used as FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b)
 	#[arg(long)]
 	cost_dimension_min_ratio_b: Option<u64>,
+	/// Ledger's `price_adjustment_a_parameter_a` parameter, used as FixedPoint::from_u64_div(price_adjustment_a_parameter_a, price_adjustment_a_parameter_b)
 	#[arg(long)]
 	price_adjustment_a_parameter_a: Option<u64>,
+	/// Ledger's `price_adjustment_a_parameter_b` parameter, used as FixedPoint::from_u64_div(price_adjustment_a_parameter_a, price_adjustment_a_parameter_b)
 	#[arg(long)]
 	price_adjustment_a_parameter_b: Option<u64>,
+	/// Ledger's `c_to_m_bridge_min_amount` parameter
 	#[arg(long)]
 	c_to_m_bridge_min_amount: Option<u128>,
 }
@@ -56,9 +71,9 @@ pub struct ShowLedgerParametersArgs {
 #[derive(Debug)]
 pub struct LedgerParametersResult {
 	#[allow(dead_code)]
-	pub(crate) parameters: LedgerParameters,
+	parameters: LedgerParameters,
 	#[allow(dead_code)]
-	pub(crate) serialized: String,
+	serialized: String,
 }
 
 pub fn execute(
