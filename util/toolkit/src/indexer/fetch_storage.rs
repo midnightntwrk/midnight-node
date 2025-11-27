@@ -44,7 +44,7 @@ pub trait FetchStorage<D: DB + Clone> {
 		let block_stream = stream::iter(
 			range.map(async |block_number| self.get_block(chain_id, block_number).await),
 		);
-		let buffered = block_stream.buffer_unordered(10);
+		let buffered = block_stream.buffered(10);
 		buffered.collect().await
 	}
 
@@ -70,7 +70,7 @@ pub trait FetchStorage<D: DB + Clone> {
 		let block_stream = stream::iter(
 			range.map(async |block_number| self.get_block_data(chain_id, block_number).await),
 		);
-		let buffered = block_stream.buffer_unordered(10);
+		let buffered = block_stream.buffered(10);
 		buffered.collect().await
 	}
 
