@@ -56,6 +56,3 @@ std = [
     "rand/std",
     "rand/thread_rng",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["scale-info", "log"]
