@@ -22,6 +22,9 @@ use crate::{
 type FetchResult = Result<WorkJob, FetchError>;
 type WorkResult = Result<WorkJob, WorkError>;
 
+/// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
+const BLOCKS_PER_JOB: u64 = 100;
+
 #[derive(Debug, thiserror::Error)]
 pub enum FetchWorkError {
 	#[error("fetch error")]
@@ -103,17 +106,18 @@ impl WorkJob {
 			WorkJob::VerifyBlocks { min, max } => {
 				log::info!("verifying {min}..{max}");
 				let blocks = storage.get_block_range(chain_id, (min..max).into_iter()).await;
+				let blocks: Result<Vec<FetchedBlock>, WorkError> = (min..max)
+					.into_iter()
+					.zip(blocks.into_iter())
+					.map(|(i, b)| b.ok_or(WorkError::BlockMissing(i)))
+					.collect();
+				let blocks = blocks?;
 				let some_failing_pair =
 					blocks.iter().zip(blocks.iter().skip(1)).find(|(parent, child)| {
-						if let Some(p) = parent {
-							if let Some(c) = child {
-								return p.block.hash() != c.block.header().parent_hash;
-							}
-						}
-						true
+						parent.block.hash() != child.block.header().parent_hash
 					});
 
-				if let Some((Some(_parent), Some(child))) = some_failing_pair {
+				if let Some((_parent, child)) = some_failing_pair {
 					return Err(WorkError::ChildBlockVerificationFailed(child.block.number()));
 				}
 
@@ -124,10 +128,21 @@ impl WorkJob {
 			WorkJob::FinalVerify { min, max } => {
 				log::info!("final verify {min} and {max}");
 				// Check min
-				let blocks = storage.get_block_range(chain_id, [min - 1, min].into_iter()).await;
-				if let [Some(parent), Some(child)] = &blocks[..] {
-					if child.block.header().parent_hash != parent.block.hash() {
-						return Err(WorkError::ChildBlockVerificationFailed(child.block.number()));
+				if min == 0 {
+					let block =
+						storage.get_block(chain_id, 0).await.ok_or(WorkError::BlockMissing(0))?;
+					if block.block.header().parent_hash.is_zero() {
+						return Err(WorkError::ChildBlockVerificationFailed(0));
+					}
+				} else {
+					let blocks =
+						storage.get_block_range(chain_id, [min - 1, min].into_iter()).await;
+					if let [Some(parent), Some(child)] = &blocks[..] {
+						if child.block.header().parent_hash != parent.block.hash() {
+							return Err(WorkError::ChildBlockVerificationFailed(
+								child.block.number(),
+							));
+						}
 					}
 				}
 				// Check max
@@ -250,10 +265,12 @@ impl FetchJob {
 				let blocks = storage.get_block_range(chain_id, *min..*max).await;
 				let mut blocks_to_insert = Vec::new();
 				for (i, b) in (*min..*max).into_iter().zip(blocks.into_iter()) {
-					let block_hash = Self::fetch_block_hash(client, i).await?;
 					let block = match b {
 						Some(b) => b,
-						None => Self::fetch_block(client, block_hash).await?,
+						None => {
+							let block_hash = Self::fetch_block_hash(client, i).await?;
+							Self::fetch_block(client, block_hash).await?
+						},
 					};
 					blocks_to_insert.push((i, block));
 				}
@@ -261,9 +278,7 @@ impl FetchJob {
 				log::info!("fetching blocks {min}..{max}: complete");
 				Ok(WorkJob::ExtractBlockData { min: *min, max: *max })
 			},
-			FetchJob::NoOp => {
-				todo!()
-			},
+			FetchJob::NoOp => Ok(WorkJob::NoOp),
 		}
 	}
 
@@ -291,7 +306,7 @@ impl FetchJob {
 
 		let block = retry(ExponentialBackoff::default(), || async {
 			client.api.blocks().at(block_hash).await.map_err(|e| {
-				eprintln!("rpc fetch failed, retrying: {e}");
+				log::warn!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})
 		})
@@ -306,7 +321,7 @@ impl FetchJob {
 pub async fn new_client(url: &str) -> MidnightNodeClient {
 	retry(ExponentialBackoff::default(), || async {
 		MidnightNodeClient::new(&url).await.map_err(|e| {
-			eprintln!("rpc fetch failed, retrying: {e}");
+			log::warn!("rpc fetch failed, retrying: {e}");
 			backoff::Error::transient(e)
 		})
 	})
@@ -327,19 +342,19 @@ pub async fn fetch_all(
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let fetch_storage = fetch_storage::InMemory::<DefaultDB>::default();
 
-	const STEP_SIZE: u64 = 100;
+	let num_cpu_workers = num_cpus::get();
 
-	let (fetch_job_sender, fetch_job_receiver) = async_channel::unbounded();
-	let (work_job_sender, work_job_receiver) = async_channel::unbounded();
-	let (final_jobs_sender, final_jobs_receiver) = async_channel::unbounded();
+	let (fetch_job_sender, fetch_job_receiver) = async_channel::bounded(num_workers * 2);
+	let (work_job_sender, work_job_receiver) = async_channel::bounded(num_cpu_workers * 2);
+	let (final_jobs_sender, final_jobs_receiver) = async_channel::bounded(num_cpu_workers * 2);
 
 	// Push jobs into queue
 	{
 		let job_sender = fetch_job_sender.clone();
 		let finalized_height = finalized_height;
 		tokio::spawn(async move {
-			for min in (0..finalized_height + 1).step_by(STEP_SIZE as usize) {
-				let max = u64::min(min + STEP_SIZE, finalized_height + 1);
+			for min in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
+				let max = u64::min(min + BLOCKS_PER_JOB, finalized_height + 1);
 				log::info!("pushing new fetch job {min} -> {max}...");
 				job_sender
 					.send(FetchJob::FetchBlocks { min, max })
@@ -349,7 +364,7 @@ pub async fn fetch_all(
 		});
 	}
 
-	println!("spawn workers");
+	log::info!("spawning {num_workers} fetch workers");
 
 	// Spawn fetch workers
 	for _ in 0..num_workers {
@@ -376,7 +391,9 @@ pub async fn fetch_all(
 		});
 	}
 
-	// Spawn work workers
+	log::info!("spawning {num_cpu_workers} cpu workers");
+
+	// Spawn cpu workers
 	for _ in 0..num_cpus::get() {
 		let work_job_receiver = work_job_receiver.clone();
 		let work_job_sender = work_job_sender.clone();
@@ -409,14 +426,14 @@ pub async fn fetch_all(
 		});
 	}
 
-	println!("receive blocks");
+	log::debug!("receive blocks");
 
-	println!("final verify step");
+	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = ((finalized_height / STEP_SIZE) + finalized_height % STEP_SIZE) as usize;
-	let mut jobs = Vec::with_capacity(num_jobs);
-	for i in (0..finalized_height + 1).step_by(STEP_SIZE as usize) {
-		println!("job {i}/{finalized_height}");
+	let num_jobs = (finalized_height / BLOCKS_PER_JOB) + 1;
+	let mut jobs = Vec::with_capacity(num_jobs as usize);
+	for i in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
+		log::info!("job {i}/{finalized_height}");
 		let job = final_jobs_receiver
 			.recv()
 			.await
@@ -427,10 +444,12 @@ pub async fn fetch_all(
 	for job in jobs {
 		job.work(&chain_id.0, fetch_storage.clone()).await?;
 	}
-	println!("all blocks verified");
+	log::info!("all blocks verified");
 
 	// Close channels to exit workers
 	fetch_job_receiver.close();
+	work_job_receiver.close();
+	final_jobs_receiver.close();
 
 	let blocks: Vec<_> = fetch_storage
 		.get_block_range(&chain_id.0, (0..finalized_height).into_iter())

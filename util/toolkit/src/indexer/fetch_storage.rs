@@ -117,5 +117,6 @@ impl<D: DB + Clone> FetchStorage<D> for InMemory<D> {
 		self.blocks.lock().await.insert(k, block);
 	}
 
+	/// In-memory storage has no persistence, so flush is a no-op.
 	async fn flush_all(&self) {}
 }
