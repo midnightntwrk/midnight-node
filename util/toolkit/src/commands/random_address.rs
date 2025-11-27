@@ -78,7 +78,7 @@ mod tests {
 	}
 
 	#[test_case(test_fixture!("devnet", true, "0000000000000000000000000000000000000000000000000000000000000001") =>
-	    "mn_shield-addr_devnet1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmsxqp00mnr3lked3qn6d06yl6lj2dw9x9azd8vlcud9f4c4kx05a2wuv7hh6r8";
+	    "mn_shield-addr_devnet1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmj7lhx8rldjmzp856l5fl4ly56u2vt6y6wel3c62nt3tvvlf65acczuddha";
 		"shielded address from seed"
 	)]
 	#[test_case(test_fixture!("devnet", false, "0000000000000000000000000000000000000000000000000000000000000001") =>
