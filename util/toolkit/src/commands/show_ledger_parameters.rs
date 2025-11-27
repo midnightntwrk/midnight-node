@@ -22,7 +22,7 @@ pub struct ShowLedgerParametersArgs {
 	#[arg(long)]
 	base_params: Option<String>,
 	/// Set to true to return the serialized parameters only, otherwise the whole structure will be printed.
-	#[arg(long, global = false)]
+	#[arg(long, default_value_t = false)]
 	pub serialize: bool,
 	/// Ledger's `read_price_a` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b).
 	#[arg(long)]
