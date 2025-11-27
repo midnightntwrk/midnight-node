@@ -11,8 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod compute_task;
 pub mod fetch;
 pub mod fetch_storage;
+pub mod fetch_task;
+
 mod runtimes;
 
 pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
