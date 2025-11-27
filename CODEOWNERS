@@ -1,5 +1,7 @@
 * @midnightntwrk/mn-codeowners-node
-/.github/ISSUE_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/ISSUE_TEMPLATE/bug-report.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/ISSUE_TEMPLATE/documentation-improvement.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/ISSUE_TEMPLATE/feature-request.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
 /.github/PULL_REQUEST_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
 /.github/workflows/checkmarx.yaml @midnightntwrk/mn-security @midnightntwrk/mn-sre
 /.github/workflows/dependabot.yml @midnightntwrk/mn-security @midnightntwrk/mn-sre
