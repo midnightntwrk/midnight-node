@@ -1,18 +1,12 @@
 use futures::stream::{self, StreamExt};
-use std::{
-	collections::HashMap,
-	ops::Range,
-	sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Mutex;
 
 use super::MidnightBlock;
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BlockContext, DB, SystemTransaction, transaction::FinalizedTransaction,
 };
-use subxt::{OnlineClient, blocks::Block};
-
-use crate::client::MidnightNodeClientConfig;
 
 #[derive(Clone)]
 pub struct FetchedBlock {
@@ -106,28 +100,21 @@ impl<D: DB> InMemory<D> {
 impl<D: DB + Clone> FetchStorage<D> for InMemory<D> {
 	async fn get_block(&self, chain_id: &[u8], block_number: u64) -> Option<FetchedBlock> {
 		let k = Self::block_key(chain_id, block_number);
-		self.midnight_blocks
-			.lock()
-			.expect("failed to lock midnight_blocks")
-			.get(&k)
-			.cloned()
+		self.midnight_blocks.lock().await.get(&k).cloned()
 	}
 	async fn insert_block(&self, chain_id: &[u8], block_number: u64, block: FetchedBlock) {
 		let k = Self::block_key(chain_id, block_number);
-		self.midnight_blocks
-			.lock()
-			.expect("failed to lock midnight_blocks")
-			.insert(k, block);
+		self.midnight_blocks.lock().await.insert(k, block);
 	}
 
 	async fn get_block_data(&self, chain_id: &[u8], block_number: u64) -> Option<BlockData<D>> {
 		let k = Self::block_key(chain_id, block_number);
-		self.blocks.lock().expect("failed to lock blocks").get(&k).cloned()
+		self.blocks.lock().await.get(&k).cloned()
 	}
 
 	async fn insert_block_data(&self, chain_id: &[u8], block_number: u64, block: BlockData<D>) {
 		let k = Self::block_key(chain_id, block_number);
-		self.blocks.lock().expect("failed to lock blocks").insert(k, block);
+		self.blocks.lock().await.insert(k, block);
 	}
 
 	async fn flush_all(&self) {}
