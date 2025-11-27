@@ -237,8 +237,12 @@ pub(crate) async fn run_command(
 			Ok(())
 		},
 		Commands::ShowLedgerParameters(args) => {
-			let result = show_ledger_parameters::execute(args)?;
-			println!("{:#?}", result);
+			let result = show_ledger_parameters::execute(args.clone())?;
+			if args.serialize {
+				println!("{}", result.serialized);
+			} else {
+				println!("{:#?}", result);
+			}
 			Ok(())
 		},
 		Commands::UpdateLedgerParameters(args) => {
