@@ -46,17 +46,11 @@ pub struct UpdateLedgerParametersArgs {
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
 
-	#[arg(short, long, env, default_value = "//Alice", value_parser = cli::keypair_from_str)]
-	technical_committee_member_1: Keypair,
+	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
+	technical_committee_members: Vec<Keypair>,
 
-	#[arg(short, long, env, default_value = "//Bob", value_parser = cli::keypair_from_str)]
-	technical_committee_member_2: Keypair,
-
-	#[arg(short, long, env, default_value = "//Dave", value_parser = cli::keypair_from_str)]
-	council_member_1: Keypair,
-
-	#[arg(short, long, env, default_value = "//Eve", value_parser = cli::keypair_from_str)]
-	council_member_2: Keypair,
+	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
+	council_members: Vec<Keypair>,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
@@ -74,11 +68,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(args.rpc_url).await?;
 
 	// Authority member keypairs
-	let tc_member_1 = args.technical_committee_member_1;
-	let tc_member_2 = args.technical_committee_member_2;
+	let tc_member_1 = args.technical_committee_members[0].clone();
+	let tc_other_members = args.technical_committee_members[1..].to_vec();
 	// Council members
-	let council_member_1 = args.council_member_1;
-	let council_member_2 = args.council_member_2;
+	let council_member_1 = args.council_members[0].clone();
+	let council_other_members = args.council_members[1..].to_vec();
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
@@ -145,15 +139,17 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		true,
 	)
 	.await?;
-	vote_on_proposal(
-		&api,
-		&council_member_2,
-		"Council",
-		council_proposal_hash,
-		council_proposal_index,
-		true,
-	)
-	.await?;
+	for council_member in council_other_members {
+		vote_on_proposal(
+			&api,
+			&council_member,
+			"Council",
+			council_proposal_hash,
+			council_proposal_index,
+			true,
+		)
+		.await?;
+	}
 
 	// Step 5: Close Council proposal
 	println!("Closing Council proposal...");
@@ -202,16 +198,17 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		true,
 	)
 	.await?;
-	vote_on_proposal(
-		&api,
-		&tc_member_2,
-		"TechnicalCommittee",
-		tech_proposal_hash,
-		tech_proposal_index,
-		true,
-	)
-	.await?;
-	// Ferdie doesn't need to vote since we already have 2/3
+	for tc_member in tc_other_members {
+		vote_on_proposal(
+			&api,
+			&tc_member,
+			"TechnicalCommittee",
+			tech_proposal_hash,
+			tech_proposal_index,
+			true,
+		)
+		.await?;
+	}
 
 	// Step 8: Close Technical Committee proposal
 	println!("Closing Technical Committee proposal...");
