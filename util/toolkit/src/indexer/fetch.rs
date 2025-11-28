@@ -1,12 +1,12 @@
 use backoff::{ExponentialBackoff, future::retry};
-use midnight_node_ledger_helpers::DefaultDB;
+use midnight_node_ledger_helpers::DB;
 use subxt::ext::subxt_rpcs;
 
 use crate::{
 	client::{ClientError, MidnightNodeClient},
 	indexer::{
 		compute_task::{ComputeError, ComputeTask},
-		fetch_storage::{self, FetchStorage, FetchedBlock},
+		fetch_storage::{self, BlockData, FetchStorage, FetchedBlock},
 		fetch_task::{FetchTask, FetchTaskError},
 	},
 };
@@ -43,18 +43,19 @@ pub async fn new_client(url: &str) -> MidnightNodeClient {
 	.expect("failed to fetch from node after retrying")
 }
 
-pub async fn fetch_all(
+pub async fn fetch_all<D: DB + Clone>(
 	url: &str,
 	num_workers: usize,
 	height: usize,
-) -> Result<Vec<FetchedBlock>, FetchError> {
+) -> Result<Vec<BlockData<D>>, FetchError> {
 	let client = new_client(&url).await;
 	// TODO: use full height
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let finalized_height = height as u64;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
-	let fetch_storage = fetch_storage::InMemory::<DefaultDB>::default();
+
+	let fetch_storage = fetch_storage::redb_backend::RedbBackend::<D>::new("toolkit.db");
 
 	let num_cpu_workers = num_cpus::get();
 
@@ -96,7 +97,7 @@ pub async fn fetch_all(
 				log::info!("received new job...");
 
 				let work_job = job
-					.fetch(&chain_id.0, &client, fetch_storage.clone())
+					.fetch(chain_id, &client, fetch_storage.clone())
 					.await
 					.expect("failed to fetch from node after retrying");
 
@@ -122,7 +123,7 @@ pub async fn fetch_all(
 				log::info!("received new work job...");
 
 				let work_job = job
-					.work(&chain_id.0, fetch_storage.clone())
+					.work(chain_id, fetch_storage.clone())
 					.await
 					.expect("failed to process work job");
 
@@ -156,7 +157,7 @@ pub async fn fetch_all(
 	}
 
 	for job in jobs {
-		job.work(&chain_id.0, fetch_storage.clone()).await?;
+		job.work(chain_id, fetch_storage.clone()).await?;
 	}
 	log::info!("all blocks verified");
 
@@ -166,7 +167,7 @@ pub async fn fetch_all(
 	final_jobs_receiver.close();
 
 	let blocks: Vec<_> = fetch_storage
-		.get_block_range(&chain_id.0, (0..finalized_height).into_iter())
+		.get_block_data_range(chain_id, (0..finalized_height).into_iter())
 		.await
 		.into_iter()
 		.map(|b| b.expect("missing block"))

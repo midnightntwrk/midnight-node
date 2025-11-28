@@ -32,29 +32,25 @@ pub enum FetchTask {
 
 impl FetchTask {
 	pub async fn fetch<D: DB + Clone>(
-		&self,
-		chain_id: &[u8],
+		self,
+		chain_id: H256,
 		client: &MidnightNodeClient,
 		storage: impl FetchStorage<D> + Send + Sync,
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
 				log::info!("fetching blocks {min}..{max}");
-				let blocks = storage.get_block_range(chain_id, *min..*max).await;
-				let mut blocks_to_insert = Vec::new();
-				for (i, b) in (*min..*max).into_iter().zip(blocks.into_iter()) {
-					let block = match b {
-						Some(b) => b,
-						None => {
-							let block_hash = Self::fetch_block_hash(client, i).await?;
-							Self::fetch_block(client, block_hash).await?
-						},
-					};
-					blocks_to_insert.push((i, block));
+				let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
+				let mut blocks = Vec::new();
+				for (i, b) in (min..max).into_iter().zip(cached_blocks.into_iter()) {
+					if b.is_none() {
+						let block_hash = Self::fetch_block_hash(client, i).await?;
+						let block = Self::fetch_block(client, block_hash).await?;
+						blocks.push(block);
+					}
 				}
-				storage.insert_block_range(chain_id, blocks_to_insert.into_iter()).await;
 				log::info!("fetching blocks {min}..{max}: complete");
-				Ok(ComputeTask::ExtractBlockData { min: *min, max: *max })
+				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
 			},
 			FetchTask::NoOp => Ok(ComputeTask::NoOp),
 		}

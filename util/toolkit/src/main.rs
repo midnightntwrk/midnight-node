@@ -27,7 +27,7 @@ use commands::{
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
 };
-use midnight_node_ledger_helpers::*;
+use midnight_node_ledger_helpers::{ledger_storage::db::InMemoryDB, *};
 use std::{
 	error::Error,
 	fmt,
@@ -311,7 +311,7 @@ pub(crate) async fn run_command(
 		},
 		Commands::Fetch(FetchArgs { url, num_workers, height }) => {
 			let start = std::time::Instant::now();
-			let blocks = fetch_all(&url, num_workers, height).await.unwrap();
+			let blocks = fetch_all::<InMemoryDB>(&url, num_workers, height).await.unwrap();
 			println!("fetched {} blocks in {:.3} s", blocks.len(), start.elapsed().as_secs_f32());
 			Ok(())
 		},

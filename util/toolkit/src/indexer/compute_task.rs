@@ -4,6 +4,7 @@ use midnight_node_ledger_helpers::{
 use subxt::{
 	blocks::ExtrinsicEvents,
 	config::substrate::{ConsensusEngineId, DigestItem},
+	utils::H256,
 };
 
 use crate::indexer::{
@@ -27,11 +28,11 @@ pub enum ComputeError {
 	#[error("ledger deserialization error")]
 	LedgerDeserializationError(std::io::Error),
 	#[error("verification failed, child block {0}")]
-	ChildBlockVerificationFailed(u32),
+	ChildBlockVerificationFailed(u64),
 }
 
 pub enum ComputeTask {
-	ExtractBlockData { min: u64, max: u64 },
+	ExtractBlockData { min: u64, max: u64, blocks: Vec<FetchedBlock> },
 	Verify { min: u64, max: u64 },
 	FinalVerify { min: u64, max: u64 },
 	NoOp,
@@ -40,28 +41,16 @@ pub enum ComputeTask {
 impl ComputeTask {
 	pub async fn work<D: DB + Clone>(
 		self,
-		chain_id: &[u8],
+		chain_id: H256,
 		storage: impl FetchStorage<D> + Send + Sync,
 	) -> ComputeResult {
 		match self {
-			ComputeTask::ExtractBlockData { min, max } => {
+			ComputeTask::ExtractBlockData { min, max, blocks } => {
 				log::info!("extracting block data {min}..{max}");
-				let block_data = storage.get_block_data_range(chain_id, min..max).await;
-				let blocks_to_fetch = (min..max)
-					.into_iter()
-					.zip(block_data.iter())
-					.filter_map(|(i, b)| if b.is_none() { Some(i) } else { None });
-				let blocks =
-					storage.get_block_range(chain_id, blocks_to_fetch.clone().into_iter()).await;
-
 				let mut blocks_to_insert = Vec::new();
-				for (i, b) in blocks_to_fetch.into_iter().zip(blocks.into_iter()) {
-					let b = match b {
-						Some(b) => b,
-						None => return Err(ComputeError::BlockMissing(i)),
-					};
+				for b in blocks {
 					let block_data = Self::extract_data(&b).await?;
-					blocks_to_insert.push((i, block_data));
+					blocks_to_insert.push((b.block.number() as u64, block_data));
 				}
 				storage.insert_block_data_range(chain_id, blocks_to_insert.into_iter()).await;
 				log::info!("extracting block data {min}..{max}: complete");
@@ -69,20 +58,20 @@ impl ComputeTask {
 			},
 			ComputeTask::Verify { min, max } => {
 				log::info!("verifying {min}..{max}");
-				let blocks = storage.get_block_range(chain_id, (min..max).into_iter()).await;
-				let blocks: Result<Vec<FetchedBlock>, ComputeError> = (min..max)
+				let blocks = storage.get_block_data_range(chain_id, (min..max).into_iter()).await;
+				let blocks: Result<Vec<BlockData<D>>, ComputeError> = (min..max)
 					.into_iter()
 					.zip(blocks.into_iter())
 					.map(|(i, b)| b.ok_or(ComputeError::BlockMissing(i)))
 					.collect();
 				let blocks = blocks?;
-				let some_failing_pair =
-					blocks.iter().zip(blocks.iter().skip(1)).find(|(parent, child)| {
-						parent.block.hash() != child.block.header().parent_hash
-					});
+				let some_failing_pair = blocks
+					.iter()
+					.zip(blocks.iter().skip(1))
+					.find(|(parent, child)| parent.hash != child.parent_hash);
 
 				if let Some((_parent, child)) = some_failing_pair {
-					return Err(ComputeError::ChildBlockVerificationFailed(child.block.number()));
+					return Err(ComputeError::ChildBlockVerificationFailed(child.number));
 				}
 
 				log::info!("verifying {min}..{max}: complete");
@@ -94,30 +83,27 @@ impl ComputeTask {
 				// Check min
 				if min == 0 {
 					let block = storage
-						.get_block(chain_id, 0)
+						.get_block_data(chain_id, 0)
 						.await
 						.ok_or(ComputeError::BlockMissing(0))?;
-					if block.block.header().parent_hash.is_zero() {
+					if !block.parent_hash.is_zero() {
 						return Err(ComputeError::ChildBlockVerificationFailed(0));
 					}
 				} else {
 					let blocks =
-						storage.get_block_range(chain_id, [min - 1, min].into_iter()).await;
+						storage.get_block_data_range(chain_id, [min - 1, min].into_iter()).await;
 					if let [Some(parent), Some(child)] = &blocks[..] {
-						if child.block.header().parent_hash != parent.block.hash() {
-							return Err(ComputeError::ChildBlockVerificationFailed(
-								child.block.number(),
-							));
+						if child.parent_hash != parent.hash {
+							return Err(ComputeError::ChildBlockVerificationFailed(child.number));
 						}
 					}
 				}
 				// Check max
-				let blocks = storage.get_block_range(chain_id, [max, max + 1].into_iter()).await;
+				let blocks =
+					storage.get_block_data_range(chain_id, [max, max + 1].into_iter()).await;
 				if let [Some(parent), Some(child)] = &blocks[..] {
-					if child.block.header().parent_hash != parent.block.hash() {
-						return Err(ComputeError::ChildBlockVerificationFailed(
-							child.block.number(),
-						));
+					if child.parent_hash != parent.hash {
+						return Err(ComputeError::ChildBlockVerificationFailed(child.number));
 					}
 				}
 
@@ -218,6 +204,9 @@ impl ComputeTask {
 			tblock_err: 30,
 			parent_block_hash: HashOutput(parent_block_hash.0),
 		};
-		Ok(BlockData { transactions, context, state_root })
+		let hash = block.block.hash();
+		let parent_hash = block.block.header().parent_hash;
+		let number = block.block.number() as u64;
+		Ok(BlockData { hash, parent_hash, number, transactions, context, state_root })
 	}
 }
