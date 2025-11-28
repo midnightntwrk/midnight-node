@@ -8,7 +8,7 @@ use subxt::{
 use thiserror::Error;
 
 use midnight_node_ledger_helpers::{
-	Keypair, deserialize,
+	Duration, FeePrices, FixedPoint, Keypair, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction},
 	serialize,
 };
@@ -54,6 +54,66 @@ pub struct UpdateLedgerParametersArgs {
 	/// Council members.
 	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
 	council_members: Vec<Keypair>,
+
+	/// Ledger's `read_price_a` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b).
+	#[arg(long)]
+	read_price_a: Option<u64>,
+
+	/// Ledger's `read_price_b` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b).
+	#[arg(long)]
+	read_price_b: Option<u64>,
+
+	/// Ledger's `compute_price_a` parameter, used in FixedPoint::from_u64_div(compute_price_a, compute_price_b).
+	#[arg(long)]
+	compute_price_a: Option<u64>,
+
+	/// Ledger's `compute_price_b` parameter, used in FixedPoint::from_u64_div(compute_price_a, compute_price_b).
+	#[arg(long)]
+	compute_price_b: Option<u64>,
+
+	/// Ledger's `block_usage_price_a` parameter, used in FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b).
+	#[arg(long)]
+	block_usage_price_a: Option<u64>,
+
+	/// Ledger's `block_usage_price_b` parameter, used in FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b).
+	#[arg(long)]
+	block_usage_price_b: Option<u64>,
+
+	/// Ledger's `write_price_a` parameter, used in FixedPoint::from_u64_div(write_price_a, write_price_b).
+	#[arg(long)]
+	write_price_a: Option<u64>,
+
+	/// Ledger's `write_price_b` parameter, used as FixedPoint::from_u64_div(write_price_a, write_price_b).
+	#[arg(long)]
+	write_price_b: Option<u64>,
+
+	/// Ledger's `global_ttl` parameter.
+	#[arg(long)]
+	global_ttl: Option<i128>,
+
+	/// Ledger's `cardano_to_midnight_bridge_fee_basis_points` parameter.
+	#[arg(long)]
+	cardano_to_midnight_bridge_fee_basis_points: Option<u32>,
+
+	/// Ledger's `cost_dimension_min_ratio_a` parameter, used as FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b).
+	#[arg(long)]
+	cost_dimension_min_ratio_a: Option<u64>,
+
+	/// Ledger's `cost_dimension_min_ratio_b` parameter, used as FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b).
+	#[arg(long)]
+	cost_dimension_min_ratio_b: Option<u64>,
+
+	/// Ledger's `price_adjustment_a_parameter_a` parameter, used as FixedPoint::from_u64_div(price_adjustment_a_parameter_a, price_adjustment_a_parameter_b).
+	#[arg(long)]
+	price_adjustment_a_parameter_a: Option<u64>,
+
+	/// Ledger's `price_adjustment_a_parameter_b` parameter, used as FixedPoint::from_u64_div(price_adjustment_a_parameter_a, price_adjustment_a_parameter_b).
+	#[arg(long)]
+	price_adjustment_a_parameter_b: Option<u64>,
+
+	/// Ledger's `c_to_m_bridge_min_amount` parameter.
+	#[arg(long)]
+	c_to_m_bridge_min_amount: Option<u128>,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
@@ -74,8 +134,70 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 				.expect("not possible to retrieve ledger parameters from RPC server")
 		},
 	};
-	let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+
+	let base: LedgerParameters = deserialize(&mut &bytes[..])
 		.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
+
+	let parameters = LedgerParameters {
+		fee_prices: FeePrices {
+			read_price: match (args.read_price_a, args.read_price_b) {
+				(Some(read_price_a), Some(read_price_b)) => {
+					FixedPoint::from_u64_div(read_price_a, read_price_b)
+				},
+				_ => base.fee_prices.read_price,
+			},
+			compute_price: match (args.compute_price_a, args.compute_price_b) {
+				(Some(compute_price_a), Some(compute_price_b)) => {
+					FixedPoint::from_u64_div(compute_price_a, compute_price_b)
+				},
+				_ => base.fee_prices.compute_price,
+			},
+			block_usage_price: match (args.block_usage_price_a, args.block_usage_price_b) {
+				(Some(block_usage_price_a), Some(block_usage_price_b)) => {
+					FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
+				},
+				_ => base.fee_prices.block_usage_price,
+			},
+			write_price: match (args.write_price_a, args.write_price_b) {
+				(Some(write_price_a), Some(write_price_b)) => {
+					FixedPoint::from_u64_div(write_price_a, write_price_b)
+				},
+				_ => base.fee_prices.write_price,
+			},
+		},
+		global_ttl: args
+			.global_ttl
+			.map(|global_ttl| Duration::from_secs(global_ttl))
+			.unwrap_or(base.global_ttl),
+		cardano_to_midnight_bridge_fee_basis_points: args
+			.cardano_to_midnight_bridge_fee_basis_points
+			.unwrap_or(base.cardano_to_midnight_bridge_fee_basis_points),
+		cost_dimension_min_ratio: match (
+			args.cost_dimension_min_ratio_a,
+			args.cost_dimension_min_ratio_b,
+		) {
+			(Some(cost_dimension_min_ratio_a), Some(cost_dimension_min_ratio_b)) => {
+				FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b)
+			},
+			_ => base.cost_dimension_min_ratio,
+		},
+		price_adjustment_a_parameter: match (
+			args.price_adjustment_a_parameter_a,
+			args.price_adjustment_a_parameter_b,
+		) {
+			(Some(price_adjustment_a_parameter_a), Some(price_adjustment_a_parameter_b)) => {
+				FixedPoint::from_u64_div(
+					price_adjustment_a_parameter_a,
+					price_adjustment_a_parameter_b,
+				)
+			},
+			_ => base.price_adjustment_a_parameter,
+		},
+		c_to_m_bridge_min_amount: args
+			.c_to_m_bridge_min_amount
+			.unwrap_or(base.c_to_m_bridge_min_amount),
+		..base
+	};
 
 	println!("Ledger params loaded: {:#?}", parameters);
 
