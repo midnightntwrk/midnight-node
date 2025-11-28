@@ -565,7 +565,7 @@ $ midnight-node-toolkit show-address
 >   --network undeployed
 >   --shielded
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqxr6r2x
+mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqm9zs2g
 
 ```
 
