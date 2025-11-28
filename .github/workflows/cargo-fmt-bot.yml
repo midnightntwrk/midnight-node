@@ -1,0 +1,169 @@
+name: Cargo Format (Bot Action)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to format'
+        required: true
+
+jobs:
+  cargo-fmt:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/bot cargo-fmt'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check user permission
+        if: github.event_name == 'issue_comment'
+        id: check_permission
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const allowed = ['admin', 'write'].includes(permission.permission);
+            if (!allowed) {
+              core.setFailed(`User ${context.actor} does not have write permission`);
+            }
+
+      - name: Add reaction to comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            })
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? '${{ github.event.inputs.pr_number }}'
+              : context.issue.number;
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('sha', pr.data.head.sha);
+            core.setOutput('number', prNumber);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Run cargo fmt
+        run: cargo fmt --all
+
+      - name: Commit and push changes
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        id: commit
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Check if there are changes
+            const { execSync } = require('child_process');
+            const status = execSync('git status --porcelain').toString();
+
+            if (!status.trim()) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No changes to commit');
+              return;
+            }
+
+            // Get all changed .rs files
+            const changedFiles = status.split('\n')
+              .filter(line => line.trim())
+              .map(line => line.substring(3))
+              .filter(file => file.endsWith('.rs'));
+
+            if (changedFiles.length === 0) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No Rust files changed');
+              return;
+            }
+
+            // Prepare file additions
+            const additions = changedFiles.map(filePath => {
+              const contents = fs.readFileSync(filePath);
+              return {
+                path: filePath,
+                contents: contents.toString('base64')
+              };
+            });
+
+            // Get current HEAD
+            const headOid = execSync('git rev-parse HEAD').toString().trim();
+
+            // Create commit via GraphQL API
+            const result = await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit {
+                    oid
+                  }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: '${{ github.repository }}',
+                  branchName: '${{ steps.pr.outputs.ref }}'
+                },
+                message: {
+                  headline: 'chore: cargo fmt'
+                },
+                expectedHeadOid: headOid,
+                fileChanges: {
+                  additions: additions
+                }
+              }
+            });
+
+            console.log('Commit created:', result.createCommitOnBranch.commit.oid);
+            core.exportVariable('CHANGES_MADE', 'true');
+
+      - name: Post success comment
+        if: env.CHANGES_MADE == 'true'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :white_check_mark: Cargo format complete! Changes have been committed.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post no-changes comment
+        if: env.CHANGES_MADE == 'false'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :white_check_mark: Cargo format complete. No changes detected.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post failure comment
+        if: failure()
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :x: Cargo format failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+          pr-number: ${{ steps.pr.outputs.number }}
