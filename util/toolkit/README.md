@@ -4,14 +4,24 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 
 ---
 
-## 🚀 **IMPORTANT: See Usage Examples**
+## 🚀 **Quick Start: See Usage Examples**
 
-**The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
-
-### 👉 Check out the `toolkit-*.sh` files here:
+**👉 Check out the `toolkit-*.sh` test scripts for real usage patterns:**  
 **https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
 
-These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
+### 📦 Version Selection
+
+**Recommended:** Use `latest-main` for backwards compatibility and latest bugfixes:
+```bash
+docker pull midnightntwrk/midnight-node-toolkit:latest-main
+```
+
+For guaranteed compatibility with a specific node version, use matching tags:
+```bash
+# Example: both toolkit and node at version 0.18.0-rc.7
+docker pull midnightntwrk/midnight-node-toolkit:0.18.0-rc.7
+docker pull midnightntwrk/midnight-node:0.18.0-rc.7
+```
 
 ---
 
@@ -582,7 +592,7 @@ $ midnight-node-toolkit show-address
 >   --network undeployed
 >   --shielded
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqxr6r2x
+mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqm9zs2g
 
 ```
 
