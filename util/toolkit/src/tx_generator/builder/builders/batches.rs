@@ -12,14 +12,8 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
-	BlockContext, SerdeTransaction, ShieldedTokenType, Timestamp, UnshieldedTokenType,
-};
-use std::{
-	collections::HashMap,
-	sync::Arc,
-	time::{SystemTime, UNIX_EPOCH},
-};
+use midnight_node_ledger_helpers::{SerdeTransaction, ShieldedTokenType, UnshieldedTokenType};
+use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinError};
 
 use crate::{
@@ -201,12 +195,6 @@ impl BuildTxs for BatchesBuilder {
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let now = Timestamp::from_secs(
-			SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("time has run backwards")
-				.as_secs(),
-		);
 		// --------------------------------------------------------------
 		// Simulates what in the future will be the output of the YAML file based on `num_batches`
 		// and `num_txs_per_batch` when https://shielded.atlassian.net/browse/PM-10459 is implemented
@@ -248,6 +236,7 @@ impl BuildTxs for BatchesBuilder {
 		for block in received_tx.blocks {
 			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
+		let block_context = context.latest_block_context();
 
 		let context_arc = Arc::new(context);
 
@@ -256,10 +245,7 @@ impl BuildTxs for BatchesBuilder {
 			context_arc.clone(),
 			prover_arc.clone(),
 			self.rng_seed,
-			Some(now),
 		);
-		let block_context =
-			BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
 
 		// - Initial Tx to fund the first `num_txs_per_batch` wallets of the first batch
 		let first_batch_output_wallets =
@@ -359,7 +345,6 @@ impl BuildTxs for BatchesBuilder {
 						context_arc.clone(),
 						prover_arc.clone(),
 						None,
-						Some(now),
 					);
 
 					let input_seed = seed;

@@ -210,6 +210,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple deploy \
@@ -220,6 +221,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_2_store_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -230,6 +232,7 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_3_check_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -241,6 +244,7 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
                 --src-file out/contract_tx_3_check_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple maintenance \
@@ -257,6 +261,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -275,6 +280,7 @@ rebuild-genesis-state:
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -307,6 +313,7 @@ rebuild-genesis-state:
                 0 \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -337,6 +344,7 @@ rebuild-genesis-state:
                 --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/mint/deploy.bin \
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \

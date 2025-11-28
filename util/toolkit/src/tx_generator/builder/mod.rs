@@ -413,7 +413,6 @@ pub trait BuildTxsExt {
 			context_arc.clone(),
 			prover_arc.clone(),
 			self.rng_seed(),
-			None,
 		);
 
 		(context_arc, tx_info)

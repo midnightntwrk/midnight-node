@@ -14,13 +14,18 @@
 use async_trait::async_trait;
 use clap::Args;
 use midnight_node_ledger_helpers::*;
-use std::{fs::File, marker::PhantomData, sync::Arc};
+use std::{
+	fs::File,
+	marker::PhantomData,
+	sync::Arc,
+	time::{SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 
 use crate::{
 	client::ClientError,
 	indexer::Indexer,
-	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
+	serde_def::{SerializedTransactionsWithContext, SourceBlockTransactions, SourceTransactions},
 };
 
 #[derive(Args, Debug)]
@@ -40,6 +45,11 @@ pub struct Source {
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
+	/// Spend DUST with timestamp as system time rather than the previous block timestamp. Useful
+	/// if loading from a genesis file, but may result in invalid proofs when connected to a live
+	/// chain
+	#[arg(long, global = true)]
+	pub dust_warp: bool,
 }
 
 #[derive(Error, Debug)]
@@ -88,6 +98,7 @@ impl<
 pub struct GetTxsFromFile<S, P> {
 	files: Vec<String>,
 	extension: String,
+	dust_warp: bool,
 	_marker_p: PhantomData<P>,
 	_marker_s: PhantomData<S>,
 }
@@ -100,8 +111,8 @@ where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub fn new(files: Vec<String>, extension: String) -> Self {
-		Self { files, extension, _marker_p: PhantomData, _marker_s: PhantomData }
+	pub fn new(files: Vec<String>, extension: String, dust_warp: bool) -> Self {
+		Self { files, extension, dust_warp, _marker_p: PhantomData, _marker_s: PhantomData }
 	}
 
 	fn txs_from_files(
@@ -118,7 +129,7 @@ where
 					txs.push(serde_json::from_str(&tx).map_err(|e| Box::new(e))?);
 				}
 			}
-			Ok(SourceTransactions::from_txs_with_context(txs))
+			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
 		} else {
 			let mut txs = vec![];
 			for file in &self.files {
@@ -130,7 +141,7 @@ where
 					})?;
 				txs.append(&mut file_txs);
 			}
-			Ok(SourceTransactions::from_txs_with_context(txs))
+			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
 		}
 	}
 }
@@ -159,6 +170,7 @@ pub struct GetTxsFromUrl<
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
 	pub indexer: Arc<Indexer<S, P>>,
+	pub dust_warp: bool,
 }
 
 impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send + 'static>
@@ -169,8 +181,8 @@ where
 	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub fn new(indexer: Arc<Indexer<S, P>>) -> Self {
-		Self { indexer }
+	pub fn new(indexer: Arc<Indexer<S, P>>, dust_warp: bool) -> Self {
+		Self { indexer, dust_warp }
 	}
 }
 
@@ -189,8 +201,25 @@ where
 		&self,
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
 		let indexer_handle = self.indexer.clone().start().await?;
-		let blocks = self.indexer.clone().get_blocks().await;
+		let mut blocks = self.indexer.clone().get_blocks().await;
 		indexer_handle.stop().await?;
+
+		if self.dust_warp {
+			// Add an empty block with a now() as a block_context
+			let now = Timestamp::from_secs(
+				SystemTime::now()
+					.duration_since(UNIX_EPOCH)
+					.expect("time has run backwards")
+					.as_secs(),
+			);
+			let context =
+				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			blocks.push(SourceBlockTransactions {
+				transactions: Vec::new(),
+				context,
+				state_root: None,
+			});
+		}
 
 		Ok(SourceTransactions { blocks })
 	}
