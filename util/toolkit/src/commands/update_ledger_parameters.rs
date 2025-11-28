@@ -12,6 +12,7 @@ use midnight_node_ledger_helpers::{
 	mn_ledger::structure::{LedgerParameters, SystemTransaction},
 	serialize,
 };
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Error, Debug)]
@@ -34,38 +35,51 @@ pub enum LedgerParametersError {
 
 #[derive(Args, Clone)]
 pub struct UpdateLedgerParametersArgs {
-	/// The new serialized ledger parameters
+	/// The new serialized ledger parameters. If not provided, the default parameters will be fetched from the server.
 	#[arg(long, env)]
-	parameters: String,
+	parameters: Option<String>,
 
-	/// Seed for applying the authorized update (can be any authority member)
+	/// Seed for applying the authorized update (can be any authority member).
 	#[arg(short, long, env, default_value = "//Alice", value_parser = cli::keypair_from_str)]
 	signer_key: Keypair,
 
-	/// RPC URL for sending the update
+	/// RPC URL for sending the update.
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
 
+	/// Technical committee members.
 	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
 	technical_committee_members: Vec<Keypair>,
 
+	/// Council members.
 	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
 	council_members: Vec<Keypair>,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
+	// Create a new API client
+	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(args.rpc_url).await?;
+
 	let signer = args.signer_key;
-	let bytes = hex::decode(&args.parameters.replace("0x", ""))
-		.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?;
+	let bytes = match args.parameters {
+		Some(parameters) => hex::decode(&parameters.replace("0x", ""))
+			.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?,
+		None => {
+			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
+			api.runtime_api()
+				.at_latest()
+				.await?
+				.call(call)
+				.await?
+				.expect("not possible to retrieve ledger parameters from RPC server")
+		},
+	};
 	let parameters: LedgerParameters = deserialize(&mut &bytes[..])
 		.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
 
 	println!("Ledger params loaded: {:#?}", parameters);
 
 	println!("Executing ledger parameters update via federated authority.");
-
-	// Create a new API client
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(args.rpc_url).await?;
 
 	// Authority member keypairs
 	let tc_member_1 = args.technical_committee_members[0].clone();
