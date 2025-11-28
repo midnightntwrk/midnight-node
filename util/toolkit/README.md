@@ -499,7 +499,7 @@ Tx TransactionWithContext {
 ### Show Ledger Parameters
 Show parsed and serialized ledger parameters. \
 It allows overriding the base parameters by passing the new values:
-```console
+```ignore
 $ midnight-node-toolkit show-ledger-parameters -r ws://localhost:9944 --c-to-m-bridge-min-amount 2000
 ```
 Base parameters can be loaded in these ways:
@@ -515,11 +515,11 @@ Return types:
 Update the ledger parameters on the remote server via federated authority.
 
 Update parameters based on the existing ones:
-```console
+```ignore
 $ midnight-node-toolkit update-ledger-parameters -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 Update parameters based on a serialized value:
-```console
+```ignore
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
