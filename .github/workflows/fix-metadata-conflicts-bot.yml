@@ -15,7 +15,6 @@ on:
         options:
           - accept-current
           - accept-incoming
-  push:
 
 jobs:
   fix-metadata-conflicts:
