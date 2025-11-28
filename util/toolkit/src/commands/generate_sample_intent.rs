@@ -87,6 +87,7 @@ mod test {
 			src_url: None,
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
+			dust_warp: true,
 		};
 
 		let args = GenerateSampleIntentArgs {
