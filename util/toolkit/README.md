@@ -4,14 +4,24 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 
 ---
 
-## 🚀 **IMPORTANT: See Usage Examples**
+## 🚀 **Quick Start: See Usage Examples**
 
-**The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
-
-### 👉 Check out the `toolkit-*.sh` files here:
+**👉 Check out the `toolkit-*.sh` test scripts for real usage patterns:**  
 **https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
 
-These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
+### 📦 Version Selection
+
+**Recommended:** Use `latest-main` for backwards compatibility and latest bugfixes:
+```bash
+docker pull midnightntwrk/midnight-node-toolkit:latest-main
+```
+
+For guaranteed compatibility with a specific node version, use matching tags:
+```bash
+# Example: both toolkit and node at version 0.18.0-rc.7
+docker pull midnightntwrk/midnight-node-toolkit:0.18.0-rc.7
+docker pull midnightntwrk/midnight-node:0.18.0-rc.7
+```
 
 ---
 
