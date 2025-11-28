@@ -23,8 +23,8 @@ pub enum LedgerParametersError {
 #[derive(Args, Clone, Debug, Default)]
 pub struct ShowLedgerParametersArgs {
 	/// Base serialized ledger parameters, otherwise the default will be used.
-	#[arg(long)]
-	base_params: Option<String>,
+	#[arg(short, long)]
+	base_parameters: Option<String>,
 	/// Set to true to return the serialized parameters only, otherwise the whole structure will be printed.
 	#[arg(long, default_value_t = false)]
 	pub serialize: bool,
@@ -94,17 +94,17 @@ pub async fn execute(
 		let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
 		let response = api.runtime_api().at_latest().await?.call(call).await?;
 		let bytes = response.expect("not possible to retrieve ledger parameters from RPC server");
-		let params: LedgerParameters = deserialize(&mut &bytes[..])
+		let parameters: LedgerParameters = deserialize(&mut &bytes[..])
 			.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
-		params
+		parameters
 	} else {
-		match args.base_params {
-			Some(serialized_params) => {
-				let bytes = hex::decode(&serialized_params.replace("0x", ""))
+		match args.base_parameters {
+			Some(serialized_parameters) => {
+				let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
 					.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?;
-				let params: LedgerParameters = deserialize(&mut &bytes[..])
+				let parameters: LedgerParameters = deserialize(&mut &bytes[..])
 					.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
-				params
+				parameters
 			},
 			_ => INITIAL_PARAMETERS,
 		}
@@ -214,12 +214,12 @@ mod test {
 	#[tokio::test]
 	async fn test_base_ledger_params() {
 		let params = LedgerParameters { c_to_m_bridge_min_amount: 2000, ..INITIAL_PARAMETERS };
-		let base_params =
+		let base_parameters =
 			hex::encode(serialize(&params).expect("failed to serialize ledger parameters"));
 
 		let new_params = ShowLedgerParametersArgs {
 			cardano_to_midnight_bridge_fee_basis_points: Some(600),
-			base_params: Some(base_params),
+			base_parameters: Some(base_parameters),
 			..ShowLedgerParametersArgs::default()
 		};
 		let result_new_params = execute(new_params).await.expect("failed to execute command");
