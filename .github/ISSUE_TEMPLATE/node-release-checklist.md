@@ -55,6 +55,8 @@ assignees: ''
 # Post-release checklist
 
  - [ ] All code on release branch backported to `main`?
+ - [ ] Metadata file in main matches the release
+   - (e.g. `git checkout node-0.18.0-rc.7 metadata/static/midnight_metadata_0.18.0.scale`)
  - [ ] Runtime upgrade has been enacted? (at block: _)
 
 (Reference: https://shielded.atlassian.net/wiki/spaces/MN/pages/27999401/Release+Playbook )
