@@ -45,6 +45,13 @@ jobs:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       - name: Checkout Season action repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
@@ -73,37 +80,56 @@ jobs:
           changes_archive_dir: .changes_archive
           repo_root: ./.tmp-package
 
-      - name: Retag and push node image
-        working-directory: ./.tmp-package
-        shell: bash
-        env:
-          FORCE: ${{ github.event.inputs.force }}
-        run: season-retag
-
-      - name: Retag and push toolkit image
+      - name: Retag and push release images (GHCR)
         working-directory: ./.tmp-package
         shell: bash
         env:
           FORCE: ${{ github.event.inputs.force }}
         run: |
-          export SEASON_IMAGE_NAME=midnight-node-toolkit
           season-retag
+          SEASON_IMAGE_NAME=midnight-node-toolkit season-retag
 
-      # TODO: Fix upgrader image release
-      #      - name: Retag and push hard-fork-test-upgrader image
-      #        working-directory: ./.tmp-package
-      #        shell: bash
-      #        env:
-      #          FORCE: ${{ github.event.inputs.force }}
-      #        run: |
-      #          export SEASON_IMAGE_NAME=midnight-hardfork-test-upgrader
-      #          export SEASON_IMAGE_TAG_COMMIT=$SEASON_SHORT_COMMIT
-      #          season-retag
+      - name: Retag and push release images (Docker Hub)
+        run: |
+          export IMAGE_TAG="$SEASON_IMAGE_TAG_COMMIT"
+          export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
+
+          echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
+          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
+
+          echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
+          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+
+          echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
+          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+
+          echo "Create multi-arch manifests for Docker Hub"
+          docker manifest create midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE} \
+            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
+            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+
+          docker manifest create midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE} \
+            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
+            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+
+          echo "Push manifests to Docker Hub"
+          docker manifest push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}
+          docker manifest push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}
 
       - name: Build Release Notes
         working-directory: ./.tmp-package
         shell: bash
         run: |
+          export SEASON_GHCR_REGISTRY="midnightntwrk"
           export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_RELEASE"
           export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-node-toolkit:$SEASON_IMAGE_TAG_RELEASE"
           export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
