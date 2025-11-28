@@ -13,6 +13,10 @@ node-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/node-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Node E2E test completed successfully."
 
+toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Update Ledger Parameters E2E test completed successfully."
+
 toolkit-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit E2E test completed successfully."
