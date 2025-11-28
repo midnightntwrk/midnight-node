@@ -60,12 +60,8 @@ impl BuildTxs for ClaimRewardsBuilder {
 		let context_arc = Arc::new(context);
 
 		// - Transaction info
-		let mut tx_info = ClaimMintInfo::new_from_context(
-			context_arc.clone(),
-			prover_arc.clone(),
-			self.rng_seed,
-			None,
-		);
+		let mut tx_info =
+			ClaimMintInfo::new_from_context(context_arc.clone(), prover_arc.clone(), self.rng_seed);
 
 		// - Mint
 		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };
