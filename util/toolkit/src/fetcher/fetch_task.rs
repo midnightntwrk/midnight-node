@@ -1,11 +1,11 @@
 use backoff::{ExponentialBackoff, future::retry};
 use hex::ToHex as _;
-use midnight_node_ledger_helpers::DB;
+use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use subxt::{ext::subxt_rpcs, utils::H256};
 
 use crate::{
 	client::{ClientError, MidnightNodeClient},
-	indexer::{
+	fetcher::{
 		compute_task::ComputeTask,
 		fetch_storage::{FetchStorage, FetchedBlock},
 	},
@@ -31,11 +31,15 @@ pub enum FetchTask {
 }
 
 impl FetchTask {
-	pub async fn fetch<D: DB + Clone>(
+	pub async fn fetch<
+		S: SignatureKind<D> + Tagged,
+		P: ProofKind<D> + core::fmt::Debug,
+		D: DB + Clone,
+	>(
 		self,
 		chain_id: H256,
 		client: &MidnightNodeClient,
-		storage: impl FetchStorage<D> + Send + Sync,
+		storage: impl FetchStorage<S, P, D> + Send + Sync,
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {

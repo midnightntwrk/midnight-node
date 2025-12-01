@@ -14,12 +14,11 @@
 use async_trait::async_trait;
 use clap::Args;
 use midnight_node_ledger_helpers::*;
-use std::{fs::File, marker::PhantomData, sync::Arc};
+use std::{fs::File, marker::PhantomData};
 use thiserror::Error;
 
 use crate::{
 	client::ClientError,
-	indexer::Indexer,
 	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
 };
 
@@ -44,8 +43,8 @@ pub struct Source {
 
 #[derive(Error, Debug)]
 pub enum SourceError {
-	#[error("failed to fetch transactions from indexer")]
-	TransactionFetchError(#[from] crate::indexer::IndexerError),
+	#[error("failed to fetch transactions")]
+	TransactionFetchError(#[from] crate::fetcher::FetchError),
 	#[error("failed to initialize midnight node client")]
 	ClientInitializationError(#[from] ClientError),
 	#[error("failed to read genesis transaction file")]
@@ -152,25 +151,14 @@ where
 	}
 }
 
-pub struct GetTxsFromUrl<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> where
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	pub indexer: Arc<Indexer<S, P>>,
+pub struct GetTxsFromUrl {
+	pub rpc_url: String,
+	pub num_fetch_workers: usize,
 }
 
-impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send + 'static>
-	GetTxsFromUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	pub fn new(indexer: Arc<Indexer<S, P>>) -> Self {
-		Self { indexer }
+impl GetTxsFromUrl {
+	pub fn new(rpc_url: &str, num_fetch_workers: usize) -> Self {
+		Self { rpc_url: rpc_url.to_string(), num_fetch_workers }
 	}
 }
 
@@ -178,7 +166,7 @@ where
 impl<
 	S: SignatureKind<DefaultDB> + Tagged,
 	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
-> GetTxs<S, P> for GetTxsFromUrl<S, P>
+> GetTxs<S, P> for GetTxsFromUrl
 where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
@@ -188,9 +176,8 @@ where
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
-		let indexer_handle = self.indexer.clone().start().await?;
-		let blocks = self.indexer.clone().get_blocks().await;
-		indexer_handle.stop().await?;
+		let blocks =
+			crate::fetcher::fetch_all(&self.rpc_url, self.num_fetch_workers, 10000).await?;
 
 		Ok(SourceTransactions { blocks })
 	}

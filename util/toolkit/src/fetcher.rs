@@ -1,15 +1,35 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pub mod compute_task;
+pub mod fetch_storage;
+pub mod fetch_task;
+pub mod runtimes;
+
 use backoff::{ExponentialBackoff, future::retry};
-use midnight_node_ledger_helpers::DB;
-use subxt::ext::subxt_rpcs;
+use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
+use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
 
 use crate::{
-	client::{ClientError, MidnightNodeClient},
-	indexer::{
+	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
+	fetcher::{
 		compute_task::{ComputeError, ComputeTask},
-		fetch_storage::{self, BlockData, FetchStorage, FetchedBlock},
+		fetch_storage::{BlockData, FetchStorage},
 		fetch_task::{FetchTask, FetchTaskError},
 	},
 };
+
+pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
@@ -43,20 +63,24 @@ pub async fn new_client(url: &str) -> MidnightNodeClient {
 	.expect("failed to fetch from node after retrying")
 }
 
-pub async fn fetch_all<D: DB + Clone>(
+pub async fn fetch_all<
+	S: SignatureKind<D> + Tagged,
+	P: ProofKind<D> + core::fmt::Debug,
+	D: DB + Clone,
+>(
 	url: &str,
 	num_workers: usize,
 	height: usize,
-) -> Result<Vec<BlockData<D>>, FetchError> {
+) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
 	let client = new_client(&url).await;
 	// TODO: use full height
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
-	let finalized_height = height as u64;
+	// let finalized_height = height as u64;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 
-	// let fetch_storage = fetch_storage::redb_backend::RedbBackend::<D>::new("toolkit.db");
-	let fetch_storage = fetch_storage::InMemory::<D>::default();
+	let fetch_storage = fetch_storage::redb_backend::RedbBackend::<S, P, D>::new("toolkit.db");
+	// let fetch_storage = fetch_storage::InMemory::<S, P, D>::default();
 
 	let num_cpu_workers = num_cpus::get();
 

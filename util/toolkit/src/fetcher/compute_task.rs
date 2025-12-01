@@ -1,5 +1,6 @@
 use midnight_node_ledger_helpers::{
-	BlockContext, DB, HashOutput, Timestamp, midnight_serialize::tagged_deserialize,
+	BlockContext, DB, HashOutput, ProofKind, SignatureKind, Tagged, Timestamp,
+	midnight_serialize::tagged_deserialize,
 };
 use subxt::{
 	blocks::ExtrinsicEvents,
@@ -7,7 +8,7 @@ use subxt::{
 	utils::H256,
 };
 
-use crate::indexer::{
+use crate::fetcher::{
 	fetch_storage::{BlockData, FetchStorage, FetchedBlock, FetchedTransaction},
 	runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
@@ -39,10 +40,14 @@ pub enum ComputeTask {
 }
 
 impl ComputeTask {
-	pub async fn work<D: DB + Clone>(
+	pub async fn work<
+		S: SignatureKind<D> + Tagged,
+		P: ProofKind<D> + core::fmt::Debug,
+		D: DB + Clone,
+	>(
 		self,
 		chain_id: H256,
-		storage: impl FetchStorage<D> + Send + Sync,
+		storage: impl FetchStorage<S, P, D> + Send + Sync,
 	) -> ComputeResult {
 		match self {
 			ComputeTask::ExtractBlockData { min, max, blocks } => {
@@ -59,7 +64,7 @@ impl ComputeTask {
 			ComputeTask::Verify { min, max } => {
 				log::info!("verifying {min}..{max}");
 				let blocks = storage.get_block_data_range(chain_id, (min..max).into_iter()).await;
-				let blocks: Result<Vec<BlockData<D>>, ComputeError> = (min..max)
+				let blocks: Result<Vec<BlockData<S, P, D>>, ComputeError> = (min..max)
 					.into_iter()
 					.zip(blocks.into_iter())
 					.map(|(i, b)| b.ok_or(ComputeError::BlockMissing(i)))
@@ -114,9 +119,13 @@ impl ComputeTask {
 		}
 	}
 
-	async fn extract_data<D: DB + Clone>(
+	async fn extract_data<
+		S: SignatureKind<D> + Tagged,
+		P: ProofKind<D> + core::fmt::Debug,
+		D: DB + Clone,
+	>(
 		block: &FetchedBlock,
-	) -> Result<BlockData<D>, ComputeError> {
+	) -> Result<BlockData<S, P, D>, ComputeError> {
 		let version_number = block
 			.block
 			.header()
@@ -134,23 +143,28 @@ impl ComputeTask {
 			.expect("no runtime version found")?;
 		match version_number {
 			RuntimeVersion::V0_17_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_0, D>(block).await
+				Self::process_block_with_protocol::<MidnightMetadata0_17_0, S, P, D>(block).await
 			},
 			RuntimeVersion::V0_17_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_1, D>(block).await
+				Self::process_block_with_protocol::<MidnightMetadata0_17_1, S, P, D>(block).await
 			},
 			RuntimeVersion::V0_18_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_0, D>(block).await
+				Self::process_block_with_protocol::<MidnightMetadata0_18_0, S, P, D>(block).await
 			},
 			RuntimeVersion::V0_18_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_1, D>(block).await
+				Self::process_block_with_protocol::<MidnightMetadata0_18_1, S, P, D>(block).await
 			},
 		}
 	}
 
-	async fn process_block_with_protocol<M: MidnightMetadata, D: DB + Clone>(
+	async fn process_block_with_protocol<
+		M: MidnightMetadata,
+		S: SignatureKind<D> + Tagged,
+		P: ProofKind<D> + core::fmt::Debug,
+		D: DB + Clone,
+	>(
 		block: &FetchedBlock,
-	) -> Result<BlockData<D>, ComputeError> {
+	) -> Result<BlockData<S, P, D>, ComputeError> {
 		let state_root = block.state_root.clone();
 		let block_header = block.block.header();
 		let parent_block_hash = block_header.parent_hash;

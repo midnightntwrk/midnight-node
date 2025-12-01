@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::indexer::IndexerError;
-
 #[derive(thiserror::Error, Debug)]
 pub enum RuntimeVersionError {
 	#[error("indexer received a block with invalid node version: {0}")]

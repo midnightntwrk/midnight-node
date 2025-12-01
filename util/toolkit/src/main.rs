@@ -46,7 +46,7 @@ use crate::commands::{
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 };
 
-use midnight_node_toolkit::indexer::fetch::fetch_all;
+use midnight_node_toolkit::fetcher::fetch_all;
 
 mod commands;
 mod utils;
@@ -311,7 +311,9 @@ pub(crate) async fn run_command(
 		},
 		Commands::Fetch(FetchArgs { url, num_workers, height }) => {
 			let start = std::time::Instant::now();
-			let blocks = fetch_all::<InMemoryDB>(&url, num_workers, height).await.unwrap();
+			let blocks = fetch_all::<Signature, ProofMarker, InMemoryDB>(&url, num_workers, height)
+				.await
+				.unwrap();
 			println!("fetched {} blocks in {:.3} s", blocks.len(), start.elapsed().as_secs_f32());
 			Ok(())
 		},

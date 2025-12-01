@@ -2,13 +2,13 @@ use std::{any::type_name, cmp::Ordering, path::Path, sync::Arc};
 
 use async_trait::async_trait;
 use core::fmt::Debug;
-use midnight_node_ledger_helpers::DB;
+use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
 use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
 use tokio::sync::Mutex;
 
-use crate::indexer::fetch_storage::{BlockData, FetchStorage};
+use super::{BlockData, FetchStorage};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockKey {
@@ -17,13 +17,13 @@ pub struct BlockKey {
 }
 
 #[derive(Clone)]
-pub struct RedbBackend<D: DB> {
+pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
 	pub db: Arc<Database>,
-	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<D>>>,
+	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<S, P, D>>>,
 	pub write_lock: Arc<Mutex<()>>,
 }
 
-impl<D: DB> RedbBackend<D> {
+impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		Self {
 			db: Arc::new(Database::create(path).expect("failed to create database")),
@@ -34,8 +34,14 @@ impl<D: DB> RedbBackend<D> {
 }
 
 #[async_trait]
-impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
-	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<BlockData<D>> {
+impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> FetchStorage<S, P, D>
+	for RedbBackend<S, P, D>
+{
+	async fn get_block_data(
+		&self,
+		chain_id: H256,
+		block_number: u64,
+	) -> Option<BlockData<S, P, D>> {
 		let read_txn = self.db.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else { return None };
 		table
@@ -47,7 +53,7 @@ impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<D>>> {
+	) -> Vec<Option<BlockData<S, P, D>>> {
 		let read_txn = self.db.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else {
 			return std::iter::repeat_n(None, range.count()).collect();
@@ -63,7 +69,12 @@ impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
 			.collect()
 	}
 
-	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: BlockData<D>) {
+	async fn insert_block_data(
+		&self,
+		chain_id: H256,
+		block_number: u64,
+		block: BlockData<S, P, D>,
+	) {
 		// Can only open the table as writable from one thread
 		let _ = self.write_lock.lock().await;
 
@@ -81,7 +92,7 @@ impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<D>)> + Send,
+		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
 	) {
 		// Can only open the table as writable from one thread
 		let _ = self.write_lock.lock().await;
