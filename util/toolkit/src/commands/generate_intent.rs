@@ -197,14 +197,12 @@ pub async fn execute(
 	Ok(())
 }
 
-/*
 /// Make sure to build toolkit-js before running these tests - this can be done with the earthly
 /// target:
 /// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
 /// $ earthly -P +rebuild-genesis-state-undeployed
-
 #[cfg(test)]
 mod test {
 	use clap::Parser as _;
@@ -256,7 +254,6 @@ mod test {
 		assert!(fs::exists(&output_private_state).unwrap());
 		assert!(fs::exists(&output_zswap_state).unwrap());
 	}
-
 
 	#[tokio::test]
 	async fn test_generate_circuit_call() {
@@ -316,7 +313,6 @@ mod test {
 		assert!(fs::exists(&output_result).unwrap());
 	}
 
-	
 	#[tokio::test]
 	async fn test_generate_maintain_contract() {
 		// as this is inside util/toolkit, current dir should move a few directories up
@@ -453,6 +449,3 @@ mod test {
 		assert!(fs::exists(&output_intent).unwrap());
 	}
 }
-
-
-*/

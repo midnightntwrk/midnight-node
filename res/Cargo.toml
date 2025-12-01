@@ -24,8 +24,8 @@ std = []
 runtime-benchmarks = []
 
 [dependencies]
-hex-literal.workspace = true
 midnight-serialize.workspace = true
+hex-literal.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["alloc"] }
 sp-core = { workspace = true, optional = true }

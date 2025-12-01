@@ -1,71 +1,53 @@
 name: +test
 
-on: ["push","pull_request"]
-
+on:
+  merge_group:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["main"]
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  cancel-in-progress: true
 jobs:
   run:
     name: Run tests
     # 16 core machines seem to have gone walkabout.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-core-x64
+    env:
+      FORCE_COLOR: 1
     steps:
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
 
       - name: Checkout node repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
 
-      - name: Freeing up more disk space
-        run: |
-          sudo swapoff -a
-          sudo rm -f /mnt/swapfile
-          free -h
-          sudo rm -rf /usr/local/lib/android # will release about 10 GB if you don't need Android
-          sudo rm -rf /usr/share/dotnet # will release about 20GB if you don't need .NET
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /opt/hostedtoolcache
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo apt-get remove -y 'php.*' --fix-missing
-          sudo apt-get remove -y '^mongodb-.*' --fix-missing
-          sudo apt-get remove -y '^mysql-.*' --fix-missing
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing
-          sudo apt-get remove -y google-cloud-sdk --fix-missing
-          sudo apt-get remove -y google-cloud-cli --fix-missing
-          sudo apt-get autoremove -y
-          sudo apt-get clean          
-          df -h
-        shell: bash
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
 
-      # Free GitHub Actions Environment Disk Space
-      - name: Maximize Build Space
-        uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false
-          large-packages: false
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Install protobuf-compiler
+      - name: Run build
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test
 
-      - name: install llcov
-        env:
-          COVERAGE: 1
-        run: |
-          mkdir test-artifacts
-          cargo install cargo-binstall --version 1.6.9
-          cargo binstall --no-confirm cargo-nextest cargo-llvm-cov
-          cargo llvm-cov nextest --profile ci --release --workspace --locked
-          cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path test-artifacts/tests.lcov
-
-      # - name: Upload lcov test report artifact
-      #   uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-      #   if: success() || failure()
-      #   with:
-      #     name: Lcov Coverage Report
-      #     path: test-artifacts/tests.lcov
-
-      - name: Coveralls
-        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
+      - name: Upload test report artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: success() || failure()
         with:
-          github-token: ${{ github.token }}
-          file: test-artifacts/tests.lcov
-          format: lcov
+          name: Test Report
+          path: test-artifacts/html
+
+      - name: Upload lcov test report artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: success() || failure()
+        with:
+          name: Lcov Coverage Report
+          path: test-artifacts/tests.lcov

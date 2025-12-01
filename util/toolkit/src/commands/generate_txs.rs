@@ -77,7 +77,6 @@ async fn send_txs(
 		.map_err(|e| GenerateTxsError::SendTransactions(e))
 }
 
-/* 
 #[cfg(test)]
 mod tests {
 	use std::str::FromStr;
@@ -212,5 +211,3 @@ mod tests {
 		super::generate_txs(&generator, received_txs).await
 	}
 }
-
-*/
