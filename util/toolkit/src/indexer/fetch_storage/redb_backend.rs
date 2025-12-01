@@ -43,6 +43,26 @@ impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
 			.expect("failed to get from table")
 			.map(|a| a.value())
 	}
+	async fn get_block_data_range(
+		&self,
+		chain_id: H256,
+		range: impl Iterator<Item = u64> + Send,
+	) -> Vec<Option<BlockData<D>>> {
+		let read_txn = self.db.begin_read().expect("failed to begin read txn");
+		let Ok(table) = read_txn.open_table(self.block_data_table) else {
+			return std::iter::repeat_n(None, range.count()).collect();
+		};
+		range
+			.into_iter()
+			.map(|block_number| {
+				table
+					.get(BlockKey { chain_id, block_number })
+					.expect("failed to get from table")
+					.map(|a| a.value())
+			})
+			.collect()
+	}
+
 	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: BlockData<D>) {
 		// Can only open the table as writable from one thread
 		let _ = self.write_lock.lock().await;
@@ -54,6 +74,27 @@ impl<D: DB + Clone> FetchStorage<D> for RedbBackend<D> {
 			table
 				.insert(BlockKey { chain_id, block_number }, block)
 				.expect("failed to insert block");
+		}
+		write_txn.commit().expect("failed to commit write")
+	}
+
+	async fn insert_block_data_range(
+		&self,
+		chain_id: H256,
+		range: impl Iterator<Item = (u64, BlockData<D>)> + Send,
+	) {
+		// Can only open the table as writable from one thread
+		let _ = self.write_lock.lock().await;
+
+		let write_txn = self.db.begin_write().expect("failed to begin write txn");
+		{
+			let mut table =
+				write_txn.open_table(self.block_data_table).expect("failed to open table");
+			for (block_number, block) in range {
+				table
+					.insert(BlockKey { chain_id, block_number }, block)
+					.expect("failed to insert block");
+			}
 		}
 		write_txn.commit().expect("failed to commit write")
 	}

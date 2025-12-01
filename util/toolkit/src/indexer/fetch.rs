@@ -55,7 +55,8 @@ pub async fn fetch_all<D: DB + Clone>(
 	let finalized_height = height as u64;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 
-	let fetch_storage = fetch_storage::redb_backend::RedbBackend::<D>::new("toolkit.db");
+	// let fetch_storage = fetch_storage::redb_backend::RedbBackend::<D>::new("toolkit.db");
+	let fetch_storage = fetch_storage::InMemory::<D>::default();
 
 	let num_cpu_workers = num_cpus::get();
 

@@ -80,10 +80,34 @@ impl<D: DB + Clone> FetchStorage<D> for InMemory<D> {
 		let k = Self::block_key(&chain_id.0, block_number);
 		self.blocks.lock().await.get(&k).cloned()
 	}
+	async fn get_block_data_range(
+		&self,
+		chain_id: H256,
+		range: impl Iterator<Item = u64> + Send,
+	) -> Vec<Option<BlockData<D>>> {
+		let blocks = self.blocks.lock().await;
+		range
+			.map(|block_number| {
+				let k = Self::block_key(&chain_id.0, block_number);
+				blocks.get(&k).cloned()
+			})
+			.collect()
+	}
 
 	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: BlockData<D>) {
 		let k = Self::block_key(&chain_id.0, block_number);
 		self.blocks.lock().await.insert(k, block);
+	}
+	async fn insert_block_data_range(
+		&self,
+		chain_id: H256,
+		range: impl Iterator<Item = (u64, BlockData<D>)> + Send,
+	) {
+		let mut blocks = self.blocks.lock().await;
+		range.for_each(|(block_number, block)| {
+			let k = Self::block_key(&chain_id.0, block_number);
+			blocks.insert(k, block);
+		});
 	}
 
 	/// In-memory storage has no persistence, so flush is a no-op.
