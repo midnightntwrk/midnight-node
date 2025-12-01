@@ -39,6 +39,8 @@ serde = { workspace = true, features = ["derive"] }
 bech32 = "0.11.0"
 bip39 = "2.0.0"
 toml.workspace = true
+subxt.workspace = true
+subxt-signer.workspace = true
 
 [features]
 default = []

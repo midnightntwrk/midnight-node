@@ -22,10 +22,12 @@ use commands::{
 	random_address::{self, RandomAddressArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::{self, ShowAddressArgs},
+	show_ledger_parameters::{self, ShowLedgerParametersArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
+	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use midnight_node_ledger_helpers::*;
 use std::{
@@ -85,6 +87,8 @@ enum Commands {
 	ShowWallet(ShowWalletArgs),
 	/// Show the address of a wallet using it's seed
 	ShowAddress(ShowAddressArgs),
+	/// Show the ledger parameters
+	ShowLedgerParameters(ShowLedgerParametersArgs),
 	/// Show the seed of a wallet
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
@@ -101,6 +105,8 @@ enum Commands {
 	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
+	/// Update the ledger parameters
+	UpdateLedgerParameters(UpdateLedgerParametersArgs),
 	/// Get the version information
 	Version,
 }
@@ -228,6 +234,19 @@ pub(crate) async fn run_command(
 				ShowAddress::SingleAddress(address) => println!("{address}"),
 			};
 
+			Ok(())
+		},
+		Commands::ShowLedgerParameters(args) => {
+			let result = show_ledger_parameters::execute(args.clone()).await?;
+			if args.serialize {
+				println!("{}", result.serialized);
+			} else {
+				println!("{:#?}", result);
+			}
+			Ok(())
+		},
+		Commands::UpdateLedgerParameters(args) => {
+			update_ledger_parameters::execute(args).await?;
 			Ok(())
 		},
 		Commands::ShowSeed(args) => {
