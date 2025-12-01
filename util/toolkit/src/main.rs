@@ -38,11 +38,10 @@ use std::{
 
 use midnight_node_toolkit::{
 	ProofType, SignatureType,
-	fetcher::fetch_storage,
 	serde_def::SourceTransactions,
 	tx_generator::{
 		TxGenerator,
-		source::{FetchCacheConfig, GetTxs, GetTxsFromUrl, Source},
+		source::{GetTxs, GetTxsFromUrl, Source},
 	},
 };
 
@@ -52,8 +51,6 @@ use crate::commands::{
 	show_address::ShowAddress,
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 };
-
-use midnight_node_toolkit::fetcher::fetch_all;
 
 mod commands;
 mod utils;

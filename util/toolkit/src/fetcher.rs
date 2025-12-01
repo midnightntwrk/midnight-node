@@ -19,6 +19,7 @@ pub mod runtimes;
 use backoff::{ExponentialBackoff, future::retry};
 use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
+use tokio::task::JoinSet;
 
 use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
@@ -50,6 +51,8 @@ pub enum FetchError {
 	FetchTaskError(#[from] FetchTaskError),
 	#[error("compute task error")]
 	ComputeTaskError(#[from] ComputeError),
+	#[error("worker thread panicced")]
+	WorkerPanic(String),
 }
 
 pub async fn new_client(url: &str) -> MidnightNodeClient {
@@ -88,6 +91,8 @@ pub async fn fetch_all<
 
 	let num_cpu_workers = num_cpus::get();
 
+	let mut join_set: JoinSet<Result<(), FetchError>> = JoinSet::new();
+
 	let (fetch_job_sender, fetch_job_receiver) = async_channel::bounded(num_workers * 2);
 	let (compute_job_sender, compute_job_receiver) = async_channel::bounded(num_cpu_workers * 2);
 	let (final_jobs_sender, final_jobs_receiver) = async_channel::bounded(num_cpu_workers * 2);
@@ -96,7 +101,7 @@ pub async fn fetch_all<
 	{
 		let job_sender = fetch_job_sender.clone();
 		let finalized_height = finalized_height;
-		tokio::spawn(async move {
+		join_set.spawn(async move {
 			for min in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
 				let max = u64::min(min + BLOCKS_PER_JOB, finalized_height + 1);
 				log::info!("pushing new fetch job {min} -> {max}...");
@@ -105,6 +110,8 @@ pub async fn fetch_all<
 					.await
 					.expect("failed to push job on channel");
 			}
+
+			Ok(())
 		});
 	}
 
@@ -116,19 +123,16 @@ pub async fn fetch_all<
 		let work_job_sender = compute_job_sender.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
-		tokio::spawn(async move {
+		join_set.spawn(async move {
 			let client = new_client(&url).await;
 			loop {
 				let Ok(job) = job_receiver.recv().await else {
-					return;
+					return Ok(());
 				};
 
 				log::info!("received new job...");
 
-				let work_job = job
-					.fetch(chain_id, &client, fetch_storage.clone())
-					.await
-					.expect("failed to fetch from node after retrying");
+				let work_job = job.fetch(chain_id, &client, fetch_storage.clone()).await?;
 
 				work_job_sender.send(work_job).await.expect("failed to push job on work queue");
 			}
@@ -143,18 +147,15 @@ pub async fn fetch_all<
 		let work_job_sender = compute_job_sender.clone();
 		let final_jobs_sender = final_jobs_sender.clone();
 		let fetch_storage = fetch_storage.clone();
-		tokio::spawn(async move {
+		join_set.spawn(async move {
 			loop {
 				let Ok(job) = work_job_receiver.recv().await else {
-					return;
+					return Ok(());
 				};
 
 				log::info!("received new work job...");
 
-				let work_job = job
-					.work(chain_id, fetch_storage.clone())
-					.await
-					.expect("failed to process work job");
+				let work_job = job.work(chain_id, fetch_storage.clone()).await?;
 
 				match &work_job {
 					ComputeTask::FinalVerify { .. } => {
@@ -178,11 +179,25 @@ pub async fn fetch_all<
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	for i in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
 		log::info!("job {i}/{finalized_height}");
-		let job = final_jobs_receiver
-			.recv()
-			.await
-			.expect("failed to receive final job from channel");
-		jobs.push(job);
+		tokio::select! {
+			// If any task completes, check if it was an error
+			Some(result) = join_set.join_next() => {
+				match result {
+					Ok(Ok(())) => {}, // Task completed successfully
+					Ok(Err(e)) => {
+						join_set.abort_all();
+						return Err(e);
+					}
+					Err(join_err) if join_err.is_panic() => {
+						join_set.abort_all();
+						return Err(FetchError::WorkerPanic(join_err.to_string()));
+					}
+					Err(_) => {}
+				}
+			}
+			// Your normal work...
+			job = final_jobs_receiver.recv() => jobs.push(job.expect("failed to receive job from channel"))
+		}
 	}
 
 	for job in jobs {
