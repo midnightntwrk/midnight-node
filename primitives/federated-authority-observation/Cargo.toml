@@ -12,9 +12,9 @@ scale-info.workspace = true
 sp-inherents.workspace = true
 sp-runtime.workspace = true
 sp-api.workspace = true
+sp-core.workspace = true
 sidechain-domain.workspace = true
 serde = { workspace = true, optional = true }
-sp-core = { workspace = true, optional = true }
 
 [features]
 default = ["std"]
@@ -25,8 +25,6 @@ std = [
     "sp-runtime/std",
     "sidechain-domain/std",
     "sp-core/std",
+    "sp-api/std",
     "serde",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec"]

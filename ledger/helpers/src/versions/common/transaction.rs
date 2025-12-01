@@ -21,15 +21,7 @@ use super::{
 	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
 	Storable, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
 };
-use std::{
-	collections::HashMap,
-	error::Error,
-	fs,
-	fs::File,
-	io::Write,
-	sync::Arc,
-	time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
 pub type UnprovenTransaction<D> =
 	Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
@@ -45,7 +37,6 @@ pub trait FromContext<D: DB + Clone> {
 		context: Arc<LedgerContext<D>>,
 		prover: Arc<dyn ProofProvider<D>>,
 		maybe_rng_seed: Option<[u8; 32]>,
-		now: Option<Timestamp>,
 	) -> Self;
 
 	fn rng(maybe_rng_seed: Option<[u8; 32]>) -> StdRng {
@@ -91,7 +82,6 @@ pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub prover: Arc<dyn ProofProvider<D>>,
 	pub funding_seeds: Vec<WalletSeed>,
 	pub mock_proofs_for_fees: bool,
-	pub now: Timestamp,
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
@@ -100,17 +90,8 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 		context: Arc<LedgerContext<D>>,
 		prover: Arc<dyn ProofProvider<D>>,
 		maybe_rng_seed: Option<[u8; 32]>,
-		now: Option<Timestamp>,
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
-		let now = now.unwrap_or_else(|| {
-			Timestamp::from_secs(
-				SystemTime::now()
-					.duration_since(UNIX_EPOCH)
-					.expect("time went backwards")
-					.as_secs(),
-			)
-		});
 
 		Self {
 			context,
@@ -121,7 +102,6 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 			prover,
 			funding_seeds: vec![],
 			mock_proofs_for_fees: false,
-			now,
 			dust_registrations: vec![],
 		}
 	}
@@ -165,7 +145,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 
 	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
-		let now = self.now;
+		let now = self.context.latest_block_context().tblock;
 		// (10 min) max_ttl/6 - enough to produce 6 txs for a chain that starts
 		// with the `Timestamp` of the first tx to be sent
 		let delay = Duration::from_secs(600);
@@ -399,7 +379,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		// make sure that the dir is created, if it does not exist
 		fs::create_dir_all(parent_dir).expect("failed to create directory");
 
-		let now = self.now;
+		let now = self.context.latest_block_context().tblock;
 		let ttl = now + Duration::from_secs(600);
 
 		for (segment_id, intent_info) in self.intents.iter_mut() {
@@ -427,12 +407,14 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	pub async fn erase_proof(mut self) -> Result<Transaction<(), (), Pedersen, D>> {
 		let tx_unproven = self.build().await?;
 		let tx_erased_proof = tx_unproven.erase_proofs();
-		Self::validate(self.context, self.now, tx_erased_proof.erase_signatures())
+		let now = self.context.latest_block_context().tblock;
+		Self::validate(self.context, now, tx_erased_proof.erase_signatures())
 	}
 
 	pub async fn prove(mut self) -> Result<FinalizedTransaction<D>> {
 		let tx = self.build().await?;
-		Self::validate(self.context, self.now, tx)
+		let now = self.context.latest_block_context().tblock;
+		Self::validate(self.context, now, tx)
 	}
 
 	fn validate<
@@ -472,7 +454,6 @@ impl<D: DB + Clone> FromContext<D> for ClaimMintInfo<D> {
 		context: Arc<LedgerContext<D>>,
 		prover: Arc<dyn ProofProvider<D>>,
 		maybe_rng_seed: Option<[u8; 32]>,
-		_now: Option<Timestamp>,
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
 

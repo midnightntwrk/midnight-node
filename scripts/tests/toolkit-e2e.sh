@@ -97,6 +97,6 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-tx "$TOOLK
     generate-txs single-tx \
     --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
     --shielded-amount 10 \
-    --destination-address mn_shield-addr_undeployed12ch04fxzmmcfsy7nvy2894pfsm7smxrvzdkmc0scw6vshjrw5pkqxqyxd4ythchgl47ma2qp04703dpkwzkxtkxea7053xsyyunuvlxzp5fn43u5
+    --destination-address mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d
 
 echo "✅ Toolkit E2E"

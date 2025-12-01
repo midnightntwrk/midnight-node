@@ -89,8 +89,11 @@ where
 			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+				src_files.clone(),
+				extension.to_string(),
+				src.dust_warp,
+			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
 			if dry_run {
@@ -98,7 +101,7 @@ where
 				return Ok(Box::new(()));
 			}
 			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromUrl::new(&url, src.fetch_concurrency));
+				Box::new(GetTxsFromUrl::new(&url, src.fetch_concurrency, src.dust_warp));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))
