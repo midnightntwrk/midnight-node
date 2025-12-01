@@ -29,7 +29,7 @@ use commands::{
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
 	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
-use midnight_node_ledger_helpers::{ledger_storage::db::InMemoryDB, *};
+use midnight_node_ledger_helpers::*;
 use std::{
 	error::Error,
 	fmt,
@@ -38,7 +38,12 @@ use std::{
 
 use midnight_node_toolkit::{
 	ProofType, SignatureType,
-	tx_generator::{TxGenerator, source::Source},
+	fetcher::fetch_storage,
+	serde_def::SourceTransactions,
+	tx_generator::{
+		TxGenerator,
+		source::{FetchCacheConfig, GetTxs, GetTxsFromUrl, Source},
+	},
 };
 
 use crate::commands::{
@@ -115,11 +120,10 @@ enum Commands {
 	Fetch(FetchArgs),
 }
 
-#[derive(Args, Clone)]
+#[derive(Args)]
 struct FetchArgs {
-	url: String,
-	num_workers: usize,
-	height: usize,
+	#[command(flatten)]
+	src: Source,
 }
 
 #[derive(Args)]
@@ -328,12 +332,24 @@ pub(crate) async fn run_command(
 
 			Ok(())
 		},
-		Commands::Fetch(FetchArgs { url, num_workers, height }) => {
+		Commands::Fetch(FetchArgs { src }) => {
+			if src.src_files.is_some() {
+				panic!("error: fetch command doesn't work with '--src-files'");
+			}
 			let start = std::time::Instant::now();
-			let blocks = fetch_all::<Signature, ProofMarker, InMemoryDB>(&url, num_workers, height)
-				.await
-				.unwrap();
-			println!("fetched {} blocks in {:.3} s", blocks.len(), start.elapsed().as_secs_f32());
+			let txs: SourceTransactions<Signature, ProofMarker> = GetTxsFromUrl::new(
+				&src.src_url.unwrap(),
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			)
+			.get_txs()
+			.await?;
+			println!(
+				"fetched {} blocks in {:.3} s",
+				txs.blocks.len(),
+				start.elapsed().as_secs_f32()
+			);
 			Ok(())
 		},
 	}

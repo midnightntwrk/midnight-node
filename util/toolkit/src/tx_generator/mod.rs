@@ -100,8 +100,12 @@ where
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromUrl::new(&url, src.fetch_concurrency, src.dust_warp));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+				&url,
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))

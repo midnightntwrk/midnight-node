@@ -70,17 +70,21 @@ pub async fn fetch_all<
 >(
 	url: &str,
 	num_workers: usize,
+	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
 	height: usize,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	if std::env::var("SYNC_CACHE").is_ok() {
+		panic!(
+			"Error: 'SYNC_CACHE' is defined - please use 'FETCH_CACHE' instead. See `--help` for more info."
+		);
+	}
+
 	let client = new_client(&url).await;
 	// TODO: use full height
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	// let finalized_height = height as u64;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
-
-	let fetch_storage = fetch_storage::redb_backend::RedbBackend::<S, P, D>::new("toolkit.db");
-	// let fetch_storage = fetch_storage::InMemory::<S, P, D>::default();
 
 	let num_cpu_workers = num_cpus::get();
 

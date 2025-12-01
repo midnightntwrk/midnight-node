@@ -15,6 +15,8 @@ use std::str::FromStr;
 
 use midnight_node_ledger_helpers::*;
 
+use crate::tx_generator::source::FetchCacheConfig;
+
 pub trait TokenDecode: Sized + Send + Sync + Clone {
 	fn decode(token_id: [u8; 32]) -> Self;
 }
@@ -152,6 +154,19 @@ where
 	})?;
 
 	Ok(res)
+}
+
+pub fn fetch_cache_config(input: &str) -> Result<FetchCacheConfig, clap::Error> {
+	FetchCacheConfig::from_str(input).map_err(|error| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("invalid fetch cache config: {}", error)),
+		);
+
+		err
+	})
 }
 
 pub fn wallet_address(input: &str) -> Result<WalletAddress, clap::Error> {

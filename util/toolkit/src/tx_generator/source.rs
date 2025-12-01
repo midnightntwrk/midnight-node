@@ -11,12 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{
+	cli_parsers as cli,
+	fetcher::{fetch_all, fetch_storage},
+};
 use async_trait::async_trait;
 use clap::Args;
 use midnight_node_ledger_helpers::*;
 use std::{
 	fs::File,
 	marker::PhantomData,
+	str::FromStr,
 	time::{SystemTime, UNIX_EPOCH},
 };
 use subxt::utils::H256;
@@ -27,6 +32,49 @@ use crate::{
 	client::ClientError,
 	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
 };
+
+#[derive(Clone, Debug)]
+pub enum FetchCacheConfig {
+	InMemory,
+	Redb { filename: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FetchCacheConfigParseError {
+	#[error("could not find delimited ':'")]
+	MissingDelimiter,
+	#[error("unknown prefix for fetch source: {0}")]
+	UnknownPrefix(String),
+}
+
+impl FromStr for FetchCacheConfig {
+	type Err = FetchCacheConfigParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let prefix: String;
+		let opts: String;
+
+		match s.split_once(":") {
+			Some((s0, s1)) => {
+				prefix = s0.to_string();
+				opts = s1.to_string();
+			},
+			None => {
+				prefix = s.to_string();
+				opts = String::new();
+			},
+		}
+
+		match prefix.as_str() {
+			"redb" => {
+				let filename = opts;
+				Ok(Self::Redb { filename })
+			},
+			"inmemory" => Ok(Self::InMemory),
+			_ => Err(FetchCacheConfigParseError::UnknownPrefix(prefix)),
+		}
+	}
+}
 
 #[derive(Args, Debug)]
 pub struct Source {
@@ -50,6 +98,13 @@ pub struct Source {
 	/// chain
 	#[arg(long, global = true)]
 	pub dust_warp: bool,
+
+	#[arg(long, global = true, value_parser = cli::fetch_cache_config, default_value = "redb:toolkit.db", env)]
+	/// Fetch cache config. Available options:
+	/// - "inmemory" (i.e. no cache),
+	/// - "redb:<filename>" (file-cache, single-writer)
+	/// - TODO: "postgres:<db-url>" (external db, multi-writer)
+	pub fetch_cache: FetchCacheConfig,
 }
 
 #[derive(Error, Debug)]
@@ -167,11 +222,17 @@ pub struct GetTxsFromUrl {
 	pub rpc_url: String,
 	pub num_fetch_workers: usize,
 	pub dust_warp: bool,
+	pub fetch_cache_config: FetchCacheConfig,
 }
 
 impl GetTxsFromUrl {
-	pub fn new(rpc_url: &str, num_fetch_workers: usize, dust_warp: bool) -> Self {
-		Self { rpc_url: rpc_url.to_string(), num_fetch_workers, dust_warp }
+	pub fn new(
+		rpc_url: &str,
+		num_fetch_workers: usize,
+		dust_warp: bool,
+		fetch_cache_config: FetchCacheConfig,
+	) -> Self {
+		Self { rpc_url: rpc_url.to_string(), num_fetch_workers, dust_warp, fetch_cache_config }
 	}
 }
 
@@ -189,8 +250,26 @@ where
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
-		let mut blocks =
-			crate::fetcher::fetch_all(&self.rpc_url, self.num_fetch_workers, 10000).await?;
+		let mut blocks = match &self.fetch_cache_config {
+			FetchCacheConfig::InMemory => {
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					fetch_storage::InMemory::default(),
+					10000,
+				)
+				.await?
+			},
+			FetchCacheConfig::Redb { filename } => {
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					fetch_storage::redb_backend::RedbBackend::new(filename),
+					10000,
+				)
+				.await?
+			},
+		};
 
 		if self.dust_warp {
 			// Add an empty block with a now() as a block_context
