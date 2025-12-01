@@ -75,16 +75,23 @@ pub mod pallet {
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 
-			<T as Config>::LedgerStateProviderMut::mut_ledger_state(move |state_key| {
+			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 				let result = LedgerApi::apply_system_transaction(
 					&state_key,
-					&midnight_system_tx,
+					&midnight_system_tx.clone(),
 					block_context,
 					runtime_version,
 				)
 				.map_err(Error::<T>::from)?;
-				Ok::<(Vec<u8>, ()), Error<T>>((result.state_root, ()))
+				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
 			})?;
+
+			Self::deposit_event(Event::<T>::SystemTransactionApplied(
+				super::SystemTransactionApplied {
+					hash,
+					serialized_system_transaction: midnight_system_tx,
+				},
+			));
 
 			Ok(())
 		}
