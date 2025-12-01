@@ -49,6 +49,17 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
+pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
+	input.parse().map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse keypair: {}", e)),
+		);
+		err
+	})
+}
+
 pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, clap::error::Error> {
 	if let Ok(addr) = hex_ledger_tagged_decode::<T>(input) {
 		Ok(addr)

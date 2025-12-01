@@ -496,6 +496,33 @@ Tx TransactionWithContext {
 ...
 ```
 
+### Show Ledger Parameters
+Show parsed and serialized ledger parameters. \
+It allows overriding the base parameters by passing the new values:
+```ignore
+$ midnight-node-toolkit show-ledger-parameters -r ws://localhost:9944 --c-to-m-bridge-min-amount 2000
+```
+Base parameters can be loaded in these ways:
+ - From the remote server: `-r ws://localhost:9944`
+ - By providing the serialized parameters: `--base-parameters 0x...`
+ - Otherwise, the initial ledger parameters are used.
+
+Return types:
+ - With the `--serialize` option, only the serialized parameters are returned.
+ - Otherwise, the parsed parameters and the serialized are returned.
+
+### Update Ledger Parameters
+Update the ledger parameters on the remote server via federated authority.
+
+Update parameters based on the existing ones:
+```ignore
+$ midnight-node-toolkit update-ledger-parameters -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
+```
+Update parameters based on a serialized value:
+```ignore
+$ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
+```
+
 ---
 
 ### Show Wallet (JSON output)
@@ -565,7 +592,7 @@ $ midnight-node-toolkit show-address
 >   --network undeployed
 >   --shielded
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqxr6r2x
+mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqm9zs2g
 
 ```
 
