@@ -49,7 +49,7 @@ echo "Get version for toolkit"
 docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
 
 current_parameters=$(
-    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 --network container:midnight-node "$TOOLKIT_IMAGE" \
         show-ledger-parameters -r ws://127.0.0.1:9944 --serialize
 )
 
@@ -57,7 +57,7 @@ current_parameters=$(
       update-ledger-parameters -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 
 new_parameters=$(
-    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 --network container:midnight-node "$TOOLKIT_IMAGE" \
         show-ledger-parameters -r ws://127.0.0.1:9944 --serialize
 )
 
