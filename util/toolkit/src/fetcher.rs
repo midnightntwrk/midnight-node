@@ -195,7 +195,6 @@ pub async fn fetch_all<
 					Err(_) => {}
 				}
 			}
-			// Your normal work...
 			job = final_jobs_receiver.recv() => jobs.push(job.expect("failed to receive job from channel"))
 		}
 	}
