@@ -50,7 +50,7 @@ docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
 
 current_parameters=$(
     docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
-        show-ledger-parameters -r ws://localhost:9944 --serialize
+        show-ledger-parameters -r http://localhost:9944 --serialize
 )
 
   docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 --network container:midnight-node "$TOOLKIT_IMAGE" \
@@ -58,7 +58,7 @@ current_parameters=$(
 
 new_parameters=$(
     docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
-        show-ledger-parameters -r ws://localhost:9944 --serialize
+        show-ledger-parameters -r http://localhost:9944 --serialize
 )
 
   if [ "$current_parameters" != "$new_parameters" ]; then
