@@ -61,7 +61,6 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			context.clone(),
 			prover_arc.clone(),
 			self.rng_seed,
-			None,
 		);
 
 		let inputs = context.with_ledger_state(|ledger_state| {

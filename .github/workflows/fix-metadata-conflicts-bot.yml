@@ -1,0 +1,229 @@
+name: Fix Metadata Conflicts (Bot Action)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to fix metadata conflicts for'
+        required: true
+      strategy:
+        description: 'Conflict resolution strategy'
+        required: true
+        type: choice
+        options:
+          - accept-current
+          - accept-incoming
+
+jobs:
+  fix-metadata-conflicts:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && startsWith(github.event.comment.body, '/bot fix-metadata-conflicts'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Parse command and validate
+        id: parse
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            let strategy;
+            if (context.eventName === 'workflow_dispatch') {
+              strategy = '${{ github.event.inputs.strategy }}';
+            } else {
+              const comment = context.payload.comment.body.trim();
+              const match = comment.match(/^\/bot\s+fix-metadata-conflicts\s+(accept-current|accept-incoming)\s*$/);
+              if (!match) {
+                core.setFailed('Invalid command format. Usage: /bot fix-metadata-conflicts <accept-current|accept-incoming>');
+                return;
+              }
+              strategy = match[1];
+            }
+            core.setOutput('strategy', strategy);
+            console.log(`Strategy: ${strategy}`);
+
+      - name: Check user permission
+        if: github.event_name == 'issue_comment'
+        id: check_permission
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const allowed = ['admin', 'write'].includes(permission.permission);
+            if (!allowed) {
+              core.setFailed(`User ${context.actor} does not have write permission`);
+            }
+
+      - name: Add reaction to comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            })
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? '${{ github.event.inputs.pr_number }}'
+              : context.issue.number;
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('sha', pr.data.head.sha);
+            core.setOutput('number', prNumber);
+            core.setOutput('base', pr.data.base.ref);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for conflicts and resolve
+        id: resolve
+        env:
+          STRATEGY: ${{ steps.parse.outputs.strategy }}
+          BASE_BRANCH: ${{ steps.pr.outputs.base }}
+        run: |
+          set +e  # Don't exit on error
+
+          # Fetch the base branch
+          git fetch origin "$BASE_BRANCH"
+
+          # Try to merge and see if there are conflicts
+          merge_output=$(git merge "origin/$BASE_BRANCH" --no-commit --no-ff 2>&1)
+          merge_status=$?
+
+          if [ $merge_status -eq 0 ]; then
+            # No conflicts - abort the merge
+            git merge --abort 2>/dev/null || true
+            echo "RESULT=no-conflicts" >> $GITHUB_ENV
+            echo "No conflicts detected with base branch"
+            exit 0
+          fi
+
+          # Get list of conflicted files
+          conflicted_files=$(git diff --name-only --diff-filter=U)
+
+          if [ -z "$conflicted_files" ]; then
+            git merge --abort 2>/dev/null || true
+            echo "RESULT=no-conflicts" >> $GITHUB_ENV
+            echo "No conflicts detected"
+            exit 0
+          fi
+
+          echo "Conflicted files:"
+          echo "$conflicted_files"
+
+          # Check if ALL conflicts are under metadata/static/
+          non_metadata_conflicts=$(echo "$conflicted_files" | grep -v "^metadata/static/" || true)
+
+          if [ -n "$non_metadata_conflicts" ]; then
+            git merge --abort 2>/dev/null || true
+            echo "RESULT=non-metadata-conflicts" >> $GITHUB_ENV
+            # Replace newlines with comma-space for display
+            non_metadata_list=$(echo "$non_metadata_conflicts" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
+            echo "NON_METADATA_FILES=$non_metadata_list" >> $GITHUB_ENV
+            echo "Found conflicts outside metadata/static/: $non_metadata_list"
+            exit 0
+          fi
+
+          # All conflicts are in metadata/static/ - resolve them
+          echo "Resolving metadata conflicts with strategy: $STRATEGY"
+
+          for file in $conflicted_files; do
+            if [ "$STRATEGY" = "accept-current" ]; then
+              # Keep our version (the PR branch)
+              git checkout --ours "$file"
+            else
+              # Accept incoming version (from main)
+              git checkout --theirs "$file"
+            fi
+            git add "$file"
+          done
+
+          # Create the merge commit
+          strategy_desc=""
+          if [ "$STRATEGY" = "accept-current" ]; then
+            strategy_desc="keeping PR branch changes"
+          else
+            strategy_desc="accepting $BASE_BRANCH branch changes"
+          fi
+
+          git commit -m "chore: merge $BASE_BRANCH and resolve metadata conflicts ($strategy_desc)"
+
+          # Push the merge commit
+          git push origin HEAD
+
+          echo "RESULT=resolved" >> $GITHUB_ENV
+          # Replace newlines with comma-space for display
+          resolved_list=$(echo "$conflicted_files" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
+          echo "RESOLVED_FILES=$resolved_list" >> $GITHUB_ENV
+
+      - name: Post success comment
+        if: env.RESULT == 'resolved'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :white_check_mark: Metadata conflicts resolved successfully!
+
+            **Strategy used:** `${{ steps.parse.outputs.strategy }}`
+            **Files resolved:** ${{ env.RESOLVED_FILES }}
+
+            The `${{ steps.pr.outputs.base }}` branch has been merged into this PR with metadata conflicts resolved.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post no-conflicts comment
+        if: env.RESULT == 'no-conflicts'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :information_source: No conflicts detected between this PR and the `${{ steps.pr.outputs.base }}` branch.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post non-metadata-conflicts comment
+        if: env.RESULT == 'non-metadata-conflicts'
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :warning: Cannot automatically resolve conflicts. Found conflicts in files outside `metadata/static/`:
+
+            ```
+            ${{ env.NON_METADATA_FILES }}
+            ```
+
+            Please resolve these conflicts manually.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post failure comment
+        if: failure()
+        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        with:
+          message: |
+            :x: Failed to fix metadata conflicts. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+          pr-number: ${{ steps.pr.outputs.number }}

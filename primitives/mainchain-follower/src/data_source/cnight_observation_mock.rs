@@ -16,8 +16,9 @@ use crate::{
 	RegistrationData, UtxoIndexInTx,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, ObservedUtxos,
 };
+use rand::seq::IteratorRandom;
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;
@@ -36,6 +37,10 @@ impl CNightObservationDataSourceMock {
 
 // Mock datum of expected registered user json datum
 pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
+	let dust_pk = rand::random::<[u8; 33]>();
+	let mut rng = rand::rng();
+	let (dust_pk, _) = dust_pk.split_at((0..33).choose(&mut rng).unwrap());
+
 	vec![ObservedUtxo {
 		header: ObservedUtxoHeader {
 			tx_position: CardanoPosition {
@@ -50,7 +55,7 @@ pub fn mock_utxos(start: &CardanoPosition) -> Vec<ObservedUtxo> {
 		},
 		data: ObservedUtxoData::Registration(RegistrationData {
 			cardano_reward_address: CardanoRewardAddressBytes(rand::random::<[u8; 29]>()),
-			dust_public_key: DustPublicKeyBytes(rand::random::<[u8; 33]>()),
+			dust_public_key: dust_pk.try_into().unwrap(),
 		}),
 	}]
 }
