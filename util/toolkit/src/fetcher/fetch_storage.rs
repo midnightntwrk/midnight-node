@@ -23,6 +23,7 @@ use midnight_node_ledger_helpers::{
 	BlockContext, DB, ProofKind, SerdeTransaction, SignatureKind, Tagged,
 };
 
+pub mod postgres_backend;
 pub mod redb_backend;
 
 #[derive(Clone)]
@@ -33,6 +34,7 @@ pub struct FetchedBlock {
 
 pub type FetchedTransaction<S, P, D> = SerdeTransaction<S, P, D>;
 
+/// Block data stored by [`FetchStorage`] implementations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockData<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
 	pub hash: H256,
@@ -47,6 +49,10 @@ pub struct BlockData<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
 	pub state_root: Option<Vec<u8>>,
 }
 
+/// Storage backend for fetched block data.
+///
+/// Provides methods to store and retrieve [`BlockData`] by chain ID and block number,
+/// as well as tracking the highest verified block per chain.
 #[async_trait]
 pub trait FetchStorage<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB + Clone> {
 	async fn get_block_data(&self, chain_id: H256, block_number: u64)

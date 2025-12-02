@@ -29,6 +29,9 @@ pub struct BlockKey {
 	block_number: u64,
 }
 
+/// Persistent [`FetchStorage`] backend using [redb](https://github.com/cberner/redb).
+///
+/// Data is serialized as BSON. Uses `RwLock` for concurrent read access.
 #[derive(Clone)]
 pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
 	pub db: Arc<RwLock<Database>>,
@@ -37,9 +40,12 @@ pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D:
 }
 
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
+	/// Creates or opens a database at the given path. Will fail if open in another process.
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		Self {
-			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
+			db: Arc::new(RwLock::new(
+				Database::create(path).expect("failed to create database - is it already open?"),
+			)),
 			block_data_table: TableDefinition::new("block_data"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
 		}

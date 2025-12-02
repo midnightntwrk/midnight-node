@@ -7496,6 +7496,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
+ "sqlx",
  "structured-logger",
  "subxt 0.44.0",
  "tempfile",

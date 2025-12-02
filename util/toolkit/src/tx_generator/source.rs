@@ -37,6 +37,7 @@ use crate::{
 pub enum FetchCacheConfig {
 	InMemory,
 	Redb { filename: String },
+	Postgres { database_url: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,6 +72,7 @@ impl FromStr for FetchCacheConfig {
 				Ok(Self::Redb { filename })
 			},
 			"inmemory" => Ok(Self::InMemory),
+			"postgres" => Ok(Self::Postgres { database_url: s.to_string() }),
 			_ => Err(FetchCacheConfigParseError::UnknownPrefix(prefix)),
 		}
 	}
@@ -103,7 +105,7 @@ pub struct Source {
 	/// Fetch cache config. Available options:
 	/// - "inmemory" (i.e. no cache),
 	/// - "redb:<filename>" (file-cache, single-writer)
-	/// - TODO: "postgres:<db-url>" (external db, multi-writer)
+	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
 	pub fetch_cache: FetchCacheConfig,
 }
 
@@ -265,6 +267,15 @@ where
 					&self.rpc_url,
 					self.num_fetch_workers,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
+					10000,
+				)
+				.await?
+			},
+			FetchCacheConfig::Postgres { database_url } => {
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
 					10000,
 				)
 				.await?
