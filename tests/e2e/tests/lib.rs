@@ -19,6 +19,7 @@ async fn register_for_dust_production() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let dust_hex = MidnightClient::new_dust_hex();
+    let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -57,7 +58,7 @@ async fn register_for_dust_production() {
     );
 
     let reward_address = cardano_client.reward_address_bytes();
-    let dust_address: [u8; 33] = hex::decode(&dust_hex)
+    let dust_address: Vec<u8> = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
         .try_into()
         .unwrap();
@@ -72,7 +73,7 @@ async fn register_for_dust_production() {
         .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
     assert!(
         registration.is_some(),
@@ -89,7 +90,7 @@ async fn register_for_dust_production() {
         .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_bytes
                 && map.0.utxo_tx_hash.0 == register_tx_id
         });
     assert!(
@@ -363,7 +364,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let reward_address_1 = cardano_client_1.reward_address_bytes();
     let reward_address_2 = cardano_client_2.reward_address_bytes();
 
-    let dust_address: [u8; 33] = hex::decode(&dust_hex)
+    let dust_address: Vec<u8> = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
         .try_into()
         .unwrap();
@@ -383,7 +384,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address_1
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
 
     let registration_2 = registration_events_2
@@ -392,7 +393,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address_2
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
 
     assert!(
@@ -421,7 +422,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_1
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_bytes
                 && map.0.utxo_tx_hash.0 == register_tx_id_1
         });
 
@@ -431,7 +432,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_2
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_bytes
                 && map.0.utxo_tx_hash.0 == register_tx_id_2
         });
     assert!(
@@ -519,7 +520,7 @@ async fn cnight_produces_dust() {
         .expect("Failed to poll UTXO owners");
     println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
 
-    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0);
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
     println!("UTXO owner in hex: {:?}", utxo_owner_hex);
     assert_eq!(
         utxo_owner_hex, dust_hex,
@@ -537,6 +538,7 @@ async fn deregister_from_dust_production() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let dust_hex = MidnightClient::new_dust_hex();
+    let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -593,7 +595,7 @@ async fn deregister_from_dust_production() {
     );
 
     let reward_address = cardano_client.reward_address_bytes();
-    let dust_address: [u8; 33] = hex::decode(&dust_hex)
+    let dust_address: Vec<u8> = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
         .try_into()
         .unwrap();
@@ -608,7 +610,7 @@ async fn deregister_from_dust_production() {
         .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
     assert!(
         deregistration.is_some(),
@@ -629,7 +631,7 @@ async fn deregister_from_dust_production() {
         })
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_bytes
                 && map.0.utxo_tx_hash.0 == register_tx_id
         });
     assert!(
@@ -793,7 +795,7 @@ async fn removing_excessive_registrations() {
         .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
     assert!(
         registration.is_some(),
@@ -810,7 +812,7 @@ async fn removing_excessive_registrations() {
         .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_address
                 && map.0.utxo_tx_hash.0 == register_tx_id
         });
     assert!(
@@ -844,7 +846,7 @@ async fn removing_excessive_registrations() {
         .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0 == second_dust_address
+                && map.0.dust_public_key.0.0 == second_dust_address
                 && map.0.utxo_tx_hash.0 == second_register_tx_id
         });
     assert!(
@@ -862,7 +864,7 @@ async fn removing_excessive_registrations() {
         .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0 == dust_address
+                && reg.0.dust_public_key.0.0 == dust_address
         });
     assert!(
         deregistration.is_some(),
@@ -913,7 +915,7 @@ async fn removing_excessive_registrations() {
         })
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0 == dust_address
+                && map.0.dust_public_key.0.0 == dust_address
                 && map.0.utxo_tx_hash.0 == register_tx_id
         });
     assert!(
@@ -931,7 +933,7 @@ async fn removing_excessive_registrations() {
         .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0 == second_dust_address
+                && reg.0.dust_public_key.0.0 == second_dust_address
         });
     assert!(
         registration_after_removing_excessive_mapping.is_some(),
@@ -971,7 +973,7 @@ async fn removing_excessive_registrations() {
         .expect("Failed to poll UTXO owners");
     println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
 
-    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0);
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
     println!("UTXO owner in hex: {:?}", utxo_owner_hex);
     assert_eq!(
         utxo_owner_hex, second_dust_hex,

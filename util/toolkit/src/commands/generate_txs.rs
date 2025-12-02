@@ -109,6 +109,7 @@ mod tests {
 					src_url: None,
 					fetch_concurrency: 20,
 					src_files: Some($src_files.map(resource_file).to_vec()),
+					dust_warp: true,
 				},
 				destination: Destination {
 					dest_urls: vec![],

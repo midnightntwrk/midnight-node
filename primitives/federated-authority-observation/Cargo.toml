@@ -28,6 +28,3 @@ std = [
     "sp-api/std",
     "serde",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec"]

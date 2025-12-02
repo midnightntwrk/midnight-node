@@ -58,6 +58,20 @@ generate-preview-keys:
 generate-preview-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
+generate-preprod-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preprod \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preprod-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preprod --OUTPUT_FILE=preprod-genesis-seeds.json
+
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
     ARG DEV=false
@@ -167,16 +181,16 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    COPY --if-exists res/genesis/genesis_funding_wallets_${NETWORK}.txt funding_wallets.txt
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
+    # wallet-seed-3 is the wallet Lace uses for testing.
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
             echo '{ \
                 "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001", \
                 "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002", \
                 "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003", \
-                "wallet-seed-3": "0000000000000000000000000000000000000000000000000000000000000004" \
+                "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d" \
             }' > /secrets/genesis-seeds.json; \
         fi
 
@@ -196,6 +210,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple deploy \
@@ -206,6 +221,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_2_store_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -216,6 +232,7 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_3_check_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -227,6 +244,7 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
                 --src-file out/contract_tx_3_check_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple maintenance \
@@ -243,6 +261,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -261,6 +280,7 @@ rebuild-genesis-state:
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -293,6 +313,7 @@ rebuild-genesis-state:
                 0 \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -323,6 +344,7 @@ rebuild-genesis-state:
                 --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/mint/deploy.bin \
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
@@ -367,10 +389,16 @@ rebuild-genesis-state-qanet:
         --NETWORK=qanet \
         --GENERATE_TEST_TXS=false
 
-# rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
         --NETWORK=preview \
+        --GENERATE_TEST_TXS=false
+
+# rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-preprod:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=preprod \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
@@ -379,6 +407,7 @@ rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
     BUILD +rebuild-genesis-state-preview
+    BUILD +rebuild-genesis-state-preprod
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
@@ -402,6 +431,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=node-dev-01
     BUILD +rebuild-chainspec --NETWORK=qanet
     BUILD +rebuild-chainspec --NETWORK=preview
+    BUILD +rebuild-chainspec --NETWORK=preprod
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:

@@ -155,7 +155,12 @@ mod tests {
 		(addr, src_files): (&str, Vec<String>),
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
 		let args = ShowWalletArgs {
-			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				src_files: Some(src_files),
+				dust_warp: false,
+			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
@@ -180,7 +185,7 @@ mod tests {
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
-	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000004", "genesis/genesis_block_undeployed.mn") =>
+	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d", "genesis/genesis_block_undeployed.mn") =>
 	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
@@ -196,7 +201,12 @@ mod tests {
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = ShowWalletArgs {
-			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				src_files: Some(src_files),
+				dust_warp: true,
+			},
 			seed: Some(seed),
 			address: None,
 			debug: false,

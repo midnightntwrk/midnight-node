@@ -21,10 +21,12 @@ pub mod get_tx_from_context;
 pub mod random_address;
 pub mod send_intent;
 pub mod show_address;
+pub mod show_ledger_parameters;
 pub mod show_seed;
 pub mod show_token_type;
 pub mod show_transaction;
 pub mod show_viewing_key;
 pub mod show_wallet;
+pub mod update_ledger_parameters;
 
 pub mod generate_intent;

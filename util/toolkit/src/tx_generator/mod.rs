@@ -91,8 +91,11 @@ where
 			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+				src_files.clone(),
+				extension.to_string(),
+				src.dust_warp,
+			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
 			if dry_run {
@@ -102,7 +105,8 @@ where
 			let midnight_node_client = MidnightNodeClient::new(&url).await?;
 			let indexer =
 				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
+			let source: Box<dyn GetTxs<S, P>> =
+				Box::new(GetTxsFromUrl::new(indexer, src.dust_warp));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))

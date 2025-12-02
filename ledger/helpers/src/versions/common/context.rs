@@ -15,8 +15,8 @@ use super::{
 	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
 	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
-	Tagged, Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction, Wallet,
-	WalletAddress, WalletSeed, WellFormedStrictness, default_storage,
+	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, default_storage,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
@@ -25,6 +25,7 @@ use lazy_static::lazy_static;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Mutex,
+	time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex as MutexTokio;
 
@@ -45,6 +46,7 @@ lazy_static! {
 
 pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<LedgerState<D>>,
+	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
 }
@@ -79,6 +81,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			ledger_state: Mutex::new(LedgerState::new(network_id)),
 			wallets: Mutex::new(HashMap::new()),
 			resolver: MutexTokio::new(&DEFAULT_RESOLVER),
+			latest_block_context: Mutex::new(None),
 		}
 	}
 
@@ -100,7 +103,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.insert(*seed, wallet);
 		}
 
-		Self { ledger_state: Mutex::new(ledger_state), wallets, resolver }
+		Self {
+			ledger_state: Mutex::new(ledger_state),
+			wallets,
+			resolver,
+			latest_block_context: Mutex::new(None),
+		}
 	}
 
 	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -150,6 +158,26 @@ impl<D: DB + Clone> LedgerContext<D> {
 		{
 			wallet.update_dust_from_block(&block_context);
 		}
+		// Update latest block context
+		*self.latest_block_context.lock().expect("error locking latest_block_context") =
+			Some(block_context.clone());
+	}
+
+	pub fn latest_block_context(&self) -> BlockContext {
+		self.latest_block_context
+			.lock()
+			.expect("failed to lock latest_block_context")
+			.as_ref()
+			.cloned()
+			.unwrap_or_else(|| {
+				let now = Timestamp::from_secs(
+					SystemTime::now()
+						.duration_since(UNIX_EPOCH)
+						.expect("time has run backwards")
+						.as_secs(),
+				);
+				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() }
+			})
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
