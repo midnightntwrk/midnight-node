@@ -76,9 +76,9 @@ pub async fn fetch_all<
 	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
 	height: usize,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
-	if std::env::var("SYNC_CACHE").is_ok() {
+	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(
-			"Error: 'SYNC_CACHE' is defined - please use 'FETCH_CACHE' instead. See `--help` for more info."
+			"Error: 'MN_SYNC_CACHE' is defined - please use 'MN_FETCH_CACHE' instead. See `--help` for more info."
 		);
 	}
 

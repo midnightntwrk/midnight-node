@@ -101,7 +101,13 @@ pub struct Source {
 	#[arg(long, global = true)]
 	pub dust_warp: bool,
 
-	#[arg(long, global = true, value_parser = cli::fetch_cache_config, default_value = "redb:toolkit.db", env)]
+	#[arg(
+		long,
+		global = true,
+		value_parser = cli::fetch_cache_config,
+		default_value = "redb:toolkit.db",
+		env = "MN_FETCH_CACHE"
+	)]
 	/// Fetch cache config. Available options:
 	/// - "inmemory" (i.e. no cache),
 	/// - "redb:<filename>" (file-cache, single-writer)
