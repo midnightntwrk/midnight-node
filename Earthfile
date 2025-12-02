@@ -946,6 +946,7 @@ hardfork-test-upgrader-image:
     COPY +hardforkbuild/artifacts-$NATIVEARCH/rollback/* /
 
     COPY node/Cargo.toml /node/
+    RUN ls node
     LET NODE_VERSION= "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
     # LET NODE_VERSION = "$(cat node_version)"
 
