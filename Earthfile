@@ -726,7 +726,10 @@ hardforkbuild:
     ARG NATIVEARCH
 
     FROM scratch
+    
     # FROM +build-prepare
+    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
+    
     WAIT
         BUILD +build-upgrader
         BUILD +build-fork
@@ -946,22 +949,21 @@ hardfork-test-upgrader-image:
     COPY +hardforkbuild/artifacts-$NATIVEARCH/rollback/* /
 
     COPY node/Cargo.toml /node/
-    RUN ls node
-    # LET NODE_VERSION= "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
-    # # LET NODE_VERSION = "$(cat node_version)"
+    LET NODE_VERSION= "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
+    # LET NODE_VERSION = "$(cat node_version)"
 
-    # ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    # ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    # ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV IMAGE_NAME=midnight-hardfork-test-upgrader
+    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
 
-    # RUN mkdir -p /artifacts-$NATIVEARCH
-    # RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
-    # LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    # SAVE IMAGE --push \
-    #     $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \
-    #     $GHCR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+    RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
+    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    SAVE IMAGE --push \
+        $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
 
-    # SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
+    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
