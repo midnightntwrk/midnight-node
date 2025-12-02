@@ -367,6 +367,7 @@ pub fn new_partial(
 			data_sources.cnight_observation.clone(),
 			data_sources.governed_map.clone(),
 			data_sources.federated_authority_observation.clone(),
+			data_sources.bridge.clone(),
 		),
 		spawner: &task_manager.spawn_essential_handle(),
 		registry: config.prometheus_registry(),
@@ -628,6 +629,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				data_sources.cnight_observation.clone(),
 				data_sources.governed_map.clone(),
 				data_sources.federated_authority_observation.clone(),
+				data_sources.bridge.clone(),
 			),
 			force_authoring,
 			backoff_authoring_blocks,
@@ -662,7 +664,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			notification_service: beefy_notification_service,
 			_phantom: core::marker::PhantomData::<Block>,
 		};
-		let payload_provider = sp_consensus_beefy::mmr::MmrRootProvider::new(client.clone());
+		let payload_provider = crate::payload::MmrRootAndBeefyStakesProvder::new(client.clone());
 		let beefy_params = sc_consensus_beefy::BeefyParams {
 			client: client.clone(),
 			backend: backend.clone(),

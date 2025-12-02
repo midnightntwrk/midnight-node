@@ -30,6 +30,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
         with:
@@ -84,6 +90,7 @@ jobs:
           BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
           # Build release notes
+          export SEASON_GHCR_REGISTRY="midnightntwrk"
           export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_COMMIT"
           export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-node-toolkit:$SEASON_IMAGE_TAG_COMMIT"
           export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
@@ -274,13 +281,19 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       - name: Checkout node repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
           ref: ${{ github.event.inputs.branch }}
           submodules: true
 
-      - name: Create and push Docker manifest
+      - name: Create and push Docker manifest (GHCR)
         run: |
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
@@ -291,25 +304,66 @@ jobs:
             ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
 
-          # Multi-arch latest
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
-
           # Toolkit manifests
           docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest \
+          # Push node manifests
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
+
+
+      - name: Create and push `latest-main` images (GHCR)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest-main \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
+            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+
+          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
-          # Push node manifests
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest-main
+          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main
+
+      - name: Create and push `latest-main` images (Docker Hub)
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+
+          echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
+          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+
+          echo "Tagging each image with 'latest-main'"
+          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
+
+          echo "Push 'latest-main' images to Docker Hub"
+          docker push midnightntwrk/midnight-node:latest-main-amd64
+          docker push midnightntwrk/midnight-node:latest-main-arm64
+          docker push midnightntwrk/midnight-node-toolkit:latest-main-amd64
+          docker push midnightntwrk/midnight-node-toolkit:latest-main-arm64
+
+          echo "Create multi-arch manifests for Docker Hub"
+          docker manifest create midnightntwrk/midnight-node:latest-main \
+            midnightntwrk/midnight-node:latest-main-amd64 \
+            midnightntwrk/midnight-node:latest-main-arm64
+
+          docker manifest create midnightntwrk/midnight-node-toolkit:latest-main \
+            midnightntwrk/midnight-node-toolkit:latest-main-amd64 \
+            midnightntwrk/midnight-node-toolkit:latest-main-arm64
+
+          echo "Push manifests to Docker Hub"
+          docker manifest push midnightntwrk/midnight-node:latest-main
+          docker manifest push midnightntwrk/midnight-node-toolkit:latest-main
 
       - name: Check if indexer is on main
         id: indexer-check

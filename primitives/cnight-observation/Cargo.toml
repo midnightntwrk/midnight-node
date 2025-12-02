@@ -6,6 +6,7 @@ description = "Midnight cNight observation primitives"
 license-file.workspace = true
 
 [dependencies]
+frame-support.workspace = true
 sp-api.workspace = true
 sp-inherents.workspace = true
 parity-scale-codec.workspace = true
@@ -20,6 +21,7 @@ sqlx = { workspace = true,  optional = true, features = ["chrono"] }
 [features]
 default = ["std"]
 std = [
+    "frame-support/std",
     "hex/std",
     "sp-api/std",
     "sp-inherents/std",

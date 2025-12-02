@@ -12,7 +12,10 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::{
+	fmt::Debug,
+	time::{SystemTime, UNIX_EPOCH},
+};
 
 use midnight_node_ledger_helpers::*;
 
@@ -30,6 +33,7 @@ where
 {
 	pub fn from_txs_with_context(
 		txs: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
+		dust_warp: bool,
 	) -> Self {
 		let mut blocks = vec![];
 		let mut current_batch = vec![];
@@ -48,6 +52,23 @@ where
 		if let Some(context) = last_context {
 			blocks.push(SourceBlockTransactions {
 				transactions: current_batch,
+				context,
+				state_root: None,
+			});
+		}
+
+		if dust_warp {
+			// Add an empty block with a now() as a block_context
+			let now = Timestamp::from_secs(
+				SystemTime::now()
+					.duration_since(UNIX_EPOCH)
+					.expect("time has run backwards")
+					.as_secs(),
+			);
+			let context =
+				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			blocks.push(SourceBlockTransactions {
+				transactions: Vec::new(),
 				context,
 				state_root: None,
 			});

@@ -89,6 +89,25 @@ pub trait LedgerBridge {
 			state_key,
 			tx,
 			block_context,
+			false,
+		)
+	}
+
+	#[version(2)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, latest::types::LedgerApiError>>
+	{
+		latest::Bridge::<Signature, Database>::apply_transaction(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			true,
 		)
 	}
 
@@ -320,6 +339,7 @@ pub trait LedgerBridgeHf {
 			state_key,
 			tx,
 			block_context,
+			true,
 		)
 	}
 
