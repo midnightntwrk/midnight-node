@@ -10,11 +10,13 @@ use std::path::{Path, PathBuf};
 use std::slice::from_ref;
 use std::time::Duration;
 use tokio::time::sleep;
-use whisky::csl::{Address, BaseAddress, Credential, NetworkInfo, RewardAddress};
+use whisky::csl::{
+    Address, Bip32PrivateKey, Credential, EnterpriseAddress, NetworkInfo, PrivateKey, RewardAddress,
+};
 use whisky::data::{constr0, constr1};
 use whisky::{
-    Asset, Budget, LanguageVersion, Network, OfflineTxEvaluator, TxBuilder, WData, WRedeemer,
-    Wallet,
+    Asset, Budget, LanguageVersion, Network, OfflineTxEvaluator, TxBuilder, WData, WError,
+    WRedeemer, Wallet, WalletType,
 };
 
 #[derive(Debug)]
@@ -35,7 +37,6 @@ pub struct CardanoClient {
     pub ogmios_clients: OgmiosClients,
     pub constants: Constants,
     pub wallet: Wallet,
-    pub address: Address,
     pub network: Network,
     pub network_info: NetworkInfo,
 }
@@ -50,6 +51,7 @@ impl CardanoClient {
         .expect("Failed to initialize client");
 
         let wallet = Self::create_wallet();
+        Self::print_addresses(&wallet, &Self::network_info(&ogmios_settings.network));
         Self::from_wallet(ogmios_settings, constants, wallet, ogmios_clients)
     }
 
@@ -75,13 +77,11 @@ impl CardanoClient {
         ogmios_clients: OgmiosClients,
     ) -> Self {
         let network_info = Self::network_info(&ogmios_settings.network);
-        let address = Self::address(&wallet, network_info.network_id());
 
         Self {
             ogmios_clients,
             constants,
             wallet,
-            address,
             network: ogmios_settings.network,
             network_info,
         }
@@ -99,7 +99,31 @@ impl CardanoClient {
     fn create_wallet() -> Wallet {
         let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
         let phrase = mnemonic.phrase().to_string();
+        println!("Generated mnemonic phrase: {}", phrase);
         Wallet::new_mnemonic(&phrase).expect("Failed to create a wallet")
+    }
+
+    fn print_addresses(wallet: &Wallet, network_info: &NetworkInfo) {
+        let delegated_payment_address = wallet
+            .get_change_address(whisky::AddressType::Payment)
+            .expect("Failed to get change address");
+        println!("Payment address: {}", delegated_payment_address);
+
+        let payment_public_key_hash = wallet.account.as_ref().unwrap().public_key.hash().to_hex();
+        println!("Payment public key hash: {}", payment_public_key_hash);
+
+        let stake_cred = wallet.addresses.base_address.as_ref().unwrap().stake_cred();
+
+        let reward_address = RewardAddress::new(network_info.network_id(), &stake_cred)
+            .to_address()
+            .to_bech32(None)
+            .unwrap();
+
+        println!("Reward (stake) address: {}", reward_address);
+        println!(
+            "Stake public key hash: {}",
+            stake_cred.to_keyhash().unwrap().to_hex()
+        );
     }
 
     fn wallet_for_funded(cli_skey: &str) -> Wallet {
@@ -110,12 +134,31 @@ impl CardanoClient {
         Wallet::new_cli(cli_hex.as_str()).expect("Failed to create a funded wallet")
     }
 
-    fn address(wallet: &Wallet, network_id: u8) -> Address {
-        let pub_key_hash = wallet.account.public_key.hash();
-        let cred = Credential::from_keyhash(&pub_key_hash);
-        let private_key_hash = wallet.account.private_key.to_hex();
-        println!("Private key hash: {}", private_key_hash);
-        BaseAddress::new(network_id, &cred, &cred).to_address()
+    fn derive_stake_signing_key_from_mnemonic(wallet: &Wallet) -> Result<PrivateKey, WError> {
+        let phrase = match &wallet.wallet_type {
+            WalletType::MnemonicWallet(mw) => &mw.mnemonic_phrase,
+            _ => {
+                return Err(WError::new(
+                    "derive_stake_signing_key_from_mnemonic",
+                    "wallet does not contain mnemonic",
+                ));
+            }
+        };
+        let mnemonic = Mnemonic::from_phrase(phrase, Language::English).unwrap();
+        let entropy = mnemonic.entropy();
+
+        let mut root = Bip32PrivateKey::from_bip39_entropy(entropy, &[]);
+
+        // m / 1852' / 1815' / 0'
+        root = root
+            .derive(1852 | 0x8000_0000)
+            .derive(1815 | 0x8000_0000)
+            .derive(0x8000_0000);
+
+        // stake: /2/0
+        let stake_xprv = root.derive(2).derive(0);
+
+        Ok(PrivateKey::from_extended_bytes(&stake_xprv.to_raw_key().as_bytes()).unwrap())
     }
 
     pub async fn make_collateral(&self) -> Option<OgmiosUtxo> {
@@ -134,7 +177,19 @@ impl CardanoClient {
     }
 
     pub fn address_as_bech32(&self) -> String {
-        self.address.to_bech32(None).unwrap()
+        match self.wallet.get_change_address(whisky::AddressType::Payment) {
+            Ok(addr) => addr,
+            Err(_) => {
+                let pub_key_hash = self.wallet.account.as_ref().unwrap().public_key.hash();
+                let cred = Credential::from_keyhash(&pub_key_hash);
+                let address_bech32 = EnterpriseAddress::new(self.network_info.network_id(), &cred)
+                    .to_address()
+                    .to_bech32(None)
+                    .unwrap();
+                println!("Derived enterprise address: {}", address_bech32);
+                address_bech32
+            }
+        }
     }
 
     pub async fn register(
@@ -153,7 +208,7 @@ impl CardanoClient {
                         "constructor": 0,
                         "fields": [
                             {
-                                "bytes": &self.wallet.account.public_key.hash().to_hex()
+                                "bytes": &self.wallet.addresses.base_address.as_ref().unwrap().stake_cred().to_keyhash().unwrap().to_hex()
                             }
                         ]
                     },
@@ -202,12 +257,30 @@ impl CardanoClient {
                 },
             })
             .change_address(&payment_addr)
-            .required_signer_hash(&self.wallet.account.public_key.hash().to_hex())
+            .required_signer_hash(
+                &self
+                    .wallet
+                    .addresses
+                    .base_address
+                    .as_ref()
+                    .unwrap()
+                    .stake_cred()
+                    .to_keyhash()
+                    .unwrap()
+                    .to_hex(),
+            )
             .complete_sync(None)
             .unwrap();
 
         let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
-        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+
+        // sign with stake key
+        let stake_signing_key = Self::derive_stake_signing_key_from_mnemonic(&self.wallet).unwrap();
+        let stake_wallet = Wallet::new_cli(&stake_signing_key.to_hex()).unwrap();
+        let signed_by_stake_tx = stake_wallet.sign_tx(&signed_tx.unwrap());
+
+        let tx_bytes =
+            hex::decode(signed_by_stake_tx.unwrap()).expect("Failed to decode hex string");
         self.ogmios_clients.submit_transaction(&tx_bytes).await
     }
 
@@ -276,7 +349,18 @@ impl CardanoClient {
                 },
             })
             .change_address(&payment_addr)
-            .required_signer_hash(&self.wallet.account.public_key.hash().to_hex())
+            .required_signer_hash(
+                &self
+                    .wallet
+                    .addresses
+                    .base_address
+                    .as_ref()
+                    .unwrap()
+                    .stake_cred()
+                    .to_keyhash()
+                    .unwrap()
+                    .to_hex(),
+            )
             .complete_sync(None)
             .unwrap();
 
@@ -284,7 +368,14 @@ impl CardanoClient {
             .wallet
             .sign_tx(&tx_builder.tx_hex())
             .expect("Failed to sign tx");
-        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+
+        // sign with stake key
+        let stake_signing_key = Self::derive_stake_signing_key_from_mnemonic(&self.wallet).unwrap();
+        let stake_wallet = Wallet::new_cli(&stake_signing_key.to_hex()).unwrap();
+        let signed_by_stake_tx = stake_wallet.sign_tx(&signed_tx);
+
+        let tx_bytes =
+            hex::decode(signed_by_stake_tx.unwrap()).expect("Failed to decode hex string");
         self.ogmios_clients.submit_transaction(&tx_bytes).await
     }
 
@@ -699,8 +790,13 @@ impl CardanoClient {
     }
 
     pub fn reward_address_bytes(&self) -> [u8; 29] {
-        let pub_key_hash = self.wallet.account.public_key.hash();
-        let cred = Credential::from_keyhash(&pub_key_hash);
+        let cred = self
+            .wallet
+            .addresses
+            .base_address
+            .as_ref()
+            .unwrap()
+            .stake_cred();
         RewardAddress::new(self.network_info.network_id(), &cred)
             .to_address()
             .to_bytes()
