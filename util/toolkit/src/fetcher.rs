@@ -17,7 +17,6 @@ pub mod fetch_task;
 pub mod runtimes;
 
 use backoff::{ExponentialBackoff, future::retry};
-use hex::ToHex;
 use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
 use tokio::task::JoinSet;
@@ -88,6 +87,13 @@ pub async fn fetch_all<
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let max_height = finalized_height + 1;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
+	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
+
+	let blocks_per_job = if (max_height - min_height) < BLOCKS_PER_JOB * num_workers as u64 {
+		(max_height - min_height).div_ceil(num_workers as u64).max(5)
+	} else {
+		BLOCKS_PER_JOB
+	};
 
 	let num_cpu_workers = num_cpus::get();
 
@@ -102,8 +108,8 @@ pub async fn fetch_all<
 		let job_sender = fetch_job_sender.clone();
 		let max_height = max_height;
 		join_set.spawn(async move {
-			for min in (0..max_height).step_by(BLOCKS_PER_JOB as usize) {
-				let max = u64::min(min + BLOCKS_PER_JOB, max_height);
+			for min in (min_height..max_height).step_by(blocks_per_job as usize) {
+				let max = u64::min(min + blocks_per_job, max_height);
 				log::info!("pushing new fetch job {min} -> {max}...");
 				job_sender
 					.send(FetchTask::FetchBlocks { min, max })
@@ -175,7 +181,7 @@ pub async fn fetch_all<
 
 	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = max_height.div_ceil(BLOCKS_PER_JOB);
+	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
 	while received < num_jobs {
@@ -219,28 +225,8 @@ pub async fn fetch_all<
 		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
 
-	for b in &blocks {
-		for (i, tx) in b.transactions.iter().enumerate() {
-			match tx {
-				midnight_node_ledger_helpers::SerdeTransaction::Midnight(_) => {
-					println!(
-						"usr tx, block {} hash {}, index {}",
-						b.number,
-						b.hash.0.encode_hex::<String>(),
-						i
-					)
-				},
-				midnight_node_ledger_helpers::SerdeTransaction::System(_) => {
-					println!(
-						"sys tx, block {} hash {}, index {}",
-						b.number,
-						b.hash.0.encode_hex::<String>(),
-						i
-					)
-				},
-			}
-		}
-	}
+	// Set highest verified height for quicker fetch next time
+	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
 
 	Ok(blocks)
 }

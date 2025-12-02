@@ -75,16 +75,22 @@ pub trait FetchStorage<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB + Cl
 		let buffered = block_stream.buffer_unordered(10);
 		buffered.collect().await
 	}
+	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64>;
+	async fn set_highest_verified_block(&self, chain_id: H256, height: u64);
 }
 
 #[derive(Clone)]
 pub struct InMemory<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
+	highest_verified: Arc<Mutex<HashMap<H256, u64>>>,
 	blocks: Arc<Mutex<HashMap<Vec<u8>, BlockData<S, P, D>>>>,
 }
 
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> Default for InMemory<S, P, D> {
 	fn default() -> Self {
-		Self { blocks: Arc::new(Mutex::new(HashMap::new())) }
+		Self {
+			highest_verified: Arc::new(Mutex::new(HashMap::new())),
+			blocks: Arc::new(Mutex::new(HashMap::new())),
+		}
 	}
 }
 
@@ -139,5 +145,13 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> FetchStorage<
 			let k = Self::block_key(&chain_id.0, block_number);
 			blocks.insert(k, block);
 		});
+	}
+
+	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64> {
+		self.highest_verified.lock().await.get(&chain_id).cloned()
+	}
+
+	async fn set_highest_verified_block(&self, chain_id: H256, height: u64) {
+		self.highest_verified.lock().await.insert(chain_id, height);
 	}
 }

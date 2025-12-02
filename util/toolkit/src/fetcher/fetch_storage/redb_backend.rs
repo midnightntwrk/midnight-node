@@ -19,7 +19,7 @@ use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
 use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use super::{BlockData, FetchStorage};
 
@@ -31,17 +31,17 @@ pub struct BlockKey {
 
 #[derive(Clone)]
 pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
-	pub db: Arc<Database>,
+	pub db: Arc<RwLock<Database>>,
 	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<S, P, D>>>,
-	pub write_lock: Arc<Mutex<()>>,
+	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
 }
 
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		Self {
-			db: Arc::new(Database::create(path).expect("failed to create database")),
+			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
 			block_data_table: TableDefinition::new("block_data"),
-			write_lock: Default::default(),
+			highest_verified_table: TableDefinition::new("highest_verified"),
 		}
 	}
 }
@@ -55,7 +55,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		chain_id: H256,
 		block_number: u64,
 	) -> Option<BlockData<S, P, D>> {
-		let read_txn = self.db.begin_read().expect("failed to begin read txn");
+		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else { return None };
 		table
 			.get(BlockKey { chain_id, block_number })
@@ -67,7 +67,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
 	) -> Vec<Option<BlockData<S, P, D>>> {
-		let read_txn = self.db.begin_read().expect("failed to begin read txn");
+		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else {
 			return std::iter::repeat_n(None, range.count()).collect();
 		};
@@ -89,9 +89,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		block: BlockData<S, P, D>,
 	) {
 		// Can only open the table as writable from one thread
-		let _ = self.write_lock.lock().await;
-
-		let write_txn = self.db.begin_write().expect("failed to begin write txn");
+		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
 			let mut table =
 				write_txn.open_table(self.block_data_table).expect("failed to open table");
@@ -108,9 +106,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
 	) {
 		// Can only open the table as writable from one thread
-		let _ = self.write_lock.lock().await;
-
-		let write_txn = self.db.begin_write().expect("failed to begin write txn");
+		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
 			let mut table =
 				write_txn.open_table(self.block_data_table).expect("failed to open table");
@@ -119,6 +115,22 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 					.insert(BlockKey { chain_id, block_number }, block)
 					.expect("failed to insert block");
 			}
+		}
+		write_txn.commit().expect("failed to commit write")
+	}
+
+	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64> {
+		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
+		let Ok(table) = read_txn.open_table(self.highest_verified_table) else { return None };
+		table.get(&chain_id.0).expect("failed to get from table").map(|a| a.value())
+	}
+
+	async fn set_highest_verified_block(&self, chain_id: H256, height: u64) {
+		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
+		{
+			let mut table =
+				write_txn.open_table(self.highest_verified_table).expect("failed to open table");
+			table.insert(&chain_id.0, height).expect("failed to insert highest verified");
 		}
 		write_txn.commit().expect("failed to commit write")
 	}
