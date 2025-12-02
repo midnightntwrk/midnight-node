@@ -260,20 +260,14 @@ where
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
 		let mut blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
-				fetch_all(
-					&self.rpc_url,
-					self.num_fetch_workers,
-					fetch_storage::InMemory::default(),
-					10000,
-				)
-				.await?
+				fetch_all(&self.rpc_url, self.num_fetch_workers, fetch_storage::InMemory::default())
+					.await?
 			},
 			FetchCacheConfig::Redb { filename } => {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
-					10000,
 				)
 				.await?
 			},
@@ -282,7 +276,6 @@ where
 					&self.rpc_url,
 					self.num_fetch_workers,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
-					10000,
 				)
 				.await?
 			},

@@ -74,7 +74,6 @@ pub async fn fetch_all<
 	url: &str,
 	num_workers: usize,
 	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
-	height: usize,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(

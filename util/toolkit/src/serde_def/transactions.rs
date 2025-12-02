@@ -207,35 +207,3 @@ impl SerializedTransactionsWithContext {
 		Ok(SerializedTransactionsWithContext { initial_tx, batches })
 	}
 }
-
-pub(crate) mod block_vec {
-	use super::*;
-	use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-	pub(crate) fn serialize<SE, S, P>(
-		txes: &Vec<SourceBlockTransactions<S, P>>,
-		s: SE,
-	) -> Result<SE::Ok, SE::Error>
-	where
-		SE: Serializer,
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB>,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		// Delegate to Vec's default serialization
-		Serialize::serialize(txes, s)
-	}
-
-	pub(crate) fn deserialize<'de, DE, S, P>(
-		deserializer: DE,
-	) -> Result<Vec<SourceBlockTransactions<S, P>>, DE::Error>
-	where
-		DE: Deserializer<'de>,
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB>,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		// Delegate to Vec's default deserialization
-		Deserialize::deserialize(deserializer)
-	}
-}
