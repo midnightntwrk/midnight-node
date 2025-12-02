@@ -84,10 +84,9 @@ pub async fn fetch_all<
 	}
 
 	let client = new_client(&url).await;
-	// TODO: use full height
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
-	// let finalized_height = height as u64;
+	let max_height = finalized_height + 1;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 
 	let num_cpu_workers = num_cpus::get();
@@ -101,10 +100,10 @@ pub async fn fetch_all<
 	// Push jobs into queue
 	{
 		let job_sender = fetch_job_sender.clone();
-		let finalized_height = finalized_height;
+		let max_height = max_height;
 		join_set.spawn(async move {
-			for min in (0..=finalized_height).step_by(BLOCKS_PER_JOB as usize) {
-				let max = u64::min(min + BLOCKS_PER_JOB, finalized_height);
+			for min in (0..max_height).step_by(BLOCKS_PER_JOB as usize) {
+				let max = u64::min(min + BLOCKS_PER_JOB, max_height);
 				log::info!("pushing new fetch job {min} -> {max}...");
 				job_sender
 					.send(FetchTask::FetchBlocks { min, max })
@@ -176,7 +175,7 @@ pub async fn fetch_all<
 
 	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = (finalized_height / BLOCKS_PER_JOB) + 1;
+	let num_jobs = max_height.div_ceil(BLOCKS_PER_JOB);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
 	while received < num_jobs {
@@ -213,7 +212,7 @@ pub async fn fetch_all<
 	final_jobs_receiver.close();
 
 	let blocks: Vec<_> = fetch_storage
-		.get_block_data_range(chain_id, (0..=finalized_height).into_iter())
+		.get_block_data_range(chain_id, (0..max_height).into_iter())
 		.await
 		.into_iter()
 		.enumerate()

@@ -57,9 +57,9 @@ impl FetchTask {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
 				log::info!("fetching blocks {min}..{max}");
-				let cached_blocks = storage.get_block_data_range(chain_id, min..=max).await;
+				let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
 				let mut blocks = Vec::new();
-				for (i, b) in (min..=max).into_iter().zip(cached_blocks.into_iter()) {
+				for (i, b) in (min..max).into_iter().zip(cached_blocks.into_iter()) {
 					if b.is_none() {
 						let block_hash = Self::fetch_block_hash(client, i).await?;
 						let block = Self::fetch_block(client, block_hash).await?;

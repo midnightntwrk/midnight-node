@@ -76,8 +76,8 @@ impl ComputeTask {
 			},
 			ComputeTask::Verify { min, max } => {
 				log::info!("verifying {min}..{max}");
-				let blocks = storage.get_block_data_range(chain_id, (min..=max).into_iter()).await;
-				let blocks: Result<Vec<BlockData<S, P, D>>, ComputeError> = (min..=max)
+				let blocks = storage.get_block_data_range(chain_id, (min..max).into_iter()).await;
+				let blocks: Result<Vec<BlockData<S, P, D>>, ComputeError> = (min..max)
 					.into_iter()
 					.zip(blocks.into_iter())
 					.map(|(i, b)| b.ok_or(ComputeError::BlockMissing(i)))
@@ -98,7 +98,8 @@ impl ComputeTask {
 			},
 			ComputeTask::FinalVerify { min, max } => {
 				log::info!("final verify {min} and {max}");
-				// Check min
+
+				// Check min - only for genesis block
 				if min == 0 {
 					let block = storage
 						.get_block_data(chain_id, 0)
@@ -107,23 +108,18 @@ impl ComputeTask {
 					if !block.parent_hash.is_zero() {
 						return Err(ComputeError::ChildBlockVerificationFailed(0));
 					}
-				} else {
-					let blocks =
-						storage.get_block_data_range(chain_id, [min - 1, min].into_iter()).await;
-					if let [Some(parent), Some(child)] = &blocks[..] {
-						if child.parent_hash != parent.hash {
-							return Err(ComputeError::ChildBlockVerificationFailed(child.number));
-						}
-					}
 				}
-				// Check max
+				// For min > 0: previous batch's max check already verified this boundary
+
+				// Check max - verify forward connection to next batch
 				let blocks =
-					storage.get_block_data_range(chain_id, [max, max + 1].into_iter()).await;
+					storage.get_block_data_range(chain_id, [max - 1, max].into_iter()).await;
 				if let [Some(parent), Some(child)] = &blocks[..] {
 					if child.parent_hash != parent.hash {
 						return Err(ComputeError::ChildBlockVerificationFailed(child.number));
 					}
 				}
+				// If child (block `max`) doesn't exist, we're at the last batch - no forward check needed
 
 				log::info!("final verify {min} and {max}: complete");
 				Ok(ComputeTask::NoOp)
