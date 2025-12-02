@@ -156,14 +156,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			.unwrap()
 			.block_on(async {
 				// Initialize the logger.
-				structured_logger::Builder::with_level("info")
+				structured_logger::Builder::new()
 					.with_default_writer(structured_logger::async_json::new_writer(
 						tokio::io::stdout(),
 					))
-					//.with_target_writer(
-					//	"midnight_node_toolkit*",
-					//	structured_logger::async_json::new_writer(tokio::io::stdout()),
-					//)
 					.init();
 
 				// Initialize tracing (used by ledger to emit warnings)

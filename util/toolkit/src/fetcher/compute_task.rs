@@ -76,8 +76,8 @@ impl ComputeTask {
 			},
 			ComputeTask::Verify { min, max } => {
 				log::info!("verifying {min}..{max}");
-				let blocks = storage.get_block_data_range(chain_id, (min..max).into_iter()).await;
-				let blocks: Result<Vec<BlockData<S, P, D>>, ComputeError> = (min..max)
+				let blocks = storage.get_block_data_range(chain_id, (min..=max).into_iter()).await;
+				let blocks: Result<Vec<BlockData<S, P, D>>, ComputeError> = (min..=max)
 					.into_iter()
 					.zip(blocks.into_iter())
 					.map(|(i, b)| b.ok_or(ComputeError::BlockMissing(i)))

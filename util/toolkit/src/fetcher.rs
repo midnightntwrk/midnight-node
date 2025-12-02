@@ -17,6 +17,7 @@ pub mod fetch_task;
 pub mod runtimes;
 
 use backoff::{ExponentialBackoff, future::retry};
+use hex::ToHex;
 use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
 use tokio::task::JoinSet;
@@ -102,8 +103,8 @@ pub async fn fetch_all<
 		let job_sender = fetch_job_sender.clone();
 		let finalized_height = finalized_height;
 		join_set.spawn(async move {
-			for min in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
-				let max = u64::min(min + BLOCKS_PER_JOB, finalized_height + 1);
+			for min in (0..=finalized_height).step_by(BLOCKS_PER_JOB as usize) {
+				let max = u64::min(min + BLOCKS_PER_JOB, finalized_height);
 				log::info!("pushing new fetch job {min} -> {max}...");
 				job_sender
 					.send(FetchTask::FetchBlocks { min, max })
@@ -177,10 +178,9 @@ pub async fn fetch_all<
 	// Receive final jobs
 	let num_jobs = (finalized_height / BLOCKS_PER_JOB) + 1;
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
-	for i in (0..finalized_height + 1).step_by(BLOCKS_PER_JOB as usize) {
-		log::info!("job {i}/{finalized_height}");
+	let mut received = 0;
+	while received < num_jobs {
 		tokio::select! {
-			// If any task completes, check if it was an error
 			Some(result) = join_set.join_next() => {
 				match result {
 					Ok(Ok(())) => {}, // Task completed successfully
@@ -194,8 +194,11 @@ pub async fn fetch_all<
 					}
 					Err(_) => {}
 				}
+			},
+			job = final_jobs_receiver.recv() => {
+				jobs.push(job.expect("..."));
+				received += 1;
 			}
-			job = final_jobs_receiver.recv() => jobs.push(job.expect("failed to receive job from channel"))
 		}
 	}
 
@@ -210,11 +213,35 @@ pub async fn fetch_all<
 	final_jobs_receiver.close();
 
 	let blocks: Vec<_> = fetch_storage
-		.get_block_data_range(chain_id, (0..finalized_height).into_iter())
+		.get_block_data_range(chain_id, (0..=finalized_height).into_iter())
 		.await
 		.into_iter()
-		.map(|b| b.expect("missing block"))
+		.enumerate()
+		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
+
+	for b in &blocks {
+		for (i, tx) in b.transactions.iter().enumerate() {
+			match tx {
+				midnight_node_ledger_helpers::SerdeTransaction::Midnight(_) => {
+					println!(
+						"usr tx, block {} hash {}, index {}",
+						b.number,
+						b.hash.0.encode_hex::<String>(),
+						i
+					)
+				},
+				midnight_node_ledger_helpers::SerdeTransaction::System(_) => {
+					println!(
+						"sys tx, block {} hash {}, index {}",
+						b.number,
+						b.hash.0.encode_hex::<String>(),
+						i
+					)
+				},
+			}
+		}
+	}
 
 	Ok(blocks)
 }
