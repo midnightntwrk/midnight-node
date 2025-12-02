@@ -122,9 +122,6 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		}
 		write_txn.commit().expect("failed to commit write")
 	}
-
-	// redb flushes as it goes
-	async fn flush_all(&self) {}
 }
 
 /// Wrapper type to handle keys and values using bincode serialization

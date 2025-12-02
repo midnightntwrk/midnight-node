@@ -75,8 +75,6 @@ pub trait FetchStorage<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB + Cl
 		let buffered = block_stream.buffer_unordered(10);
 		buffered.collect().await
 	}
-
-	async fn flush_all(&self);
 }
 
 #[derive(Clone)]
@@ -142,7 +140,4 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> FetchStorage<
 			blocks.insert(k, block);
 		});
 	}
-
-	/// In-memory storage has no persistence, so flush is a no-op.
-	async fn flush_all(&self) {}
 }
