@@ -6,4 +6,4 @@ Fixes:
 - https://shielded.atlassian.net/browse/PM-20790
 - https://shielded.atlassian.net/browse/PM-20786
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/318
