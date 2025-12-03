@@ -980,3 +980,89 @@ async fn removing_excessive_registrations() {
         "UTXO owner does not match DUST address"
     );
 }
+
+#[tokio::test]
+async fn create_hundred_registrations() {
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let address_bech32 = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", address_bech32);
+
+    let collateral_utxo = cardano_client
+        .make_collateral()
+        .await
+        .expect("Failed to make collateral");
+
+    let reward_address = cardano_client.reward_address_bytes();
+
+    for _ in 0..100 {
+        let dust_hex = MidnightClient::new_dust_hex();
+        println!(
+            "Registering Cardano wallet {} with DUST address {}",
+            address_bech32, dust_hex
+        );
+
+        let assets = vec![Asset::new_from_str("lovelace", "10000000")];
+        let tx_in = cardano_client
+            .fund_wallet(assets)
+            .await
+            .expect("Failed to fund a wallet");
+
+        let register_tx_id = cardano_client
+            .register(&dust_hex, &tx_in, &collateral_utxo)
+            .await
+            .expect("Failed to register transaction")
+            .transaction
+            .id;
+        println!(
+            "Registration transaction submitted with hash: {:?}",
+            register_tx_id
+        );
+
+        let dust_address: [u8; 33] = hex::decode(&dust_hex)
+            .expect("Failed to decode DUST hex")
+            .try_into()
+            .unwrap();
+
+        let registration_events = midnight_client
+            .subscribe_to_cnight_observation_events(&register_tx_id)
+            .await
+            .expect("Failed to listen to cNgD registration event");
+
+        let registration = registration_events
+            .iter()
+            .filter_map(|e| e.ok())
+            .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+            .find(|reg| {
+                reg.0.cardano_reward_address.0 == reward_address
+                    && reg.0.dust_public_key.0.0 == dust_address
+            });
+        assert!(
+            registration.is_some(),
+            "Did not find registration event with expected reward_address and dust_address"
+        );
+        println!(
+            "Matching Registration event found: {:?}",
+            registration.unwrap()
+        );
+
+        let mapping_added = registration_events
+            .iter()
+            .filter_map(|e| e.ok())
+            .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+            .find(|map| {
+                map.0.cardano_reward_address.0 == reward_address
+                    && map.0.dust_public_key.0.0 == dust_address
+                    && map.0.utxo_tx_hash.0 == register_tx_id
+            });
+        assert!(
+            mapping_added.is_some(),
+            "Did not find MappingAdded event with expected reward_address, dust_address, and utxo_id"
+        );
+        println!(
+            "Matching MappingAdded event found: {:?}",
+            mapping_added.unwrap()
+        );
+    }
+}
