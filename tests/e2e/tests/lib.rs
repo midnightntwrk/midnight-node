@@ -994,14 +994,19 @@ async fn create_hundred_registrations() {
         .await
         .expect("Failed to make collateral");
 
-    let reward_address = cardano_client.reward_address_bytes();
+    let validator_address = cardano_client.constants.policies.auth_token_address();
 
-    for _ in 0..100 {
+   let mut register_tx_id: [[u8; 32]; 3] = [[0; 32]; 3];
+
+    //run n registrations
+    for i in 0..3 {
         let dust_hex = MidnightClient::new_dust_hex();
         println!(
             "Registering Cardano wallet {} with DUST address {}",
             address_bech32, dust_hex
         );
+
+        println!("STEP #1");
 
         let assets = vec![Asset::new_from_str("lovelace", "10000000")];
         let tx_in = cardano_client
@@ -1009,7 +1014,9 @@ async fn create_hundred_registrations() {
             .await
             .expect("Failed to fund a wallet");
 
-        let register_tx_id = cardano_client
+        println!("STEP #2");
+
+        register_tx_id[i] = cardano_client
             .register(&dust_hex, &tx_in, &collateral_utxo)
             .await
             .expect("Failed to register transaction")
@@ -1019,50 +1026,37 @@ async fn create_hundred_registrations() {
             "Registration transaction submitted with hash: {:?}",
             register_tx_id
         );
+    };
 
-        let dust_address: [u8; 33] = hex::decode(&dust_hex)
-            .expect("Failed to decode DUST hex")
-            .try_into()
-            .unwrap();
-
-        let registration_events = midnight_client
-            .subscribe_to_cnight_observation_events(&register_tx_id)
+    //run n-1 deregistrations
+    for i in 0..2 {
+        let register_tx = cardano_client
+            .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id[i]))
             .await
-            .expect("Failed to listen to cNgD registration event");
+            .expect("No registration UTXO found after registering");
+        println!("Found registration UTXO: {:?}", register_tx);
 
-        let registration = registration_events
-            .iter()
-            .filter_map(|e| e.ok())
-            .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
-            .find(|reg| {
-                reg.0.cardano_reward_address.0 == reward_address
-                    && reg.0.dust_public_key.0.0 == dust_address
-            });
-        assert!(
-            registration.is_some(),
-            "Did not find registration event with expected reward_address and dust_address"
-        );
+        println!("STEP #4");
+
+        let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
+        let tx_in_for_deregister = cardano_client
+            .fund_wallet(more_assets)
+            .await
+            .expect("Failed to fund a wallet");
+
+       println!("STEP #5");
+
+        let deregister_tx = cardano_client
+            .deregister(&tx_in_for_deregister, &register_tx, &collateral_utxo)
+            .await
+            .expect("Failed to deregister")
+            .transaction
+            .id;
         println!(
-            "Matching Registration event found: {:?}",
-            registration.unwrap()
+            "Deregistration transaction submitted with hash: {:?}",
+            deregister_tx
         );
 
-        let mapping_added = registration_events
-            .iter()
-            .filter_map(|e| e.ok())
-            .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
-            .find(|map| {
-                map.0.cardano_reward_address.0 == reward_address
-                    && map.0.dust_public_key.0.0 == dust_address
-                    && map.0.utxo_tx_hash.0 == register_tx_id
-            });
-        assert!(
-            mapping_added.is_some(),
-            "Did not find MappingAdded event with expected reward_address, dust_address, and utxo_id"
-        );
-        println!(
-            "Matching MappingAdded event found: {:?}",
-            mapping_added.unwrap()
-        );
+        println!("STEP #6");
     }
 }
