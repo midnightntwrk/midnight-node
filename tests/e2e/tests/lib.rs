@@ -1026,6 +1026,8 @@ async fn create_hundred_registrations() {
             "Registration transaction submitted with hash: {:?}",
             register_tx_id
         );
+
+        println!("STEP #3");
     };
 
     //run n-1 deregistrations
