@@ -86,9 +86,12 @@ mod tests {
 	use midnight_node_toolkit::{
 		cli_parsers::contract_address_decode,
 		t_token,
-		tx_generator::builder::{
-			BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
-			SingleTxArgs,
+		tx_generator::{
+			builder::{
+				BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
+				SingleTxArgs,
+			},
+			source::FetchCacheConfig,
 		},
 	};
 	use test_case::test_case;
@@ -110,6 +113,7 @@ mod tests {
 					fetch_concurrency: 20,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
+					fetch_cache: FetchCacheConfig::InMemory,
 				},
 				destination: Destination {
 					dest_urls: vec![],

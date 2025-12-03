@@ -97,6 +97,7 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
 	/// Test data
@@ -114,6 +115,7 @@ mod tests {
 				fetch_concurrency: 1,
 				src_files: Some(src_files),
 				dust_warp: true,
+				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed,
 			dry_run: false,

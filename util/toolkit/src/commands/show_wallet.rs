@@ -127,6 +127,7 @@ mod tests {
 	//use std::str::FromStr;
 
 	use super::*;
+	use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
 	macro_rules! test_fixture {
@@ -160,6 +161,7 @@ mod tests {
 				fetch_concurrency: 20,
 				src_files: Some(src_files),
 				dust_warp: false,
+				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -206,6 +208,7 @@ mod tests {
 				fetch_concurrency: 20,
 				src_files: Some(src_files),
 				dust_warp: true,
+				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: Some(seed),
 			address: None,
