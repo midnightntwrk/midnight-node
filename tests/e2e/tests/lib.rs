@@ -996,25 +996,23 @@ async fn create_hundred_registrations() {
 
     let validator_address = cardano_client.constants.policies.auth_token_address();
 
-   let mut register_tx_id: [[u8; 32]; 3] = [[0; 32]; 3];
+    let mut register_tx_id: [[u8; 32]; 11] = [[0; 32]; 11];
+
+    let mut dust_hex = String::new();
 
     //run n registrations
-    for i in 0..3 {
-        let dust_hex = MidnightClient::new_dust_hex();
+    for i in 0..11 {
+        dust_hex = MidnightClient::new_dust_hex();
         println!(
             "Registering Cardano wallet {} with DUST address {}",
             address_bech32, dust_hex
         );
-
-        println!("STEP #1");
 
         let assets = vec![Asset::new_from_str("lovelace", "10000000")];
         let tx_in = cardano_client
             .fund_wallet(assets)
             .await
             .expect("Failed to fund a wallet");
-
-        println!("STEP #2");
 
         register_tx_id[i] = cardano_client
             .register(&dust_hex, &tx_in, &collateral_utxo)
@@ -1026,27 +1024,21 @@ async fn create_hundred_registrations() {
             "Registration transaction submitted with hash: {:?}",
             register_tx_id
         );
-
-        println!("STEP #3");
     };
 
     //run n-1 deregistrations
-    for i in 0..2 {
+    for i in 0..10 {
         let register_tx = cardano_client
             .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id[i]))
             .await
             .expect("No registration UTXO found after registering");
         println!("Found registration UTXO: {:?}", register_tx);
 
-        println!("STEP #4");
-
         let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
         let tx_in_for_deregister = cardano_client
             .fund_wallet(more_assets)
             .await
             .expect("Failed to fund a wallet");
-
-       println!("STEP #5");
 
         let deregister_tx = cardano_client
             .deregister(&tx_in_for_deregister, &register_tx, &collateral_utxo)
@@ -1058,7 +1050,34 @@ async fn create_hundred_registrations() {
             "Deregistration transaction submitted with hash: {:?}",
             deregister_tx
         );
+    };
 
-        println!("STEP #6");
-    }
+    //assertions for the last registration
+    let reward_address = cardano_client.reward_address_bytes();
+    let dust_address: [u8; 33] = hex::decode(&dust_hex)
+        .expect("Failed to decode DUST hex")
+        .try_into()
+        .unwrap();
+
+    let registration_events = midnight_client
+        .subscribe_to_cnight_observation_events(&register_tx_id[10])
+        .await
+        .expect("Failed to listen to cNgD registration event");
+
+    let registration = registration_events
+        .iter()
+        .filter_map(|e| e.ok())
+        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .find(|reg| {
+            reg.0.cardano_reward_address.0 == reward_address
+                && reg.0.dust_public_key.0.0 == dust_address
+        });
+    assert!(
+        registration.is_some(),
+        "Did not find registration event with expected reward_address and dust_address"
+    );
+    println!(
+        "Matching Registration event found: {:?}",
+        registration.unwrap()
+    );
 }
