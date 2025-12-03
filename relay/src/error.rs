@@ -19,8 +19,8 @@ pub enum Error {
 	#[error("Codec Error: {0}")]
 	Codec(#[from] parity_scale_codec::Error),
 
-	#[error("Block({0}): commitment signatures does not match the validator set")]
-	NoMatchingSignature(BlockNumber),
+	#[error("Block({0}): commitment signature(1) does not match the validator set")]
+	NoMatchingSignature(BlockNumber, u32),
 
 	#[error("Failed to create proof of authorities list")]
 	InvalidAuthoritiesProofCreation,
@@ -36,4 +36,7 @@ pub enum Error {
 
 	#[error("No \"Next\" Beefy AuthoritySet found in the payload")]
 	MissingNextAuthoritySet,
+
+	#[error("Chain did not return any validator set")]
+	EmptyValidatorSet,
 }

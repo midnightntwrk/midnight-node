@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use midnight_primitives_beefy::BEEFY_LOG_TARGET;
-use parity_scale_codec::Encode;
 use sp_consensus_beefy::{VersionedFinalityProof, ecdsa_crypto::Signature as EcdsaSignature};
 use sp_core::Bytes;
 use subxt::{
@@ -11,13 +10,17 @@ use subxt::{
 		client::{RpcParams, RpcSubscription},
 		rpc_params,
 	},
-	utils::to_hex,
+	runtime_api::Payload as SubxtPayload,
 };
 
-use crate::{BlockNumber, Error, MmrProof, justification::BeefyStakesInfo};
+use crate::{
+	BeefySignedCommitment, BeefyValidatorSet, BlockNumber, Error, MmrProof,
+	cardano_encoding::{RelayChainProof, ToPlutusData},
+	helper::{HexExt, MnMetaConversion},
+	mn_meta,
+};
 
 pub type BlockHash = sp_core::H256;
-pub type BeefySignedCommitment = sp_consensus_beefy::SignedCommitment<BlockNumber, EcdsaSignature>;
 
 pub struct Relayer {
 	// Shared RPC client interface for the relayer
@@ -62,17 +65,21 @@ impl Relayer {
 			parity_scale_codec::Decode::decode(&mut &justification[..])?;
 
 		// Identifies whether using from best block, or the commitment's block hash
-		let (_best_block, _at_block_hash) = self.choose_params(&beef_signed_commitment).await?;
+		let (_best_block, at_block_hash) = self.choose_params(&beef_signed_commitment).await?;
 
-		let payload = &beef_signed_commitment.commitment.payload;
-		let payload_bytes = payload.encode();
-		let payload_hex = to_hex(&payload_bytes);
-		log::debug!(target: BEEFY_LOG_TARGET, "🥩 payload: {payload_hex}");
+		// retrieve necessary data in creating the proof
+		let validator_set = self.get_beefy_validator_set(at_block_hash).await?;
+		log::trace!(target: BEEFY_LOG_TARGET, "🥩 Get Validator Set: {validator_set:?}");
 
-		let beefy_stakes_info = BeefyStakesInfo::try_from(payload)?;
-		log::debug!(target: BEEFY_LOG_TARGET, "🥩 beefy stakes: {beefy_stakes_info:#?}");
+		// generate the proof
+		let relay_chain_proof = RelayChainProof::generate(beef_signed_commitment, validator_set)?;
 
-		//todo: handle authorities
+		// display the proofs
+		let plutus_data = relay_chain_proof.to_plutus_data();
+
+		log::info!("🥩 RelaychainProof plutus: {}", plutus_data.as_hex());
+		log::info!(target: BEEFY_LOG_TARGET, "🥩 Relaychain: {relay_chain_proof:#?}");
+
 		Ok(())
 	}
 
@@ -117,6 +124,20 @@ impl Relayer {
 		Ok((best_block, at_block_hash))
 	}
 
+	/// Returns the validator set with beefy ids, based on the provided block hash
+	async fn get_beefy_validator_set(
+		&self,
+		at_block_hash: Option<BlockHash>,
+	) -> Result<BeefyValidatorSet, Error> {
+		let validator_set_call = mn_meta::apis().beefy_api().validator_set();
+
+		let validator_set = self.runtime_api(at_block_hash, validator_set_call).await?;
+
+		validator_set
+			.map(|v_set| v_set.into_non_metadata())
+			.ok_or(Error::EmptyValidatorSet)
+	}
+
 	/// Returns the Best Block Number, or None if querying fails.
 	/// No need to throw an error
 	async fn get_best_block_number(&self) -> Option<BlockNumber> {
@@ -141,5 +162,21 @@ impl Relayer {
 				None
 			},
 		}
+	}
+
+	/// Helper function for querying via the runtime api
+	async fn runtime_api<T: SubxtPayload>(
+		&self,
+		at_block_hash: Option<BlockHash>,
+		payload: T,
+	) -> Result<T::ReturnType, Error> {
+		match at_block_hash {
+			Some(at_block_hash) => self.api.runtime_api().at(at_block_hash).call(payload).await,
+			None => {
+				let result = self.api.runtime_api().at_latest().await?;
+				result.call(payload).await
+			},
+		}
+		.map_err(Error::Subxt)
 	}
 }
