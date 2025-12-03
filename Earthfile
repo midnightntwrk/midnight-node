@@ -725,20 +725,35 @@ build-prepare:
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
+build-upgrader:
+    FROM +prep
+    ARG NATIVEARCH
+
+    RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+        && mv /target/release/upgrader /artifacts-$NATIVEARCH
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 # build creates production ready binaries
 build:
     ARG NATIVEARCH
 
-    FROM +build-prepare
+    FROM +prep
+
+    ARG EARTHLY_GIT_SHORT_HASH
+    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
+    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
+    ENV CC=clang
+    ENV CXX=clang++
+
     WAIT
-        BUILD +build-normal
+        BUILD +build-upgrader
         BUILD +build-fork
         BUILD +build-undo
     END
 
     RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
 
@@ -777,7 +792,7 @@ build-normal:
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-fork:
-    FROM +build-prepare
+    FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
@@ -789,15 +804,14 @@ build-fork:
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
 
     # Hardfork build
-    # NOTE: We're NOT doing -p midnight-node-runtime - building the workspace is faster as it caches better.
-    RUN HARDFORK_TEST=1 cargo build --workspace  --locked --release
+    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-undo:
-    FROM +build-normal
+    FROM +prep
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
@@ -938,7 +952,8 @@ hardfork-test-upgrader-image:
     COPY +build/artifacts-$NATIVEARCH/test/* /
     COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    COPY node/Cargo.toml /node/
+    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
@@ -1203,5 +1218,4 @@ node-e2e-test:
 images:
     FROM scratch
     BUILD +node-image
-    BUILD +hardfork-test-upgrader-image
     BUILD +toolkit-image
