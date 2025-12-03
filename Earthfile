@@ -728,7 +728,7 @@ build-prepare:
 build-upgrader:
     FROM +prep
     ARG NATIVEARCH
-    
+
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH
@@ -952,7 +952,8 @@ hardfork-test-upgrader-image:
     COPY +build/artifacts-$NATIVEARCH/test/* /
     COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    COPY node/Cargo.toml /node/
+    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
