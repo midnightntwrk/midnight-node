@@ -561,8 +561,12 @@ prep:
         metadata rustfmt.toml util tests relay .
 
     RUN rustup show
-    # Any cargo fetch used here is ignored and downloaded again.
-
+    # This doesn't seem to prevent the downloading at a later point, but
+    # for now this is ok as there's only one compile task dependent on this.
+    # RUN cargo fetch --locked \
+    #   --target aarch64-unknown-linux-gnu \
+    #   --target x86_64-unknown-linux-gnu \
+    #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
 
 # prepares the toolkit-js, in time for testing
@@ -721,15 +725,27 @@ build-prepare:
     # Build dependencies - this is the caching Docker layer!
     RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-# produces upgrader binary, test and rollback runtimes for hardfork testing
-hardforkbuild:
+build-upgrader:
+    FROM +prep
+    ARG NATIVEARCH
+    
+    RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+        && mv /target/release/upgrader /artifacts-$NATIVEARCH
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
+
+# build creates production ready binaries
+build:
     ARG NATIVEARCH
 
-    FROM scratch
-    
-    # FROM +build-prepare
+    FROM +prep
+
+    ARG EARTHLY_GIT_SHORT_HASH
+    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
-    
+    ENV CC=clang
+    ENV CXX=clang++
+
     WAIT
         BUILD +build-upgrader
         BUILD +build-fork
@@ -745,13 +761,12 @@ hardforkbuild:
     SAVE ARTIFACT /artifacts-$NATIVEARCH
 
 build-normal:
-    # FROM +build-prepare
-    FROM +prep
+    FROM +build-prepare
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
-    # COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    # ledger node pallets primitives metadata res runtime util tests relay .
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay .
 
     ARG NATIVEARCH
 
@@ -765,7 +780,8 @@ build-normal:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    RUN cargo build --workspace --locked --release
+    RUN \
+        cargo build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -775,31 +791,20 @@ build-normal:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
-build-upgrader:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN cargo build -p upgrader --locked --release \
-      && mkdir -p /artifacts-$NATIVEARCH \
-      && mv /target/release/upgrader /artifacts-$NATIVEARCH
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
 build-fork:
     FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
-    # COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    # ledger node pallets primitives res metadata runtime util tests relay .
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives res metadata runtime util tests relay .
 
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
 
     # Hardfork build
-    # NOTE: Rather than doing -p midnight-node-runtime - building the workspace caches better if using chef.
-    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime --locked --release
+    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
@@ -807,13 +812,12 @@ build-fork:
 
 build-undo:
     FROM +prep
-    # FROM +build-normal
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
-    # RUN rm -Rf /target/release/build/midnight-node-runtime-*
+    RUN rm -Rf /target/release/build/midnight-node-runtime-*
     # Rollback build
-    RUN HARDFORK_TEST_ROLLBACK=1 cargo build -p midnight-node-runtime --locked --release
+    RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
         /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
 
@@ -944,17 +948,15 @@ hardfork-test-upgrader-image:
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
     USER root
 
-    COPY +hardforkbuild/artifacts-$NATIVEARCH/upgrader /
-    COPY +hardforkbuild/artifacts-$NATIVEARCH/test/* /
-    COPY +hardforkbuild/artifacts-$NATIVEARCH/rollback/* /
+    COPY +build/artifacts-$NATIVEARCH/upgrader /
+    COPY +build/artifacts-$NATIVEARCH/test/* /
+    COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
-    COPY node/Cargo.toml /node/
-    LET NODE_VERSION= "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
-    # LET NODE_VERSION = "$(cat node_version)"
+    LET NODE_VERSION = "$(cat node_version)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
+    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVETARCH"
 
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
