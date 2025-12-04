@@ -27,7 +27,7 @@ echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 docker network create toolkit-e2e-net || true
 
 # Start a postgres container for the toolkit sync-cache
-docker run -d \
+docker run -d --rm \
     --name postgres-test \
     --network toolkit-e2e-net \
     -e POSTGRES_USER=test \
@@ -48,6 +48,7 @@ tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
 cleanup() {
     echo "🛑 Killing node container..."
     docker container stop midnight-node-tx
+    docker container stop postgres-test
     echo "🧹 Removing tempdir..."
     rm -rf $tempdir
 }
@@ -61,20 +62,25 @@ sleep 10
 echo "📦 Running toolkit tests..."
 
 echo "Get version for toolkit"
-docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" version
+docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" version
 
 deploy_filename="contract_deploy.mn"
+
+read
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -e RUST_BACKTRACE=1 \
     --network toolkit-e2e-net \
     "$TOOLKIT_IMAGE" \
-    generate-txs batches -n 1 -b 1
+    generate-txs batches -n 1 -b 1 \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
     --dest-file "/out/$deploy_filename" --to-bytes \
     contract-simple deploy \
-    --rng-seed "$RNG_SEED"
+    --rng-seed "$RNG_SEED" \
+    -s ws://midnight-node-tx:9944
 
 contract_address=$(
     docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out "$TOOLKIT_IMAGE" \
@@ -82,52 +88,67 @@ contract_address=$(
 )
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
-    --src-file="/out/$deploy_filename" send
+    --src-file="/out/$deploy_filename" send \
+    -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --rng-seed "$RNG_SEED" \
     --contract-address "$contract_address" \
     --new-authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key store \
     --rng-seed "$RNG_SEED" \
-    --contract-address "$contract_address"
+    --contract-address "$contract_address" \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key check \
     --rng-seed "$RNG_SEED" \
-    --contract-address "$contract_address"
+    --contract-address "$contract_address" \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 echo "Sending just unshielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
     --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
     --unshielded-amount 10 \
-    --destination-address mn_addr_undeployed1na9c5lvmj6rvwkwkuq7vsqvyjcx74tg0th0vevrcluatxq02h9gsjtnn9j
+    --destination-address mn_addr_undeployed1na9c5lvmj6rvwkwkuq7vsqvyjcx74tg0th0vevrcluatxq02h9gsjtnn9j \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 echo "Sending just shielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
     --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
     --shielded-amount 10 \
-    --destination-address mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d
+    --destination-address mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
 
 echo "Try fetching with all backends"
 
 echo "fetching with redb"
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
-    fetch --fetch-cache "redb:.cache/fetch/e2e_test.db"
+    fetch --fetch-cache "redb:.cache/fetch/e2e_test.db" \
+    -s ws://midnight-node-tx:9944
+
 
 echo "fetching with inmemory"
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
-    fetch --fetch-cache "inmemory"
+    fetch --fetch-cache "inmemory" \
+    -s ws://midnight-node-tx:9944
 
 echo "fetching with postgres"
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
-    fetch --fetch-cache "postgres://test:test@localhost:5432/toolkit"
+    fetch --fetch-cache "postgres://test:test@postgres-test:5432/toolkit" \
+    -s ws://midnight-node-tx:9944
 
 echo "✅ Toolkit E2E"
