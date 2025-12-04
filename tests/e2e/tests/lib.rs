@@ -53,8 +53,8 @@ async fn register_for_dust_production() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
     );
 
     let reward_address = cardano_client.reward_address_bytes();
@@ -346,8 +346,8 @@ async fn register_2_cardano_same_dust_address_production() {
         .transaction
         .id;
     println!(
-        "Registration transaction for the first cardano submitted with hash: {:?}",
-        register_tx_id_1
+        "Registration transaction for the first cardano submitted with hash: {}",
+        hex::encode(register_tx_id_1)
     );
 
     let register_tx_id_2 = cardano_client_2
@@ -357,8 +357,8 @@ async fn register_2_cardano_same_dust_address_production() {
         .transaction
         .id;
     println!(
-        "Registration transaction for second cardano submitted with hash: {:?}",
-        register_tx_id_1
+        "Registration transaction for second cardano submitted with hash: {}",
+        hex::encode(register_tx_id_2)
     );
 
     let reward_address_1 = cardano_client_1.reward_address_bytes();
@@ -487,8 +487,8 @@ async fn cnight_produces_dust() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
     );
 
     let amount = 100;
@@ -498,7 +498,7 @@ async fn cnight_produces_dust() {
         .expect("Failed to mint tokens")
         .transaction
         .id;
-    println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
 
     // FIXME: it returns first utxo, find by native token or return all utxos
     let cnight_utxo = match cardano_client
@@ -561,8 +561,8 @@ async fn deregister_from_dust_production() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
     );
 
     let validator_address = cardano_client.constants.policies.auth_token_address();
@@ -590,8 +590,8 @@ async fn deregister_from_dust_production() {
         .transaction
         .id;
     println!(
-        "Deregistration transaction submitted with hash: {:?}",
-        deregister_tx
+        "Deregistration transaction submitted with hash: {}",
+        hex::encode(deregister_tx)
     );
 
     let reward_address = cardano_client.reward_address_bytes();
@@ -687,8 +687,8 @@ async fn alice_cannot_deregister_bob() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
     );
 
     // Find Bob's registration UTXO
@@ -771,8 +771,8 @@ async fn removing_excessive_registrations() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
     );
 
     let reward_address = cardano_client.reward_address_bytes();
@@ -831,8 +831,8 @@ async fn removing_excessive_registrations() {
         .transaction
         .id;
     println!(
-        "Registration transaction submitted with hash: {:?}",
-        register_tx_id
+        "Second registration transaction submitted with hash: {}",
+        hex::encode(second_register_tx_id)
     );
 
     let second_registration_events = midnight_client
@@ -896,8 +896,8 @@ async fn removing_excessive_registrations() {
         .transaction
         .id;
     println!(
-        "Deregistration transaction submitted with hash: {:?}",
-        deregister_tx
+        "Deregistration transaction submitted with hash: {}",
+        hex::encode(deregister_tx)
     );
 
     let deregister_events = midnight_client
@@ -951,7 +951,7 @@ async fn removing_excessive_registrations() {
         .expect("Failed to mint tokens")
         .transaction
         .id;
-    println!("Minted {} cNIGHT. Tx: {:?}", amount, tx_id);
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
 
     // FIXME: it returns first utxo, find by native token or return all utxos
     let cnight_utxo = match cardano_client
