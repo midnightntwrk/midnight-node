@@ -42,6 +42,11 @@ pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D:
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
 	/// Creates or opens a database at the given path. Will fail if open in another process.
 	pub fn new(path: impl AsRef<Path>) -> Self {
+		let p = path.as_ref();
+		if let Some(parent) = p.parent() {
+			std::fs::create_dir_all(parent)
+				.expect("failed to create parent dir for redb fetch cache");
+		}
 		Self {
 			db: Arc::new(RwLock::new(
 				Database::create(path).expect("failed to create database - is it already open?"),
