@@ -82,7 +82,7 @@ impl SubstrateCli for Cfg {
 	}
 
 	fn support_url() -> String {
-		"support.anonymous.an".into()
+		"https://github.com/midnightntwrk/midnight-node/issues".into()
 	}
 
 	fn copyright_start_year() -> i32 {
