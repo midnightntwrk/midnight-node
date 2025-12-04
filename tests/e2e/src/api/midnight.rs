@@ -1,6 +1,8 @@
 use crate::config::NodeClientSettings;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
+use hex::ToHex;
+use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::types::utxo_owners::UtxoOwners;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
@@ -29,8 +31,14 @@ impl MidnightClient {
     }
 
     pub fn new_dust_hex() -> String {
-        let bytes: [u8; 33] = rand::random();
-        hex::encode(bytes)
+        let seed_bytes: [u8; 32] = rand::random();
+        println!("Midnight seed: {}", hex::encode(seed_bytes));
+        let wallet_seed = WalletSeed::from(seed_bytes);
+        let dust_wallet = DustWallet::<DefaultDB>::default(wallet_seed, None);
+        let dust_public = dust_wallet.public_key;
+        let dust_public_hex = serialize_untagged(&dust_public).unwrap().encode_hex();
+        println!("Dust public key hex: {}", dust_public_hex);
+        dust_public_hex
     }
 
     pub async fn subscribe_to_cnight_observation_events(
