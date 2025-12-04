@@ -996,14 +996,14 @@ async fn create_hundred_registrations() {
 
     let validator_address = cardano_client.constants.policies.auth_token_address();
 
-    let mut register_tx_id: [[u8; 32]; 11] = [[0; 32]; 11];
+    let mut register_tx_id: [[u8; 32]; 101] = [[0; 32]; 101];
 
     let mut last_deregistration_tx_id: [u8; 32] = [0; 32];
 
     let mut dust_hex = String::new();
 
     //run n registrations
-    for i in 0..11 {
+    for i in 0..101 {
         dust_hex = MidnightClient::new_dust_hex();
         println!(
             "Registering Cardano wallet {} with DUST address {}",
@@ -1029,7 +1029,7 @@ async fn create_hundred_registrations() {
     }
 
     //run n-1 deregistrations
-    for i in 0..10 {
+    for i in 0..100 {
         let register_tx = cardano_client
             .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id[i]))
             .await
@@ -1086,4 +1086,3 @@ async fn create_hundred_registrations() {
         registration.unwrap()
     );
 }
-
