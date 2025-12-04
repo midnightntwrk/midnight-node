@@ -17,10 +17,10 @@ use sp_core::H256;
 use crate::Error;
 #[derive(Debug)]
 pub struct BeefyStakesInfo {
-	current_stakes: BeefyStakes<BeefyId>,
-	current_authority_set: BeefyAuthoritySet<H256>,
-	next_stakes: BeefyStakes<BeefyId>,
-	next_authority_set: BeefyNextAuthoritySet<H256>,
+	pub current_stakes: BeefyStakes<BeefyId>,
+	pub current_authority_set: BeefyAuthoritySet<H256>,
+	pub next_stakes: BeefyStakes<BeefyId>,
+	pub next_authority_set: BeefyNextAuthoritySet<H256>,
 }
 
 impl TryFrom<Payload> for BeefyStakesInfo {
@@ -59,30 +59,17 @@ impl TryFrom<&Payload> for BeefyStakesInfo {
 
 #[cfg(test)]
 mod test {
-	use parity_scale_codec::Decode;
-	use sp_consensus_beefy::{Payload, ecdsa_crypto::AuthorityId};
-	use sp_core::{H256, bytes::from_hex, crypto::Ss58Codec};
+	use sp_consensus_beefy::Payload;
+	use sp_core::H256;
 
-	use crate::justification::BeefyStakesInfo;
+	use crate::{
+		helper::test::{ECDSA_ALICE, ECDSA_BOB, ECDSA_CHARLIE, ECDSA_DAVE, decode, get_ecdsa},
+		justification::BeefyStakesInfo,
+	};
 
 	const ENCODED_PAYLOAD: &str = "0x146362b000000000000000000400000086fd5cd50b8bb99aa5c8befc197dd8273d17a4530b44e7aca182a4af271bd6a86373950210020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a101000000000000000390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f2701000000000000000389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb000000000000000003bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c00000000000000006d6880850783e47991669df4fa44075cd0fa5d8532d2a99fce644fcc33c7395522c8526e62b001000000000000000400000086fd5cd50b8bb99aa5c8befc197dd8273d17a4530b44e7aca182a4af271bd6a86e73950210020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a101000000000000000390084fdbf27d2b79d26a4f13f0ccd982cb755a661969143c37cbc49ef5b91f2701000000000000000389411795514af1627765eceffcbd002719f031604fadd7d188e2dc585b4e1afb000000000000000003bc9d0ca094bd5b8b3225d7651eac5d18c1c04bf8ae8f8b263eebca4e1410ed0c0000000000000000";
 	const EXPECTED_ROOT: &str =
 		"0x86fd5cd50b8bb99aa5c8befc197dd8273d17a4530b44e7aca182a4af271bd6a8";
-
-	const ECDSA_ALICE: &str = "KW39r9CJjAVzmkf9zQ4YDb2hqfAVGdRqn53eRqyruqpxAP5YL";
-	const ECDSA_BOB: &str = "KWByAN7WfZABWS5AoWqxriRmF5f2jnDqy3rB5pfHLGkY93ibN";
-	const ECDSA_CHARLIE: &str = "KWBpGtyJLBkJERdZT1a1uu19c2uPpZm9nFd8SGtCfRUAT3Y4w";
-	const ECDSA_DAVE: &str = "KWCycezxoy7MWTTqA5JDKxJbqVMiNfqThKFhb5dTfsbNaGbrW";
-
-	fn decode<T: Decode>(hex: &str) -> T {
-		let hex_bytes = from_hex(hex).expect("invalid bytes");
-
-		Decode::decode(&mut &hex_bytes[..]).expect("conversion failed")
-	}
-
-	fn get_ecdsa(hex_key: &str) -> AuthorityId {
-		AuthorityId::from_ss58check(hex_key).expect("should be able to convert to beefyid")
-	}
 
 	#[test]
 	fn test_extract_beefy_stakes() {
