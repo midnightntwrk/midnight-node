@@ -34,6 +34,7 @@ use std::{
 	error::Error,
 	fmt,
 	panic::{self, AssertUnwindSafe},
+	time::Duration,
 };
 
 use midnight_node_toolkit::{
@@ -338,11 +339,14 @@ pub(crate) async fn run_command(
 			)
 			.get_txs()
 			.await?;
-			println!(
+			log::info!(
 				"fetched {} blocks in {:.3} s",
 				txs.blocks.len(),
 				start.elapsed().as_secs_f32()
 			);
+
+			// Wait a little - allows logs to reach stdout before exit
+			tokio::time::sleep(Duration::from_millis(200)).await;
 			Ok(())
 		},
 	}

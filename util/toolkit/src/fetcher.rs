@@ -227,5 +227,11 @@ pub async fn fetch_all<
 	// Set highest verified height for quicker fetch next time
 	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
 
+	log::info!("fetched {} blocks", blocks.len());
+	log::info!(
+		"fetched {} transactions",
+		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
+	);
+
 	Ok(blocks)
 }

@@ -26,12 +26,14 @@ echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 # Ensure Docker network exists
 docker network create toolkit-e2e-net || true
 
+export POSTGRES_PASSWORD=$(uuidgen | tr -d '-' | head -c 16)
+
 # Start a postgres container for the toolkit sync-cache
 docker run -d --rm \
     --name postgres-test \
     --network toolkit-e2e-net \
     -e POSTGRES_USER=test \
-    -e POSTGRES_PASSWORD=test \
+    -e POSTGRES_PASSWORD \
     -e POSTGRES_DB=toolkit \
     postgres:16
 
@@ -55,8 +57,8 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-echo "⏳ Waiting for node to boot..."
-sleep 10
+echo "⏳ Waiting for node to boot... (allow at least 2 blocks to be produced)"
+sleep 20
 
 # Run toolkit commands
 echo "📦 Running toolkit tests..."
@@ -65,8 +67,6 @@ echo "Get version for toolkit"
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" version
 
 deploy_filename="contract_deploy.mn"
-
-read
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -e RUST_BACKTRACE=1 \
@@ -148,7 +148,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
 
 echo "fetching with postgres"
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
-    fetch --fetch-cache "postgres://test:test@postgres-test:5432/toolkit" \
+    fetch --fetch-cache "postgres://test:$POSTGRES_PASSWORD@postgres-test:5432/toolkit" \
     -s ws://midnight-node-tx:9944
 
 echo "✅ Toolkit E2E"
