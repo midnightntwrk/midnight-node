@@ -998,6 +998,8 @@ async fn create_hundred_registrations() {
 
     let mut register_tx_id: [[u8; 32]; 11] = [[0; 32]; 11];
 
+    let mut last_deregistration_tx_id: [u8; 32] = [0; 32];
+
     let mut dust_hex = String::new();
 
     //run n registrations
@@ -1021,10 +1023,10 @@ async fn create_hundred_registrations() {
             .transaction
             .id;
         println!(
-            "Registration transaction submitted with hash: {:?}",
-            register_tx_id
+            "Registration transaction submitted with hash: {}",
+            hex::encode(register_tx_id[i])
         );
-    };
+    }
 
     //run n-1 deregistrations
     for i in 0..10 {
@@ -1047,20 +1049,23 @@ async fn create_hundred_registrations() {
             .transaction
             .id;
         println!(
-            "Deregistration transaction submitted with hash: {:?}",
-            deregister_tx
+            "Deregistration transaction submitted with hash: {}",
+            hex::encode(deregister_tx)
         );
-    };
+        last_deregistration_tx_id = deregister_tx;
+    }
 
     //assertions for the last registration
     let reward_address = cardano_client.reward_address_bytes();
+    println!("Reward address hex: {}", hex::encode(&reward_address));
+    println!("DUST address hex: {}", dust_hex);
     let dust_address: [u8; 33] = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
         .try_into()
         .unwrap();
 
     let registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id[10])
+        .subscribe_to_cnight_observation_events(&last_deregistration_tx_id)
         .await
         .expect("Failed to listen to cNgD registration event");
 
