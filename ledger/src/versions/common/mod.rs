@@ -495,7 +495,7 @@ where
 		]
 		.iter()
 		.max()
-		.expect("non-empty array");
+		.expect("Hard-coded array should not be empty");
 		let gas_cost = max_fp.into_atomic_units(u64::MAX as u128)
 						.min(u64::MAX as u128) as u64;
 

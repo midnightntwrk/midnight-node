@@ -565,8 +565,14 @@ use sp_runtime::Weight;
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
 			let (_, gas_cost) = Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-			// Adjust the weight's ref time by an optional safety paremter
-			let adjusted_ref_time = gas_cost.saturating_mul(ConfigurableTransactionSizeWeight::<T>::get().ref_time());
+			let adjustment = ConfigurableTransactionSizeWeight::<T>::get().ref_time();
+
+			let adjusted_ref_time = if adjustment > 0 {
+				gas_cost.saturating_mul(adjustment)
+			} else {
+				gas_cost
+			};
+
 			Weight::from_parts(adjusted_ref_time, 0)
 		}
 	}
