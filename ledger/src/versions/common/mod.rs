@@ -42,7 +42,13 @@ use {
 		ContractAddress, ContractState, Ledger, LedgerParameters, SystemTransaction, Transaction,
 		TransactionAppliedStage, TransactionOperation,
 	},
-	base_crypto_local::{hash::HashOutput, time::Timestamp},
+	base_crypto_local::{
+		cost_model::{
+			NormalizedCost as LedgerNormalizedCost, SyntheticCost as LedgerSyntheticCost,
+		},
+		hash::HashOutput,
+		time::Timestamp,
+	},
 	coin_structure_local::coin::Commitment,
 	coin_structure_local::coin::Nonce,
 	coin_structure_local::coin::UnshieldedTokenType,
@@ -70,8 +76,9 @@ use {
 
 use crate::common::types::{
 	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, StorageCost, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-	TransactionDetails, TransactionValidationWasCached, Tx, WrappedHash,
+	Hash, Op, StorageCost, SystemTransactionAppliedStateRoot,
+	TransactionAppliedStateRoot, TransactionDetails, TransactionValidationWasCached, Tx,
+	WrappedHash,
 };
 
 #[cfg(feature = "std")]
@@ -468,7 +475,31 @@ where
 		tx: &[u8],
 		block_context: &BlockContext,
 	) -> Result<(StorageCost, GasCost), LedgerApiError> {
-		Ok((0, 0))
+		let api = api::new();
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let cost =
+			tx.0.cost(&ledger.state.parameters, true)
+				.map_err(|_| LedgerApiError::FeeCalculationError)?;
+
+		let limits = ledger.state.parameters.limits.block_limits;
+		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
+
+		let max_fp = *[
+			normalized.read_time,
+			normalized.compute_time,
+			normalized.block_usage,
+			normalized.bytes_written,
+			normalized.bytes_churned,
+		]
+		.iter()
+		.max()
+		.expect("non-empty array");
+		let gas_cost = max_fp.into_atomic_units(u64::MAX as u128)
+						.min(u64::MAX as u128) as u64;
+
+		Ok((0, gas_cost))
 	}
 
 	// TODO COST MODEL: Needs to be redone with the new ledger cost model

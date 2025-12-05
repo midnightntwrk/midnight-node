@@ -45,12 +45,13 @@ pub mod pallet {
 	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
+		self as LedgerTypes, BlockContext, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
 		active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
 	};
+use sp_runtime::Weight;
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
@@ -351,7 +352,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight(ConfigurableTransactionSizeWeight::<T>::get())]
+		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
@@ -527,6 +528,7 @@ pub mod pallet {
 					runtime_version,
 				)
 				.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 				ValidTransaction::with_tag_prefix("Midnight")
 					// Transactions can live in the pool for max 600 blocks before they must be revalidated
 					.longevity(600)
@@ -558,6 +560,14 @@ pub mod pallet {
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			LedgerApi::get_zswap_state_root(&state_key)
+		}
+
+		// Helper for the weight macro
+		pub fn get_tx_weight(tx: &[u8]) -> Weight {
+			let (_, gas_cost) = Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
+			// Adjust the weight's ref time by an optional safety paremter
+			let adjusted_ref_time = gas_cost.saturating_mul(ConfigurableTransactionSizeWeight::<T>::get().ref_time());
+			Weight::from_parts(adjusted_ref_time, 0)
 		}
 	}
 }
