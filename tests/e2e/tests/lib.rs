@@ -882,7 +882,7 @@ async fn removing_excessive_registrations() {
         .expect("No registration UTXO found after registering");
     println!("Found registration UTXO: {:?}", register_tx);
 
-    let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
+    let more_assets = vec![Asset::new_from_str("lovelace", "10000000")];
     let tx_in_for_deregister = cardano_client
         .fund_wallet(more_assets)
         .await
@@ -1036,7 +1036,7 @@ async fn create_hundred_registrations() {
             .expect("No registration UTXO found after registering");
         println!("Found registration UTXO: {:?}", register_tx);
 
-        let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
+        let more_assets = vec![Asset::new_from_str("lovelace", "10000000")];
         let tx_in_for_deregister = cardano_client
             .fund_wallet(more_assets)
             .await
