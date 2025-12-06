@@ -51,7 +51,7 @@ pub mod pallet {
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
 	};
-use sp_runtime::Weight;
+	use sp_runtime::Weight;
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
@@ -554,7 +554,8 @@ use sp_runtime::Weight;
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<(StorageCost, GasCost), LedgerApiError> {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
-			LedgerApi::get_transaction_cost(&state_key, tx, block_context)
+			let max_weight = T::BlockWeights::get().max_block.ref_time();
+			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
@@ -564,16 +565,11 @@ use sp_runtime::Weight;
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let (_, gas_cost) = Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-			let adjustment = ConfigurableTransactionSizeWeight::<T>::get().ref_time();
+			let (_, gas_cost) =
+				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
 
-			let adjusted_ref_time = if adjustment > 0 {
-				gas_cost.saturating_mul(adjustment)
-			} else {
-				gas_cost
-			};
 
-			Weight::from_parts(adjusted_ref_time, 0)
+			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
 		}
 	}
 }
