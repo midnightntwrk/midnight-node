@@ -161,19 +161,18 @@ impl CardanoClient {
         Ok(PrivateKey::from_extended_bytes(&stake_xprv.to_raw_key().as_bytes()).unwrap())
     }
 
-    pub async fn make_collateral(&self) -> Option<OgmiosUtxo> {
-        let assets = vec![Asset::new_from_str("lovelace", "5000000")];
-        self.fund_wallet(assets).await
-    }
-
-    pub async fn fund_wallet(&self, assets: Vec<Asset>) -> Option<OgmiosUtxo> {
-        let tx_id_hex = match self.send(assets).await {
+    pub async fn fund_wallet(
+        &self,
+        tx_in: &OgmiosUtxo,
+        tx_out_addr: &str,
+        assets: Vec<Asset>,
+    ) -> Option<OgmiosUtxo> {
+        let tx_id_hex = match self.send(tx_in, tx_out_addr, assets).await {
             Ok(response) => hex::encode(response.transaction.id),
             Err(e) => panic!("Failed to send assets: {:?}", e),
         };
         println!("Funded wallet with transaction id: {}", tx_id_hex);
-        self.find_utxo_by_tx_id(&self.address_as_bech32(), tx_id_hex)
-            .await
+        self.find_utxo_by_tx_id(tx_out_addr, tx_id_hex).await
     }
 
     pub fn address_as_bech32(&self) -> String {
@@ -382,6 +381,7 @@ impl CardanoClient {
     pub async fn mint_tokens(
         &self,
         amount: i32,
+        collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policies = self.constants.policies.clone();
 
@@ -390,22 +390,16 @@ impl CardanoClient {
         let network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
-        let collateral_utxo = match self.make_collateral().await {
-            Some(utxo) => utxo,
-            None => panic!("UTXO not found after funding"),
-        };
 
         let utxos = self
             .ogmios_clients
             .query_utxos(from_ref(&payment_addr))
             .await?;
-
         assert!(
             !utxos.is_empty(),
             "No UTXOs found for payment address {}",
             payment_addr
         );
-
         let utxo = utxos
             .iter()
             .max_by_key(|u| u.value.lovelace)
@@ -432,7 +426,7 @@ impl CardanoClient {
             .tx_in_collateral(
                 &hex::encode(collateral_utxo.transaction.id),
                 collateral_utxo.index.into(),
-                &Self::build_asset_vector(&collateral_utxo),
+                &Self::build_asset_vector(collateral_utxo),
                 &payment_addr,
             )
             .tx_out(&payment_addr, &assets)
@@ -457,39 +451,37 @@ impl CardanoClient {
 
     pub async fn send(
         &self,
+        tx_in: &OgmiosUtxo,
+        tx_out_addr: &str,
         assets: Vec<Asset>,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
-        let payments = self.constants.payments.clone();
-        let payment_addr = payments.funded_address;
-        let utxos = self
-            .ogmios_clients
-            .query_utxos(from_ref(&payment_addr))
-            .await?;
-        assert!(!utxos.is_empty());
+        let payment_addr = self.address_as_bech32();
+        println!(
+            "Sending assets from {} to address: {}",
+            payment_addr, tx_out_addr
+        );
 
-        let utxo = utxos
-            .iter()
-            .max_by_key(|u| u.value.lovelace)
-            .expect("No UTXO with lovelace found");
-        let cbor_hex = payments.funded_address_skey_cbor;
-        let input_tx_hash = hex::encode(utxo.transaction.id);
+        let input_tx_hash = hex::encode(tx_in.transaction.id);
 
-        let address_as_bech32 = self.address_as_bech32();
-        let tx_hex = TxBuilder::new_core()
+        let address_as_bech32 = tx_out_addr.to_string();
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
             .tx_in(
                 &input_tx_hash,
-                utxo.index.into(),
-                &Self::build_asset_vector(utxo),
+                tx_in.index.into(),
+                &Self::build_asset_vector(tx_in),
                 address_as_bech32.as_str(),
             )
             .tx_out(address_as_bech32.as_str(), &assets)
             .change_address(&payment_addr)
-            .signing_key(&cbor_hex)
             .complete_sync(None)
-            .unwrap()
-            .complete_signing()
             .unwrap();
-        let tx_bytes = hex::decode(tx_hex).expect("Failed to decode hex string");
+
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_builder.tx_hex())
+            .expect("Failed to sign tx");
+        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
         self.ogmios_clients.submit_transaction(&tx_bytes).await
     }
 
