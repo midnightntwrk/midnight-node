@@ -76,7 +76,7 @@ use {
 
 use crate::common::types::{
 	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, StorageCost, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
+	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
 	TransactionDetails, TransactionValidationWasCached, Tx, WrappedHash,
 };
 
@@ -474,7 +474,7 @@ where
 		tx: &[u8],
 		block_context: &BlockContext,
 		max_weight: u64,
-	) -> Result<(StorageCost, GasCost), LedgerApiError> {
+	) -> Result<GasCost, LedgerApiError> {
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
@@ -488,7 +488,7 @@ where
 
 		let gas_cost = scale_normalized_cost(&normalized, max_weight);
 
-		Ok((0, gas_cost))
+		Ok(gas_cost)
 	}
 
 	// TODO COST MODEL: Needs to be redone with the new ledger cost model

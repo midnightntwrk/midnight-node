@@ -45,7 +45,7 @@ pub mod pallet {
 	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, BlockContext, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
+		self as LedgerTypes, BlockContext, GasCost, Tx as LedgerTx, UtxoInfo,
 		active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
@@ -551,7 +551,7 @@ pub mod pallet {
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
-		pub fn get_transaction_cost(tx: &[u8]) -> Result<(StorageCost, GasCost), LedgerApiError> {
+		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
@@ -565,7 +565,7 @@ pub mod pallet {
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let (_, gas_cost) =
+			let gas_cost =
 				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
 
 
