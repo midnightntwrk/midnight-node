@@ -76,6 +76,11 @@ impl MidnightNodeClient {
 		let hash = self.rpc.chain_get_block_hash(Some(BlockNumber::Number(1))).await?;
 		hash.ok_or_else(|| ClientError::BlockHashNotFound(1))
 	}
+
+	pub async fn get_finalized_height(&self) -> Result<u64, ClientError> {
+		let latest_block = self.api.blocks().at_latest().await?;
+		Ok(latest_block.number().into())
+	}
 }
 
 #[derive(Error, Debug)]

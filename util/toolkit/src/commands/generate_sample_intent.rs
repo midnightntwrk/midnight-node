@@ -65,6 +65,7 @@ mod test {
 
 	use midnight_node_toolkit::cli_parsers::hex_str_decode;
 	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
@@ -88,6 +89,7 @@ mod test {
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
 		let args = GenerateSampleIntentArgs {

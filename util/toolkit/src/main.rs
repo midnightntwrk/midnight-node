@@ -34,11 +34,16 @@ use std::{
 	error::Error,
 	fmt,
 	panic::{self, AssertUnwindSafe},
+	time::Duration,
 };
 
 use midnight_node_toolkit::{
 	ProofType, SignatureType,
-	tx_generator::{TxGenerator, source::Source},
+	serde_def::SourceTransactions,
+	tx_generator::{
+		TxGenerator,
+		source::{GetTxs, GetTxsFromUrl, Source},
+	},
 };
 
 use crate::commands::{
@@ -109,6 +114,14 @@ enum Commands {
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
 	/// Get the version information
 	Version,
+	/// Fetch
+	Fetch(FetchArgs),
+}
+
+#[derive(Args)]
+struct FetchArgs {
+	#[command(flatten)]
+	src: Source,
 }
 
 #[derive(Args)]
@@ -144,14 +157,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			.unwrap()
 			.block_on(async {
 				// Initialize the logger.
-				structured_logger::Builder::with_level("info")
+				structured_logger::Builder::new()
 					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::sink(),
+						tokio::io::stdout(),
 					))
-					.with_target_writer(
-						"midnight_node_toolkit*",
-						structured_logger::async_json::new_writer(tokio::io::stdout()),
-					)
 					.init();
 
 				// Initialize tracing (used by ledger to emit warnings)
@@ -315,6 +324,29 @@ pub(crate) async fn run_command(
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::Fetch(FetchArgs { src }) => {
+			if src.src_files.is_some() {
+				panic!("error: fetch command doesn't work with '--src-files'");
+			}
+			let start = std::time::Instant::now();
+			let txs: SourceTransactions<Signature, ProofMarker> = GetTxsFromUrl::new(
+				&src.src_url.unwrap(),
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			)
+			.get_txs()
+			.await?;
+			log::info!(
+				"fetched {} blocks in {:.3} s",
+				txs.blocks.len(),
+				start.elapsed().as_secs_f32()
+			);
+
+			// Wait a little - allows logs to reach stdout before exit
+			tokio::time::sleep(Duration::from_millis(200)).await;
 			Ok(())
 		},
 	}

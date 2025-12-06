@@ -1,6 +1,7 @@
 *.json
 !test-data/**/*.json
 .sync_cache
+toolkit.db
 
 # Test data ends up here
 out/

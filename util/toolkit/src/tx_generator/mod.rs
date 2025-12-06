@@ -18,8 +18,6 @@ use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
-	client::MidnightNodeClient,
-	indexer::Indexer,
 	remote_prover::RemoteProofServer,
 	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
@@ -102,11 +100,12 @@ where
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer =
-				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromUrl::new(indexer, src.dust_warp));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+				&url,
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))

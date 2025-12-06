@@ -13,8 +13,8 @@
 
 pub mod cli_parsers;
 pub mod client;
+pub mod fetcher;
 pub mod genesis_generator;
-pub mod indexer;
 pub mod progress;
 pub mod remote_prover;
 pub mod sender;

@@ -54,6 +54,7 @@ mod test {
 	use clap::Parser;
 	use midnight_node_toolkit::cli_parsers::hex_str_decode;
 	use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
+	use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 	use std::fs;
 	use tempfile::tempdir;
 
@@ -98,6 +99,7 @@ mod test {
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
 		let destination = Destination {
