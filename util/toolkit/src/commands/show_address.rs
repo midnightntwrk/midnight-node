@@ -1,8 +1,8 @@
+use crate::cli_parsers::{self as cli};
 use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet, WalletSeed};
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DustWallet, serialize, serialize_untagged};
-use midnight_node_toolkit::cli_parsers::{self as cli};
 use serde::Serialize;
 
 #[derive(Args, Clone)]

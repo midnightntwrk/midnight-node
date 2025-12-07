@@ -1,6 +1,6 @@
+use crate::{ProofType, SignatureType};
 use clap::Args;
 use midnight_node_ledger_helpers::{DefaultDB, TransactionWithContext, deserialize};
-use midnight_node_toolkit::{ProofType, SignatureType};
 
 #[derive(Args)]
 pub struct GetTxFromContextArgs {

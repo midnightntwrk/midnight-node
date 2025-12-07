@@ -1,5 +1,4 @@
-use clap::Args;
-use midnight_node_toolkit::{
+use crate::{
 	ProofType, SignatureType,
 	tx_generator::{
 		TxGenerator,
@@ -10,6 +9,7 @@ use midnight_node_toolkit::{
 		source::Source,
 	},
 };
+use clap::Args;
 
 #[derive(Args)]
 pub struct GenerateSampleIntentArgs {
@@ -63,8 +63,9 @@ mod test {
 	use std::fs;
 	use std::fs::remove_file;
 
-	use midnight_node_toolkit::cli_parsers::hex_str_decode;
-	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use crate::cli_parsers::hex_str_decode;
+	use crate::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use crate::tx_generator::source::FetchCacheConfig;
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
@@ -88,6 +89,7 @@ mod test {
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
 		let args = GenerateSampleIntentArgs {

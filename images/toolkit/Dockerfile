@@ -16,7 +16,7 @@ COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 ENV MIDNIGHT_PP=/.cache/midnight/zk-params
-ENV MN_SYNC_CACHE=/.cache/sync
+ENV MN_FETCH_CACHE=redb:/.cache/fetch/toolkit.db
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/
