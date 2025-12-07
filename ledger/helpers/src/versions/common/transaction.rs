@@ -23,11 +23,12 @@ use super::{
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
-type UnprovenTransaction<D> = Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+pub type UnprovenTransaction<D> =
+	Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[cfg(not(feature = "erase-proof"))]
-type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
+pub type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
 #[cfg(feature = "erase-proof")]
-type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
+pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 

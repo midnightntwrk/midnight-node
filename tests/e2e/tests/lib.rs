@@ -5,6 +5,10 @@ use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, MappingAdded, Registration,
 };
+use midnight_node_toolkit::commands::dust_balance::{
+    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
+};
+use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use std::slice::from_ref;
 use tokio::time::{Duration, timeout};
@@ -18,7 +22,8 @@ async fn register_for_dust_production() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -286,7 +291,8 @@ async fn register_2_cardano_same_dust_address_production() {
     println!("First Cardano wallet created: {:?}", address_bech_32_1);
     println!("Second Cardano wallet created: {:?}", address_bech_32_2);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering First Cardano wallet {} with DUST address {}",
@@ -459,12 +465,17 @@ async fn register_2_cardano_same_dust_address_production() {
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let bech32_address = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", bech32_address);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    println!(
+        "Midnight wallet seed: {}",
+        hex::encode(midnight_wallet_seed.as_bytes())
+    );
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         bech32_address, dust_hex
@@ -526,6 +537,28 @@ async fn cnight_produces_dust() {
         utxo_owner_hex, dust_hex,
         "UTXO owner does not match DUST address"
     );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 }
 
 #[tokio::test]
@@ -537,7 +570,8 @@ async fn deregister_from_dust_production() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -653,7 +687,8 @@ async fn alice_cannot_deregister_bob() {
 
     let bob = CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
     let bob_bech32 = bob.address_as_bech32();
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
 
     // Fund Alice and Bob wallets
     let ada_to_fund = vec![Asset::new_from_str("lovelace", "10000000")];
@@ -726,13 +761,15 @@ async fn removing_excessive_registrations() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
     );
 
-    let second_dust_hex = MidnightClient::new_dust_hex();
+    let second_midnight_wallet_seed = MidnightClient::new_seed();
+    let second_dust_hex = MidnightClient::new_dust_hex(second_midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with second DUST address {}",
         address_bech32, second_dust_hex
@@ -882,7 +919,7 @@ async fn removing_excessive_registrations() {
         .expect("No registration UTXO found after registering");
     println!("Found registration UTXO: {:?}", register_tx);
 
-    let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
+    let more_assets = vec![Asset::new_from_str("lovelace", "10000000")];
     let tx_in_for_deregister = cardano_client
         .fund_wallet(more_assets)
         .await
@@ -1004,7 +1041,8 @@ async fn create_hundred_registrations() {
 
     //run n registrations
     for i in 0..101 {
-        dust_hex = MidnightClient::new_dust_hex();
+        let midnight_wallet_seed = MidnightClient::new_seed();
+        dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
         println!(
             "Registering Cardano wallet {} with DUST address {}",
             address_bech32, dust_hex
@@ -1036,7 +1074,7 @@ async fn create_hundred_registrations() {
             .expect("No registration UTXO found after registering");
         println!("Found registration UTXO: {:?}", register_tx);
 
-        let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
+        let more_assets = vec![Asset::new_from_str("lovelace", "10000000")];
         let tx_in_for_deregister = cardano_client
             .fund_wallet(more_assets)
             .await

@@ -46,7 +46,7 @@ jobs:
       - name: Checkout Season action repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
         with:
-          repository: midnight-ntwrk/season-action
+          repository: midnightntwrk/season-action
           ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
           path: season-action
           token: ${{ secrets.MIDNIGHTCI_REPO }}
