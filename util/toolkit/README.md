@@ -4,14 +4,24 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 
 ---
 
-## 🚀 **IMPORTANT: See Usage Examples**
+## 🚀 **Quick Start: See Usage Examples**
 
-**The best way to understand how to use this CLI tool is by looking at the end-to-end test scripts.**
-
-### 👉 Check out the `toolkit-*.sh` files here:
+**👉 Check out the `toolkit-*.sh` test scripts for real usage patterns:**  
 **https://github.com/midnightntwrk/midnight-node/tree/main/scripts/tests**
 
-These scripts demonstrate real usage patterns and suggested best-practices for the toolkit.
+### 📦 Version Selection
+
+**Recommended:** Use `latest-main` for backwards compatibility and latest bugfixes:
+```bash
+docker pull midnightntwrk/midnight-node-toolkit:latest-main
+```
+
+For guaranteed compatibility with a specific node version, use matching tags:
+```bash
+# Example: both toolkit and node at version 0.18.0-rc.7
+docker pull midnightntwrk/midnight-node-toolkit:0.18.0-rc.7
+docker pull midnightntwrk/midnight-node:0.18.0-rc.7
+```
 
 ---
 
@@ -101,6 +111,14 @@ Use the `-h` flag for full usage information.
 Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGenerator` reads and send `TransactionWithContext` instead of `Transaction`. The reason is now it is necessary to know the `BlockContext` a transaction is valid.
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-from-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
+
+### Caching fetched transactions
+
+The toolkit implements a caching mechanism to avoid fetching the entire chain each time you generate a new transaction. The caching mechanism implements three backends, which can be set using the `MN_FETCH_CACHE` environment variable:
+
+- `inmemory` - no persistence, fetched transactions are not stored to disk
+- `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
+- `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
 
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
@@ -324,7 +342,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```console
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
-040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 
 ```
 
@@ -333,7 +351,7 @@ $ midnight-node-toolkit contract-address
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
->   --contract-address 040dcc237a542543f1c0e0af4a8e937f74f357a238c9d2a9fcfcd644eb0f5c70
+>   --contract-address 3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
 >   --dest-file out/contract_state.bin
 ```
 
@@ -437,7 +455,8 @@ midnight-node-toolkit \
     --to-bytes \
     register-dust-address \
     --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
-    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --destination-dust "mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y"
 ```
 
 ---
@@ -465,7 +484,7 @@ Show deserialized result of a single transaction. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction
->   --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
 
 Tx StandardTransaction {
 ...
@@ -479,10 +498,37 @@ Show deserialized result of a single transaction with its context. Two options:
 - Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
 $ midnight-node-toolkit show-transaction --with-context
->   --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
+>   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
 
 Tx TransactionWithContext {
 ...
+```
+
+### Show Ledger Parameters
+Show parsed and serialized ledger parameters. \
+It allows overriding the base parameters by passing the new values:
+```ignore
+$ midnight-node-toolkit show-ledger-parameters -r ws://localhost:9944 --c-to-m-bridge-min-amount 2000
+```
+Base parameters can be loaded in these ways:
+ - From the remote server: `-r ws://localhost:9944`
+ - By providing the serialized parameters: `--base-parameters 0x...`
+ - Otherwise, the initial ledger parameters are used.
+
+Return types:
+ - With the `--serialize` option, only the serialized parameters are returned.
+ - Otherwise, the parsed parameters and the serialized are returned.
+
+### Update Ledger Parameters
+Update the ledger parameters on the remote server via federated authority.
+
+Update parameters based on the existing ones:
+```ignore
+$ midnight-node-toolkit update-ledger-parameters -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
+```
+Update parameters based on a serialized value:
+```ignore
+$ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
 ---
@@ -554,7 +600,7 @@ $ midnight-node-toolkit show-address
 >   --network undeployed
 >   --shielded
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvqxq9k9e3s5qcpwx67zxhjfplszqlx2rx8q0egf59y0ze2827lju2mwqxr6r2x
+mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqm9zs2g
 
 ```
 

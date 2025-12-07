@@ -27,6 +27,7 @@ use std::{
 	marker::PhantomData,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum WalletSeed {
@@ -141,6 +142,42 @@ impl FromStr for WalletSeed {
 
 		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
 		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
+	}
+}
+
+#[derive(Clone)]
+pub struct Keypair(pub sr25519::Keypair);
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeypairParseError {
+	#[error("Secret URI parse error: {0}")]
+	UriParseFailed(#[from] SecretUriError),
+	#[error("Subxt signer error: {0}")]
+	SubxtSignerError(#[from] sr25519::Error),
+	#[error("Subxt error: {0}")]
+	SubxtError(#[from] subxt::Error),
+	#[error("BIP error: {0}")]
+	BipError(#[from] bip39::Error),
+}
+
+impl From<sr25519::Keypair> for Keypair {
+	fn from(val: sr25519::Keypair) -> Self {
+		Keypair(val)
+	}
+}
+
+impl FromStr for Keypair {
+	type Err = KeypairParseError;
+	fn from_str(key_str: &str) -> Result<Self, Self::Err> {
+		let key_str = key_str.trim();
+		// Supports seed phrases
+		if key_str.contains('/') {
+			let uri = SecretUri::from_str(key_str)?;
+			Ok(sr25519::Keypair::from_uri(&uri)?.into())
+		} else {
+			let phrase = Mnemonic::parse(key_str)?;
+			Ok(sr25519::Keypair::from_phrase(&phrase, None)?.into())
+		}
 	}
 }
 

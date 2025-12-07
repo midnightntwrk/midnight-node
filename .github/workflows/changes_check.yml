@@ -1,7 +1,8 @@
 # Enforces the update of a change file on every pull request
 name: "Changes Check"
 on:
-  merge_group:
+  # merge_group: - skip changes check for merge queue as we don't want merges kicked out for
+  # link 500s errors. Checking at PR level is sufficient.
   pull_request:
     # The specific activity types are listed here to include "labeled" and "unlabeled"
     # (which are not included by default for the "pull_request" trigger).

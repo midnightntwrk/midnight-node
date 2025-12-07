@@ -88,7 +88,7 @@ fn check_spec_version_matches_node_version() {
 #[test]
 fn check_toolkit_supports_new_node_version() {
 	let toolkit_runtimes_src =
-		std::fs::read_to_string("../util/toolkit/src/indexer/runtimes.rs").unwrap();
+		std::fs::read_to_string("../util/toolkit/src/fetcher/runtimes.rs").unwrap();
 
 	assert!(
 		toolkit_runtimes_src.contains(&get_runtime_spec_version()),
