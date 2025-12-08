@@ -89,3 +89,6 @@ dist
 
 # Handy to locally save images
 .bin
+
+# Toolkit cache
+toolkit.db

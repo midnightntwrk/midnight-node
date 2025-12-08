@@ -1,9 +1,7 @@
+use super::super::tx_generator::{TxGenerator, source::Source};
+use crate::{ProofType, SignatureType, cli_parsers as cli};
 use clap::Args;
 use midnight_node_ledger_helpers::{ContractAddress, LedgerContext, serialize};
-use midnight_node_toolkit::{
-	ProofType, SignatureType, cli_parsers as cli,
-	tx_generator::{TxGenerator, source::Source},
-};
 use std::{fs, path::Path};
 
 #[derive(Args)]
