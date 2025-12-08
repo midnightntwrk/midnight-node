@@ -20,7 +20,7 @@ use super::{
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
-use hex::encode as hex_encode;
+use hex::{ToHex, encode as hex_encode};
 use lazy_static::lazy_static;
 use std::{
 	collections::{HashMap, HashSet},
@@ -125,10 +125,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
-				if let Err(error) = wallet.update_dust_from_tx(&events) {
-					// TODO: should we have better error handling here?
-					println!("Failed to replay events for Dust monitoring: {error}");
-				}
+				wallet.update_dust_from_tx(&events).unwrap_or_else(|e| {
+					panic!(
+						"failed to replay dust events for tx {}: {e}",
+						tx.transaction_hash().0.0.encode_hex::<String>()
+					)
+				});
 			}
 			total_cost = total_cost + cost;
 		}
