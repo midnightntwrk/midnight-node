@@ -486,4 +486,17 @@ pub trait LedgerBridgeHf {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::get_zswap_state_root(state_key)
 	}
+
+	// Hard-fork Version
+	fn get_dust_root_history(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		timestamp_secs: u64,
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, Vec<u8>), hard_fork_test::types::LedgerApiError>>
+	{
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::get_dust_root_history(
+			state_key,
+			timestamp_secs,
+		)
+	}
 }
