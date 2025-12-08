@@ -10,8 +10,6 @@ use midnight_node_toolkit::commands::dust_balance::{
     self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
-use ogmios_client::query_ledger_state::QueryLedgerState;
-use std::slice::from_ref;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
@@ -56,11 +54,7 @@ async fn register_for_dust_production() {
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert_eq!(
         utxos.len(),
         2,
@@ -310,22 +304,14 @@ async fn register_2_cardano_same_dust_address_production() {
     let collateral_utxo_2 = faucet.request_tokens(&address_bech_32_2, 5_000_000).await;
     let tx_in_2 = faucet.request_tokens(&address_bech_32_2, 10_000_000).await;
 
-    let utxos_1 = cardano_client_1
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech_32_1))
-        .await
-        .unwrap();
+    let utxos_1 = cardano_client_1.utxos().await;
     assert_eq!(
         utxos_1.len(),
         2,
         "First wallet should have exactly two UTXOs after funding"
     );
 
-    let utxos_2 = cardano_client_2
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech_32_2))
-        .await
-        .unwrap();
+    let utxos_2 = cardano_client_2.utxos().await;
     assert_eq!(
         utxos_2.len(),
         2,
@@ -591,11 +577,7 @@ async fn deregister_from_dust_production() {
         .expect("No registration UTXO found after registering");
     println!("Found registration UTXO: {:?}", register_tx);
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert!(!utxos.is_empty(), "No UTXOs found for funding address");
     let utxo = utxos
         .iter()
@@ -757,11 +739,7 @@ async fn removing_excessive_registrations() {
     let second_tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
     let tx_in_for_deregister = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert_eq!(
         utxos.len(),
         4,

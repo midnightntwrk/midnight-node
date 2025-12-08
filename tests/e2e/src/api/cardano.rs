@@ -1,13 +1,12 @@
 use crate::config::{Constants, OgmiosClientSettings};
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::OgmiosClientError;
-use ogmios_client::jsonrpsee::{OgmiosClients, client_for_url};
-use ogmios_client::query_ledger_state::QueryLedgerState;
+use ogmios_client::jsonrpsee::client_for_url;
+use ogmios_client::query_ledger_state::{OgmiosTip, QueryLedgerState};
 use ogmios_client::transactions::{SubmitTransactionResponse, Transactions};
 use ogmios_client::types::OgmiosUtxo;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::slice::from_ref;
 use std::time::Duration;
 use tokio::time::sleep;
 use whisky::csl::{
@@ -33,8 +32,22 @@ impl From<std::io::Error> for GetUtxoError {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum OgmiosRequest {
+    QueryTip,
+    QueryUtxo { address: String },
+    SubmitTx { tx_bytes: Vec<u8> },
+}
+
+#[derive(Debug)]
+pub enum OgmiosResponse {
+    QueryTip(OgmiosTip),
+    QueryUtxo(Vec<OgmiosUtxo>),
+    SubmitTx(SubmitTransactionResponse),
+}
+
 pub struct CardanoClient {
-    pub ogmios_clients: OgmiosClients,
+    pub ogmios_settings: OgmiosClientSettings,
     pub constants: Constants,
     pub wallet: Wallet,
     pub network: Network,
@@ -43,43 +56,28 @@ pub struct CardanoClient {
 
 impl CardanoClient {
     pub async fn new(ogmios_settings: OgmiosClientSettings, constants: Constants) -> Self {
-        let ogmios_clients = client_for_url(
-            &ogmios_settings.base_url,
-            Duration::from_secs(ogmios_settings.timeout_seconds),
-        )
-        .await
-        .expect("Failed to initialize client");
-
         let wallet = Self::create_wallet();
         Self::print_addresses(&wallet, &Self::network_info(&ogmios_settings.network));
-        Self::from_wallet(ogmios_settings, constants, wallet, ogmios_clients)
+        Self::from_wallet(ogmios_settings, constants, wallet)
     }
 
     pub async fn new_from_funded(
         ogmios_settings: OgmiosClientSettings,
         constants: Constants,
     ) -> Self {
-        let ogmios_clients = client_for_url(
-            &ogmios_settings.base_url,
-            Duration::from_secs(ogmios_settings.timeout_seconds),
-        )
-        .await
-        .expect("Failed to initialize client");
-
         let wallet = Self::wallet_for_funded(constants.payments.funded_address_skey_cbor.as_str());
-        Self::from_wallet(ogmios_settings, constants, wallet, ogmios_clients)
+        Self::from_wallet(ogmios_settings, constants, wallet)
     }
 
     fn from_wallet(
         ogmios_settings: OgmiosClientSettings,
         constants: Constants,
         wallet: Wallet,
-        ogmios_clients: OgmiosClients,
     ) -> Self {
         let network_info = Self::network_info(&ogmios_settings.network);
 
         Self {
-            ogmios_clients,
+            ogmios_settings: ogmios_settings.clone(),
             constants,
             wallet,
             network: ogmios_settings.network,
@@ -191,6 +189,90 @@ impl CardanoClient {
         }
     }
 
+    async fn ogmios_request(
+        config: &OgmiosClientSettings,
+        req: OgmiosRequest,
+    ) -> Result<OgmiosResponse, OgmiosClientError> {
+        let client = client_for_url(
+            &config.base_url,
+            Duration::from_secs(config.timeout_seconds),
+        )
+        .await
+        .expect("Failed to connecto to ogmios");
+        match req {
+            OgmiosRequest::QueryTip => {
+                let ledger_state = client.get_tip().await.expect("Failed to get chain tip");
+                Ok(OgmiosResponse::QueryTip(ledger_state))
+            }
+            OgmiosRequest::QueryUtxo { address } => {
+                let utxos = client
+                    .query_utxos(&[address])
+                    .await
+                    .expect("Failed to get utxos");
+                Ok(OgmiosResponse::QueryUtxo(utxos))
+            }
+            OgmiosRequest::SubmitTx { tx_bytes } => {
+                let response = client.submit_transaction(&tx_bytes).await;
+                match response {
+                    Err(e) => Err(e),
+                    Ok(res) => Ok(OgmiosResponse::SubmitTx(res)),
+                }
+            }
+        }
+    }
+
+    // fn ogmios_request(
+    //     config: &OgmiosClientSettings,
+    //     req: OgmiosRequest,
+    // ) -> Result<OgmiosResponse, OgmiosClientError> {
+    //     let tokio_runtime =
+    //         tokio::runtime::Runtime::new().expect("Failed to get tokio runtime for ogmios request");
+    //     tokio_runtime.block_on(async {
+    //         let client = client_for_url(
+    //             &config.base_url,
+    //             Duration::from_secs(config.timeout_seconds),
+    //         )
+    //         .await
+    //         .expect("Failed to connecto to ogmios");
+    //         match req {
+    //             OgmiosRequest::QueryTip => {
+    //                 let ledger_state = client.get_tip().await.expect("Failed to get chain tip");
+    //                 Ok(OgmiosResponse::QueryTip(ledger_state))
+    //             }
+    //             OgmiosRequest::QueryUtxo { address } => {
+    //                 let utxos = client
+    //                     .query_utxos(&[address])
+    //                     .await
+    //                     .expect("Failed to get utxos");
+    //                 Ok(OgmiosResponse::QueryUtxo(utxos))
+    //             }
+    //             OgmiosRequest::SubmitTx { tx_bytes } => {
+    //                 let response = client
+    //                     .submit_transaction(&tx_bytes)
+    //                     .await
+    //                     .expect("Failed to submit transaction");
+    //                 Ok(OgmiosResponse::SubmitTx(response))
+    //             }
+    //         }
+    //     })
+    // }
+
+    pub async fn utxos(&self) -> Vec<OgmiosUtxo> {
+        let request = OgmiosRequest::QueryUtxo {
+            address: self.address_as_bech32(),
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request).await;
+        match response {
+            Ok(OgmiosResponse::QueryUtxo(utxos)) => utxos,
+            _ => vec![],
+        }
+    }
+
+    pub async fn utxo_with_max_lovelace(&self) -> Option<OgmiosUtxo> {
+        let utxos = self.utxos().await;
+        utxos.iter().max_by_key(|u| u.value.lovelace).cloned()
+    }
+
     pub async fn register(
         &self,
         midnight_address_hex: &str,
@@ -280,7 +362,16 @@ impl CardanoClient {
 
         let tx_bytes =
             hex::decode(signed_by_stake_tx.unwrap()).expect("Failed to decode hex string");
-        self.ogmios_clients.submit_transaction(&tx_bytes).await
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 
     pub async fn deregister(
@@ -375,7 +466,14 @@ impl CardanoClient {
 
         let tx_bytes =
             hex::decode(signed_by_stake_tx.unwrap()).expect("Failed to decode hex string");
-        self.ogmios_clients.submit_transaction(&tx_bytes).await
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request).await;
+        match response {
+            Ok(OgmiosResponse::SubmitTx(res)) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 
     pub async fn mint_tokens(
@@ -391,10 +489,17 @@ impl CardanoClient {
 
         let payment_addr = self.address_as_bech32();
 
-        let utxos = self
-            .ogmios_clients
-            .query_utxos(from_ref(&payment_addr))
-            .await?;
+        let request = OgmiosRequest::QueryUtxo {
+            address: payment_addr.clone(),
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        let utxos = match response {
+            OgmiosResponse::QueryUtxo(utxos) => utxos,
+            _ => vec![],
+        };
+
         assert!(
             !utxos.is_empty(),
             "No UTXOs found for payment address {}",
@@ -446,7 +551,16 @@ impl CardanoClient {
 
         let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
         let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
-        self.ogmios_clients.submit_transaction(&tx_bytes).await
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 
     pub async fn send(
@@ -482,20 +596,34 @@ impl CardanoClient {
             .sign_tx(&tx_builder.tx_hex())
             .expect("Failed to sign tx");
         let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
-        self.ogmios_clients.submit_transaction(&tx_bytes).await
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 
     pub async fn find_utxo_by_tx_id(&self, address: &str, tx_id_hex: String) -> Option<OgmiosUtxo> {
         const MAX_ATTEMPTS: u32 = 10;
-        const PAUSE: Duration = Duration::from_secs(1);
-        let tx_id_bytes = hex::decode(tx_id_hex).expect("invalid hex tx_id");
+        const PAUSE: Duration = Duration::from_secs(2);
+        let tx_id_bytes = hex::decode(tx_id_hex.clone()).expect("invalid hex tx_id");
+        let request = OgmiosRequest::QueryUtxo {
+            address: address.to_string(),
+        };
 
         for _ in 0..MAX_ATTEMPTS {
-            let utxos = self
-                .ogmios_clients
-                .query_utxos(&[address.into()])
+            let response = Self::ogmios_request(&self.ogmios_settings, request.clone())
                 .await
-                .expect("Failed to query Ogmios UTXO");
+                .unwrap();
+            let utxos = match response {
+                OgmiosResponse::QueryUtxo(utxos) => utxos,
+                _ => vec![],
+            };
 
             if let Some(found) = utxos
                 .into_iter()
@@ -532,7 +660,14 @@ impl CardanoClient {
         // Get the current block number (slot) as the starting point
         const SLOTS_NUMBER: u64 = 3;
         const LIMIT: i32 = 5;
-        let start_slot = self.ogmios_clients.get_tip().await.unwrap().slot;
+        let response = Self::ogmios_request(&self.ogmios_settings, OgmiosRequest::QueryTip)
+            .await
+            .unwrap();
+        let tip = match response {
+            OgmiosResponse::QueryTip(tip) => tip,
+            _ => panic!("Unexpected response type"),
+        };
+        let start_slot = tip.slot;
         println!(
             "Current slot is {}. Waiting for {} more slots (limit {} checks)...",
             start_slot, SLOTS_NUMBER, LIMIT
@@ -544,7 +679,13 @@ impl CardanoClient {
 
         let mut last_slot = start_slot;
         for iteration in 0..=LIMIT {
-            let tip = self.ogmios_clients.get_tip().await.unwrap();
+            let response = Self::ogmios_request(&self.ogmios_settings, OgmiosRequest::QueryTip)
+                .await
+                .unwrap();
+            let tip = match response {
+                OgmiosResponse::QueryTip(tip) => tip,
+                _ => panic!("Unexpected response type"),
+            };
 
             if tip.slot > last_slot {
                 println!("Slot advanced: {} -> {}", last_slot, tip.slot);
@@ -561,11 +702,16 @@ impl CardanoClient {
         }
 
         // After 3 slots, check if the UTXO is still present
-        let utxos = self
-            .ogmios_clients
-            .query_utxos(&[address.into()])
+        let request = OgmiosRequest::QueryUtxo {
+            address: address.to_string(),
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
             .await
             .unwrap();
+        let utxos = match response {
+            OgmiosResponse::QueryUtxo(utxos) => utxos,
+            _ => vec![],
+        };
         let still_unspent = utxos.iter().any(|u| hex::encode(u.transaction.id) == tx_id);
         if still_unspent {
             println!("UTXO {} is still unspent after 3 slots.", tx_id);
@@ -595,11 +741,16 @@ impl CardanoClient {
             .split_once('#')
             .ok_or(GetUtxoError::InvalidFormat)?;
 
-        let utxos = self
-            .ogmios_clients
-            .query_utxos(from_ref(&self.constants.payments.funded_address))
+        let request = OgmiosRequest::QueryUtxo {
+            address: self.constants.payments.funded_address.to_string(),
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
             .await
-            .map_err(|_| GetUtxoError::NotFoundOnChain)?;
+            .unwrap();
+        let utxos = match response {
+            OgmiosResponse::QueryUtxo(utxos) => utxos,
+            _ => vec![],
+        };
 
         utxos
             .into_iter()
@@ -778,7 +929,16 @@ impl CardanoClient {
 
         let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
 
-        self.ogmios_clients.submit_transaction(&tx_bytes).await
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 
     pub fn reward_address_bytes(&self) -> [u8; 29] {

@@ -1,9 +1,6 @@
 use crate::api::cardano::CardanoClient;
 use crate::config::OgmiosClientSettings;
-use ogmios_client::jsonrpsee::{OgmiosClients, client_for_url};
-use ogmios_client::query_ledger_state::QueryLedgerState;
 use ogmios_client::types::OgmiosUtxo;
-use std::time::Duration;
 use tokio::sync::Mutex;
 use whisky::Asset;
 
@@ -16,27 +13,9 @@ pub struct FaucetManager {
 }
 
 impl FaucetManager {
-    async fn utxo_with_max_lovelace(address: String, ogmios: OgmiosClients) -> Option<OgmiosUtxo> {
-        let utxos = ogmios
-            .query_utxos(&[address.to_string()])
-            .await
-            .expect("Failed to query UTXOs");
-
-        utxos.iter().max_by_key(|u| u.value.lovelace).cloned()
-    }
-
     pub async fn new(ogmios_settings: OgmiosClientSettings, faucet: CardanoClient) -> Self {
-        let ogmios = client_for_url(
-            &ogmios_settings.base_url,
-            Duration::from_secs(ogmios_settings.timeout_seconds),
-        )
-        .await
-        .expect("Failed to initialize ogmios");
-
-        let faucet_addr = faucet.address_as_bech32();
-
-        // pick the largest UTXO as manager_utxo
-        let manager_utxo = Self::utxo_with_max_lovelace(faucet_addr, ogmios)
+        let manager_utxo = faucet
+            .utxo_with_max_lovelace()
             .await
             .expect("Faucet has no UTXOs");
 
@@ -71,29 +50,19 @@ impl FaucetManager {
     async fn lock_utxo_with_fee(&self, lovelace: u64, fee: u64) -> Option<OgmiosUtxo> {
         let _guard = self.utxo_lock.lock().await;
         let expected_lovelace = lovelace + fee;
-        let ogmios = client_for_url(
-            &self.ogmios_settings.base_url,
-            Duration::from_secs(self.ogmios_settings.timeout_seconds),
-        )
-        .await
-        .ok()?;
-        let faucet_addr = self.faucet.address_as_bech32();
-        let utxos = ogmios
-            .query_utxos(&[faucet_addr])
-            .await
-            .expect("Failed to query UTXOs from ogmios");
         let manager_utxo = self.manager_utxo.lock().await.clone();
         let locked = self.locked_utxos.lock().await;
-        let locked_ids: Vec<_> = locked.iter().map(Self::utxo).collect();
+        let locked_utxos: Vec<_> = locked.iter().map(Self::utxo).collect();
         drop(locked);
 
         // pick eligible UTXO
+        let utxos = self.faucet.utxos().await;
         let utxo = utxos
             .into_iter()
             .filter(|u| {
                 let id = Self::utxo(u);
                 id != Self::utxo(&manager_utxo)
-                    && !locked_ids.contains(&id)
+                    && !locked_utxos.contains(&id)
                     && u.value.lovelace >= expected_lovelace
             })
             .max_by_key(|u| u.value.lovelace);
@@ -121,10 +90,7 @@ impl FaucetManager {
 
                 self.locked_utxos.lock().await.push(new_utxo.clone());
 
-                let new_manager =
-                    Self::utxo_with_max_lovelace(self.faucet.address_as_bech32(), ogmios)
-                        .await
-                        .expect("Faucet has no UTXOs");
+                let new_manager = self.faucet.utxo_with_max_lovelace().await.unwrap();
 
                 *self.manager_utxo.lock().await = new_manager;
 
