@@ -1,12 +1,12 @@
-use clap::Args;
-use midnight_node_ledger_helpers::{ProofMarker, Signature};
-use midnight_node_toolkit::{
+use crate::{
 	ProofType, SignatureType,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 	tx_generator::{
 		TxGenerator, TxGeneratorError, builder::Builder, destination::Destination, source::Source,
 	},
 };
+use clap::Args;
+use midnight_node_ledger_helpers::{ProofMarker, Signature};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -82,15 +82,18 @@ mod tests {
 	use std::str::FromStr;
 
 	use super::*;
-	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
-	use midnight_node_toolkit::{
+	use crate::{
 		cli_parsers::contract_address_decode,
 		t_token,
-		tx_generator::builder::{
-			BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
-			SingleTxArgs,
+		tx_generator::{
+			builder::{
+				BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
+				SingleTxArgs,
+			},
+			source::FetchCacheConfig,
 		},
 	};
+	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
 	fn resource_file(path: &str) -> String {
@@ -110,6 +113,7 @@ mod tests {
 					fetch_concurrency: 20,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
+					fetch_cache: FetchCacheConfig::InMemory,
 				},
 				destination: Destination {
 					dest_urls: vec![],

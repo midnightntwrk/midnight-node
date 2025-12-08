@@ -112,6 +112,14 @@ Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGene
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-from-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
 
+### Caching fetched transactions
+
+The toolkit implements a caching mechanism to avoid fetching the entire chain each time you generate a new transaction. The caching mechanism implements three backends, which can be set using the `MN_FETCH_CACHE` environment variable:
+
+- `inmemory` - no persistence, fetched transactions are not stored to disk
+- `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
+- `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console

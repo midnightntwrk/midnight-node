@@ -11,9 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::cli_parsers::{self as cli};
 use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet};
 use clap::Args;
-use midnight_node_toolkit::cli_parsers::{self as cli};
 
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -55,7 +55,7 @@ pub fn execute(args: RandomAddressArgs) -> String {
 
 #[cfg(test)]
 mod tests {
-	use midnight_node_toolkit::cli_parsers as cli;
+	use crate::cli_parsers as cli;
 
 	use super::RandomAddressArgs;
 	use test_case::test_case;

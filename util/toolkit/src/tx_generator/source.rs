@@ -11,22 +11,72 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::{
+	cli_parsers as cli,
+	fetcher::{fetch_all, fetch_storage},
+};
 use async_trait::async_trait;
 use clap::Args;
 use midnight_node_ledger_helpers::*;
 use std::{
 	fs::File,
 	marker::PhantomData,
-	sync::Arc,
+	str::FromStr,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use subxt::utils::H256;
 use thiserror::Error;
 
+use crate::fetcher::fetch_storage::BlockData;
 use crate::{
 	client::ClientError,
-	indexer::Indexer,
-	serde_def::{SerializedTransactionsWithContext, SourceBlockTransactions, SourceTransactions},
+	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
 };
+
+#[derive(Clone, Debug)]
+pub enum FetchCacheConfig {
+	InMemory,
+	Redb { filename: String },
+	Postgres { database_url: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FetchCacheConfigParseError {
+	#[error("could not find delimited ':'")]
+	MissingDelimiter,
+	#[error("unknown prefix for fetch source: {0}")]
+	UnknownPrefix(String),
+}
+
+impl FromStr for FetchCacheConfig {
+	type Err = FetchCacheConfigParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let prefix: String;
+		let opts: String;
+
+		match s.split_once(":") {
+			Some((s0, s1)) => {
+				prefix = s0.to_string();
+				opts = s1.to_string();
+			},
+			None => {
+				prefix = s.to_string();
+				opts = String::new();
+			},
+		}
+
+		match prefix.as_str() {
+			"redb" => {
+				let filename = opts;
+				Ok(Self::Redb { filename })
+			},
+			"inmemory" => Ok(Self::InMemory),
+			"postgres" => Ok(Self::Postgres { database_url: s.to_string() }),
+			_ => Err(FetchCacheConfigParseError::UnknownPrefix(prefix)),
+		}
+	}
+}
 
 #[derive(Args, Debug)]
 pub struct Source {
@@ -50,12 +100,25 @@ pub struct Source {
 	/// chain
 	#[arg(long, global = true)]
 	pub dust_warp: bool,
+
+	#[arg(
+		long,
+		global = true,
+		value_parser = cli::fetch_cache_config,
+		default_value = "redb:toolkit.db",
+		env = "MN_FETCH_CACHE"
+	)]
+	/// Fetch cache config. Available options:
+	/// - "inmemory" (i.e. no cache),
+	/// - "redb:<filename>" (file-cache, single-writer)
+	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
+	pub fetch_cache: FetchCacheConfig,
 }
 
 #[derive(Error, Debug)]
 pub enum SourceError {
-	#[error("failed to fetch transactions from indexer")]
-	TransactionFetchError(#[from] crate::indexer::IndexerError),
+	#[error("failed to fetch transactions")]
+	TransactionFetchError(#[from] crate::fetcher::FetchError),
 	#[error("failed to initialize midnight node client")]
 	ClientInitializationError(#[from] ClientError),
 	#[error("failed to read genesis transaction file")]
@@ -163,26 +226,21 @@ where
 	}
 }
 
-pub struct GetTxsFromUrl<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> where
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	pub indexer: Arc<Indexer<S, P>>,
+pub struct GetTxsFromUrl {
+	pub rpc_url: String,
+	pub num_fetch_workers: usize,
 	pub dust_warp: bool,
+	pub fetch_cache_config: FetchCacheConfig,
 }
 
-impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send + 'static>
-	GetTxsFromUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	pub fn new(indexer: Arc<Indexer<S, P>>, dust_warp: bool) -> Self {
-		Self { indexer, dust_warp }
+impl GetTxsFromUrl {
+	pub fn new(
+		rpc_url: &str,
+		num_fetch_workers: usize,
+		dust_warp: bool,
+		fetch_cache_config: FetchCacheConfig,
+	) -> Self {
+		Self { rpc_url: rpc_url.to_string(), num_fetch_workers, dust_warp, fetch_cache_config }
 	}
 }
 
@@ -190,7 +248,7 @@ where
 impl<
 	S: SignatureKind<DefaultDB> + Tagged,
 	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
-> GetTxs<S, P> for GetTxsFromUrl<S, P>
+> GetTxs<S, P> for GetTxsFromUrl
 where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
@@ -200,9 +258,28 @@ where
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
-		let indexer_handle = self.indexer.clone().start().await?;
-		let mut blocks = self.indexer.clone().get_blocks().await;
-		indexer_handle.stop().await?;
+		let mut blocks = match &self.fetch_cache_config {
+			FetchCacheConfig::InMemory => {
+				fetch_all(&self.rpc_url, self.num_fetch_workers, fetch_storage::InMemory::default())
+					.await?
+			},
+			FetchCacheConfig::Redb { filename } => {
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					fetch_storage::redb_backend::RedbBackend::new(filename),
+				)
+				.await?
+			},
+			FetchCacheConfig::Postgres { database_url } => {
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
+				)
+				.await?
+			},
+		};
 
 		if self.dust_warp {
 			// Add an empty block with a now() as a block_context
@@ -214,7 +291,10 @@ where
 			);
 			let context =
 				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
-			blocks.push(SourceBlockTransactions {
+			blocks.push(BlockData {
+				hash: H256::zero(),
+				parent_hash: H256::zero(),
+				number: 0,
 				transactions: Vec::new(),
 				context,
 				state_root: None,

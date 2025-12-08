@@ -24,6 +24,9 @@ midnight-node-metadata.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 blake2 = "0.10.6"
 
+[dev-dependencies]
+midnight-node-toolkit = { path = "../../util/toolkit" }
+
 [[test]]
 name = "e2e_tests"
 path = "tests/lib.rs"
