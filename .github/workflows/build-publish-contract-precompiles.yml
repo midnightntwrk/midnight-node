@@ -63,13 +63,13 @@ jobs:
           . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
           export VERSION="1.90"
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+
           echo "Tag and push ${VERSION} images"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 midnightntwrk/midnight-node-ci:${VERSION}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64 midnightntwrk/midnight-node-ci:${VERSION}-arm64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }} midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
 
           echo "Push ${VERSION} images to Docker Hub"
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-amd64
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-arm64
+          docker push midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
 
   publish_to_dockerhub:
     # needed so forks can run ci jobs
