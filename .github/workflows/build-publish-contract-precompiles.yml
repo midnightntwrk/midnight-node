@@ -10,14 +10,14 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    name: Precompile contracts (${{ matrix.platform }})
+    name: Precompile contracts (linux/${{ matrix.platform }})
     strategy:
       matrix:
         # Define matrix with platform and corresponding GitHub-hosted runner
         include:
-          - platform: linux/amd64
+          - platform: amd64
             runner: ubuntu-latest-16-core-x64 # Default x86_64 GitHub-hosted runner
-          - platform: linux/arm64
+          - platform: arm64
             runner: ubuntu-latest-8-core-arm64 # Native ARM64 GitHub-hosted runner (public preview)
 
     runs-on: ${{ matrix.runner }}
@@ -36,6 +36,12 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
 
+      - name: Login to DockerHub
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       # Log in to GitHub Container Registry
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
@@ -45,7 +51,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       # Run Earthly build with platform-specific flags
-      - name: Run Earthly build for ${{ matrix.platform }}
+      - name: Run Earthly build for linux/${{ matrix.platform }}
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
@@ -54,7 +60,16 @@ jobs:
 
           # Run Earthly platform-specific image builds
           # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
-          . ./.envrc && earthly --ci --platform=${{ matrix.platform }} --push +node-ci-image-single-platform
+          . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
+
+          export VERSION="1.90"
+          echo "Tag and push ${VERSION} images"
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 midnightntwrk/midnight-node-ci:${VERSION}-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64 midnightntwrk/midnight-node-ci:${VERSION}-arm64
+
+          echo "Push ${VERSION} images to Docker Hub"
+          docker push midnightntwrk/midnight-node-ci:${VERSION}-amd64
+          docker push midnightntwrk/midnight-node-ci:${VERSION}-arm64
 
   publish_to_dockerhub:
     # needed so forks can run ci jobs
@@ -64,36 +79,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  #v3.11.1
 
-      - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
-
       - name: Login to DockerHub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      - name: Retag and push release images (Docker Hub)
+      - name: Create multiplatform image (Docker Hub)
         run: |
           export VERSION="1.90"
 
-          echo "Pull ${VERSION} images from GHCR"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64
-
-          echo "Tag and push ${VERSION} images"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 midnightntwrk/midnight-node-ci:${VERSION}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64 midnightntwrk/midnight-node-ci:${VERSION}-arm64
-
-          echo "Push ${VERSION} images to Docker Hub"
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-amd64
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-arm64
-
           docker buildx imagetools create \
             -t midnightntwrk/midnight-node-ci:${VERSION} \
-            ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64
+            midnightntwrk/midnight-node-ci:${VERSION}-amd64 \
+            midnightntwrk/midnight-node-ci:${VERSION}-arm64
