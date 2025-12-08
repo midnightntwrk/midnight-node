@@ -39,5 +39,9 @@ sp_api::decl_runtime_apis! {
 		fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError>;
 		fn get_transaction_cost(transaction_bytes: Vec<u8>) -> Result<(StorageCost, GasCost), LedgerApiError>;
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError>;
+		/// Get dust root_history values at a given timestamp (in seconds).
+		/// Returns (utxo_root, generation_root) as 32-byte merkle tree digests.
+		/// Used for debugging dust proof verification failures.
+		fn get_dust_root_history(timestamp_secs: u64) -> Result<(Vec<u8>, Vec<u8>), LedgerApiError>;
 	}
 }

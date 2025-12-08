@@ -1191,6 +1191,9 @@ impl_runtime_apis! {
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
 		}
+		fn get_dust_root_history(timestamp_secs: u64) -> Result<(Vec<u8>, Vec<u8>), LedgerApiError> {
+			Midnight::get_dust_root_history(timestamp_secs)
+		}
 	}
 
 	impl sp_api::Metadata<Block> for Runtime {

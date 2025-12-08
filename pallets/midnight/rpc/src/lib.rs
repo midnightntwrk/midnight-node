@@ -41,6 +41,16 @@ pub trait MidnightApi<BlockHash> {
 	#[method(name = "midnight_zswapStateRoot")]
 	fn get_zswap_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
 
+	/// Get dust root_history merkle roots at a given timestamp (in seconds).
+	/// Returns (utxo_root_hex, generation_root_hex) as hex-encoded 32-byte digests.
+	/// Used for debugging dust proof verification failures.
+	#[method(name = "midnight_dustRootHistory")]
+	fn get_dust_root_history(
+		&self,
+		timestamp_secs: u64,
+		at: Option<BlockHash>,
+	) -> Result<(String, String), StateRpcError>;
+
 	#[method(name = "midnight_apiVersions")]
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>>;
 
@@ -55,6 +65,7 @@ pub enum StateRpcError {
 	UnableToGetContractState,
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
+	UnableToGetDustRootHistory,
 }
 
 #[derive(Debug)]
@@ -116,6 +127,9 @@ impl Display for StateRpcError {
 			},
 			StateRpcError::UnableToGetZSwapStateRoot => {
 				write!(f, "Unable to get requested zswap state root")
+			},
+			StateRpcError::UnableToGetDustRootHistory => {
+				write!(f, "Unable to get dust root history")
 			},
 		}
 	}
@@ -290,6 +304,25 @@ where
 			})?;
 
 		Ok(root)
+	}
+
+	fn get_dust_root_history(
+		&self,
+		timestamp_secs: u64,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<(String, String), StateRpcError> {
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let (utxo_root, generation_root) = self
+			.client
+			.runtime_api()
+			.get_dust_root_history(at, timestamp_secs)
+			.map_err(|_e| StateRpcError::UnableToGetDustRootHistory)
+			.and_then(|inner_res| {
+				inner_res.map_err(|_| StateRpcError::UnableToGetDustRootHistory)
+			})?;
+
+		Ok((hex::encode(utxo_root), hex::encode(generation_root)))
 	}
 
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>> {

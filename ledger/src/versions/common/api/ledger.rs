@@ -121,6 +121,33 @@ impl<D: DB> Ledger<D> {
 		state.coin_coms.rehash().root().unwrap()
 	}
 
+	/// Get dust root_history values at a given timestamp.
+	/// Returns (utxo_root, generation_root) - both are Option<MerkleTreeDigest>.
+	/// Returns default (zero) digest if no entry exists at or before the timestamp.
+	pub(crate) fn get_dust_root_history(
+		&self,
+		timestamp_secs: u64,
+	) -> (MerkleTreeDigest, MerkleTreeDigest) {
+		let ts = Timestamp::from_secs(timestamp_secs);
+		let utxo_root = self
+			.state
+			.dust
+			.utxo
+			.root_history
+			.get(ts)
+			.map(|x| x.0)
+			.unwrap_or_default();
+		let generation_root = self
+			.state
+			.dust
+			.generation
+			.root_history
+			.get(ts)
+			.map(|x| x.0)
+			.unwrap_or_default();
+		(utxo_root, generation_root)
+	}
+
 	// grcov-excl-stop
 	pub(crate) fn get_contract_state(
 		&self,

@@ -410,6 +410,17 @@ where
 		api.serialize(&ledger.get_zswap_state_root())
 	}
 
+	pub fn get_dust_root_history(
+		state_key: &[u8],
+		timestamp_secs: u64,
+	) -> Result<(Vec<u8>, Vec<u8>), LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let (utxo_root, generation_root) = ledger.get_dust_root_history(timestamp_secs);
+		Ok((api.serialize(&utxo_root)?, api.serialize(&generation_root)?))
+	}
+
 	pub fn mint_coins(
 		state_key: &[u8],
 		amount: u128,
