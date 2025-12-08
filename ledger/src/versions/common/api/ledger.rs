@@ -129,22 +129,9 @@ impl<D: DB> Ledger<D> {
 		timestamp_secs: u64,
 	) -> (MerkleTreeDigest, MerkleTreeDigest) {
 		let ts = Timestamp::from_secs(timestamp_secs);
-		let utxo_root = self
-			.state
-			.dust
-			.utxo
-			.root_history
-			.get(ts)
-			.map(|x| x.0)
-			.unwrap_or_default();
-		let generation_root = self
-			.state
-			.dust
-			.generation
-			.root_history
-			.get(ts)
-			.map(|x| x.0)
-			.unwrap_or_default();
+		let utxo_root = self.state.dust.utxo.root_history.get(ts).map(|x| x.0).unwrap_or_default();
+		let generation_root =
+			self.state.dust.generation.root_history.get(ts).map(|x| x.0).unwrap_or_default();
 		(utxo_root, generation_root)
 	}
 

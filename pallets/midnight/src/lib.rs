@@ -630,7 +630,9 @@ pub mod pallet {
 			LedgerApi::get_zswap_state_root(&state_key)
 		}
 
-		pub fn get_dust_root_history(timestamp_secs: u64) -> Result<(Vec<u8>, Vec<u8>), LedgerApiError> {
+		pub fn get_dust_root_history(
+			timestamp_secs: u64,
+		) -> Result<(Vec<u8>, Vec<u8>), LedgerApiError> {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			LedgerApi::get_dust_root_history(&state_key, timestamp_secs)
 		}
