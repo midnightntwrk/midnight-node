@@ -80,6 +80,19 @@ jobs:
       - name: Retag and push release images (Docker Hub)
         run: |
           export VERSION="1.90"
+
+          echo "Pull ${VERSION} images from GHCR"
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64
+          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64
+
+          echo "Tag and push ${VERSION} images"
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 midnightntwrk/midnight-node-ci:${VERSION}-amd64
+          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-arm64 midnightntwrk/midnight-node-ci:${VERSION}-arm64
+
+          echo "Push ${VERSION} images to Docker Hub"
+          docker push midnightntwrk/midnight-node-ci:${VERSION}-amd64
+          docker push midnightntwrk/midnight-node-ci:${VERSION}-arm64
+
           docker buildx imagetools create \
             -t midnightntwrk/midnight-node-ci:${VERSION} \
             ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-amd64 \
