@@ -108,6 +108,7 @@ where
 	C: BlockBackend<Block>,
 	C: BlockchainEvents<Block>,
 	C: Send + Sync + 'static,
+	C: sc_client_api::StorageProvider<Block, B>,
 	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
 	C::Api: BlockBuilder<Block>,
 	C::Api: MidnightRuntimeApi<Block>,
@@ -204,7 +205,7 @@ where
 		)))
 		.into_rpc(),
 	)?;
-	module.merge(Midnight::new(client).into_rpc())?;
+	module.merge(Midnight::<_, _, B>::new(client).into_rpc())?;
 
 	// Extend this RPC with a custom API by using the following syntax.
 	// `YourRpcStruct` should have a reference to a client, which is needed
