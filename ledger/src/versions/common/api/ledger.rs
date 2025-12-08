@@ -122,7 +122,7 @@ impl<D: DB> Ledger<D> {
 	}
 
 	/// Get dust root_history values at a given timestamp.
-	/// Returns (utxo_root, generation_root) - both are Option<MerkleTreeDigest>.
+	/// Returns (utxo_root, generation_root) - both are MerkleTreeDigest.
 	/// Returns default (zero) digest if no entry exists at or before the timestamp.
 	pub(crate) fn get_dust_root_history(
 		&self,
