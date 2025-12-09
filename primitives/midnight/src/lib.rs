@@ -59,9 +59,13 @@ pub enum TransactionTypeV2 {
 pub mod well_known_keys {
 	use super::hex;
 
+	/// Storage key for the Midnight pallet's StateKey storage item.
+	/// Computed as: twox_128("Midnight") ++ twox_128("StateKey")
 	pub const MIDNIGHT_STATE_KEY: &[u8] =
-		&hex!["2a760f9a173a6df5cd4373ff49fa999bf39a107f2d8d3854c9aba9b021f43d9c"];
+		&hex!["2a760f9a173a6df5cd4373ff49fa999bd3b3812d84b965be98ec477e3575379b"];
 
+	/// Storage key for the Midnight pallet's NetworkId storage item.
+	/// Computed as: twox_128("Midnight") ++ twox_128("NetworkId")
 	pub const MIDNIGHT_NETWORK_ID_KEY: &[u8] =
 		&hex!["2a760f9a173a6df5cd4373ff49fa999b47872dec514b30607df0c271efce9fc4"];
 }
