@@ -221,42 +221,6 @@ impl CardanoClient {
         }
     }
 
-    // fn ogmios_request(
-    //     config: &OgmiosClientSettings,
-    //     req: OgmiosRequest,
-    // ) -> Result<OgmiosResponse, OgmiosClientError> {
-    //     let tokio_runtime =
-    //         tokio::runtime::Runtime::new().expect("Failed to get tokio runtime for ogmios request");
-    //     tokio_runtime.block_on(async {
-    //         let client = client_for_url(
-    //             &config.base_url,
-    //             Duration::from_secs(config.timeout_seconds),
-    //         )
-    //         .await
-    //         .expect("Failed to connecto to ogmios");
-    //         match req {
-    //             OgmiosRequest::QueryTip => {
-    //                 let ledger_state = client.get_tip().await.expect("Failed to get chain tip");
-    //                 Ok(OgmiosResponse::QueryTip(ledger_state))
-    //             }
-    //             OgmiosRequest::QueryUtxo { address } => {
-    //                 let utxos = client
-    //                     .query_utxos(&[address])
-    //                     .await
-    //                     .expect("Failed to get utxos");
-    //                 Ok(OgmiosResponse::QueryUtxo(utxos))
-    //             }
-    //             OgmiosRequest::SubmitTx { tx_bytes } => {
-    //                 let response = client
-    //                     .submit_transaction(&tx_bytes)
-    //                     .await
-    //                     .expect("Failed to submit transaction");
-    //                 Ok(OgmiosResponse::SubmitTx(response))
-    //             }
-    //         }
-    //     })
-    // }
-
     pub async fn utxos(&self) -> Vec<OgmiosUtxo> {
         let request = OgmiosRequest::QueryUtxo {
             address: self.address_as_bech32(),
