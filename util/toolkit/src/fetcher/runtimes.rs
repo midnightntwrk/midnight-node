@@ -11,7 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::indexer::IndexerError;
+#[derive(thiserror::Error, Debug)]
+pub enum RuntimeVersionError {
+	#[error("indexer received a block with invalid node version: {0}")]
+	InvalidProtocolVersion(parity_scale_codec::Error),
+	#[error("indexer received a block made with unsupported node version {0}")]
+	UnsupportedBlockVersion(u32),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeVersion {
@@ -21,26 +27,26 @@ pub enum RuntimeVersion {
 	V0_18_1,
 }
 impl TryFrom<u32> for RuntimeVersion {
-	type Error = IndexerError;
+	type Error = RuntimeVersionError;
 	fn try_from(value: u32) -> Result<Self, Self::Error> {
 		match value {
 			000_017_000 => Ok(Self::V0_17_0),
 			000_017_001 => Ok(Self::V0_17_1),
 			000_018_000 => Ok(Self::V0_18_0),
 			000_018_001 => Ok(Self::V0_18_1),
-			_ => Err(IndexerError::UnsupportedBlockVersion(value)),
+			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
 }
 
 impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
-	type Error = IndexerError;
+	type Error = RuntimeVersionError;
 
 	fn try_from(mut value: &'a [u8]) -> Result<Self, Self::Error> {
 		use parity_scale_codec::Decode;
 		match u32::decode(&mut value) {
 			Ok(version) => Self::try_from(version),
-			Err(e) => Err(IndexerError::InvalidProtocolVersion(e)),
+			Err(e) => Err(RuntimeVersionError::InvalidProtocolVersion(e)),
 		}
 	}
 }

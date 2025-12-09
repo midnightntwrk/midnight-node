@@ -1,14 +1,38 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
+use midnight_node_e2e::faucet::FaucetManager;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, MappingAdded, Registration,
 };
-use ogmios_client::query_ledger_state::QueryLedgerState;
-use std::slice::from_ref;
+use midnight_node_toolkit::commands::dust_balance::{
+    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
+};
+use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
+use std::sync::Arc;
+use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
-use whisky::Asset;
+
+// -------- GLOBAL ASYNC FAUCET MANAGER --------
+
+static FAUCET_MANAGER: OnceCell<Arc<FaucetManager>> = OnceCell::const_new();
+
+async fn global_faucet_manager() -> Arc<FaucetManager> {
+    FAUCET_MANAGER
+        .get_or_init(|| async {
+            let settings = Settings::default();
+            let faucet_wallet =
+                CardanoClient::new_from_funded(settings.ogmios_client.clone(), settings.constants)
+                    .await;
+
+            Arc::new(FaucetManager::new(settings.ogmios_client, faucet_wallet).await)
+        })
+        .await
+        .clone()
+}
+
+// -------- TESTS --------
 
 #[tokio::test]
 async fn register_for_dust_production() {
@@ -18,28 +42,19 @@ async fn register_for_dust_production() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
     );
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert_eq!(
         utxos.len(),
         2,
@@ -131,26 +146,12 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
     let bob_cardano_hash = "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2c";
 
     // Fund UTxOs for deployment (these will be owned by funded_address)
-    let funding_assets = vec![Asset::new_from_str("lovelace", "500000000")]; // 500 ADA
-    let tx_in_utxo = cardano_client
-        .fund_wallet(funding_assets.clone())
-        .await
-        .expect("Failed to fund a wallet");
-    println!("First funding UTXO created");
-
-    // Create additional funding UTxO for second deployment
-    let tx_in_utxo_2 = cardano_client
-        .fund_wallet(funding_assets)
-        .await
-        .expect("Failed to fund a wallet");
-    println!("Second funding UTXO created");
-
-    // Create collateral for script transactions
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to generate collateral");
-    println!("Collateral UTXO created");
+    let address_bech32 = cardano_client.address_as_bech32();
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in_utxo = faucet.request_tokens(&address_bech32, 500_000_000).await;
+    let tx_in_utxo_2 = faucet.request_tokens(&address_bech32, 500_000_000).await;
+    println!("Wallet funded for governance contract deployment");
 
     // Load contract CBORs and calculate addresses and policy IDs
     let council_cbor = policies.council_forever_cbor_double_encoding();
@@ -277,8 +278,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
         CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
-    let cardano_client_2 =
-        CardanoClient::new(settings.ogmios_client.clone(), settings.constants).await;
+    let cardano_client_2 = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
     let address_bech_32_1 = cardano_client_1.address_as_bech32();
@@ -286,7 +286,8 @@ async fn register_2_cardano_same_dust_address_production() {
     println!("First Cardano wallet created: {:?}", address_bech_32_1);
     println!("Second Cardano wallet created: {:?}", address_bech_32_2);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering First Cardano wallet {} with DUST address {}",
@@ -297,42 +298,20 @@ async fn register_2_cardano_same_dust_address_production() {
         address_bech_32_2, dust_hex
     );
 
-    let collateral_utxo_1 = cardano_client_1
-        .make_collateral()
-        .await
-        .expect("Failed to create collateral");
-    let assets_1 = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in_1 = cardano_client_1
-        .fund_wallet(assets_1)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo_1 = faucet.request_tokens(&address_bech_32_1, 5_000_000).await;
+    let tx_in_1 = faucet.request_tokens(&address_bech_32_1, 10_000_000).await;
+    let collateral_utxo_2 = faucet.request_tokens(&address_bech_32_2, 5_000_000).await;
+    let tx_in_2 = faucet.request_tokens(&address_bech_32_2, 10_000_000).await;
 
-    let collateral_utxo_2 = cardano_client_2
-        .make_collateral()
-        .await
-        .expect("Failed to fund_wallet");
-    let assets_2 = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in_2 = cardano_client_2
-        .fund_wallet(assets_2)
-        .await
-        .expect("Failed to fund a wallet");
-
-    let utxos_1 = cardano_client_1
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech_32_1))
-        .await
-        .unwrap();
+    let utxos_1 = cardano_client_1.utxos().await;
     assert_eq!(
         utxos_1.len(),
         2,
         "First wallet should have exactly two UTXOs after funding"
     );
 
-    let utxos_2 = cardano_client_2
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech_32_2))
-        .await
-        .unwrap();
+    let utxos_2 = cardano_client_2.utxos().await;
     assert_eq!(
         utxos_2.len(),
         2,
@@ -459,26 +438,25 @@ async fn register_2_cardano_same_dust_address_production() {
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let bech32_address = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", bech32_address);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    println!(
+        "Midnight wallet seed: {}",
+        hex::encode(midnight_wallet_seed.as_bytes())
+    );
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         bech32_address, dust_hex
     );
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&bech32_address, 10_000_000).await;
 
     let register_tx_id = cardano_client
         .register(&dust_hex, &tx_in, &collateral_utxo)
@@ -490,10 +468,20 @@ async fn cnight_produces_dust() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
+    match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(register_tx_id),
+        )
+        .await
+    {
+        Some(_) => (),
+        None => panic!("No registration UTXO found"),
+    };
 
     let amount = 100;
     let tx_id = cardano_client
-        .mint_tokens(amount)
+        .mint_tokens(amount, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
@@ -526,6 +514,28 @@ async fn cnight_produces_dust() {
         utxo_owner_hex, dust_hex,
         "UTXO owner does not match DUST address"
     );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 }
 
 #[tokio::test]
@@ -537,22 +547,17 @@ async fn deregister_from_dust_production() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
     );
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let register_tx_id = cardano_client
         .register(&dust_hex, &tx_in, &collateral_utxo)
@@ -572,11 +577,7 @@ async fn deregister_from_dust_production() {
         .expect("No registration UTXO found after registering");
     println!("Found registration UTXO: {:?}", register_tx);
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert!(!utxos.is_empty(), "No UTXOs found for funding address");
     let utxo = utxos
         .iter()
@@ -647,33 +648,25 @@ async fn deregister_from_dust_production() {
 #[tokio::test]
 async fn alice_cannot_deregister_bob() {
     let settings = Settings::default();
+
     // Create Alice and Bob wallets
     let alice =
         CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
-
-    let bob = CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let bob = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let bob_bech32 = bob.address_as_bech32();
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
 
     // Fund Alice and Bob wallets
-    let ada_to_fund = vec![Asset::new_from_str("lovelace", "10000000")];
-    let alice_collateral = alice
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let deregister_tx_in = alice
-        .fund_wallet(ada_to_fund.clone())
-        .await
-        .expect("Failed to fund a wallet");
-
-    let bob_collateral = bob
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let register_tx_in = bob
-        .fund_wallet(ada_to_fund.clone())
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let alice_collateral = faucet
+        .request_tokens(&alice.address_as_bech32(), 5_000_000)
+        .await;
+    let deregister_tx_in = faucet
+        .request_tokens(&alice.address_as_bech32(), 10_000_000)
+        .await;
+    let bob_collateral = faucet.request_tokens(&bob_bech32, 5_000_000).await;
+    let register_tx_in = faucet.request_tokens(&bob_bech32, 10_000_000).await;
 
     // Bob registers his DUST address
     println!(
@@ -726,41 +719,30 @@ async fn removing_excessive_registrations() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
     );
 
-    let second_dust_hex = MidnightClient::new_dust_hex();
+    let second_midnight_wallet_seed = MidnightClient::new_seed();
+    let second_dust_hex = MidnightClient::new_dust_hex(second_midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with second DUST address {}",
         address_bech32, second_dust_hex
     );
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let second_assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
-    let second_tx_in = cardano_client
-        .fund_wallet(second_assets)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+    let second_tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+    let tx_in_for_deregister = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&address_bech32))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert_eq!(
         utxos.len(),
-        3,
+        4,
         "New wallet should have exactly two UTXOs after funding"
     );
 
@@ -882,12 +864,6 @@ async fn removing_excessive_registrations() {
         .expect("No registration UTXO found after registering");
     println!("Found registration UTXO: {:?}", register_tx);
 
-    let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
-    let tx_in_for_deregister = cardano_client
-        .fund_wallet(more_assets)
-        .await
-        .expect("Failed to fund a wallet");
-
     // Deregister the first mapping, so the second mapping should be active from deregistration the first one
     let deregister_tx = cardano_client
         .deregister(&tx_in_for_deregister, &register_tx, &collateral_utxo)
@@ -946,7 +922,7 @@ async fn removing_excessive_registrations() {
 
     let amount = 100;
     let tx_id = cardano_client
-        .mint_tokens(amount)
+        .mint_tokens(amount, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
@@ -989,10 +965,9 @@ async fn create_hundred_registrations() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let mut tx_in = faucet.request_tokens(&address_bech32, 500_000_000).await;
 
     let validator_address = cardano_client.constants.policies.auth_token_address();
 
@@ -1004,20 +979,23 @@ async fn create_hundred_registrations() {
 
     //run n registrations
     for i in 0..101 {
-        dust_hex = MidnightClient::new_dust_hex();
+        let midnight_wallet_seed = MidnightClient::new_seed();
+        dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
         println!(
             "Registering Cardano wallet {} with DUST address {}",
             address_bech32, dust_hex
         );
 
-        let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-        let tx_in = cardano_client
-            .fund_wallet(assets)
+        let register_tx_in = cardano_client
+            .find_utxo_by_tx_id(
+                &cardano_client.address_as_bech32(),
+                hex::encode(tx_in.transaction.id),
+            )
             .await
-            .expect("Failed to fund a wallet");
+            .expect("Failed to find UTXO for registration");
 
         register_tx_id[i] = cardano_client
-            .register(&dust_hex, &tx_in, &collateral_utxo)
+            .register(&dust_hex, &register_tx_in, &collateral_utxo)
             .await
             .expect("Failed to register transaction")
             .transaction
@@ -1026,6 +1004,15 @@ async fn create_hundred_registrations() {
             "Registration transaction submitted with hash: {}",
             hex::encode(register_tx_id[i])
         );
+        tx_in = cardano_client
+            .find_utxo_by_tx_id(
+                &cardano_client.address_as_bech32(),
+                hex::encode(register_tx_id[i]),
+            )
+            .await
+            .expect("Failed to find UTXO for next registration");
+
+        println!("UTXO for next registration: {:?}", tx_in);
     }
 
     //run n-1 deregistrations
@@ -1036,11 +1023,13 @@ async fn create_hundred_registrations() {
             .expect("No registration UTXO found after registering");
         println!("Found registration UTXO: {:?}", register_tx);
 
-        let more_assets = vec![Asset::new_from_str("lovelace", "160000000")];
         let tx_in_for_deregister = cardano_client
-            .fund_wallet(more_assets)
+            .find_utxo_by_tx_id(
+                &cardano_client.address_as_bech32(),
+                hex::encode(tx_in.transaction.id),
+            )
             .await
-            .expect("Failed to fund a wallet");
+            .expect("Failed to find UTXO for deregistration");
 
         let deregister_tx = cardano_client
             .deregister(&tx_in_for_deregister, &register_tx, &collateral_utxo)
@@ -1052,6 +1041,15 @@ async fn create_hundred_registrations() {
             "Deregistration transaction submitted with hash: {}",
             hex::encode(deregister_tx)
         );
+        tx_in = cardano_client
+            .find_utxo_by_tx_id(
+                &cardano_client.address_as_bech32(),
+                hex::encode(deregister_tx),
+            )
+            .await
+            .expect("Failed to find UTXO for next registration");
+
+        println!("UTXO for next deregistration: {:?}", tx_in);
         last_deregistration_tx_id = deregister_tx;
     }
 

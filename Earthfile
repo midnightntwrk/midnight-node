@@ -490,7 +490,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
-        apt-get upgrade && \
+        apt-get upgrade -y -qq && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
@@ -1088,7 +1088,7 @@ local-env-e2e:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
+    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
