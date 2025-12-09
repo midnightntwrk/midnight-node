@@ -233,6 +233,17 @@ pub trait LedgerBridge {
 		latest::Bridge::<Signature, Database>::get_zswap_state_root(state_key)
 	}
 
+	/*
+	 * Returns dust root_history values at a given timestamp (for debugging)
+	 */
+	fn get_dust_root_history(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		timestamp_secs: u64,
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, Vec<u8>), latest::types::LedgerApiError>> {
+		latest::Bridge::<Signature, Database>::get_dust_root_history(state_key, timestamp_secs)
+	}
+
 	fn construct_cnight_generates_dust_event(
 		value: PassFatPointerAndDecode<u128>,
 		owner: PassFatPointerAndRead<&[u8]>,
@@ -474,5 +485,18 @@ pub trait LedgerBridgeHf {
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::get_zswap_state_root(state_key)
+	}
+
+	// Hard-fork Version
+	fn get_dust_root_history(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		timestamp_secs: u64,
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, Vec<u8>), hard_fork_test::types::LedgerApiError>>
+	{
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::get_dust_root_history(
+			state_key,
+			timestamp_secs,
+		)
 	}
 }

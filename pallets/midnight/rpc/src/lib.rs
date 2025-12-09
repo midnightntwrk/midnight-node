@@ -20,11 +20,19 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
+use midnight_node_ledger::latest::Bridge as LedgerBridge;
+use midnight_primitives::well_known_keys::MIDNIGHT_STATE_KEY;
 use pallet_midnight::MidnightRuntimeApi;
-use sc_client_api::{BlockBackend, BlockchainEvents};
+use parity_scale_codec::Decode;
+use sc_client_api::{BlockBackend, BlockchainEvents, StorageProvider};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
+use sp_storage::StorageKey;
+
+// Type aliases for native ledger access
+type Signature = base_crypto::signatures::Signature;
+type Database = ledger_storage::db::ParityDb;
 use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
@@ -41,6 +49,16 @@ pub trait MidnightApi<BlockHash> {
 	#[method(name = "midnight_zswapStateRoot")]
 	fn get_zswap_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
 
+	/// Get dust root_history merkle roots at a given timestamp (in seconds).
+	/// Returns (utxo_root_hex, generation_root_hex) as hex-encoded 32-byte digests.
+	/// Used for debugging dust proof verification failures.
+	#[method(name = "midnight_dustRootHistory")]
+	fn get_dust_root_history(
+		&self,
+		timestamp_secs: u64,
+		at: Option<BlockHash>,
+	) -> Result<(String, String), StateRpcError>;
+
 	#[method(name = "midnight_apiVersions")]
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>>;
 
@@ -55,6 +73,7 @@ pub enum StateRpcError {
 	UnableToGetContractState,
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
+	UnableToGetDustRootHistory,
 }
 
 #[derive(Debug)]
@@ -116,6 +135,9 @@ impl Display for StateRpcError {
 			},
 			StateRpcError::UnableToGetZSwapStateRoot => {
 				write!(f, "Unable to get requested zswap state root")
+			},
+			StateRpcError::UnableToGetDustRootHistory => {
+				write!(f, "Unable to get dust root history")
 			},
 		}
 	}
@@ -201,14 +223,13 @@ pub struct RpcBlock<Header> {
 	pub transactions_index: Vec<(String, String)>,
 }
 
-pub struct Midnight<C, Block> {
+pub struct Midnight<C, Block, BE> {
 	/// Shared reference to the client.
 	client: Arc<C>,
-	//todo do I need this one?
-	_marker: std::marker::PhantomData<Block>,
+	_marker: std::marker::PhantomData<(Block, BE)>,
 }
 
-impl<C, Block> Midnight<C, Block> {
+impl<C, Block, BE> Midnight<C, Block, BE> {
 	pub fn new(client: Arc<C>) -> Self {
 		Self { client, _marker: Default::default() }
 	}
@@ -232,14 +253,16 @@ where
 		.ok_or(sp_api::ApiError::UsingSameInstanceForDifferentBlocks)
 }
 
-impl<C, Block> MidnightApiServer<<Block as BlockT>::Hash> for Midnight<C, Block>
+impl<C, Block, BE> MidnightApiServer<<Block as BlockT>::Hash> for Midnight<C, Block, BE>
 where
 	Block: BlockT,
+	BE: sc_client_api::backend::Backend<Block> + 'static,
 	C: Send + Sync + 'static,
 	C: ProvideRuntimeApi<Block>,
 	C: HeaderBackend<Block>,
 	C: BlockBackend<Block>,
 	C: BlockchainEvents<Block>,
+	C: StorageProvider<Block, BE>,
 	C::Api: MidnightRuntimeApi<Block>,
 {
 	fn get_state(
@@ -290,6 +313,33 @@ where
 			})?;
 
 		Ok(root)
+	}
+
+	fn get_dust_root_history(
+		&self,
+		timestamp_secs: u64,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<(String, String), StateRpcError> {
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		// Read the state key from storage using the well-known key
+		let storage_key = StorageKey(MIDNIGHT_STATE_KEY.to_vec());
+		let storage_data = self
+			.client
+			.storage(at, &storage_key)
+			.map_err(|_| StateRpcError::UnableToGetDustRootHistory)?
+			.ok_or(StateRpcError::UnableToGetDustRootHistory)?;
+
+		// Decode the SCALE-encoded BoundedVec to get the raw state key bytes
+		let state_key: Vec<u8> = Decode::decode(&mut &storage_data.0[..])
+			.map_err(|_| StateRpcError::UnableToGetDustRootHistory)?;
+
+		// Call the native ledger API directly (bypasses WASM runtime)
+		let (utxo_root, generation_root) =
+			LedgerBridge::<Signature, Database>::get_dust_root_history(&state_key, timestamp_secs)
+				.map_err(|_| StateRpcError::UnableToGetDustRootHistory)?;
+
+		Ok((hex::encode(utxo_root), hex::encode(generation_root)))
 	}
 
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>> {

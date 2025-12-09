@@ -15,7 +15,13 @@ sc-client-api.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
 sp-blockchain.workspace = true
-pallet-midnight.workspace = true
+sp-storage.workspace = true
+parity-scale-codec = { workspace = true, features = ["derive", "std"] }
+pallet-midnight = { workspace = true, features = ["std"] }
+midnight-node-ledger = { workspace = true, features = ["std"] }
+midnight-primitives = { workspace = true, features = ["std"] }
+base-crypto.workspace = true
+ledger-storage.workspace = true
 
 [dev-dependencies]
 
