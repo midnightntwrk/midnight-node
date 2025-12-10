@@ -1,4 +1,4 @@
-#cnight-generates-dust
+#runtime #client
 # Connect Ledger tx cost to Substrate weight
 
 Ticket: https://shielded.atlassian.net/browse/PM-19763
