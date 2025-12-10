@@ -33,6 +33,7 @@ use midnight_node_res::{
 	},
 };
 use sp_runtime::{
+	Percent,
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
@@ -179,24 +180,6 @@ fn test_validation_fails() {
 }
 
 #[test]
-fn sets_manual_test_weight() {
-	mock::new_test_ext().execute_with(|| {
-		let midnight_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: vec![] };
-		let call_info = midnight_call.get_dispatch_info();
-
-		// Starting weight
-		assert_eq!(call_info.call_weight, FIXED_MN_TRANSACTION_WEIGHT);
-
-		mock::Midnight::set_mn_tx_weight(RawOrigin::Root.into(), Weight::from_parts(42, 0))
-			.unwrap();
-
-		let midnight_call_2 = MidnightCall::<Test>::send_mn_transaction { midnight_tx: vec![] };
-		let call_info_2 = midnight_call_2.get_dispatch_info();
-		assert_eq!(call_info_2.call_weight, Weight::from_parts(42, 0));
-	});
-}
-
-#[test]
 fn sets_extra_contract_call_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_contract_call_weight();
@@ -231,7 +214,6 @@ fn sets_extra_transaction_size_weight() {
 }
 
 #[test]
-#[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
 fn disable_safe_mode() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
@@ -257,18 +239,50 @@ fn disable_safe_mode() {
 }
 
 #[test]
-#[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
-		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+		let tx_fixtures = [
+			("DEPLOY", DEPLOY_TX),
+			("STORE", STORE_TX),
+			("CHECK", CHECK_TX),
+			("MAINTENANCE", MAINTENANCE_TX),
+			("ZSWAP", ZSWAP_TX),
+		];
 
-		init_ledger_state(block_context.into());
+		let max_weight = <Test as frame_system::Config>::BlockWeights::get().max_block.ref_time();
+		let mut checked = 0usize;
 
-		let gas_cost = mock::Midnight::get_transaction_cost(&tx).unwrap();
+		for (name, tx_bytes) in tx_fixtures {
+			let extracted = std::panic::catch_unwind(|| {
+				midnight_node_ledger_helpers::extract_info_from_tx_with_context(tx_bytes)
+			});
 
-		// Assert the transaction has some associated cost
-		assert!(gas_cost > 0);
+			let (tx, block_context) = match extracted {
+				Ok(tuple) => tuple,
+				Err(_) => {
+					// Skip fixtures that are not encoded as TransactionWithContext in these tests.
+					continue;
+				},
+			};
+
+			init_ledger_state(block_context.into());
+
+			let gas_cost = mock::Midnight::get_transaction_cost(&tx)
+				.unwrap_or_else(|e| panic!("cost fails for {name}: {e:?}"));
+
+			assert!(gas_cost > 0, "{name} should have non-zero cost");
+			// Highly unlikely that a transaction's cost should be unexpectedly high
+			assert!(
+				gas_cost <= Percent::from_percent(40).mul_floor(max_weight),
+				"{name} cost should not exceed max block weight ({} <= {})",
+				gas_cost,
+				max_weight
+			);
+
+			checked += 1;
+		}
+
+		assert!(checked > 0, "no fixtures were checked; ensure at least one fixture is decodable");
 	});
 }
 

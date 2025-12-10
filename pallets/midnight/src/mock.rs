@@ -16,12 +16,13 @@ use crate as pallet_midnight;
 use frame_support::{
 	parameter_types,
 	traits::{ConstU16, ConstU64},
+	weights::{Weight, constants::WEIGHT_REF_TIME_PER_SECOND},
 };
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
 use sp_core::H256;
 use sp_runtime::{
-	BuildStorage,
+	BuildStorage, Perbill,
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 
@@ -72,12 +73,15 @@ impl frame_system::Config for Test {
 	type ExtensionsWeightInfo = ();
 }
 
+const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
+
 parameter_types! {
 	pub BlockWeights: frame_system::limits::BlockWeights =
-		frame_system::limits::BlockWeights::simple_max(frame_support::weights::Weight::from_parts(
-			1_000_000_000_000,
-			0,
-		));
+		frame_system::limits::BlockWeights::with_sensible_defaults(
+			// Match runtime: ~2 seconds of compute with 6s block time.
+			Weight::from_parts(2 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
+			NORMAL_DISPATCH_RATIO,
+		);
 }
 
 pub const SLOT_DURATION: u64 = 6 * 1000;

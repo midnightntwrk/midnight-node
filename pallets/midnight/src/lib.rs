@@ -612,7 +612,7 @@ pub mod pallet {
 		}
 
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
