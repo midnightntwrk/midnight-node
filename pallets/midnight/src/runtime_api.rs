@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Runtime API definition for Midnight pallet
 
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};

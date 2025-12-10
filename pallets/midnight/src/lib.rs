@@ -45,8 +45,7 @@ pub mod pallet {
 	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo,
-		active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
@@ -569,7 +568,6 @@ pub mod pallet {
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
 			let gas_cost =
 				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-
 
 			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
 		}

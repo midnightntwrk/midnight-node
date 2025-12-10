@@ -62,7 +62,8 @@ use {
 		dust::InitialNonce,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate, Transaction as LedgerTransaction,
+			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
+			Transaction as LedgerTransaction,
 		},
 	},
 	std::time::Instant,
@@ -70,8 +71,8 @@ use {
 
 use crate::common::types::{
 	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-	TransactionDetails, TransactionValidationWasCached, Tx, WrappedHash,
+	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails,
+	TransactionValidationWasCached, Tx, WrappedHash,
 };
 
 #[cfg(feature = "std")]
@@ -324,12 +325,8 @@ where
 		let was_cached =
 			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
 
-		let tx_gas_cost = Self::get_transaction_cost(
-			state_key,
-			tx_serialized,
-			&block_context,
-			max_weight,
-		)?;
+		let tx_gas_cost =
+			Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
 
 		let tx_details = Self::get_transaction_details(&tx, &ledger, tx_gas_cost)?;
 

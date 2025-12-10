@@ -13,8 +13,8 @@
 
 use crate::{
 	common::types::{
-		BlockContext, GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-		TransactionDetails, Tx,
+		BlockContext, GasCost, Hash, SystemTransactionAppliedStateRoot,
+		TransactionAppliedStateRoot, TransactionDetails, Tx,
 	},
 	hard_fork_test, latest,
 };
