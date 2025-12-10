@@ -273,7 +273,7 @@ fn test_get_mn_transaction_fee() {
 			assert!(gas_cost > 0, "{name} should have non-zero cost");
 			// Highly unlikely that a transaction's cost should be unexpectedly high
 			assert!(
-				gas_cost <= Percent::from_percent(40).mul_floor(max_weight),
+				gas_cost <= Percent::from_percent(30).mul_floor(max_weight),
 				"{name} cost should not exceed max block weight ({} <= {})",
 				gas_cost,
 				max_weight
