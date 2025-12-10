@@ -43,11 +43,7 @@ use {
 		TransactionAppliedStage, TransactionOperation,
 	},
 	base_crypto_local::{
-		cost_model::{
-			NormalizedCost as LedgerNormalizedCost, SyntheticCost as LedgerSyntheticCost,
-		},
-		hash::HashOutput,
-		time::Timestamp,
+		cost_model::NormalizedCost as LedgerNormalizedCost, hash::HashOutput, time::Timestamp,
 	},
 	coin_structure_local::coin::Nonce,
 	coin_structure_local::coin::UnshieldedTokenType,
