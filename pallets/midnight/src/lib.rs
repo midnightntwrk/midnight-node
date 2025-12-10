@@ -45,7 +45,7 @@ pub mod pallet {
 	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, BlockContext, GasCost, Tx as LedgerTx, UtxoInfo,
+		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo,
 		active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
@@ -520,12 +520,14 @@ pub mod pallet {
 			if let Call::send_mn_transaction { midnight_tx } = call {
 				let state_key = StateKey::<T>::get().expect("Failed to get state key");
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
 				let (tx_hash, _) = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
 					block_context,
 					runtime_version,
+					max_weight,
 				)
 				.map_err(|e| Self::invalid_transaction(e.into()))?;
 

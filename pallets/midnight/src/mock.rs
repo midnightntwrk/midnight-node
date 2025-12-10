@@ -13,7 +13,10 @@
 
 // grcov-excl-start
 use crate as pallet_midnight;
-use frame_support::traits::{ConstU16, ConstU64};
+use frame_support::{
+	parameter_types,
+	traits::{ConstU16, ConstU64},
+};
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
 use sp_core::H256;
@@ -38,7 +41,7 @@ frame_support::construct_runtime!(
 
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
+	type BlockWeights = BlockWeights;
 	type BlockLength = ();
 	type DbWeight = ();
 	type RuntimeOrigin = RuntimeOrigin;
@@ -67,6 +70,14 @@ impl frame_system::Config for Test {
 	type PostInherents = (); // a hook to run between inherents and `poll`/MBM logic.
 	type PostTransactions = (); // a hook to run after all transactions but before `on_idle`.
 	type ExtensionsWeightInfo = ();
+}
+
+parameter_types! {
+	pub BlockWeights: frame_system::limits::BlockWeights =
+		frame_system::limits::BlockWeights::simple_max(frame_support::weights::Weight::from_parts(
+			1_000_000_000_000,
+			0,
+		));
 }
 
 pub const SLOT_DURATION: u64 = 6 * 1000;

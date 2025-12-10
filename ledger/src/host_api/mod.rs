@@ -138,6 +138,8 @@ pub trait LedgerBridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), latest::types::LedgerApiError>>
 	{
 		latest::Bridge::<Signature, Database>::validate_transaction(
@@ -146,6 +148,7 @@ pub trait LedgerBridge {
 			tx,
 			block_context,
 			runtime_version,
+			max_weight,
 		)
 	}
 
@@ -373,6 +376,7 @@ pub trait LedgerBridgeHf {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<
 		Result<(Hash, TransactionDetails), hard_fork_test::types::LedgerApiError>,
 	> {
@@ -382,6 +386,7 @@ pub trait LedgerBridgeHf {
 			tx,
 			block_context,
 			runtime_version,
+			max_weight,
 		)
 	}
 
