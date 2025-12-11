@@ -8,6 +8,7 @@
     "run:qanet": "ts-node src/index.ts run qanet",
     "run:devnet": "ts-node src/index.ts run devnet",
     "run:testnet-02": "ts-node src/index.ts run testnet-02",
+    "run:preview": "ts-node src/index.ts run preview",
     "run:local-env": "ts-node src/index.ts run local-env",
     "run:local-env-with-indexer": "ts-node src/index.ts run local-env -p withindexer",
     "image-upgrade:node-dev-01": "ts-node src/index.ts image-upgrade node-dev-01",

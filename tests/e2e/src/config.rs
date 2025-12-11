@@ -30,7 +30,7 @@ impl Settings {
                     base_url: "ws://172.17.0.1:1337".into(),
                     #[cfg(feature="qanet")]
                     base_url: "wss://ogmios.qanet.dev.midnight.network".into(),
-                    timeout_seconds: 5,
+                    timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
                     network_info: network_info.clone(),
                 },
