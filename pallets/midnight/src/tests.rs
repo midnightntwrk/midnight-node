@@ -19,7 +19,7 @@ use crate::{
 };
 use assert_matches::assert_matches;
 use frame_support::{
-	assert_err, assert_ok, dispatch::GetDispatchInfo, pallet_prelude::Weight, traits::OnFinalize,
+	assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize,
 };
 use frame_system::RawOrigin;
 use midnight_node_ledger::types::{
