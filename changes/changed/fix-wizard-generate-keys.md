@@ -17,16 +17,4 @@ chain spec generation must succeed when using default configuration: "ChainSpec 
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
-Initial fix PR: https://github.com/midnightntwrk/midnight-node/pull/187
-
-**Additional fix**: The initial fix introduced a regression where running `wizards generate-keys` without any configuration would panic with `called Option::unwrap() on a None value` at `node/src/cfg/mod.rs:100:88`. 
-
-Fixed by making `create_chain_spec()` properly respect the configuration system:
-- Uses the `chain` value from `SubstrateCfg` (configurable via `CHAIN` env var or `CFG_PRESET`)
-- Defaults to `"dev"` when no chain is specified
-
-Now supports all usage patterns:
-- `./midnight-node wizards generate-keys` (defaults to dev)
-- `CFG_PRESET=qanet ./midnight-node wizards generate-keys` 
-- `CHAIN=local ./midnight-node wizards generate-keys`
-- `CHAIN=path/to/chain-spec.json ./midnight-node wizards generate-keys`
+PR: https://github.com/midnightntwrk/midnight-node/pull/187
