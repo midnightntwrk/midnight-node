@@ -84,7 +84,7 @@ pub struct MidnightCfg {
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 
-	/// Allow no-TLS connection upon failure
+	/// Allow non-SSL database connections (not recommended for production)
 	pub allow_non_ssl: bool,
 }
 
