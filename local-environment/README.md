@@ -61,6 +61,8 @@ In addition to well-known networks, you can launch a dynamic local environment t
 
 ### Local env – step by step
 
+> **Note:** Local development environments set `ALLOW_NON_SSL=true` to allow connections to PostgreSQL without SSL certificates. Production deployments require SSL.
+
 When first run, all images are pulled from public repositories. This may take some time.
 
 The stack is built and started. A Cardano node begins block production from a pre-configured genesis file (private testnet, no public connectivity).
