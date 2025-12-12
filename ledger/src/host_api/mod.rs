@@ -150,6 +150,28 @@ pub trait LedgerBridge {
 	}
 
 	/*
+	 * validate_guaranteed_execution()
+	 *
+	 * Validates that the guaranteed part of a transaction will succeed.
+	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 */
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), latest::types::LedgerApiError>> {
+		latest::Bridge::<Signature, Database>::validate_guaranteed_execution(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+		)
+	}
+
+	/*
 	 * get_contract_state()
 	 */
 	// Current Enabled Version
@@ -371,6 +393,23 @@ pub trait LedgerBridgeHf {
 		Result<(Hash, TransactionDetails), hard_fork_test::types::LedgerApiError>,
 	> {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+		)
+	}
+
+	// Hard-fork Version
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), hard_fork_test::types::LedgerApiError>> {
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_guaranteed_execution(
 			*self,
 			state_key,
 			tx,
