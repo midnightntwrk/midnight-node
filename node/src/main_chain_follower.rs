@@ -217,12 +217,9 @@ pub async fn create_cached_data_sources(
 	)
 	.await?;
 
-	let federated_authority_observation_pool = get_connection(
-		postgres_uri,
-		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
-	)
-	.await?;
+	let federated_authority_observation_pool =
+		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
+			.await?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
 		metrics_opt.clone(),
