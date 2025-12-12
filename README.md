@@ -269,7 +269,7 @@ Chain specifications are located in `/res/` directory.
 | RPC port | - | `--rpc-port 9944` | WebSocket RPC port (default: 9944) |
 | Node key | `NODE_KEY_FILE=/path/to/key` | `--node-key "0x..."` | Network identity key file |
 | Bootstrap nodes | `BOOTNODES="/ip4/... /ip4/..."` | `--bootnodes "/ip4/..."` | Space-separated initial peers |
-| Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections (default: false, not recommended for production) |
+| Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections |
 
 **Start single-node local network** for development:
 
