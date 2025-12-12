@@ -1,6 +1,6 @@
 # Pre-Dispatch Validation of Guaranteed Transaction Part
 
-#### status: proposed
+#### status: accepted
 #### date: 2025-12-12
 #### deciders: TBD
 
