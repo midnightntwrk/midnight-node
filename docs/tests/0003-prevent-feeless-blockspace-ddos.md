@@ -174,14 +174,14 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 | Test Case | Unit Test | Integration Test | E2E Test | Manual |
 |-----------|-----------|------------------|----------|--------|
-| TC-0003-01 | ✅ | ⬜ | ⬜ | ⬜ |
-| TC-0003-02 | ⬜ | ⬜ | ⬜ | ⬜ |
-| TC-0003-03 | ✅ | ⬜ | ⬜ | ⬜ |
-| TC-0003-04 | ⬜ | ⬜ | ⬜ | ⬜ |
-| TC-0003-05 | ⬜ | ⬜ | ⬜ | ⬜ |
-| TC-0003-06 | ⬜ | ⬜ | ⬜ | ⬜ |
+| TC-0003-01 | ✅ | ➖ | ⬜ | ⬜ |
+| TC-0003-02 | ⬜ | ➖ | ⬜ | ⬜ |
+| TC-0003-03 | ✅ | ⬜ | ⬜ | ➖ |
+| TC-0003-04 | ⬜ | ➖ | ⬜ | ➖ |
+| TC-0003-05 | ⬜ | ⬜ | ➖ | ➖ |
+| TC-0003-06 | ➖ | ⬜ | ⬜ | ⬜ |
 
-Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped
+Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
 ---
 
