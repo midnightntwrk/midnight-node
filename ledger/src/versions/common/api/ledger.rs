@@ -212,9 +212,8 @@ impl<D: DB> Ledger<D> {
 	) -> Result<(), LedgerApiError> {
 		// First, perform structural validation (well_formed check)
 		let ctx = sp.get_transaction_context(block_context.clone());
-		let valid_tx = tx
-			.0
-			.well_formed(
+		let valid_tx =
+			tx.0.well_formed(
 				&ctx.ref_state,
 				mn_ledger_local::verify::WellFormedStrictness::default(),
 				ctx.block_context.tblock,
