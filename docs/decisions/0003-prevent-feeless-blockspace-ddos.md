@@ -19,19 +19,26 @@ An attacker can exploit this by flooding the network with structurally valid tra
 
 #### DDoS Attack Vector
 
-```mermaid
-flowchart TB
-    subgraph Attack["Attack Flow"]
-        direction TB
-        A1[Attacker crafts malicious TX] --> A2[TX passes well_formed ✓]
-        A2 --> A3[TX included in block]
-        A3 --> A4[Guaranteed part FAILS]
-        A4 --> A5[No fee extracted]
-        A5 --> A6[Blockspace consumed FREE]
-    end
-
-    style A6 fill:#ff6b6b,stroke:#c92a2a,color:#fff
-```
+                         VALIDATION                           EXECUTION
+                        (Pool Entry)                      (Block Building)
+                              │                                  │
+    Transaction ─────────────►│ well_formed() ✓ ────────────────►│ apply()
+                              │                                  │
+                              │ Checks:                          │ Executes:
+                              │ • Proof validity                 │ • State modifications
+                              │ • Signature validity             │ • Contract calls
+                              │ • Balancing                      │ • Fee extraction ◄── HERE
+                              │ • Structure                      │
+                              │                                  │
+                              │ Does NOT check:                  │ Can fail with:
+                              │ • State conditions               │ • ContractNotPresent
+                              │ • Contract existence             │ • ReplayCounterMismatch
+                              │ • Replay protection              │ • InsufficientClaimable
+                              │                                  │
+                              ▼                                  ▼
+                        Enters Pool                    Failure → No Fee Paid
+                                                                 ↓
+                                                      BUT: Blockspace Consumed!
 
 **Ticket:** [PM-20944](https://shielded.atlassian.net/browse/PM-20944)
 
