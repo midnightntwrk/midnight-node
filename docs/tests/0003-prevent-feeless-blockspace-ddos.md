@@ -62,25 +62,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Transaction NOT included in block
 - Zero blockspace consumed
 
-**Test Code Location:** `pallets/midnight/src/tests.rs`
-
-```rust
-#[test]
-fn test_pre_dispatch_rejects_contract_not_present() {
-    let (tx, block_context) =
-        extract_info_from_tx_with_context(STORE_TX);
-    
-    let call = Call::send_mn_transaction { midnight_tx: tx };
-    new_test_ext().execute_with(|| {
-        init_ledger_state(block_context.into());
-        // Note: DEPLOY_TX not applied - contract doesn't exist
-        
-        let result = <Midnight as ValidateUnsigned>::pre_dispatch(&call);
-        assert!(result.is_err());
-        // Should contain ContractNotPresent error
-    });
-}
-```
+**Test Location:** `pallets/midnight/src/tests.rs`
 
 ---
 
@@ -218,13 +200,8 @@ The existing test infrastructure has pre-existing compilation issues:
 
 ### Recommended Resolution
 
-Fix in `pallets/midnight/Cargo.toml`:
-```toml
-[dev-dependencies]
-midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
-```
-
-Add type conversion or use matching types for `BlockContext`.
+1. Add `can-panic` feature to `midnight-node-ledger-helpers` in `pallets/midnight/Cargo.toml` dev-dependencies
+2. Add type conversion or use matching types for `BlockContext`
 
 ---
 
@@ -232,29 +209,13 @@ Add type conversion or use matching types for `BlockContext`.
 
 For immediate validation without fixing test infrastructure:
 
-### 1. Start Dev Node
-```bash
-cargo run --release -- --dev
-```
-
-### 2. Monitor Logs
-Watch for:
-```
-Pre-dispatch validation failed: guaranteed part would fail: ContractNotPresent
-```
-
-### 3. Submit Malicious Transaction
-Using toolkit or RPC, attempt to call non-existent contract:
-```bash
-# Craft and submit transaction to non-existent contract
-curl -X POST localhost:9944 -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"author_submitExtrinsic","params":["0x<malicious_tx>"],"id":1}'
-```
-
-### 4. Verify Rejection
-- RPC returns error (not accepted)
-- No `TxApplied` event emitted
-- Block does not contain the transaction
+| Step | Action | Expected Outcome |
+|------|--------|------------------|
+| 1 | Start dev node with `--dev` flag | Node running locally |
+| 2 | Monitor node logs | Watch for "Pre-dispatch validation failed" messages |
+| 3 | Submit transaction to non-existent contract via RPC | RPC returns error |
+| 4 | Check block contents | Transaction NOT included in block |
+| 5 | Verify no `TxApplied` event | Event log empty for this transaction |
 
 ---
 
