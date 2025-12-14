@@ -193,21 +193,6 @@ Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skippe
 
 ---
 
-## Test Infrastructure Notes
-
-### Status: ✅ FIXED
-
-The pallet test infrastructure has been fixed. Tests now compile and run successfully.
-
-### Fix Applied
-
-Added required feature flags to `pallets/midnight/Cargo.toml` dev-dependencies:
-
-| Dependency | Feature Added | Purpose |
-|------------|---------------|---------|
-| `midnight-node-ledger-helpers` | `can-panic` | Enables `extract_info_from_tx_with_context` |
-| `midnight-node-ledger` | `std`, `test-utils` | Enables `BlockContext` type conversion |
-
 ### Test Results
 
 All 13 pallet tests pass (3 ignored for unrelated reasons).
