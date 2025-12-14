@@ -20,31 +20,31 @@ An attacker can exploit this by flooding the network with structurally valid tra
 #### DDoS Attack Vector
 
 ```mermaid
-flowchart TD
-    subgraph Attack["DDoS Attack (Before Fix)"]
-        A1[Attacker crafts malicious TX] --> A2[TX passes well_formed check ✓]
-        A2 --> A3[TX enters transaction pool]
-        A3 --> A4[TX included in block]
-        A4 --> A5[Guaranteed part FAILS ❌]
-        A5 --> A6[No fee extracted]
-        A6 --> A7[Blockspace consumed for FREE]
-        A7 --> A8[Repeat to fill blocks]
+flowchart TB
+    subgraph Attack["❌ DDoS Attack (Before Fix)"]
+        direction TB
+        A1[Attacker crafts malicious TX] --> A2[TX passes well_formed ✓]
+        A2 --> A3[TX included in block]
+        A3 --> A4[Guaranteed part FAILS]
+        A4 --> A5[No fee extracted]
+        A5 --> A6[Blockspace consumed FREE]
     end
 
-    subgraph Defense["With Pre-Dispatch Fix"]
-        B1[Attacker crafts malicious TX] --> B2[TX passes well_formed check ✓]
-        B2 --> B3[TX enters transaction pool]
-        B3 --> B4[pre_dispatch validates guaranteed part]
-        B4 --> B5{Will guaranteed succeed?}
-        B5 -->|No| B6[TX REJECTED 🛑]
-        B6 --> B7[No blockspace consumed]
-        B5 -->|Yes| B8[TX included in block]
-        B8 --> B9[Fee extracted ✓]
+    Attack --> Defense
+
+    subgraph Defense["✅ With Pre-Dispatch Fix"]
+        direction TB
+        B1[Attacker crafts malicious TX] --> B2[TX passes well_formed ✓]
+        B2 --> B3[pre_dispatch validates]
+        B3 --> B4{Guaranteed OK?}
+        B4 -->|No| B5[TX REJECTED]
+        B4 -->|Yes| B6[TX included]
+        B6 --> B7[Fee extracted]
     end
 
-    style A7 fill:#ff6b6b,stroke:#c92a2a,color:#fff
-    style B6 fill:#51cf66,stroke:#2f9e44,color:#fff
-    style B9 fill:#51cf66,stroke:#2f9e44,color:#fff
+    style A6 fill:#ff6b6b,stroke:#c92a2a,color:#fff
+    style B5 fill:#51cf66,stroke:#2f9e44,color:#fff
+    style B7 fill:#51cf66,stroke:#2f9e44,color:#fff
 ```
 
 **Ticket:** [PM-20944](https://shielded.atlassian.net/browse/PM-20944)
