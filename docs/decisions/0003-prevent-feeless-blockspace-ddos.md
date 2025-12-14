@@ -30,21 +30,7 @@ flowchart TB
         A5 --> A6[Blockspace consumed FREE]
     end
 
-    Attack --> Defense
-
-    subgraph Defense["✅ With Pre-Dispatch Fix"]
-        direction TB
-        B1[Attacker crafts malicious TX] --> B2[TX passes well_formed ✓]
-        B2 --> B3[pre_dispatch validates]
-        B3 --> B4{Guaranteed OK?}
-        B4 -->|No| B5[TX REJECTED]
-        B4 -->|Yes| B6[TX included]
-        B6 --> B7[Fee extracted]
-    end
-
     style A6 fill:#ff6b6b,stroke:#c92a2a,color:#fff
-    style B5 fill:#51cf66,stroke:#2f9e44,color:#fff
-    style B7 fill:#51cf66,stroke:#2f9e44,color:#fff
 ```
 
 **Ticket:** [PM-20944](https://shielded.atlassian.net/browse/PM-20944)
