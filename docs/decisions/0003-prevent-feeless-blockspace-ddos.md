@@ -30,18 +30,44 @@ An attacker can exploit this by flooding the network with structurally valid tra
                               │ • Balancing                      │ • Fee extraction ◄── HERE
                               │ • Structure                      │
                               │                                  │
-                              │ Does NOT check:                  │ Can fail with (examples):
-                              │ • State conditions               │ • ContractNotPresent
-                              │ • Contract existence             │ • ReplayProtectionViolation
-                              │ • Replay protection              │ • InsufficientClaimable
-                              │ • Balance sufficiency            │ • Zswap errors
-                              │                                  │ • Transcript errors
-                              │                                  │ • And many more...
+                              │ Does NOT check:                  │
+                              │ • State conditions               │
+                              │ • Contract existence             │
+                              │ • Replay protection              │
+                              │ • Balance sufficiency            │
                               │                                  │
                               ▼                                  ▼
                         Enters Pool                    Failure → No Fee Paid
                                                                  ↓
                                                       BUT: Blockspace Consumed!
+
+#### Guaranteed Part Failure Vectors
+
+The following `TransactionInvalid` errors can occur during guaranteed part execution, causing fee-free blockspace consumption:
+
+| Category | Error | Description |
+|----------|-------|-------------|
+| **Contract** | `ContractNotPresent` | Call to non-existent contract |
+| | `ContractAlreadyDeployed` | Contract already deployed at address |
+| | `VerifierKeyNotFound` | Missing verifier key for operation |
+| | `VerifierKeyAlreadyPresent` | Verifier key already exists |
+| **Replay** | `ReplayCounterMismatch` | Contract replay counter mismatch |
+| | `ReplayProtectionViolation` | TTL expired, TTL too far in future, or intent already exists |
+| **Balance** | `InsufficientClaimable` | Not enough claimable balance |
+| | `BalanceCheckOutOfBounds` | Balance check failed (overflow/underflow) |
+| | `RewardTooSmall` | Reward claim below minimum threshold |
+| **Zswap** | `NullifierAlreadyPresent` | Double-spend attempt |
+| | `CommitmentAlreadyPresent` | Faerie-gold attempt |
+| | `UnknownMerkleRoot` | Invalid coin tree root |
+| **Execution** | `Transcript` | Onchain runtime execution failure |
+| | `EffectsMismatch` | Declared effects don't match computed |
+| **UTXO** | `InputNotInUtxos` | Input not in UTXO set |
+| **Dust** | `DustDoubleSpend` | Dust nullifier already spent |
+| | `DustDeregistrationNotRegistered` | Deregistration for unregistered user |
+| **Other** | `GenerationInfoAlreadyPresent` | Generation info already exists |
+| | `InvariantViolation` | Ledger invariant violated |
+
+All of these can be exploited to consume blockspace without paying fees if not caught before block inclusion.
 
 **Ticket:** [PM-20944](https://shielded.atlassian.net/browse/PM-20944)
 
