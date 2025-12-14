@@ -183,20 +183,6 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped
 
-### Implemented Unit Tests
-
-| Test Function | Covers | Status |
-|---------------|--------|--------|
-| `test_pre_dispatch_accepts_valid_transaction` | TC-0003-03 | ✅ Pass |
-| `test_pre_dispatch_rejects_contract_not_present` | TC-0003-01 | ✅ Pass |
-| `test_pre_dispatch_rejects_malformed_transaction` | Malformed tx | ✅ Pass |
-
----
-
-### Test Results
-
-All 13 pallet tests pass (3 ignored for unrelated reasons).
-
 ---
 
 ## Manual Testing Protocol
