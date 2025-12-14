@@ -21,7 +21,7 @@ An attacker can exploit this by flooding the network with structurally valid tra
 
 ```mermaid
 flowchart TB
-    subgraph Attack["❌ DDoS Attack (Before Fix)"]
+    subgraph Attack["DDoS Attack Vector"]
         direction TB
         A1[Attacker crafts malicious TX] --> A2[TX passes well_formed ✓]
         A2 --> A3[TX included in block]
