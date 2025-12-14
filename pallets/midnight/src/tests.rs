@@ -177,6 +177,59 @@ fn test_validation_fails() {
 }
 
 #[test]
+fn test_pre_dispatch_accepts_valid_transaction() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+
+		// pre_dispatch should succeed for a valid transaction
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+	})
+}
+
+#[test]
+fn test_pre_dispatch_rejects_contract_not_present() {
+	// STORE_TX requires a deployed contract, so without DEPLOY_TX it will fail
+	// This tests the DDoS mitigation: transactions that would fail the guaranteed
+	// part are rejected at pre_dispatch time, before consuming blockspace.
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+		// Note: DEPLOY_TX not applied - contract doesn't exist
+
+		// pre_dispatch should fail because the contract doesn't exist
+		let result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
+		assert!(
+			result.is_err(),
+			"pre_dispatch should reject transaction with missing contract dependency"
+		);
+	});
+}
+
+#[test]
+fn test_pre_dispatch_rejects_malformed_transaction() {
+	let call = MidnightCall::send_mn_transaction { midnight_tx: vec![1, 2, 3] };
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// pre_dispatch should fail for malformed transaction
+		assert_err!(
+			<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call),
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(
+				LedgerApiError::Deserialization(DeserializationError::Transaction).into()
+			))
+		);
+	});
+}
+
+#[test]
 fn sets_extra_transaction_size_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_transaction_size_weight();
