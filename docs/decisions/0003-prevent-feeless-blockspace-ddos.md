@@ -30,10 +30,13 @@ An attacker can exploit this by flooding the network with structurally valid tra
                               │ • Balancing                      │ • Fee extraction ◄── HERE
                               │ • Structure                      │
                               │                                  │
-                              │ Does NOT check:                  │ Can fail with:
+                              │ Does NOT check:                  │ Can fail with (examples):
                               │ • State conditions               │ • ContractNotPresent
-                              │ • Contract existence             │ • ReplayCounterMismatch
+                              │ • Contract existence             │ • ReplayProtectionViolation
                               │ • Replay protection              │ • InsufficientClaimable
+                              │ • Balance sufficiency            │ • Zswap errors
+                              │                                  │ • Transcript errors
+                              │                                  │ • And many more...
                               │                                  │
                               ▼                                  ▼
                         Enters Pool                    Failure → No Fee Paid
