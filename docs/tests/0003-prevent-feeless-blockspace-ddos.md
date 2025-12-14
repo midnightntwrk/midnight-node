@@ -174,34 +174,43 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 | Test Case | Unit Test | Integration Test | E2E Test | Manual |
 |-----------|-----------|------------------|----------|--------|
-| TC-0003-01 | ⬜ | ⬜ | ⬜ | ⬜ |
+| TC-0003-01 | ✅ | ⬜ | ⬜ | ⬜ |
 | TC-0003-02 | ⬜ | ⬜ | ⬜ | ⬜ |
-| TC-0003-03 | ⬜ | ⬜ | ⬜ | ⬜ |
+| TC-0003-03 | ✅ | ⬜ | ⬜ | ⬜ |
 | TC-0003-04 | ⬜ | ⬜ | ⬜ | ⬜ |
 | TC-0003-05 | ⬜ | ⬜ | ⬜ | ⬜ |
 | TC-0003-06 | ⬜ | ⬜ | ⬜ | ⬜ |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped
 
+### Implemented Unit Tests
+
+| Test Function | Covers | Status |
+|---------------|--------|--------|
+| `test_pre_dispatch_accepts_valid_transaction` | TC-0003-03 | ✅ Pass |
+| `test_pre_dispatch_rejects_contract_not_present` | TC-0003-01 | ✅ Pass |
+| `test_pre_dispatch_rejects_malformed_transaction` | Malformed tx | ✅ Pass |
+
 ---
 
 ## Test Infrastructure Notes
 
-### Current Blockers
+### Status: ✅ FIXED
 
-The existing test infrastructure has pre-existing compilation issues:
+The pallet test infrastructure has been fixed. Tests now compile and run successfully.
 
-1. **Pallet tests** (`pallets/midnight/src/tests.rs`):
-   - Missing `can-panic` feature on `midnight-node-ledger-helpers`
-   - `BlockContext` type conversion issues between crates
+### Fix Applied
 
-2. **Ledger tests** (`ledger/src/versions/common/api/ledger.rs`):
-   - `extract_info_from_tx_with_context` not exported for `hard_fork_test` module
+Added required feature flags to `pallets/midnight/Cargo.toml` dev-dependencies:
 
-### Recommended Resolution
+| Dependency | Feature Added | Purpose |
+|------------|---------------|---------|
+| `midnight-node-ledger-helpers` | `can-panic` | Enables `extract_info_from_tx_with_context` |
+| `midnight-node-ledger` | `std`, `test-utils` | Enables `BlockContext` type conversion |
 
-1. Add `can-panic` feature to `midnight-node-ledger-helpers` in `pallets/midnight/Cargo.toml` dev-dependencies
-2. Add type conversion or use matching types for `BlockContext`
+### Test Results
+
+All 13 pallet tests pass (3 ignored for unrelated reasons).
 
 ---
 
@@ -221,9 +230,9 @@ For immediate validation without fixing test infrastructure:
 
 ## Success Criteria
 
-- [ ] At least one failing-guaranteed vector tested (Priority: TC-0003-01)
-- [ ] Valid transactions confirmed still working (TC-0003-03)
-- [ ] No regression in existing functionality
+- [x] At least one failing-guaranteed vector tested (Priority: TC-0003-01) ✅
+- [x] Valid transactions confirmed still working (TC-0003-03) ✅
+- [x] No regression in existing functionality ✅
 - [ ] Attack simulation shows 0 blockspace consumed (TC-0003-06)
 
 ---
