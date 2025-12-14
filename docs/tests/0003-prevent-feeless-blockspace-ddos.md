@@ -62,6 +62,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Transaction NOT included in block
 - Zero blockspace consumed
 
+**Success Criteria:** ✅ At least one failing-guaranteed vector is tested and rejected
+
 **Test Location:** `pallets/midnight/src/tests.rs`
 
 ---
@@ -85,6 +87,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Second submission fails with `ReplayProtectionViolation`
 - Replay transaction NOT included in block
 
+**Success Criteria:** Replay attack vector is blocked at pre_dispatch
+
 ---
 
 ### TC-0003-03: Valid Transaction Passes
@@ -105,6 +109,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - `pre_dispatch` returns `Ok(())`
 - Transaction executes successfully
 - Events emitted correctly
+
+**Success Criteria:** ✅ Valid transactions still work; no regression in existing functionality
 
 ---
 
@@ -128,6 +134,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Fees extracted (guaranteed succeeded)
 - Fallible part rolled back
 
+**Success Criteria:** Partial success transactions correctly pass pre_dispatch and pay fees
+
 ---
 
 ### TC-0003-05: Validation Does Not Modify State
@@ -146,6 +154,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 **Expected Result:**
 - State hashes match
 - No state modifications from validation
+
+**Success Criteria:** Validation is purely read-only with no side effects
 
 ---
 
@@ -167,6 +177,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - All 10 transactions rejected at `pre_dispatch`
 - 0 transactions in block
 - 0 blockspace consumed by attack transactions
+
+**Success Criteria:** Attack simulation shows 0 blockspace consumed by malicious transactions
 
 ---
 
@@ -196,15 +208,6 @@ For immediate validation without fixing test infrastructure:
 | 3 | Submit transaction to non-existent contract via RPC | RPC returns error |
 | 4 | Check block contents | Transaction NOT included in block |
 | 5 | Verify no `TxApplied` event | Event log empty for this transaction |
-
----
-
-## Success Criteria
-
-- [x] At least one failing-guaranteed vector tested (Priority: TC-0003-01) ✅
-- [x] Valid transactions confirmed still working (TC-0003-03) ✅
-- [x] No regression in existing functionality ✅
-- [ ] Attack simulation shows 0 blockspace consumed (TC-0003-06)
 
 ---
 
