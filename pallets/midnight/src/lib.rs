@@ -51,7 +51,8 @@ pub mod pallet {
 	use scale_info::prelude::{string::String, vec::Vec};
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, GasCost, StorageCost, Tx as LedgerTx, UtxoInfo,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
@@ -381,7 +382,16 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
+		#[pallet::weight({
+                if SafeMode::<T>::get() {
+                    ConfigurableWeight::<T>::get()
+                } else {
+                    // TODO: Now that we always revalidate txs, we don't want to validate the tx again to calculate the Weight
+                    //       Weight calculation and benchmarks should be revisited anyway once new Ledger's Cost Model is finished.
+                    //       Deleted code can be checked in: https://github.com/midnightntwrk/midnight-node/pull/1054
+                    ConfigurableWeight::<T>::get()
+                }
+            })]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
@@ -579,14 +589,12 @@ pub mod pallet {
 			if let Call::send_mn_transaction { midnight_tx } = call {
 				let state_key = StateKey::<T>::get().expect("Failed to get state key");
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
 				let (tx_hash, _) = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
 					block_context,
 					runtime_version,
-					max_weight,
 				)
 				.map_err(|e| Self::invalid_transaction(e.into()))?;
 				ValidTransaction::with_tag_prefix("Midnight")
@@ -611,23 +619,15 @@ pub mod pallet {
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
-		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+		pub fn get_transaction_cost(tx: &[u8]) -> Result<(StorageCost, GasCost), LedgerApiError> {
+			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			let block_context = Self::get_block_context();
-			let max_weight = T::BlockWeights::get().max_block.ref_time();
-			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
+			LedgerApi::get_transaction_cost(&state_key, tx, block_context)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get().expect("Failed to get state key");
 			LedgerApi::get_zswap_state_root(&state_key)
-		}
-
-		// Helper for the weight macro
-		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let gas_cost = Self::get_transaction_cost(tx).unwrap_or(0);
-
-			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
 		}
 
 		pub fn get_dust_root_history(

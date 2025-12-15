@@ -13,16 +13,12 @@
 
 // grcov-excl-start
 use crate as pallet_midnight;
-use frame_support::{
-	parameter_types,
-	traits::{ConstU16, ConstU64},
-	weights::{Weight, constants::WEIGHT_REF_TIME_PER_SECOND},
-};
+use frame_support::traits::{ConstU16, ConstU64};
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
 use sp_core::H256;
 use sp_runtime::{
-	BuildStorage, Perbill,
+	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 
@@ -42,7 +38,7 @@ frame_support::construct_runtime!(
 
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = BlockWeights;
+	type BlockWeights = ();
 	type BlockLength = ();
 	type DbWeight = ();
 	type RuntimeOrigin = RuntimeOrigin;
@@ -71,17 +67,6 @@ impl frame_system::Config for Test {
 	type PostInherents = (); // a hook to run between inherents and `poll`/MBM logic.
 	type PostTransactions = (); // a hook to run after all transactions but before `on_idle`.
 	type ExtensionsWeightInfo = ();
-}
-
-const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
-
-parameter_types! {
-	pub BlockWeights: frame_system::limits::BlockWeights =
-		frame_system::limits::BlockWeights::with_sensible_defaults(
-			// Match runtime: ~2 seconds of compute with 6s block time.
-			Weight::from_parts(2 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
-			NORMAL_DISPATCH_RATIO,
-		);
 }
 
 pub const SLOT_DURATION: u64 = 6 * 1000;
