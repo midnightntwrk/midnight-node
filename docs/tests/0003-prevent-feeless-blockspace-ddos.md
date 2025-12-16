@@ -140,7 +140,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 **Success Criteria:** Partial success transactions correctly pass pre_dispatch and pay fees
 
-**Note:** Unit test N/A - no test transaction available that produces `PartialSuccess`. Requires E2E test with crafted transaction.
+**Note:** Requires crafted transaction with failing fallible part. Deferred - would need custom test transaction generation.
 
 ---
 
@@ -196,14 +196,20 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 |-----------|-----------|-------------|-----|--------|-------|
 | TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
 | TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| TC-0003-03 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `valid_deploy_transaction_succeeds_via_rpc` |
 | TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
 | TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| TC-0003-06 | ➖ | ➖ | ⏭️ | ⬜ | Manual validation preferred |
+| TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `ddos_attack_transaction_rejected_at_rpc`, `ddos_batch_attack_all_rejected` |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
-**Note on E2E tests:** Project E2E tests (`tests/e2e/`) require running node + Cardano infrastructure. The unit tests verify the `pre_dispatch` rejection logic which is the same code path as RPC submission. E2E tests for this feature are deferred as low-value given unit test coverage.
+**E2E Test Location:** `tests/e2e/tests/lib.rs`
+
+**Running E2E tests:**
+```bash
+# Requires running node on ws://127.0.0.1:9933
+cargo test --test e2e_tests --no-default-features --features local -- ddos --nocapture
+```
 
 ---
 

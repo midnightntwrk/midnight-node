@@ -1084,3 +1084,122 @@ async fn create_hundred_registrations() {
         registration.unwrap()
     );
 }
+
+// ============================================================================
+// DDoS Mitigation E2E Tests (TC-0003-06)
+// Tests for ADR-0003: Pre-Dispatch Validation of Guaranteed Transaction Part
+// ============================================================================
+
+/// TC-0003-06: DDoS Attack Prevention - Single Transaction
+///
+/// Verifies that a transaction which would fail the guaranteed part
+/// (due to ContractNotPresent) is rejected at the RPC level via pre_dispatch.
+/// This prevents the DDoS attack vector where attackers fill blocks with
+/// failing transactions that don't pay fees.
+#[tokio::test]
+async fn ddos_attack_transaction_rejected_at_rpc() {
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // STORE_TX requires the contract to be deployed first.
+    // Without DEPLOY_TX, it will fail at pre_dispatch with ContractNotPresent.
+    // This simulates an attacker trying to consume blockspace without paying fees.
+    println!("=== TC-0003-06: DDoS Attack Prevention Test ===");
+    println!("Submitting STORE_TX without prior DEPLOY_TX...");
+    println!("Expected: Transaction rejected at pre_dispatch (ContractNotPresent)");
+
+    let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
+
+    assert!(
+        result.is_ok(),
+        "Transaction should be rejected at pre_dispatch, but was accepted: {:?}",
+        result.err()
+    );
+
+    let error_msg = result.unwrap();
+    println!("✓ Transaction rejected with error: {}", error_msg);
+
+    // The error should indicate an invalid transaction
+    // (exact message depends on subxt error formatting)
+    assert!(
+        error_msg.to_lowercase().contains("invalid")
+            || error_msg.to_lowercase().contains("transaction")
+            || error_msg.contains("1010"), // Substrate InvalidTransaction code
+        "Expected InvalidTransaction error, got: {}",
+        error_msg
+    );
+
+    println!("✓ TC-0003-06 PASSED: Attack transaction rejected, no blockspace consumed");
+}
+
+/// TC-0003-06: DDoS Attack Prevention - Batch Attack
+///
+/// Verifies that multiple attack transactions are all rejected.
+/// Simulates an attacker attempting to flood the network with failing transactions.
+#[tokio::test]
+async fn ddos_batch_attack_all_rejected() {
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== TC-0003-06: Batch Attack Prevention Test ===");
+    println!("Submitting 5 attack transactions (STORE_TX without DEPLOY_TX)...");
+
+    let mut rejected_count = 0;
+    let total_attacks = 5;
+
+    for i in 0..total_attacks {
+        let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
+        if result.is_ok() {
+            rejected_count += 1;
+            println!("  Attack tx {}/{} rejected ✓", i + 1, total_attacks);
+        } else {
+            println!(
+                "  Attack tx {}/{} unexpectedly accepted! Error: {:?}",
+                i + 1,
+                total_attacks,
+                result.err()
+            );
+        }
+    }
+
+    assert_eq!(
+        rejected_count, total_attacks,
+        "All {} attack transactions should be rejected, but only {} were",
+        total_attacks, rejected_count
+    );
+
+    println!(
+        "✓ TC-0003-06 PASSED: All {} attack transactions rejected",
+        total_attacks
+    );
+}
+
+/// TC-0003-03 E2E: Valid Transaction Succeeds
+///
+/// Confirms no regression - valid transactions should still be accepted.
+/// Note: This test requires a fresh node state where the contract hasn't been deployed.
+#[tokio::test]
+#[ignore = "Requires fresh node state - run manually with cargo test-e2e-local"]
+async fn valid_deploy_transaction_succeeds_via_rpc() {
+    use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== TC-0003-03 E2E: Valid Transaction Test ===");
+    println!("Submitting valid DEPLOY_TX...");
+
+    let result = client.submit_expecting_success(DEPLOY_TX.to_vec()).await;
+
+    assert!(
+        result.is_ok(),
+        "Valid DEPLOY_TX should be accepted, but was rejected: {:?}",
+        result.err()
+    );
+
+    println!("✓ TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
+}
