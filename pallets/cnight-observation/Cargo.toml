@@ -52,4 +52,4 @@ std = [
 ]
 
 [package.metadata.cargo-shear]
-ignored = ["sp-io"]
+ignored = ["sp-io", "parity-scale-codec"]
