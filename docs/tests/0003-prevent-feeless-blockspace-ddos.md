@@ -87,7 +87,9 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Second submission fails with `ReplayProtectionViolation`
 - Replay transaction NOT included in block
 
-**Success Criteria:** Replay attack vector is blocked at pre_dispatch
+**Success Criteria:** ✅ Replay attack vector is blocked at pre_dispatch
+
+**Test Location:** `pallets/midnight/src/tests.rs`
 
 ---
 
@@ -111,6 +113,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - Events emitted correctly
 
 **Success Criteria:** ✅ Valid transactions still work; no regression in existing functionality
+
+**Test Location:** `pallets/midnight/src/tests.rs`
 
 ---
 
@@ -136,6 +140,8 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 **Success Criteria:** Partial success transactions correctly pass pre_dispatch and pay fees
 
+**Note:** Unit test N/A - no test transaction available that produces `PartialSuccess`. Requires E2E test with crafted transaction.
+
 ---
 
 ### TC-0003-05: Validation Does Not Modify State
@@ -155,7 +161,9 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 - State hashes match
 - No state modifications from validation
 
-**Success Criteria:** Validation is purely read-only with no side effects
+**Success Criteria:** ✅ Validation is purely read-only with no side effects
+
+**Test Location:** `pallets/midnight/src/tests.rs`
 
 ---
 
@@ -187,10 +195,10 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 | Test Case | Unit Test | Integration Test | E2E Test | Manual |
 |-----------|-----------|------------------|----------|--------|
 | TC-0003-01 | ✅ | ➖ | ⬜ | ⬜ |
-| TC-0003-02 | ⬜ | ➖ | ⬜ | ⬜ |
+| TC-0003-02 | ✅ | ➖ | ⬜ | ⬜ |
 | TC-0003-03 | ✅ | ⬜ | ⬜ | ➖ |
-| TC-0003-04 | ⬜ | ➖ | ⬜ | ➖ |
-| TC-0003-05 | ⬜ | ⬜ | ➖ | ➖ |
+| TC-0003-04 | ➖ | ➖ | ⬜ | ➖ |
+| TC-0003-05 | ✅ | ⬜ | ➖ | ➖ |
 | TC-0003-06 | ➖ | ⬜ | ⬜ | ⬜ |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
