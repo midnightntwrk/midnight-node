@@ -258,10 +258,7 @@ fn test_pre_dispatch_rejects_replay_attack() {
 		let result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
 
 		// pre_dispatch should reject the replay attempt
-		assert!(
-			result.is_err(),
-			"pre_dispatch should reject replayed transaction"
-		);
+		assert!(result.is_err(), "pre_dispatch should reject replayed transaction");
 	});
 }
 
@@ -276,16 +273,16 @@ fn test_pre_dispatch_validation_does_not_modify_state() {
 		init_ledger_state(block_context.into());
 
 		// Record state before validation
-		let state_root_before = mock::Midnight::get_zswap_state_root()
-			.expect("Should be able to get state root");
+		let state_root_before =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
 
 		// Create call and run pre_dispatch
 		let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 		let _result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
 
 		// Record state after validation
-		let state_root_after = mock::Midnight::get_zswap_state_root()
-			.expect("Should be able to get state root");
+		let state_root_after =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
 
 		// State should be unchanged - validation must be read-only
 		assert_eq!(
@@ -306,8 +303,8 @@ fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 		init_ledger_state(block_context.into());
 
 		// Record state before validation
-		let state_root_before = mock::Midnight::get_zswap_state_root()
-			.expect("Should be able to get state root");
+		let state_root_before =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
 
 		// Create call and run pre_dispatch (will fail)
 		let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
@@ -315,8 +312,8 @@ fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 		assert!(result.is_err(), "pre_dispatch should fail for missing contract");
 
 		// Record state after validation
-		let state_root_after = mock::Midnight::get_zswap_state_root()
-			.expect("Should be able to get state root");
+		let state_root_after =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
 
 		// State should be unchanged - even failed validation must be read-only
 		assert_eq!(

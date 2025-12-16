@@ -256,9 +256,10 @@ impl MidnightClient {
                 println!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())
             }
-            Ok(_) => {
-                Err("Transaction was unexpectedly accepted - should have been rejected at pre_dispatch".into())
-            }
+            Ok(_) => Err(
+                "Transaction was unexpectedly accepted - should have been rejected at pre_dispatch"
+                    .into(),
+            ),
         }
     }
 
