@@ -31,7 +31,7 @@ UTXO=52956f41579e93d8fb12847476915b2f33e4bb5e494d6e0843822b5d7544e93a#1
 # deregister Bob and vice versa.
 REGISTRATION_UTXO=52956f41579e93d8fb12847476915b2f33e4bb5e494d6e0843822b5d7544e93a#0
 
-USER_PKH=$(cardano-cli address key-hash --payment-verification-key-file payment-$1.vkey)
+USER_PKH=$(cardano-cli address key-hash --payment-verification-key-file stake-$1.vkey)
 
 rm deregister-$1.tx 2>/dev/null
 rm deregister-$1-signed.tx 2>/dev/null
@@ -55,6 +55,7 @@ cardano-cli conway transaction build \
 cardano-cli conway transaction sign \
   --tx-file deregister-$1.tx \
   --signing-key-file payment-$1.skey \
+  --signing-key-file stake-$1.skey \
   --out-file deregister-$1-signed.tx || exit
 
 cardano-cli conway transaction submit \

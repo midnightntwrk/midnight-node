@@ -127,6 +127,7 @@ $ ./build_contracts.sh <network> verbose
 ```
 
 - `cnight-mapping-validator.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the mapping_validator_address  "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
+- `test_cnight_no_audit.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the tcnight policy id  "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
 
 ## Features
 
