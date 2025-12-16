@@ -7063,7 +7063,6 @@ dependencies = [
  "serde_json",
  "sp-consensus-beefy",
  "sp-core",
- "sp-mmr-primitives",
  "subxt 0.44.0",
  "thiserror 1.0.69",
  "tokio",
