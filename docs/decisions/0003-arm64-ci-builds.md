@@ -1,7 +1,7 @@
 # 0003: ARM64 CI Builds for PR and Merge Queue Pipelines
 
 **Date:** 2025-12-16  
-**Status:** Proposed  
+**Status:** Accepted  
 **Deciders:** @m2ux
 
 ## Context
