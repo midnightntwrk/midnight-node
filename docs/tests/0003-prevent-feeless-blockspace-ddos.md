@@ -192,16 +192,18 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ## Test Matrix
 
-| Test Case | Unit Test | Integration Test | E2E Test | Manual |
-|-----------|-----------|------------------|----------|--------|
-| TC-0003-01 | ✅ | ➖ | ➖ | ➖ |
-| TC-0003-02 | ✅ | ➖ | ➖ | ➖ |
-| TC-0003-03 | ✅ | ➖ | ➖ | ➖ |
-| TC-0003-04 | ➖ | ➖ | ⬜ | ➖ |
-| TC-0003-05 | ✅ | ➖ | ➖ | ➖ |
-| TC-0003-06 | ➖ | ➖ | ⬜ | ⬜ |
+| Test Case | Unit Test | Integration | E2E | Manual | Notes |
+|-----------|-----------|-------------|-----|--------|-------|
+| TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| TC-0003-03 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
+| TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| TC-0003-06 | ➖ | ➖ | ⏭️ | ⬜ | Manual validation preferred |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
+
+**Note on E2E tests:** Project E2E tests (`tests/e2e/`) require running node + Cardano infrastructure. The unit tests verify the `pre_dispatch` rejection logic which is the same code path as RPC submission. E2E tests for this feature are deferred as low-value given unit test coverage.
 
 ---
 
