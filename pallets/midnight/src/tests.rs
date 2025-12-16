@@ -295,7 +295,7 @@ fn test_pre_dispatch_validation_does_not_modify_state() {
 	});
 }
 
-/// PR367-TC-0003-05 variant: Verify validation doesn't modify state even for failing validation
+/// PR367-TC-0003-05 (variant): Verify validation doesn't modify state even for failing validation
 #[test]
 fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 	mock::new_test_ext().execute_with(|| {
