@@ -1086,9 +1086,8 @@ async fn create_hundred_registrations() {
 }
 
 // ============================================================================
-// DDoS Mitigation E2E Tests (PR367-TC-0003-06)
+// DDoS Mitigation E2E Tests (PR367)
 // Tests for ADR-0003: Pre-Dispatch Validation of Guaranteed Transaction Part
-// PR: https://github.com/midnightntwrk/midnight-node/pull/367
 // ============================================================================
 
 /// PR367-TC-0003-06: DDoS Attack Prevention - Single Transaction
