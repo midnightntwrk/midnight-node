@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 
+use crate::source::Source;
 use crate::{
-	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, Source,
-	TxGenerator, Utxo, Wallet, WalletAddress, WalletSeed,
+	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, TxGenerator,
+	Utxo, Wallet, WalletAddress, WalletSeed,
+};
+use crate::{
+	cli_parsers::{self as cli},
+	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::serialize_untagged;
-use midnight_node_toolkit::{
-	cli_parsers::{self as cli},
-	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
-};
 
 #[derive(Debug)]
 pub struct WalletInfo<D: DB + Clone> {
@@ -127,6 +128,7 @@ mod tests {
 	//use std::str::FromStr;
 
 	use super::*;
+	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
 	macro_rules! test_fixture {
@@ -155,7 +157,13 @@ mod tests {
 		(addr, src_files): (&str, Vec<String>),
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
 		let args = ShowWalletArgs {
-			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				src_files: Some(src_files),
+				dust_warp: false,
+				fetch_cache: FetchCacheConfig::InMemory,
+			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
@@ -196,7 +204,13 @@ mod tests {
 	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = ShowWalletArgs {
-			source: Source { src_url: None, fetch_concurrency: 20, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				src_files: Some(src_files),
+				dust_warp: true,
+				fetch_cache: FetchCacheConfig::InMemory,
+			},
 			seed: Some(seed),
 			address: None,
 			debug: false,

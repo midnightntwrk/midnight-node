@@ -88,7 +88,6 @@ impl BuildTxs for SingleTxBuilder {
 			context.clone(),
 			prover_arc.clone(),
 			self.rng_seed,
-			None,
 		);
 
 		let shielded_wallets: Vec<ShieldedWallet<DefaultDB>> =

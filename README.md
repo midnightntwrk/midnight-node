@@ -342,4 +342,4 @@ python ./scripts/generate-keys.py --help
 
 ### Fork Testing
 
-See [fork-testing.md](../docs/fork-testing.md)
+See [fork-testing.md](docs/fork-testing.md)

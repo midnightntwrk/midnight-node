@@ -1178,15 +1178,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "bip32"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1212,6 +1203,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43d193de1f7487df1914d3a568b772458861d33f9c54249612cc2893d6915054"
 dependencies = [
  "bitcoin_hashes 0.13.0",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -1448,6 +1440,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "bson"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3f109694c4f45353972af96bf97d8a057f82e2d6e496457f4d135b9867a518c"
+dependencies = [
+ "ahash 0.8.12",
+ "base64 0.22.1",
+ "bitvec",
+ "getrandom 0.3.3",
+ "hex",
+ "indexmap 2.10.0",
+ "js-sys",
+ "rand 0.9.2",
+ "serde",
+ "serde_bytes",
+ "simdutf8",
+ "thiserror 2.0.12",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "build-helper"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1585,7 +1599,7 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rand_os",
- "schemars",
+ "schemars 0.8.22",
  "serde",
  "serde-wasm-bindgen 0.4.5",
  "serde_json",
@@ -1618,7 +1632,7 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rand_os",
- "schemars",
+ "schemars 0.8.22",
  "serde",
  "serde-wasm-bindgen 0.4.5",
  "serde_json",
@@ -2008,6 +2022,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2197,6 +2221,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "cquisitor-lib"
+version = "0.1.0-beta.25"
+source = "git+https://github.com/rsporny/cquisitor-lib?branch=wasm-bindgen-update#7720b6f3440701bcda62475962b7cbefb9228f67"
+dependencies = [
+ "anyhow",
+ "bech32 0.11.0",
+ "blst",
+ "bs58",
+ "cardano-serialization-lib 15.0.1",
+ "console_error_panic_hook",
+ "cquisitor-minicbor",
+ "cryptoxide",
+ "hex",
+ "itertools 0.14.0",
+ "js-sys",
+ "noop_proc_macro",
+ "pallas-codec 0.31.0",
+ "pallas-crypto 0.31.0",
+ "pallas-primitives 0.31.0",
+ "pallas-traverse 0.31.0",
+ "schemars 0.9.0",
+ "serde",
+ "serde-wasm-bindgen 0.6.5",
+ "serde_json",
+ "uplc",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "cquisitor-minicbor"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "110df8c2a45011b2d8a33fc76483a6f5c3274bcc382ec4de2da804c5a872c8a9"
+dependencies = [
+ "half 1.8.3",
+ "minicbor-derive 0.13.0",
 ]
 
 [[package]]
@@ -5387,6 +5451,7 @@ checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
+ "serde",
 ]
 
 [[package]]
@@ -6902,7 +6967,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "anyhow",
  "atomic-write-file",
@@ -6933,7 +6998,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "anyhow",
  "atomic-write-file",
@@ -6964,7 +7029,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -6974,7 +7039,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -6988,13 +7053,17 @@ dependencies = [
  "clap",
  "env_logger",
  "log",
+ "midnight-node-metadata",
  "midnight-primitives-beefy",
  "mmr-rpc",
+ "pallas",
  "parity-scale-codec",
+ "rs_merkle",
  "serde",
  "serde_json",
  "sp-consensus-beefy",
  "sp-core",
+ "sp-mmr-primitives",
  "subxt 0.44.0",
  "thiserror 1.0.69",
  "tokio",
@@ -7029,7 +7098,7 @@ dependencies = [
 [[package]]
 name = "midnight-coin-structure"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "fake",
  "lazy_static",
@@ -7045,7 +7114,7 @@ dependencies = [
 [[package]]
 name = "midnight-coin-structure"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "fake",
  "lazy_static",
@@ -7079,8 +7148,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-ledger"
-version = "6.1.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+version = "6.1.0-alpha.6"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -7097,7 +7166,7 @@ dependencies = [
  "midnight-serialize 1.0.0-alpha.5-hard-fork-test",
  "midnight-storage 1.0.0-alpha.5-hard-fork-test",
  "midnight-transient-crypto 1.0.0-alpha.5-hard-fork-test",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.22",
@@ -7112,8 +7181,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-ledger"
-version = "6.1.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+version = "6.1.0-alpha.6"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -7130,7 +7199,7 @@ dependencies = [
  "midnight-serialize 1.0.0-alpha.5",
  "midnight-storage 1.0.0-alpha.5",
  "midnight-transient-crypto 1.0.0-alpha.5",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.22",
@@ -7251,7 +7320,9 @@ version = "0.1.0"
 dependencies = [
  "blake2 0.10.6",
  "hex",
+ "midnight-node-ledger-helpers",
  "midnight-node-metadata",
+ "midnight-node-toolkit",
  "ogmios-client",
  "rand 0.9.2",
  "serde_json",
@@ -7274,8 +7345,8 @@ dependencies = [
  "midnight-base-crypto 1.0.0-alpha.5-hard-fork-test",
  "midnight-coin-structure 1.0.0-alpha.5",
  "midnight-coin-structure 1.0.0-alpha.5-hard-fork-test",
- "midnight-ledger 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5)",
- "midnight-ledger 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
+ "midnight-ledger 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
+ "midnight-ledger 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-onchain-runtime 1.0.0-alpha.5",
@@ -7287,8 +7358,8 @@ dependencies = [
  "midnight-storage 1.0.0-alpha.5-hard-fork-test",
  "midnight-transient-crypto 1.0.0-alpha.5",
  "midnight-transient-crypto 1.0.0-alpha.5-hard-fork-test",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5)",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "moka 0.11.3",
  "parity-scale-codec",
  "scale-info",
@@ -7321,8 +7392,8 @@ dependencies = [
  "midnight-base-crypto 1.0.0-alpha.5-hard-fork-test",
  "midnight-coin-structure 1.0.0-alpha.5",
  "midnight-coin-structure 1.0.0-alpha.5-hard-fork-test",
- "midnight-ledger 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5)",
- "midnight-ledger 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
+ "midnight-ledger 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
+ "midnight-ledger 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "midnight-onchain-runtime 1.0.0-alpha.5",
  "midnight-onchain-runtime 1.0.0-alpha.5-hard-fork-test",
  "midnight-serialize 1.0.0-alpha.5",
@@ -7331,10 +7402,12 @@ dependencies = [
  "midnight-storage 1.0.0-alpha.5-hard-fork-test",
  "midnight-transient-crypto 1.0.0-alpha.5",
  "midnight-transient-crypto 1.0.0-alpha.5-hard-fork-test",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5)",
- "midnight-zswap 6.1.0-alpha.5 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
+ "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "rand 0.8.5",
  "serde",
+ "subxt 0.44.0",
+ "subxt-signer 0.44.0",
  "thiserror 1.0.69",
  "tokio",
  "toml 0.9.5",
@@ -7450,9 +7523,10 @@ dependencies = [
 name = "midnight-node-toolkit"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
  "async-trait",
  "backoff",
- "bincode",
+ "bson",
  "clap",
  "console",
  "futures",
@@ -7462,11 +7536,15 @@ dependencies = [
  "log",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
+ "num_cpus",
  "parity-scale-codec",
  "rand 0.8.5",
+ "redb",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
+ "sqlx",
  "structured-logger",
  "subxt 0.44.0",
  "tempfile",
@@ -7482,7 +7560,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-runtime"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "derive-where",
  "enum_index",
@@ -7507,7 +7585,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-runtime"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "derive-where",
  "enum_index",
@@ -7532,7 +7610,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-state"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "derive-where",
  "fake",
@@ -7550,7 +7628,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-state"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "derive-where",
  "fake",
@@ -7568,7 +7646,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-vm"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "derive-where",
  "fake",
@@ -7589,7 +7667,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-vm"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "derive-where",
  "fake",
@@ -7724,7 +7802,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "crypto",
  "konst",
@@ -7737,7 +7815,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "crypto",
  "konst",
@@ -7750,7 +7828,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize-macros"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -7760,7 +7838,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize-macros"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -7770,7 +7848,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "archery",
  "crypto",
@@ -7795,7 +7873,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "archery",
  "crypto",
@@ -7820,7 +7898,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage-macros"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "midnight-serialize-macros 1.0.0-alpha.5",
  "proc-macro2",
@@ -7831,7 +7909,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage-macros"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "midnight-serialize-macros 1.0.0-alpha.5-hard-fork-test",
  "proc-macro2",
@@ -7842,7 +7920,7 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -7877,7 +7955,7 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "1.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -7911,8 +7989,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "6.1.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+version = "6.1.0-alpha.6"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "derive-where",
  "fake",
@@ -7934,8 +8012,8 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "6.1.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+version = "6.1.0-alpha.6"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "derive-where",
  "fake",
@@ -8884,6 +8962,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallas"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37bba5e9e84978df0d42b72c3b92ead5a3b1c4852f66c08b648a5c057f58717a"
+dependencies = [
+ "pallas-addresses 0.33.0",
+ "pallas-codec 0.33.0",
+ "pallas-configs",
+ "pallas-crypto 0.33.0",
+ "pallas-network",
+ "pallas-primitives 0.33.0",
+ "pallas-traverse 0.33.0",
+ "pallas-txbuilder",
+ "pallas-utxorpc",
+]
+
+[[package]]
 name = "pallas-addresses"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8897,6 +8992,38 @@ dependencies = [
  "pallas-codec 0.31.0",
  "pallas-crypto 0.31.0",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-addresses"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18f5f4dd205316335bf8eef77227e01a8a00b1fd60503d807520e93dd0362d0e"
+dependencies = [
+ "base58",
+ "bech32 0.9.1",
+ "crc",
+ "cryptoxide",
+ "hex",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-applying"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b196174663e1c4eb80a286b8ddca78f75fca5fc57b0baaa5b1143a6dd76ca71b"
+dependencies = [
+ "chrono",
+ "hex",
+ "pallas-addresses 0.33.0",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "pallas-primitives 0.33.0",
+ "pallas-traverse 0.33.0",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -8938,6 +9065,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallas-codec"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2737b05f0dbb6d197feeb26ef15d2567e54833184bd469f5655a0537da89fa"
+dependencies = [
+ "hex",
+ "minicbor 0.25.1",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-configs"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a4e63bff98bd71b3057a0986dc72e6ba58afaf063bce3dc8243fda5f0665726"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "num-rational",
+ "pallas-addresses 0.33.0",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "pallas-primitives 0.33.0",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "pallas-crypto"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8965,6 +9122,39 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "zeroize",
+]
+
+[[package]]
+name = "pallas-crypto"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0368945cd093e550febe36aef085431b1611c2e9196297cd70f4b21a4add054c"
+dependencies = [
+ "cryptoxide",
+ "hex",
+ "pallas-codec 0.33.0",
+ "rand_core 0.6.4",
+ "serde",
+ "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
+name = "pallas-network"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1244da7a760a08b8a9d9a28a28112f10a7b6476d64192696a269cfd09a7ec55c"
+dependencies = [
+ "byteorder",
+ "hex",
+ "itertools 0.13.0",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "rand 0.8.5",
+ "socket2 0.5.10",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -9000,6 +9190,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallas-primitives"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb2acde8875c43446194d387c60fe2d6a127e4f8384bef3dcabd5a04e9422429"
+dependencies = [
+ "base58",
+ "bech32 0.9.1",
+ "hex",
+ "log",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pallas-traverse"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9007,12 +9213,77 @@ checksum = "5d04fc75a2144eb257c68b4604cdde647e07404ea185b791c0005826960dfb35"
 dependencies = [
  "hex",
  "itertools 0.13.0",
- "pallas-addresses",
+ "pallas-addresses 0.31.0",
  "pallas-codec 0.31.0",
  "pallas-crypto 0.31.0",
  "pallas-primitives 0.31.0",
  "paste",
  "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-traverse"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab64895a0d94fed1ef2d99dd37e480ed0483e91eb98dcd2f94cc614fb9575173"
+dependencies = [
+ "hex",
+ "itertools 0.13.0",
+ "pallas-addresses 0.33.0",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "pallas-primitives 0.33.0",
+ "paste",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-txbuilder"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46ff1f49d99aced71b20daa68577167e1db3f0aaffe92fbc1de6df0b6002a66e"
+dependencies = [
+ "hex",
+ "pallas-addresses 0.33.0",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "pallas-primitives 0.33.0",
+ "pallas-traverse 0.33.0",
+ "pallas-wallet",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pallas-utxorpc"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bdf89daca5ebfbcd9b5cf8b480486302ffd3401f6891d3c4f02087fd7687b94"
+dependencies = [
+ "pallas-applying",
+ "pallas-codec 0.33.0",
+ "pallas-crypto 0.33.0",
+ "pallas-primitives 0.33.0",
+ "pallas-traverse 0.33.0",
+ "prost-types",
+ "utxorpc-spec",
+]
+
+[[package]]
+name = "pallas-wallet"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d91b48fe1d0d07b425aed4b1c6ac5d962e0a392ccc58e2f3faa8ad250a5c364"
+dependencies = [
+ "bech32 0.9.1",
+ "bip39",
+ "cryptoxide",
+ "ed25519-bip32",
+ "pallas-crypto 0.33.0",
+ "rand 0.8.5",
  "thiserror 1.0.69",
 ]
 
@@ -10084,6 +10355,43 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
+
+[[package]]
+name = "pbjson"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7e6349fa080353f4a597daffd05cb81572a9c031a6d4fff7e504947496fcc68"
+dependencies = [
+ "base64 0.21.7",
+ "serde",
+]
+
+[[package]]
+name = "pbjson-build"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6eea3058763d6e656105d1403cb04e0a41b7bbac6362d413e7c33be0c32279c9"
+dependencies = [
+ "heck 0.5.0",
+ "itertools 0.13.0",
+ "prost 0.13.5",
+ "prost-types",
+]
+
+[[package]]
+name = "pbjson-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e54e5e7bfb1652f95bc361d76f3c780d8e526b134b85417e774166ee941f0887"
+dependencies = [
+ "bytes",
+ "chrono",
+ "pbjson",
+ "pbjson-build",
+ "prost 0.13.5",
+ "prost-build",
+ "serde",
+]
 
 [[package]]
 name = "pbkdf2"
@@ -11478,6 +11786,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "redb"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae323eb086579a3769daa2c753bb96deb95993c534711e0dbe881b5192906a06"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11803,6 +12120,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9bd6ce569b15c331b1e5fd8cf6adb0bf240678b5f0cdc4d0f41e11683f6feba9"
 dependencies = [
  "archery",
+]
+
+[[package]]
+name = "rs_merkle"
+version = "1.5.0"
+source = "git+https://github.com/midnightntwrk/rs-merkle.git?rev=7c997a5#7c997a58410ae9a23e0513d5eed6cfb410633dc8"
+dependencies = [
+ "parity-scale-codec",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -13458,7 +13784,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
  "dyn-clone",
- "schemars_derive",
+ "schemars_derive 0.8.22",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cd191f9397d57d581cddd31014772520aa448f65ef991055d7f61582c65165f"
+dependencies = [
+ "dyn-clone",
+ "ref-cast",
+ "schemars_derive 0.9.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9558e172d4e8533736ba97870c4b2cd63f84b382a3d6eb063da41b91cce17289"
+dependencies = [
+ "dyn-clone",
+ "ref-cast",
  "serde",
  "serde_json",
 ]
@@ -13468,6 +13819,18 @@ name = "schemars_derive"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.40",
+ "serde_derive_internals",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5016d94c77c6d32f0b8e08b781f7dc8a90c2007d4e77472cc2807bc10a8438fe"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -13913,6 +14276,10 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "hex",
+ "indexmap 1.9.3",
+ "indexmap 2.10.0",
+ "schemars 0.9.0",
+ "schemars 1.1.0",
  "serde",
  "serde_derive",
  "serde_json",
@@ -17032,6 +17399,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcc842091f2def52017664b53082ecbbeb5c7731092bad69d2c63050401dfd64"
 
 [[package]]
+name = "tonic"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "http 1.3.1",
+ "http-body 1.0.1",
+ "http-body-util",
+ "percent-encoding",
+ "pin-project",
+ "prost 0.13.5",
+ "tokio-stream",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tower"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -17561,11 +17949,11 @@ dependencies = [
  "num-integer",
  "num-traits",
  "once_cell",
- "pallas-addresses",
+ "pallas-addresses 0.31.0",
  "pallas-codec 0.31.0",
  "pallas-crypto 0.31.0",
  "pallas-primitives 0.31.0",
- "pallas-traverse",
+ "pallas-traverse 0.31.0",
  "peg",
  "pretty",
  "secp256k1 0.26.0",
@@ -17606,6 +17994,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utxorpc-spec"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9c73cb3e15766a14cbc99fbd6dbbee04496fc9c64b47b088ae1d7698d43e357"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "pbjson",
+ "pbjson-types",
+ "prost 0.13.5",
+ "prost-types",
+ "serde",
+ "tonic",
+]
+
+[[package]]
 name = "uuid"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -17613,6 +18017,7 @@ checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
  "getrandom 0.3.3",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 
@@ -18359,8 +18764,8 @@ dependencies = [
 
 [[package]]
 name = "whisky"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "async-trait",
  "cryptoxide",
@@ -18371,7 +18776,7 @@ dependencies = [
  "noop_proc_macro",
  "pallas-codec 0.30.2",
  "pallas-primitives 0.31.0",
- "pallas-traverse",
+ "pallas-traverse 0.31.0",
  "rand_os",
  "reqwest 0.12.22",
  "serde",
@@ -18389,12 +18794,12 @@ dependencies = [
 
 [[package]]
 name = "whisky-common"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "async-trait",
  "hex",
- "schemars",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "uplc",
@@ -18403,10 +18808,11 @@ dependencies = [
 
 [[package]]
 name = "whisky-csl"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "cardano-serialization-lib 15.0.1",
+ "cquisitor-lib",
  "cryptoxide",
  "getrandom 0.2.16",
  "hex",
@@ -18414,9 +18820,9 @@ dependencies = [
  "noop_proc_macro",
  "pallas-codec 0.31.0",
  "pallas-primitives 0.31.0",
- "pallas-traverse",
+ "pallas-traverse 0.31.0",
  "rand_os",
- "schemars",
+ "schemars 0.8.22",
  "serde",
  "serde-wasm-bindgen 0.4.5",
  "serde-wasm-bindgen 0.6.5",
@@ -18429,8 +18835,8 @@ dependencies = [
 
 [[package]]
 name = "whisky-macros"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -18439,8 +18845,8 @@ dependencies = [
 
 [[package]]
 name = "whisky-provider"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "async-trait",
  "futures",
@@ -18456,8 +18862,8 @@ dependencies = [
 
 [[package]]
 name = "whisky-wallet"
-version = "1.0.10"
-source = "git+https://github.com/ozgb/whisky?rev=9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a#9cd916b8eb2cbb17ec6561c69ed285dcd3ad446a"
+version = "1.0.16"
+source = "git+https://github.com/rsporny/whisky?branch=wasm-bindgen-update#c7b138a6dd1bf176f4a2d95b78d264d74a6d73e2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -19350,7 +19756,7 @@ dependencies = [
 [[package]]
 name = "zkir"
 version = "2.0.0-alpha.5"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.5#d6845a987a6fe04643f14fe25ff96aad45656cf2"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6#895e93d4cd5829f954c0f6722f673394cb0e2a99"
 dependencies = [
  "anyhow",
  "const-hex",
@@ -19372,7 +19778,7 @@ dependencies = [
 [[package]]
 name = "zkir"
 version = "2.0.0-alpha.5-hard-fork-test"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.5#24edf82fa7c6ceb97fe4dfe2d5b87dc99652d516"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6#99554908d3875356272d2d0fdddfcb3474292377"
 dependencies = [
  "anyhow",
  "const-hex",
