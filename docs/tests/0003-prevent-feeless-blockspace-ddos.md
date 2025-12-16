@@ -42,7 +42,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ## Test Cases
 
-### TC-0003-01: ContractNotPresent Rejection
+### PR367-TC-0003-01: ContractNotPresent Rejection
 
 **Objective:** Verify transaction calling non-existent contract is rejected at `pre_dispatch`.
 
@@ -68,7 +68,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ---
 
-### TC-0003-02: ReplayProtection Rejection
+### PR367-TC-0003-02: ReplayProtection Rejection
 
 **Objective:** Verify replayed transaction is rejected at `pre_dispatch`.
 
@@ -93,7 +93,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ---
 
-### TC-0003-03: Valid Transaction Passes
+### PR367-TC-0003-03: Valid Transaction Passes
 
 **Objective:** Verify valid transactions are not affected by new validation.
 
@@ -118,7 +118,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ---
 
-### TC-0003-04: Partial Success Still Works
+### PR367-TC-0003-04: Partial Success Still Works
 
 **Objective:** Verify transactions with guaranteed success + fallible failure work correctly.
 
@@ -144,7 +144,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ---
 
-### TC-0003-05: Validation Does Not Modify State
+### PR367-TC-0003-05: Validation Does Not Modify State
 
 **Objective:** Verify `validate_guaranteed_execution` is read-only.
 
@@ -167,7 +167,7 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 ---
 
-### TC-0003-06: Attack Simulation
+### PR367-TC-0003-06: Attack Simulation
 
 **Objective:** Verify attacker cannot fill blocks with failing transactions.
 
@@ -194,12 +194,12 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 
 | Test Case | Unit Test | Integration | E2E | Manual | Notes |
 |-----------|-----------|-------------|-----|--------|-------|
-| TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `valid_deploy_transaction_succeeds_via_rpc` |
-| TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
-| TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `ddos_attack_transaction_rejected_at_rpc`, `ddos_batch_attack_all_rejected` |
+| PR367-TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| PR367-TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| PR367-TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `pr367_valid_deploy_transaction_succeeds_via_rpc` |
+| PR367-TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
+| PR367-TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
+| PR367-TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `pr367_ddos_attack_transaction_rejected_at_rpc`, `pr367_ddos_batch_attack_all_rejected` |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
@@ -208,7 +208,7 @@ Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skippe
 **Running E2E tests:**
 ```bash
 # Requires running node on ws://127.0.0.1:9933
-cargo test --test e2e_tests --no-default-features --features local -- ddos --nocapture
+cargo test --test e2e_tests --no-default-features --features local -- pr367 --nocapture
 ```
 
 ---

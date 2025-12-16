@@ -229,7 +229,7 @@ fn test_pre_dispatch_rejects_malformed_transaction() {
 	});
 }
 
-/// TC-0003-02: ReplayProtection Rejection
+/// PR367-TC-0003-02: ReplayProtection Rejection
 /// Verify that a replayed transaction is rejected at `pre_dispatch`.
 #[test]
 fn test_pre_dispatch_rejects_replay_attack() {
@@ -265,7 +265,7 @@ fn test_pre_dispatch_rejects_replay_attack() {
 	});
 }
 
-/// TC-0003-05: Validation Does Not Modify State
+/// PR367-TC-0003-05: Validation Does Not Modify State
 /// Verify that `validate_guaranteed_execution` (via pre_dispatch) is read-only.
 #[test]
 fn test_pre_dispatch_validation_does_not_modify_state() {
@@ -295,7 +295,7 @@ fn test_pre_dispatch_validation_does_not_modify_state() {
 	});
 }
 
-/// TC-0003-05 variant: Verify validation doesn't modify state even for failing validation
+/// PR367-TC-0003-05 variant: Verify validation doesn't modify state even for failing validation
 #[test]
 fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 	mock::new_test_ext().execute_with(|| {
