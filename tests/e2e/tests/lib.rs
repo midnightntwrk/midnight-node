@@ -1098,7 +1098,7 @@ async fn create_hundred_registrations() {
 /// This prevents the DDoS attack vector where attackers fill blocks with
 /// failing transactions that don't pay fees.
 #[tokio::test]
-async fn pr367_ddos_attack_transaction_rejected_at_rpc() {
+async fn ddos_attack_transaction_rejected_at_rpc() {
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -1140,7 +1140,7 @@ async fn pr367_ddos_attack_transaction_rejected_at_rpc() {
 /// Verifies that multiple attack transactions are all rejected.
 /// Simulates an attacker attempting to flood the network with failing transactions.
 #[tokio::test]
-async fn pr367_ddos_batch_attack_all_rejected() {
+async fn ddos_batch_attack_all_rejected() {
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -1185,7 +1185,7 @@ async fn pr367_ddos_batch_attack_all_rejected() {
 /// Note: This test requires a fresh node state where the contract hasn't been deployed.
 #[tokio::test]
 #[ignore = "Requires fresh node state - run manually with cargo test-e2e-local"]
-async fn pr367_valid_deploy_transaction_succeeds_via_rpc() {
+async fn valid_deploy_transaction_succeeds_via_rpc() {
     use midnight_node_res::undeployed::transactions::DEPLOY_TX;
 
     let settings = Settings::default();

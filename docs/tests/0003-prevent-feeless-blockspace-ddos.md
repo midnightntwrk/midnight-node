@@ -196,10 +196,10 @@ All `TransactionInvalid` variants that can occur during guaranteed part executio
 |-----------|-----------|-------------|-----|--------|-------|
 | PR367-TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
 | PR367-TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| PR367-TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `pr367_valid_deploy_transaction_succeeds_via_rpc` |
+| PR367-TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `valid_deploy_transaction_succeeds_via_rpc` |
 | PR367-TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
 | PR367-TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| PR367-TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `pr367_ddos_attack_transaction_rejected_at_rpc`, `pr367_ddos_batch_attack_all_rejected` |
+| PR367-TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `ddos_attack_transaction_rejected_at_rpc`, `ddos_batch_attack_all_rejected` |
 
 Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
@@ -208,7 +208,7 @@ Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skippe
 **Running E2E tests:**
 ```bash
 # Requires running node on ws://127.0.0.1:9933
-cargo test --test e2e_tests --no-default-features --features local -- pr367 --nocapture
+cargo test --test e2e_tests --no-default-features --features local -- ddos --nocapture
 ```
 
 ---
