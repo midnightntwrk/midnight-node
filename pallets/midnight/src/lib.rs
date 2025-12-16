@@ -462,8 +462,6 @@ pub mod pallet {
 			Self::validate_unsigned(call, block_context.clone())?;
 
 			// Then, validate that the guaranteed part will succeed.
-			// This prevents DDoS attacks where transactions fail the guaranteed
-			// part (before fees are extracted) and consume blockspace without paying.
 			if let Call::send_mn_transaction { midnight_tx } = call {
 				let state_key = StateKey::<T>::get().expect("Failed to get state key");
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
