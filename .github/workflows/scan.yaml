@@ -1,0 +1,50 @@
+name: Scan
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}   # so you can still run it manually
+  schedule:
+    - cron: "0 0 * * *"   # run daily at midnight UTC
+concurrency:
+  group: ${{ github.event_name != 'merge_group' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # needed to stop rate limiting of compact download.
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      statuses: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  #v6.0.1
+
+      - name: Scan code
+        uses: midnightntwrk/upload-sarif-github-action/scan@d4419cb7f06b276c2c7ef74953f34db3624fd415
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          scan_rust: true
+          scan_typescript: true
+
+      # - name: Initialize CodeQL
+      #   uses: github/codeql-action/init@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+      #   with:
+      #     source-root: bboard-ui
+      #     languages: javascript-typescript
+      #     queries: security-and-quality
+
+      # - name: Analyze
+      #   uses: github/codeql-action/analyze@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+      #   with:
+      #     upload: true
+      #     category: bboard-ui
