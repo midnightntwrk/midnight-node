@@ -490,7 +490,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
-        apt-get upgrade && \
+        apt-get upgrade -y -qq && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
@@ -614,14 +614,14 @@ planner:
 check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     RUN apt-get update && apt-get install -y jq
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -636,9 +636,8 @@ check-rust:
 
     ENV SKIP_WASM_BUILD=1
 
-    # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
@@ -712,7 +711,8 @@ test:
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # TODO: re-enable when chef is improved.
+    # COPY +planner/recipe.json /recipe.json
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
@@ -723,7 +723,8 @@ build-prepare:
     ENV CXX=clang++
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+    # TODO: re-enable when chef is improved.
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
 build-upgrader:
     FROM +prep
@@ -876,6 +877,8 @@ node-image:
         $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
 
     # Re-export build artifacts which contain wasm
+    COPY .envrc /artifacts-$NATIVEARCH/.envrc
+    COPY res/ /artifacts-$NATIVEARCH/res/
     COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
@@ -1088,7 +1091,7 @@ local-env-e2e:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
+    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

@@ -28,6 +28,7 @@ import { RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
 import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
 import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
+import { setupPreviewProxies } from "../lib/previewProxy";
 
 /**
  * Runs a specified network, with passed configuration
@@ -52,7 +53,11 @@ async function runEphemeralEnvironment(
   runOptions: RunOptions,
 ) {
   console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  await connectToPostgres(namespace);
+  if (namespace === "preview") {
+    console.log("Skipping port-forward for preview (DB is publicly reachable)");
+  } else {
+    await connectToPostgres(namespace);
+  }
 
   console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
   const envObject = getSecrets(namespace);
@@ -66,6 +71,11 @@ async function runEphemeralEnvironment(
     } else {
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
+  }
+
+  if (namespace === "preview") {
+    const proxyOverrides = await setupPreviewProxies(env, namespace);
+    env = { ...env, ...proxyOverrides };
   }
 
   const composeFile = resolveComposeFile(namespace);
@@ -185,3 +195,5 @@ function cleanEnv(
     Object.entries(env).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
 }
+
+

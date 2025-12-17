@@ -39,7 +39,11 @@ impl MidnightClient {
     pub fn new_dust_hex(wallet_seed: WalletSeed) -> String {
         let dust_wallet = DustWallet::<DefaultDB>::default(wallet_seed, None);
         let dust_public = dust_wallet.public_key;
-        let dust_public_hex = serialize_untagged(&dust_public).unwrap().encode_hex();
+        let mut dust_bytes = serialize_untagged(&dust_public).unwrap();
+        if dust_bytes.len() == 32 {
+            dust_bytes.push(0);
+        }
+        let dust_public_hex = dust_bytes.encode_hex::<String>();
         println!("Dust public key hex: {}", dust_public_hex);
         dust_public_hex
     }
