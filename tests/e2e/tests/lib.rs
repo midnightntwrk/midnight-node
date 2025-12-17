@@ -1084,3 +1084,99 @@ async fn create_hundred_registrations() {
         registration.unwrap()
     );
 }
+
+#[tokio::test]
+async fn register_twice_with_same_cardano_address() {
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    let address_bech32 = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", address_bech32);
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    println!(
+        "Registering Cardano wallet {} with DUST address {}",
+        address_bech32, dust_hex
+    );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    println!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    // register second time
+    let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
+
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2);
+    let register_tx_id2 = cardano_client
+        .register(&dust_hex2, &tx_in2, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    println!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id2)
+    );
+
+    let amount2 = 100;
+    let tx_id2 = cardano_client
+        .mint_tokens(amount2, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount2, hex::encode(tx_id2));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo2 = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id2))
+        .await
+    {
+        Some(cnight_utxo2) => cnight_utxo2,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix2 = b"asset_create";
+    let nonce2 =
+        MidnightClient::calculate_nonce(prefix2, cnight_utxo2.transaction.id, cnight_utxo2.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce2);
+}
+
