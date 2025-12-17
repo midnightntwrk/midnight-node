@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   run:
-    name: Build node and images (amd64)
+    name: Build node and images (linux/amd64, ubuntu-latest-16-core-x64, amd64)
     permissions:
       id-token: write
       contents: read
