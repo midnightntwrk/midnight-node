@@ -66,10 +66,7 @@ pub struct FixedDParameterProvider<const P: u16, const R: u16>;
 #[cfg(any(test, feature = "runtime-benchmarks"))]
 impl<const P: u16, const R: u16> DParameterProvider for FixedDParameterProvider<P, R> {
 	fn get_d_parameter() -> Option<DParameter> {
-		Some(DParameter {
-			num_permissioned_candidates: P,
-			num_registered_candidates: R,
-		})
+		Some(DParameter { num_permissioned_candidates: P, num_registered_candidates: R })
 	}
 }
 
@@ -91,4 +88,3 @@ mod tests {
 		assert_eq!(d_param.num_registered_candidates, 2);
 	}
 }
-
