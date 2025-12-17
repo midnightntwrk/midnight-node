@@ -208,6 +208,14 @@ jobs:
           echo "Created midnight-node-arm64.tar.gz"
           ls -lh midnight-node-arm64.tar.gz
 
+      - name: Download release notes artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: .
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+
       - name: Create or Update Draft Release (ARM64)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
