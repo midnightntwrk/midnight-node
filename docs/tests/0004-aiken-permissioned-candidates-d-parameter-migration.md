@@ -34,7 +34,7 @@ Key changes validated:
 
 ## Test Cases
 
-### PM20994-TC-0004-01: MockDParameterProvider Returns None
+### PR378-TC-0004-01: MockDParameterProvider Returns None
 
 **Objective:** Verify mock provider returns `None` to maintain backward compatibility with inherent data.
 
@@ -55,7 +55,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-02: FixedDParameterProvider Returns Configured Values
+### PR378-TC-0004-02: FixedDParameterProvider Returns Configured Values
 
 **Objective:** Verify fixed provider returns configured D Parameter values for testing.
 
@@ -78,7 +78,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-03: Provider Integration with Authority Selection
+### PR378-TC-0004-03: Provider Integration with Authority Selection
 
 **Objective:** Verify `select_authorities_with_provider` correctly uses provider values.
 
@@ -103,7 +103,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-04: DParameterOverride Storage Removed
+### PR378-TC-0004-04: DParameterOverride Storage Removed
 
 **Objective:** Verify `DParameterOverride` storage no longer exists in pallet-midnight.
 
@@ -126,7 +126,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-05: override_d_parameter Extrinsic Removed
+### PR378-TC-0004-05: override_d_parameter Extrinsic Removed
 
 **Objective:** Verify `override_d_parameter` extrinsic no longer exists.
 
@@ -149,7 +149,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-06: Authority Rotation Works with Mock Provider
+### PR378-TC-0004-06: Authority Rotation Works with Mock Provider
 
 **Objective:** Verify committee rotation continues to work correctly.
 
@@ -174,7 +174,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-07: Config Files Have Correct Aiken Policy IDs
+### PR378-TC-0004-07: Config Files Have Correct Aiken Policy IDs
 
 **Objective:** Verify all pc-chain-config.json files updated with new Aiken policy IDs.
 
@@ -203,7 +203,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-08: Aura Authorities Rotation Not Affected
+### PR378-TC-0004-08: Aura Authorities Rotation Not Affected
 
 **Objective:** Verify Aura authority rotation continues to work.
 
@@ -226,7 +226,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-09: Grandpa Authorities Rotation Not Affected
+### PR378-TC-0004-09: Grandpa Authorities Rotation Not Affected
 
 **Objective:** Verify Grandpa authority rotation continues to work.
 
@@ -249,7 +249,7 @@ Key changes validated:
 
 ---
 
-### PM20994-TC-0004-10: Cross-Chain Committee Rotation Not Affected
+### PR378-TC-0004-10: Cross-Chain Committee Rotation Not Affected
 
 **Objective:** Verify cross-chain committee rotation continues to work.
 
@@ -276,16 +276,16 @@ Key changes validated:
 
 | Test Case | Unit Test | Integration | E2E | Manual |
 |-----------|-----------|-------------|-----|--------|
-| PM20994-TC-0004-01 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-02 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-03 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-04 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-05 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-06 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-07 | ➖ | ➖ | ➖ | ✅ |
-| PM20994-TC-0004-08 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-09 | ✅ | ➖ | ➖ | ➖ |
-| PM20994-TC-0004-10 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-01 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-02 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-03 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-04 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-05 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-06 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-07 | ➖ | ➖ | ➖ | ✅ |
+| PR378-TC-0004-08 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-09 | ✅ | ➖ | ➖ | ➖ |
+| PR378-TC-0004-10 | ✅ | ➖ | ➖ | ➖ |
 
 Legend: ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
@@ -330,10 +330,10 @@ When `pallet-system-parameters` is available:
 
 | Test Case | Description | Priority |
 |-----------|-------------|----------|
-| PM20994-TC-0004-11 | D Parameter read from pallet storage | 🔴 HIGH |
-| PM20994-TC-0004-12 | D Parameter governance update | 🔴 HIGH |
-| PM20994-TC-0004-13 | D Parameter change takes effect next epoch | 🟡 MEDIUM |
-| PM20994-TC-0004-14 | Invalid D Parameter rejected | 🟡 MEDIUM |
+| PR378-TC-0004-11 | D Parameter read from pallet storage | 🔴 HIGH |
+| PR378-TC-0004-12 | D Parameter governance update | 🔴 HIGH |
+| PR378-TC-0004-13 | D Parameter change takes effect next epoch | 🟡 MEDIUM |
+| PR378-TC-0004-14 | Invalid D Parameter rejected | 🟡 MEDIUM |
 
 ---
 
