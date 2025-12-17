@@ -8,7 +8,7 @@ on:
     # (which are not included by default for the "pull_request" trigger).
     # This is needed to allow skipping enforcement of the changelog in PRs with specific labels,
     # as defined in the (optional) "skipLabels" property.
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
 
 jobs:
   check-changes:
@@ -69,3 +69,19 @@ jobs:
           FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
           echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
           if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" "$FILENAME"; fi
+
+      - name: Check PR description for a link
+        if: >
+          github.event_name != 'merge_group' &&
+          contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all')
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body;
+            const urlRegex = /(https?:\/\/[^\s]+|#[0-9]+)/g;
+
+            if (!prBody || !urlRegex.test(prBody)) {
+              core.setFailed("Pull request description must contain a 'why' link (to a jira or the PR that caused this PR).");
+            } else {
+              console.log("PR description contains a link.");
+            }
