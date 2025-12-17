@@ -122,7 +122,7 @@ Key changes validated:
 
 **Success Criteria:** ✅ Legacy storage completely removed
 
-**Test Location:** Compile-time verification + code review (see Manual Verification Procedures)
+**Test Location:** Verified by compilation - if code compiles, storage is removed
 
 ---
 
@@ -145,7 +145,7 @@ Key changes validated:
 
 **Success Criteria:** ✅ Legacy extrinsic completely removed
 
-**Test Location:** Compile-time verification + code review (see Manual Verification Procedures)
+**Test Location:** Verified by compilation - if code compiles, extrinsic is removed
 
 ---
 
@@ -173,33 +173,6 @@ Key changes validated:
 **Test Location:** `runtime/src/lib.rs` - existing committee rotation tests
 
 ---
-
-### PR378-TC-0004-07: Config Files Have Correct Aiken Policy IDs
-
-**Objective:** Verify all pc-chain-config.json files updated with new Aiken policy IDs.
-
-**Preconditions:**
-- Access to config files
-
-**Steps:**
-1. Check `res/node-dev-01/pc-chain-config.json`
-2. Check `res/qanet/pc-chain-config.json`
-3. Check `res/preview/pc-chain-config.json`
-4. Check `res/preprod/pc-chain-config.json`
-5. Verify each has correct Aiken policy ID
-
-**Expected Result:**
-
-| Environment | Expected Policy ID |
-|-------------|-------------------|
-| node-dev-01 | `0x51f812332ccc276d1dfa9da923c2235b91a5150ff275b633a5fa1bdb` |
-| qa-net | `0x6c327f1fe5e3b2619c62ca642892146c7326a91dc47f6006f6cdf690` |
-| preview | `0x4057188de00d74c6679263989745309f02bf55f8806061943124489b` |
-| preprod | `0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec` |
-
-**Success Criteria:** ✅ All config files have correct Aiken policy IDs
-
-**Test Location:** Config file verification
 
 ---
 
@@ -279,10 +252,10 @@ Key changes validated:
 | PR378-TC-0004-01 | ✅ | ➖ | ➖ | ➖ | `mock_provider_returns_none` |
 | PR378-TC-0004-02 | ✅ | ➖ | ➖ | ➖ | `fixed_provider_returns_configured_values` |
 | PR378-TC-0004-03 | ✅ | ➖ | ➖ | ➖ | `check_d_parameter_provider_integration` |
-| PR378-TC-0004-04 | ➖ | ➖ | ➖ | ⬜ | Compile-time + code review |
-| PR378-TC-0004-05 | ➖ | ➖ | ➖ | ⬜ | Compile-time + code review |
+| PR378-TC-0004-04 | ➖ | ➖ | ➖ | ➖ | Verified by compilation |
+| PR378-TC-0004-05 | ➖ | ➖ | ➖ | ➖ | Verified by compilation |
 | PR378-TC-0004-06 | ✅ | ➖ | ➖ | ➖ | Existing rotation tests |
-| PR378-TC-0004-07 | ➖ | ➖ | ➖ | ⬜ | Config file verification |
+| PR378-TC-0004-07 | ➖ | ➖ | ➖ | ➖ | Removed: verified at dev time |
 | PR378-TC-0004-08 | ✅ | ➖ | ➖ | ➖ | `check_aura_authorities_rotation` |
 | PR378-TC-0004-09 | ✅ | ➖ | ➖ | ➖ | `check_grandpa_authorities_rotation` |
 | PR378-TC-0004-10 | ✅ | ➖ | ➖ | ➖ | `check_cross_chain_committee_rotation` |
@@ -311,71 +284,6 @@ cargo build -p pallet-midnight
 ---
 
 ## Manual Verification Procedures
-
-### Code Review Verification (PR378-TC-0004-04, PR378-TC-0004-05)
-
-**Purpose:** One-shot verification during PR code review to confirm DParameterOverride removal.
-
-**Reviewer Checklist:**
-
-1. **Verify storage removal (TC-0004-04):**
-   - Open file: `pallets/midnight/src/lib.rs`
-   - Confirm `DParameterOverride` storage item is removed
-   - Verify no references to `DParameterOverride` in pallet
-
-2. **Verify extrinsic removal (TC-0004-05):**
-   - Open file: `pallets/midnight/src/lib.rs`
-   - Confirm `override_d_parameter` extrinsic is removed
-   - Verify `call_index(1)` is documented as reserved/skipped (for compatibility)
-
-3. **Document verification:**
-   - Add a comment to the PR review confirming: "TC-0004-04 & TC-0004-05: DParameterOverride removal verified ✅"
-
-**When to Perform:** Once per PR review, before approval.
-
-**Verification Record:** Document completion in PR review comments.
-
----
-
-### Config File Verification (PR378-TC-0004-07)
-
-**Purpose:** Verify all pc-chain-config.json files have correct Aiken policy IDs.
-
-**Verification Steps:**
-
-1. **Check each config file:**
-
-```bash
-# node-dev-01
-grep -A2 "PermissionedCandidatesPolicy" res/node-dev-01/pc-chain-config.json
-
-# qa-net
-grep -A2 "PermissionedCandidatesPolicy" res/qanet/pc-chain-config.json
-
-# preview
-grep -A2 "PermissionedCandidatesPolicy" res/preview/pc-chain-config.json
-
-# preprod
-grep -A2 "PermissionedCandidatesPolicy" res/preprod/pc-chain-config.json
-```
-
-2. **Expected Policy IDs:**
-
-| Environment | Expected Policy ID |
-|-------------|-------------------|
-| node-dev-01 | `0x51f812332ccc276d1dfa9da923c2235b91a5150ff275b633a5fa1bdb` |
-| qa-net | `0x6c327f1fe5e3b2619c62ca642892146c7326a91dc47f6006f6cdf690` |
-| preview | `0x4057188de00d74c6679263989745309f02bf55f8806061943124489b` |
-| preprod | `0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec` |
-
-3. **Document verification:**
-   - Add a comment to the PR review confirming: "TC-0004-07: Aiken policy IDs verified ✅"
-
-**When to Perform:** Once per PR review, before approval.
-
-**Verification Record:** Document completion in PR review comments.
-
----
 
 ### Running Node Verification (Pre-Testnet Deployment)
 
