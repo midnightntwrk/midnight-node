@@ -21,23 +21,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   run:
-    name: Build node and images
+    name: Build node and images (linux/amd64, ubuntu-latest-16-core-x64, amd64)
     permissions:
       id-token: write
       contents: read
-    # 16 core machines seem to have gone walkabout.
-    strategy:
-      matrix:
-        # Define matrix with platform and corresponding GitHub-hosted runner
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest-16-core-x64 # Default x86_64 GitHub-hosted runner
-            arch: amd64
-          # - platform: linux/arm64
-          #   runner: ubuntu-latest-8-core-arm64 # Native ARM64 GitHub-hosted runner (public preview)
-          #   arch: arm64
-
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
     outputs:
@@ -76,15 +64,75 @@ jobs:
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: success() || failure()
         with:
-          name: Wasm Runtime and binaries
-          path: artifacts-${{ matrix.arch }}/
+          name: Wasm Runtime and binaries (amd64)
+          path: artifacts-amd64/
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: success() || failure()
         with:
-          name: Wasm Runtime and binaries
-          path: test-artifacts-${{ matrix.arch }}/
+          name: Test artifacts (amd64)
+          path: test-artifacts-amd64/
+
+  run-arm64:
+    name: Build node and images (arm64)
+    # ARM64 gating: only for merge_group, workflow_dispatch, or PRs with ci:arm64 label
+    if: |
+      github.event_name == 'merge_group' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:arm64'))
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest-8-core-arm64
+    env:
+      FORCE_COLOR: 1
+    steps:
+      # QEMU required on ARM64 runner for compactc (amd64-only binary)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          image: tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6 # latest
+          platforms: "amd64"
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+          allow-privileged: true
+
+      - name: Checkout node repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Run build
+        run: |
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: success() || failure()
+        with:
+          name: Wasm Runtime and binaries (arm64)
+          path: artifacts-arm64/
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: success() || failure()
+        with:
+          name: Test artifacts (arm64)
+          path: test-artifacts-arm64/
 
   hardfork:
     name: Build hardfork images
