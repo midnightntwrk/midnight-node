@@ -279,8 +279,8 @@ Key changes validated:
 | PR378-TC-0004-01 | ✅ | ➖ | ➖ | ➖ | `mock_provider_returns_none` |
 | PR378-TC-0004-02 | ✅ | ➖ | ➖ | ➖ | `fixed_provider_returns_configured_values` |
 | PR378-TC-0004-03 | ✅ | ➖ | ➖ | ➖ | `check_d_parameter_provider_integration` |
-| PR378-TC-0004-04 | ✅ | ➖ | ➖ | ⬜ | Compile-time + code review |
-| PR378-TC-0004-05 | ✅ | ➖ | ➖ | ⬜ | Compile-time + code review |
+| PR378-TC-0004-04 | ➖ | ➖ | ➖ | ⬜ | Compile-time + code review |
+| PR378-TC-0004-05 | ➖ | ➖ | ➖ | ⬜ | Compile-time + code review |
 | PR378-TC-0004-06 | ✅ | ➖ | ➖ | ➖ | Existing rotation tests |
 | PR378-TC-0004-07 | ➖ | ➖ | ➖ | ⬜ | Config file verification |
 | PR378-TC-0004-08 | ✅ | ➖ | ➖ | ➖ | `check_aura_authorities_rotation` |
