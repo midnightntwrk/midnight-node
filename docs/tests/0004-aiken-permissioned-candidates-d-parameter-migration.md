@@ -122,7 +122,7 @@ Key changes validated:
 
 **Success Criteria:** ✅ Legacy storage completely removed
 
-**Test Location:** Compile-time verification
+**Test Location:** Compile-time verification + code review (see Manual Verification Procedures)
 
 ---
 
@@ -145,7 +145,7 @@ Key changes validated:
 
 **Success Criteria:** ✅ Legacy extrinsic completely removed
 
-**Test Location:** Compile-time verification + code review
+**Test Location:** Compile-time verification + code review (see Manual Verification Procedures)
 
 ---
 
@@ -274,20 +274,20 @@ Key changes validated:
 
 ## Test Matrix
 
-| Test Case | Unit Test | Integration | E2E | Manual |
-|-----------|-----------|-------------|-----|--------|
-| PR378-TC-0004-01 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-02 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-03 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-04 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-05 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-06 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-07 | ➖ | ➖ | ➖ | ✅ |
-| PR378-TC-0004-08 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-09 | ✅ | ➖ | ➖ | ➖ |
-| PR378-TC-0004-10 | ✅ | ➖ | ➖ | ➖ |
+| Test Case | Unit Test | Integration | E2E | Manual | Notes |
+|-----------|-----------|-------------|-----|--------|-------|
+| PR378-TC-0004-01 | ✅ | ➖ | ➖ | ➖ | `mock_provider_returns_none` |
+| PR378-TC-0004-02 | ✅ | ➖ | ➖ | ➖ | `fixed_provider_returns_configured_values` |
+| PR378-TC-0004-03 | ✅ | ➖ | ➖ | ➖ | `check_d_parameter_provider_integration` |
+| PR378-TC-0004-04 | ✅ | ➖ | ➖ | ⬜ | Compile-time + code review |
+| PR378-TC-0004-05 | ✅ | ➖ | ➖ | ⬜ | Compile-time + code review |
+| PR378-TC-0004-06 | ✅ | ➖ | ➖ | ➖ | Existing rotation tests |
+| PR378-TC-0004-07 | ➖ | ➖ | ➖ | ⬜ | Config file verification |
+| PR378-TC-0004-08 | ✅ | ➖ | ➖ | ➖ | `check_aura_authorities_rotation` |
+| PR378-TC-0004-09 | ✅ | ➖ | ➖ | ➖ | `check_grandpa_authorities_rotation` |
+| PR378-TC-0004-10 | ✅ | ➖ | ➖ | ➖ | `check_cross_chain_committee_rotation` |
 
-Legend: ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
+Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
 
 ---
 
@@ -310,17 +310,85 @@ cargo build -p pallet-midnight
 
 ---
 
-## Manual Testing Protocol
+## Manual Verification Procedures
+
+### Code Review Verification (PR378-TC-0004-04, PR378-TC-0004-05)
+
+**Purpose:** One-shot verification during PR code review to confirm DParameterOverride removal.
+
+**Reviewer Checklist:**
+
+1. **Verify storage removal (TC-0004-04):**
+   - Open file: `pallets/midnight/src/lib.rs`
+   - Confirm `DParameterOverride` storage item is removed
+   - Verify no references to `DParameterOverride` in pallet
+
+2. **Verify extrinsic removal (TC-0004-05):**
+   - Open file: `pallets/midnight/src/lib.rs`
+   - Confirm `override_d_parameter` extrinsic is removed
+   - Verify `call_index(1)` is documented as reserved/skipped (for compatibility)
+
+3. **Document verification:**
+   - Add a comment to the PR review confirming: "TC-0004-04 & TC-0004-05: DParameterOverride removal verified ✅"
+
+**When to Perform:** Once per PR review, before approval.
+
+**Verification Record:** Document completion in PR review comments.
+
+---
+
+### Config File Verification (PR378-TC-0004-07)
+
+**Purpose:** Verify all pc-chain-config.json files have correct Aiken policy IDs.
+
+**Verification Steps:**
+
+1. **Check each config file:**
+
+```bash
+# node-dev-01
+grep -A2 "PermissionedCandidatesPolicy" res/node-dev-01/pc-chain-config.json
+
+# qa-net
+grep -A2 "PermissionedCandidatesPolicy" res/qanet/pc-chain-config.json
+
+# preview
+grep -A2 "PermissionedCandidatesPolicy" res/preview/pc-chain-config.json
+
+# preprod
+grep -A2 "PermissionedCandidatesPolicy" res/preprod/pc-chain-config.json
+```
+
+2. **Expected Policy IDs:**
+
+| Environment | Expected Policy ID |
+|-------------|-------------------|
+| node-dev-01 | `0x51f812332ccc276d1dfa9da923c2235b91a5150ff275b633a5fa1bdb` |
+| qa-net | `0x6c327f1fe5e3b2619c62ca642892146c7326a91dc47f6006f6cdf690` |
+| preview | `0x4057188de00d74c6679263989745309f02bf55f8806061943124489b` |
+| preprod | `0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec` |
+
+3. **Document verification:**
+   - Add a comment to the PR review confirming: "TC-0004-07: Aiken policy IDs verified ✅"
+
+**When to Perform:** Once per PR review, before approval.
+
+**Verification Record:** Document completion in PR review comments.
+
+---
+
+### Running Node Verification (Pre-Testnet Deployment)
 
 For validation before deploying to testnets:
 
 | Step | Action | Expected Outcome |
 |------|--------|------------------|
-| 1 | Start local dev node | Node starts successfully |
-| 2 | Verify runtime version | Runtime includes new changes |
-| 3 | Check committee at epoch boundary | Committee rotates correctly |
-| 4 | Verify permissioned validators selected | Validators match configured candidates |
-| 5 | Confirm D Parameter from inherent data | Logs show D Parameter from main chain |
+| 1 | Build the node: `cargo build --release` | Build succeeds without errors |
+| 2 | Start local dev node: `./target/release/midnight-node --dev` | Node starts successfully |
+| 3 | Verify runtime version | Runtime includes new changes |
+| 4 | Check committee at epoch boundary | Committee rotates correctly |
+| 5 | Verify permissioned validators selected | Validators match configured candidates |
+| 6 | Confirm D Parameter from inherent data | Logs show D Parameter from main chain |
 
 ---
 
