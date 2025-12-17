@@ -1102,11 +1102,8 @@ async fn deregister_with_valid_cnight_utxo() {
         address_bech32, dust_hex
     );
 
-    let bech32_address = cardano_client.address_as_bech32();
-    println!("New Cardano wallet created: {:?}", bech32_address);
-
     let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let register_tx_id = cardano_client
