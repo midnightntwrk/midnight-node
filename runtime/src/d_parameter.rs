@@ -60,10 +60,10 @@ impl DParameterProvider for MockDParameterProvider {
 /// Implementation that always returns a fixed D Parameter.
 ///
 /// Useful for testing scenarios where a specific D Parameter is needed.
-#[cfg(any(test, feature = "runtime-benchmarks"))]
+#[cfg(test)]
 pub struct FixedDParameterProvider<const P: u16, const R: u16>;
 
-#[cfg(any(test, feature = "runtime-benchmarks"))]
+#[cfg(test)]
 impl<const P: u16, const R: u16> DParameterProvider for FixedDParameterProvider<P, R> {
 	fn get_d_parameter() -> Option<DParameter> {
 		Some(DParameter { num_permissioned_candidates: P, num_registered_candidates: R })
