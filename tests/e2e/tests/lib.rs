@@ -1252,16 +1252,16 @@ async fn deregister_with_valid_cnight_utxo() {
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     let args2 = DustBalanceArgs {
-            source: Source {
-                src_files: None,
-                src_url: Some(settings.node_client.base_url.clone()),
-                fetch_concurrency: 1,
-                dust_warp: true,
-                fetch_cache: FetchCacheConfig::InMemory,
-            },
-            seed: midnight_wallet_seed,
-            dry_run: false,
-        };
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
 
     let result2 = dust_balance::execute(args2)
         .await
