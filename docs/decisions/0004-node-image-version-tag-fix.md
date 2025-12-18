@@ -1,7 +1,7 @@
 # 0004: Fix Node Image Version Tag to Preserve Semver Pre-release Suffix
 
 **Date:** 2025-12-18  
-**Status:** Proposed  
+**Status:** Accepted  
 **Deciders:** @m2ux
 
 ## Context
