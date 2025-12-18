@@ -543,7 +543,7 @@ node-ci-image-single-platform:
 prep-no-copy:
     ARG NATIVEARCH
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.90-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:1.90-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
