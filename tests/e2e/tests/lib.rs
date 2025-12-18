@@ -1268,8 +1268,10 @@ async fn deregister_with_valid_cnight_utxo() {
         .expect("dust-balance error");
 
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
-       println!("Total dust balance: {}", total);
+        println!("Total dust balance: {}", total);
     }
 
-    assert!(matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > *balance));
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > *balance)
+    );
 }
