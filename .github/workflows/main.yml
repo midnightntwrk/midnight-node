@@ -218,23 +218,12 @@ jobs:
             exit 0
           fi
 
-          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
           RELEASE_TITLE="[Unreleased]"
 
-          if gh release view "$RELEASE_TITLE"; then
-            echo "Release already exists, modifying..."
-            EDIT_OR_CREATE="edit"
-          else
-            echo "Creating release..."
-            EDIT_OR_CREATE="create"
+          if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
+            echo "Release has already been published, skipping draft..."
+            exit 0
           fi
-
-          # We are modifying an existing draft created by AMD, or creating a new one if it's the first.
-          # If the AMD job already created the release, this step will simply modify it and add the ARM64 asset.
-          gh release $EDIT_OR_CREATE "$RELEASE_TITLE" \
-            --title "$RELEASE_TITLE" \
-            --draft \
-            --notes-file RELEASE_NOTES.md
 
           echo "Uploading ARM64 artifacts..."
           gh release upload "$RELEASE_TITLE" artifacts-arm64.tar.gz --clobber
