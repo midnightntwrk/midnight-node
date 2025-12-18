@@ -1,4 +1,4 @@
-# ADR-0003: Pre-Dispatch Validation of Guaranteed Transaction Part
+# ADR: Pre-Dispatch Validation of Guaranteed Transaction Part
 
 ## Status
 
