@@ -65,24 +65,6 @@ Key constraints:
 - The abstraction must support returning on-chain values or signaling that inherent data should be used
 - The Registered Candidates address is kept as-is (not migrated to Aiken)
 
-## Consequences
-
-### Positive
-
-- **Clean abstraction**: Follows existing codebase patterns
-- **Swappable implementation**: Easy to replace mock with real pallet
-- **Reduced centralization risk**: Emergency override mechanism removed
-- **Simplified flow**: Validator selection no longer depends on Cardano D Parameter contract
-
-### Negative
-
-- **Placeholder values**: Initial mock requires placeholder D Parameter values
-- **Interface stability**: Trait interface may need adjustment when real pallet is integrated
-
-### Neutral
-
-- Existing `d_parameter_policy_id` configuration is kept but ignored
-
 ## Confirmation
 
 The decision will be validated through:
