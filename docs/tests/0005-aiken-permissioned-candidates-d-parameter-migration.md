@@ -51,6 +51,5 @@ cargo build -p pallet-midnight
 
 ## References
 
-- **ADR:** [0005-aiken-permissioned-candidates-d-parameter-migration](../decisions/0005-aiken-permissioned-candidates-d-parameter-migration.md)
 - **Implementation:** [`runtime/src/d_parameter.rs#L34`](../../runtime/src/d_parameter.rs#L34) - `DParameterProvider` trait
 - **Integration:** [`runtime/src/lib.rs#L582`](../../runtime/src/lib.rs#L582) - `select_authorities_with_provider`
