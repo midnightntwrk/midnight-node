@@ -1116,12 +1116,12 @@ async fn register_twice_with_same_cardano_address() {
         hex::encode(register_tx_id)
     );
 
-     let validator_address = cardano_client.constants.policies.auth_token_address();
-     let register_tx = cardano_client
-         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
-         .await
-         .expect("No registration UTXO found after registering");
-     println!("Found registration UTXO: {:?}", register_tx);
+    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let register_tx = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
+        .await
+        .expect("No registration UTXO found after registering");
+    println!("Found registration UTXO: {:?}", register_tx);
 
     let amount = 100;
     let tx_id = cardano_client
@@ -1184,11 +1184,11 @@ async fn register_twice_with_same_cardano_address() {
         hex::encode(register_tx_id2)
     );
 
-     let register_tx2 = cardano_client
-         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id2))
-         .await
-         .expect("No registration UTXO found after registering");
-     println!("Found registration UTXO: {:?}", register_tx2);
+    let register_tx2 = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id2))
+        .await
+        .expect("No registration UTXO found after registering");
+    println!("Found registration UTXO: {:?}", register_tx2);
 
     let amount2 = 100;
     let tx_id2 = cardano_client
@@ -1213,4 +1213,3 @@ async fn register_twice_with_same_cardano_address() {
         MidnightClient::calculate_nonce(prefix2, cnight_utxo2.transaction.id, cnight_utxo2.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce2);
 }
-
