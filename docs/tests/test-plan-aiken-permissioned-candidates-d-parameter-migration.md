@@ -23,10 +23,10 @@ Key changes validated:
 | TC-01 | Verify D Parameter can be updated via pallet extrinsic | 1. Call `SystemParameters::update_d_parameter(Root, 5, 3)` <br>2. Verify storage updated | D Parameter in storage is (5, 3) | Unit |
 | TC-02 | Verify `get_d_parameter()` returns current storage values | 1. Set D Parameter via extrinsic <br>2. Call `SystemParameters::get_d_parameter()` | Returns `DParameter` with configured values | Unit |
 | TC-03 | Verify authority selection uses pallet D Parameter | 1. Set D Parameter via pallet <br>2. Call authority selection <br>3. Verify correct validator count selected | Authority selection respects pallet D Parameter values | Unit |
-| TC-04 | Verify Aura authority rotation continues to work | 1. Run `check_aura_authorities_rotation` test | Test passes, Aura authorities rotate as expected | Unit |
-| TC-05 | Verify Grandpa authority rotation continues to work | 1. Run `check_grandpa_authorities_rotation` test | Test passes, Grandpa authorities rotate as expected | Unit |
-| TC-06 | Verify cross-chain committee rotation continues to work | 1. Run `check_cross_chain_committee_rotation` test | Test passes, cross-chain committee rotates as expected | Unit |
-| TC-07 | Verify D Parameter override integration test | 1. Run `check_overridden_d_param_committee_rotation` test | D Parameter from pallet correctly overrides inherent data | Unit |
+| TC-04 | Verify Aura authority rotation continues to work | Run `check_aura_authorities_rotation` test | Test passes, Aura authorities rotate as expected | Unit |
+| TC-05 | Verify Grandpa authority rotation continues to work | Run `check_grandpa_authorities_rotation` test | Test passes, Grandpa authorities rotate as expected | Unit |
+| TC-06 | Verify cross-chain committee rotation continues to work | Run `check_cross_chain_committee_rotation` test | Test passes, cross-chain committee rotates as expected | Unit |
+| TC-07 | Verify D Parameter override integration test | Run `check_overridden_d_param_committee_rotation` test | D Parameter from pallet correctly overrides inherent data | Unit |
 
 ---
 
