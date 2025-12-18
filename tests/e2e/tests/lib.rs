@@ -1089,7 +1089,7 @@ async fn create_hundred_registrations() {
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
@@ -1145,6 +1145,28 @@ async fn register_twice_with_same_cardano_address() {
     let nonce =
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     // register second time
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
