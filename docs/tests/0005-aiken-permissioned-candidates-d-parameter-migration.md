@@ -13,7 +13,7 @@ This test plan validates the migration from Haskell-based Permissioned Candidate
 Key changes validated:
 1. `DParameterProvider` trait correctly abstracts D Parameter sourcing
 2. `MockDParameterProvider` maintains backward compatibility (uses inherent data)
-3. Authority selection continues to work correctly
+3. `select_authorities_with_provider` authority selection works correctly
 
 ---
 
