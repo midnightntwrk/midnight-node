@@ -175,7 +175,8 @@ impl<D: DB> Ledger<D> {
 	) -> Result<Sp<Self, D>, LedgerApiError> {
 		let max = sp.state.parameters.limits.block_limits;
 		let tstamp = Timestamp::from_secs(block_context.tblock);
-		let next_state = match sp.state.post_block_update(tstamp, sp.block_fullness.clone().into()) {
+		let next_state = match sp.state.post_block_update(tstamp, sp.block_fullness.clone().into())
+		{
 			Ok(state) => state,
 			Err(error) => {
 				log::error!(
