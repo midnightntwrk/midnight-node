@@ -60,28 +60,29 @@ Continue using the existing emergency override mechanism as a stand-in for the r
 
 ## Decision
 
-Implement **Option A: Direct pallet integration** - the D Parameter is sourced directly from `pallet-system-parameters` on-chain storage. The trait-based abstraction was used during development while the pallet was being built, and has now been replaced with direct pallet calls.
+Implement **Option A: Direct pallet integration** - the D Parameter is sourced directly from on-chain pallet storage rather than from Cardano contracts. The trait-based abstraction was used during development while the pallet was being built, and has now been replaced with direct pallet access.
 
 Key outcomes:
-- D Parameter is sourced from `SystemParameters::get_d_parameter()` 
-- Emergency override mechanism (`DParameterOverride`) removed from `pallet-midnight`
-- The Registered Candidates address is kept as-is (not migrated to Aiken)
+- D Parameter is sourced from on-chain storage (authoritative source)
+- Emergency override mechanism removed (no longer needed)
+- Registered Candidates address is kept as-is (not migrated to Aiken)
 
 ## Confirmation
 
 The decision has been validated through:
 
 1. ✅ All existing tests continue to pass
-2. ✅ Authority selection works correctly with `pallet-system-parameters` D Parameter values
+2. ✅ Authority selection works correctly with pallet-sourced D Parameter values
 3. ✅ No regression in block production or finalization
 4. ✅ Emergency override mechanism fully removed from codebase
-5. ✅ Mock abstraction layer (`DParameterProvider` trait) removed after pallet integration
 
 ## Notes
 
 - Supersedes the emergency override mechanism from ADR-0001
 - Aiken contracts use the same datum schema as the Haskell contracts they replace
 - D Parameter is now governed on-chain via `pallet-system-parameters`, initialized at genesis
+- Existing RPC endpoints that source D Parameter from Cardano should be deprecated; a new endpoint sourcing from the on-chain pallet must be provided to consumers
+- Downstream consumers (Indexer, Wallet SDK, Explorer) require coordination for migration to the authoritative D Parameter source
 
 ## References
 

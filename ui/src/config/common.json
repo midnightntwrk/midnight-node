@@ -88,6 +88,16 @@
         "description": "Returns the version of Midnight ledger",
         "params": [],
         "type": "Text"
+      },
+      "getAriadneParameters": {
+        "description": "Gets Ariadne parameters with D Parameter from pallet-system-parameters. Use this instead of sidechain.getAriadneParameters for authoritative D Parameter values.",
+        "params": [
+          {
+            "name": "epoch_number",
+            "type": "u64"
+          }
+        ],
+        "type": "Text"
       }
     },
     "sidechain": {
@@ -114,7 +124,7 @@
         "type": "Text"
       },
       "getAriadneParameters": {
-        "description": "Gets Ariadne parameters for a sidechain",
+        "description": "[DEPRECATED] Gets Ariadne parameters for a sidechain. D Parameter is sourced from Cardano contract. Use midnight.getAriadneParameters instead for authoritative D Parameter from pallet-system-parameters.",
         "params": [
           {
             "name": "at",

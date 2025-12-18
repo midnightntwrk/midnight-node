@@ -48,6 +48,8 @@ use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer};
 use pallet_system_parameters::SystemParametersApi;
 use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiServer};
+
+use crate::ariadne_rpc::{MidnightAriadneRpc, MidnightAriadneRpcApiServer};
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
@@ -200,13 +202,18 @@ where
 		.into_rpc(),
 	)?;
 
+	let session_validator_query = Arc::new(SessionValidatorManagementQuery::new(
+		client.clone(),
+		main_chain_follower_data_sources.authority_selection.clone(),
+	));
+
+	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
+
+	// Midnight Ariadne RPC - provides getAriadneParameters with D Parameter from pallet
 	module.merge(
-		SessionValidatorManagementRpc::new(Arc::new(SessionValidatorManagementQuery::new(
-			client.clone(),
-			main_chain_follower_data_sources.authority_selection.clone(),
-		)))
-		.into_rpc(),
+		MidnightAriadneRpc::new(client.clone(), session_validator_query).into_rpc(),
 	)?;
+
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client).into_rpc())?;
 
