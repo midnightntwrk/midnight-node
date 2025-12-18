@@ -1,4 +1,4 @@
-# Aiken Permissioned Candidates & D Parameter Migration
+# ADR: Aiken Permissioned Candidates & D Parameter Migration
 
 #### Status: Proposed
 #### Date: 2024-12-17
