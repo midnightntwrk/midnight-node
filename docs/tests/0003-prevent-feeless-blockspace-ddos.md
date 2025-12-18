@@ -10,226 +10,45 @@
 
 This test plan validates the DDoS mitigation implemented in ADR-0003. The fix adds `validate_guaranteed_execution` to `pre_dispatch` to reject transactions whose guaranteed part would fail before they consume blockspace.
 
----
-
-## Failure Vectors Under Test
-
-All `TransactionInvalid` variants that can occur during guaranteed part execution:
-
-| Category | Error | Test Priority |
-|----------|-------|---------------|
-| **Contract** | `ContractNotPresent` | 🔴 HIGH |
-| | `ContractAlreadyDeployed` | 🟡 MEDIUM |
-| | `VerifierKeyNotFound` | 🟡 MEDIUM |
-| | `VerifierKeyAlreadyPresent` | 🟢 LOW |
-| **Replay** | `ReplayCounterMismatch` | 🔴 HIGH |
-| | `ReplayProtectionViolation` | 🔴 HIGH |
-| **Balance** | `InsufficientClaimable` | 🔴 HIGH |
-| | `BalanceCheckOutOfBounds` | 🟡 MEDIUM |
-| | `RewardTooSmall` | 🟢 LOW |
-| **Zswap** | `NullifierAlreadyPresent` | 🔴 HIGH |
-| | `CommitmentAlreadyPresent` | 🟡 MEDIUM |
-| | `UnknownMerkleRoot` | 🟡 MEDIUM |
-| **Execution** | `Transcript` | 🟡 MEDIUM |
-| | `EffectsMismatch` | 🟢 LOW |
-| **UTXO** | `InputNotInUtxos` | 🟡 MEDIUM |
-| **Dust** | `DustDoubleSpend` | 🟡 MEDIUM |
-| | `DustDeregistrationNotRegistered` | 🟢 LOW |
-| **Other** | `GenerationInfoAlreadyPresent` | 🟢 LOW |
-| | `InvariantViolation` | 🟢 LOW |
+Key changes validated:
+1. [`validate_guaranteed_execution`](../../ledger/src/versions/common/api/ledger.rs#L208) - Simulates guaranteed part execution without modifying state
+2. [`pre_dispatch`](../../pallets/midnight/src/lib.rs#L458) - Enhanced to call `validate_guaranteed_execution` before block inclusion
 
 ---
 
 ## Test Cases
 
-### PR367-TC-0003-01: ContractNotPresent Rejection
+| <div style="width:120px">Test ID</div> | <div style="width:350px">Objective</div> | <div style="width:400px">Steps</div> | <div style="width:350px">Expected Result</div> | <div style="width:50px">Type</div> |
+|---|---|---|---|---|
+| [PR367-TC-0003-01](../../pallets/midnight/src/tests.rs#L194) | Verify transaction calling non-existent contract is rejected at `pre_dispatch` | 1. Initialize ledger WITHOUT deploying contract  <br>2. Create STORE_TX call (requires deployed contract)  <br>3. Call `pre_dispatch` with the transaction  <br>4. Verify rejection | `pre_dispatch` returns error; transaction NOT included in block; zero blockspace consumed | Unit |
+| [PR367-TC-0003-02](../../pallets/midnight/src/tests.rs#L235) | Verify replayed transaction is rejected at `pre_dispatch` | 1. Deploy contract via DEPLOY_TX  <br>2. Apply STORE_TX successfully  <br>3. Attempt same STORE_TX again via `pre_dispatch`  <br>4. Verify rejection | First submission succeeds; second fails with replay protection error | Unit |
+| [PR367-TC-0003-03](../../pallets/midnight/src/tests.rs#L180) | Verify valid transactions are not affected by new validation | 1. Initialize ledger state  <br>2. Call `pre_dispatch` with valid DEPLOY_TX  <br>3. Verify it passes | `pre_dispatch` returns `Ok(())`; transaction can execute successfully | Unit |
+| [PR367-TC-0003-05](../../pallets/midnight/src/tests.rs#L268) | Verify `validate_guaranteed_execution` is read-only (success path) | 1. Record ledger state root  <br>2. Call `pre_dispatch` with valid transaction  <br>3. Record state root again  <br>4. Compare roots | State roots match; no state modifications from validation | Unit |
+| [PR367-TC-0003-05b](../../pallets/midnight/src/tests.rs#L297) | Verify `validate_guaranteed_execution` is read-only (failure path) | 1. Record ledger state root  <br>2. Call `pre_dispatch` with failing transaction  <br>3. Record state root again  <br>4. Compare roots | State roots match; even failed validation is read-only | Unit |
+| [PR367-TC-0003-06](../../tests/e2e/tests/lib.rs#L1100) | Verify attacker cannot fill blocks with failing transactions (single) | 1. Submit STORE_TX without prior DEPLOY_TX via RPC  <br>2. Verify RPC-level rejection | Transaction rejected at RPC level; error indicates invalid transaction | E2E |
+| [PR367-TC-0003-06b](../../tests/e2e/tests/lib.rs#L1142) | Verify batch attack transactions are all rejected | 1. Submit 5 STORE_TX transactions without DEPLOY_TX  <br>2. Count rejections | All 5 transactions rejected; 0 blockspace consumed | E2E |
+| [PR367-TC-0003-03e2e](../../tests/e2e/tests/lib.rs#L1187)** | Verify valid transactions succeed via RPC (no regression) | 1. Submit valid DEPLOY_TX via RPC  <br>2. Verify acceptance | Transaction accepted and included in block | E2E |
 
-**Objective:** Verify transaction calling non-existent contract is rejected at `pre_dispatch`.
-
-**Preconditions:**
-- Fresh ledger state from genesis
-- No contracts deployed
-
-**Steps:**
-1. Deserialize `STORE_TX` (requires deployed contract)
-2. Initialize ledger state WITHOUT deploying contract
-3. Call `pre_dispatch` with the transaction
-4. Verify rejection with `InvalidTransaction` error
-
-**Expected Result:**
-- `pre_dispatch` returns `TransactionValidityError::Invalid`
-- Error contains `ContractNotPresent`
-- Transaction NOT included in block
-- Zero blockspace consumed
-
-**Success Criteria:** ✅ At least one failing-guaranteed vector is tested and rejected
-
-**Test Location:** `pallets/midnight/src/tests.rs`
+> [!NOTE]
+> **\*\*** Tests marked with ** are temporarily ignored pending fresh node state requirement. Run manually with `cargo test-e2e-local`.
 
 ---
 
-### PR367-TC-0003-02: ReplayProtection Rejection
+## Running Tests
 
-**Objective:** Verify replayed transaction is rejected at `pre_dispatch`.
-
-**Preconditions:**
-- Ledger with deployed contract
-- One successful transaction already applied
-
-**Steps:**
-1. Apply `DEPLOY_TX` successfully
-2. Apply `STORE_TX` successfully
-3. Attempt to apply same `STORE_TX` again via `pre_dispatch`
-4. Verify rejection
-
-**Expected Result:**
-- First submission succeeds
-- Second submission fails with `ReplayProtectionViolation`
-- Replay transaction NOT included in block
-
-**Success Criteria:** ✅ Replay attack vector is blocked at pre_dispatch
-
-**Test Location:** `pallets/midnight/src/tests.rs`
-
----
-
-### PR367-TC-0003-03: Valid Transaction Passes
-
-**Objective:** Verify valid transactions are not affected by new validation.
-
-**Preconditions:**
-- Fresh ledger state
-
-**Steps:**
-1. Initialize ledger
-2. Call `pre_dispatch` with valid `DEPLOY_TX`
-3. Verify it passes
-4. Execute transaction
-5. Verify success
-
-**Expected Result:**
-- `pre_dispatch` returns `Ok(())`
-- Transaction executes successfully
-- Events emitted correctly
-
-**Success Criteria:** ✅ Valid transactions still work; no regression in existing functionality
-
-**Test Location:** `pallets/midnight/src/tests.rs`
-
----
-
-### PR367-TC-0003-04: Partial Success Still Works
-
-**Objective:** Verify transactions with guaranteed success + fallible failure work correctly.
-
-**Preconditions:**
-- Ledger with appropriate state
-
-**Steps:**
-1. Craft transaction where guaranteed will succeed, fallible will fail
-2. Call `pre_dispatch` - should pass (guaranteed OK)
-3. Execute transaction
-4. Verify `PartialSuccess` result
-
-**Expected Result:**
-- `pre_dispatch` passes
-- Transaction included in block
-- `TransactionResult::PartialSuccess` returned
-- Fees extracted (guaranteed succeeded)
-- Fallible part rolled back
-
-**Success Criteria:** Partial success transactions correctly pass pre_dispatch and pay fees
-
-**Note:** Requires crafted transaction with failing fallible part. Deferred - would need custom test transaction generation.
-
----
-
-### PR367-TC-0003-05: Validation Does Not Modify State
-
-**Objective:** Verify `validate_guaranteed_execution` is read-only.
-
-**Preconditions:**
-- Ledger with known state
-
-**Steps:**
-1. Record ledger state hash
-2. Call `validate_guaranteed_execution` (pass or fail)
-3. Record ledger state hash again
-4. Compare hashes
-
-**Expected Result:**
-- State hashes match
-- No state modifications from validation
-
-**Success Criteria:** ✅ Validation is purely read-only with no side effects
-
-**Test Location:** `pallets/midnight/src/tests.rs`
-
----
-
-### PR367-TC-0003-06: Attack Simulation
-
-**Objective:** Verify attacker cannot fill blocks with failing transactions.
-
-**Preconditions:**
-- Fresh ledger state
-- No contracts deployed
-
-**Steps:**
-1. Create batch of 10 transactions calling non-existent contracts
-2. Attempt to include all via block building flow
-3. Measure transactions included
-4. Measure blockspace consumed
-
-**Expected Result:**
-- All 10 transactions rejected at `pre_dispatch`
-- 0 transactions in block
-- 0 blockspace consumed by attack transactions
-
-**Success Criteria:** Attack simulation shows 0 blockspace consumed by malicious transactions
-
----
-
-## Test Matrix
-
-| Test Case | Unit Test | Integration | E2E | Manual | Notes |
-|-----------|-----------|-------------|-----|--------|-------|
-| PR367-TC-0003-01 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| PR367-TC-0003-02 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| PR367-TC-0003-03 | ✅ | ➖ | ✅ | ➖ | `valid_deploy_transaction_succeeds_via_rpc` |
-| PR367-TC-0003-04 | ➖ | ➖ | ⏭️ | ➖ | Requires crafted tx; deferred |
-| PR367-TC-0003-05 | ✅ | ➖ | ➖ | ➖ | Unit test sufficient |
-| PR367-TC-0003-06 | ➖ | ➖ | ✅ | ➖ | `ddos_attack_transaction_rejected_at_rpc`, `ddos_batch_attack_all_rejected` |
-
-Legend: ⬜ Not Started | 🔄 In Progress | ✅ Pass | ❌ Fail | ⏭️ Skipped | ➖ N/A
-
-**E2E Test Location:** `tests/e2e/tests/lib.rs`
-
-**Running E2E tests:**
 ```bash
-# Requires running node on ws://127.0.0.1:9933
+# Run all unit tests for the midnight pallet
+cargo test -p pallet-midnight --lib
+
+# Run specific pre_dispatch tests
+cargo test -p pallet-midnight --lib pre_dispatch
+
+# Run specific test by name
+cargo test -p pallet-midnight --lib test_pre_dispatch_rejects_contract_not_present
+
+# Run E2E tests (requires running node on ws://127.0.0.1:9933)
 cargo test --test e2e_tests --no-default-features --features local -- ddos --nocapture
+
+# Run ignored E2E test manually (requires fresh node state)
+cargo test --test e2e_tests --no-default-features --features local -- valid_deploy_transaction_succeeds_via_rpc --ignored --nocapture
 ```
-
----
-
-## Manual Testing Protocol
-
-For immediate validation without fixing test infrastructure:
-
-| Step | Action | Expected Outcome |
-|------|--------|------------------|
-| 1 | Start dev node with `--dev` flag | Node running locally |
-| 2 | Monitor node logs | Watch for "Pre-dispatch validation failed" messages |
-| 3 | Submit transaction to non-existent contract via RPC | RPC returns error |
-| 4 | Check block contents | Transaction NOT included in block |
-| 5 | Verify no `TxApplied` event | Event log empty for this transaction |
-
----
-
-## References
-
-- **ADR:** [0003-prevent-feeless-blockspace-ddos](../decisions/0003-prevent-feeless-blockspace-ddos.md)
-- **Implementation:** `ledger/src/versions/common/api/ledger.rs` - `validate_guaranteed_execution`
-- **Integration:** `pallets/midnight/src/lib.rs` - `pre_dispatch`
-

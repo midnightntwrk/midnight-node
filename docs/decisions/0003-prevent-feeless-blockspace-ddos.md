@@ -1,10 +1,10 @@
-# Pre-Dispatch Validation of Guaranteed Transaction Part
+# ADR-0003: Pre-Dispatch Validation of Guaranteed Transaction Part
 
-#### status: accepted
-#### date: 2025-12-12
-#### deciders: TBD
+## Status
 
-## Context and Problem Statement
+Accepted
+
+## Context
 
 Midnight transactions have a two-phase execution model:
 1. **Guaranteed part** - Always executes; fees are extracted here
@@ -17,7 +17,26 @@ A DDoS vulnerability exists where transactions can pass structural validation (`
 
 An attacker can exploit this by flooding the network with structurally valid transactions designed to fail the guaranteed part, filling blocks without paying fees.
 
-#### DDoS Attack Vector
+### Technical Forces
+
+- Current validation (`well_formed()`) only checks structural validity, not semantic validity
+- The `pre_dispatch` hook is underutilized (currently just re-runs `validate_unsigned`)
+- Transactions pass pool validation but fail during block execution
+- State-dependent conditions cannot be checked at pool entry time
+
+### Business Forces
+
+- DDoS attacks undermine network reliability and user trust
+- Attackers can fill blocks at zero cost, denying service to legitimate users
+- Network economics depend on fee extraction for resource consumption
+
+### Operational Forces
+
+- Block authors cannot filter transactions that will fail guaranteed execution
+- Failed transactions waste computational resources during block building
+- No mechanism exists to reject semantically invalid transactions before inclusion
+
+### DDoS Attack Vector
 
                          VALIDATION                           EXECUTION
                         (Pool Entry)                      (Block Building)
@@ -41,7 +60,7 @@ An attacker can exploit this by flooding the network with structurally valid tra
                                                                  ↓
                                                       BUT: Blockspace Consumed!
 
-#### Guaranteed Part Failure Vectors
+### Guaranteed Part Failure Vectors
 
 The following `TransactionInvalid` errors can occur during guaranteed part execution, causing fee-free blockspace consumption:
 
@@ -73,35 +92,67 @@ All of these can be exploited to consume blockspace without paying fees if not c
 
 ## Decision Drivers
 
-* Transactions that fail the guaranteed part consume blockspace without paying fees
-* This creates a DDoS attack vector where attackers can fill blocks at no cost
-* Current validation (`well_formed()`) only checks structural validity, not semantic validity
-* The `pre_dispatch` hook is underutilized (currently just re-runs `validate_unsigned`)
+1. **Zero-cost attack prevention** - Transactions that fail the guaranteed part consume blockspace without paying fees
+2. **Correct validation timing** - State-dependent checks must use current block state, not stale pool state
+3. **Minimal architecture impact** - Solution should work within existing Substrate patterns
+4. **No economic model changes** - Avoid introducing new fee mechanisms or account abstractions
 
 ## Considered Options
 
-1. **Enhanced `pre_dispatch` validation** - Add semantic validation of guaranteed part before block inclusion
-2. **Substrate-level base fee** - Charge a minimum fee via Substrate's fee mechanism before ledger execution
-3. **Dry-run in pool validation** - Simulate guaranteed execution during `validate_unsigned`
-4. **Move fee extraction first** - Restructure ledger to extract fees before guaranteed execution
-5. **Block builder hints** - Advisory system for block authors to filter problematic transactions
+### Option 1: Enhanced `pre_dispatch` validation (Selected)
 
-## Decision Outcome
+Add semantic validation of guaranteed part before block inclusion using a new `validate_guaranteed_execution` function.
 
-Chosen option: **"Enhanced `pre_dispatch` validation"**, because it:
-- Catches failures at the correct point (block building, not pool entry)
-- Uses current block state for validation (not stale pool validation state)
-- Requires minimal changes to ledger architecture
-- Follows existing Substrate patterns
+- ✅ Uses current block state (accurate validation)
+- ✅ Catches failures at the correct pipeline point
+- ✅ Minimal changes to ledger architecture
+- ✅ Follows existing Substrate patterns
+- ❌ Some work duplication (validate + apply)
+- ❌ Small performance overhead
 
-### Implementation
+### Option 2: Substrate-level base fee
 
-1. Add `validate_guaranteed_execution` function in ledger that simulates guaranteed part execution without modifying state
-2. Expose this through the Bridge API
-3. Enhance `pre_dispatch` in the midnight pallet to call this validation
-4. Reject transactions at block building time if guaranteed part would fail
+Charge a minimum fee via Substrate's fee mechanism before ledger execution.
 
-#### Solution Flow
+- ✅ Simple implementation using existing Substrate infrastructure
+- ❌ Changes economic model of the chain
+- ❌ Still wastes blockspace (transaction included, then fails)
+- ❌ Requires account abstraction for fee payment
+
+### Option 3: Dry-run in pool validation
+
+Simulate guaranteed execution during `validate_unsigned`.
+
+- ✅ Catches failures earlier in pipeline
+- ❌ Uses stale state (pool validation may happen long before block)
+- ❌ Expensive to run for every pool entry
+
+### Option 4: Move fee extraction first
+
+Restructure ledger to extract fees before guaranteed execution.
+
+- ✅ Fundamental fix to the root cause
+- ❌ Major ledger architecture change
+- ❌ High risk of breaking existing functionality
+- ❌ High implementation effort
+
+### Option 5: Block builder hints
+
+Advisory system for block authors to filter problematic transactions.
+
+- ✅ Low coupling with existing code
+- ❌ Advisory only (doesn't prevent determined attackers)
+- ❌ Requires changes to block authoring logic
+
+## Decision
+
+Implement **Option 1: Enhanced `pre_dispatch` validation** because it catches failures at the correct point (block building, not pool entry), uses current block state for validation, requires minimal changes to ledger architecture, and follows existing Substrate patterns.
+
+Key constraints:
+- Validation must be read-only (no state modifications)
+- Validation must use the same logic as actual guaranteed execution
+- Rejected transactions must not be included in blocks
+- Edge case handling: state could change between `pre_dispatch` and `apply` (handled by existing error path)
 
 ```mermaid
 sequenceDiagram
@@ -123,59 +174,21 @@ sequenceDiagram
     end
 ```
 
-### Positive Consequences
+## Confirmation
 
-* Transactions with failing guaranteed parts are rejected before block inclusion
-* Attackers cannot fill blocks without paying fees
-* Minimal impact on existing transaction processing flow
-* Uses existing Substrate hook (`pre_dispatch`)
+The decision will be validated through:
 
-### Negative Consequences
+1. **Unit tests**: Verify transactions with failing guaranteed parts are rejected at `pre_dispatch`
+2. **Attack simulation**: Batch of malicious transactions shows 0 blockspace consumed
+3. **Regression tests**: Valid transactions still process correctly
 
-* Slight performance overhead (guaranteed part validated twice for successful transactions)
-* Edge case: state could change between `pre_dispatch` and `apply` (handled by existing error path)
-
-## Validation
-
-Measurable outcomes:
-
-- Attack simulation test: 100% of failing-guaranteed transactions rejected before block inclusion
-- Performance: Block building time impact < 10%
+**Success criteria:**
+- 100% of failing-guaranteed transactions rejected before block inclusion
+- Block building time impact < 10%
 - No regressions in existing transaction processing
 
-## Pros and Cons of the Options
+## Notes
 
-### Enhanced `pre_dispatch` validation
-
-* Good, because it uses current block state (accurate validation)
-* Good, because it's the correct point in the pipeline
-* Good, because minimal changes to ledger architecture
-* Neutral, because some work duplication (validate + apply)
-* Bad, because small performance overhead
-
-### Substrate-level base fee
-
-* Good, because simple implementation using existing Substrate infrastructure
-* Bad, because changes economic model of the chain
-* Bad, because still wastes blockspace (transaction included, then fails)
-* Bad, because requires account abstraction for fee payment
-
-### Dry-run in pool validation
-
-* Good, because catches failures earlier in pipeline
-* Bad, because uses stale state (pool validation may happen long before block)
-* Bad, because expensive to run for every pool entry
-
-### Move fee extraction first
-
-* Good, because fundamental fix to the root cause
-* Bad, because major ledger architecture change
-* Bad, because high risk of breaking existing functionality
-* Bad, because high implementation effort
-
-### Block builder hints
-
-* Good, because low coupling with existing code
-* Bad, because advisory only (doesn't prevent determined attackers)
-* Bad, because requires changes to block authoring logic
-
+- Performance overhead is acceptable given the security benefit
+- Transactions with successful guaranteed but failed fallible parts still work correctly (partial success)
+- The validation function must stay synchronized with actual execution logic to prevent divergence
