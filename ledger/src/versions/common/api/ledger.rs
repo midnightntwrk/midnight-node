@@ -210,7 +210,11 @@ impl<D: DB> Ledger<D> {
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 	) -> Result<(), LedgerApiError> {
-		// First, perform structural validation (well_formed check)
+		// Convert Transaction to VerifiedTransaction via well_formed().
+		// NOTE: This validation is also performed by validate_unsigned() before pre_dispatch
+		// calls this function. However, we must call it again here because apply() requires
+		// a VerifiedTransaction type, and the earlier validation discards that result.
+		// This is a type-system constraint, not redundant logic.
 		let ctx = sp.get_transaction_context(block_context.clone());
 		let valid_tx =
 			tx.0.well_formed(
