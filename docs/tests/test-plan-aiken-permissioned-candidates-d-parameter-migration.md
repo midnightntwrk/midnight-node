@@ -1,32 +1,32 @@
 # Test Plan: Aiken Permissioned Candidates & D Parameter Migration
 
-**ADR:** [0005-aiken-permissioned-candidates-d-parameter-migration](../decisions/0005-aiken-permissioned-candidates-d-parameter-migration.md)
+**ADR:** [adr-aiken-permissioned-candidates-d-parameter-migration](../decisions/adr-aiken-permissioned-candidates-d-parameter-migration.md)
 **Ticket:** [PM-20994](https://shielded.atlassian.net/browse/PM-20994)
-**PR:** [#378](https://github.com/midnightntwrk/midnight-node/pull/378)
 
 ---
 
 ## Overview
 
-This test plan validates the migration from Haskell-based Permissioned Candidates contracts to Aiken-based contracts, and the transition of D Parameter sourcing from Cardano contracts to `pallet-system-parameters` (via mock initially).
+This test plan validates the migration from Haskell-based Permissioned Candidates contracts to Aiken-based contracts, and the transition of D Parameter sourcing from Cardano contracts to `pallet-system-parameters`.
 
 Key changes validated:
-1. [`DParameterProvider`](../../runtime/src/d_parameter.rs#L34) trait correctly abstracts D Parameter sourcing
-2. [`MockDParameterProvider`](../../runtime/src/d_parameter.rs#L48) maintains backward compatibility (uses inherent data)
-3. [`select_authorities_with_provider`](../../runtime/src/lib.rs#L582) authority selection works correctly
+1. D Parameter is sourced from [`pallet-system-parameters`](../../pallets/system-parameters/src/lib.rs)
+2. [`select_authorities_optionally_overriding`](../../runtime/src/lib.rs#L581) uses pallet storage directly
+3. Emergency `DParameterOverride` mechanism removed from `pallet-midnight`
 
 ---
 
 ## Test Cases
 
-| <div style="width:120px">Test ID</div> | <div style="width:350px">Objective</div> | <div style="width:400px">Steps</div> | <div style="width:350px">Expected Result</div> | <div style="width:50px">Type</div> |
+| Test ID | Objective | Steps | Expected Result | Type |
 |---|---|---|---|---|
-| [PR378-TC-01](../../runtime/src/d_parameter.rs#L78) | Verify mock provider returns `None` to maintain backward compatibility with inherent data | 1. Call `MockDParameterProvider::get_d_parameter()`  <br>2. Verify result is `None` | Returns `None`, indicating inherent data should be used | Unit |
-| [PR378-TC-02](../../runtime/src/d_parameter.rs#L84) | Verify fixed provider returns configured D Parameter values for testing | 1. Create `FixedDParameterProvider<3, 2>` type  <br>2. Call `get_d_parameter()`  <br>3. Verify returned values match configuration | Returns `Some(DParameter)` with `num_permissioned_candidates = 3`, `num_registered_candidates = 2` | Unit |
-| [PR378-TC-03](../../runtime/src/lib.rs#L1730) | Verify `select_authorities_with_provider` correctly uses provider values | 1. Create authority selection inputs with D=(1, 0)  <br>2. Call `select_authorities_with_provider::<FixedDParameterProvider<20, 2>>`  <br>3. Verify D Parameter override is applied | Provider overrides input D Parameter; authority selection uses provider values (20 permissioned, 2 registered) | Unit |
-| [PR378-TC-04](../../runtime/src/lib.rs#L1671) | Verify Aura authority rotation continues to work | 1. Run existing `check_aura_authorities_rotation` test  <br>2. Verify authorities rotate correctly | Test passes, Aura authorities rotate as expected | Unit |
-| [PR378-TC-05](../../runtime/src/lib.rs#L1620) | Verify Grandpa authority rotation continues to work | 1. Run existing `check_grandpa_authorities_rotation` test  <br>2. Verify authorities rotate correctly | Test passes, Grandpa authorities rotate as expected | Unit |
-| [PR378-TC-06](../../runtime/src/lib.rs#L1705) | Verify cross-chain committee rotation continues to work | 1. Run existing `check_cross_chain_committee_rotation` test  <br>2. Verify committee rotates correctly | Test passes, cross-chain committee rotates as expected | Unit |
+| TC-01 | Verify D Parameter can be updated via pallet extrinsic | 1. Call `SystemParameters::update_d_parameter(Root, 5, 3)` <br>2. Verify storage updated | D Parameter in storage is (5, 3) | Unit |
+| TC-02 | Verify `get_d_parameter()` returns current storage values | 1. Set D Parameter via extrinsic <br>2. Call `SystemParameters::get_d_parameter()` | Returns `DParameter` with configured values | Unit |
+| TC-03 | Verify authority selection uses pallet D Parameter | 1. Set D Parameter via pallet <br>2. Call authority selection <br>3. Verify correct validator count selected | Authority selection respects pallet D Parameter values | Unit |
+| TC-04 | Verify Aura authority rotation continues to work | 1. Run `check_aura_authorities_rotation` test | Test passes, Aura authorities rotate as expected | Unit |
+| TC-05 | Verify Grandpa authority rotation continues to work | 1. Run `check_grandpa_authorities_rotation` test | Test passes, Grandpa authorities rotate as expected | Unit |
+| TC-06 | Verify cross-chain committee rotation continues to work | 1. Run `check_cross_chain_committee_rotation` test | Test passes, cross-chain committee rotates as expected | Unit |
+| TC-07 | Verify D Parameter override integration test | 1. Run `check_overridden_d_param_committee_rotation` test | D Parameter from pallet correctly overrides inherent data | Unit |
 
 ---
 
@@ -36,8 +36,8 @@ Key changes validated:
 # Run all runtime tests
 cargo test -p midnight-node-runtime --lib
 
-# Run d_parameter module tests specifically
-cargo test -p midnight-node-runtime --lib d_parameter
+# Run pallet-system-parameters tests
+cargo test -p pallet-system-parameters --lib
 
 # Run committee rotation tests
 cargo test -p midnight-node-runtime --lib check_
@@ -45,5 +45,16 @@ cargo test -p midnight-node-runtime --lib check_
 # Verify build
 cargo build -p midnight-node-runtime
 cargo build -p pallet-midnight
+cargo build -p pallet-system-parameters
 ```
+
+---
+
+## Test Coverage
+
+| Component | Test File | Status |
+|-----------|-----------|--------|
+| pallet-system-parameters | `pallets/system-parameters/src/tests.rs` | ✅ Covered |
+| Runtime authority selection | `runtime/src/lib.rs` (tests module) | ✅ Covered |
+| D Parameter integration | `check_overridden_d_param_committee_rotation` | ✅ Covered |
 

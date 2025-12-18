@@ -1,7 +1,8 @@
 # ADR: Aiken Permissioned Candidates & D Parameter Migration
 
-#### Status: Proposed
+#### Status: Accepted
 #### Date: 2024-12-17
+#### Updated: 2025-12-18
 #### Deciders: TBD
 
 ## Context and Problem Statement
@@ -59,27 +60,31 @@ Continue using the existing emergency override mechanism as a stand-in for the r
 
 ## Decision
 
-Implement **Option A: Trait-based abstraction with mockable provider** because it provides a clean separation of concerns, follows existing codebase patterns, and allows the mock to be easily replaced with the real `pallet-system-parameters` implementation when available.
+Implement **Option A: Direct pallet integration** - the D Parameter is sourced directly from `pallet-system-parameters` on-chain storage. The trait-based abstraction was used during development while the pallet was being built, and has now been replaced with direct pallet calls.
 
-Key constraints:
-- The abstraction must support returning on-chain values or signaling that inherent data should be used
+Key outcomes:
+- D Parameter is sourced from `SystemParameters::get_d_parameter()` 
+- Emergency override mechanism (`DParameterOverride`) removed from `pallet-midnight`
 - The Registered Candidates address is kept as-is (not migrated to Aiken)
 
 ## Confirmation
 
-The decision will be validated through:
+The decision has been validated through:
 
-1. All existing tests continue to pass
-2. Authority selection works correctly with mock D Parameter values
-3. No regression in block production or finalization
-4. Emergency override mechanism fully removed from codebase
+1. ✅ All existing tests continue to pass
+2. ✅ Authority selection works correctly with `pallet-system-parameters` D Parameter values
+3. ✅ No regression in block production or finalization
+4. ✅ Emergency override mechanism fully removed from codebase
+5. ✅ Mock abstraction layer (`DParameterProvider` trait) removed after pallet integration
 
 ## Notes
 
 - Supersedes the emergency override mechanism from ADR-0001
 - Aiken contracts use the same datum schema as the Haskell contracts they replace
+- D Parameter is now governed on-chain via `pallet-system-parameters`, initialized at genesis
 
 ## References
 
 - [ADR-0001: Ariadne Selection Emergency Override](0001-ariadne-selection-emergency-override.md)
+- PR #387: Add System Parameters pallet
 
