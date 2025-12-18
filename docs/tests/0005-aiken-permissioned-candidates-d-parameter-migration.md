@@ -11,9 +11,9 @@
 This test plan validates the migration from Haskell-based Permissioned Candidates contracts to Aiken-based contracts, and the transition of D Parameter sourcing from Cardano contracts to `pallet-system-parameters` (via mock initially).
 
 Key changes validated:
-1. `DParameterProvider` trait correctly abstracts D Parameter sourcing
-2. `MockDParameterProvider` maintains backward compatibility (uses inherent data)
-3. `select_authorities_with_provider` authority selection works correctly
+1. [`DParameterProvider`](../../runtime/src/d_parameter.rs#L34) trait correctly abstracts D Parameter sourcing
+2. [`MockDParameterProvider`](../../runtime/src/d_parameter.rs#L48) maintains backward compatibility (uses inherent data)
+3. [`select_authorities_with_provider`](../../runtime/src/lib.rs#L582) authority selection works correctly
 
 ---
 
@@ -47,9 +47,3 @@ cargo build -p midnight-node-runtime
 cargo build -p pallet-midnight
 ```
 
----
-
-## References
-
-- **Implementation:** [`runtime/src/d_parameter.rs#L34`](../../runtime/src/d_parameter.rs#L34) - `DParameterProvider` trait
-- **Integration:** [`runtime/src/lib.rs#L582`](../../runtime/src/lib.rs#L582) - `select_authorities_with_provider`
