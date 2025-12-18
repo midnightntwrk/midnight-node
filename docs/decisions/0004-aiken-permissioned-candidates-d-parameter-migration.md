@@ -99,5 +99,5 @@ The decision will be validated through:
 
 ## References
 
-- ADR-0001: Ariadne Selection Emergency Override
+- [ADR-0001: Ariadne Selection Emergency Override](0001-ariadne-selection-emergency-override.md)
 
