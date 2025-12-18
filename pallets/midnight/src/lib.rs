@@ -419,7 +419,7 @@ pub mod pallet {
 		}
 
 		// Note: call_index(1) was previously used for override_d_parameter, which has been removed.
-		// D Parameter is now sourced from pallet-system-parameters (see ADR-0004).
+		// D Parameter is now sourced from pallet-system-parameters.
 		// call_index(1) is intentionally skipped to avoid breaking changes.
 
 		#[pallet::call_index(2)]

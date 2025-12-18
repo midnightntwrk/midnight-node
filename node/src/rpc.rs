@@ -208,11 +208,7 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-
-	// Midnight Ariadne RPC - provides getAriadneParameters with D Parameter from pallet
-	module.merge(
-		MidnightAriadneRpc::new(client.clone(), session_validator_query).into_rpc(),
-	)?;
+	module.merge(MidnightAriadneRpc::new(client.clone(), session_validator_query).into_rpc())?;
 
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client).into_rpc())?;
