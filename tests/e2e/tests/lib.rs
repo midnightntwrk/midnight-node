@@ -1089,7 +1089,7 @@ async fn create_hundred_registrations() {
 async fn deregister_with_valid_cnight_utxo() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
@@ -1146,6 +1146,41 @@ async fn deregister_with_valid_cnight_utxo() {
     let nonce =
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     let utxos = cardano_client.utxos().await;
     assert!(!utxos.is_empty(), "No UTXOs found for funding address");
