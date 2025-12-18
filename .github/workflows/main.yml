@@ -100,9 +100,9 @@ jobs:
 
       - name: Archive artifacts
         run: |
-          tar -czf artifacts-amd64.tar.gz -C artifacts-amd64 .
-          echo "Created artifacts-amd64.tar.gz"
-          ls -lh artifacts-amd64.tar.gz
+          tar -czf midnight-node-amd64.tar.gz -C artifacts-amd64 .
+          echo "Created midnight-node-amd64.tar.gz"
+          ls -lh midnight-node-amd64.tar.gz
 
       - name: Create or Update Draft Release
         env:
@@ -143,7 +143,7 @@ jobs:
             --draft \
             --notes-file RELEASE_NOTES.md
 
-          gh release upload "$RELEASE_TITLE" artifacts-amd64.tar.gz --clobber
+          gh release upload "$RELEASE_TITLE" midnight-node-amd64.tar.gz --clobber
 
       - name: Archive release notes
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -204,9 +204,10 @@ jobs:
 
       - name: Archive ARM artifacts
         run: |
-          tar -czf artifacts-arm64.tar.gz -C artifacts-arm64 .
-          echo "Created artifacts-arm64.tar.gz"
-          ls -lh artifacts-arm64.tar.gz
+          tar -czf midnight-node-arm64.tar.gz -C artifacts-arm64 .
+          echo "Created midnight-node-arm64.tar.gz"
+          ls -lh midnight-node-arm64.tar.gz
+
 
       - name: Create or Update Draft Release (ARM64)
         env:
@@ -226,7 +227,7 @@ jobs:
           fi
 
           echo "Uploading ARM64 artifacts..."
-          gh release upload "$RELEASE_TITLE" artifacts-arm64.tar.gz --clobber
+          gh release upload "$RELEASE_TITLE" midnight-node-arm64.tar.gz --clobber
           echo "ARM64 artifacts uploaded successfully."
 
   build-indexer-images:
