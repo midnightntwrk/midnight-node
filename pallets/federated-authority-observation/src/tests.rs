@@ -19,7 +19,7 @@ use core::str::FromStr;
 use frame_support::inherent::ProvideInherent;
 use frame_support::{BoundedVec, assert_noop, assert_ok};
 use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
+	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
 };
 use parity_scale_codec::Encode;
 use sidechain_domain::{MainchainAddress, McBlockHash, PolicyId};
@@ -71,8 +71,8 @@ fn create_inherent_data(
 		.collect();
 
 	let fed_auth_data = FederatedAuthorityData {
-		council_authorities: council_keys,
-		technical_committee_authorities: tc_keys,
+		council_authorities: AuthoritiesData { authorities: council_keys, round: 0 },
+		technical_committee_authorities: AuthoritiesData { authorities: tc_keys, round: 0 },
 		mc_block_hash: McBlockHash([0u8; 32]),
 	};
 

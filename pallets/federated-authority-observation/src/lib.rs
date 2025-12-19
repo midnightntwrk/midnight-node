@@ -388,10 +388,12 @@ pub mod pallet {
 			let fed_auth_data = Self::get_data_from_inherent_data(data).unwrap_or_default()?;
 
 			let council_authorities =
-				Self::decode_auth_accounts(fed_auth_data.council_authorities).ok()?;
+				Self::decode_auth_accounts(fed_auth_data.council_authorities.authorities).ok()?;
 
-			let technical_committee_authorities =
-				Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities).ok()?;
+			let technical_committee_authorities = Self::decode_auth_accounts(
+				fed_auth_data.technical_committee_authorities.authorities,
+			)
+			.ok()?;
 
 			if !council_authorities.is_empty() && !technical_committee_authorities.is_empty() {
 				Some(Call::reset_members { council_authorities, technical_committee_authorities })
@@ -410,8 +412,10 @@ pub mod pallet {
 		) -> Result<(), Self::Error> {
 			// Validate the federated authority data from inherent
 			if let Some(fed_auth_data) = Self::get_data_from_inherent_data(data)? {
-				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities)?;
-				let _ = Self::decode_auth_accounts(fed_auth_data.technical_committee_authorities)?;
+				let _ = Self::decode_auth_accounts(fed_auth_data.council_authorities.authorities)?;
+				let _ = Self::decode_auth_accounts(
+					fed_auth_data.technical_committee_authorities.authorities,
+				)?;
 			}
 
 			Ok(())
