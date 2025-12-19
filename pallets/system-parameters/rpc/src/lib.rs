@@ -40,9 +40,8 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::Block as BlockT;
-use sp_session_validator_management_query::types::AriadneParameters;
 use sp_session_validator_management_query::SessionValidatorManagementQueryApi;
-
+use sp_session_validator_management_query::types::AriadneParameters;
 
 /// Terms and Conditions response for RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
