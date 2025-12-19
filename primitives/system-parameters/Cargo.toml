@@ -1,0 +1,26 @@
+[package]
+name = "midnight-primitives-system-parameters"
+version = "0.1.0"
+edition = "2024"
+description = "Primitives for system parameters"
+license-file.workspace = true
+
+[dependencies]
+hex.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+sp-runtime.workspace = true
+sp-core.workspace = true
+sidechain-domain.workspace = true
+serde = { workspace = true, features = ["derive"], optional = true }
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sp-runtime/std",
+    "sidechain-domain/std",
+    "sp-core/std",
+    "serde",
+]
