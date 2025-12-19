@@ -12,10 +12,20 @@
 // limitations under the License.
 
 //! RPC endpoints for the System Parameters pallet
+//!
+//! This module provides RPC endpoints for accessing system parameters:
+//! - `systemParameters_getTermsAndConditions` - Get current Terms and Conditions
+//! - `systemParameters_getDParameter` - Get current D Parameter
+//! - `systemParameters_getAriadneParameters` - Get Ariadne parameters with D Parameter from pallet
+//!
+//! The `getAriadneParameters` endpoint returns the same response schema as
+//! `sidechain_getAriadneParameters` but sources the D Parameter from the on-chain
+//! `pallet-system-parameters` instead of from Cardano.
 
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use jsonrpsee::{
 	core::RpcResult,
 	proc_macros::rpc,
@@ -25,10 +35,14 @@ use serde::{Deserialize, Serialize};
 
 use pallet_system_parameters::SystemParametersApi;
 use sc_client_api::BlockchainEvents;
+use sidechain_domain::McEpochNumber;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
 use sp_runtime::traits::Block as BlockT;
+use sp_session_validator_management_query::types::AriadneParameters;
+use sp_session_validator_management_query::SessionValidatorManagementQueryApi;
+
 
 /// Terms and Conditions response for RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +71,8 @@ pub enum SystemParametersRpcError {
 	UnableToGetTermsAndConditions,
 	/// Unable to get D-parameter
 	UnableToGetDParameter,
+	/// Unable to get Ariadne parameters
+	UnableToGetAriadneParameters(String),
 	/// Runtime API error
 	RuntimeApiError(String),
 }
@@ -69,6 +85,9 @@ impl Display for SystemParametersRpcError {
 			},
 			SystemParametersRpcError::UnableToGetDParameter => {
 				write!(f, "Unable to get D-parameter")
+			},
+			SystemParametersRpcError::UnableToGetAriadneParameters(msg) => {
+				write!(f, "Unable to get Ariadne parameters: {}", msg)
 			},
 			SystemParametersRpcError::RuntimeApiError(msg) => {
 				write!(f, "Runtime API error: {}", msg)
@@ -103,23 +122,38 @@ pub trait SystemParametersRpcApi<BlockHash> {
 	/// Returns the number of permissioned and registered candidates.
 	#[method(name = "systemParameters_getDParameter")]
 	fn get_d_parameter(&self, at: Option<BlockHash>) -> RpcResult<DParameterRpcResponse>;
+
+	/// Get Ariadne parameters for a given mainchain epoch.
+	///
+	/// Returns permissioned candidates and candidate registrations from Cardano,
+	/// but the D Parameter is sourced from `pallet-system-parameters` on-chain storage.
+	///
+	/// This endpoint should be used instead of `sidechain_getAriadneParameters` which
+	/// sources D Parameter from the deprecated Cardano contract.
+	#[method(name = "systemParameters_getAriadneParameters")]
+	async fn get_ariadne_parameters(
+		&self,
+		epoch_number: McEpochNumber,
+	) -> RpcResult<AriadneParameters>;
 }
 
 /// System Parameters RPC implementation
-pub struct SystemParametersRpc<C, Block> {
+pub struct SystemParametersRpc<C, Block, Q> {
 	client: Arc<C>,
+	query_api: Arc<Q>,
 	_marker: std::marker::PhantomData<Block>,
 }
 
-impl<C, Block> SystemParametersRpc<C, Block> {
+impl<C, Block, Q> SystemParametersRpc<C, Block, Q> {
 	/// Create a new instance of the System Parameters RPC handler
-	pub fn new(client: Arc<C>) -> Self {
-		Self { client, _marker: Default::default() }
+	pub fn new(client: Arc<C>, query_api: Arc<Q>) -> Self {
+		Self { client, query_api, _marker: Default::default() }
 	}
 }
 
-impl<C, Block> SystemParametersRpcApiServer<<Block as BlockT>::Hash>
-	for SystemParametersRpc<C, Block>
+#[async_trait]
+impl<C, Block, Q> SystemParametersRpcApiServer<<Block as BlockT>::Hash>
+	for SystemParametersRpc<C, Block, Q>
 where
 	Block: BlockT,
 	C: Send + Sync + 'static,
@@ -127,6 +161,7 @@ where
 	C: HeaderBackend<Block>,
 	C: BlockchainEvents<Block>,
 	C::Api: SystemParametersApi<Block, H256>,
+	Q: SessionValidatorManagementQueryApi + Send + Sync + 'static,
 {
 	fn get_terms_and_conditions(
 		&self,
@@ -162,5 +197,34 @@ where
 			num_permissioned_candidates: result.num_permissioned_candidates,
 			num_registered_candidates: result.num_registered_candidates,
 		})
+	}
+
+	async fn get_ariadne_parameters(
+		&self,
+		epoch_number: McEpochNumber,
+	) -> RpcResult<AriadneParameters> {
+		// Get the full Ariadne parameters from the underlying query API
+		// (this gets candidates from Cardano and D Parameter from Cardano)
+		let mut ariadne_params = self
+			.query_api
+			.get_ariadne_parameters(epoch_number)
+			.await
+			.map_err(|e| SystemParametersRpcError::UnableToGetAriadneParameters(e))?;
+
+		// Replace D Parameter with the value from pallet-system-parameters
+		let best_block = self.client.info().best_hash;
+		let pallet_d_param = self
+			.client
+			.runtime_api()
+			.get_d_parameter(best_block)
+			.map_err(|e| SystemParametersRpcError::RuntimeApiError(format!("{:?}", e)))?;
+
+		// Update the D Parameter in the response
+		ariadne_params.d_parameter.num_permissioned_candidates =
+			pallet_d_param.num_permissioned_candidates;
+		ariadne_params.d_parameter.num_registered_candidates =
+			pallet_d_param.num_registered_candidates;
+
+		Ok(ariadne_params)
 	}
 }

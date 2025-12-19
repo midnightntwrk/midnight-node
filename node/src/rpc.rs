@@ -48,8 +48,6 @@ use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer};
 use pallet_system_parameters::SystemParametersApi;
 use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiServer};
-
-use crate::ariadne_rpc::{MidnightAriadneRpc, MidnightAriadneRpcApiServer};
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
@@ -208,10 +206,8 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-	module.merge(MidnightAriadneRpc::new(client.clone(), session_validator_query).into_rpc())?;
-
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
-	module.merge(SystemParametersRpc::new(client).into_rpc())?;
+	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 
 	// Extend this RPC with a custom API by using the following syntax.
 	// `YourRpcStruct` should have a reference to a client, which is needed

@@ -9995,6 +9995,7 @@ dependencies = [
 name = "pallet-system-parameters-rpc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "hex",
  "jsonrpsee",
  "pallet-system-parameters",
@@ -10005,6 +10006,7 @@ dependencies = [
  "sp-blockchain",
  "sp-core",
  "sp-runtime",
+ "sp-session-validator-management-query",
 ]
 
 [[package]]

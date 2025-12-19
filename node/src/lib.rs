@@ -23,7 +23,6 @@ pub mod inherent_data;
 pub mod main_chain_follower;
 pub mod partner_chains;
 pub mod payload;
-pub mod ariadne_rpc;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
