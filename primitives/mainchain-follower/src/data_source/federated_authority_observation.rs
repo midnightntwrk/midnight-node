@@ -60,12 +60,6 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
 				Ok(datum) => {
 					let authorities_data = AuthoritiesData::from(datum);
-					log::info!(
-						"Successfully decoded {} council members from block {} (round: {})",
-						authorities_data.authorities.len(),
-						utxo.block_number.0,
-						authorities_data.round
-					);
 					authorities_data
 				},
 				Err(e) => {
@@ -97,12 +91,6 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
 				Ok(datum) => {
 					let authorities_data = AuthoritiesData::from(datum);
-					log::info!(
-						"Successfully decoded {} technical committee members from block {} (round: {})",
-						authorities_data.authorities.len(),
-						utxo.block_number.0,
-						authorities_data.round
-					);
 					authorities_data
 				},
 				Err(e) => {
