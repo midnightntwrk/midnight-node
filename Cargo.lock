@@ -7789,12 +7789,8 @@ name = "midnight-primitives-system-parameters"
 version = "0.1.0"
 dependencies = [
  "hex",
- "parity-scale-codec",
- "scale-info",
  "serde",
  "sidechain-domain",
- "sp-core",
- "sp-runtime",
 ]
 
 [[package]]
@@ -9980,7 +9976,6 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "log",
  "parity-scale-codec",
  "scale-info",
  "serde",
@@ -9997,7 +9992,6 @@ name = "pallet-system-parameters-rpc"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "hex",
  "jsonrpsee",
  "pallet-system-parameters",
  "sc-client-api",

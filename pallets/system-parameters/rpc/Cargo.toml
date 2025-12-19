@@ -13,7 +13,6 @@ description = "RPC endpoints for system-parameters pallet"
 jsonrpsee = { workspace = true, features = ["client", "server", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 async-trait.workspace = true
-hex.workspace = true
 sc-client-api.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
