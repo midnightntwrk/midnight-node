@@ -116,8 +116,8 @@ jobs:
           export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
           season-build-release-notes
 
-          if [ "$BRANCH" != "main" ]; then
-            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation..."
+          if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
+            echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for AMD64..."
             exit 0
           fi
 
@@ -214,8 +214,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
         run: |
-          if [ "$BRANCH" != "main" ]; then
-            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation for ARM64..."
+          if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
+            echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for ARM64..."
             exit 0
           fi
 
