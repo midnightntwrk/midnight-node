@@ -11,23 +11,53 @@ use midnight_node_metadata::midnight_metadata_latest::{
 	c_night_observation::{self}
 	,
 };
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicEvents;
+use subxt::ext::subxt_rpcs::rpc_params;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
 
+/// Terms and Conditions response from RPC
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TermsAndConditionsResponse {
+    /// SHA-256 hash of the terms and conditions document (hex-encoded with 0x prefix)
+    pub hash: String,
+    /// URL where the terms and conditions can be found
+    pub url: String,
+}
+
+/// D-Parameter response from RPC
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DParameterResponse {
+    /// Number of permissioned candidates
+    pub num_permissioned_candidates: u16,
+    /// Number of registered candidates
+    pub num_registered_candidates: u16,
+}
+
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
+    rpc_client: RpcClient,
 }
 
 impl MidnightClient {
     pub async fn new(node_settings: NodeClientSettings) -> Self {
         let online_client =
-            OnlineClient::<SubstrateConfig>::from_insecure_url(node_settings.base_url)
+            OnlineClient::<SubstrateConfig>::from_insecure_url(&node_settings.base_url)
                 .await
-                .expect("Failed to initialize client");
-        Self { online_client }
+                .expect("Failed to initialize online client");
+        let rpc_client = RpcClient::from_insecure_url(&node_settings.base_url)
+            .await
+            .expect("Failed to initialize RPC client");
+        Self {
+            online_client,
+            rpc_client,
+        }
     }
 
     pub fn new_seed() -> WalletSeed {
@@ -226,5 +256,84 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for federated authority events".into()))
+    }
+
+    /// Get the current Terms and Conditions via RPC.
+    ///
+    /// Returns the hash (hex-encoded with 0x prefix) and URL of the current terms and conditions,
+    /// or None if not set.
+    pub async fn get_terms_and_conditions(
+        &self,
+    ) -> Result<Option<TermsAndConditionsResponse>, Box<dyn std::error::Error>> {
+        let response: Option<TermsAndConditionsResponse> = self
+            .rpc_client
+            .request("systemParameters_getTermsAndConditions", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current Terms and Conditions at a specific block hash.
+    pub async fn get_terms_and_conditions_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<Option<TermsAndConditionsResponse>, Box<dyn std::error::Error>> {
+        let response: Option<TermsAndConditionsResponse> = self
+            .rpc_client
+            .request(
+                "systemParameters_getTermsAndConditions",
+                rpc_params![block_hash],
+            )
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current D-Parameter via RPC.
+    ///
+    /// Returns the number of permissioned and registered candidates.
+    pub async fn get_d_parameter(&self) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the D-Parameter at a specific block hash.
+    pub async fn get_d_parameter_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![block_hash])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current best block hash from the node.
+    pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let block = self.online_client.blocks().at_latest().await?;
+        Ok(block.hash())
+    }
+
+    /// Wait for a new finalized block and return its hash.
+    pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+
+        let result = timeout(Duration::from_secs(30), async {
+            if let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+                println!("New finalized block #{}", block.header().number);
+                return Ok(block.hash());
+            }
+            Err("No block received".into())
+        })
+        .await;
+
+        result.unwrap_or_else(|_| Err("Timeout waiting for finalized block".into()))
     }
 }

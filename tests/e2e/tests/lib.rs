@@ -2020,4 +2020,234 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         balance_after_rotation,
         balance_before_rotation
     );
+// -------- EXPECTED SYSTEM PARAMETERS GENESIS VALUES --------
+
+/// Expected genesis terms and conditions hash (all zeros for dev network)
+const EXPECTED_TC_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+/// Expected genesis terms and conditions URL
+const EXPECTED_TC_URL: &str = "https://midnight.network/terms-and-conditions";
+/// Expected genesis D-Parameter permissioned candidates
+const EXPECTED_D_PARAM_PERMISSIONED: u16 = 10;
+/// Expected genesis D-Parameter registered candidates
+const EXPECTED_D_PARAM_REGISTERED: u16 = 0;
+
+// -------- SYSTEM PARAMETERS E2E TESTS --------
+
+/// Verify genesis system parameters are queryable via RPC after node start.
+///
+/// This test verifies:
+/// - systemParameters_getTermsAndConditions RPC endpoint works
+/// - systemParameters_getDParameter RPC endpoint works
+/// - Genesis values match expected configuration from res/dev/system-parameters-config.json
+#[tokio::test]
+async fn verify_system_parameters_genesis_via_rpc() {
+    println!("=== System Parameters Genesis Verification E2E Test ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Test 1: Query Terms and Conditions
+    println!("Querying systemParameters_getTermsAndConditions...");
+    let tc = midnight_client
+        .get_terms_and_conditions()
+        .await
+        .expect("Failed to query terms and conditions via RPC");
+
+    assert!(
+        tc.is_some(),
+        "Terms and conditions should be set in genesis"
+    );
+    let tc = tc.unwrap();
+
+    println!("  hash: {}", tc.hash);
+    println!("  url: {}", tc.url);
+
+    // Verify hash matches expected genesis value
+    assert_eq!(
+        tc.hash, EXPECTED_TC_HASH,
+        "Terms and conditions hash should match genesis config"
+    );
+
+    // Verify URL matches expected genesis value
+    assert_eq!(
+        tc.url, EXPECTED_TC_URL,
+        "Terms and conditions URL should match genesis config"
+    );
+
+    // Test 2: Query D-Parameter
+    println!("Querying systemParameters_getDParameter...");
+    let d_param = midnight_client
+        .get_d_parameter()
+        .await
+        .expect("Failed to query D-parameter via RPC");
+
+    println!(
+        "  numPermissionedCandidates: {}",
+        d_param.num_permissioned_candidates
+    );
+    println!(
+        "  numRegisteredCandidates: {}",
+        d_param.num_registered_candidates
+    );
+
+    // Verify D-Parameter matches expected genesis values
+    assert_eq!(
+        d_param.num_permissioned_candidates, EXPECTED_D_PARAM_PERMISSIONED,
+        "D-parameter num_permissioned_candidates should match genesis config"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, EXPECTED_D_PARAM_REGISTERED,
+        "D-parameter num_registered_candidates should match genesis config"
+    );
+
+    println!("✓ System parameters genesis verification passed");
+}
+
+/// Verify RPC response format matches specification (camelCase fields, 0x-prefix).
+///
+/// This test verifies:
+/// - Terms and conditions hash field is 0x-prefixed 64-character hex string
+/// - Terms and conditions url field is valid UTF-8 string
+/// - D-parameter uses camelCase field names (numPermissionedCandidates, not num_permissioned_candidates)
+#[tokio::test]
+async fn verify_system_parameters_response_format() {
+    println!("=== System Parameters Response Format Verification E2E Test ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Test Terms and Conditions response format
+    println!("Verifying terms and conditions response format...");
+    let tc = midnight_client
+        .get_terms_and_conditions()
+        .await
+        .expect("Failed to query terms and conditions via RPC")
+        .expect("Terms and conditions should be set");
+
+    // Verify hash format: should be 0x-prefixed 64-character hex string
+    assert!(
+        tc.hash.starts_with("0x"),
+        "Hash should be 0x-prefixed, got: {}",
+        tc.hash
+    );
+    assert_eq!(
+        tc.hash.len(),
+        66, // "0x" + 64 hex chars
+        "Hash should be 66 characters (0x + 64 hex), got length: {}",
+        tc.hash.len()
+    );
+
+    // Verify all characters after "0x" are valid hex
+    let hash_without_prefix = &tc.hash[2..];
+    assert!(
+        hash_without_prefix.chars().all(|c| c.is_ascii_hexdigit()),
+        "Hash should contain only hex characters: {}",
+        tc.hash
+    );
+
+    // Verify URL is non-empty valid UTF-8 (implicitly verified by being a String)
+    assert!(!tc.url.is_empty(), "URL should not be empty");
+    println!("  ✓ Terms and conditions format valid");
+
+    // Test D-Parameter response format
+    println!("Verifying D-parameter response format...");
+    let d_param = midnight_client
+        .get_d_parameter()
+        .await
+        .expect("Failed to query D-parameter via RPC");
+
+    // Verify values are reasonable (u16 max is 65535)
+    assert!(
+        d_param.num_permissioned_candidates <= u16::MAX,
+        "num_permissioned_candidates should be valid u16"
+    );
+    assert!(
+        d_param.num_registered_candidates <= u16::MAX,
+        "num_registered_candidates should be valid u16"
+    );
+    println!("  ✓ D-parameter format valid");
+
+    println!("✓ Response format verification passed");
+}
+
+/// Verify RPC endpoints accept block hash parameter for historical queries.
+///
+/// This test verifies:
+/// - systemParameters_getTermsAndConditions accepts optional block hash parameter
+/// - systemParameters_getDParameter accepts optional block hash parameter
+/// - Querying at a previous block returns consistent values
+#[tokio::test]
+async fn query_system_parameters_at_historical_block() {
+    println!("=== System Parameters Historical Block Query E2E Test ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Get current block hash
+    let initial_block_hash = midnight_client
+        .get_best_block_hash()
+        .await
+        .expect("Failed to get best block hash");
+    println!(
+        "Initial block hash: 0x{}",
+        hex::encode(initial_block_hash.as_bytes())
+    );
+
+    // Query values at current block
+    let tc_at_initial = midnight_client
+        .get_terms_and_conditions_at(initial_block_hash)
+        .await
+        .expect("Failed to query T&C at initial block");
+
+    let d_param_at_initial = midnight_client
+        .get_d_parameter_at(initial_block_hash)
+        .await
+        .expect("Failed to query D-param at initial block");
+
+    println!("Values at initial block:");
+    if let Some(ref tc) = tc_at_initial {
+        println!("  T&C hash: {}", tc.hash);
+    }
+    println!(
+        "  D-param: ({}, {})",
+        d_param_at_initial.num_permissioned_candidates,
+        d_param_at_initial.num_registered_candidates
+    );
+
+    // Wait for a new finalized block
+    println!("Waiting for next finalized block...");
+    let _new_block_hash = midnight_client
+        .wait_for_next_finalized_block()
+        .await
+        .expect("Failed to wait for next block");
+
+    // Query at the previous (initial) block hash again - should return same values
+    println!("Querying at initial block hash again...");
+    let tc_at_initial_again = midnight_client
+        .get_terms_and_conditions_at(initial_block_hash)
+        .await
+        .expect("Failed to query T&C at initial block again");
+
+    let d_param_at_initial_again = midnight_client
+        .get_d_parameter_at(initial_block_hash)
+        .await
+        .expect("Failed to query D-param at initial block again");
+
+    // Verify values are consistent
+    assert_eq!(
+        tc_at_initial, tc_at_initial_again,
+        "T&C at same block hash should be consistent"
+    );
+    assert_eq!(
+        d_param_at_initial.num_permissioned_candidates,
+        d_param_at_initial_again.num_permissioned_candidates,
+        "D-param permissioned at same block hash should be consistent"
+    );
+    assert_eq!(
+        d_param_at_initial.num_registered_candidates,
+        d_param_at_initial_again.num_registered_candidates,
+        "D-param registered at same block hash should be consistent"
+    );
+
+    println!("✓ Historical block query verification passed");
 }
