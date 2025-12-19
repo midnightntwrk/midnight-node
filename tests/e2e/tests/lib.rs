@@ -1446,24 +1446,19 @@ async fn deregister_first_mapping() {
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    let bech32_address = cardano_client.address_as_bech32();
-    println!("New Cardano wallet created: {:?}", bech32_address);
+    let address_bech32 = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     println!(
         "Registering Cardano wallet {} with DUST address {}",
-        bech32_address, dust_hex
+        address_bech32, dust_hex
     );
 
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let register_tx_id = cardano_client
         .register(&dust_hex, &tx_in, &collateral_utxo)
@@ -1475,11 +1470,8 @@ async fn deregister_first_mapping() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
+
     let validator_address = cardano_client.constants.policies.auth_token_address();
-    println!(
-        "Looking for registration UTXO at address: {}",
-        validator_address
-    );
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1488,7 +1480,7 @@ async fn deregister_first_mapping() {
 
     let amount = 100;
     let tx_id = cardano_client
-        .mint_tokens(amount)
+        .mint_tokens(amount, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
@@ -1509,14 +1501,24 @@ async fn deregister_first_mapping() {
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
 
-    // register second time
-    let assets2 = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in2 = cardano_client
-        .fund_wallet(assets2)
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
         .await
-        .expect("Failed to fund a wallet");
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
 
-    let dust_hex2 = MidnightClient::new_dust_hex();
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    // register second time
+    let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
+
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2);
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
         .await
@@ -1528,9 +1530,15 @@ async fn deregister_first_mapping() {
         hex::encode(register_tx_id2)
     );
 
+    let register_tx2 = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id2))
+        .await
+        .expect("No registration UTXO found after registering");
+    println!("Found registration UTXO: {:?}", register_tx2);
+
     let amount2 = 100;
     let tx_id2 = cardano_client
-        .mint_tokens(amount2)
+        .mint_tokens(amount2, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
@@ -1552,16 +1560,13 @@ async fn deregister_first_mapping() {
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce2);
 
     // deregister first mapping
-    let utxos = cardano_client
-        .ogmios_clients
-        .query_utxos(from_ref(&bech32_address))
-        .await
-        .unwrap();
+    let utxos = cardano_client.utxos().await;
     assert!(!utxos.is_empty(), "No UTXOs found for funding address");
     let utxo = utxos
         .iter()
         .max_by_key(|u| u.value.lovelace)
         .expect("No UTXO with lovelace found");
+
     let deregister_tx = cardano_client
         .deregister(utxo, &register_tx, &collateral_utxo)
         .await
@@ -1575,7 +1580,7 @@ async fn deregister_first_mapping() {
 
     let amount3 = 100;
     let tx_id3 = cardano_client
-        .mint_tokens(amount3)
+        .mint_tokens(amount3, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
