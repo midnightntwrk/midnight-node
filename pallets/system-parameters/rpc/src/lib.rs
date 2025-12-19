@@ -47,8 +47,8 @@ use sp_session_validator_management_query::types::AriadneParameters;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TermsAndConditionsRpcResponse {
-	/// SHA-256 hash of the terms and conditions document (hex-encoded)
-	pub hash: String,
+	/// SHA-256 hash of the terms and conditions document
+	pub hash: H256,
 	/// URL where the terms and conditions can be found
 	pub url: String,
 }
@@ -175,7 +175,7 @@ where
 			.map_err(|e| SystemParametersRpcError::RuntimeApiError(format!("{:?}", e)))?;
 
 		Ok(result.map(|tc| TermsAndConditionsRpcResponse {
-			hash: format!("0x{}", hex::encode(tc.hash.as_bytes())),
+			hash: tc.hash,
 			url: String::from_utf8_lossy(&tc.url).to_string(),
 		}))
 	}
