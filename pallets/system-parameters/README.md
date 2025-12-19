@@ -53,3 +53,13 @@ JSON-RPC endpoints are available for external queries:
 
 - `systemParameters_getTermsAndConditions`: Returns Terms and Conditions with hex-encoded hash
 - `systemParameters_getDParameter`: Returns the D-Parameter values
+- `systemParameters_getAriadneParameters(epoch_number)`: Returns Ariadne parameters for a mainchain epoch, with D Parameter sourced from on-chain storage instead of Cardano
+
+### Ariadne Parameters Endpoint
+
+The `getAriadneParameters` endpoint returns the same response schema as `sidechain_getAriadneParameters` but sources the D Parameter from `pallet-system-parameters` on-chain storage. This endpoint should be used instead of the deprecated `sidechain_getAriadneParameters` which reads D Parameter from Cardano.
+
+Response includes:
+- **d_parameter**: D Parameter from on-chain pallet storage
+- **permissioned_candidates**: Permissioned candidate data from Cardano
+- **candidate_registrations**: Registered candidate data from Cardano
