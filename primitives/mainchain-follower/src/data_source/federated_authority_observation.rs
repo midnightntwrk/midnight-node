@@ -58,10 +58,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 
 		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(datum) => {
-					let authorities_data = AuthoritiesData::from(datum);
-					authorities_data
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
 					AuthoritiesData { authorities: vec![], round: 0 }
@@ -89,10 +86,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 
 		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(datum) => {
-					let authorities_data = AuthoritiesData::from(datum);
-					authorities_data
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!(
 						"Failed to decode technical committee datum: {}. Using empty list.",
