@@ -32,7 +32,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
@@ -50,7 +50,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Checkout Season action repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           repository: midnightntwrk/season-action
           ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
@@ -174,7 +174,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
 
@@ -241,7 +241,7 @@ jobs:
       INDEXER_IMAGE_TAG: ${{ steps.build_indexer.outputs.INDEXER_IMAGE_TAG }}
     steps:
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           submodules: true
 
@@ -339,7 +339,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
           submodules: true
