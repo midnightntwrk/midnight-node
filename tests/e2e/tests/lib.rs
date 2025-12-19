@@ -1578,9 +1578,11 @@ async fn deregister_first_mapping() {
         hex::encode(deregister_tx)
     );
 
+    let collateral_utxo2 = faucet.request_tokens(&address_bech32, 5_000_000).await;
+
     let amount3 = 100;
     let tx_id3 = cardano_client
-        .mint_tokens(amount3, &collateral_utxo)
+        .mint_tokens(amount3, &collateral_utxo2)
         .await
         .expect("Failed to mint tokens")
         .transaction
