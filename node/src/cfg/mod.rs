@@ -20,6 +20,7 @@ use midnight_node_res::{
 	networks::{CustomNetwork, InitialAuthorityData, MainChainScripts, UndeployedNetwork},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
@@ -140,6 +141,15 @@ impl SubstrateCli for Cfg {
 						format!("failed to parse FederatedAuthorityObservationConfig: {e}")
 					})?;
 
+				let system_parameters_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_system_parameters_config.as_ref().unwrap(),
+				)
+				.map_err(|e| format!("failed to read system_parameters_config: {e}"))?;
+
+				let system_parameters_config: SystemParametersConfig =
+					serde_json::from_str(&system_parameters_config_str)
+						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
 					id: self.chain_spec_cfg.chainspec_id.as_ref().unwrap().clone(),
@@ -151,6 +161,7 @@ impl SubstrateCli for Cfg {
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
 					federated_authority_config,
+					system_parameters_config,
 				};
 				chain_config(network)
 			},
