@@ -7240,6 +7240,7 @@ dependencies = [
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
+ "midnight-primitives-system-parameters",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-cnight-observation",
@@ -7249,6 +7250,8 @@ dependencies = [
  "pallet-midnight-rpc",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
+ "pallet-system-parameters",
+ "pallet-system-parameters-rpc",
  "parity-scale-codec",
  "partner-chains-cli",
  "partner-chains-db-sync-data-sources",
@@ -7429,6 +7432,7 @@ dependencies = [
  "hex",
  "hex-literal 0.4.1",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-system-parameters",
  "midnight-serialize 1.0.0-alpha.5",
  "pallet-cnight-observation",
  "sc-service",
@@ -7484,6 +7488,7 @@ dependencies = [
  "pallet-session-validator-management",
  "pallet-sidechain",
  "pallet-sudo",
+ "pallet-system-parameters",
  "pallet-timestamp",
  "pallet-tx-pause",
  "pallet-version",
@@ -7776,6 +7781,19 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
+]
+
+[[package]]
+name = "midnight-primitives-system-parameters"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-core",
+ "sp-runtime",
 ]
 
 [[package]]
@@ -9926,6 +9944,41 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-system-parameters"
+version = "0.1.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-api",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-system-parameters-rpc"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "jsonrpsee",
+ "pallet-system-parameters",
+ "sc-client-api",
+ "serde",
+ "sidechain-domain",
+ "sp-api",
+ "sp-blockchain",
+ "sp-core",
  "sp-runtime",
 ]
 
