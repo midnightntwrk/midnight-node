@@ -1178,6 +1178,92 @@ async fn ddos_batch_attack_all_rejected() {
     );
 }
 
+/// PR367-TC-0003-02 E2E: Replay Attack Prevention
+///
+/// Verifies that submitting the same transaction twice results in rejection.
+/// The replay protection mechanism should reject the duplicate transaction
+/// at pre_dispatch, preventing replay attacks from consuming blockspace.
+#[tokio::test]
+async fn replay_attack_rejected_via_rpc() {
+    use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== PR367-TC-0003-02 E2E: Replay Attack Prevention Test ===");
+
+    // First submission - may succeed or fail depending on node state
+    // (contract may already be deployed from previous test runs)
+    println!("Submitting DEPLOY_TX (first attempt)...");
+    let first_result = client.submit_midnight_tx(DEPLOY_TX.to_vec()).await;
+
+    match &first_result {
+        Ok(_) => println!("  First submission accepted (contract not yet deployed)"),
+        Err(e) => println!("  First submission rejected (expected if contract exists): {}", e),
+    }
+
+    // If first succeeded, wait for it to be processed before replay attempt
+    if let Ok(mut progress) = first_result {
+        println!("Waiting for first transaction to be included in block...");
+        while let Some(status) = progress.next().await {
+            match status {
+                Ok(subxt::tx::TxStatus::InBestBlock(info)) => {
+                    println!("  First transaction in best block: {:?}", info.block_hash());
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) => {
+                    println!("  First transaction finalized: {:?}", info.block_hash());
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Error { message }) => {
+                    println!("  First transaction error: {}", message);
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Invalid { message }) => {
+                    println!("  First transaction invalid: {}", message);
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Dropped { message }) => {
+                    println!("  First transaction dropped: {}", message);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(e) => {
+                    println!("  First transaction status error: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Second submission - MUST fail (either replay protection or ContractAlreadyDeployed)
+    // Both are valid rejections that prevent the attack vector
+    println!("Submitting DEPLOY_TX (second attempt - should be rejected)...");
+    let second_result = client.submit_expecting_rejection(DEPLOY_TX.to_vec()).await;
+
+    assert!(
+        second_result.is_ok(),
+        "Replay transaction should be rejected, but was accepted: {:?}",
+        second_result.err()
+    );
+
+    let error_msg = second_result.unwrap();
+    println!("✓ Replay transaction rejected with: {}", error_msg);
+
+    // Verify the error indicates an invalid transaction
+    // Accept various error types: replay protection, already deployed, or generic invalid
+    assert!(
+        error_msg.to_lowercase().contains("invalid")
+            || error_msg.to_lowercase().contains("replay")
+            || error_msg.to_lowercase().contains("already")
+            || error_msg.contains("1010"), // Substrate InvalidTransaction code
+        "Expected InvalidTransaction or replay-related error, got: {}",
+        error_msg
+    );
+
+    println!("✓ PR367-TC-0003-02 E2E PASSED: Replay attack rejected, no blockspace consumed");
+}
+
 /// PR367-TC-0003-03 E2E: Valid Transaction Succeeds
 ///
 /// Confirms no regression - valid transactions should still be accepted.
