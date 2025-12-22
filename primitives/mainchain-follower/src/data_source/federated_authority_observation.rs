@@ -15,8 +15,8 @@ use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utx
 use cardano_serialization_lib::PlutusData;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
-	MainchainMember,
+	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
+	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, PolicyId};
@@ -56,19 +56,12 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		)
 		.await?;
 
-		let council_authorities = match council_utxo {
+		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => {
-					log::info!(
-						"Successfully decoded {} council members from block {}",
-						keys.len(),
-						utxo.block_number.0
-					);
-					keys
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
-					vec![]
+					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
@@ -78,7 +71,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 					config.council.address,
 					config.council.policy_id
 				);
-				vec![]
+				AuthoritiesData { authorities: vec![], round: 0 }
 			},
 		};
 
@@ -91,22 +84,15 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		)
 		.await?;
 
-		let technical_committee_authorities = match technical_committee_utxo {
+		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => {
-					log::info!(
-						"Successfully decoded {} technical committee members from block {}",
-						keys.len(),
-						utxo.block_number.0
-					);
-					keys
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!(
 						"Failed to decode technical committee datum: {}. Using empty list.",
 						e
 					);
-					vec![]
+					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
@@ -116,7 +102,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 					config.technical_committee.address,
 					config.technical_committee.policy_id
 				);
-				vec![]
+				AuthoritiesData { authorities: vec![], round: 0 }
 			},
 		};
 
@@ -131,35 +117,68 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
 	///
-	/// Expected format: `[total_signers: Int, [...(CborBytes, Sr25519Keys)]]`
-	/// where the map key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
-	/// and Sr25519Keys is a 32-byte public key
+	/// Expected format (VersionedMultisig):
+	/// ```text
+	/// {
+	///   data: [total_signers: Int, {...(CborBytes, Sr25519Keys)}],
+	///   round: Int
+	/// }
+	/// ```
+	/// The `data` field contains:
+	/// - total_signers: the threshold number of signers required
+	/// - a map where the key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
+	///   and Sr25519Keys is a 32-byte public key
 	///
-	/// Returns a vector of tuples (AuthorityMemberPublicKey, MainchainMember)
+	/// Returns a GovernanceAuthorityDatums enum containing the authorities and round
 	fn decode_governance_datum(
 		datum: &PlutusData,
-	) -> Result<
-		Vec<(AuthorityMemberPublicKey, MainchainMember)>,
-		Box<dyn std::error::Error + Send + Sync>,
-	> {
-		// Try to parse as a Vec of `PlutusData`
-		// We use a Vec here because the `get` method on `PlutusList` can panic
-		let list: Vec<PlutusData> = datum
+	) -> Result<GovernanceAuthorityDatums, Box<dyn std::error::Error + Send + Sync>> {
+		// The new format is a Constr with fields: [data, round]
+		// where data is [total_signers, members_map]
+		let constr = datum
+			.as_constr_plutus_data()
+			.ok_or("Expected PlutusData to be a constructor (VersionedMultisig)")?;
+
+		let fields = constr.data();
+
+		if fields.len() < 2 {
+			return Err(format!(
+				"Expected at least 2 fields in VersionedMultisig constructor, got {}",
+				fields.len()
+			)
+			.into());
+		}
+
+		// Get the 'data' field (index 0) which is [total_signers, members_map]
+		let data_field = fields.get(0);
+		let data_list: Vec<PlutusData> = data_field
 			.as_list()
-			.ok_or("Expected PlutusData to be a list")?
+			.ok_or("Expected 'data' field to be a list")?
 			.into_iter()
 			.cloned()
 			.collect();
 
-		if list.len() < 2 {
-			return Err(
-				format!("Expected at least 2 elements in datum list, got {}", list.len()).into()
-			);
+		if data_list.len() < 2 {
+			return Err(format!(
+				"Expected at least 2 elements in data list, got {}",
+				data_list.len()
+			)
+			.into());
 		}
 
-		// Get the second element which contains the members
-		// The Multisig type with @list annotation encodes the signers field as a map
-		let members_data = list.get(1).ok_or("Expected index 1 to exist in the list")?;
+		// Get the 'round' field (index 1)
+		let round_field = fields.get(1);
+		let round_bigint =
+			round_field.as_integer().ok_or("Expected 'round' field to be an integer")?;
+		// Convert BigInt to u64, then to u8
+		let round_u64: u64 = round_bigint
+			.as_u64()
+			.ok_or("Expected 'round' to be a non-negative integer that fits in u64")?
+			.into();
+		let round = u8::try_from(round_u64).map_err(|_| "Expected 'round' to fit in u8 (0-255)")?;
+
+		// Get the members map from data_list[1]
+		let members_data = data_list.get(1).ok_or("Expected index 1 to exist in the data list")?;
 
 		let mut authority_members = Vec::new();
 
@@ -237,6 +256,9 @@ impl FederatedAuthorityObservationDataSourceImpl {
 			return Err("Expected second element to be a map".into());
 		}
 
-		Ok(authority_members)
+		Ok(GovernanceAuthorityDatums::R0(GovernanceAuthorityDatumR0 {
+			authorities: authority_members,
+			round,
+		}))
 	}
 }
