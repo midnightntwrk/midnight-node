@@ -23,7 +23,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
 
       - name: Run cargo deny and npm audit
         run: |
@@ -32,7 +32,7 @@ jobs:
       # TODO: Remove this checkout step once upload-sarif-github-action repo is made public
       - name: Checkout Upload action repository
         if: hashFiles('cargo-deny.sarif') != ''
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: midnightntwrk/upload-sarif-github-action
           ref: main
