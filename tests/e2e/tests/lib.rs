@@ -1448,7 +1448,12 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
 
-    let dust_hex = MidnightClient::new_dust_hex();
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -1457,7 +1462,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 
     let amount = 100;
     let tx_id = cardano_client
-        .mint_tokens(amount)
+        .mint_tokens(amount, &collateral_utxo)
         .await
         .expect("Failed to mint tokens")
         .transaction
@@ -1476,16 +1481,6 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let nonce =
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
-
-    let collateral_utxo = cardano_client
-        .make_collateral()
-        .await
-        .expect("Failed to make collateral");
-    let assets = vec![Asset::new_from_str("lovelace", "10000000")];
-    let tx_in = cardano_client
-        .fund_wallet(assets)
-        .await
-        .expect("Failed to fund a wallet");
 
     let register_tx_id = cardano_client
         .register(&dust_hex, &tx_in, &collateral_utxo)

@@ -527,6 +527,45 @@ impl CardanoClient {
         }
     }
 
+    pub async fn rotate_cnight(&self, wallet: &Wallet, utxo: &OgmiosUtxo) -> [u8; 32] {
+        let payment_addr = self.address_as_bech32();
+        let input_tx_hash = hex::encode(utxo.transaction.id);
+        let input_index = utxo.index;
+        let input_assets = &Self::build_asset_vector(utxo);
+        let mut tx_builder = whisky::TxBuilder::new_core();
+        tx_builder
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &input_tx_hash,
+                input_index.into(),
+                &input_assets,
+                &payment_addr,
+            )
+            // .tx_out(&payment_addr, &assets)
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+//         let response = self
+//             .ogmios_clients
+//             .submit_transaction(&tx_bytes)
+//             .await
+//             .unwrap();
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+        response.transaction.id
+    }
+
     pub async fn send(
         &self,
         tx_in: &OgmiosUtxo,
