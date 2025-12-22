@@ -775,8 +775,9 @@ impl CardanoClient {
             .expect("Payment credential is not a keyhash");
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-        // Build the Multisig datum
-        let datum = serde_json::json!({
+        // Build the VersionedMultisig datum
+        // Format: Constr(0, [data: [total_signers, members_map], round: Int])
+        let multisig_data = serde_json::json!({
             "list": [
                 {"int": total_signers},
                 {"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
@@ -787,6 +788,13 @@ impl CardanoClient {
                         "v": {"bytes": sr25519_key}
                     })
                 }).collect::<Vec<_>>()}
+            ]
+        });
+        let datum = serde_json::json!({
+            "constructor": 0,
+            "fields": [
+                multisig_data,
+                {"int": 0}  // round starts at 0
             ]
         });
 

@@ -156,7 +156,8 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool = get_connection(postgres_uri, CANDIDATES_POOL_CFG).await?;
+	let candidates_pool =
+		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.allow_non_ssl).await?;
 
 	// All these pools are connections to the same database, so we can use any pool to create the index
 	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
@@ -174,7 +175,8 @@ pub async fn create_cached_data_sources(
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
-	let sidechain_pool = get_connection(postgres_uri, SIDECHAIN_POOL_CFG).await?;
+	let sidechain_pool =
+		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
 	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
@@ -183,7 +185,7 @@ pub async fn create_cached_data_sources(
 	let sidechain_rpc =
 		SidechainRpcDataSourceImpl::new(sidechain_block_data_source.clone(), metrics_opt.clone());
 
-	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG).await?;
+	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.allow_non_ssl).await?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
 		mc_hash_pool,
 		db_sync_block_data_source_config.clone(),
@@ -192,14 +194,16 @@ pub async fn create_cached_data_sources(
 	let mc_hash =
 		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), metrics_opt.clone());
 
-	let cnight_observation_pool = get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG).await?;
+	let cnight_observation_pool =
+		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.allow_non_ssl).await?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
 		metrics_opt.clone(),
 		1000,
 	);
 
-	let governed_map_pool = get_connection(postgres_uri, GOVERNED_MAP_POOL_CFG).await?;
+	let governed_map_pool =
+		get_connection(postgres_uri, GOVERNED_MAP_POOL_CFG, cfg.allow_non_ssl).await?;
 	let governed_map_block_data_source = BlockDataSourceImpl::from_config(
 		governed_map_pool.clone(),
 		db_sync_block_data_source_config.clone(),
@@ -214,14 +218,15 @@ pub async fn create_cached_data_sources(
 	.await?;
 
 	let federated_authority_observation_pool =
-		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG).await?;
+		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
+			.await?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
 		metrics_opt.clone(),
 		1000,
 	);
 
-	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG).await?;
+	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.allow_non_ssl).await?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
@@ -250,6 +255,7 @@ pub async fn create_cnight_observation_data_source(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CNIGHT_OBSERVATION_POOL_CFG,
+		cfg.allow_non_ssl,
 	)
 	.await?;
 
@@ -260,8 +266,14 @@ pub async fn create_cnight_observation_data_source(
 async fn get_connection(
 	connection_string: &str,
 	pool_cfg: DbPoolCfg,
+	allow_non_ssl: bool,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let connect_options = sqlx::postgres::PgConnectOptions::from_str(connection_string)?;
+	let connect_options =
+		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
+			sqlx::postgres::PgSslMode::Prefer
+		} else {
+			sqlx::postgres::PgSslMode::Require
+		});
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(pool_cfg.max_connections)
 		.acquire_timeout(pool_cfg.acquire_timeout)

@@ -141,9 +141,6 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type NetworkId<T> = StorageValue<_, BoundedVec<u8, MaxNetworkIdLength>>;
 
-	#[pallet::storage]
-	pub type DParameterOverride<T: Config> = StorageValue<_, (u16, u16), OptionQuery>;
-
 	#[pallet::type_value]
 	pub fn DefaultWeight() -> Weight {
 		EXTRA_WEIGHT_TX_SIZE
@@ -408,17 +405,6 @@ pub mod pallet {
 				Self::deposit_event(Event::TxPartialSuccess(TxAppliedDetails { tx_hash }));
 			}
 
-			Ok(())
-		}
-
-		#[pallet::call_index(1)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
-		pub fn override_d_parameter(
-			origin: OriginFor<T>,
-			d_parameter_override: Option<(u16, u16)>,
-		) -> DispatchResult {
-			ensure_root(origin)?;
-			DParameterOverride::<T>::set(d_parameter_override);
 			Ok(())
 		}
 
