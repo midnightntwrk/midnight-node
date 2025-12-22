@@ -927,4 +927,39 @@ impl CardanoClient {
             .try_into()
             .unwrap()
     }
+
+    pub async fn spend_cnight(
+        &self,
+        wallet: &Wallet,
+        utxo: &OgmiosUtxo,
+        recipient_address: &str,
+    ) -> [u8; 32] {
+        let payment_addr = self.address_as_bech32();
+        let input_tx_hash = hex::encode(utxo.transaction.id);
+        let input_index = utxo.index;
+        let input_assets = &Self::build_asset_vector(utxo);
+
+        let mut tx_builder = whisky::TxBuilder::new_core();
+        tx_builder
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &input_tx_hash,
+                input_index.into(),
+                &input_assets,
+                &payment_addr,
+            )
+            .change_address(&recipient_address)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+        let response = self
+            .ogmios_clients
+            .submit_transaction(&tx_bytes)
+            .await
+            .unwrap();
+        println!("Transaction submitted, response: {:?}", response);
+        response.transaction.id
+    }
 }
