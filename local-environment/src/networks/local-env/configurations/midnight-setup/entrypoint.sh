@@ -106,8 +106,8 @@ export ILLIQUID_SUPPLY_VALIDATOR_ADDRESS="addr_test1wpy8ewg646rg4ce78nl3aassmkqu
 
 echo "Inserting D parameter..."
 
-D_PERMISSIONED=3
-D_REGISTERED=2
+D_PERMISSIONED=10
+D_REGISTERED=0
 
 ./midnight-node smart-contracts upsert-d-parameter \
     --genesis-utxo $GENESIS_UTXO \
@@ -226,6 +226,7 @@ export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/dev/federated-authority-config.json
+export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/res/dev/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 

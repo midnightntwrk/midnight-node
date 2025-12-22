@@ -26,8 +26,8 @@ use midnight_node_runtime::{
 	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
 	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
-	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, TimestampCall,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
+	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
@@ -349,6 +349,24 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			..Default::default()
 		},
 		bridge: Default::default(),
+		system_parameters: {
+			let system_params = genesis.system_parameters_config();
+			let hash_bytes = system_params
+				.terms_and_conditions_hash_bytes()
+				.expect("Failed to parse terms_and_conditions hash");
+			let d_param: sidechain_domain::DParameter = system_params.d_parameter.clone().into();
+			SystemParametersConfig {
+				terms_and_conditions: pallet_system_parameters::TermsAndConditionsGenesisConfig {
+					hash: Some(H256::from(hash_bytes)),
+					url: Some(system_params.terms_and_conditions.url.clone()),
+				},
+				d_parameter: pallet_system_parameters::DParameterGenesisConfig {
+					num_permissioned_candidates: Some(d_param.num_permissioned_candidates),
+					num_registered_candidates: Some(d_param.num_registered_candidates),
+				},
+				_marker: Default::default(),
+			}
+		},
 	};
 
 	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))

@@ -543,7 +543,7 @@ node-ci-image-single-platform:
 prep-no-copy:
     ARG NATIVEARCH
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.90-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:1.90-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
@@ -614,14 +614,14 @@ planner:
 check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     RUN apt-get update && apt-get install -y jq
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -636,9 +636,8 @@ check-rust:
 
     ENV SKIP_WASM_BUILD=1
 
-    # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
@@ -712,7 +711,8 @@ test:
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # TODO: re-enable when chef is improved.
+    # COPY +planner/recipe.json /recipe.json
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
@@ -723,7 +723,8 @@ build-prepare:
     ENV CXX=clang++
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+    # TODO: re-enable when chef is improved.
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
 build-upgrader:
     FROM +prep
@@ -859,8 +860,9 @@ node-image:
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
-    # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+    # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
@@ -876,6 +878,8 @@ node-image:
         $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
 
     # Re-export build artifacts which contain wasm
+    COPY .envrc /artifacts-$NATIVEARCH/.envrc
+    COPY res/ /artifacts-$NATIVEARCH/res/
     COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
@@ -890,8 +894,9 @@ node-benchmarks-image:
 
     COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /midnight-node
 
-    # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+    # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"

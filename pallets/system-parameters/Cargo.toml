@@ -1,0 +1,56 @@
+[package]
+name = "pallet-system-parameters"
+version = "0.1.0"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+repository.workspace = true
+description = "Pallet for storing and managing system parameters"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
+log = { workspace = true }
+scale-info = { workspace = true, features = ["derive"] }
+frame-support.workspace = true
+frame-system.workspace = true
+sp-std.workspace = true
+sp-runtime.workspace = true
+sp-core.workspace = true
+sp-api.workspace = true
+sidechain-domain = { workspace = true, features = ["serde"] }
+frame-benchmarking = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+sp-core.workspace = true
+sp-io.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "sp-std/std",
+    "sp-runtime/std",
+    "sp-core/std",
+    "sp-api/std",
+    "sidechain-domain/std",
+    "serde/std",
+    "log/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+]
+try-runtime = [
+    "frame-support/try-runtime",
+    "frame-system/try-runtime",
+]
