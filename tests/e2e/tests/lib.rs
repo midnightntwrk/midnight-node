@@ -1702,7 +1702,8 @@ async fn deregister_first_mapping() {
 #[tokio::test]
 async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
-    let cardano_client =CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
     let bech32_address = cardano_client.address_as_bech32();
@@ -1771,7 +1772,5 @@ async fn spend_cnight_producing_dust() {
     // sleep 60s
     println!("Sleeping 60 seconds before spending cNIGHT...");
     tokio::time::sleep(Duration::from_secs(300)).await;
-    let cnight_spent_utxo = cardano_client
-        .spend_cnight(&cnight_utxo, &bob_bech32)
-        .await;
+    let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
 }
