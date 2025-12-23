@@ -46,6 +46,8 @@ use time_source::TimeSource;
 
 use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer};
+use pallet_system_parameters::SystemParametersApi;
+use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiServer};
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
@@ -124,6 +126,7 @@ where
 			ScEpochNumber,
 		>,
 	C::Api: CandidateValidationApi<Block>,
+	C::Api: SystemParametersApi<Block, Hash>,
 	P: TransactionPool + 'static,
 	B: sc_client_api::Backend<Block> + Send + Sync + 'static,
 	B::State: sc_client_api::backend::StateBackend<sp_runtime::traits::HashingFor<Block>>,
@@ -204,7 +207,8 @@ where
 		)))
 		.into_rpc(),
 	)?;
-	module.merge(Midnight::new(client).into_rpc())?;
+	module.merge(Midnight::new(client.clone()).into_rpc())?;
+	module.merge(SystemParametersRpc::new(client).into_rpc())?;
 
 	// Extend this RPC with a custom API by using the following syntax.
 	// `YourRpcStruct` should have a reference to a client, which is needed
