@@ -1450,7 +1450,9 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 
     let faucet = global_faucet_manager().await;
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    // for minting cNIGHT tokens
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     let midnight_wallet_seed = MidnightClient::new_seed();
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
@@ -1494,14 +1496,18 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     );
 
     let cnight_utxo_new = cardano_client
-        .rotate_cnight(&cardano_client.wallet, &cnight_utxo)
-        .await;
-    println!("Rotated cNIGHT UTXO: {}", &hex::encode(&cnight_utxo_new));
+        .rotate_cnight(&cnight_utxo)
+        .await
+        .expect("Failed to rotate cNight UTxO");
+    println!(
+        "Rotated cNIGHT UTXO: {}",
+        &hex::encode(&cnight_utxo_new.transaction.id)
+    );
 
     let cnight_new = match cardano_client
         .find_utxo_by_tx_id(
             &cardano_client.address_as_bech32(),
-            hex::encode(&cnight_utxo_new),
+            hex::encode(&cnight_utxo_new.transaction.id),
         )
         .await
     {
@@ -1514,4 +1520,3 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         MidnightClient::calculate_nonce(prefix2, cnight_new.transaction.id, cnight_new.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce_new);
 }
-

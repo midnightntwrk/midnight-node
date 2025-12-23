@@ -449,7 +449,7 @@ impl CardanoClient {
 
         let policy_id = policies.cnight_token_policy_id();
         let minting_script = policies.cnight_token_cbor;
-        let network = Network::Custom(self.constants.cost_model.clone());
+        let network: Network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
 
@@ -527,13 +527,18 @@ impl CardanoClient {
         }
     }
 
-    pub async fn rotate_cnight(&self, wallet: &Wallet, utxo: &OgmiosUtxo) -> [u8; 32] {
+    pub async fn rotate_cnight(
+        &self,
+        utxo: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let payment_addr = self.address_as_bech32();
         let input_tx_hash = hex::encode(utxo.transaction.id);
         let input_index = utxo.index;
         let input_assets = &Self::build_asset_vector(utxo);
+        let network: Network = Network::Custom(self.constants.cost_model.clone());
         let mut tx_builder = whisky::TxBuilder::new_core();
         tx_builder
+            .network(network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &input_tx_hash,
@@ -541,18 +546,12 @@ impl CardanoClient {
                 &input_assets,
                 &payment_addr,
             )
-            // .tx_out(&payment_addr, &assets)
             .change_address(&payment_addr)
             .complete_sync(None)
             .unwrap();
 
-        let signed_tx = wallet.sign_tx(&tx_builder.tx_hex());
+        let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
         let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
-//         let response = self
-//             .ogmios_clients
-//             .submit_transaction(&tx_bytes)
-//             .await
-//             .unwrap();
         let request = OgmiosRequest::SubmitTx { tx_bytes };
         let response = Self::ogmios_request(&self.ogmios_settings, request)
             .await
@@ -563,7 +562,6 @@ impl CardanoClient {
                 "Unexpected response type".into(),
             )),
         }
-        response.transaction.id
     }
 
     pub async fn send(
