@@ -543,7 +543,7 @@ impl CardanoClient {
             .tx_in(
                 &input_tx_hash,
                 input_index.into(),
-                &input_assets,
+                input_assets,
                 &payment_addr,
             )
             .change_address(&payment_addr)
