@@ -1820,7 +1820,7 @@ async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
     let cardano_client =
         CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let bech32_address = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", bech32_address);
@@ -1885,8 +1885,67 @@ async fn spend_cnight_producing_dust() {
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
 
-    // sleep 60s
-    println!("Sleeping 60 seconds before spending cNIGHT...");
-    tokio::time::sleep(Duration::from_secs(300)).await;
+    // sleep 20s
+    println!("Sleeping 20 seconds before spending cNIGHT...");
+    tokio::time::sleep(Duration::from_secs(10)).await;
     let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+        balance = total;
+    }
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
+    );
 }
