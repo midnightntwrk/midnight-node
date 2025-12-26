@@ -16,4 +16,4 @@ The CNight observation data source mock now generates deterministic data based o
 
 This fix enables running local multi-node networks in development mode without Cardano infrastructure.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/402
+PR: https://github.com/midnightntwrk/midnight-node/pull/403
