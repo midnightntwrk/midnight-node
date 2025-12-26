@@ -1887,7 +1887,7 @@ async fn spend_cnight_producing_dust() {
 
     // sleep 20s
     println!("Sleeping 20 seconds before spending cNIGHT...");
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(20)).await;
     let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
 
     let utxo_owner = midnight_client
