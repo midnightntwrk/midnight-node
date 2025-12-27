@@ -30,21 +30,6 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  #v6.0.1
 
       - name: Scan code
-        uses: midnightntwrk/upload-sarif-github-action/scan@d4419cb7f06b276c2c7ef74953f34db3624fd415
+        uses: midnightntwrk/upload-sarif-github-action/scan@27fad937a82cb810d954795f7d29c1702be17960
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          scan_rust: true
-          scan_typescript: true
-
-      # - name: Initialize CodeQL
-      #   uses: github/codeql-action/init@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
-      #   with:
-      #     source-root: bboard-ui
-      #     languages: javascript-typescript
-      #     queries: security-and-quality
-
-      # - name: Analyze
-      #   uses: github/codeql-action/analyze@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
-      #   with:
-      #     upload: true
-      #     category: bboard-ui
