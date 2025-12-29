@@ -63,7 +63,7 @@ pub async fn execute(
 		.iter()
 		.map(|(_k, v)| {
 			let wallet_seed_str = v.as_str().ok_or("seeds file object value was not a string")?;
-			let wallet_seed= WalletSeed::try_from_hex_str(wallet_seed_str)?;
+			let wallet_seed = WalletSeed::try_from_hex_str(wallet_seed_str)?;
 			Ok(wallet_seed)
 		})
 		.collect();
