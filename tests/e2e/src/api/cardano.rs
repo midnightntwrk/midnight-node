@@ -449,7 +449,7 @@ impl CardanoClient {
 
         let policy_id = policies.cnight_token_policy_id();
         let minting_script = policies.cnight_token_cbor;
-        let network = Network::Custom(self.constants.cost_model.clone());
+        let network: Network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
 
@@ -509,6 +509,43 @@ impl CardanoClient {
                     steps: 10000000000,
                 },
             })
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
+    pub async fn rotate_cnight(
+        &self,
+        utxo: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let payment_addr = self.address_as_bech32();
+        let input_tx_hash = hex::encode(utxo.transaction.id);
+        let input_index = utxo.index;
+        let input_assets = &Self::build_asset_vector(utxo);
+        let network: Network = Network::Custom(self.constants.cost_model.clone());
+        let mut tx_builder = whisky::TxBuilder::new_core();
+        tx_builder
+            .network(network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &input_tx_hash,
+                input_index.into(),
+                input_assets,
+                &payment_addr,
+            )
             .change_address(&payment_addr)
             .complete_sync(None)
             .unwrap();
@@ -775,8 +812,9 @@ impl CardanoClient {
             .expect("Payment credential is not a keyhash");
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-        // Build the Multisig datum
-        let datum = serde_json::json!({
+        // Build the VersionedMultisig datum
+        // Format: Constr(0, [data: [total_signers, members_map], round: Int])
+        let multisig_data = serde_json::json!({
             "list": [
                 {"int": total_signers},
                 {"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
@@ -787,6 +825,13 @@ impl CardanoClient {
                         "v": {"bytes": sr25519_key}
                     })
                 }).collect::<Vec<_>>()}
+            ]
+        });
+        let datum = serde_json::json!({
+            "constructor": 0,
+            "fields": [
+                multisig_data,
+                {"int": 0}  // round starts at 0
             ]
         });
 

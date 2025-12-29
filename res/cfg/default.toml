@@ -26,6 +26,7 @@ mc__first_epoch_number = 0
 mc__epoch_duration_millis = 86400000
 mc__first_slot_number = 0
 mc__slot_duration_millis = 1000
+allow_non_ssl = false
 
 # Storage Monitor Defaults
 threshold = 512
