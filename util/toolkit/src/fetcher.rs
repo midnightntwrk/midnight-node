@@ -42,6 +42,9 @@ const BLOCKS_PER_JOB: u64 = 100;
 /// Maximum time to wait for a client connection before giving up.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Maximum time to wait for a block fetch before giving up.
+pub const BLOCK_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
 	#[error("subxt error while fetching")]
