@@ -202,10 +202,10 @@ fn test_get_mn_transaction_fee() {
 
 		init_ledger_state(block_context.into());
 
-		let (storage_cost, _gas_cost) = mock::Midnight::get_transaction_cost(&tx).unwrap();
+		let gas_cost = mock::Midnight::get_transaction_cost(&tx).unwrap();
 
 		// Assert the transaction has some associated cost
-		assert!(storage_cost > 0);
+		assert!(gas_cost > 0);
 	});
 }
 
