@@ -69,38 +69,19 @@ pub enum FetchError {
 
 /// Attempts to create a new client with bounded retries.
 /// Returns `None` if the connection is refused after all retry attempts.
-pub async fn try_new_client(url: &str) -> Option<MidnightNodeClient> {
+pub async fn try_new_client(url: &str) -> Result<MidnightNodeClient, ClientError> {
 	let backoff = ExponentialBackoff {
 		max_elapsed_time: Some(CLIENT_CONNECT_TIMEOUT),
 		..ExponentialBackoff::default()
 	};
 
-	match retry(backoff, || async {
+	retry(backoff, || async {
 		MidnightNodeClient::new(url).await.map_err(|e| {
 			log::warn!("rpc connection attempt failed, retrying: {e}");
 			backoff::Error::transient(e)
 		})
 	})
 	.await
-	{
-		Ok(client) => Some(client),
-		Err(e) => {
-			log::warn!("failed to connect to node at {url} after retries: {e}");
-			None
-		},
-	}
-}
-
-/// Creates a new client, retrying indefinitely. Use only when a connection is required.
-pub async fn new_client(url: &str) -> MidnightNodeClient {
-	retry(ExponentialBackoff::default(), || async {
-		MidnightNodeClient::new(&url).await.map_err(|e| {
-			log::warn!("rpc fetch failed, retrying: {e}");
-			backoff::Error::transient(e)
-		})
-	})
-	.await
-	.expect("failed to fetch from node after retrying")
 }
 
 pub async fn fetch_all<
@@ -118,7 +99,7 @@ pub async fn fetch_all<
 		);
 	}
 
-	let client = new_client(&url).await;
+	let client = try_new_client(&url).await?;
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let max_height = finalized_height + 1;
@@ -170,7 +151,7 @@ pub async fn fetch_all<
 		let url = url.to_string();
 		let num_worker_connections_failed = Arc::clone(&num_worker_connections_failed);
 		join_set.spawn(async move {
-			let Some(client) = try_new_client(&url).await else {
+			let Ok(client) = try_new_client(&url).await else {
 				log::warn!(
 					"fetch worker {worker_id} could not connect to {url}, exiting. \
 					 This may be due to connection limits on the remote node."
