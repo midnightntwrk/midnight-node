@@ -454,10 +454,27 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    LET IMAGE_TAG="v0.24.0"
-    FROM ghcr.io/midnight-ntwrk/compactc:$IMAGE_TAG
+    LET COMPACTC_VERSION="v0.27.109-alpha.0"
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    # Install unzip
+    RUN apt update && apt install unzip
+    # Install gh
+    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
+        && mkdir -p -m 755 /etc/apt/keyrings \
+        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        && mkdir -p -m 755 /etc/apt/sources.list.d \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && apt update \
+        && apt install gh -y
+
+    # Fetch CompactC x86_64
+    RUN --secret GH_TOKEN gh release download --repo midnight-ntwrk/artifacts "compactc-${COMPACTC_VERSION}" --pattern "*x86_64-unknown-linux-musl.zip"
+    RUN unzip compactc*.zip
+
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN /bin/ls /nix/store && /nix/store/vbnn0vkzms8yiw88lad5k1axzngssd4f-compactc/bin/compactc simple-merkle-tree.compact simple-merkle-tree
+    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
     # Keys should not have 0 size (but will have if we ran out of memory):
     RUN [ -s /simple-merkle-tree/keys/check.prover ]
     RUN [ -s /simple-merkle-tree/keys/check.verifier ]
@@ -468,7 +485,7 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG=$IMAGE_TAG
+    ENV IMAGE_TAG=${COMPACTC_VERSION}
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
     LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
@@ -476,7 +493,7 @@ contract-precompile-image-single-platform:
 
 use-contract-precompile-image:
 #    FROM +contract-precompile-image
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.22.0
+    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.27.109-alpha.0
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
