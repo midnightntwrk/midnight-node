@@ -454,7 +454,6 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    LET COMPACTC_VERSION="v0.27.109-alpha.0"
     FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
     # Install unzip
     RUN apt update && apt install unzip
@@ -470,7 +469,8 @@ contract-precompile-image-single-platform:
         && apt install gh -y
 
     # Fetch CompactC x86_64
-    RUN --secret GH_TOKEN gh release download --repo midnight-ntwrk/artifacts "compactc-${COMPACTC_VERSION}" --pattern "*x86_64-unknown-linux-musl.zip"
+    COPY COMPACTC_VERSION .
+    RUN --secret GH_TOKEN gh release download --repo midnight-ntwrk/artifacts "compactc-v$(cat COMPACTC_VERSION)" --pattern "*x86_64-unknown-linux-musl.zip"
     RUN unzip compactc*.zip
 
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
@@ -485,15 +485,19 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG=${COMPACTC_VERSION}
+    ENV IMAGE_TAG=$(cat COMPACTC_VERSION)
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
     LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.27.109-alpha.0
+    COPY COMPACTC_VERSION .
+    ENV COMPACTC_VERSION_FILE=$(cat COMPACTC_VERSION)
+    ENV IMAGE_TAG="${COMPACTC_VERSION:-$COMPACTC_VERSION_FILE}"
+    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
