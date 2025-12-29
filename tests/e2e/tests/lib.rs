@@ -1199,7 +1199,10 @@ async fn replay_attack_rejected_via_rpc() {
 
     match &first_result {
         Ok(_) => println!("  First submission accepted (contract not yet deployed)"),
-        Err(e) => println!("  First submission rejected (expected if contract exists): {}", e),
+        Err(e) => println!(
+            "  First submission rejected (expected if contract exists): {}",
+            e
+        ),
     }
 
     // If first succeeded, wait for it to be processed before replay attempt
