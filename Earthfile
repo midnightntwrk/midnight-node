@@ -976,41 +976,48 @@ hardfork-test-upgrader-image:
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
     FROM +prep
-    # Update cargo-deny to latest version for SARIF support
-    RUN cargo binstall --no-confirm cargo-deny
+    RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
-    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
+    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
+    RUN mkdir -p /scan_reports
     RUN corepack enable
-    RUN --no-cache npm audit --audit-level high
+    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
+      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --severity high
+    RUN mkdir -p /scan_reports
+    RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
+      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-local-environment:
-    BUILD +audit-npm --DIRECTORY=local-environment/
+    BUILD +audit-npm --DIRECTORY=local-environment/ --REPORT_NAME=local-environment
 
 audit-toolkit-js:
-    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
 audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/
+    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
 
 audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/
+    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
 
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
