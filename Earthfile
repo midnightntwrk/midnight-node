@@ -595,8 +595,9 @@ toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
 
+    COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
 
     WORKDIR /toolkit-js
     RUN --secret GITHUB_TOKEN npm ci
