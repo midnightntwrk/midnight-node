@@ -596,7 +596,7 @@ toolkit-js-prep:
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV COMPACTC_VERSION="$(cat COMPACTC_VERSION)"
 
     WORKDIR /toolkit-js
     RUN --secret GITHUB_TOKEN npm ci
