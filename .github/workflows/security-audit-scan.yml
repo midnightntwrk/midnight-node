@@ -27,25 +27,52 @@ jobs:
 
       - name: Run cargo deny and npm audit
         run: |
-          . ./.envrc && earthly --ci +audit
+          . ./.envrc && earthly --use-inline-cache --strict +audit
 
-      # TODO: Remove this checkout step once upload-sarif-github-action repo is made public
-      - name: Checkout Upload action repository
-        if: hashFiles('cargo-deny.sarif') != ''
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          repository: midnightntwrk/upload-sarif-github-action
-          ref: main
-          path: upload-sarif-github-action
-          token: ${{ secrets.MIDNIGHTCI_REPO }}
+      - name: Fix cargo-deny SARIF format
+        if: hashFiles('scan_reports/cargo-deny.sarif') != ''
+        run: |
+          # cargo-deny produces snippet/message as strings, but SARIF spec requires objects
+          jq '(.. | .snippet? | strings) |= {"text": .}' scan_reports/cargo-deny.sarif | \
+          jq '(.. | .message? | select(type == "string")) |= {"text": .}' > scan_reports/cargo-deny-fixed.sarif
+          mv scan_reports/cargo-deny-fixed.sarif scan_reports/cargo-deny.sarif
 
-      - name: Upload cargo-deny SARIF to Checkmarx
-        if: hashFiles('cargo-deny.sarif') != ''
-        uses: ./upload-sarif-github-action
-        with:
-          sarif-file: cargo-deny.sarif
-          project-name: midnightntwrk/midnight-node
-          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
-          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
-          cx-tenant: ${{ secrets.CX_TENANT }}
+      - name: Upload cargo-deny SARIF
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        if: (success() || failure()) && hashFiles('scan_reports/cargo-deny.sarif') != ''
         continue-on-error: true
+        with:
+          sarif_file: scan_reports/cargo-deny.sarif
+          category: cargo-deny
+
+      - name: Upload npm-audit-local-environment SARIF
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: scan_reports/npm-audit-local-environment.sarif
+          category: npm-audit-local-environment
+
+      - name: Upload npm-audit-toolkit-js SARIF
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: scan_reports/npm-audit-toolkit-js.sarif
+          category: npm-audit-toolkit-js
+
+      - name: Upload npm-audit-ui-tests SARIF
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-ui-tests.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: scan_reports/npm-audit-ui-tests.sarif
+          category: npm-audit-ui-tests
+
+      - name: Upload npm-audit-ui SARIF
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-ui.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: scan_reports/npm-audit-ui.sarif
+          category: npm-audit-ui

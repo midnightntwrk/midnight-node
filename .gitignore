@@ -24,6 +24,7 @@ artifacts/
 artifacts-arm64/
 artifacts-amd64/
 test-artifacts/
+scan_reports/
 
 ui/tests/.yarn
 ui/tests/logs
