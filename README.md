@@ -68,6 +68,8 @@ Port │                                                                    │ 
      Other Midnight Nodes ◀────P2P Network (Port 30333)────▶ Other Midnight Nodes
 ```
 
+> **Security Note:** Database connections to PostgreSQL require SSL/TLS by default. Set `ALLOW_NON_SSL=true` only for local development environments without SSL certificates.
+
 ## Components
 
 ### Runtime Pallets
@@ -267,6 +269,7 @@ Chain specifications are located in `/res/` directory.
 | RPC port | - | `--rpc-port 9944` | WebSocket RPC port (default: 9944) |
 | Node key | `NODE_KEY_FILE=/path/to/key` | `--node-key "0x..."` | Network identity key file |
 | Bootstrap nodes | `BOOTNODES="/ip4/... /ip4/..."` | `--bootnodes "/ip4/..."` | Space-separated initial peers |
+| Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections |
 
 **Start single-node local network** for development:
 

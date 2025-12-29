@@ -9,10 +9,13 @@ members = [
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
+    "pallets/system-parameters",
+    "pallets/system-parameters/rpc",
     "pallets/version",
     "primitives/beefy",
     "primitives/midnight",
     "primitives/ledger",
+    "primitives/system-parameters",
     "res",
     "runtime",
     "util/toolkit",
@@ -89,6 +92,8 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-cnight-observation = { path = "pallets/cnight-observation", default-features = false }
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
+pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
+pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
 documented = { path = "util/documented", default-features = false }
@@ -100,6 +105,7 @@ midnight-primitives-ledger = { path = "primitives/ledger", default-features = fa
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
+midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 
 runtime-common = { path = "runtime/common", default-features = false }
 

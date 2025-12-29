@@ -297,6 +297,7 @@ services:
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
+      ALLOW_NON_SSL: true
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -333,6 +334,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30334:30334"
@@ -367,6 +369,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30335:30335"
@@ -403,6 +406,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30336:30336"
@@ -439,6 +443,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30337:30337"
