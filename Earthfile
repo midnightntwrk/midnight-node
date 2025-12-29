@@ -495,7 +495,7 @@ use-contract-precompile-image:
     FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
     COPY COMPACTC_VERSION .
-    ENV IMAGE_TAG="$(cat COMPACTC_VERSION}"
+    ENV IMAGE_TAG="$(cat COMPACTC_VERSION)"
     FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
