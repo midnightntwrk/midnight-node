@@ -485,7 +485,7 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG=$(cat COMPACTC_VERSION)
+    ENV IMAGE_TAG="$(cat COMPACTC_VERSION)"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
     LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
