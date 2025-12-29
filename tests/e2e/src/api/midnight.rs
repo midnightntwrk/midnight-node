@@ -20,16 +20,6 @@ use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
 
-/// Terms and Conditions response from RPC
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TermsAndConditionsResponse {
-    /// SHA-256 hash of the terms and conditions document (hex-encoded with 0x prefix)
-    pub hash: String,
-    /// URL where the terms and conditions can be found
-    pub url: String,
-}
-
 /// D-Parameter response from RPC
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -256,37 +246,6 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for federated authority events".into()))
-    }
-
-    /// Get the current Terms and Conditions via RPC.
-    ///
-    /// Returns the hash (hex-encoded with 0x prefix) and URL of the current terms and conditions,
-    /// or None if not set.
-    pub async fn get_terms_and_conditions(
-        &self,
-    ) -> Result<Option<TermsAndConditionsResponse>, Box<dyn std::error::Error>> {
-        let response: Option<TermsAndConditionsResponse> = self
-            .rpc_client
-            .request("systemParameters_getTermsAndConditions", rpc_params![])
-            .await?;
-
-        Ok(response)
-    }
-
-    /// Get the current Terms and Conditions at a specific block hash.
-    pub async fn get_terms_and_conditions_at(
-        &self,
-        block_hash: H256,
-    ) -> Result<Option<TermsAndConditionsResponse>, Box<dyn std::error::Error>> {
-        let response: Option<TermsAndConditionsResponse> = self
-            .rpc_client
-            .request(
-                "systemParameters_getTermsAndConditions",
-                rpc_params![block_hash],
-            )
-            .await?;
-
-        Ok(response)
     }
 
     /// Get the current D-Parameter via RPC.
