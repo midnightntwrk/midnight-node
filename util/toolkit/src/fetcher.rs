@@ -16,6 +16,10 @@ pub mod fetch_storage;
 pub mod fetch_task;
 pub mod runtimes;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
 use backoff::{ExponentialBackoff, future::retry};
 use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
@@ -35,6 +39,9 @@ pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNo
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
 
+/// Maximum time to wait for a client connection before giving up.
+const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
 	#[error("subxt error while fetching")]
@@ -53,8 +60,35 @@ pub enum FetchError {
 	ComputeTaskError(#[from] ComputeError),
 	#[error("worker thread panicced")]
 	WorkerPanic(String),
+	#[error("no fetch workers could connect to the node")]
+	NoWorkersConnected,
 }
 
+/// Attempts to create a new client with bounded retries.
+/// Returns `None` if the connection is refused after all retry attempts.
+pub async fn try_new_client(url: &str) -> Option<MidnightNodeClient> {
+	let backoff = ExponentialBackoff {
+		max_elapsed_time: Some(CLIENT_CONNECT_TIMEOUT),
+		..ExponentialBackoff::default()
+	};
+
+	match retry(backoff, || async {
+		MidnightNodeClient::new(url).await.map_err(|e| {
+			log::warn!("rpc connection attempt failed, retrying: {e}");
+			backoff::Error::transient(e)
+		})
+	})
+	.await
+	{
+		Ok(client) => Some(client),
+		Err(e) => {
+			log::warn!("failed to connect to node at {url} after retries: {e}");
+			None
+		},
+	}
+}
+
+/// Creates a new client, retrying indefinitely. Use only when a connection is required.
 pub async fn new_client(url: &str) -> MidnightNodeClient {
 	retry(ExponentialBackoff::default(), || async {
 		MidnightNodeClient::new(&url).await.map_err(|e| {
@@ -122,20 +156,35 @@ pub async fn fetch_all<
 
 	log::info!("spawning {num_workers} fetch workers");
 
+	// Track how many workers successfully connected
+	let connected_workers = Arc::new(AtomicUsize::new(0));
+
 	// Spawn fetch workers
-	for _ in 0..num_workers {
+	for worker_id in 0..num_workers {
 		let job_receiver = fetch_job_receiver.clone();
 		let work_job_sender = compute_job_sender.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
+		let connected_workers = Arc::clone(&connected_workers);
 		join_set.spawn(async move {
-			let client = new_client(&url).await;
+			let Some(client) = try_new_client(&url).await else {
+				log::warn!(
+					"fetch worker {worker_id} could not connect to {url}, exiting. \
+					 This may be due to connection limits on the remote node."
+				);
+				return Ok(());
+			};
+
+			// Track successful connection
+			connected_workers.fetch_add(1, Ordering::SeqCst);
+			log::info!("fetch worker {worker_id} connected successfully");
+
 			loop {
 				let Ok(job) = job_receiver.recv().await else {
 					return Ok(());
 				};
 
-				log::info!("received new job...");
+				log::info!("worker {worker_id}: received new job...");
 
 				let work_job = job.fetch(chain_id, &client, fetch_storage.clone()).await?;
 
@@ -187,7 +236,15 @@ pub async fn fetch_all<
 		tokio::select! {
 			Some(result) = join_set.join_next() => {
 				match result {
-					Ok(Ok(())) => {}, // Task completed successfully
+					Ok(Ok(())) => {
+						// Task completed - check if we still have workers
+						// If all fetch workers exited without processing jobs, we have a problem
+						if connected_workers.load(Ordering::SeqCst) == 0 && received == 0 {
+							log::error!("all fetch workers failed to connect");
+							join_set.abort_all();
+							return Err(FetchError::NoWorkersConnected);
+						}
+					},
 					Ok(Err(e)) => {
 						join_set.abort_all();
 						return Err(e);
