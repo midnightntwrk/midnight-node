@@ -160,7 +160,7 @@ pub async fn fetch_all<
 	log::info!("spawning {num_workers} fetch workers");
 
 	// Track how many workers successfully connected
-	let connected_workers = Arc::new(AtomicUsize::new(0));
+	let num_worker_connections_failed = Arc::new(AtomicUsize::new(0));
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
@@ -168,18 +168,18 @@ pub async fn fetch_all<
 		let work_job_sender = compute_job_sender.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
-		let connected_workers = Arc::clone(&connected_workers);
+		let num_worker_connections_failed = Arc::clone(&num_worker_connections_failed);
 		join_set.spawn(async move {
 			let Some(client) = try_new_client(&url).await else {
 				log::warn!(
 					"fetch worker {worker_id} could not connect to {url}, exiting. \
 					 This may be due to connection limits on the remote node."
 				);
+				// Track failed connections
+				num_worker_connections_failed.fetch_add(1, Ordering::SeqCst);
 				return Ok(());
 			};
 
-			// Track successful connection
-			connected_workers.fetch_add(1, Ordering::SeqCst);
 			log::info!("fetch worker {worker_id} connected successfully");
 
 			loop {
@@ -240,9 +240,8 @@ pub async fn fetch_all<
 			Some(result) = join_set.join_next() => {
 				match result {
 					Ok(Ok(())) => {
-						// Task completed - check if we still have workers
 						// If all fetch workers exited without processing jobs, we have a problem
-						if connected_workers.load(Ordering::SeqCst) == 0 && received == 0 {
+						if num_worker_connections_failed.load(Ordering::SeqCst) == num_workers {
 							log::error!("all fetch workers failed to connect");
 							join_set.abort_all();
 							return Err(FetchError::NoWorkersConnected);
