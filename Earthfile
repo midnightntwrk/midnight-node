@@ -612,7 +612,7 @@ toolkit-js-prep:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     # Download compactc from artifacts repo
-    RUN --secret GH_TOKEN gh release download --repo midnight-ntwrk/artifacts "compactc-v${COMPACTC_VERSION}" --pattern "*x86_64-unknown-linux-musl.zip"
+    RUN --secret GITHUB_TOKEN export GH_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && gh release download --repo midnight-ntwrk/artifacts "compactc-v${COMPACTC_VERSION}" --pattern "*x86_64-unknown-linux-musl.zip"
     RUN unzip compactc*.zip && mv compactc /usr/local/bin/ && chmod +x /usr/local/bin/compactc
 
     WORKDIR /toolkit-js
