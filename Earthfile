@@ -470,7 +470,23 @@ contract-precompile-image-single-platform:
 
     # Fetch CompactC x86_64
     COPY COMPACTC_VERSION .
-    RUN --secret GH_TOKEN gh release download --repo midnight-ntwrk/artifacts "compactc-v$(cat COMPACTC_VERSION)" --pattern "*x86_64-unknown-linux-musl.zip"
+    RUN --secret GH_TOKEN set -e && \
+        VERSION=$(cat COMPACTC_VERSION) && \
+        RELEASE_TAG="compactc-v${VERSION}" && \
+        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
+        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
+            echo "Successfully downloaded from release"; \
+        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
+            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
+            echo "Available releases with binaries:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        else \
+            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
+            echo "Available releases:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        fi
     RUN unzip compactc*.zip
 
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
