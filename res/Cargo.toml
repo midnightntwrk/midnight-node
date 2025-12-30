@@ -11,6 +11,7 @@ license-file.workspace = true
 default = ["std"]
 chain-spec = [
     "midnight-primitives-federated-authority-observation/std",
+    "midnight-primitives-system-parameters/std",
     "pallet-cnight-observation/std",
     "std",
     "sp-core/std",
@@ -24,9 +25,8 @@ std = []
 runtime-benchmarks = []
 
 [dependencies]
-hex.workspace = true
-midnight-serialize.workspace = true
 hex-literal.workspace = true
+midnight-serialize.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["alloc"] }
 sp-core = { workspace = true, optional = true }
@@ -35,14 +35,11 @@ sp-session-validator-management = { workspace = true, optional = true }
 sp-governed-map = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
 midnight-primitives-federated-authority-observation = { workspace = true, optional = true }
+midnight-primitives-system-parameters = { workspace = true, optional = true }
 pallet-cnight-observation = { workspace = true, optional = true }
 
 [dev-dependencies]
-mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
-ledger-storage.workspace = true
-base-crypto.workspace = true
 midnight-serialize.workspace = true
-transient-crypto.workspace = true
 hex.workspace = true
 toml.workspace = true
 
@@ -51,6 +48,3 @@ walkdir = "2"
 
 [lints]
 workspace = true
-
-[package.metadata.cargo-shear]
-ignored = ["midnight-transient-crypto", "midnight-ledger", "midnight-storage", "midnight-base-crypto"]

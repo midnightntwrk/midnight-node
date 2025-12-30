@@ -1,6 +1,8 @@
 use crate::config::NodeClientSettings;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
+use hex::ToHex;
+use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::types::utxo_owners::UtxoOwners;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
@@ -28,9 +30,22 @@ impl MidnightClient {
         Self { online_client }
     }
 
-    pub fn new_dust_hex() -> String {
-        let bytes: [u8; 33] = rand::random();
-        hex::encode(bytes)
+    pub fn new_seed() -> WalletSeed {
+        let seed_bytes: [u8; 32] = rand::random();
+        println!("Midnight seed: {}", hex::encode(seed_bytes));
+        WalletSeed::from(seed_bytes)
+    }
+
+    pub fn new_dust_hex(wallet_seed: WalletSeed) -> String {
+        let dust_wallet = DustWallet::<DefaultDB>::default(wallet_seed, None);
+        let dust_public = dust_wallet.public_key;
+        let mut dust_bytes = serialize_untagged(&dust_public).unwrap();
+        if dust_bytes.len() == 32 {
+            dust_bytes.push(0);
+        }
+        let dust_public_hex = dust_bytes.encode_hex::<String>();
+        println!("Dust public key hex: {}", dust_public_hex);
+        dust_public_hex
     }
 
     pub async fn subscribe_to_cnight_observation_events(
@@ -151,7 +166,9 @@ impl MidnightClient {
         let start = Instant::now();
         loop {
             let current_value = self.query_night_utxo_owners(utxo.clone()).await?;
-            if current_value.as_ref().map(|v| v.0) != initial_value.as_ref().map(|v| v.0) {
+            if current_value.as_ref().map(|v| v.0.0.clone())
+                != initial_value.as_ref().map(|v| v.0.0.clone())
+            {
                 println!("UtxoOwners storage changed: {:?}", current_value);
                 return Ok(current_value);
             }

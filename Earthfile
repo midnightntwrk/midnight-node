@@ -58,6 +58,20 @@ generate-preview-keys:
 generate-preview-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
+generate-preprod-keys:
+    BUILD +generate-keys \
+        --DEV=true \
+        --NETWORK=preprod \
+        --NUM_REGISTRATIONS=4 \
+        --NUM_PERMISSIONED=12 \
+        --D_REGISTERED=25 \
+        --D_PERMISSIONED=275 \
+        --NUM_BOOT_NODES=3 \
+        --NUM_VALIDATOR_NODES=12
+
+generate-preprod-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=preprod --OUTPUT_FILE=preprod-genesis-seeds.json
+
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
     ARG DEV=false
@@ -167,16 +181,16 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    COPY --if-exists res/genesis/genesis_funding_wallets_${NETWORK}.txt funding_wallets.txt
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
+    # wallet-seed-3 is the wallet Lace uses for testing.
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
             echo '{ \
                 "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001", \
                 "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002", \
                 "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003", \
-                "wallet-seed-3": "0000000000000000000000000000000000000000000000000000000000000004" \
+                "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d" \
             }' > /secrets/genesis-seeds.json; \
         fi
 
@@ -196,6 +210,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple deploy \
@@ -206,6 +221,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_2_store_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -216,6 +232,7 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_3_check_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple call \
@@ -227,6 +244,7 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
                 --src-file out/contract_tx_3_check_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
                 --to-bytes \
                 contract-simple maintenance \
@@ -243,6 +261,7 @@ rebuild-genesis-state:
         && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/zswap_undeployed.mn \
                 --to-bytes batches \
                 -n 1 \
@@ -261,6 +280,7 @@ rebuild-genesis-state:
                 > out/dest_addr.mn \
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --dest-file out/serialized_tx_with_context.mn \
                 --to-bytes \
                 single-tx \
@@ -293,6 +313,7 @@ rebuild-genesis-state:
                 0 \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
@@ -323,6 +344,7 @@ rebuild-genesis-state:
                 --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
             && /midnight-node-toolkit send-intent \
                 --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
                 --intent-file /res/test-data/contract/mint/deploy.bin \
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
@@ -367,10 +389,16 @@ rebuild-genesis-state-qanet:
         --NETWORK=qanet \
         --GENERATE_TEST_TXS=false
 
-# rebuild-genesis-state-testnet-02 rebuilds the genesis ledger state for testnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
         --NETWORK=preview \
+        --GENERATE_TEST_TXS=false
+
+# rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-preprod:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=preprod \
         --GENERATE_TEST_TXS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
@@ -379,6 +407,7 @@ rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
     BUILD +rebuild-genesis-state-preview
+    BUILD +rebuild-genesis-state-preprod
 
 # rebuild-chainspec for a given NETWORK
 rebuild-chainspec:
@@ -402,6 +431,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=node-dev-01
     BUILD +rebuild-chainspec --NETWORK=qanet
     BUILD +rebuild-chainspec --NETWORK=preview
+    BUILD +rebuild-chainspec --NETWORK=preprod
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -424,10 +454,43 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    LET IMAGE_TAG="v0.24.0"
-    FROM ghcr.io/midnight-ntwrk/compactc:$IMAGE_TAG
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    # Install unzip
+    RUN apt update && apt install unzip
+    # Install gh
+    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
+        && mkdir -p -m 755 /etc/apt/keyrings \
+        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        && mkdir -p -m 755 /etc/apt/sources.list.d \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && apt update \
+        && apt install gh -y
+
+    # Fetch CompactC x86_64
+    COPY COMPACTC_VERSION .
+    RUN --secret GH_TOKEN set -e && \
+        VERSION=$(cat COMPACTC_VERSION) && \
+        RELEASE_TAG="compactc-v${VERSION}" && \
+        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
+        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
+            echo "Successfully downloaded from release"; \
+        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
+            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
+            echo "Available releases with binaries:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        else \
+            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
+            echo "Available releases:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        fi
+    RUN unzip compactc*.zip
+
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN /bin/ls /nix/store && /nix/store/vbnn0vkzms8yiw88lad5k1axzngssd4f-compactc/bin/compactc simple-merkle-tree.compact simple-merkle-tree
+    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
     # Keys should not have 0 size (but will have if we ran out of memory):
     RUN [ -s /simple-merkle-tree/keys/check.prover ]
     RUN [ -s /simple-merkle-tree/keys/check.verifier ]
@@ -438,6 +501,7 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG=$IMAGE_TAG
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
@@ -445,8 +509,11 @@ contract-precompile-image-single-platform:
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.22.0
+    COPY COMPACTC_VERSION .
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
+    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
@@ -460,7 +527,7 @@ node-ci-image-single-platform:
 
     # Install build dependencies
     RUN apt-get update -qq && \
-        apt-get upgrade && \
+        apt-get upgrade -y -qq && \
         apt-get install -y --no-install-recommends -qq \
         build-essential \
         clang \
@@ -513,7 +580,7 @@ node-ci-image-single-platform:
 prep-no-copy:
     ARG NATIVEARCH
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM ghcr.io/midnight-ntwrk/midnight-node-ci:1.90-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:1.90-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
@@ -528,7 +595,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay .
+        metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -544,13 +611,19 @@ toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
 
+    COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN npm ci
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    RUN --secret GITHUB_TOKEN npm run compact
+    # Run npm compact script (includes fetch-compactc + compile steps)
+    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    # Verify keys were generated
+    RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
 
@@ -584,14 +657,14 @@ planner:
 check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     RUN apt-get update && apt-get install -y jq
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -600,15 +673,14 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay .
+    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
 
     ENV SKIP_WASM_BUILD=1
 
-    # --offline used to hard fail if caching broken.
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks --offline -- -D warnings
+    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
@@ -682,7 +754,8 @@ test:
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    COPY +planner/recipe.json /recipe.json
+    # TODO: re-enable when chef is improved.
+    # COPY +planner/recipe.json /recipe.json
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
@@ -693,22 +766,38 @@ build-prepare:
     ENV CXX=clang++
 
     # Build dependencies - this is the caching Docker layer!
-    RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+    # TODO: re-enable when chef is improved.
+    # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
+build-upgrader:
+    FROM +prep
+    ARG NATIVEARCH
+
+    RUN mkdir -p /artifacts-$NATIVEARCH
+    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+        && mv /target/release/upgrader /artifacts-$NATIVEARCH
+    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 # build creates production ready binaries
 build:
     ARG NATIVEARCH
 
-    FROM +build-prepare
+    FROM +prep
+
+    ARG EARTHLY_GIT_SHORT_HASH
+    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
+    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
+    ENV CC=clang
+    ENV CXX=clang++
+
     WAIT
-        BUILD +build-normal
+        BUILD +build-upgrader
         BUILD +build-fork
         BUILD +build-undo
     END
 
     RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
 
@@ -721,7 +810,7 @@ build-normal:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -747,7 +836,7 @@ build-normal:
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-fork:
-    FROM +build-prepare
+    FROM +prep
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
@@ -759,15 +848,14 @@ build-fork:
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
 
     # Hardfork build
-    # NOTE: We're NOT doing -p midnight-node-runtime - building the workspace is faster as it caches better.
-    RUN HARDFORK_TEST=1 cargo build --workspace  --locked --release
+    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-undo:
-    FROM +build-normal
+    FROM +prep
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
@@ -815,8 +903,9 @@ node-image:
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
-    # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+    # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
@@ -832,6 +921,8 @@ node-image:
         $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
 
     # Re-export build artifacts which contain wasm
+    COPY .envrc /artifacts-$NATIVEARCH/.envrc
+    COPY res/ /artifacts-$NATIVEARCH/res/
     COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
@@ -846,8 +937,9 @@ node-benchmarks-image:
 
     COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /midnight-node
 
-    # TODO if git source version is picked up by substrate then we can just split by space and take second.
-    RUN ./midnight-node --version | awk '{print $2}' | awk -F- '{print $1}' | head -1 > /version
+    # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
+    COPY node/Cargo.toml /node/
+    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
@@ -908,7 +1000,8 @@ hardfork-test-upgrader-image:
     COPY +build/artifacts-$NATIVEARCH/test/* /
     COPY +build/artifacts-$NATIVEARCH/rollback/* /
 
-    LET NODE_VERSION = "$(cat node_version)"
+    COPY node/Cargo.toml /node/
+    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
@@ -926,41 +1019,48 @@ hardfork-test-upgrader-image:
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
     FROM +prep
-    # Update cargo-deny to latest version for SARIF support
-    RUN cargo binstall --no-confirm cargo-deny
+    RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
-    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
+    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
+    RUN mkdir -p /scan_reports
     RUN corepack enable
-    RUN --no-cache npm audit --audit-level high
+    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
+      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --severity high
+    RUN mkdir -p /scan_reports
+    RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
+      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-local-environment:
-    BUILD +audit-npm --DIRECTORY=local-environment/
+    BUILD +audit-npm --DIRECTORY=local-environment/ --REPORT_NAME=local-environment
 
 audit-toolkit-js:
-    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
 audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/
+    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
 
 audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/
+    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
 
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
@@ -1043,7 +1143,7 @@ local-env-e2e:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=1 --nocapture
+    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -1173,5 +1273,4 @@ node-e2e-test:
 images:
     FROM scratch
     BUILD +node-image
-    BUILD +hardfork-test-upgrader-image
     BUILD +toolkit-image

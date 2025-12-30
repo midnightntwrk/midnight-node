@@ -48,7 +48,9 @@ pub use frame_support::{
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
-use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
+use midnight_primitives::BridgeRecipient;
+use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
@@ -61,19 +63,21 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	DParameter, EpochNonce, MainchainAddress, PermissionedCandidateData, PolicyId,
-	RegistrationData, ScEpochNumber, ScSlotNumber, SidechainPublicKey, StakeDelegation,
-	StakePoolPublicKey, UtxoId, byte_string::ByteString,
+	MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData, ScEpochNumber,
+	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_beefy::{
 	OpaqueKeyOwnershipProof,
 	ecdsa_crypto::{AuthorityId as BeefyId, Signature as BeefySignature},
-	mmr::{BeefyDataProvider, MmrLeafVersion},
+	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_governed_map::MainChainScriptsV1;
+use sp_partner_chains_bridge::{
+	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
+};
 
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
@@ -112,6 +116,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
+pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -124,6 +129,11 @@ use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
 use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
+
+use crate::beefy::{
+	compute_current_authority_set, compute_next_authority_set, current_beefy_stakes,
+	next_beefy_stakes,
+};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -486,131 +496,11 @@ impl Convert<BeefyId, Vec<u8>> for RawBeefyId {
 	}
 }
 
-pub struct KeyAndStakeDataProvider;
-
-impl BeefyDataProvider<Vec<u8>> for KeyAndStakeDataProvider {
-	/// Returns an encoded Vec<(BeefyId, StakeDelegation)>
-	fn extra_data() -> Vec<u8> {
-		// list of all validators
-		let validators = Session::validators_and_keys();
-
-		// list of all validators (in beefy)
-		let Some(beefy_validators) = Beefy::validator_set() else {
-			log::warn!(
-				target: "runtime:beefy_mmr",
-				"Beefy Validators is empty",
-			);
-
-			return vec![];
-		};
-		// Only concerned about the beefy validators
-		let beefy_ids = beefy_validators.validators();
-
-		// make sure beefy validators have the same number as the validators set in the session pallet
-		if validators.len() != beefy_ids.len() {
-			log::warn!(
-				target: "runtime:beefy_mmr",
-				"Not the same number of validators for  session({}) and beefy({})",
-				validators.len(),
-				beefy_ids.len()
-			);
-			return vec![];
-		}
-
-		// With the given validators, recreate a list of permissioned candidates
-		let mut permissioned_candidates = vec![];
-
-		for (idx, (_, session_keys)) in validators.iter().enumerate() {
-			// the SideChainPublicKey is ecdsa, same as beefy. For mocking purposes, we use the same value
-			let beefy = &beefy_ids[idx];
-			let Some(sidechain_public_key) =
-				convert_to_key::<sp_core::ecdsa::Public, SidechainPublicKey, _>(beefy)
-			else {
-				return vec![];
-			};
-
-			let candidate = PermissionedCandidateData {
-				sidechain_public_key,
-				keys: session_keys.clone().into(),
-			};
-
-			permissioned_candidates.push(candidate);
-		}
-
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let d_parameter = DParameter::new(6, 0);
-
-		// todo: default value, taken from `fn select_authorities_optionally_overriding`
-		let sample_epoch: u16 = 0x1234;
-		let sample_epoch = sample_epoch.to_be_bytes();
-		let sample_epoch = sample_epoch.to_vec();
-
-		let epoch_nonce = EpochNonce(sample_epoch);
-
-		// mock an input
-		let input = AuthoritySelectionInputs {
-			d_parameter,
-			permissioned_candidates,
-			registered_candidates: vec![],
-			epoch_nonce,
-		};
-
-		let Some(candidates) = select_authorities::<CrossChainPublic, SessionKeys, MaxAuthorities>(
-			Sidechain::genesis_utxo(),
-			input,
-			Runtime::current_epoch_number(),
-		) else {
-			return vec![];
-		};
-
-		let result = candidates
-			.into_iter()
-			.map(|member| match member {
-				CommitteeMember::Permissioned { id, keys: _ } =>
-				// For mocking purposes, CrosschainPublicKey is converted to BeefyId
-				// BeefyId can be derived from a value provided by the CrosschainPublicKey.
-				{
-					(
-						xchain_public_to_beefy(id),
-						// set to 0 for unfound stake delegation
-						StakeDelegation(1),
-					)
-				},
-				CommitteeMember::Registered { .. } => {
-					unreachable!("we have not mocked any registered candidates")
-				},
-			})
-			.collect::<Vec<(BeefyId, StakeDelegation)>>();
-
-		log::info!(
-			target: "runtime::beefy_mmr",
-			"Extra Data found of size {}",
-			result.len()
-		);
-
-		result.encode()
-	}
-}
-
-fn xchain_public_to_beefy(xchain_pub_key: CrossChainPublic) -> BeefyId {
-	let xchain_pub_key = xchain_pub_key.into_inner();
-	BeefyId::from(xchain_pub_key)
-}
-
-fn convert_to_key<KeyType: ByteArray, Out: From<KeyType>, T: ByteArray>(
-	pub_key: &T,
-) -> Option<Out> {
-	let pub_key_as_slice = pub_key.as_slice();
-	let new_key = KeyType::from_slice(pub_key_as_slice).ok()?;
-
-	Some(Out::from(new_key))
-}
-
 impl pallet_beefy_mmr::Config for Runtime {
 	type LeafVersion = LeafVersion;
 	type BeefyAuthorityToMerkleLeaf = RawBeefyId;
-	type LeafExtra = Vec<u8>; // default
-	type BeefyDataProvider = KeyAndStakeDataProvider;
+	type LeafExtra = Vec<u8>;
+	type BeefyDataProvider = ();
 	type WeightInfo = ();
 }
 
@@ -687,16 +577,14 @@ parameter_types! {
 	pub const MaxAuthorities: u32 = 10_000;
 }
 
-/// If an override to the D-parameter is set onchain, select the next authorities according to the overridden d-parameter. Otherwise, perform the normal authority selection
+/// Select the next authorities using the D-parameter from the system-parameters pallet
 fn select_authorities_optionally_overriding(
 	mut input: AuthoritySelectionInputs,
 	sidechain_epoch: ScEpochNumber,
 ) -> Option<BoundedVec<CommitteeMember<CrossChainPublic, SessionKeys>, MaxAuthorities>> {
-	let d_parameter_override = pallet_midnight::pallet::DParameterOverride::<Runtime>::get();
-	if let Some(d_parameter_override) = d_parameter_override {
-		input.d_parameter.num_permissioned_candidates = d_parameter_override.0;
-		input.d_parameter.num_registered_candidates = d_parameter_override.1;
-	}
+	let d_parameter = SystemParameters::get_d_parameter();
+	input.d_parameter.num_permissioned_candidates = d_parameter.num_permissioned_candidates;
+	input.d_parameter.num_registered_candidates = d_parameter.num_registered_candidates;
 	select_authorities(Sidechain::genesis_utxo(), input, sidechain_epoch)
 }
 
@@ -963,7 +851,24 @@ impl pallet_federated_authority_observation::Config for Runtime {
 	type WeightInfo = ();
 }
 
+impl pallet_system_parameters::Config for Runtime {
+	type SystemOrigin = EnsureRoot<AccountId>;
+	type WeightInfo = ();
+}
+
 pub struct MidnightTokenTransferHandler;
+
+parameter_types! {
+	pub const BridgeMaxTransfersPerBlock: u32 = 256;
+}
+
+impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
+	for MidnightTokenTransferHandler
+{
+	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+		log::debug!("Bridge token transfer received {:?}", transfer);
+	}
+}
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
@@ -986,6 +891,14 @@ impl pallet_governed_map::Config for Runtime {
 
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
+}
+
+impl pallet_partner_chains_bridge::Config for Runtime {
+	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
+	type Recipient = BridgeRecipient;
+	type TransferHandler = MidnightTokenTransferHandler;
+	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
+	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -1071,6 +984,9 @@ mod runtime {
 	#[runtime::pallet_index(31)]
 	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
+	#[runtime::pallet_index(32)]
+	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
+
 	// Governance
 	#[runtime::pallet_index(40)]
 	pub type Council = pallet_collective::Pallet<Runtime, Instance1>;
@@ -1087,6 +1003,10 @@ mod runtime {
 	#[runtime::pallet_index(45)]
 	pub type FederatedAuthorityObservation =
 		pallet_federated_authority_observation::Pallet<Runtime>;
+
+	// System Parameters
+	#[runtime::pallet_index(50)]
+	pub type SystemParameters = pallet_system_parameters::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
@@ -1141,6 +1061,7 @@ mod benches {
 		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
+		[pallet_system_parameters, SystemParameters]
 	);
 }
 
@@ -1196,11 +1117,31 @@ impl_runtime_apis! {
 		fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_ledger_parameters()
 		}
-		fn get_transaction_cost(midnight_transaction: Vec<u8>) -> Result<(StorageCost, GasCost), LedgerApiError> {
+		fn get_transaction_cost(
+			midnight_transaction: Vec<u8>,
+		) -> Result<GasCost, LedgerApiError> {
 			Midnight::get_transaction_cost(&midnight_transaction)
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
+		}
+	}
+
+	impl sp_partner_chains_bridge::TokenBridgeIDPRuntimeApi<Block> for Runtime {
+		fn get_pallet_version() -> u32 {
+			Bridge::get_pallet_version()
+		}
+
+		fn get_main_chain_scripts() -> Option<BridgeMainChainScripts> {
+			Bridge::get_main_chain_scripts()
+		}
+
+		fn get_max_transfers_per_block() -> u32 {
+			Bridge::get_max_transfers_per_block()
+		}
+
+		fn get_last_data_checkpoint() -> Option<BridgeDataCheckpoint> {
+			Bridge::get_data_checkpoint()
 		}
 	}
 
@@ -1310,6 +1251,33 @@ impl_runtime_apis! {
 				.map(|p| p.encode())
 				.map(OpaqueKeyOwnershipProof::new)
 				.ok()
+		}
+	}
+
+	// Collects the (Current BeefyStakes, Next BeefyStakes)
+	impl midnight_primitives_beefy::BeefyStakesApi<Block, Hash, BeefyId> for Runtime {
+		/// Gets the current beefy stakes
+		fn current_beefy_stakes() -> BeefyStakes<BeefyId> {
+			current_beefy_stakes(None)
+		}
+
+		/// Gets the next beefy stakes
+		fn next_beefy_stakes() -> Option<BeefyStakes<BeefyId>> {
+			next_beefy_stakes(None)
+		}
+
+		/// Returns the authority set based on the current beef stakes
+		fn compute_current_authority_set(
+			beefy_stakes: BeefyStakes<BeefyId>,
+		) ->  BeefyAuthoritySet<Hash> {
+			compute_current_authority_set(beefy_stakes)
+		}
+
+		/// Returns the authority set based on the next beef stakes
+		fn compute_next_authority_set(
+			beefy_stakes: BeefyStakes<BeefyId>,
+		) -> BeefyNextAuthoritySet<Hash> {
+			compute_next_authority_set(beefy_stakes)
 		}
 	}
 
@@ -1540,7 +1508,7 @@ impl_runtime_apis! {
 			authority_selection_inherents::validate_stake(stake).err()
 		}
 		fn validate_permissioned_candidate_data(candidate: PermissionedCandidateData) -> Option<PermissionedCandidateDataError> {
-			validate_permissioned_candidate_data::<CrossChainKey>(candidate).err()
+			validate_permissioned_candidate_data::<opaque::SessionKeys>(candidate).err()
 		}
 	}
 
@@ -1607,12 +1575,27 @@ impl_runtime_apis! {
 			pallet_federated_authority_observation::MainChainTechnicalCommitteePolicyId::<Runtime>::get()
 		}
 	}
+
+	impl pallet_system_parameters::SystemParametersApi<Block, Hash> for Runtime {
+		fn get_terms_and_conditions() -> Option<pallet_system_parameters::TermsAndConditionsResponse<Hash>> {
+			SystemParameters::get_terms_and_conditions().map(|tc| {
+				pallet_system_parameters::TermsAndConditionsResponse {
+					hash: tc.hash,
+					url: tc.url.to_vec(),
+				}
+			})
+		}
+
+		fn get_d_parameter() -> sidechain_domain::DParameter {
+			SystemParameters::get_d_parameter()
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::mock::*;
-	use crate::{Midnight, select_authorities_optionally_overriding};
+	use crate::{SystemParameters, select_authorities_optionally_overriding};
 	use authority_selection_inherents::{AuthoritySelectionInputs, RegisterValidatorSignedMessage};
 	use frame_support::{
 		assert_ok,
@@ -1776,6 +1759,9 @@ mod tests {
 			let d_parameter =
 				DParameter { num_permissioned_candidates: 1, num_registered_candidates: 0 };
 
+			// Set initial D-parameter in SystemParameters pallet
+			assert_ok!(SystemParameters::update_d_parameter(RawOrigin::Root.into(), 1, 0));
+
 			let authority_selection_inputs = create_authority_selection_inputs(
 				&permissioned_validators,
 				&registered_validators,
@@ -1789,8 +1775,8 @@ mod tests {
 
 			assert_eq!(initially_selected_authorities.unwrap().len(), 1);
 
-			// Override the committee manually
-			assert_ok!(Midnight::override_d_parameter(RawOrigin::Root.into(), Some((20, 2))));
+			// Override the D-parameter via SystemParameters pallet
+			assert_ok!(SystemParameters::update_d_parameter(RawOrigin::Root.into(), 20, 2));
 
 			let selected_authorities_override = select_authorities_optionally_overriding(
 				authority_selection_inputs,

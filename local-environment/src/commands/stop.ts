@@ -42,7 +42,11 @@ async function stopEphemeralEnvironment(
   runOptions: RunOptions,
 ) {
   console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  await connectToPostgres(namespace);
+  if (namespace === "preview") {
+    console.log("Skipping port-forward for preview (DB is publicly reachable)");
+  } else {
+    await connectToPostgres(namespace);
+  }
 
   console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
   const envObject = getSecrets(namespace);

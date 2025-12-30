@@ -1,6 +1,6 @@
 use crate::WalletSeed;
+use crate::cli_parsers::{self as cli};
 use clap::Args;
-use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Args, Clone)]
 pub struct ShowSeedArgs {

@@ -18,8 +18,6 @@ use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
-	client::MidnightNodeClient,
-	indexer::Indexer,
 	remote_prover::RemoteProofServer,
 	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
@@ -91,18 +89,23 @@ where
 			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+				src_files.clone(),
+				extension.to_string(),
+				src.dust_warp,
+			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
 			if dry_run {
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer =
-				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+				&url,
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))

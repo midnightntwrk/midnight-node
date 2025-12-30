@@ -66,14 +66,49 @@ where
 #[derive(Eq, Debug, Clone, PartialEq, TypeInfo, Default, Encode, Decode, PartialOrd, Ord)]
 pub struct AuthorityMemberPublicKey(pub Vec<u8>);
 
+/// Versioned enum for governance authority datums decoded from mainchain
+/// This allows for future schema changes while maintaining backward compatibility
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GovernanceAuthorityDatums {
+	R0(GovernanceAuthorityDatumR0),
+}
+
+/// Governance authority datum format for round 0 (initial version)
+/// Contains the list of authorities and the round number
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernanceAuthorityDatumR0 {
+	pub authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+	pub round: u8,
+}
+
+/// Authorities data with round information
+/// This structure is used to represent decoded authority data from the mainchain
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]
+pub struct AuthoritiesData {
+	/// List of tuples (sr25519 authority public key, mainchain member hash)
+	pub authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+	/// Round number from the mainchain datum (currently unused but available for future use)
+	pub round: u8,
+}
+
+impl From<GovernanceAuthorityDatums> for AuthoritiesData {
+	fn from(datum: GovernanceAuthorityDatums) -> Self {
+		match datum {
+			GovernanceAuthorityDatums::R0(r0) => {
+				AuthoritiesData { authorities: r0.authorities, round: r0.round }
+			},
+		}
+	}
+}
+
 /// Placeholder structure for federated authority data from main chain
 /// This will contain sr25519 public keys and mainchain member hashes for federated authorities
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]
 pub struct FederatedAuthorityData {
-	/// List of tuples (sr25519 authority public key, mainchain member hash)
-	pub council_authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
-	/// List of tuples (sr25519 authority public key, mainchain member hash)
-	pub technical_committee_authorities: Vec<(AuthorityMemberPublicKey, MainchainMember)>,
+	/// Council authorities data including round information
+	pub council_authorities: AuthoritiesData,
+	/// Technical committee authorities data including round information
+	pub technical_committee_authorities: AuthoritiesData,
 	/// Main chain block hash this data was observed at
 	pub mc_block_hash: McBlockHash,
 }
