@@ -485,7 +485,8 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat COMPACTC_VERSION)"
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
+    ENV IMAGE_TAG=$IMAGE_TAG
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
     LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
@@ -495,7 +496,7 @@ use-contract-precompile-image:
     FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
     COPY COMPACTC_VERSION .
-    ENV IMAGE_TAG="$(cat COMPACTC_VERSION)"
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
     FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
@@ -596,7 +597,8 @@ toolkit-js-prep:
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION="$(cat COMPACTC_VERSION)"
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
     RUN --secret GITHUB_TOKEN npm ci
