@@ -618,10 +618,10 @@ toolkit-js-prep:
     WORKDIR /toolkit-js
     RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    # Run compactc directly (bypassing run-compactc from npm package which may not find our binary)
-    RUN /usr/local/bin/compactc ./test/contract/counter.compact ./test/contract/managed/counter
-    RUN /usr/local/bin/compactc ./test/ut_contract/unshielder.compact ./test/ut_contract/out
-    RUN /usr/local/bin/compactc ./mint/mint.compact ./mint/out
+    # Run npm compact scripts - run-compactc will use compactc from PATH and generate JS bindings
+    RUN npm run compact-counter && npm run compact-ut && npm run compact-mint
+    # Verify keys were generated
+    RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
 
