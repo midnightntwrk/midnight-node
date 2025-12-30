@@ -595,31 +595,17 @@ toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
 
-    # Install gh CLI for downloading compactc from artifacts
-    RUN (type -p wget >/dev/null || (apt update && apt-get install wget -y)) \
-        && mkdir -p -m 755 /etc/apt/keyrings \
-        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-        && mkdir -p -m 755 /etc/apt/sources.list.d \
-        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-        && apt update \
-        && apt install gh unzip -y
-
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
-    # Download compactc from artifacts repo
-    RUN --secret GITHUB_TOKEN export GH_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && gh release download --repo midnight-ntwrk/artifacts "compactc-v${COMPACTC_VERSION}" --pattern "*x86_64-unknown-linux-musl.zip"
-    RUN unzip compactc*.zip && mv compactc compactc.bin /usr/local/bin/ && chmod +x /usr/local/bin/compactc /usr/local/bin/compactc.bin
-
     WORKDIR /toolkit-js
     RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    # Run npm compact scripts - run-compactc will use compactc from PATH and generate JS bindings
-    RUN npm run compact-counter && npm run compact-ut && npm run compact-mint
+    # Run npm compact script (includes fetch-compactc + compile steps)
+    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
