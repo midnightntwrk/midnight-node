@@ -601,9 +601,9 @@ toolkit-js-prep:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN npm ci
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    RUN --secret GITHUB_TOKEN npm run compact
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
 
     SAVE ARTIFACT /toolkit-js
 
