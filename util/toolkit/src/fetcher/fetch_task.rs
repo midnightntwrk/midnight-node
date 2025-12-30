@@ -79,13 +79,26 @@ impl FetchTask {
 		block_number: u64,
 	) -> Result<H256, FetchTaskError> {
 		log::debug!("fetching block hash for number {block_number}...");
-		let block_hash = client
-			.rpc
-			.chain_get_block_hash(Some(subxt::backend::legacy::rpc_methods::NumberOrHex::Number(
-				block_number,
-			)))
-			.await?
-			.ok_or(FetchTaskError::BlockHashMissing(block_number))?;
+
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
+
+		let block_hash = retry(backoff, || async {
+			client
+				.rpc
+				.chain_get_block_hash(Some(
+					subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
+				))
+				.await
+				.map_err(|e| {
+					log::warn!("block hash fetch failed, retrying: {e}");
+					backoff::Error::transient(e)
+				})
+		})
+		.await?
+		.ok_or(FetchTaskError::BlockHashMissing(block_number))?;
 
 		Ok(block_hash)
 	}
