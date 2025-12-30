@@ -42,36 +42,33 @@ use {
 		ContractAddress, ContractState, Ledger, LedgerParameters, SystemTransaction, Transaction,
 		TransactionAppliedStage, TransactionOperation,
 	},
-	base_crypto_local::{hash::HashOutput, time::Timestamp},
-	coin_structure_local::coin::Commitment,
+	base_crypto_local::{
+		cost_model::NormalizedCost as LedgerNormalizedCost, hash::HashOutput, time::Timestamp,
+	},
 	coin_structure_local::coin::Nonce,
 	coin_structure_local::coin::UnshieldedTokenType,
 	ledger_storage_local::{
 		Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
 		db::{DB, ParityDb},
-		storage::{Map, default_storage, set_default_storage},
+		storage::{default_storage, set_default_storage},
 	},
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
-		semantics::TransactionContext,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			ContractCall, MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
+			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
 			Transaction as LedgerTransaction,
 		},
 	},
-	onchain_runtime_local::cost_model::CostModel,
 	std::time::Instant,
-	transient_crypto_local::proofs::Proof as BaseProof,
-	zswap_local::Offer,
 };
 
 use crate::common::types::{
 	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, StorageCost, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-	TransactionDetails, TransactionValidationWasCached, Tx, WrappedHash,
+	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails,
+	TransactionValidationWasCached, Tx, WrappedHash,
 };
 
 #[cfg(feature = "std")]
@@ -309,6 +306,8 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		runtime_version: u32,
+		// The runtime's max weight as of now
+		max_weight: u64,
 	) -> Result<(Hash, TransactionDetails), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
@@ -322,7 +321,10 @@ where
 		let was_cached =
 			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
 
-		let tx_details = Self::get_transaction_details(&tx, &ledger)?;
+		let tx_gas_cost =
+			Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
+
+		let tx_details = Self::get_transaction_details(&tx, &ledger, tx_gas_cost)?;
 
 		// We only want to record the metric once
 		if let TransactionValidationWasCached::No = was_cached {
@@ -467,22 +469,22 @@ where
 		state_key: &[u8],
 		tx: &[u8],
 		block_context: &BlockContext,
-	) -> Result<(StorageCost, GasCost), LedgerApiError> {
-		Ok((0, 0))
-	}
-
-	// TODO COST MODEL: Needs to be redone with the new ledger cost model
-	#[allow(unused_variables)]
-	fn get_contract_call_gas_cost(
-		ledger: &Ledger<D>,
-		indicies: &Map<Commitment, u64>,
-		tx_ctx: &TransactionContext<D>,
-		guaranteed: Option<Option<&Offer<BaseProof, D>>>,
-		cost_model: &CostModel,
-		total_gas: u64,
-		call: &ContractCall<ProofMarker, D>,
+		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
-		Ok(0)
+		let api = api::new();
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let cost =
+			tx.0.cost(&ledger.state.parameters, true)
+				.map_err(|_| LedgerApiError::FeeCalculationError)?;
+
+		let limits = ledger.state.parameters.limits.block_limits;
+		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
+
+		let gas_cost = scale_normalized_cost(&normalized, max_weight);
+
+		Ok(gas_cost)
 	}
 
 	fn get_deserialized_ledger_parameters(state: &Ledger<D>) -> LedgerParameters {
@@ -499,16 +501,10 @@ where
 
 	fn get_transaction_details(
 		tx: &Transaction<S, D>,
-		ledger: &Ledger<D>,
+		_ledger: &Ledger<D>,
+		tx_gas_cost: GasCost,
 	) -> Result<TransactionDetails, LedgerApiError> {
 		let ledger_tx = &tx.0;
-		// Indicies do not affect to cost calculation
-		let indicies = Map::new();
-		// `BlockContext` does not affect to cost calculation
-		let block_context = BlockContext::default();
-		let tx_ctx = ledger.get_transaction_context(block_context.clone());
-		let ledger_parameters = Self::get_deserialized_ledger_parameters(ledger);
-		let cost_model = ledger_parameters.cost_model.runtime_cost_model;
 
 		match ledger_tx {
 			LedgerTransaction::Standard(tx) => {
@@ -524,29 +520,12 @@ where
 					tx.fallible_transients().count() as u32,
 				);
 
-				let guaranteed = None;
-
-				let mut total_gas = 0;
-
-				let contract_calls = tx.actions().try_fold(
+				let mut contract_calls = tx.actions().try_fold(
 					ContractCallsDetails::default(),
 					|mut cd, (_segment, action)| {
 						match action {
-							ContractAction::Call(call) => {
+							ContractAction::Call(_) => {
 								cd.inc_calls();
-
-								total_gas = Self::get_contract_call_gas_cost(
-									ledger,
-									&indicies,
-									&tx_ctx,
-									guaranteed,
-									&cost_model,
-									total_gas,
-									&call,
-								)
-								.unwrap_or(0); // For now we set `gas_cost` to `0` in case of failure
-
-								cd.set_gas_cost(total_gas);
 							},
 							ContractAction::Deploy(_) => {
 								cd.inc_deploys();
@@ -570,6 +549,8 @@ where
 						Ok(cd)
 					},
 				)?;
+
+				contract_calls.set_gas_cost(tx_gas_cost);
 
 				Ok(TransactionDetails::Standard {
 					guaranteed_coins,
@@ -681,4 +662,56 @@ fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce
 	let h256 = BlakeTwo256::hash(&concatenated);
 
 	Nonce(HashOutput(h256.0))
+}
+
+#[cfg(feature = "std")]
+fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> GasCost {
+	let max_fp = *[
+		normalized.read_time,
+		normalized.compute_time,
+		normalized.block_usage,
+		normalized.bytes_written,
+		normalized.bytes_churned,
+	]
+	.iter()
+	.max()
+	.expect("Hard-coded array should not be empty");
+
+	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use base_crypto_local::cost_model::FixedPoint;
+
+	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
+		LedgerNormalizedCost {
+			read_time: value,
+			compute_time: value,
+			block_usage: value,
+			bytes_written: value,
+			bytes_churned: value,
+		}
+	}
+
+	#[test]
+	fn scale_normalized_cost_bounds_and_monotonic() {
+		let max_weight = 100u64;
+
+		let zero = scale_normalized_cost(&normalized_all(FixedPoint::from(0.0f64)), max_weight);
+		let half = scale_normalized_cost(&normalized_all(FixedPoint::from(0.5f64)), max_weight);
+		let one = scale_normalized_cost(&normalized_all(FixedPoint::from(1.0f64)), max_weight);
+		let over_one = scale_normalized_cost(&normalized_all(FixedPoint::from(1.5f64)), max_weight);
+		let negative =
+			scale_normalized_cost(&normalized_all(FixedPoint::from(-0.25f64)), max_weight);
+
+		assert_eq!(zero, 0);
+		assert_eq!(negative, 0);
+		assert!(half >= max_weight / 2 && half <= max_weight);
+		assert_eq!(one, max_weight);
+		assert_eq!(over_one, max_weight);
+		assert!(half >= zero);
+		assert!(one >= half);
+	}
 }
