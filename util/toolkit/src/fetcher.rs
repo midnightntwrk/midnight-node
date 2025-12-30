@@ -16,8 +16,6 @@ pub mod fetch_storage;
 pub mod fetch_task;
 pub mod runtimes;
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use backoff::{ExponentialBackoff, future::retry};
@@ -67,8 +65,15 @@ pub enum FetchError {
 	NoWorkersConnected,
 }
 
+/// Identifies the type of task that completed in the join set.
+enum TaskResult {
+	JobPusher,
+	FetchWorker,
+	ComputeWorker,
+}
+
 /// Attempts to create a new client with bounded retries.
-/// Returns `None` if the connection is refused after all retry attempts.
+/// Returns `Err` if the connection is refused after all retry attempts.
 pub async fn try_new_client(url: &str) -> Result<MidnightNodeClient, ClientError> {
 	let backoff = ExponentialBackoff {
 		max_elapsed_time: Some(CLIENT_CONNECT_TIMEOUT),
@@ -114,7 +119,7 @@ pub async fn fetch_all<
 
 	let num_cpu_workers = num_cpus::get();
 
-	let mut join_set: JoinSet<Result<(), FetchError>> = JoinSet::new();
+	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_sender, fetch_job_receiver) = async_channel::bounded(num_workers * 2);
 	let (compute_job_sender, compute_job_receiver) = async_channel::bounded(num_cpu_workers * 2);
@@ -134,14 +139,11 @@ pub async fn fetch_all<
 					.expect("failed to push job on channel");
 			}
 
-			Ok(())
+			Ok(TaskResult::JobPusher)
 		});
 	}
 
 	log::info!("spawning {num_workers} fetch workers");
-
-	// Track how many workers successfully connected
-	let num_worker_connections_failed = Arc::new(AtomicUsize::new(0));
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
@@ -149,23 +151,20 @@ pub async fn fetch_all<
 		let work_job_sender = compute_job_sender.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
-		let num_worker_connections_failed = Arc::clone(&num_worker_connections_failed);
 		join_set.spawn(async move {
 			let Ok(client) = try_new_client(&url).await else {
 				log::warn!(
 					"fetch worker {worker_id} could not connect to {url}, exiting. \
 					 This may be due to connection limits on the remote node."
 				);
-				// Track failed connections
-				num_worker_connections_failed.fetch_add(1, Ordering::SeqCst);
-				return Ok(());
+				return Ok(TaskResult::FetchWorker);
 			};
 
 			log::info!("fetch worker {worker_id} connected successfully");
 
 			loop {
 				let Ok(job) = job_receiver.recv().await else {
-					return Ok(());
+					return Ok(TaskResult::FetchWorker);
 				};
 
 				log::info!("worker {worker_id}: received new job...");
@@ -173,6 +172,7 @@ pub async fn fetch_all<
 				let work_job = job.fetch(chain_id, &client, fetch_storage.clone()).await?;
 
 				work_job_sender.send(work_job).await.expect("failed to push job on work queue");
+				log::info!("worker {worker_id}: completed job.");
 			}
 		});
 	}
@@ -188,7 +188,7 @@ pub async fn fetch_all<
 		join_set.spawn(async move {
 			loop {
 				let Ok(job) = work_job_receiver.recv().await else {
-					return Ok(());
+					return Ok(TaskResult::ComputeWorker);
 				};
 
 				log::info!("received new work job...");
@@ -216,18 +216,20 @@ pub async fn fetch_all<
 	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
+	let mut fetch_workers_exited = 0;
 	while received < num_jobs {
 		tokio::select! {
 			Some(result) = join_set.join_next() => {
 				match result {
-					Ok(Ok(())) => {
-						// If all fetch workers exited without processing jobs, we have a problem
-						if num_worker_connections_failed.load(Ordering::SeqCst) == num_workers {
-							log::error!("all fetch workers failed to connect");
+					Ok(Ok(TaskResult::FetchWorker)) => {
+						fetch_workers_exited += 1;
+						if fetch_workers_exited == num_workers {
+							log::error!("all fetch workers exited before completing all jobs ({received}/{num_jobs} received)");
 							join_set.abort_all();
 							return Err(FetchError::NoWorkersConnected);
 						}
 					},
+					Ok(Ok(_)) => {}, // JobPusher or ComputeWorker exited normally
 					Ok(Err(e)) => {
 						join_set.abort_all();
 						return Err(e);
@@ -236,6 +238,7 @@ pub async fn fetch_all<
 						join_set.abort_all();
 						return Err(FetchError::WorkerPanic(join_err.to_string()));
 					}
+					// Task was cancelled (expected after abort_all())
 					Err(_) => {}
 				}
 			},
@@ -245,6 +248,8 @@ pub async fn fetch_all<
 			}
 		}
 	}
+
+	log::info!("finished loop");
 
 	for job in jobs {
 		job.work(chain_id, fetch_storage.clone()).await?;
