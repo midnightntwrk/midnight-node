@@ -121,19 +121,21 @@ pub async fn fetch_all<
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
-	let (fetch_job_sender, fetch_job_receiver) = async_channel::bounded(num_workers * 2);
-	let (compute_job_sender, compute_job_receiver) = async_channel::bounded(num_cpu_workers * 2);
-	let (final_jobs_sender, final_jobs_receiver) = async_channel::bounded(num_cpu_workers * 2);
+	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
+	let (fetch_to_compute_tx, fetch_to_compute_rx) = async_channel::bounded(num_cpu_workers * 2);
+	// We use a separate unbounded channel here because compute workers produce recursive tasks
+	let (compute_to_compute_tx, compute_to_compute_rx) = async_channel::unbounded();
+	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_cpu_workers * 2);
 
 	// Push jobs into queue
 	{
-		let job_sender = fetch_job_sender.clone();
+		let job_tx = fetch_job_tx.clone();
 		let max_height = max_height;
 		join_set.spawn(async move {
 			for min in (min_height..max_height).step_by(blocks_per_job as usize) {
 				let max = u64::min(min + blocks_per_job, max_height);
 				log::info!("pushing new fetch job {min} -> {max}...");
-				job_sender
+				job_tx
 					.send(FetchTask::FetchBlocks { min, max })
 					.await
 					.expect("failed to push job on channel");
@@ -147,8 +149,8 @@ pub async fn fetch_all<
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
-		let job_receiver = fetch_job_receiver.clone();
-		let work_job_sender = compute_job_sender.clone();
+		let job_rx = fetch_job_rx.clone();
+		let work_job_tx = fetch_to_compute_tx.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
 		join_set.spawn(async move {
@@ -163,7 +165,7 @@ pub async fn fetch_all<
 			log::info!("fetch worker {worker_id} connected successfully");
 
 			loop {
-				let Ok(job) = job_receiver.recv().await else {
+				let Ok(job) = job_rx.recv().await else {
 					return Ok(TaskResult::FetchWorker);
 				};
 
@@ -171,7 +173,7 @@ pub async fn fetch_all<
 
 				let work_job = job.fetch(chain_id, &client, fetch_storage.clone()).await?;
 
-				work_job_sender.send(work_job).await.expect("failed to push job on work queue");
+				work_job_tx.send(work_job).await.expect("failed to push job on work queue");
 				log::info!("worker {worker_id}: completed job.");
 			}
 		});
@@ -181,14 +183,29 @@ pub async fn fetch_all<
 
 	// Spawn compute workers
 	for _ in 0..num_cpus::get() {
-		let work_job_receiver = compute_job_receiver.clone();
-		let work_job_sender = compute_job_sender.clone();
-		let final_jobs_sender = final_jobs_sender.clone();
+		let fetch_to_compute_rx = fetch_to_compute_rx.clone();
+		let compute_to_compute_rx = compute_to_compute_rx.clone();
+		let compute_to_compute_tx = compute_to_compute_tx.clone();
+		let final_jobs_tx = final_jobs_tx.clone();
 		let fetch_storage = fetch_storage.clone();
 		join_set.spawn(async move {
 			loop {
-				let Ok(job) = work_job_receiver.recv().await else {
-					return Ok(TaskResult::ComputeWorker);
+				// Receive from both channels - prioritize new work from fetch workers
+				let job = tokio::select! {
+					biased;
+
+					job = fetch_to_compute_rx.recv() => {
+						match job {
+							Ok(job) => job,
+							Err(_) => return Ok(TaskResult::ComputeWorker),
+						}
+					},
+					job = compute_to_compute_rx.recv() => {
+						match job {
+							Ok(job) => job,
+							Err(_) => return Ok(TaskResult::ComputeWorker),
+						}
+					},
 				};
 
 				log::info!("received new work job...");
@@ -197,10 +214,10 @@ pub async fn fetch_all<
 
 				match &work_job {
 					ComputeTask::FinalVerify { .. } => {
-						final_jobs_sender.send(work_job).await.expect("failed to push final job");
+						final_jobs_tx.send(work_job).await.expect("failed to push final job");
 					},
 					ComputeTask::NoOp => continue,
-					_ => work_job_sender
+					_ => compute_to_compute_tx
 						.send(work_job)
 						.await
 						.expect("failed to push job on work queue"),
@@ -242,7 +259,7 @@ pub async fn fetch_all<
 					Err(_) => {}
 				}
 			},
-			job = final_jobs_receiver.recv() => {
+			job = final_jobs_rx.recv() => {
 				jobs.push(job.expect("..."));
 				received += 1;
 			}
@@ -257,9 +274,10 @@ pub async fn fetch_all<
 	log::info!("all blocks verified");
 
 	// Close channels to exit workers
-	fetch_job_receiver.close();
-	compute_job_receiver.close();
-	final_jobs_receiver.close();
+	fetch_job_rx.close();
+	fetch_to_compute_rx.close();
+	compute_to_compute_rx.close();
+	final_jobs_rx.close();
 
 	let blocks: Vec<_> = fetch_storage
 		.get_block_data_range(chain_id, (0..max_height).into_iter())
