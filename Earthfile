@@ -619,9 +619,9 @@ toolkit-js-prep:
     RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
     # Run compactc directly (bypassing run-compactc from npm package which may not find our binary)
-    RUN compactc ./test/contract/counter.compact ./test/contract/managed/counter
-    RUN compactc ./test/ut_contract/unshielder.compact ./test/ut_contract/out
-    RUN compactc ./mint/mint.compact ./mint/out
+    RUN /usr/local/bin/compactc ./test/contract/counter.compact ./test/contract/managed/counter
+    RUN /usr/local/bin/compactc ./test/ut_contract/unshielder.compact ./test/ut_contract/out
+    RUN /usr/local/bin/compactc ./mint/mint.compact ./mint/out
 
     SAVE ARTIFACT /toolkit-js
 
