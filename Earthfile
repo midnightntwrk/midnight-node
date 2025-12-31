@@ -454,10 +454,43 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    LET IMAGE_TAG="v0.24.0"
-    FROM ghcr.io/midnight-ntwrk/compactc:$IMAGE_TAG
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    # Install unzip
+    RUN apt update && apt install unzip
+    # Install gh
+    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
+        && mkdir -p -m 755 /etc/apt/keyrings \
+        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        && mkdir -p -m 755 /etc/apt/sources.list.d \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && apt update \
+        && apt install gh -y
+
+    # Fetch CompactC x86_64
+    COPY COMPACTC_VERSION .
+    RUN --secret GH_TOKEN set -e && \
+        VERSION=$(cat COMPACTC_VERSION) && \
+        RELEASE_TAG="compactc-v${VERSION}" && \
+        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
+        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
+            echo "Successfully downloaded from release"; \
+        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
+            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
+            echo "Available releases with binaries:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        else \
+            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
+            echo "Available releases:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        fi
+    RUN unzip compactc*.zip
+
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN /bin/ls /nix/store && /nix/store/vbnn0vkzms8yiw88lad5k1axzngssd4f-compactc/bin/compactc simple-merkle-tree.compact simple-merkle-tree
+    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
     # Keys should not have 0 size (but will have if we ran out of memory):
     RUN [ -s /simple-merkle-tree/keys/check.prover ]
     RUN [ -s /simple-merkle-tree/keys/check.verifier ]
@@ -468,6 +501,7 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG=$IMAGE_TAG
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
@@ -475,8 +509,11 @@ contract-precompile-image-single-platform:
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.22.0
+    COPY COMPACTC_VERSION .
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
+    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
@@ -558,7 +595,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay .
+        metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -574,13 +611,19 @@ toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
 
+    COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN npm ci
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    RUN --secret GITHUB_TOKEN npm run compact
+    # Run npm compact script (includes fetch-compactc + compile steps)
+    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    # Verify keys were generated
+    RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
 
@@ -630,7 +673,7 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay .
+    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
 
@@ -767,7 +810,7 @@ build-normal:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -976,41 +1019,48 @@ hardfork-test-upgrader-image:
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
     FROM +prep
-    # Update cargo-deny to latest version for SARIF support
-    RUN cargo binstall --no-confirm cargo-deny
+    RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
-    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
+    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
+    RUN mkdir -p /scan_reports
     RUN corepack enable
-    RUN --no-cache npm audit --audit-level high
+    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
+      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --severity high
+    RUN mkdir -p /scan_reports
+    RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
+      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-local-environment:
-    BUILD +audit-npm --DIRECTORY=local-environment/
+    BUILD +audit-npm --DIRECTORY=local-environment/ --REPORT_NAME=local-environment
 
 audit-toolkit-js:
-    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
 audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/
+    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
 
 audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/
+    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
 
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
