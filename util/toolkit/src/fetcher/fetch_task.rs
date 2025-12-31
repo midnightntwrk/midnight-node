@@ -19,6 +19,7 @@ use subxt::{ext::subxt_rpcs, utils::H256};
 use crate::{
 	client::{ClientError, MidnightNodeClient},
 	fetcher::{
+		BLOCK_FETCH_TIMEOUT,
 		compute_task::ComputeTask,
 		fetch_storage::{FetchStorage, FetchedBlock},
 	},
@@ -78,13 +79,26 @@ impl FetchTask {
 		block_number: u64,
 	) -> Result<H256, FetchTaskError> {
 		log::debug!("fetching block hash for number {block_number}...");
-		let block_hash = client
-			.rpc
-			.chain_get_block_hash(Some(subxt::backend::legacy::rpc_methods::NumberOrHex::Number(
-				block_number,
-			)))
-			.await?
-			.ok_or(FetchTaskError::BlockHashMissing(block_number))?;
+
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
+
+		let block_hash = retry(backoff, || async {
+			client
+				.rpc
+				.chain_get_block_hash(Some(
+					subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
+				))
+				.await
+				.map_err(|e| {
+					log::warn!("block hash fetch failed, retrying: {e}");
+					backoff::Error::transient(e)
+				})
+		})
+		.await?
+		.ok_or(FetchTaskError::BlockHashMissing(block_number))?;
 
 		Ok(block_hash)
 	}
@@ -95,7 +109,12 @@ impl FetchTask {
 	) -> Result<FetchedBlock, FetchTaskError> {
 		log::debug!("fetching block for hash {}...", block_hash.0.encode_hex::<String>());
 
-		let block = retry(ExponentialBackoff::default(), || async {
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
+
+		let block = retry(backoff, || async {
 			client.api.blocks().at(block_hash).await.map_err(|e| {
 				log::warn!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
