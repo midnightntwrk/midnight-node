@@ -55,4 +55,4 @@ jobs:
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Run Earthly platform-specific image builds
-          . ./.envrc && earthly --ci --platform=linux/amd64 --push +contract-precompile-image
+          . ./.envrc && earthly --secret GH_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --ci --platform=linux/amd64 --push +contract-precompile-image
