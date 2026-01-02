@@ -11,7 +11,11 @@ use crate::{
 use clap::Args;
 use midnight_node_ledger_helpers::{DustOutput, Timestamp};
 
-#[derive(Args)]
+use tokio::time::{Duration, Instant, sleep};
+
+const U64_MAX: u64 = u64::MAX;
+
+#[derive(Args, Clone)]
 pub struct DustBalanceArgs {
 	#[command(flatten)]
 	pub source: Source,
@@ -92,6 +96,41 @@ pub async fn execute(
 		}
 		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total }))
 	})
+}
+
+/// This function continuously polls the dust balance state for a limited amount of time (30 sec).
+/// If `dtime` of the source is NOT equal to `u64::MAX`, it means that the UTxO
+/// has started reducing the DUST balance.
+/// If the value remains `u64::MAX` until the timeout is reached, an error is returned.
+pub async fn wait_dtime_not_max(
+	args: DustBalanceArgs,
+) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+	let deadline = Instant::now() + Duration::from_secs(30);
+
+	loop {
+		let result = execute(args.clone()).await?;
+
+		if let DustBalanceResult::Json(DustBalanceJson { generation_infos, .. }) = result {
+			// Find the first dtime that indicates the UTxO has started reducing DUST
+			let dtime = generation_infos
+				.iter()
+				.filter_map(|p| p.generation_info.as_ref())
+				.map(|gi| gi.dtime.to_secs())
+				.find(|&d| d != U64_MAX);
+
+			if let Some(dtime) = dtime {
+				return Ok(dtime);
+			}
+		} else {
+			return Err("Unexpected result type".into());
+		}
+
+		if Instant::now() >= deadline {
+			return Err("Timeout: dtime is still u64::MAX after 30 seconds".into());
+		}
+
+		sleep(Duration::from_millis(500)).await;
+	}
 }
 
 #[cfg(test)]
