@@ -13,7 +13,7 @@
 
 //! Runtime API definition for Midnight pallet
 
-use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use scale_info::prelude::string::String;
 use sp_std::vec::Vec;
 
@@ -37,7 +37,7 @@ sp_api::decl_runtime_apis! {
 		fn get_unclaimed_amount(beneficiary: Vec<u8>) -> u128;
 		fn get_unclaimed_amount(beneficiary: Vec<u8>) -> Result<u128, LedgerApiError>;
 		fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError>;
-		fn get_transaction_cost(transaction_bytes: Vec<u8>) -> Result<(StorageCost, GasCost), LedgerApiError>;
+		fn get_transaction_cost(transaction_bytes: Vec<u8>) -> Result<GasCost, LedgerApiError>;
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError>;
 	}
 }
