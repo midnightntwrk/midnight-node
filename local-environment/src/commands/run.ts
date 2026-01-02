@@ -29,6 +29,7 @@ import { runDockerCompose } from "../lib/docker";
 import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
 import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
 import { setupPreviewProxies } from "../lib/previewProxy";
+import { loadNetworkConfig } from "../lib/networkConfig";
 
 /**
  * Runs a specified network, with passed configuration
@@ -52,9 +53,14 @@ async function runEphemeralEnvironment(
   namespace: string,
   runOptions: RunOptions,
 ) {
+  const networkConfig = loadNetworkConfig(namespace);
+  const dbsyncMode = networkConfig.dbsync.mode;
+
   console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  if (namespace === "preview") {
-    console.log("Skipping port-forward for preview (DB is publicly reachable)");
+  if (dbsyncMode === "public") {
+    console.log("Skipping port-forward: DB marked as publicly reachable");
+  } else if (dbsyncMode === "rds-proxy") {
+    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
   } else {
     await connectToPostgres(namespace);
   }
@@ -73,7 +79,7 @@ async function runEphemeralEnvironment(
     }
   }
 
-  if (namespace === "preview") {
+  if (dbsyncMode === "rds-proxy") {
     const proxyOverrides = await setupPreviewProxies(env, namespace);
     env = { ...env, ...proxyOverrides };
   }
@@ -195,5 +201,3 @@ function cleanEnv(
     Object.entries(env).filter(([, v]) => typeof v === "string"),
   ) as Record<string, string>;
 }
-
-
