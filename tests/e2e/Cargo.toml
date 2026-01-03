@@ -6,10 +6,12 @@ publish = false
 autotests = false
 
 [features]
+one-shot-utxo = []
+indexer = []
 local = []
 local-ci = []
 qanet = []
-default = ["local-ci"]
+default = ["local", "indexer"]
 
 [dependencies]
 hex.workspace = true
@@ -22,10 +24,11 @@ rand = "0.9.2"
 subxt.workspace = true
 midnight-node-metadata.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
+midnight-node-toolkit = { path = "../../util/toolkit" }
 blake2 = "0.10.6"
 
 [dev-dependencies]
-midnight-node-toolkit = { path = "../../util/toolkit" }
+reqwest = "0.12.25"
 
 [[test]]
 name = "e2e_tests"

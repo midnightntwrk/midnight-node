@@ -1143,7 +1143,7 @@ local-env-e2e:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
+    RUN cargo test --test e2e_tests --no-default-features --features local-ci,indexer,one-shot-utxo -- --test-threads=4 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

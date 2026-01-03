@@ -4,6 +4,7 @@ use whisky::{LanguageVersion, Network as CardanoNetwork};
 #[derive(Clone)]
 pub struct Settings {
     pub node_client: NodeClientSettings,
+    pub indexer_healthchecks: IndexerHealthchecks,
     pub ogmios_client: OgmiosClientSettings,
     pub constants: Constants,
 }
@@ -22,6 +23,21 @@ impl Settings {
 
                     #[cfg(feature="qanet")]
                     base_url: "wss://rpc.qanet.dev.midnight.network".into(),
+                },
+                indexer_healthchecks: IndexerHealthchecks {
+                    #[cfg(feature="local")]
+                    chain_indexer_metrics: "http://127.0.0.1:9001".into(),
+                    #[cfg(feature="local")]
+                    wallet_indexer_metrics: "http://127.0.0.1:9002".into(),
+                    #[cfg(feature="local")]
+                    indexer_api: "http://127.0.0.1:8088/ready".into(),
+
+                    #[cfg(feature="local-ci")]
+                    chain_indexer_metrics: "http://172.17.0.1:9001".into(),
+                    #[cfg(feature="local-ci")]
+                    wallet_indexer_metrics: "http://172.17.0.1:9002".into(),
+                    #[cfg(feature="local-ci")]
+                    indexer_api: "http://172.17.0.1:8088/ready".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
                     #[cfg(feature="local")]
@@ -44,6 +60,7 @@ impl Settings {
                         funded_address_vkey_cbor:
                         "5820fc014cb5f071f5d6a36cb5a7e5f168c86555989445a23d4abec33d280f71aca4"
                             .into(),
+                        midnight_seed: "0000000000000000000000000000000000000000000000000000000000000001".into()
                     },
                     policies: Policies {
                         network_info,
@@ -122,9 +139,17 @@ impl Default for Settings {
         Self::new()
     }
 }
+
 #[derive(Clone)]
 pub struct NodeClientSettings {
     pub base_url: String,
+}
+
+#[derive(Clone)]
+pub struct IndexerHealthchecks {
+    pub chain_indexer_metrics: String,
+    pub wallet_indexer_metrics: String,
+    pub indexer_api: String,
 }
 
 #[derive(Clone)]
@@ -142,12 +167,15 @@ pub struct Constants {
     pub cost_model: Vec<Vec<i64>>,
     pub runtime_values_location: String,
 }
+
 #[derive(Clone)]
 pub struct Payments {
     pub funded_address: String,
     pub funded_address_skey_cbor: String,
     pub funded_address_vkey_cbor: String,
+    pub midnight_seed: String,
 }
+
 #[derive(Clone)]
 pub struct Policies {
     pub network_info: CardanoNetworkInfo,

@@ -1,18 +1,15 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
+use midnight_node_e2e::api::toolkit::ToolkitClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, MappingAdded, Registration,
 };
-use midnight_node_toolkit::commands::dust_balance::{
-    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
-};
-use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
+use midnight_node_toolkit::commands::dust_balance::{DustBalanceJson, DustBalanceResult};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
-use tokio::time::{Duration, timeout};
 
 // -------- GLOBAL ASYNC FAUCET MANAGER --------
 
@@ -33,6 +30,55 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 }
 
 // -------- TESTS --------
+
+#[cfg(feature = "indexer")]
+#[tokio::test]
+async fn indexer_healthchecks() {
+    let settings = Settings::default();
+    let toolkit = ToolkitClient::new(settings.clone());
+
+    // Generate some transactions to ensure the indexer has data to process
+    // Running this with other tests that generate system txs also tests PM-20886
+    for _ in 0..10 {
+        let result = toolkit.generate_single_tx().await;
+        assert!(result.is_ok(), "Transaction generation failed");
+    }
+
+    let client = reqwest::Client::new();
+
+    let chain_indexer_metrics = client
+        .get(&settings.indexer_healthchecks.chain_indexer_metrics)
+        .send()
+        .await
+        .expect("Failed to send request to chain indexer metrics");
+    assert!(
+        chain_indexer_metrics.status().is_success(),
+        "{:?}",
+        chain_indexer_metrics.error_for_status().err().unwrap()
+    );
+
+    let wallet_indexer_metrics = client
+        .get(&settings.indexer_healthchecks.wallet_indexer_metrics)
+        .send()
+        .await
+        .expect("Failed to send request to wallet indexer metrics");
+    assert!(
+        wallet_indexer_metrics.status().is_success(),
+        "{:?}",
+        wallet_indexer_metrics.error_for_status().err().unwrap()
+    );
+
+    let indexer_health_check = client
+        .get(&settings.indexer_healthchecks.indexer_api)
+        .send()
+        .await
+        .expect("Failed to send request to indexer api /ready enpoint");
+    assert!(
+        indexer_health_check.status().is_success(),
+        "{:?}",
+        indexer_health_check.error_for_status().err().unwrap()
+    );
+}
 
 #[tokio::test]
 async fn register_for_dust_production() {
@@ -118,8 +164,10 @@ async fn register_for_dust_production() {
     );
 }
 
+#[cfg(feature = "one-shot-utxo")]
 #[tokio::test]
 async fn deploy_governance_contracts_and_validate_membership_reset() {
+    use tokio::time::{Duration, timeout};
     println!("=== Starting Governance Contracts E2E Test ===");
 
     let settings = Settings::default();
@@ -437,7 +485,8 @@ async fn register_2_cardano_same_dust_address_production() {
 #[tokio::test]
 async fn cnight_produces_dust() {
     let settings = Settings::default();
-    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let bech32_address = cardano_client.address_as_bech32();
@@ -515,21 +564,11 @@ async fn cnight_produces_dust() {
         "UTXO owner does not match DUST address"
     );
 
-    let args = DustBalanceArgs {
-        source: Source {
-            src_files: None,
-            src_url: Some(settings.node_client.base_url.clone()),
-            fetch_concurrency: 1,
-            dust_warp: true,
-            fetch_cache: FetchCacheConfig::InMemory,
-        },
-        seed: midnight_wallet_seed,
-        dry_run: false,
-    };
-
-    let result = dust_balance::execute(args)
+    let toolkit = ToolkitClient::new(settings);
+    let result = toolkit
+        .dust_balance(midnight_wallet_seed)
         .await
-        .expect("dust-balance error");
+        .expect("Failed to get dust balance");
 
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
         println!("Total dust balance: {}", total);

@@ -6985,7 +6985,7 @@ dependencies = [
  "midnight-serialize 1.0.0-alpha.5",
  "paste",
  "rand 0.8.5",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -7016,7 +7016,7 @@ dependencies = [
  "midnight-serialize 1.0.0-alpha.5-hard-fork-test",
  "paste",
  "rand 0.8.5",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -7169,7 +7169,7 @@ dependencies = [
  "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-6.1.0-alpha.6)",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -7202,7 +7202,7 @@ dependencies = [
  "midnight-zswap 6.1.0-alpha.6 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-6.1.0-alpha.6)",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -7328,6 +7328,7 @@ dependencies = [
  "midnight-node-toolkit",
  "ogmios-client",
  "rand 0.9.2",
+ "reqwest 0.12.25",
  "serde_json",
  "subxt 0.44.0",
  "tiny-bip39",
@@ -12009,9 +12010,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.22"
+version = "0.12.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
+checksum = "b6eff9328d40131d43bd911d42d79eb6a47312002a4daefc9e37f17e74a7701a"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -12045,7 +12046,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower 0.5.2",
- "tower-http 0.6.6",
+ "tower-http 0.6.8",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -17520,9 +17521,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.6"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
+checksum = "d4e6559d53cc268e5031cd8429d05415bc4cb4aefc4aa5d6cc35fbf5b924a1f8"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -18831,7 +18832,7 @@ dependencies = [
  "pallas-primitives 0.31.0",
  "pallas-traverse 0.31.0",
  "rand_os",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "serde-wasm-bindgen 0.6.5",
  "serde_json",
@@ -18905,7 +18906,7 @@ dependencies = [
  "futures",
  "hex",
  "maestro-rust-sdk",
- "reqwest 0.12.22",
+ "reqwest 0.12.25",
  "serde",
  "serde_json",
  "uplc",
