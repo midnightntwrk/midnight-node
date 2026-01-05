@@ -12,12 +12,13 @@
 // limitations under the License.
 
 use super::{
-	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, FixedPoint,
+	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode,
 	LedgerState, Loader, MidnightDataProvider, NormalizedCost, Offer, OutputMode, PUBLIC_PARAMS,
 	ProofKind, PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable,
 	SyntheticCost, Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, default_storage,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
+	compute_overall_fullness, default_storage, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::{ToHex, encode as hex_encode};
@@ -141,13 +142,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
 			total_cost.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
-		let overall_fullness = FixedPoint::max(
-			FixedPoint::max(
-				FixedPoint::max(normalized_fullness.read_time, normalized_fullness.compute_time),
-				normalized_fullness.block_usage,
-			),
-			FixedPoint::max(normalized_fullness.bytes_written, normalized_fullness.bytes_churned),
-		);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		*latest_ledger_state = latest_ledger_state
 			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 			.expect("Error applying block updates");
