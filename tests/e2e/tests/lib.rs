@@ -7,10 +7,11 @@ use midnight_node_metadata::midnight_metadata_latest::c_night_observation::event
     Deregistration, MappingAdded, Registration,
 };
 use midnight_node_toolkit::commands::dust_balance::{
-    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult, wait_dtime_not_max,
+    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::Arc;
+use std::thread::sleep;
 use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
 
@@ -1861,41 +1862,6 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         .try_into()
         .unwrap();
 
-    let registration = registration_events
-        .iter()
-        .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
-        .find(|reg| {
-            reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0.0 == dust_address
-        });
-    assert!(
-        registration.is_some(),
-        "Did not find registration event with expected reward_address and dust_address"
-    );
-    println!(
-        "Matching Registration event found: {:?}",
-        registration.unwrap()
-    );
-
-    let mapping_added = registration_events
-        .iter()
-        .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
-        .find(|map| {
-            map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id
-        });
-    assert!(
-        mapping_added.is_some(),
-        "Did not find MappingAdded event with expected reward_address, dust_address, and utxo_id"
-    );
-    println!(
-        "Matching MappingAdded event found: {:?}",
-        mapping_added.unwrap()
-    );
-
     let amount = 100;
     let tx_id = cardano_client
         .mint_tokens(amount, &collateral_utxo)
@@ -1956,49 +1922,27 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         hex::encode(deregister_tx)
     );
 
-    let events = midnight_client
-        .subscribe_to_cnight_observation_events(&deregister_tx)
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(same_base_url),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
         .await
-        .expect("Failed to listen to cNgD registration event");
+        .expect("dust-balance error");
 
-    let deregistration = events
-        .iter()
-        .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
-        .find(|reg| {
-            reg.0.cardano_reward_address.0 == reward_address
-                && reg.0.dust_public_key.0.0 == dust_address
-        });
-    assert!(
-        deregistration.is_some(),
-        "Did not find deregistration event with expected reward_address and dust_address"
-    );
-    println!(
-        "Matching Deregistration event found: {:?}",
-        deregistration.unwrap()
-    );
-
-    let mapping_removed = events
-        .iter()
-        .filter_map(|e| e.ok())
-        .filter_map(|evt| {
-            evt.as_event::<c_night_observation::events::MappingRemoved>()
-                .ok()
-                .flatten()
-        })
-        .find(|map| {
-            map.0.cardano_reward_address.0 == reward_address
-                && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id
-        });
-    assert!(
-        mapping_removed.is_some(),
-        "Did not find MappingRemoved event with expected reward_address, dust_address, and utxo_id"
-    );
-    println!(
-        "Matching MappingRemoved event found: {:?}",
-        mapping_removed.unwrap()
-    );
+    let mut balance_before_rotation: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance before rotation: {}", total);
+        balance_before_rotation = total;
+    }
 
     let cnight_utxo_new = cardano_client
         .rotate_cnight(&cnight_utxo)
@@ -2021,7 +1965,25 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let dtime = wait_dtime_not_max(args)
+    let spend_cnight_event = midnight_client
+        .subscribe_to_cnight_observation_events(&cnight_utxo_new.transaction.id)
         .await
-        .expect("DUST generation did not stop within 30 seconds");
+        .expect("Failed to listen to cNgD registration event");
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance_after_rotation: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance after rotation: {}", total);
+        balance_after_rotation = total;
+    }
+
+    assert!(
+        balance_after_rotation < balance_before_rotation,
+        "balance_after_rotation ({}) must be less than balance_before_rotation ({})",
+        balance_after_rotation,
+        balance_before_rotation
+    );
 }

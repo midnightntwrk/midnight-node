@@ -78,7 +78,7 @@ impl FromStr for FetchCacheConfig {
 	}
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug)]
 pub struct Source {
 	/// Load input transactions/blocks from node instance using an RPC URL
 	#[arg(
