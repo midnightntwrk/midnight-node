@@ -13,7 +13,7 @@
 
 use crate::{
 	common::types::{
-		BlockContext, GasCost, Hash, StorageCost, SystemTransactionAppliedStateRoot,
+		BlockContext, GasCost, Hash, SystemTransactionAppliedStateRoot,
 		TransactionAppliedStateRoot, TransactionDetails, Tx,
 	},
 	hard_fork_test, latest,
@@ -138,6 +138,8 @@ pub trait LedgerBridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), latest::types::LedgerApiError>>
 	{
 		latest::Bridge::<Signature, Database>::validate_transaction(
@@ -146,6 +148,7 @@ pub trait LedgerBridge {
 			tx,
 			block_context,
 			runtime_version,
+			max_weight,
 		)
 	}
 
@@ -233,8 +236,14 @@ pub trait LedgerBridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<Result<(StorageCost, GasCost), latest::types::LedgerApiError>> {
-		latest::Bridge::<Signature, Database>::get_transaction_cost(state_key, tx, &block_context)
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, latest::types::LedgerApiError>> {
+		latest::Bridge::<Signature, Database>::get_transaction_cost(
+			state_key,
+			tx,
+			&block_context,
+			max_weight,
+		)
 	}
 
 	/*
@@ -367,6 +376,7 @@ pub trait LedgerBridgeHf {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<
 		Result<(Hash, TransactionDetails), hard_fork_test::types::LedgerApiError>,
 	> {
@@ -376,6 +386,7 @@ pub trait LedgerBridgeHf {
 			tx,
 			block_context,
 			runtime_version,
+			max_weight,
 		)
 	}
 
@@ -474,13 +485,13 @@ pub trait LedgerBridgeHf {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<
-		Result<(StorageCost, GasCost), hard_fork_test::types::LedgerApiError>,
-	> {
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, hard_fork_test::types::LedgerApiError>> {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::get_transaction_cost(
 			state_key,
 			tx,
 			&block_context,
+			max_weight,
 		)
 	}
 
