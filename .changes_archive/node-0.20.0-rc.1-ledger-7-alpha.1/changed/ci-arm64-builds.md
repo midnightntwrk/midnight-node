@@ -6,4 +6,3 @@ manual workflow dispatches always run ARM64 builds.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/375
 Ticket: https://shielded.atlassian.net/browse/PM-21000
-
