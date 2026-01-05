@@ -5,4 +5,3 @@ This adds support for an optional dust destination address to the dust registrat
 
 - PR: https://github.com/midnightntwrk/midnight-node/pull/287
 - Fixes: https://shielded.atlassian.net/browse/PM-20394
-
