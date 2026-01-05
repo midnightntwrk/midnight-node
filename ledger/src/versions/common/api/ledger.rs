@@ -16,7 +16,7 @@ use super::{
 	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{
-	cost_model::{FixedPoint, NormalizedCost, SyntheticCost},
+	cost_model::{NormalizedCost, SyntheticCost},
 	hash::HashOutput as HashOutputLedger,
 	time::Timestamp,
 };
@@ -29,7 +29,7 @@ use ledger_storage_local::{
 	storage::default_storage,
 };
 
-use helpers_local::StorableSyntheticCost;
+use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
@@ -179,13 +179,7 @@ impl<D: DB> Ledger<D> {
 		let block_limits = sp.state.parameters.limits.block_limits;
 		let normalized_fullness =
 			block_fullness.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
-		let overall_fullness = FixedPoint::max(
-			FixedPoint::max(
-				FixedPoint::max(normalized_fullness.read_time, normalized_fullness.compute_time),
-				normalized_fullness.block_usage,
-			),
-			FixedPoint::max(normalized_fullness.bytes_written, normalized_fullness.bytes_churned),
-		);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		let next_state = sp
 			.state
 			.post_block_update(

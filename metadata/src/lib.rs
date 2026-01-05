@@ -11,10 +11,10 @@ pub mod midnight_metadata_0_18_0 {}
 #[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_0.18.1.scale")]
 pub mod midnight_metadata_0_18_1 {}
 
-#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_0.19.0-rc.1.scale")]
+#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_0.19.0.scale")]
 pub mod midnight_metadata_0_19_0 {}
 
-#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_0.20.0-rc.1.scale")]
+#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_0.20.0.scale")]
 pub mod midnight_metadata_0_20_0 {}
 
 pub use midnight_metadata_0_20_0 as midnight_metadata_latest;
