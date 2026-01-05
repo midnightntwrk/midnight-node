@@ -173,11 +173,21 @@ impl<D: DB> Ledger<D> {
 		sp: Sp<Self, D>,
 		block_context: BlockContext,
 	) -> Result<Sp<Self, D>, LedgerApiError> {
-		let block_fullness = sp.block_fullness.clone().into();
-		let next_state = sp
-			.state
-			.post_block_update(Timestamp::from_secs(block_context.tblock), block_fullness)
-			.map_err(|_| LedgerApiError::BlockLimitExceededError)?;
+		let max = sp.state.parameters.limits.block_limits;
+		let tstamp = Timestamp::from_secs(block_context.tblock);
+		let next_state = match sp.state.post_block_update(tstamp, sp.block_fullness.clone().into())
+		{
+			Ok(state) => state,
+			Err(error) => {
+				log::error!(
+					target: LOG_TARGET,
+					"Post block update hit calculated fullness prices are now incorrect because we miscalculated them. {error:?}"
+				);
+				sp.state
+					.post_block_update(tstamp, max)
+					.map_err(|_| LedgerApiError::BlockLimitExceededError)?
+			},
+		};
 		let new_sp = default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() });
