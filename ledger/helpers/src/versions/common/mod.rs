@@ -186,7 +186,7 @@ pub fn deserialize<T: Deserializable + Tagged, H: std::io::Read>(
 /// based on block utilization. The overall fullness represents the most congested
 /// dimension of the block.
 ///
-/// TODO: Confirm that "max of all dimensions" is the correct semantic for overall
+/// TODO: Confirm that 'max of all dimensions' is the correct semantic for overall
 //  fullness. This was inferred from ledger API usage patterns but not explicitly
 //  documented.
 pub fn compute_overall_fullness(normalized: &NormalizedCost) -> FixedPoint {
