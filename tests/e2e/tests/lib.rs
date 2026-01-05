@@ -2123,6 +2123,11 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
+    let spend_cnight_event = midnight_client
+        .subscribe_to_cnight_observation_events(&cnight_spent_utxo.unwrap().transaction.id)
+        .await
+        .expect("Failed to listen to cNgD registration event");
+
     let result2 = dust_balance::execute(args2)
         .await
         .expect("dust-balance error");
