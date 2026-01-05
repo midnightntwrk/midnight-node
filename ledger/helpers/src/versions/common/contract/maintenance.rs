@@ -83,4 +83,3 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		intent.add_maintenance_update(update)
 	}
 }
-

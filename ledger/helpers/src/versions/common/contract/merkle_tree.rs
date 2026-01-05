@@ -17,16 +17,16 @@ use async_trait::async_trait;
 use lazy_static::lazy_static;
 use std::{any::Any, borrow::Cow, sync::Arc};
 
+use super::super::{
+	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
+	LedgerContext, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
+	ValueReprAlignedValue,
+};
 use super::{
 	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
 	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, VerifyingKey, key,
 	leaf_hash, partition_transcripts, stval, verifier_key,
-};
-use super::super::{
-	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
-	LedgerContext, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
-	ValueReprAlignedValue,
 };
 
 #[cfg(feature = "test-utils")]
@@ -217,4 +217,3 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		}
 	}
 }
-
