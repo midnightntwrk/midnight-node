@@ -7227,7 +7227,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "0.19.0-rc.1"
+version = "0.19.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
