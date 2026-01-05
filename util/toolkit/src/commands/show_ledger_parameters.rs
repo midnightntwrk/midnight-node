@@ -112,29 +112,30 @@ pub async fn execute(
 
 	let parameters = LedgerParameters {
 		fee_prices: FeePrices {
-			read_price: match (args.read_price_a, args.read_price_b) {
+			overall_price: base.fee_prices.overall_price,
+			read_factor: match (args.read_price_a, args.read_price_b) {
 				(Some(read_price_a), Some(read_price_b)) => {
 					FixedPoint::from_u64_div(read_price_a, read_price_b)
 				},
-				_ => base.fee_prices.read_price,
+				_ => base.fee_prices.read_factor,
 			},
-			compute_price: match (args.compute_price_a, args.compute_price_b) {
+			compute_factor: match (args.compute_price_a, args.compute_price_b) {
 				(Some(compute_price_a), Some(compute_price_b)) => {
 					FixedPoint::from_u64_div(compute_price_a, compute_price_b)
 				},
-				_ => base.fee_prices.compute_price,
+				_ => base.fee_prices.compute_factor,
 			},
-			block_usage_price: match (args.block_usage_price_a, args.block_usage_price_b) {
+			block_usage_factor: match (args.block_usage_price_a, args.block_usage_price_b) {
 				(Some(block_usage_price_a), Some(block_usage_price_b)) => {
 					FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
 				},
-				_ => base.fee_prices.block_usage_price,
+				_ => base.fee_prices.block_usage_factor,
 			},
-			write_price: match (args.write_price_a, args.write_price_b) {
+			write_factor: match (args.write_price_a, args.write_price_b) {
 				(Some(write_price_a), Some(write_price_b)) => {
 					FixedPoint::from_u64_div(write_price_a, write_price_b)
 				},
-				_ => base.fee_prices.write_price,
+				_ => base.fee_prices.write_factor,
 			},
 		},
 		global_ttl: args

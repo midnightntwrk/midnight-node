@@ -80,9 +80,21 @@ fn check_spec_version_matches_node_version() {
 
 	// Parse each part, separate with '.'
 	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
-	let v = format!("{}.{}.{}", v[0], v[1], v[2]);
+	let spec_version = format!("{}.{}.{}", v[0], v[1], v[2]);
 
-	assert_eq!(node_manifest.package.version, v, "Spec version does not match node version");
+	// Strip pre-release suffix (e.g., "-rc.1") from node version for comparison,
+	// since spec_version can only encode major.minor.patch
+	let node_version = node_manifest
+		.package
+		.version
+		.split('-')
+		.next()
+		.expect("Node version should have at least the base version");
+
+	assert_eq!(
+		node_version, spec_version,
+		"Spec version does not match node version (ignoring pre-release suffix)"
+	);
 }
 
 #[test]

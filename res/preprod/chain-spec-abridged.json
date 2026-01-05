@@ -65,42 +65,44 @@
             101,
             91,
             118,
-            57,
+            49,
+            50,
             93,
             41,
             58,
-            217,
-            231,
-            213,
-            236,
-            146,
-            136,
-            126,
-            131,
-            125,
-            18,
-            215,
-            231,
-            17,
-            63,
+            0,
+            19,
+            85,
+            240,
+            216,
+            218,
+            251,
+            90,
+            186,
+            123,
+            239,
             103,
+            219,
+            54,
+            16,
+            193,
+            167,
+            222,
+            254,
+            87,
+            135,
+            71,
+            196,
             160,
+            61,
             29,
-            81,
-            66,
-            157,
-            98,
+            247,
+            15,
+            93,
+            247,
+            19,
             82,
-            153,
-            185,
-            155,
-            175,
-            31,
-            163,
-            150,
-            4,
-            59,
-            208
+            176
           ]
         },
         "sudo": {
@@ -344,6 +346,11 @@
           },
           "marker": null
         },
+        "bridge": {
+          "mainChainScripts": null,
+          "initialCheckpoint": null,
+          "marker": null
+        },
         "council": {
           "members": []
         },
@@ -365,10 +372,10 @@
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wr59xjxnctrcnyjm8mtfnjjn00saptt0jpc2w3p2tnk784qruvy77",
-          "councilPolicyId": "0xe85348d3c2c789925b3ed699ca537be1d0ad6f9070a7442a5cede3d4",
-          "technicalCommitteeAddress": "addr_test1wq02xjyl3vl9qvyz5s4l9ejhpwmae23n22hhx2kk32sdaxcqq60nv",
-          "technicalCommitteePolicyId": "0x1ea3489f8b3e503082a42bf2e6570bb7dcaa3352af732ad68aa0de9b",
+          "councilAddress": "addr_test1wpfywxjxl0wdynjnccut556vkncg0xw90xr2xgchx7qg45c6qg50c",
+          "councilPolicyId": "0x52471a46fbdcd24e53c638ba534cb4f08799c57986a3231737808ad3",
+          "technicalCommitteeAddress": "addr_test1wpn7h9gtlkszq6n9gaacak3tdlxjxncth86xnuaqmrg86ns359jgs",
+          "technicalCommitteePolicyId": "0x67eb950bfda0206a65477b8eda2b6fcd234f0bb9f469f3a0d8d07d4e",
           "councilMembersMainchain": [
             "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
             "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
@@ -379,6 +386,16 @@
             "0xde14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
             "0x1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
           ]
+        },
+        "systemParameters": {
+          "termsAndConditions": {
+            "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "url": "https://midnight.network/terms-and-conditions"
+          },
+          "dParameter": {
+            "num_permissioned_candidates": 10,
+            "num_registered_candidates": 0
+          }
         }
       }
     }

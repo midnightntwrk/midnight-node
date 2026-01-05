@@ -13,7 +13,9 @@
 
 pub use super::{
 	base_crypto::{
-		cost_model::{CostDuration, FeePrices, FixedPoint, RunningCost, SyntheticCost},
+		cost_model::{
+			CostDuration, FeePrices, FixedPoint, NormalizedCost, RunningCost, SyntheticCost,
+		},
 		data_provider::{FetchMode, MidnightDataProvider, OutputMode},
 		fab::AlignedValue,
 		hash::{HashOutput, PERSISTENT_HASH_BYTES, persistent_commit, persistent_hash},
@@ -176,6 +178,25 @@ pub fn deserialize<T: Deserializable + Tagged, H: std::io::Read>(
 ) -> Result<T, std::io::Error> {
 	let val: T = mn_ledger_serialize::tagged_deserialize(bytes)?;
 	Ok(val)
+}
+
+/// Computes the overall block fullness as the maximum across all cost dimensions.
+///
+/// This value is used by the ledger's fee adjustment algorithm to update prices
+/// based on block utilization. The overall fullness represents the most congested
+/// dimension of the block.
+///
+/// TODO: Confirm that "max of all dimensions" is the correct semantic for overall
+//  fullness. This was inferred from ledger API usage patterns but not explicitly
+//  documented.
+pub fn compute_overall_fullness(normalized: &NormalizedCost) -> FixedPoint {
+	FixedPoint::max(
+		FixedPoint::max(
+			FixedPoint::max(normalized.read_time, normalized.compute_time),
+			normalized.block_usage,
+		),
+		FixedPoint::max(normalized.bytes_written, normalized.bytes_churned),
+	)
 }
 
 #[cfg(feature = "can-panic")]
