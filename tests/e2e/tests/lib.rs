@@ -11,7 +11,6 @@ use midnight_node_toolkit::commands::dust_balance::{
 };
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::Arc;
-use std::thread::sleep;
 use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
 
@@ -1716,7 +1715,6 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 
     let midnight_wallet_seed = MidnightClient::new_seed();
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
-    let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -1834,7 +1832,6 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
 
     let midnight_wallet_seed = MidnightClient::new_seed();
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
-    let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -1850,17 +1847,6 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
-
-    let registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to listen to cNgD registration event");
-
-    let reward_address = cardano_client.reward_address_bytes();
-    let dust_address: Vec<u8> = hex::decode(&dust_hex)
-        .expect("Failed to decode DUST hex")
-        .try_into()
-        .unwrap();
 
     let amount = 100;
     let tx_id = cardano_client
