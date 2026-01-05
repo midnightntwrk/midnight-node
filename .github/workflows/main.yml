@@ -32,7 +32,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
@@ -50,7 +50,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Checkout Season action repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           repository: midnightntwrk/season-action
           ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
@@ -72,7 +72,7 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@537c30d2b45cc3aa3fb35e2bbcfb61ef93fd6f02 #v2.62.52
+        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb #v2.65.6
         with:
           tool: just
 
@@ -100,9 +100,9 @@ jobs:
 
       - name: Archive artifacts
         run: |
-          tar -czf artifacts-amd64.tar.gz -C artifacts-amd64 .
-          echo "Created artifacts-amd64.tar.gz"
-          ls -lh artifacts-amd64.tar.gz
+          tar -czf midnight-node-amd64.tar.gz -C artifacts-amd64 .
+          echo "Created midnight-node-amd64.tar.gz"
+          ls -lh midnight-node-amd64.tar.gz
 
       - name: Create or Update Draft Release
         env:
@@ -116,8 +116,8 @@ jobs:
           export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
           season-build-release-notes
 
-          if [ "$BRANCH" != "main" ]; then
-            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation..."
+          if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
+            echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for AMD64..."
             exit 0
           fi
 
@@ -143,10 +143,10 @@ jobs:
             --draft \
             --notes-file RELEASE_NOTES.md
 
-          gh release upload "$RELEASE_TITLE" artifacts-amd64.tar.gz --clobber
+          gh release upload "$RELEASE_TITLE" midnight-node-amd64.tar.gz --clobber
 
       - name: Archive release notes
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -174,7 +174,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
 
@@ -204,17 +204,18 @@ jobs:
 
       - name: Archive ARM artifacts
         run: |
-          tar -czf artifacts-arm64.tar.gz -C artifacts-arm64 .
-          echo "Created artifacts-arm64.tar.gz"
-          ls -lh artifacts-arm64.tar.gz
+          tar -czf midnight-node-arm64.tar.gz -C artifacts-arm64 .
+          echo "Created midnight-node-arm64.tar.gz"
+          ls -lh midnight-node-arm64.tar.gz
+
 
       - name: Create or Update Draft Release (ARM64)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
         run: |
-          if [ "$BRANCH" != "main" ]; then
-            echo "Branch \"$BRANCH\" is not \"main\", skipping draft release creation for ARM64..."
+          if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
+            echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for ARM64..."
             exit 0
           fi
 
@@ -226,7 +227,7 @@ jobs:
           fi
 
           echo "Uploading ARM64 artifacts..."
-          gh release upload "$RELEASE_TITLE" artifacts-arm64.tar.gz --clobber
+          gh release upload "$RELEASE_TITLE" midnight-node-arm64.tar.gz --clobber
           echo "ARM64 artifacts uploaded successfully."
 
   build-indexer-images:
@@ -240,12 +241,12 @@ jobs:
       INDEXER_IMAGE_TAG: ${{ steps.build_indexer.outputs.INDEXER_IMAGE_TAG }}
     steps:
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@537c30d2b45cc3aa3fb35e2bbcfb61ef93fd6f02 #v2.62.52
+        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb #v2.65.6
         with:
           tool: just
 
@@ -338,7 +339,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout node repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd #v5.0.1
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
           submodules: true

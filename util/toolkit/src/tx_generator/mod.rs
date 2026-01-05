@@ -13,13 +13,11 @@
 
 use midnight_node_ledger_helpers::*;
 use std::{path::Path, sync::Arc};
-use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
 	remote_prover::RemoteProofServer,
-	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 };
 
@@ -140,10 +138,8 @@ where
 				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 				continue;
 			}
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api, url));
 			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::new(sender, dest.rate));
+				Box::new(SendTxsToUrl::<S, P>::new(url.clone(), dest.rate));
 
 			dests.push(destination);
 		}

@@ -187,6 +187,7 @@ services:
      EXTRA_NODE_ARGS: "--bootnodes /dns/node-01.devnet.midnight.network/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp --validator"
      SEED_PHRASE: "{Your seed phrase}"
      USE_MAIN_CHAIN_FOLLOWER_MOCK: false
+     ALLOW_NON_SSL: false
 
    healthcheck:
      test: [ "CMD", "curl", "-f", "http://localhost:9933/health" ]

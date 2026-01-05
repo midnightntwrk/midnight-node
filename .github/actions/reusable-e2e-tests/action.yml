@@ -19,10 +19,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      with:
-        clean: false
-
     - name: Install just
       uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
       with:
