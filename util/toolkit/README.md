@@ -217,7 +217,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
   * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
   * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
     * export TOOLKIT_JS_PATH="util/toolkit-js"
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent deploy
 >   -c ../toolkit-js/test/contract/contract.config.ts \
 >    --toolkit-js-path ../toolkit-js/
@@ -356,7 +356,7 @@ $ midnight-node-toolkit contract-state
 ```
 
 - Generate a circuit call intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
@@ -379,7 +379,7 @@ written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 To send it, see "Generate and send a tx from an intent" above
 
 - Generate a contract maintenance intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent maintain-contract
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
@@ -399,7 +399,7 @@ written: out/intent.bin
 To send it, see "Generate and send a tx from an intent" above
 
 - Generate a circuit maintenance intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent maintain-circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
