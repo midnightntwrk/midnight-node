@@ -7433,7 +7433,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "0.19.0-rc.1"
+version = "0.19.0"
 dependencies = [
  "subxt 0.44.0",
 ]
