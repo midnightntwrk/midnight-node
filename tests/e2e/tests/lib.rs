@@ -531,11 +531,37 @@ async fn cnight_produces_dust() {
         .await
         .expect("dust-balance error");
 
+    let mut balance: &u128 = &0;
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
         println!("Total dust balance: {}", total);
+        balance = total;
     }
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > *balance)
+    );
 }
 
 #[tokio::test]
