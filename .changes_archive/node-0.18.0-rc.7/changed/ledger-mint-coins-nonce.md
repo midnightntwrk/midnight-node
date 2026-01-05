@@ -1,4 +1,4 @@
-# Ledger `fn mint_coins` nonce creation 
+# Ledger `fn mint_coins` nonce creation
 
 uses domain separator, previous block hash, and the output number
 

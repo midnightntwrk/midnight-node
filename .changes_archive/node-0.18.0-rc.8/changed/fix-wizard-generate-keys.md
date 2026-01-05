@@ -1,4 +1,4 @@
-# Fix `wizards generate-keys` command for non-dev chains 
+# Fix `wizards generate-keys` command for non-dev chains
 
 Previously, this command resulted in an error:
 
