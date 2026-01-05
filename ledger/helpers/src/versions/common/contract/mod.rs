@@ -35,11 +35,17 @@ pub use super::super::test_resolver;
 
 mod call;
 mod deploy;
-// Note: contracts and maintenance modules are now in versions/latest_only/contract/
-// because they require ledger 7.x APIs
+#[cfg(feature = "can-panic")]
+mod maintenance;
+#[cfg(feature = "can-panic")]
+mod merkle_tree;
 
 pub use call::*;
 pub use deploy::*;
+#[cfg(feature = "can-panic")]
+pub use maintenance::*;
+#[cfg(feature = "can-panic")]
+pub use merkle_tree::*;
 
 #[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {

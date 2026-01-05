@@ -24,8 +24,8 @@ pub mod hard_fork_test {
 		transient_crypto_hf as transient_crypto, zkir_hf as zkir, zswap_hf as zswap,
 	};
 
-	/// Marker to indicate this is the hard-fork test version (ledger 6.x)
-	pub const IS_LEDGER_7: bool = false;
+	/// Marker to indicate this is the hard-fork test version (ledger 7.x)
+	pub const IS_LEDGER_7: bool = true;
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -45,13 +45,6 @@ pub mod latest {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
-
-	// Ledger 7.x specific modules
-	mod latest_only;
-	#[cfg(feature = "can-panic")]
-	pub use latest_only::contract::{
-		ContractMaintenanceAuthorityInfo, MaintenanceUpdateInfo, MerkleTreeContract, UpdateInfo,
-	};
 }
 
 #[cfg(hardfork_test)]

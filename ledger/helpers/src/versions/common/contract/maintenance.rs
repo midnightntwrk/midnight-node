@@ -12,18 +12,17 @@
 // limitations under the License.
 
 //! Contract maintenance module.
-//! This module requires ledger 7.x APIs (ContractOperationVersion::V3).
 
 use async_trait::async_trait;
 use std::sync::Arc;
 
-// Import from the latest module (types re-exported from common)
-use crate::latest::{
-	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+use super::super::{
+	ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
 	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SigningKey,
 	SingleUpdate, StdRng,
 };
+use super::BuildContractAction;
 
 pub struct ContractMaintenanceAuthorityInfo {
 	pub new_committee: Vec<SigningKey>,
@@ -64,7 +63,6 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 					})
 				},
 				UpdateInfo::VerifierKeyRemove(k) => {
-					// Use V3 for ledger 7.x, V2 for ledger 6.x
 					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
 				},
 				UpdateInfo::VerifierKeyInsert(k, new_key) => {
@@ -85,3 +83,4 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		intent.add_maintenance_update(update)
 	}
 }
+
