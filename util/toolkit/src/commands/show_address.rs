@@ -120,7 +120,7 @@ mod test {
 
 		assert!(matches!(
 			address,
-			ShowAddress::SingleAddress(a) if a == "mn_shield-addr_testnet14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqyfza7t"
+			ShowAddress::SingleAddress(a) if a == "mn_shield-addr_testnet1r020sfa7jllsz0z2wqhykz8npmphsu5223nsea7vjt9ekxs5almtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqmrxx6k"
 		));
 	}
 
@@ -141,7 +141,7 @@ mod test {
 		let address = super::execute(args);
 		assert!(matches!(
 			address,
-			ShowAddress::SingleAddress(a) if a == "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98"
+			ShowAddress::SingleAddress(a) if a == "1bd4f827be97ff013c4a702e4b08f30ec378728a54670cf7cc92cb9b1a14eff6"
 		));
 	}
 
