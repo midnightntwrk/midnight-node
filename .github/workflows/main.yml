@@ -72,7 +72,7 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@537c30d2b45cc3aa3fb35e2bbcfb61ef93fd6f02 #v2.62.52
+        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb #v2.65.6
         with:
           tool: just
 
@@ -146,7 +146,7 @@ jobs:
           gh release upload "$RELEASE_TITLE" midnight-node-amd64.tar.gz --clobber
 
       - name: Archive release notes
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -246,7 +246,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@537c30d2b45cc3aa3fb35e2bbcfb61ef93fd6f02 #v2.62.52
+        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb #v2.65.6
         with:
           tool: just
 

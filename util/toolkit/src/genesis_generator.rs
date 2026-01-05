@@ -168,7 +168,15 @@ impl GenesisGenerator {
 			self.apply_system_tx(system_tx, &genesis_block_context)?;
 		}
 
-		self.state = self.state.post_block_update(genesis_block_context.tblock, self.fullness)?;
+		let block_limits = self.state.parameters.limits.block_limits;
+		let normalized_fullness =
+			self.fullness.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
+		self.state = self.state.post_block_update(
+			genesis_block_context.tblock,
+			normalized_fullness,
+			overall_fullness,
+		)?;
 		Ok(())
 	}
 
@@ -551,10 +559,11 @@ impl GenesisGenerator {
 fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 	LedgerParameters {
 		fee_prices: FeePrices {
-			read_price: FixedPoint::ZERO,
-			compute_price: FixedPoint::ZERO,
-			block_usage_price: FixedPoint::ZERO,
-			write_price: FixedPoint::ZERO,
+			overall_price: FixedPoint::ZERO,
+			read_factor: FixedPoint::ONE,
+			compute_factor: FixedPoint::ONE,
+			block_usage_factor: FixedPoint::ONE,
+			write_factor: FixedPoint::ONE,
 		},
 		..params.clone()
 	}

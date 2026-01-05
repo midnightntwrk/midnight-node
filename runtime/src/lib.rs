@@ -48,7 +48,7 @@ pub use frame_support::{
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
-use midnight_node_ledger::types::{GasCost, StorageCost, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
@@ -279,7 +279,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_018_001,
+	spec_version: 000_019_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -1117,7 +1117,9 @@ impl_runtime_apis! {
 		fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_ledger_parameters()
 		}
-		fn get_transaction_cost(midnight_transaction: Vec<u8>) -> Result<(StorageCost, GasCost), LedgerApiError> {
+		fn get_transaction_cost(
+			midnight_transaction: Vec<u8>,
+		) -> Result<GasCost, LedgerApiError> {
 			Midnight::get_transaction_cost(&midnight_transaction)
 		}
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {

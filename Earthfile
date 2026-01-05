@@ -181,6 +181,8 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
+    # Use generic genesis-seeds.json, then override with network-specific if it exists (re-enable temporarily before genesis rebuilds)
+    #COPY --if-exists secrets/genesis-seeds.json /secrets/genesis-seeds.json
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -296,72 +298,73 @@ rebuild-genesis-state:
             && cp out/serialized_* /res/test-tx-deserialize \
         ; fi
 
-    RUN mkdir -p /res/test-data/contract/counter \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit generate-intent deploy \
-                --coin-public $( \
-                    /midnight-node-toolkit \
-                    show-address \
-                    --network $NETWORK \
-                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
-                ) \
-                -c /toolkit-js/test/contract/contract.config.ts \
-                --output-intent /res/test-data/contract/counter/deploy.bin \
-                --output-private-state /res/test-data/contract/counter/initial_state.json \
-                --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
-                0 \
-            && /midnight-node-toolkit send-intent \
-                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-                --dust-warp \
-                --intent-file /res/test-data/contract/counter/deploy.bin \
-                --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
-                --rng-seed "$RNG_SEED" \
-                --to-bytes \
-                --dest-file /res/test-data/contract/counter/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address \
-                --src-file /res/test-data/contract/counter/deploy_tx.mn \
-                | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
-            && /midnight-node-toolkit contract-state \
-                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-                --src-file /res/test-data/contract/counter/deploy_tx.mn \
-                --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
-                --dest-file /res/test-data/contract/counter/contract_state.mn \
-        ; fi
-    RUN mkdir -p /res/test-data/contract/mint \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-            /midnight-node-toolkit generate-intent deploy \
-                --coin-public $( \
-                    /midnight-node-toolkit \
-                    show-address \
-                    --network $NETWORK \
-                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
-                ) \
-                -c /toolkit-js/mint/mint.config.ts \
-                --output-intent /res/test-data/contract/mint/deploy.bin \
-                --output-private-state /res/test-data/contract/mint/initial_state.json \
-                --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
-            && /midnight-node-toolkit send-intent \
-                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-                --dust-warp \
-                --intent-file /res/test-data/contract/mint/deploy.bin \
-                --compiled-contract-dir /toolkit-js/mint/out \
-                --rng-seed "$RNG_SEED" \
-                --to-bytes \
-                --dest-file /res/test-data/contract/mint/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address \
-                --src-file /res/test-data/contract/mint/deploy_tx.mn \
-                | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
-            && /midnight-node-toolkit contract-state \
-                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-                --src-file /res/test-data/contract/mint/deploy_tx.mn \
-                --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
-                --dest-file /res/test-data/contract/mint/contract_state.mn \
-        ; fi
-    IF [ "$GENERATE_TEST_TXS" = "true" ]
-        COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
-    END
+    # TODO: Re-enable when toolkit-js is updated to use compact >= 0.27
+    # RUN mkdir -p /res/test-data/contract/counter \
+    #     && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+    #         /midnight-node-toolkit generate-intent deploy \
+    #             --coin-public $( \
+    #                 /midnight-node-toolkit \
+    #                 show-address \
+    #                 --network $NETWORK \
+    #                 --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    #                 --coin-public \
+    #             ) \
+    #             -c /toolkit-js/test/contract/contract.config.ts \
+    #             --output-intent /res/test-data/contract/counter/deploy.bin \
+    #             --output-private-state /res/test-data/contract/counter/initial_state.json \
+    #             --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
+    #             0 \
+    #         && /midnight-node-toolkit send-intent \
+    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+    #             --dust-warp \
+    #             --intent-file /res/test-data/contract/counter/deploy.bin \
+    #             --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
+    #             --rng-seed "$RNG_SEED" \
+    #             --to-bytes \
+    #             --dest-file /res/test-data/contract/counter/deploy_tx.mn \
+    #         && /midnight-node-toolkit contract-address \
+    #             --src-file /res/test-data/contract/counter/deploy_tx.mn \
+    #             | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+    #         && /midnight-node-toolkit contract-state \
+    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+    #             --src-file /res/test-data/contract/counter/deploy_tx.mn \
+    #             --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
+    #             --dest-file /res/test-data/contract/counter/contract_state.mn \
+    #     ; fi
+    # RUN mkdir -p /res/test-data/contract/mint \
+    #     && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+    #         /midnight-node-toolkit generate-intent deploy \
+    #             --coin-public $( \
+    #                 /midnight-node-toolkit \
+    #                 show-address \
+    #                 --network $NETWORK \
+    #                 --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    #                 --coin-public \
+    #             ) \
+    #             -c /toolkit-js/mint/mint.config.ts \
+    #             --output-intent /res/test-data/contract/mint/deploy.bin \
+    #             --output-private-state /res/test-data/contract/mint/initial_state.json \
+    #             --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
+    #         && /midnight-node-toolkit send-intent \
+    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+    #             --dust-warp \
+    #             --intent-file /res/test-data/contract/mint/deploy.bin \
+    #             --compiled-contract-dir /toolkit-js/mint/out \
+    #             --rng-seed "$RNG_SEED" \
+    #             --to-bytes \
+    #             --dest-file /res/test-data/contract/mint/deploy_tx.mn \
+    #         && /midnight-node-toolkit contract-address \
+    #             --src-file /res/test-data/contract/mint/deploy_tx.mn \
+    #             | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
+    #         && /midnight-node-toolkit contract-state \
+    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+    #             --src-file /res/test-data/contract/mint/deploy_tx.mn \
+    #             --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
+    #             --dest-file /res/test-data/contract/mint/contract_state.mn \
+    #     ; fi
+    # IF [ "$GENERATE_TEST_TXS" = "true" ]
+    #     COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
+    # END
 
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
@@ -369,8 +372,8 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/test-tx-deserialize/* AS LOCAL res/test-tx-deserialize/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
-    SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
-    SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
+    # SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
+    # SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -454,10 +457,43 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    LET IMAGE_TAG="v0.24.0"
-    FROM ghcr.io/midnight-ntwrk/compactc:$IMAGE_TAG
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    # Install unzip
+    RUN apt update && apt install unzip
+    # Install gh
+    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
+        && mkdir -p -m 755 /etc/apt/keyrings \
+        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        && mkdir -p -m 755 /etc/apt/sources.list.d \
+        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+        && apt update \
+        && apt install gh -y
+
+    # Fetch CompactC x86_64
+    COPY COMPACTC_VERSION .
+    RUN --secret GH_TOKEN set -e && \
+        VERSION=$(cat COMPACTC_VERSION) && \
+        RELEASE_TAG="compactc-v${VERSION}" && \
+        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
+        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
+            echo "Successfully downloaded from release"; \
+        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
+            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
+            echo "Available releases with binaries:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        else \
+            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
+            echo "Available releases:" && \
+            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
+            exit 1; \
+        fi
+    RUN unzip compactc*.zip
+
     COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN /bin/ls /nix/store && /nix/store/vbnn0vkzms8yiw88lad5k1axzngssd4f-compactc/bin/compactc simple-merkle-tree.compact simple-merkle-tree
+    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
     # Keys should not have 0 size (but will have if we ran out of memory):
     RUN [ -s /simple-merkle-tree/keys/check.prover ]
     RUN [ -s /simple-merkle-tree/keys/check.verifier ]
@@ -468,6 +504,7 @@ contract-precompile-image-single-platform:
     ENTRYPOINT [ "/bin/sh" ]
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG=$IMAGE_TAG
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-test-contract-precompiles
@@ -475,8 +512,11 @@ contract-precompile-image-single-platform:
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
+    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 #    FROM +contract-precompile-image
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:v0.22.0
+    COPY COMPACTC_VERSION .
+    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
+    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
@@ -558,7 +598,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay .
+        metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -574,13 +614,19 @@ toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
 
+    COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
-    ENV COMPACTC_VERSION=$(cat toolkit-js/COMPACTC_VERSION)
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN npm ci
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
     RUN npm run build
-    RUN --secret GITHUB_TOKEN npm run compact
+    # Run npm compact script (includes fetch-compactc + compile steps)
+    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
+    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    # Verify keys were generated
+    RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
 
@@ -630,7 +676,7 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay .
+    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
 
@@ -671,7 +717,59 @@ check:
     BUILD +check-rust
 
 # test runs the tests in parallel with code coverage.
+# Core tests - excludes midnight-node-toolkit (which requires toolkit-js/midnight-js packages)
 test:
+    ARG NATIVEARCH
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+
+    # Test
+    RUN mkdir /test-artifacts
+    # Compile the tests to go as fast as possible on this machine:
+    ENV RUSTFLAGS="-C target-cpu=native"
+    COPY .envrc ./bin/.envrc
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+
+    # Run all tests EXCEPT:
+    # - midnight-node-toolkit (depends on toolkit-js/midnight-js npm packages)
+    # - pallet-midnight fixture tests (depend on .mn files that need regenerating with toolkit)
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+        --exclude midnight-node-toolkit \
+        -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+
+    # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
+    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+
+# Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
+# These tests do NOT require toolkit-js
+test-pallet-fixtures:
+    ARG NATIVEARCH
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+
+    # Compile the tests to go as fast as possible on this machine:
+    ENV RUSTFLAGS="-C target-cpu=native"
+    COPY .envrc ./bin/.envrc
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+
+    # Run pallet-midnight fixture tests only
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+        -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
+
+    SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
+
+# Toolkit tests - requires toolkit-js which depends on midnight-js npm packages
+test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
     FROM +prep
@@ -690,7 +788,7 @@ test:
         rm -rf /var/lib/apt/lists/*
 
     # Test
-    RUN mkdir /test-artifacts
+    RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
     ENV RUSTFLAGS="-C target-cpu=native"
     COPY .envrc ./bin/.envrc
@@ -701,12 +799,13 @@ test:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+    # Run midnight-node-toolkit package tests only (requires toolkit-js)
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+        -E 'package(midnight-node-toolkit)'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
 
-    # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
@@ -767,7 +866,7 @@ build-normal:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -976,41 +1075,48 @@ hardfork-test-upgrader-image:
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
     FROM +prep
-    # Update cargo-deny to latest version for SARIF support
-    RUN cargo binstall --no-confirm cargo-deny
+    RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > cargo-deny.sarif || true
-    SAVE ARTIFACT cargo-deny.sarif AS LOCAL ./cargo-deny.sarif
+    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
+    RUN mkdir -p /scan_reports
     RUN corepack enable
-    RUN --no-cache npm audit --audit-level high
+    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
+      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
+    ARG REPORT_NAME
     FROM node:22-trixie
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN corepack enable
     RUN yarn install --immutable
-    RUN --no-cache yarn npm audit --severity high
+    RUN mkdir -p /scan_reports
+    RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
+      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
+    SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-local-environment:
-    BUILD +audit-npm --DIRECTORY=local-environment/
+    BUILD +audit-npm --DIRECTORY=local-environment/ --REPORT_NAME=local-environment
 
 audit-toolkit-js:
-    BUILD +audit-npm --DIRECTORY=util/toolkit-js/
+    BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
 audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/
+    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
 
 audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/
+    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
 
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:

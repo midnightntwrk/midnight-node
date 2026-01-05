@@ -22,7 +22,11 @@ pub use super::types::{self, DeserializationError, LedgerApiError, Serialization
 
 use base_crypto_local::hash::HashOutput;
 use coin_structure_local::coin::UserAddress as UserAddressLedger;
-use ledger_storage_local::{WellBehavedHasher, arena::TypedArenaKey, db::DB};
+use ledger_storage_local::{
+	WellBehavedHasher,
+	arena::{ArenaHash, TypedArenaKey},
+	db::DB,
+};
 use midnight_serialize_local::{Deserializable, Tagged};
 
 pub mod ledger;
@@ -74,6 +78,12 @@ impl DeserializableError for DustPublicKey {
 impl<T, H: WellBehavedHasher> SerializableError for TypedArenaKey<T, H> {
 	fn error() -> SerializationError {
 		SerializationError::TypedArenaKey
+	}
+}
+
+impl<H: WellBehavedHasher> SerializableError for ArenaHash<H> {
+	fn error() -> SerializationError {
+		SerializationError::ArenaHash
 	}
 }
 
