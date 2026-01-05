@@ -119,7 +119,7 @@ where
 		let key: ArenaKey<D::Hasher> = typed_key.into();
 
 		let now = std::time::Instant::now();
-		default_storage::<D>().with_backend(|backend| backend.pre_fetch(&key, None, true));
+		default_storage::<D>().with_backend(|backend| backend.pre_fetch(key.hash(), None, true));
 		let elapsed = now.elapsed().as_secs_f64();
 
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -148,7 +148,7 @@ where
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
+		let mut ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -156,7 +156,7 @@ where
 			LedgerApiError::NoLedgerState
 		})?;
 
-		let state_root = api.tagged_serialize(&ledger.hash())?;
+		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 
 		// Only update state after no errors
 		ledger.persist();
@@ -190,7 +190,7 @@ where
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
 
 		let tx_ctx = ledger.get_transaction_context(block_context.clone());
-		let (ledger, applied_stage) = Ledger::apply_transaction(ledger, &api, &tx, &tx_ctx)?;
+		let (mut ledger, applied_stage) = Ledger::apply_transaction(ledger, &api, &tx, &tx_ctx)?;
 
 		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
 
@@ -212,7 +212,7 @@ where
 			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
 
 		let mut event = TransactionAppliedStateRoot {
-			state_root: api.tagged_serialize(&ledger.hash())?,
+			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			all_applied,
 			call_addresses: vec![],
@@ -276,11 +276,11 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let ledger =
+		let mut ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
-			state_root: api.tagged_serialize(&ledger.hash())?,
+			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
 		};
@@ -436,12 +436,12 @@ where
 			token_type: UnshieldedTokenType(HashOutput([0u8; 32])), // TODO: UnshieldedTokenType::Reward,
 		};
 		let ledger = Self::get_ledger(&api, state_key)?;
-		let ledger =
+		let mut ledger =
 			Ledger::apply_system_tx(ledger, &sys_tx, Timestamp::from_secs(block_context.tblock))?;
 
 		// Only update state after no errors
 		ledger.persist();
-		api.tagged_serialize(&ledger.hash())
+		api.tagged_serialize(&ledger.as_typed_key())
 	}
 
 	pub fn get_unclaimed_amount(
