@@ -46,11 +46,12 @@ async function stopEphemeralEnvironment(
   const dbsyncMode = networkConfig.dbsync.mode;
 
   console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  if (dbsyncMode === "public") {
+  switch(dbsyncMode) {
+  case "public":
     console.log("Skipping port-forward: DB marked as publicly reachable");
-  } else if (dbsyncMode === "rds-proxy") {
-    console.log("Skipping pod port-forward: DB proxied via RDS helper");
-  } else {
+  case "rds-proxy":
+    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
+  default:
     await connectToPostgres(namespace);
   }
 
