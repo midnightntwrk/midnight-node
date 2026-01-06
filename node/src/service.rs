@@ -24,7 +24,7 @@ use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use parity_scale_codec::{Decode, Encode};
-use prometheus_endpoint::{prometheus::Encoder, TextEncoder};
+use prometheus_endpoint::prometheus::{Encoder, TextEncoder};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use reqwest::Client;
@@ -63,19 +63,25 @@ use time_source::SystemTimeSource;
 use tokio::time;
 
 /// Derive the metrics push endpoint from (in priority order):
-/// 1) PROMETHEUS_PUSH_ENDPOINT env var
-/// 2) The first telemetry endpoint in the chain spec (or CLI override)
-fn metrics_push_endpoint(config: &Configuration) -> Option<String> {
+/// 1) CLI flag: --prometheus-push-endpoint <url>
+/// 2) Env var: PROMETHEUS_PUSH_ENDPOINT
+fn metrics_push_endpoint(_config: &Configuration) -> Option<String> {
+	let args: Vec<String> = std::env::args().collect();
+	if let Some(pos) = args.iter().position(|a| a == "--prometheus-push-endpoint") {
+		if let Some(url) = args.get(pos + 1) {
+			if !url.trim().is_empty() {
+				return Some(url.clone());
+			}
+		}
+	}
+
 	if let Ok(endpoint) = std::env::var("PROMETHEUS_PUSH_ENDPOINT") {
 		if !endpoint.trim().is_empty() {
 			return Some(endpoint);
 		}
 	}
 
-	config
-		.telemetry_endpoints
-		.as_ref()
-		.and_then(|t| t.endpoints().first().map(|(url, _)| url.clone()))
+	None
 }
 
 /// Spawn a background task to push Prometheus metrics to a remote endpoint (e.g. Thanos Receive / PushGateway).
