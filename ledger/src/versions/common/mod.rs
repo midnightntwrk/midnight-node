@@ -341,6 +341,43 @@ where
 		Ok((wrapped_cache_key.0, tx_details))
 	}
 
+	/// Validates that the guaranteed part of a transaction will succeed.
+	///
+	/// This performs a dry-run of the transaction application to detect failures
+	/// that would occur during the guaranteed phase. Unlike `apply_transaction`,
+	/// this function does NOT persist any state changes.
+	///
+	/// Used by `pre_dispatch` to reject transactions whose guaranteed part
+	/// would fail, preventing DDoS attacks via feeless blockspace consumption.
+	pub fn validate_guaranteed_execution(
+		mut externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+		_runtime_version: u32,
+	) -> Result<(), LedgerApiError> {
+		// Gather metrics for Prometheus
+		let start_validation_time = Instant::now();
+
+		let api = api::new();
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		// Perform dry-run validation of guaranteed execution
+		Ledger::validate_guaranteed_execution(ledger, &tx, &block_context)?;
+
+		// Write Prometheus metrics
+		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
+		if let Some(metrics) = maybe_metrics {
+			let tx_type = Self::get_tx_type(&tx);
+			let elapsed_time = start_validation_time.elapsed().as_secs_f64();
+
+			metrics.observe_txs_validating_time(elapsed_time, tx_type);
+		}
+
+		Ok(())
+	}
+
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
