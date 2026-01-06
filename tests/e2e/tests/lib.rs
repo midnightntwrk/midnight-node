@@ -1779,6 +1779,28 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         hex::encode(register_tx_id)
     );
 
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
+
     let cnight_utxo_new = cardano_client
         .rotate_cnight(&cnight_utxo)
         .await
@@ -1817,7 +1839,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         "UTXO owner does not match DUST address"
     );
 
-    let args = DustBalanceArgs {
+    let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
@@ -1829,15 +1851,15 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result2 = dust_balance::execute(args2)
         .await
         .expect("dust-balance error");
 
-    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
         println!("Total dust balance: {}", total);
     }
 
-    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+    assert!(matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 }
 
 #[tokio::test]
