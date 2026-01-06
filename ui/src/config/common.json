@@ -90,11 +90,16 @@
         "type": "Text"
       },
       "getAriadneParameters": {
-        "description": "Gets Ariadne parameters with D Parameter from pallet-system-parameters. Use this instead of sidechain.getAriadneParameters for authoritative D Parameter values.",
+        "description": "Gets Ariadne parameters with D Parameter from pallet-system-parameters. Use this instead of sidechain.getAriadneParameters for authoritative D Parameter values. Response includes dParameterBlockInfo metadata showing which block the D Parameter was fetched from.",
         "params": [
           {
             "name": "epoch_number",
             "type": "u64"
+          },
+          {
+            "name": "d_parameter_at",
+            "type": "Hash",
+            "isOptional": true
           }
         ],
         "type": "Text"

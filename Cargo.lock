@@ -9996,6 +9996,7 @@ dependencies = [
  "pallet-system-parameters",
  "sc-client-api",
  "serde",
+ "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",

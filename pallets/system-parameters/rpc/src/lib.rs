@@ -39,9 +39,8 @@ use sidechain_domain::McEpochNumber;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_core::H256;
-use sp_runtime::traits::Block as BlockT;
+use sp_runtime::traits::{Block as BlockT, SaturatedConversion};
 use sp_session_validator_management_query::SessionValidatorManagementQueryApi;
-use sp_session_validator_management_query::types::AriadneParameters;
 
 /// Terms and Conditions response for RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +60,30 @@ pub struct DParameterRpcResponse {
 	pub num_permissioned_candidates: u16,
 	/// Number of registered candidates
 	pub num_registered_candidates: u16,
+}
+
+/// Metadata about the block from which D Parameter was fetched
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DParameterBlockInfo {
+	/// Block hash at which D Parameter was fetched
+	pub block_hash: H256,
+	/// Block number at which D Parameter was fetched
+	pub block_number: u64,
+}
+
+/// Extended Ariadne parameters response with D Parameter source metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AriadneParametersWithMetadata {
+	/// The D-parameter
+	pub d_parameter: DParameterRpcResponse,
+	/// List of permissioned candidates. None signifies a list was not set on mainchain.
+	pub permissioned_candidates: Option<Vec<serde_json::Value>>,
+	/// Map of candidate registrations
+	pub candidate_registrations: serde_json::Value,
+	/// Metadata about the block from which D Parameter was fetched
+	pub d_parameter_block_info: DParameterBlockInfo,
 }
 
 /// RPC error types
@@ -127,13 +150,24 @@ pub trait SystemParametersRpcApi<BlockHash> {
 	/// Returns permissioned candidates and candidate registrations from Cardano,
 	/// but the D Parameter is sourced from `pallet-system-parameters` on-chain storage.
 	///
+	/// # Parameters
+	/// - `epoch_number`: The mainchain epoch number to query candidates for
+	/// - `d_parameter_at`: Optional block hash to query D Parameter from. If not provided,
+	///   uses the best (latest) block. This is useful when querying historical epoch data
+	///   and you want the D Parameter value that was in effect at a specific block.
+	///
+	/// # Response
+	/// The response includes `d_parameter_block_info` metadata showing which block
+	/// the D Parameter was fetched from, ensuring transparency about data provenance.
+	///
 	/// This endpoint should be used instead of `sidechain_getAriadneParameters` which
 	/// sources D Parameter from the deprecated Cardano contract.
 	#[method(name = "systemParameters_getAriadneParameters")]
 	async fn get_ariadne_parameters(
 		&self,
 		epoch_number: McEpochNumber,
-	) -> RpcResult<AriadneParameters>;
+		d_parameter_at: Option<BlockHash>,
+	) -> RpcResult<AriadneParametersWithMetadata>;
 }
 
 /// System Parameters RPC implementation
@@ -201,29 +235,56 @@ where
 	async fn get_ariadne_parameters(
 		&self,
 		epoch_number: McEpochNumber,
-	) -> RpcResult<AriadneParameters> {
+		d_parameter_at: Option<<Block as BlockT>::Hash>,
+	) -> RpcResult<AriadneParametersWithMetadata> {
 		// Get the full Ariadne parameters from the underlying query API
 		// (this gets candidates from Cardano and D Parameter from Cardano)
-		let mut ariadne_params = self
+		let ariadne_params = self
 			.query_api
 			.get_ariadne_parameters(epoch_number)
 			.await
 			.map_err(|e| SystemParametersRpcError::UnableToGetAriadneParameters(e))?;
 
-		// Replace D Parameter with the value from pallet-system-parameters
-		let best_block = self.client.info().best_hash;
+		// Determine which block to query D Parameter from
+		let block_hash = d_parameter_at.unwrap_or_else(|| self.client.info().best_hash);
+		let block_number = self
+			.client
+			.number(block_hash)
+			.map_err(|e| SystemParametersRpcError::RuntimeApiError(format!("{:?}", e)))?
+			.ok_or_else(|| {
+				SystemParametersRpcError::RuntimeApiError("Block number not found".to_string())
+			})?;
+
+		// Get D Parameter from pallet-system-parameters at the specified block
 		let pallet_d_param = self
 			.client
 			.runtime_api()
-			.get_d_parameter(best_block)
+			.get_d_parameter(block_hash)
 			.map_err(|e| SystemParametersRpcError::RuntimeApiError(format!("{:?}", e)))?;
 
-		// Update the D Parameter in the response
-		ariadne_params.d_parameter.num_permissioned_candidates =
-			pallet_d_param.num_permissioned_candidates;
-		ariadne_params.d_parameter.num_registered_candidates =
-			pallet_d_param.num_registered_candidates;
+		// Convert block hash to H256 for response
+		let block_hash_h256 = H256::from_slice(block_hash.as_ref());
 
-		Ok(ariadne_params)
+		// Build the extended response with metadata
+		Ok(AriadneParametersWithMetadata {
+			d_parameter: DParameterRpcResponse {
+				num_permissioned_candidates: pallet_d_param.num_permissioned_candidates,
+				num_registered_candidates: pallet_d_param.num_registered_candidates,
+			},
+			permissioned_candidates: ariadne_params
+				.permissioned_candidates
+				.map(|candidates| {
+					candidates
+						.into_iter()
+						.map(|c| serde_json::to_value(c).unwrap_or_default())
+						.collect()
+				}),
+			candidate_registrations: serde_json::to_value(&ariadne_params.candidate_registrations)
+				.unwrap_or_default(),
+			d_parameter_block_info: DParameterBlockInfo {
+				block_hash: block_hash_h256,
+				block_number: block_number.saturated_into(),
+			},
+		})
 	}
 }
