@@ -7,7 +7,7 @@ Updates midnight-node to be compatible with midnight-ledger version 7.0.0-alpha.
 - `ContractOperationVersion::V2` replaced by `ContractOperationVersion::V3`
 - `ContractOperationVersionedVerifierKey::V2` replaced by `V3`
 
-The `ledger/helpers` crate now isolates ledger 7.x-specific modules (`merkle_tree`, `maintenance`) in a `latest_only` directory to maintain compatibility with the hard-fork test version (6.2.0-rc.2).
+Both the latest and hard-fork test versions now use ledger 7.0.0-alpha.1, so the `merkle_tree` and `maintenance` modules have been unified in `ledger/helpers/src/versions/common/contract/`.
 
 Jira: https://shielded.atlassian.net/browse/PM-21895
 

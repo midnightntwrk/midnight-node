@@ -24,9 +24,6 @@ pub mod hard_fork_test {
 		transient_crypto_hf as transient_crypto, zkir_hf as zkir, zswap_hf as zswap,
 	};
 
-	/// Marker to indicate this is the hard-fork test version (ledger 7.x)
-	pub const IS_LEDGER_7: bool = true;
-
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -38,9 +35,6 @@ pub mod latest {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,
 	};
-
-	/// Marker to indicate this is the latest version (ledger 7.x)
-	pub const IS_LEDGER_7: bool = true;
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
