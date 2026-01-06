@@ -24,7 +24,7 @@ import {
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
-import { RunOptions } from "../lib/types";
+import { assertWellKnownNamespace, RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
 import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
 import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
@@ -42,6 +42,7 @@ export async function run(network: string, runOptions: RunOptions) {
     console.log("Running environment with local Cardano/PC resources");
     runLocalEnvironment(runOptions);
   } else {
+    assertWellKnownNamespace(network);
     console.log(
       `Running ${network} chain from genesis with ${network} Cardano/PC resources`,
     );
