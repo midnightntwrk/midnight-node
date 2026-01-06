@@ -271,14 +271,12 @@ where
 				num_permissioned_candidates: pallet_d_param.num_permissioned_candidates,
 				num_registered_candidates: pallet_d_param.num_registered_candidates,
 			},
-			permissioned_candidates: ariadne_params
-				.permissioned_candidates
-				.map(|candidates| {
-					candidates
-						.into_iter()
-						.map(|c| serde_json::to_value(c).unwrap_or_default())
-						.collect()
-				}),
+			permissioned_candidates: ariadne_params.permissioned_candidates.map(|candidates| {
+				candidates
+					.into_iter()
+					.map(|c| serde_json::to_value(c).unwrap_or_default())
+					.collect()
+			}),
 			candidate_registrations: serde_json::to_value(&ariadne_params.candidate_registrations)
 				.unwrap_or_default(),
 			d_parameter_block_info: DParameterBlockInfo {
