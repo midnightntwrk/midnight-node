@@ -181,8 +181,7 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    # Use generic genesis-seeds.json, then override with network-specific if it exists (re-enable temporarily before genesis rebuilds)
-    #COPY --if-exists secrets/genesis-seeds.json /secrets/genesis-seeds.json
+    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # wallet-seed-3 is the wallet Lace uses for testing.
