@@ -117,6 +117,7 @@ sp-governed-map.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 
 sc-storage-monitor.workspace = true
 sp-inherents.workspace = true

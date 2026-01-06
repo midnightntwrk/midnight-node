@@ -24,8 +24,10 @@ use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use parity_scale_codec::{Decode, Encode};
+use prometheus_endpoint::{prometheus::Encoder, TextEncoder};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
+use reqwest::Client;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
@@ -58,6 +60,103 @@ use std::{
 	time::Duration,
 };
 use time_source::SystemTimeSource;
+use tokio::time;
+
+/// Derive the metrics push endpoint from (in priority order):
+/// 1) PROMETHEUS_PUSH_ENDPOINT env var
+/// 2) The first telemetry endpoint in the chain spec (or CLI override)
+fn metrics_push_endpoint(config: &Configuration) -> Option<String> {
+	if let Ok(endpoint) = std::env::var("PROMETHEUS_PUSH_ENDPOINT") {
+		if !endpoint.trim().is_empty() {
+			return Some(endpoint);
+		}
+	}
+
+	config
+		.telemetry_endpoints
+		.as_ref()
+		.and_then(|t| t.endpoints().first().map(|(url, _)| url.clone()))
+}
+
+/// Spawn a background task to push Prometheus metrics to a remote endpoint (e.g. Thanos Receive / PushGateway).
+fn spawn_metrics_pusher(
+	registry: Option<prometheus_endpoint::Registry>,
+	endpoint: Option<String>,
+	task_manager: &sc_service::TaskManager,
+) {
+	let Some(registry) = registry else { return };
+	let Some(endpoint) = endpoint else { return };
+
+	let interval = std::env::var("PROMETHEUS_PUSH_INTERVAL_SECS")
+		.ok()
+		.and_then(|v| v.parse::<u64>().ok())
+		.unwrap_or(15);
+	let timeout = std::env::var("PROMETHEUS_PUSH_TIMEOUT_SECS")
+		.ok()
+		.and_then(|v| v.parse::<u64>().ok())
+		.unwrap_or(10);
+
+	let client = match Client::builder()
+		.timeout(Duration::from_secs(timeout))
+		.build()
+	{
+		Ok(client) => client,
+		Err(err) => {
+			log::warn!(target: "prometheus", "Failed to build metrics push client: {err}");
+			return;
+		},
+	};
+
+	let handle = task_manager.spawn_handle();
+	handle.spawn("metrics-push", None, async move {
+		let mut ticker = time::interval(Duration::from_secs(interval));
+		let encoder = TextEncoder::new();
+
+		loop {
+			ticker.tick().await;
+
+			// Gather current metrics
+			let metric_families = registry.gather();
+			let mut buffer = Vec::new();
+			if let Err(err) = encoder.encode(&metric_families, &mut buffer) {
+				log::warn!(target: "prometheus", "Failed to encode metrics: {err}");
+				continue;
+			}
+
+			let body = match String::from_utf8(buffer) {
+				Ok(s) => s,
+				Err(err) => {
+					log::warn!(target: "prometheus", "Metrics UTF-8 error: {err}");
+					continue;
+				},
+			};
+
+			// Push to remote endpoint (expects PushGateway/Thanos Receive style HTTP endpoint)
+			let res = client
+				.put(&endpoint)
+				.header("content-type", "text/plain")
+				.body(body)
+				.send()
+				.await;
+
+			match res {
+				Ok(resp) if resp.status().is_success() => {
+					log::debug!(target: "prometheus", "Pushed metrics to {endpoint}");
+				},
+				Ok(resp) => {
+					log::warn!(
+						target: "prometheus",
+						"Metrics push failed: status={} endpoint={endpoint}",
+						resp.status()
+					);
+				},
+				Err(err) => {
+					log::warn!(target: "prometheus", "Metrics push error to {endpoint}: {err}");
+				},
+			}
+		}
+	});
+}
 
 pub struct StorageInit {
 	pub genesis_state: Vec<u8>,
@@ -429,6 +528,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				_mc_follower_metrics_opt,
 			),
 	} = new_partial_components;
+
+	// Push metrics to a remote endpoint (derived from chain-spec telemetryEndpoints or PROMETHEUS_PUSH_ENDPOINT env var)
+	let push_endpoint = metrics_push_endpoint(&config);
+	if push_endpoint.is_some() {
+		spawn_metrics_pusher(config.prometheus_registry().cloned(), push_endpoint, &task_manager);
+	}
 
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<_, _, Network>::new(
 		&config.network,
