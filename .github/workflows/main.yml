@@ -1,4 +1,4 @@
-name: Main - Midnight Node Toolkit and Node build/publish
+name: Main - Toolkit and Node build/publish
 
 on:
   push:
