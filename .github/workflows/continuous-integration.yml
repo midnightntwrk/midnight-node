@@ -351,7 +351,7 @@ jobs:
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:
-    name: Toolkit E2E
+    name: Midnight Node Toolkit E2E
     needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     steps:
