@@ -13,11 +13,12 @@
 
 use super::{
 	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
-	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
+	Loader, MidnightDataProvider, NormalizedCost, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
 	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, default_storage,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
+	compute_overall_fullness, default_storage, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::{ToHex, encode as hex_encode};
@@ -138,8 +139,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// Only when done processing txs for the same block, it's time to call `post_block_update`
 		let mut latest_ledger_state =
 			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let block_limits = latest_ledger_state.parameters.limits.block_limits;
+		let normalized_fullness =
+			total_cost.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		*latest_ledger_state = latest_ledger_state
-			.post_block_update(block_context.tblock, total_cost)
+			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 			.expect("Error applying block updates");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
@@ -186,7 +191,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let storage = default_storage::<D>();
 		let ledger = StorableLedgerState::new(state.clone());
 		let sp = storage.arena.alloc(ledger);
-		super::serialize(&sp.hash()).ok()
+		super::serialize(&sp.as_typed_key()).ok()
 	}
 
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(

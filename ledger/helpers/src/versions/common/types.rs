@@ -262,6 +262,12 @@ impl From<Segment> for u16 {
 	}
 }
 
+impl From<Segment> for Option<u16> {
+	fn from(val: Segment) -> Self {
+		Some(val.into())
+	}
+}
+
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]

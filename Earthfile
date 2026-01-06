@@ -181,6 +181,7 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
+    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -607,7 +608,7 @@ prep:
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
 
-# prepares the toolkit-js, in time for testing
+# Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
@@ -628,7 +629,7 @@ toolkit-js-prep:
 
     SAVE ARTIFACT /toolkit-js
 
-# toolkit-js-prep-local saves toolkit-js build artifacts
+# toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     FROM --platform=linux/amd64 +toolkit-js-prep
@@ -715,7 +716,59 @@ check:
     BUILD +check-rust
 
 # test runs the tests in parallel with code coverage.
+# Core tests - excludes Midnight Node Toolkit (requires Node Toolkit (JS) npm packages from midnight-js)
 test:
+    ARG NATIVEARCH
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+
+    # Test
+    RUN mkdir /test-artifacts
+    # Compile the tests to go as fast as possible on this machine:
+    ENV RUSTFLAGS="-C target-cpu=native"
+    COPY .envrc ./bin/.envrc
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+
+    # Run all tests EXCEPT:
+    # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
+    # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+        --exclude midnight-node-toolkit \
+        -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+
+    # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
+    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+
+# Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
+# These tests do NOT require toolkit-js
+test-pallet-fixtures:
+    ARG NATIVEARCH
+    FROM +prep
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
+
+    # Compile the tests to go as fast as possible on this machine:
+    ENV RUSTFLAGS="-C target-cpu=native"
+    COPY .envrc ./bin/.envrc
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+
+    # Run pallet-midnight fixture tests only
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+        -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
+
+    SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
+
+# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
     FROM +prep
@@ -734,23 +787,24 @@ test:
         rm -rf /var/lib/apt/lists/*
 
     # Test
-    RUN mkdir /test-artifacts
+    RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
     ENV RUSTFLAGS="-C target-cpu=native"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # extract the toolkit-js
+    # Extract Node Toolkit (JS)
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+        -E 'package(midnight-node-toolkit)'
+    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
+    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
 
-    # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
