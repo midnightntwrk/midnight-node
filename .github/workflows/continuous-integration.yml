@@ -330,7 +330,6 @@ jobs:
         run: |
           . ./.envrc && earthly --strict +test-pallet-fixtures
 
-  # Gate job for Midnight Node Toolkit E2E tests - if this fails, Midnight Node Toolkit E2E tests are skipped
   # NOTE: This job requires toolkit-js which depends on compact-js npm packages
   test-toolkit:
     name: Test Midnight Node Toolkit
@@ -353,7 +352,7 @@ jobs:
 
   toolkit-e2e:
     name: Midnight Node Toolkit E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -373,7 +372,7 @@ jobs:
 
   toolkit-update-ledger-parameters-e2e:
     name: Midnight Node Toolkit Update Ledger Parameters E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -393,7 +392,7 @@ jobs:
 
   toolkit-maintenance-e2e:
     name: Midnight Node Toolkit Maintenance E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -413,7 +412,7 @@ jobs:
 
   toolkit-mint-e2e:
     name: Midnight Node Toolkit Mint E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -433,7 +432,7 @@ jobs:
 
   toolkit-ut-e2e:
     name: Midnight Node Toolkit Unshielded Token E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -483,7 +482,7 @@ jobs:
 
   toolkit-contracts-e2e:
     name: Midnight Node Toolkit Contracts E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
