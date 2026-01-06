@@ -418,11 +418,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		//#[pallet::call_index(1)]
-		// Previously used for override_d_parameter, which has been removed. D Parameter is now sourced from pallet-system-parameters.
-		// This is intentionally skipped to avoid breaking changes.
-
-		#[pallet::call_index(2)]
+		#[pallet::call_index(1)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		// A system transaction for configuring contract call weights
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
