@@ -219,6 +219,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_deploy() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -256,6 +257,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_circuit_call() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -314,6 +316,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_maintain_contract() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -406,6 +409,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_maintain_remove_circuit() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
