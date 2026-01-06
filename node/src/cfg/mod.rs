@@ -247,7 +247,7 @@ impl Cfg {
 
 		let argv: Vec<String> = std::env::args().collect();
 		if argv.len() > 1 {
-			// Strip the custom metrics push flag before passing args into config
+			// Strip custom flags before passing args into config
 			let mut args_clean = Vec::with_capacity(argv.len());
 			let mut i = 1;
 			while i < argv.len() {

@@ -46,7 +46,7 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
-	// Pre-scan args to pick up the push endpoint flag and avoid clap errors on unknown flags.
+	// Pre-scan args to pick up custom flags and avoid clap errors on unknown flags.
 	let raw_args: Vec<String> = std::env::args().collect();
 	let mut filtered_args: Vec<String> = Vec::with_capacity(raw_args.len());
 	if let Some(program) = raw_args.first() {
@@ -57,13 +57,13 @@ pub fn run() -> sc_cli::Result<()> {
 		let arg = &raw_args[i];
 		if arg == "--prometheus-push-endpoint" {
 			if let Some(val) = raw_args.get(i + 1) {
-				if std::env::var("PROMETHEUS_PUSH_ENDPOINT").is_err() {
-					unsafe { std::env::set_var("PROMETHEUS_PUSH_ENDPOINT", val) };
-				}
+				unsafe { std::env::set_var("PROMETHEUS_PUSH_ENDPOINT", val) };
 			}
 			i += 2;
 			continue;
 		}
+		// Keep all other args for normal clap parsing
+		filtered_args.push(arg.clone());
 		i += 1;
 	}
 

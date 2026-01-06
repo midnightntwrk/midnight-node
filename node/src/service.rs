@@ -185,6 +185,7 @@ fn spawn_metrics_pusher(
 		.unwrap_or(10);
 
 	let client = match Client::builder()
+		.http1_only() // Avoid intermittent HTTP/2 disconnects from some receivers
 		.timeout(Duration::from_secs(timeout))
 		.build()
 	{
