@@ -45,6 +45,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use mmr_gadget::MmrGadget;
+use prost::Message;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
@@ -53,7 +54,6 @@ use sp_runtime::{
 	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
 };
 use sp_runtime::{Digest, DigestItem};
-use prost::Message;
 use std::{
 	marker::PhantomData,
 	sync::{Arc, Mutex},
@@ -133,7 +133,10 @@ fn build_remote_write_payload(
 			let mut labels: Vec<WrLabel> = m
 				.get_label()
 				.iter()
-				.map(|l| WrLabel { name: l.get_name().to_string(), value: l.get_value().to_string() })
+				.map(|l| WrLabel {
+					name: l.get_name().to_string(),
+					value: l.get_value().to_string(),
+				})
 				.collect();
 			labels.push(WrLabel { name: "__name__".into(), value: name.into() });
 			labels.sort_by(|a, b| a.name.cmp(&b.name));
@@ -159,9 +162,7 @@ fn build_remote_write_payload(
 	}
 
 	let mut buf = Vec::with_capacity(1024);
-	WriteRequest { timeseries: ts_out }
-		.encode(&mut buf)
-		.ok()?;
+	WriteRequest { timeseries: ts_out }.encode(&mut buf).ok()?;
 	let compressed = snap::raw::Encoder::new().compress_vec(&buf).ok()?;
 	Some(compressed)
 }
