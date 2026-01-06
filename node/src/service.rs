@@ -90,7 +90,7 @@ fn spawn_metrics_pusher(
 	let interval = std::env::var("PROMETHEUS_PUSH_INTERVAL_SECS")
 		.ok()
 		.and_then(|v| v.parse::<u64>().ok())
-		.unwrap_or(15);
+		.unwrap_or(60);
 	let timeout = std::env::var("PROMETHEUS_PUSH_TIMEOUT_SECS")
 		.ok()
 		.and_then(|v| v.parse::<u64>().ok())
