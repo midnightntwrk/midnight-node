@@ -24,7 +24,6 @@ use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use parity_scale_codec::{Decode, Encode};
-use prometheus_endpoint::prometheus::{Encoder, TextEncoder};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use reqwest::Client;
@@ -54,6 +53,7 @@ use sp_runtime::{
 	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
 };
 use sp_runtime::{Digest, DigestItem};
+use prost::Message;
 use std::{
 	marker::PhantomData,
 	sync::{Arc, Mutex},
@@ -84,7 +84,89 @@ fn metrics_push_endpoint(_config: &Configuration) -> Option<String> {
 	None
 }
 
-/// Spawn a background task to push Prometheus metrics to a remote endpoint (e.g. Thanos Receive / PushGateway).
+/// Remote write types for Prometheus/Thanos.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WrLabel {
+	#[prost(string, tag = "1")]
+	pub name: String,
+	#[prost(string, tag = "2")]
+	pub value: String,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WrSample {
+	#[prost(double, tag = "1")]
+	pub value: f64,
+	#[prost(int64, tag = "2")]
+	pub timestamp: i64,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WrTimeSeries {
+	#[prost(message, repeated, tag = "1")]
+	pub labels: Vec<WrLabel>,
+	#[prost(message, repeated, tag = "2")]
+	pub samples: Vec<WrSample>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WriteRequest {
+	#[prost(message, repeated, tag = "1")]
+	pub timeseries: Vec<WrTimeSeries>,
+}
+
+fn build_remote_write_payload(
+	metric_families: &[prometheus_endpoint::prometheus::proto::MetricFamily],
+) -> Option<Vec<u8>> {
+	let mut ts_out = Vec::new();
+	let now_ms = || {
+		let dur = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.unwrap_or_default();
+		(dur.as_secs() as i64) * 1000 + (dur.subsec_millis() as i64)
+	};
+
+	for family in metric_families {
+		let name = family.get_name();
+		let mtype = family.get_field_type();
+		for m in family.get_metric() {
+			let mut labels: Vec<WrLabel> = m
+				.get_label()
+				.iter()
+				.map(|l| WrLabel { name: l.get_name().to_string(), value: l.get_value().to_string() })
+				.collect();
+			labels.push(WrLabel { name: "__name__".into(), value: name.into() });
+			labels.sort_by(|a, b| a.name.cmp(&b.name));
+
+			let ts = if mtype == prometheus_endpoint::prometheus::proto::MetricType::COUNTER {
+				m.get_counter().get_value()
+			} else if mtype == prometheus_endpoint::prometheus::proto::MetricType::GAUGE {
+				m.get_gauge().get_value()
+			} else {
+				continue;
+			};
+			let ts_field = m.get_timestamp_ms();
+			let ts_ms = if ts_field != 0 { ts_field } else { now_ms() };
+			ts_out.push(WrTimeSeries {
+				labels,
+				samples: vec![WrSample { value: ts, timestamp: ts_ms }],
+			});
+		}
+	}
+
+	if ts_out.is_empty() {
+		return None;
+	}
+
+	let mut buf = Vec::with_capacity(1024);
+	WriteRequest { timeseries: ts_out }
+		.encode(&mut buf)
+		.ok()?;
+	let compressed = snap::raw::Encoder::new().compress_vec(&buf).ok()?;
+	Some(compressed)
+}
+
+/// Spawn a background task to push Prometheus metrics to a remote endpoint (Thanos Receive / remote_write).
 fn spawn_metrics_pusher(
 	registry: Option<prometheus_endpoint::Registry>,
 	endpoint: Option<String>,
@@ -116,31 +198,19 @@ fn spawn_metrics_pusher(
 	let handle = task_manager.spawn_handle();
 	handle.spawn("metrics-push", None, async move {
 		let mut ticker = time::interval(Duration::from_secs(interval));
-		let encoder = TextEncoder::new();
 
 		loop {
 			ticker.tick().await;
 
-			// Gather current metrics
 			let metric_families = registry.gather();
-			let mut buffer = Vec::new();
-			if let Err(err) = encoder.encode(&metric_families, &mut buffer) {
-				log::warn!(target: "prometheus", "Failed to encode metrics: {err}");
+			let Some(body) = build_remote_write_payload(&metric_families) else {
 				continue;
-			}
-
-			let body = match String::from_utf8(buffer) {
-				Ok(s) => s,
-				Err(err) => {
-					log::warn!(target: "prometheus", "Metrics UTF-8 error: {err}");
-					continue;
-				},
 			};
 
-			// Push to remote endpoint (expects PushGateway/Thanos Receive style HTTP endpoint)
 			let res = client
-				.put(&endpoint)
-				.header("content-type", "text/plain")
+				.post(&endpoint)
+				.header("content-type", "application/x-protobuf")
+				.header("X-Prometheus-Remote-Write-Version", "0.1.0")
 				.body(body)
 				.send()
 				.await;
@@ -249,7 +319,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 	let block_digest = Digest {
 		logs: vec![DigestItem::Consensus(
 			midnight_node_runtime::VERSION_ID,
-			midnight_node_runtime::VERSION.spec_version.encode(),
+			parity_scale_codec::Encode::encode(&midnight_node_runtime::VERSION.spec_version),
 		)],
 	};
 

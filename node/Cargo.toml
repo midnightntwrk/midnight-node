@@ -119,6 +119,9 @@ partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 prometheus-endpoint.workspace = true
+prost = { version = "0.12", default-features = false, features = ["prost-derive"] }
+bytes = "1"
+snap = "1"
 
 sc-storage-monitor.workspace = true
 sp-inherents.workspace = true

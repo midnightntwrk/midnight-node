@@ -34,6 +34,10 @@ pub struct RunMidnight {
 /// To see full config options, run with no args with env-var SHOW_CONFIG=TRUE or run --help
 #[command(version)]
 pub struct Cli {
+	/// Push metrics to a remote Prometheus-compatible endpoint (e.g. Pushgateway/Thanos Receive).
+	#[arg(long, value_name = "URL")]
+	pub prometheus_push_endpoint: Option<String>,
+
 	#[command(subcommand)]
 	pub subcommand: Subcommand,
 }

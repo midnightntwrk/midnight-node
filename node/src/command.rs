@@ -46,10 +46,32 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
-	let first_arg_char = std::env::args().nth(1).map(|arg| arg.chars().next());
+	// Pre-scan args to pick up the push endpoint flag and avoid clap errors on unknown flags.
+	let raw_args: Vec<String> = std::env::args().collect();
+	let mut filtered_args: Vec<String> = Vec::with_capacity(raw_args.len());
+	if let Some(program) = raw_args.first() {
+		filtered_args.push(program.clone());
+	}
+	let mut i = 1;
+	while i < raw_args.len() {
+		let arg = &raw_args[i];
+		if arg == "--prometheus-push-endpoint" {
+			if let Some(val) = raw_args.get(i + 1) {
+				if std::env::var("PROMETHEUS_PUSH_ENDPOINT").is_err() {
+					unsafe { std::env::set_var("PROMETHEUS_PUSH_ENDPOINT", val) };
+				}
+			}
+			i += 2;
+			continue;
+		}
+		i += 1;
+	}
+
+	let first_arg_char = raw_args.get(1).map(|arg| arg.chars().next());
 	let subcommand_used = first_arg_char.is_some() && first_arg_char != Some(Some('-'));
 
-	match Cli::try_parse() {
+	// Parse CLI with filtered args (we only need subcommand parsing here).
+	match Cli::try_parse_from(filtered_args) {
 		Ok(cli) => {
 			let cfg = get_cfg(false)?;
 			run_subcommand(cli.subcommand, cfg)

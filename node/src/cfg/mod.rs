@@ -247,7 +247,19 @@ impl Cfg {
 
 		let argv: Vec<String> = std::env::args().collect();
 		if argv.len() > 1 {
-			cfg = cfg.set_default("args", argv[1..].to_vec())?;
+			// Strip the custom metrics push flag before passing args into config
+			let mut args_clean = Vec::with_capacity(argv.len());
+			let mut i = 1;
+			while i < argv.len() {
+				if argv[i] == "--prometheus-push-endpoint" {
+					// skip flag and its value if present
+					i += 2;
+					continue;
+				}
+				args_clean.push(argv[i].clone());
+				i += 1;
+			}
+			cfg = cfg.set_default("args", args_clean)?;
 		}
 
 		cfg.build()
