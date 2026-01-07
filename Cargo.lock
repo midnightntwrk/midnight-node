@@ -7545,7 +7545,6 @@ dependencies = [
  "parity-scale-codec",
  "rand 0.8.5",
  "redb",
- "reqwest 0.11.27",
  "serde",
  "serde_json",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
