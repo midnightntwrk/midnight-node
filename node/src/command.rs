@@ -46,32 +46,10 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
-	// Pre-scan args to pick up custom flags and avoid clap errors on unknown flags.
-	let raw_args: Vec<String> = std::env::args().collect();
-	let mut filtered_args: Vec<String> = Vec::with_capacity(raw_args.len());
-	if let Some(program) = raw_args.first() {
-		filtered_args.push(program.clone());
-	}
-	let mut i = 1;
-	while i < raw_args.len() {
-		let arg = &raw_args[i];
-		if arg == "--prometheus-push-endpoint" {
-			if let Some(val) = raw_args.get(i + 1) {
-				unsafe { std::env::set_var("PROMETHEUS_PUSH_ENDPOINT", val) };
-			}
-			i += 2;
-			continue;
-		}
-		// Keep all other args for normal clap parsing
-		filtered_args.push(arg.clone());
-		i += 1;
-	}
-
-	let first_arg_char = raw_args.get(1).map(|arg| arg.chars().next());
+	let first_arg_char = std::env::args().nth(1).map(|arg| arg.chars().next());
 	let subcommand_used = first_arg_char.is_some() && first_arg_char != Some(Some('-'));
 
-	// Parse CLI with filtered args (we only need subcommand parsing here).
-	match Cli::try_parse_from(filtered_args) {
+	match Cli::try_parse() {
 		Ok(cli) => {
 			let cfg = get_cfg(false)?;
 			run_subcommand(cli.subcommand, cfg)
@@ -215,6 +193,27 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				None,
 			)
 			.await?;
+
+		// Build Prometheus push config if endpoint is configured
+		log::debug!(
+			"Prometheus push endpoint config: {:?}",
+			cfg.midnight_cfg.prometheus_push_endpoint
+		);
+		let metrics_push_config =
+			cfg.midnight_cfg.prometheus_push_endpoint.as_ref().map(|endpoint| {
+				crate::metrics_push::MetricsPushConfig {
+					endpoint: endpoint.clone(),
+					interval: std::time::Duration::from_secs(
+						cfg.midnight_cfg.prometheus_push_interval_secs.unwrap_or(15),
+					),
+					job_name: cfg
+						.midnight_cfg
+						.prometheus_push_job_name
+						.clone()
+						.unwrap_or_else(|| "midnight-node".to_string()),
+				}
+			});
+
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
 		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
@@ -222,6 +221,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			data_sources,
 			cfg.storage_monitor_params_cfg.into(),
 			storage_config,
+			metrics_push_config,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)

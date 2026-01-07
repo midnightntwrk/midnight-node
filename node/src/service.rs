@@ -17,6 +17,7 @@ use crate::{
 	extensions::ExtensionsFactory,
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
+	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
 };
 use futures::FutureExt;
@@ -26,7 +27,6 @@ use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
-use reqwest::Client;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
@@ -45,7 +45,6 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use mmr_gadget::MmrGadget;
-use prost::Message;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
@@ -60,181 +59,6 @@ use std::{
 	time::Duration,
 };
 use time_source::SystemTimeSource;
-use tokio::time;
-
-/// Derive the metrics push endpoint from (in priority order):
-/// 1) CLI flag: --prometheus-push-endpoint <url>
-/// 2) Env var: PROMETHEUS_PUSH_ENDPOINT
-fn metrics_push_endpoint(_config: &Configuration) -> Option<String> {
-	let args: Vec<String> = std::env::args().collect();
-	if let Some(pos) = args.iter().position(|a| a == "--prometheus-push-endpoint") {
-		if let Some(url) = args.get(pos + 1) {
-			if !url.trim().is_empty() {
-				return Some(url.clone());
-			}
-		}
-	}
-
-	if let Ok(endpoint) = std::env::var("PROMETHEUS_PUSH_ENDPOINT") {
-		if !endpoint.trim().is_empty() {
-			return Some(endpoint);
-		}
-	}
-
-	None
-}
-
-/// Remote write types for Prometheus/Thanos.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WrLabel {
-	#[prost(string, tag = "1")]
-	pub name: String,
-	#[prost(string, tag = "2")]
-	pub value: String,
-}
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WrSample {
-	#[prost(double, tag = "1")]
-	pub value: f64,
-	#[prost(int64, tag = "2")]
-	pub timestamp: i64,
-}
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WrTimeSeries {
-	#[prost(message, repeated, tag = "1")]
-	pub labels: Vec<WrLabel>,
-	#[prost(message, repeated, tag = "2")]
-	pub samples: Vec<WrSample>,
-}
-
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WriteRequest {
-	#[prost(message, repeated, tag = "1")]
-	pub timeseries: Vec<WrTimeSeries>,
-}
-
-fn build_remote_write_payload(
-	metric_families: &[prometheus_endpoint::prometheus::proto::MetricFamily],
-) -> Option<Vec<u8>> {
-	let mut ts_out = Vec::new();
-	let now_ms = || {
-		let dur = std::time::SystemTime::now()
-			.duration_since(std::time::UNIX_EPOCH)
-			.unwrap_or_default();
-		(dur.as_secs() as i64) * 1000 + (dur.subsec_millis() as i64)
-	};
-
-	for family in metric_families {
-		let name = family.get_name();
-		let mtype = family.get_field_type();
-		for m in family.get_metric() {
-			let mut labels: Vec<WrLabel> = m
-				.get_label()
-				.iter()
-				.map(|l| WrLabel {
-					name: l.get_name().to_string(),
-					value: l.get_value().to_string(),
-				})
-				.collect();
-			labels.push(WrLabel { name: "__name__".into(), value: name.into() });
-			labels.sort_by(|a, b| a.name.cmp(&b.name));
-
-			let ts = if mtype == prometheus_endpoint::prometheus::proto::MetricType::COUNTER {
-				m.get_counter().get_value()
-			} else if mtype == prometheus_endpoint::prometheus::proto::MetricType::GAUGE {
-				m.get_gauge().get_value()
-			} else {
-				continue;
-			};
-			let ts_field = m.get_timestamp_ms();
-			let ts_ms = if ts_field != 0 { ts_field } else { now_ms() };
-			ts_out.push(WrTimeSeries {
-				labels,
-				samples: vec![WrSample { value: ts, timestamp: ts_ms }],
-			});
-		}
-	}
-
-	if ts_out.is_empty() {
-		return None;
-	}
-
-	let mut buf = Vec::with_capacity(1024);
-	WriteRequest { timeseries: ts_out }.encode(&mut buf).ok()?;
-	let compressed = snap::raw::Encoder::new().compress_vec(&buf).ok()?;
-	Some(compressed)
-}
-
-/// Spawn a background task to push Prometheus metrics to a remote endpoint (Thanos Receive / remote_write).
-fn spawn_metrics_pusher(
-	registry: Option<prometheus_endpoint::Registry>,
-	endpoint: Option<String>,
-	task_manager: &sc_service::TaskManager,
-) {
-	let Some(registry) = registry else { return };
-	let Some(endpoint) = endpoint else { return };
-
-	let interval = std::env::var("PROMETHEUS_PUSH_INTERVAL_SECS")
-		.ok()
-		.and_then(|v| v.parse::<u64>().ok())
-		.unwrap_or(60);
-	let timeout = std::env::var("PROMETHEUS_PUSH_TIMEOUT_SECS")
-		.ok()
-		.and_then(|v| v.parse::<u64>().ok())
-		.unwrap_or(10);
-
-	let client = match Client::builder()
-		.http1_only() // Avoid intermittent HTTP/2 disconnects from some receivers
-		.timeout(Duration::from_secs(timeout))
-		.build()
-	{
-		Ok(client) => client,
-		Err(err) => {
-			log::warn!(target: "prometheus", "Failed to build metrics push client: {err}");
-			return;
-		},
-	};
-
-	let handle = task_manager.spawn_handle();
-	handle.spawn("metrics-push", None, async move {
-		let mut ticker = time::interval(Duration::from_secs(interval));
-
-		loop {
-			ticker.tick().await;
-
-			let metric_families = registry.gather();
-			let Some(body) = build_remote_write_payload(&metric_families) else {
-				continue;
-			};
-
-			let res = client
-				.post(&endpoint)
-				.header("content-type", "application/x-protobuf")
-				.header("X-Prometheus-Remote-Write-Version", "0.1.0")
-				.body(body)
-				.send()
-				.await;
-
-			match res {
-				Ok(resp) if resp.status().is_success() => {
-					log::debug!(target: "prometheus", "Pushed metrics to {endpoint}");
-				},
-				Ok(resp) => {
-					log::warn!(
-						target: "prometheus",
-						"Metrics push failed: status={} endpoint={endpoint}",
-						resp.status()
-					);
-				},
-				Err(err) => {
-					log::warn!(target: "prometheus", "Metrics push error to {endpoint}: {err}");
-				},
-			}
-		}
-	});
-}
 
 pub struct StorageInit {
 	pub genesis_state: Vec<u8>,
@@ -321,7 +145,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 	let block_digest = Digest {
 		logs: vec![DigestItem::Consensus(
 			midnight_node_runtime::VERSION_ID,
-			parity_scale_codec::Encode::encode(&midnight_node_runtime::VERSION.spec_version),
+			midnight_node_runtime::VERSION.spec_version.encode(),
 		)],
 	};
 
@@ -582,6 +406,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	data_sources: DataSources,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
 	storage_config: StorageInit,
+	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
@@ -606,12 +431,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				_mc_follower_metrics_opt,
 			),
 	} = new_partial_components;
-
-	// Push metrics to a remote endpoint (derived from chain-spec telemetryEndpoints or PROMETHEUS_PUSH_ENDPOINT env var)
-	let push_endpoint = metrics_push_endpoint(&config);
-	if push_endpoint.is_some() {
-		spawn_metrics_pusher(config.prometheus_registry().cloned(), push_endpoint, &task_manager);
-	}
 
 	let mut net_config = sc_network::config::FullNetworkConfiguration::<_, _, Network>::new(
 		&config.network,
@@ -709,6 +528,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let name = config.network.node_name.clone();
 	let enable_grandpa = !config.disable_grandpa;
 	let prometheus_registry = config.prometheus_registry().cloned();
+	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
 	let rpc_extensions_builder = {
@@ -931,6 +751,22 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			&task_manager.spawn_essential_handle(),
 		)
 		.map_err(|e| ServiceError::Application(e.into()))?;
+	}
+
+	// Spawn Prometheus metrics push task if configured
+	if let Some(push_config) = metrics_push_config {
+		if let Some(registry) = prometheus_registry_for_push {
+			task_manager.spawn_handle().spawn(
+				"prometheus-push",
+				None,
+				run_metrics_push_task(registry, push_config),
+			);
+		} else {
+			log::warn!(
+				"Prometheus push endpoint configured but no Prometheus registry available. \
+				 Enable Prometheus with --prometheus-port to use push functionality."
+			);
+		}
 	}
 
 	Ok(task_manager)

@@ -117,13 +117,12 @@ sp-governed-map.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
-prometheus-endpoint.workspace = true
-prost = { version = "0.12", default-features = false, features = ["prost-derive"] }
-bytes = "1"
-snap = "1"
 
 sc-storage-monitor.workspace = true
+prometheus-endpoint.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+prost = "0.14"
+snap = "1.1"
 sp-inherents.workspace = true
 sp-keystore.workspace = true
 sp-io.workspace = true

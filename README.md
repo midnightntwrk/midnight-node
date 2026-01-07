@@ -270,6 +270,9 @@ Chain specifications are located in `/res/` directory.
 | Node key | `NODE_KEY_FILE=/path/to/key` | `--node-key "0x..."` | Network identity key file |
 | Bootstrap nodes | `BOOTNODES="/ip4/... /ip4/..."` | `--bootnodes "/ip4/..."` | Space-separated initial peers |
 | Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections |
+| Remote write | `PROMETHEUS_PUSH_ENDPOINT=https://thanos:9091/api/v1/receive` | - | Push metrics via Prometheus Remote Write (Thanos, Cortex, Mimir) |
+| Push interval | `PROMETHEUS_PUSH_INTERVAL_SECS=15` | - | Seconds between metric pushes (default: 15) |
+| Push job name | `PROMETHEUS_PUSH_JOB_NAME=midnight-node` | - | Job label for pushed metrics (default: midnight-node) |
 
 **Start single-node local network** for development:
 
