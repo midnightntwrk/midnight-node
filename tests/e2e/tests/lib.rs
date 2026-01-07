@@ -2170,8 +2170,8 @@ async fn permissioned_candidates_match_inserted_values() {
         for (i, candidate) in candidates.iter().enumerate() {
             let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
                 || candidate.get("sidechain_public_key").is_some();
-            let has_aura_key =
-                candidate.get("auraPublicKey").is_some() || candidate.get("aura_public_key").is_some();
+            let has_aura_key = candidate.get("auraPublicKey").is_some()
+                || candidate.get("aura_public_key").is_some();
             let has_grandpa_key = candidate.get("grandpaPublicKey").is_some()
                 || candidate.get("grandpa_public_key").is_some();
 
@@ -2236,13 +2236,11 @@ async fn d_parameter_from_pallet_matches_config() {
 
     // Verify both endpoints return the same D-Parameter
     assert_eq!(
-        d_param.num_permissioned_candidates,
-        ariadne_params.d_parameter.num_permissioned_candidates,
+        d_param.num_permissioned_candidates, ariadne_params.d_parameter.num_permissioned_candidates,
         "D-Parameter permissioned count should match between endpoints"
     );
     assert_eq!(
-        d_param.num_registered_candidates,
-        ariadne_params.d_parameter.num_registered_candidates,
+        d_param.num_registered_candidates, ariadne_params.d_parameter.num_registered_candidates,
         "D-Parameter registered count should match between endpoints"
     );
 

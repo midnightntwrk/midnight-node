@@ -190,6 +190,8 @@ pub enum ToolkitJsError {
 	ExecutionError(std::io::Error),
 	#[error("failed to read toolkit-js output")]
 	ToolkitJsOutputReadError(std::io::Error),
+	#[error("toolkit-js exited with non-zero status: {0}")]
+	NonZeroExit(std::process::ExitStatus),
 }
 
 impl ToolkitJs {
@@ -371,6 +373,11 @@ impl ToolkitJs {
 				eprintln!("toolkit-js> {line}");
 			}
 		}
+
+		if !output.status.success() {
+			return Err(ToolkitJsError::NonZeroExit(output.status));
+		}
+
 		Ok(())
 	}
 }
