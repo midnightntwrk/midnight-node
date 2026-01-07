@@ -31,29 +31,7 @@ pub struct DParameterResponse {
     pub num_registered_candidates: u16,
 }
 
-/// Metadata about the block from which D Parameter was fetched
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DParameterBlockInfo {
-    /// Block hash at which D Parameter was fetched
-    pub block_hash: H256,
-    /// Block number at which D Parameter was fetched
-    pub block_number: u64,
-}
-
-/// Permissioned candidate from Cardano Aiken contracts
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PermissionedCandidate {
-    /// Sidechain public key (hex-encoded)
-    pub sidechain_public_key: String,
-    /// Aura public key (hex-encoded)
-    pub aura_public_key: String,
-    /// Grandpa public key (hex-encoded)
-    pub grandpa_public_key: String,
-}
-
-/// Extended Ariadne parameters response with D Parameter source metadata
+/// Ariadne parameters response from systemParameters_getAriadneParameters RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AriadneParametersResponse {
@@ -63,8 +41,6 @@ pub struct AriadneParametersResponse {
     pub permissioned_candidates: Option<Vec<serde_json::Value>>,
     /// Map of candidate registrations
     pub candidate_registrations: serde_json::Value,
-    /// Metadata about the block from which D Parameter was fetched
-    pub d_parameter_block_info: DParameterBlockInfo,
 }
 
 pub struct MidnightClient {

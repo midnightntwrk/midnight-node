@@ -2115,22 +2115,11 @@ async fn get_ariadne_parameters_returns_valid_structure() {
         ariadne_params.d_parameter.num_registered_candidates
     );
     println!(
-        "  D-Parameter Block: #{} (0x{})",
-        ariadne_params.d_parameter_block_info.block_number,
-        hex::encode(ariadne_params.d_parameter_block_info.block_hash.as_bytes())
-    );
-    println!(
         "  Permissioned Candidates: {:?}",
         ariadne_params
             .permissioned_candidates
             .as_ref()
             .map(|c| c.len())
-    );
-
-    // Verify block info metadata is present and valid
-    assert!(
-        ariadne_params.d_parameter_block_info.block_number > 0,
-        "Block number should be greater than 0"
     );
 
     // Verify D-Parameter structure is valid (values can be 0)
