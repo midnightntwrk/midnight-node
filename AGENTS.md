@@ -59,9 +59,9 @@ just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 **Consensus:** AURA (6-second blocks) + GRANDPA (finality) + BEEFY (bridge security)
 
 **Key dependencies:**
-- `midnight-ledger` v7.0.0-alpha.1 - Privacy ledger with zero-knowledge proofs
-- `polkadot-sdk` stable2509 - Substrate framework
-- `partner-chains` v1.8.1 - Cardano sidechain framework
+- `midnight-ledger` - Privacy ledger with zero-knowledge proofs
+- `polkadot-sdk` - Substrate framework
+- `partner-chains` - Cardano sidechain framework
 
 ## Development Setup
 
@@ -71,6 +71,15 @@ cargo check
 ```
 
 See `docs/rust-setup.md` for Rust toolchain installation.
+
+**Running a local node** (always use release mode):
+```bash
+cargo build --release
+CFG_PRESET=dev ./target/release/midnight-node
+```
+Ports: P2P 30333, RPC 9944
+
+**Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 **Recommended tools:**
 - [gh CLI](https://cli.github.com/) - GitHub CLI for creating PRs, viewing issues, etc.
@@ -97,20 +106,6 @@ Config presets are in `res/cfg/`:
 - `preprod` - Pre-production network
 
 Networks other than `dev`/`node-dev-01` require AWS access for genesis rebuilds. Contact the node team if you need help.
-
-## Running a Local Node
-
-Always run in release mode:
-```bash
-cargo build --release
-CFG_PRESET=dev ./target/release/midnight-node
-```
-
-Ports: P2P 30333, RPC 9944
-
-## Debugging Ledger Issues
-
-Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 ## Git Workflow
 
