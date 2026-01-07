@@ -2335,9 +2335,9 @@ async fn spend_cnight_producing_dust() {
         balance = total;
     }
 
-    // sleep 20s
-    println!("Sleeping 20 seconds before spending cNIGHT...");
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    // sleep 10s
+    println!("Sleeping 10 seconds before spending cNIGHT...");
+    tokio::time::sleep(Duration::from_secs(10)).await;
     let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
 
     let args2 = DustBalanceArgs {
