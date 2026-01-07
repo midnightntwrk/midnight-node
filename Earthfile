@@ -641,8 +641,7 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo binstall --no-confirm cargo-shear@1.8.0
+    RUN cargo install cargo-shear --version 1.8.0 --locked
 
     # shear
     RUN cargo shear
