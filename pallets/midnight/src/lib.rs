@@ -454,7 +454,24 @@ pub mod pallet {
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
 			let block_context = Self::get_block_context();
 
-			Self::validate_unsigned(call, block_context).map(|_| ())
+			// First, perform existing structural validation
+			Self::validate_unsigned(call, block_context.clone())?;
+
+			// Then, validate that the guaranteed part will succeed.
+			if let Call::send_mn_transaction { midnight_tx } = call {
+				let state_key = StateKey::<T>::get().expect("Failed to get state key");
+				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+
+				LedgerApi::validate_guaranteed_execution(
+					&state_key,
+					midnight_tx,
+					block_context,
+					runtime_version,
+				)
+				.map_err(|e| Self::invalid_transaction(e.into()))?;
+			}
+
+			Ok(())
 		}
 	}
 
