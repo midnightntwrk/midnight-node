@@ -130,7 +130,9 @@ Keep a local checkout of `midnight-ledger` for searching error messages and unde
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant JIRA ticket link. If no JIRA link is provided, create the PR with `-l skip-changes-check-jira`.
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant JIRA ticket link and add labels as needed:
+- No JIRA link: add `-l skip-changes-check-jira`
+- No change file: add `-l skip-changes-check-all`
 
 ## Change Files
 
