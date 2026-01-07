@@ -1948,6 +1948,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 
     let midnight_wallet_seed = MidnightClient::new_seed();
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -2226,5 +2227,145 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         "balance_after_rotation ({}) must be less than balance_before_rotation ({})",
         balance_after_rotation,
         balance_before_rotation
+    );
+}
+
+#[tokio::test]
+async fn spend_cnight_producing_dust() {
+    let settings = Settings::default();
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let bech32_address = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", bech32_address);
+
+    let bob_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let bob_bech32 = bob_client.address_as_bech32();
+    println!("Bob's Cardano wallet created: {:?}", bob_bech32);
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    println!(
+        "Registering Cardano wallet {} with DUST address {}",
+        bech32_address, dust_hex
+    );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&bech32_address, 10_000_000).await;
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    println!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(register_tx_id),
+        )
+        .await
+    {
+        Some(_) => (),
+        None => panic!("No registration UTXO found"),
+    };
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+        balance = total;
+    }
+
+    // sleep 10s
+    println!("Sleeping 10 seconds before spending cNIGHT...");
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let spend_cnight_event = midnight_client
+        .subscribe_to_cnight_observation_events(&cnight_spent_utxo.unwrap().transaction.id)
+        .await
+        .expect("Failed to listen to cNgD registration event");
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
     );
 }
