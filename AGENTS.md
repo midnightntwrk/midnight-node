@@ -114,7 +114,7 @@ Keep a local checkout of `midnight-ledger` for searching error messages and unde
 
 ## Git Workflow
 
-**Branching:** Create branches prefixed with a short name moniker (e.g., `jill-my-feature`).
+**Branching:** Always create a new branch for changes - never push directly to main. Branch names should be prefixed with a short name moniker (e.g., `jill-my-feature`).
 
 **Commit messages:** Must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 - `feat:` new features
