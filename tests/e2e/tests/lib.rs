@@ -2100,8 +2100,8 @@ async fn get_ariadne_parameters_returns_valid_structure() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Use epoch 0 for local environment (always valid)
-    let epoch_number = 0u64;
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
 
     let ariadne_params = midnight_client
         .get_ariadne_parameters(epoch_number, None)
@@ -2138,7 +2138,8 @@ async fn permissioned_candidates_match_inserted_values() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    let epoch_number = 0u64;
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
 
     let ariadne_params = midnight_client
         .get_ariadne_parameters(epoch_number, None)
@@ -2212,8 +2213,9 @@ async fn d_parameter_from_pallet_matches_config() {
     );
 
     // Also query via getAriadneParameters to verify consistency
+    // Use epoch 2 (minimum supported epoch)
     let ariadne_params = midnight_client
-        .get_ariadne_parameters(0, None)
+        .get_ariadne_parameters(2, None)
         .await
         .expect("Failed to get Ariadne parameters");
 
