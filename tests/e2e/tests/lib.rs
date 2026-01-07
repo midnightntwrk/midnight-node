@@ -2093,11 +2093,6 @@ async fn spend_cnight_producing_dust() {
         MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
 
-    // sleep 20s
-    println!("Sleeping 20 seconds before spending cNIGHT...");
-    tokio::time::sleep(Duration::from_secs(20)).await;
-    let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
-
     let utxo_owner = midnight_client
         .poll_utxo_owners_until_change(nonce, None, 60, 1000)
         .await
@@ -2132,6 +2127,11 @@ async fn spend_cnight_producing_dust() {
         println!("Total dust balance: {}", total);
         balance = total;
     }
+
+    // sleep 20s
+    println!("Sleeping 20 seconds before spending cNIGHT...");
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
 
     let args2 = DustBalanceArgs {
         source: Source {
