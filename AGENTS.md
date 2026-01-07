@@ -148,3 +148,9 @@ Change files are optional for changes that don't affect products (e.g., CI-only 
 ## License Header
 
 See `LICENSE_HEADER.txt` for the required header on all new source files.
+
+## Local Rules
+
+Personal or environment-specific rules can be defined in `AGENTS.local.md` (gitignored):
+
+@AGENTS.local.md
