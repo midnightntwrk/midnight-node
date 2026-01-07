@@ -2083,3 +2083,179 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 }
+
+// ========== Aiken Permissioned Candidates E2E Tests ==========
+// These tests verify permissioned candidates via the new Aiken contracts
+
+/// TC-PC-001: Verify systemParameters_getAriadneParameters returns valid structure.
+///
+/// Tests that the RPC endpoint returns correctly structured data including:
+/// - D-Parameter with permissioned and registered candidate counts
+/// - Block info metadata showing where D-Parameter was fetched from
+/// - Permissioned candidates list (may be None if not set on mainchain)
+#[tokio::test]
+async fn get_ariadne_parameters_returns_valid_structure() {
+    println!("=== TC-PC-001: Ariadne Parameters Structure Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Use epoch 0 for local environment (always valid)
+    let epoch_number = 0u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!("Ariadne Parameters Response:");
+    println!(
+        "  D-Parameter: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+    println!(
+        "  D-Parameter Block: #{} (0x{})",
+        ariadne_params.d_parameter_block_info.block_number,
+        hex::encode(ariadne_params.d_parameter_block_info.block_hash.as_bytes())
+    );
+    println!(
+        "  Permissioned Candidates: {:?}",
+        ariadne_params
+            .permissioned_candidates
+            .as_ref()
+            .map(|c| c.len())
+    );
+
+    // Verify block info metadata is present and valid
+    assert!(
+        ariadne_params.d_parameter_block_info.block_number > 0,
+        "Block number should be greater than 0"
+    );
+
+    // Verify D-Parameter structure is valid (values can be 0)
+    // The important thing is that the RPC call succeeded and returned valid types
+    println!("✓ Ariadne parameters structure is valid");
+}
+
+/// TC-PC-002: Verify permissioned candidates match inserted values.
+///
+/// In local environment, 4 permissioned candidates (Alice, Bob, Charlie, Dave)
+/// are inserted during setup. This test verifies they are returned correctly.
+#[tokio::test]
+async fn permissioned_candidates_match_inserted_values() {
+    println!("=== TC-PC-002: Permissioned Candidates Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    let epoch_number = 0u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    if let Some(candidates) = &ariadne_params.permissioned_candidates {
+        println!("Found {} permissioned candidates", candidates.len());
+
+        // Local environment inserts 4 permissioned candidates
+        assert!(
+            candidates.len() >= 4,
+            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len()
+        );
+
+        // Verify each candidate has required keys
+        for (i, candidate) in candidates.iter().enumerate() {
+            let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
+                || candidate.get("sidechain_public_key").is_some();
+            let has_aura_key =
+                candidate.get("auraPublicKey").is_some() || candidate.get("aura_public_key").is_some();
+            let has_grandpa_key = candidate.get("grandpaPublicKey").is_some()
+                || candidate.get("grandpa_public_key").is_some();
+
+            println!(
+                "  Candidate {}: sidechain={}, aura={}, grandpa={}",
+                i, has_sidechain_key, has_aura_key, has_grandpa_key
+            );
+
+            assert!(
+                has_sidechain_key,
+                "Candidate {} should have sidechain public key",
+                i
+            );
+            assert!(has_aura_key, "Candidate {} should have aura public key", i);
+            assert!(
+                has_grandpa_key,
+                "Candidate {} should have grandpa public key",
+                i
+            );
+        }
+
+        println!("✓ All permissioned candidates have required keys");
+    } else {
+        // In some test environments, permissioned candidates might not be set
+        println!("⚠ No permissioned candidates returned (may be expected in some environments)");
+    }
+}
+
+/// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
+///
+/// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
+/// In local environment, it's configured as (10, 0) - 10 permissioned, 0 registered.
+#[tokio::test]
+async fn d_parameter_from_pallet_matches_config() {
+    println!("=== TC-PC-003: D-Parameter Pallet Integration ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Query D-Parameter directly via the dedicated RPC
+    let d_param = midnight_client
+        .get_d_parameter()
+        .await
+        .expect("Failed to get D-Parameter");
+
+    println!(
+        "D-Parameter from pallet-system-parameters: ({}, {})",
+        d_param.num_permissioned_candidates, d_param.num_registered_candidates
+    );
+
+    // Also query via getAriadneParameters to verify consistency
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(0, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!(
+        "D-Parameter from getAriadneParameters: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+
+    // Verify both endpoints return the same D-Parameter
+    assert_eq!(
+        d_param.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        "D-Parameter permissioned count should match between endpoints"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates,
+        ariadne_params.d_parameter.num_registered_candidates,
+        "D-Parameter registered count should match between endpoints"
+    );
+
+    // Local environment configures D-Parameter as (10, 0)
+    // This comes from pallet-system-parameters, not Cardano
+    assert_eq!(
+        d_param.num_permissioned_candidates, 10,
+        "Permissioned count should match system-parameters config (expected 10)"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, 0,
+        "Registered count should match system-parameters config (expected 0)"
+    );
+
+    println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
+}

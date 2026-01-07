@@ -31,6 +31,42 @@ pub struct DParameterResponse {
     pub num_registered_candidates: u16,
 }
 
+/// Metadata about the block from which D Parameter was fetched
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DParameterBlockInfo {
+    /// Block hash at which D Parameter was fetched
+    pub block_hash: H256,
+    /// Block number at which D Parameter was fetched
+    pub block_number: u64,
+}
+
+/// Permissioned candidate from Cardano Aiken contracts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionedCandidate {
+    /// Sidechain public key (hex-encoded)
+    pub sidechain_public_key: String,
+    /// Aura public key (hex-encoded)
+    pub aura_public_key: String,
+    /// Grandpa public key (hex-encoded)
+    pub grandpa_public_key: String,
+}
+
+/// Extended Ariadne parameters response with D Parameter source metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AriadneParametersResponse {
+    /// The D-parameter (from pallet-system-parameters)
+    pub d_parameter: DParameterResponse,
+    /// List of permissioned candidates from Cardano Aiken contracts
+    pub permissioned_candidates: Option<Vec<serde_json::Value>>,
+    /// Map of candidate registrations
+    pub candidate_registrations: serde_json::Value,
+    /// Metadata about the block from which D Parameter was fetched
+    pub d_parameter_block_info: DParameterBlockInfo,
+}
+
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
     rpc_client: RpcClient,
@@ -295,6 +331,37 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for finalized block".into()))
+    }
+
+    /// Get Ariadne parameters including permissioned candidates and D-Parameter.
+    ///
+    /// The D-Parameter is sourced from pallet-system-parameters (on-chain),
+    /// while permissioned candidates come from Cardano Aiken contracts.
+    pub async fn get_ariadne_parameters(
+        &self,
+        epoch_number: u64,
+        d_parameter_at: Option<H256>,
+    ) -> Result<AriadneParametersResponse, Box<dyn std::error::Error>> {
+        let response: AriadneParametersResponse = match d_parameter_at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number],
+                    )
+                    .await?
+            }
+        };
+
+        Ok(response)
     }
 
     // ========== Midnight Transaction Submission Methods ==========
