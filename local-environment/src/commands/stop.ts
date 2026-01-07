@@ -25,6 +25,7 @@ import {
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
+import { loadNetworkConfig } from "../lib/networkConfig";
 
 export async function stop(network: string, runOptions: RunOptions) {
   // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
@@ -41,10 +42,16 @@ async function stopEphemeralEnvironment(
   namespace: string,
   runOptions: RunOptions,
 ) {
+  const networkConfig = loadNetworkConfig(namespace);
+  const dbsyncMode = networkConfig.dbsync.mode;
+
   console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  if (namespace === "preview") {
-    console.log("Skipping port-forward for preview (DB is publicly reachable)");
-  } else {
+  switch(dbsyncMode) {
+  case "public":
+    console.log("Skipping port-forward: DB marked as publicly reachable");
+  case "rds-proxy":
+    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
+  default:
     await connectToPostgres(namespace);
   }
 

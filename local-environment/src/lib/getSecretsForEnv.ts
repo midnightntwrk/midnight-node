@@ -13,6 +13,7 @@
 
 import { execSync } from "child_process";
 import { readFileSync } from "fs";
+import { loadNetworkConfig } from "./networkConfig";
 
 /** Pod port map e.g. { "psql-dbsync-cardano-0-db-01": 54321 } */
 type PortMapping = Record<string, number>;
@@ -70,7 +71,9 @@ const SEED_ENV_KEYS = [
 
 // TODO: Change this to use AWS SSM
 export function getSecrets(namespace: string): Record<string, string> {
-  if (namespace === "preview") {
+  const networkConfig = loadNetworkConfig(namespace);
+
+  if (networkConfig.secrets.mode === "preview-style") {
     return getPreviewSecrets(namespace);
   }
 
@@ -78,7 +81,7 @@ export function getSecrets(namespace: string): Record<string, string> {
 
   const secrets: SecretsByNode = {};
   collectAuthorityPods(namespace, portMapping, secrets);
-  collectBootPods(namespace, portMapping, secrets);
+  collectBootPods(namespace, portMapping, secrets, networkConfig.boot.podNames);
 
   const envObject = convertSecretsToEnvObject(secrets);
   return envObject;
@@ -148,8 +151,12 @@ function collectBootPods(
   namespace: string,
   portMapping: PortMapping,
   secrets: SecretsByNode,
+  explicitPods: string[] = [],
 ) {
-  const pods = listPods(namespace, "midnight.tech/node-type=boot");
+  const pods =
+    explicitPods.length > 0
+      ? explicitPods
+      : listPods(namespace, "midnight.tech/node-type=boot");
   console.log(`processing ${pods.length} boot pod(s)`);
 
   for (const pod of pods) {
@@ -189,7 +196,6 @@ function buildPostgresSecret(
   if (mappedPort) {
     secret.connectionString = `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`;
   }
-
   return secret;
 }
 
