@@ -641,7 +641,7 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN cargo install cargo-shear --version 1.8.0 --locked
+    RUN cargo install cargo-shear --version 1.6.6 --locked
 
     # shear
     RUN cargo shear
