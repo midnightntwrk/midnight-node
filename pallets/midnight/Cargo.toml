@@ -41,7 +41,7 @@ midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 assert_matches.workspace = true
 #pallet-block-rewards.workspace = true
 tempfile.workspace = true
-midnight-node-ledger-helpers.workspace = true
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 midnight-node-ledger = { workspace = true, features = ["std", "test-utils"] }
 test-log.workspace = true
 

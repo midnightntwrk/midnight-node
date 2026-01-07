@@ -202,6 +202,60 @@ impl<D: DB> Ledger<D> {
 		tx.validate(self, block_context)
 	}
 
+	/// Validates that the guaranteed part of a transaction will succeed.
+	///
+	/// This performs a dry-run of the transaction application to detect failures
+	/// that would occur during the guaranteed phase. Unlike `apply_transaction`,
+	/// this function does NOT persist any state changes - the result is discarded.
+	///
+	/// This is used by `pre_dispatch` to reject transactions whose guaranteed part
+	/// would fail, preventing attackers from filling blocks with transactions that
+	/// consume blockspace without paying fees.
+	///
+	/// # Returns
+	/// - `Ok(())` if the guaranteed part would succeed (fees would be paid)
+	/// - `Err(LedgerApiError)` if the guaranteed part would fail
+	pub(crate) fn validate_guaranteed_execution<S: SignatureKind<D>>(
+		sp: Sp<Self, D>,
+		tx: &Transaction<S, D>,
+		block_context: &BlockContext,
+	) -> Result<(), LedgerApiError> {
+		// Convert Transaction to VerifiedTransaction via well_formed().
+		// NOTE: This validation is also performed by validate_unsigned() before pre_dispatch
+		// calls this function. However, we must call it again here because apply() requires
+		// a VerifiedTransaction type, and the earlier validation discards that result.
+		// This is a type-system constraint, not redundant logic.
+		let ctx = sp.get_transaction_context(block_context.clone());
+		let valid_tx =
+			tx.0.well_formed(
+				&ctx.ref_state,
+				mn_ledger_local::verify::WellFormedStrictness::default(),
+				ctx.block_context.tblock,
+			)
+			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
+
+		// Perform a dry-run of the transaction application.
+		// We call apply() but do NOT persist the resulting state.
+		// This allows us to detect TransactionResult::Failure without
+		// modifying the ledger state.
+		let (_next_state, result) = sp.state.apply(&valid_tx, &ctx);
+
+		match result {
+			TransactionResult::Success(_) | TransactionResult::PartialSuccess(_, _) => {
+				// Success or PartialSuccess means guaranteed part succeeded.
+				// PartialSuccess indicates fallible part failed, but fees were still paid.
+				Ok(())
+			},
+			TransactionResult::Failure(reason) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"Pre-dispatch validation failed: guaranteed part would fail: {reason:?}"
+				);
+				Err(LedgerApiError::Transaction(TransactionError::Invalid(reason.into())))
+			},
+		}
+	}
+
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,

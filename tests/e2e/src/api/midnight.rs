@@ -13,6 +13,7 @@ use midnight_node_metadata::midnight_metadata_latest::{
 };
 use std::time::Duration;
 use subxt::blocks::ExtrinsicEvents;
+use subxt::tx::TxProgress;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
@@ -226,5 +227,82 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for federated authority events".into()))
+    }
+
+    // ========== Midnight Transaction Submission Methods ==========
+    // Used for DDoS mitigation E2E tests (TC-0003-06)
+
+    /// Submit a raw Midnight transaction and watch for result.
+    /// Returns the transaction progress if submission succeeds.
+    pub async fn submit_midnight_tx(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<TxProgress<SubstrateConfig, OnlineClient<SubstrateConfig>>, subxt::Error> {
+        let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
+        let unsigned_extrinsic = self.online_client.tx().create_unsigned(&mn_tx)?;
+        unsigned_extrinsic.submit_and_watch().await
+    }
+
+    /// Submit a Midnight transaction expecting it to be rejected at pre_dispatch.
+    /// Returns Ok(error_message) if rejected as expected.
+    /// Returns Err if the transaction was unexpectedly accepted.
+    pub async fn submit_expecting_rejection(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        println!("Submitting transaction expecting rejection...");
+        match self.submit_midnight_tx(tx_bytes).await {
+            Err(e) => {
+                println!("Transaction rejected as expected: {}", e);
+                Ok(e.to_string())
+            }
+            Ok(_) => Err(
+                "Transaction was unexpectedly accepted - should have been rejected at pre_dispatch"
+                    .into(),
+            ),
+        }
+    }
+
+    /// Submit a Midnight transaction expecting it to succeed.
+    /// Waits for the transaction to be included in a block.
+    pub async fn submit_expecting_success(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Submitting transaction expecting success...");
+        let mut progress = self.submit_midnight_tx(tx_bytes).await?;
+
+        // Wait for inclusion in block
+        while let Some(status) = progress.next().await {
+            match status? {
+                subxt::tx::TxStatus::InBestBlock(block_info) => {
+                    println!(
+                        "Transaction included in best block: {:?}",
+                        block_info.block_hash()
+                    );
+                    return Ok(());
+                }
+                subxt::tx::TxStatus::InFinalizedBlock(block_info) => {
+                    println!(
+                        "Transaction finalized in block: {:?}",
+                        block_info.block_hash()
+                    );
+                    return Ok(());
+                }
+                subxt::tx::TxStatus::Error { message } => {
+                    return Err(format!("Transaction error: {}", message).into());
+                }
+                subxt::tx::TxStatus::Invalid { message } => {
+                    return Err(format!("Transaction invalid: {}", message).into());
+                }
+                subxt::tx::TxStatus::Dropped { message } => {
+                    return Err(format!("Transaction dropped: {}", message).into());
+                }
+                _ => {
+                    // Continue waiting for other statuses
+                }
+            }
+        }
+        Err("Transaction progress ended without confirmation".into())
     }
 }
