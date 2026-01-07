@@ -48,3 +48,6 @@ runtime-benchmarks = [
     "pallet-membership/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
 ]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info"]

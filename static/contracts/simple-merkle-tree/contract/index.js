@@ -1,5 +1,5 @@
 import * as __compactRuntime from '@midnight-ntwrk/compact-runtime';
-__compactRuntime.checkRuntimeVersion('0.12.0-alpha.0');
+__compactRuntime.checkRuntimeVersion('0.13.0-alpha.0');
 
 const _descriptor_0 = new __compactRuntime.CompactTypeUnsignedInteger(4294967295n, 4);
 
