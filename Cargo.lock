@@ -7487,7 +7487,6 @@ dependencies = [
  "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",
- "pallet-sudo",
  "pallet-system-parameters",
  "pallet-timestamp",
  "pallet-tx-pause",
@@ -9954,21 +9953,6 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-staking",
-]
-
-[[package]]
-name = "pallet-sudo"
-version = "43.0.0"
-source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509#5ab401310d2fbd808b3ffbcfc8735ad8f1c8fe10"
-dependencies = [
- "docify",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
 ]
 
 [[package]]

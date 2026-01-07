@@ -26,7 +26,6 @@ pallet-beefy-mmr.workspace = true
 pallet-grandpa.workspace = true
 pallet-preimage.workspace = true
 pallet-mmr.workspace = true
-pallet-sudo.workspace = true
 pallet-scheduler.workspace = true
 pallet-timestamp.workspace = true
 pallet-tx-pause.workspace = true
@@ -128,7 +127,6 @@ std = [
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
-    "pallet-sudo/std",
     "pallet-scheduler/std",
     "pallet-timestamp/std",
     "pallet-migrations/std",
@@ -185,7 +183,6 @@ runtime-benchmarks = [
     # TODO: Enable native-token-mgmt benchmarks when available
     # "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
-    "pallet-sudo/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
     "pallet-migrations/runtime-benchmarks",
@@ -212,7 +209,6 @@ try-runtime = [
     # "pallet-partner-chains-bridge/try-runtime",
     "pallet-mmr/try-runtime",
     "pallet-scheduler/try-runtime",
-    "pallet-sudo/try-runtime",
     "pallet-timestamp/try-runtime",
     "pallet-tx-pause/try-runtime",
     "pallet-migrations/try-runtime",
