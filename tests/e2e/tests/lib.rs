@@ -2157,17 +2157,23 @@ async fn permissioned_candidates_match_inserted_values() {
         );
 
         // Verify each candidate has required keys
+        // The structure is:
+        // - sidechain_public_key: hex string
+        // - keys: array of CandidateKey { id: [u8; 4], bytes: Vec<u8> }
+        //   where id is the key type (e.g., "aura" = [97,117,114,97], "gran" = [103,114,97,110])
         for (i, candidate) in candidates.iter().enumerate() {
             let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
                 || candidate.get("sidechain_public_key").is_some();
-            let has_aura_key = candidate.get("auraPublicKey").is_some()
-                || candidate.get("aura_public_key").is_some();
-            let has_grandpa_key = candidate.get("grandpaPublicKey").is_some()
-                || candidate.get("grandpa_public_key").is_some();
+
+            // Check for keys array containing aura and grandpa keys
+            let keys = candidate.get("keys");
+            let has_keys_array = keys
+                .map(|k| k.as_array().map(|arr| arr.len() >= 2).unwrap_or(false))
+                .unwrap_or(false);
 
             println!(
-                "  Candidate {}: sidechain={}, aura={}, grandpa={}",
-                i, has_sidechain_key, has_aura_key, has_grandpa_key
+                "  Candidate {}: sidechain={}, keys_array={}",
+                i, has_sidechain_key, has_keys_array
             );
 
             assert!(
@@ -2175,15 +2181,14 @@ async fn permissioned_candidates_match_inserted_values() {
                 "Candidate {} should have sidechain public key",
                 i
             );
-            assert!(has_aura_key, "Candidate {} should have aura public key", i);
             assert!(
-                has_grandpa_key,
-                "Candidate {} should have grandpa public key",
+                has_keys_array,
+                "Candidate {} should have keys array with at least 2 entries (aura, grandpa)",
                 i
             );
         }
 
-        println!("✓ All permissioned candidates have required keys");
+        println!("✓ All permissioned candidates have sidechain_public_key and keys array");
     } else {
         // In some test environments, permissioned candidates might not be set
         println!("⚠ No permissioned candidates returned (may be expected in some environments)");
