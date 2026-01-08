@@ -11,6 +11,30 @@ Configuration can be loaded either from:
 
 The CLI supports the same arguments as Substrate/PolkadotSDK-based nodes. Some commonly-used Substrate variables can be set via our env-var config system. Midnight-specific variables are all set via default values, env-vars or config preset files.
 
+### Configuration precedence
+
+Configuration sources are applied in the following order (later sources override earlier):
+
+1. Default values (`res/cfg/default.toml`)
+2. Config preset file (`res/cfg/<preset>.toml` via `CFG_PRESET`)
+3. Environment variables
+
+For example, if `default.toml` sets `validator = false` and you set `VALIDATOR=1` in the environment, the node runs as a validator.
+
+### Environment variable naming
+
+Config keys use `snake_case` in TOML files. Environment variables are case-insensitive.
+
+| TOML key | Environment variable |
+|----------|---------------------|
+| `validator` | `VALIDATOR` |
+| `cardano_security_parameter` | `CARDANO_SECURITY_PARAMETER` |
+| `mc__first_epoch_timestamp_millis` | `MC__FIRST_EPOCH_TIMESTAMP_MILLIS` |
+
+Double underscores (`__`) denote nested configuration groups.
+
+Boolean values accept any truthy value: `1`, `true`, `TRUE`, `True`, etc.
+
 ## Inspecting configuration
 
 When run with `SHOW_CONFIG=1`, the node will print all it's configuration values, including a short description of each, and the source of the value i.e. where the configuration was loaded from. Example:
@@ -43,9 +67,15 @@ CURRENT_VALUE: my_new_chain_id
 
 ## Chainspecs
 
-To run the node, you must supply a chainspec file. Chainspec files for known networks are stored in `res/<network-name>/` and are either `chainspec.json` or `chainspec-raw.json`. 
+To run the node, you must supply a chainspec file. Chainspec files for known networks are stored in `res/<network-name>/` and are named `chain-spec.json` (human-readable) or `chain-spec-raw.json` (encoded for production use).
 
-The raw chainspec can be generated from the chainspec.json, and contains the raw storage values for the node genesis. # Claude: give short summary on the differences between raw and not-raw
+The raw chainspec can be generated from `chain-spec.json`, and contains the raw storage values for the node genesis.
+
+**Raw vs non-raw chainspecs:**
+- **Non-raw (plain)**: Human-readable keys and values (e.g., `"sudo": { "key": "5Grwva..." }`). Used for editing and customization.
+- **Raw**: Encoded storage keys suitable for the Substrate storage trie. Required for production deployment and syncing after runtime upgrades.
+
+Always distribute **raw** chainspecs to production nodes. Use non-raw specs only for inspection or modification.
 
 To generate a chainspec, you need all the `chainspec_` config values defined:
 
@@ -134,7 +164,13 @@ $ docker run --rm midnightntwrk/midnight-node:latest-main generate-c-night-genes
 
 This file contains the set of governance authorities for both the technical committee and the council. These values will vary across different chains if the governance authorities should differ.
 
-# TODO: How do we generate this file?
+This file is manually created when setting up a new chain. Each collective (`council` and `technical_committee`) requires:
+- `members`: Array of Substrate SS58 account IDs (hex-encoded)
+- `members_mainchain`: Corresponding Cardano payment key hashes
+- `address`: Cardano address for governance transactions
+- `policy_id`: Minting policy ID for governance NFTs
+
+For test networks, you can copy from an existing network (e.g., `res/qanet/federated-authority-config.json`) and update the member keys.
 
 ## `system-parameters-config.json`: Midnight Governance Parameters
 
@@ -142,3 +178,38 @@ Stores the terms and conditions for using the network, and the D parameter using
 
 The D parameter should match the intended mix of permissioned and registered validators for the network. For example, a federated-only network should have `num_permissioned_candidates` >= the initial authorities (in `pc-chain-config.json`) and <= the epoch length (hard-coded to 300), and `num_registered_candidates` set to `0`. If registered nodes are expected, set `num_registered_candidates` higher to allow SPOs to occupy slots in the committee.
 
+## Passing Substrate CLI arguments
+
+Substrate-native CLI arguments can be passed via the `args` or `append_args` config keys:
+
+```toml
+# In preset file - replaces all default args
+args = ["--rpc-external", "--rpc-cors=all"]
+
+# Or append to existing args
+append_args = ["--prometheus-external"]
+```
+
+Common Substrate flags for SREs:
+- `--state-pruning archive` - Keep full state history
+- `--blocks-pruning archive` - Keep all blocks
+- `--rpc-external` - Expose RPC to external connections
+- `--prometheus-external` - Expose metrics endpoint
+
+See `midnight-node --help` for all available options.
+
+## Troubleshooting
+
+### Diagnosing configuration issues
+
+1. **Always start with `SHOW_CONFIG=1`** to verify values and their sources
+2. Check for typos in environment variable names
+3. Verify `CFG_PRESET` matches an existing file in `res/cfg/`
+
+### Common issues
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Node fails to start with "chainspec not found" | Missing or incorrect `chain` config | Verify chainspec path exists and `CFG_PRESET` is set |
+| "Genesis mismatch" when syncing | Wrong chainspec version | Ensure all nodes use identical `chain-spec-raw.json` |
+| Node starts but won't produce blocks | Keys (`{AURA, GRANDPA, CROSS_CHAIN}_SEED_FILE`) don't match initial authorities. | Verify the secret keys for each node match `initial_authorities`  |
