@@ -119,6 +119,12 @@ pub struct FederatedAuthorityData {
 pub enum InherentError {
 	/// The inherent data could not be decoded
 	DecodeFailed,
+	/// Mismatch between inherent checked Council members and the ones reported in the inherent tx
+	CouncilMembersMismatch,
+	/// Mismatch between inherent checked Technical Committee members and the ones reported in the inherent tx
+	TechnicalCommitteeMembersMismatch,
+	/// The number of members exceeds the limits
+	TooManyMembers,
 	/// Other error
 	#[cfg(feature = "std")]
 	Other(Cow<'static, str>),
