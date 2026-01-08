@@ -60,13 +60,17 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
 				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
-					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
+					log::warn!(
+						"Failed to decode council datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
+					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No council UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No council UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.council.address,
 					config.council.policy_id
@@ -89,15 +93,16 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!(
-						"Failed to decode technical committee datum: {}. Using empty list.",
-						e
+						"Failed to decode technical committee datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
 					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No technical committee UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No technical committee UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.technical_committee.address,
 					config.technical_committee.policy_id

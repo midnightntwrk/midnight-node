@@ -208,13 +208,13 @@ impl MidnightClient {
                 if let Some(event) = &council_reset {
                     println!(
                         "✓ Found CouncilMembersReset event with {} members",
-                        event.members.0.len()
+                        event.members.len()
                     );
                 }
                 if let Some(event) = &tech_committee_reset {
                     println!(
                         "✓ Found TechnicalCommitteeMembersReset event with {} members",
-                        event.members.0.len()
+                        event.members.len()
                     );
                 }
 
