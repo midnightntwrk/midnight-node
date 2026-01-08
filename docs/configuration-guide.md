@@ -114,6 +114,12 @@ chainspec_federated_authority_config = "res/qanet/federated-authority-config.jso
 chainspec_system_parameters_config = "res/qanet/system-parameters-config.json"
 ```
 
+The process for building chainspecs is automated via Earthly build commands:
+```
+$ earthly +rebuild-chainspec --NETWORK=<network>
+$ earthly +rebuild-all-chainspecs
+```
+
 
 ## `genesis_state_<network>mn` and `genesis_block_<network>.mn`: Building Ledger state
 
@@ -141,6 +147,10 @@ $ earthly +rebuild-genesis-state-<network>
 $ earthly +rebuild-all-genesis-states
 ```
 
+New seeds can be generated via Earthly too - the generated file is written to `./secrets/`:
+```
+$ earthly +generate-seeds --NETWORK=<network> --OUTPUT_FILE=<network>-genesis-seeds.json
+```
 
 ## `pc-chain-config.json`: PartnerChains Configuration
 
