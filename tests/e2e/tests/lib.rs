@@ -531,11 +531,37 @@ async fn cnight_produces_dust() {
         .await
         .expect("dust-balance error");
 
+    let mut balance: &u128 = &0;
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
         println!("Total dust balance: {}", total);
+        balance = total;
     }
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > *balance)
+    );
 }
 
 #[tokio::test]
@@ -570,7 +596,10 @@ async fn deregister_from_dust_production() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -685,7 +714,7 @@ async fn alice_cannot_deregister_bob() {
     );
 
     // Find Bob's registration UTXO
-    let validator_address = bob.constants.policies.auth_token_address();
+    let validator_address = bob.constants.policies.mapping_validator_address();
     let register_tx = bob
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -857,7 +886,10 @@ async fn removing_excessive_registrations() {
         deregistration.unwrap()
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -969,7 +1001,10 @@ async fn create_hundred_registrations() {
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let mut tx_in = faucet.request_tokens(&address_bech32, 500_000_000).await;
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
 
     let mut register_tx_id: [[u8; 32]; 101] = [[0; 32]; 101];
 
@@ -1085,6 +1120,213 @@ async fn create_hundred_registrations() {
     );
 }
 
+// ============================================================================
+// DDoS Mitigation E2E Tests (PR367)
+// Tests for ADR-0003: Pre-Dispatch Validation of Guaranteed Transaction Part
+// ============================================================================
+
+/// PR367-TC-0003-06: DDoS Attack Prevention - Single Transaction
+///
+/// Verifies that a transaction which would fail the guaranteed part
+/// (due to ContractNotPresent) is rejected at the RPC level via pre_dispatch.
+/// This prevents the DDoS attack vector where attackers fill blocks with
+/// failing transactions that don't pay fees.
+#[tokio::test]
+async fn ddos_attack_transaction_rejected_at_rpc() {
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // STORE_TX requires the contract to be deployed first.
+    // Without DEPLOY_TX, it will fail at pre_dispatch with ContractNotPresent.
+    // This simulates an attacker trying to consume blockspace without paying fees.
+    println!("=== PR367-TC-0003-06: DDoS Attack Prevention Test ===");
+    println!("Submitting STORE_TX without prior DEPLOY_TX...");
+    println!("Expected: Transaction rejected at pre_dispatch (ContractNotPresent)");
+
+    let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
+
+    assert!(
+        result.is_ok(),
+        "Transaction should be rejected at pre_dispatch, but was accepted: {:?}",
+        result.err()
+    );
+
+    let error_msg = result.unwrap();
+    println!("✓ Transaction rejected with error: {}", error_msg);
+
+    // The error should indicate an invalid transaction
+    // (exact message depends on subxt error formatting)
+    assert!(
+        error_msg.to_lowercase().contains("invalid")
+            || error_msg.to_lowercase().contains("transaction")
+            || error_msg.contains("1010"), // Substrate InvalidTransaction code
+        "Expected InvalidTransaction error, got: {}",
+        error_msg
+    );
+
+    println!("✓ PR367-TC-0003-06 PASSED: Attack transaction rejected, no blockspace consumed");
+}
+
+/// PR367-TC-0003-06: DDoS Attack Prevention - Batch Attack
+///
+/// Verifies that multiple attack transactions are all rejected.
+/// Simulates an attacker attempting to flood the network with failing transactions.
+#[tokio::test]
+async fn ddos_batch_attack_all_rejected() {
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== PR367-TC-0003-06: Batch Attack Prevention Test ===");
+    println!("Submitting 5 attack transactions (STORE_TX without DEPLOY_TX)...");
+
+    let mut rejected_count = 0;
+    let total_attacks = 5;
+
+    for i in 0..total_attacks {
+        let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
+        if result.is_ok() {
+            rejected_count += 1;
+            println!("  Attack tx {}/{} rejected ✓", i + 1, total_attacks);
+        } else {
+            println!(
+                "  Attack tx {}/{} unexpectedly accepted! Error: {:?}",
+                i + 1,
+                total_attacks,
+                result.err()
+            );
+        }
+    }
+
+    assert_eq!(
+        rejected_count, total_attacks,
+        "All {} attack transactions should be rejected, but only {} were",
+        total_attacks, rejected_count
+    );
+
+    println!(
+        "✓ PR367-TC-0003-06 PASSED: All {} attack transactions rejected",
+        total_attacks
+    );
+}
+
+/// PR367-TC-0003-02 E2E: Replay Attack Prevention
+///
+/// Verifies that submitting the same transaction twice results in rejection.
+/// The replay protection mechanism should reject the duplicate transaction
+/// at pre_dispatch, preventing replay attacks from consuming blockspace.
+#[tokio::test]
+async fn replay_attack_rejected_via_rpc() {
+    use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== PR367-TC-0003-02 E2E: Replay Attack Prevention Test ===");
+
+    // First submission - may succeed or fail depending on node state
+    // (contract may already be deployed from previous test runs)
+    println!("Submitting DEPLOY_TX (first attempt)...");
+    let first_result = client.submit_midnight_tx(DEPLOY_TX.to_vec()).await;
+
+    match &first_result {
+        Ok(_) => println!("  First submission accepted (contract not yet deployed)"),
+        Err(e) => println!(
+            "  First submission rejected (expected if contract exists): {}",
+            e
+        ),
+    }
+
+    // If first succeeded, wait for it to be processed before replay attempt
+    if let Ok(mut progress) = first_result {
+        println!("Waiting for first transaction to be included in block...");
+        while let Some(status) = progress.next().await {
+            match status {
+                Ok(subxt::tx::TxStatus::InBestBlock(info)) => {
+                    println!("  First transaction in best block: {:?}", info.block_hash());
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) => {
+                    println!("  First transaction finalized: {:?}", info.block_hash());
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Error { message }) => {
+                    println!("  First transaction error: {}", message);
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Invalid { message }) => {
+                    println!("  First transaction invalid: {}", message);
+                    break;
+                }
+                Ok(subxt::tx::TxStatus::Dropped { message }) => {
+                    println!("  First transaction dropped: {}", message);
+                    break;
+                }
+                Ok(_) => continue,
+                Err(e) => {
+                    println!("  First transaction status error: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Second submission - MUST fail (either replay protection or ContractAlreadyDeployed)
+    // Both are valid rejections that prevent the attack vector
+    println!("Submitting DEPLOY_TX (second attempt - should be rejected)...");
+    let second_result = client.submit_expecting_rejection(DEPLOY_TX.to_vec()).await;
+
+    assert!(
+        second_result.is_ok(),
+        "Replay transaction should be rejected, but was accepted: {:?}",
+        second_result.err()
+    );
+
+    let error_msg = second_result.unwrap();
+    println!("✓ Replay transaction rejected with: {}", error_msg);
+
+    // Verify the error indicates an invalid transaction
+    // Accept various error types: replay protection, already deployed, or generic invalid
+    assert!(
+        error_msg.to_lowercase().contains("invalid")
+            || error_msg.to_lowercase().contains("replay")
+            || error_msg.to_lowercase().contains("already")
+            || error_msg.contains("1010"), // Substrate InvalidTransaction code
+        "Expected InvalidTransaction or replay-related error, got: {}",
+        error_msg
+    );
+
+    println!("✓ PR367-TC-0003-02 E2E PASSED: Replay attack rejected, no blockspace consumed");
+}
+
+/// PR367-TC-0003-03 E2E: Valid Transaction Succeeds
+///
+/// Confirms no regression - valid transactions should still be accepted.
+/// Note: This test requires a fresh node state where the contract hasn't been deployed.
+#[tokio::test]
+#[ignore = "Requires fresh node state - run manually with cargo test-e2e-local"]
+async fn valid_deploy_transaction_succeeds_via_rpc() {
+    use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    println!("=== PR367-TC-0003-03 E2E: Valid Transaction Test ===");
+    println!("Submitting valid DEPLOY_TX...");
+
+    let result = client.submit_expecting_success(DEPLOY_TX.to_vec()).await;
+
+    assert!(
+        result.is_ok(),
+        "Valid DEPLOY_TX should be accepted, but was rejected: {:?}",
+        result.err()
+    );
+
+    println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
+}
 #[tokio::test]
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
@@ -1116,7 +1358,10 @@ async fn register_twice_with_same_cardano_address() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1281,7 +1526,10 @@ async fn deregister_with_valid_cnight_utxo() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1471,7 +1719,10 @@ async fn deregister_first_mapping() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1754,6 +2005,28 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         hex::encode(register_tx_id)
     );
 
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
+
     let cnight_utxo_new = cardano_client
         .rotate_cnight(&cnight_utxo)
         .await
@@ -1792,6 +2065,275 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         "UTXO owner does not match DUST address"
     );
 
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+}
+
+#[tokio::test]
+async fn stop_dust_producing_after_deregistration_and_rotation() {
+    // case for stop dust production (reg -> mint -> dereg -> rotate)
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let address_bech32 = cardano_client.address_as_bech32();
+    let base_url = settings.node_client.base_url.clone();
+    let same_base_url = settings.node_client.base_url.clone();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+    println!("New Cardano wallet created: {:?}", address_bech32);
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    println!(
+        "Registering Cardano wallet {} with DUST address {}",
+        address_bech32, dust_hex
+    );
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    println!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    let utxos = cardano_client.utxos().await;
+    assert!(!utxos.is_empty(), "No UTXOs found for funding address");
+    let utxo = utxos
+        .iter()
+        .max_by_key(|u| u.value.lovelace)
+        .expect("No UTXO with lovelace found");
+
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
+    let register_tx = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
+        .await
+        .expect("No registration UTXO found after registering");
+    println!("Found registration UTXO: {:?}", register_tx);
+
+    let deregister_tx = cardano_client
+        .deregister(utxo, &register_tx, &collateral_utxo)
+        .await
+        .expect("Failed to deregister")
+        .transaction
+        .id;
+    println!(
+        "Deregistration transaction submitted with hash: {}",
+        hex::encode(deregister_tx)
+    );
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(same_base_url),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance_before_rotation: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        println!("Total dust balance before rotation: {}", total);
+        balance_before_rotation = total;
+    }
+
+    let cnight_utxo_new = cardano_client
+        .rotate_cnight(&cnight_utxo)
+        .await
+        .expect("Failed to rotate cNight UTxO");
+    println!(
+        "Rotated cNIGHT UTXO: {}",
+        &hex::encode(&cnight_utxo_new.transaction.id)
+    );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(base_url),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let spend_cnight_event = midnight_client
+        .subscribe_to_cnight_observation_events(&cnight_utxo_new.transaction.id)
+        .await
+        .expect("Failed to listen to cNgD registration event");
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance_after_rotation: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance after rotation: {}", total);
+        balance_after_rotation = total;
+    }
+
+    assert!(
+        balance_after_rotation < balance_before_rotation,
+        "balance_after_rotation ({}) must be less than balance_before_rotation ({})",
+        balance_after_rotation,
+        balance_before_rotation
+    );
+}
+
+#[tokio::test]
+async fn spend_cnight_producing_dust() {
+    let settings = Settings::default();
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let bech32_address = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", bech32_address);
+
+    let bob_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let bob_bech32 = bob_client.address_as_bech32();
+    println!("Bob's Cardano wallet created: {:?}", bob_bech32);
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    println!(
+        "Registering Cardano wallet {} with DUST address {}",
+        bech32_address, dust_hex
+    );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&bech32_address, 10_000_000).await;
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    println!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(register_tx_id),
+        )
+        .await
+    {
+        Some(_) => (),
+        None => panic!("No registration UTXO found"),
+    };
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
@@ -1808,9 +2350,43 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         .await
         .expect("dust-balance error");
 
+    let mut balance: &u128 = &0;
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+        balance = total;
+    }
+
+    // sleep 10s
+    println!("Sleeping 10 seconds before spending cNIGHT...");
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let cnight_spent_utxo = cardano_client.spend_cnight(&cnight_utxo, &bob_bech32).await;
+
+    let args2 = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let spend_cnight_event = midnight_client
+        .subscribe_to_cnight_observation_events(&cnight_spent_utxo.unwrap().transaction.id)
+        .await
+        .expect("Failed to listen to cNgD registration event");
+
+    let result2 = dust_balance::execute(args2)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
         println!("Total dust balance: {}", total);
     }
 
-    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
+    );
 }

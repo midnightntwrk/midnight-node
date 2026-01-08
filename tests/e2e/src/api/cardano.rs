@@ -244,7 +244,7 @@ impl CardanoClient {
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policies = self.constants.policies.clone();
-        let validator_address = policies.auth_token_address();
+        let validator_address = policies.mapping_validator_address();
         let datum = serde_json::to_string(&serde_json::json!(
             {
                 "constructor": 0,
@@ -265,12 +265,12 @@ impl CardanoClient {
         ))
         .unwrap();
         let payment_addr = self.address_as_bech32();
-        let auth_token_policy_id = policies.auth_token_policy_id();
+        let mapping_validator_policy_id = policies.mapping_validator_policy_id();
         let send_assets = vec![
             Asset::new_from_str("lovelace", "2000000"),
-            Asset::new_from_str(&auth_token_policy_id, "1"),
+            Asset::new_from_str(&mapping_validator_policy_id, "1"),
         ];
-        let minting_script = policies.auth_token_cbor_double_encoding();
+        let minting_script = policies.mapping_validator_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
 
         let mut tx_builder = TxBuilder::new_core();
@@ -292,7 +292,7 @@ impl CardanoClient {
             .tx_out(&validator_address, &send_assets)
             .tx_out_inline_datum_value(&WData::JSON(datum))
             .mint_plutus_script_v3()
-            .mint(1, &auth_token_policy_id, "")
+            .mint(1, &mapping_validator_policy_id, "")
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {
                 data: WData::JSON(constr0(serde_json::json!([])).to_string()),
@@ -345,15 +345,15 @@ impl CardanoClient {
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policies = self.constants.policies.clone();
-        let validator_address = policies.auth_token_address();
+        let validator_address = policies.mapping_validator_address();
         let datum =
             serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
         let payment_addr = self.address_as_bech32();
-        let auth_token_policy_id = policies.auth_token_policy_id();
+        let mapping_validator_policy_id = policies.mapping_validator_policy_id();
         let send_assets = vec![Asset::new_from_str("lovelace", "2000000")];
-        let minting_script = policies.auth_token_cbor_double_encoding();
+        let minting_script = policies.mapping_validator_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
-        let mapping_validator_cbor = policies.auth_token_cbor_double_encoding();
+        let mapping_validator_cbor = policies.mapping_validator_cbor_double_encoding();
         let register_asset_tx_vector = Self::build_asset_vector(register_tx);
         println!("Register tx assets: {:?}", register_asset_tx_vector);
         let script_hash = whisky::get_script_hash(&mapping_validator_cbor, LanguageVersion::V2);
@@ -393,7 +393,7 @@ impl CardanoClient {
             )
             .tx_out(&payment_addr, &send_assets)
             .mint_plutus_script_v3()
-            .mint(-1, &auth_token_policy_id, "")
+            .mint(-1, &mapping_validator_policy_id, "")
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {
                 data: WData::JSON(constr1(serde_json::json!([])).to_string()),
@@ -448,8 +448,8 @@ impl CardanoClient {
         let policies = self.constants.policies.clone();
 
         let policy_id = policies.cnight_token_policy_id();
-        let minting_script = policies.cnight_token_cbor;
-        let network: Network = Network::Custom(self.constants.cost_model.clone());
+        let minting_script = policies.cnight_token_cbor_double_encoding();
+        let network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
 
@@ -499,7 +499,7 @@ impl CardanoClient {
                 &payment_addr,
             )
             .tx_out(&payment_addr, &assets)
-            .mint_plutus_script_v2()
+            .mint_plutus_script_v3()
             .mint(amount.into(), &policy_id, "")
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {
@@ -963,5 +963,44 @@ impl CardanoClient {
             .to_bytes()
             .try_into()
             .unwrap()
+    }
+
+    pub async fn spend_cnight(
+        &self,
+        utxo: &OgmiosUtxo,
+        recipient_address: &str,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let payment_addr = self.address_as_bech32();
+        let input_tx_hash = hex::encode(utxo.transaction.id);
+        let input_index = utxo.index;
+        let input_assets = &Self::build_asset_vector(utxo);
+
+        let network: Network = Network::Custom(self.constants.cost_model.clone());
+        let mut tx_builder = whisky::TxBuilder::new_core();
+        tx_builder
+            .network(network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &input_tx_hash,
+                input_index.into(),
+                input_assets,
+                &payment_addr,
+            )
+            .change_address(recipient_address)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
     }
 }

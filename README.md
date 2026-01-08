@@ -118,6 +118,17 @@ Midnight Node includes six custom runtime pallets that implement core blockchain
 
 **Keystore** - Local cryptographic key management for validators
 
+### Cardano Smart Contracts
+
+We make use of several smart contracts on Cardano to support Midnight functionality. These can be found in [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts). These are built in verbose mode using the command:
+
+```shell
+$ ./build_contracts.sh <network> verbose
+```
+
+- `cnight-mapping-validator.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the mapping_validator_address  "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
+- `test_cnight_no_audit.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the tcnight policy id  "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+
 ## Features
 
 **Privacy-Preserving Smart Contracts** - Execute contracts with zero-knowledge proofs while maintaining public blockchain state
@@ -270,6 +281,9 @@ Chain specifications are located in `/res/` directory.
 | Node key | `NODE_KEY_FILE=/path/to/key` | `--node-key "0x..."` | Network identity key file |
 | Bootstrap nodes | `BOOTNODES="/ip4/... /ip4/..."` | `--bootnodes "/ip4/..."` | Space-separated initial peers |
 | Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections |
+| Remote write | `PROMETHEUS_PUSH_ENDPOINT=https://thanos:9091/api/v1/receive` | - | Push metrics via Prometheus Remote Write (Thanos, Cortex, Mimir) |
+| Push interval | `PROMETHEUS_PUSH_INTERVAL_SECS=15` | - | Seconds between metric pushes (default: 15) |
+| Push job name | `PROMETHEUS_PUSH_JOB_NAME=midnight-node` | - | Job label for pushed metrics (default: midnight-node) |
 
 **Start single-node local network** for development:
 

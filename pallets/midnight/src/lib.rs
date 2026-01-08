@@ -130,7 +130,17 @@ pub mod pallet {
 
 	// The pallet's runtime storage items.
 	// https://docs.substrate.io/main-docs/build/runtime-storage/
-	pub type StateKeyLength = ConstU32<128>;
+
+	/// Maximum length for the serialized ledger state key.
+	///
+	/// Derivation (from midnight-ledger):
+	/// - Tag prefix: "midnight:storage-key(ledger-state[vXX]):" = ~40 bytes
+	/// - GLOBAL_TAG "midnight:" (9) + "storage-key(" (12) + "ledger-state[vXX]" (17) + "):" (2)
+	/// - ArenaKey discriminant: 1 byte
+	/// - DirectChildNode max size: SMALL_OBJECT_LIMIT = 1024 bytes
+	///
+	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
+	pub type StateKeyLength = ConstU32<1065>;
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
@@ -444,7 +454,24 @@ pub mod pallet {
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
 			let block_context = Self::get_block_context();
 
-			Self::validate_unsigned(call, block_context).map(|_| ())
+			// First, perform existing structural validation
+			Self::validate_unsigned(call, block_context.clone())?;
+
+			// Then, validate that the guaranteed part will succeed.
+			if let Call::send_mn_transaction { midnight_tx } = call {
+				let state_key = StateKey::<T>::get().expect("Failed to get state key");
+				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+
+				LedgerApi::validate_guaranteed_execution(
+					&state_key,
+					midnight_tx,
+					block_context,
+					runtime_version,
+				)
+				.map_err(|e| Self::invalid_transaction(e.into()))?;
+			}
+
+			Ok(())
 		}
 	}
 

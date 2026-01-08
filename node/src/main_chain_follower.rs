@@ -26,6 +26,7 @@ use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_governed_map::GovernedMapDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
+use sqlx::{Pool, Postgres};
 
 use super::cfg::midnight_cfg::MidnightCfg;
 use midnight_primitives::BridgeRecipient;
@@ -106,6 +107,41 @@ pub async fn create_mock_data_sources(
 	})
 }
 
+pub async fn create_index_if_not_exists(pool: &Pool<Postgres>) {
+	// Check if index already exists
+	let index_exists: bool = sqlx::query_scalar(
+		r#"
+			SELECT EXISTS (
+				SELECT 1 FROM pg_indexes
+				WHERE indexname = 'idx_multi_asset_policy_name_hex'
+			)
+		"#,
+	)
+	.fetch_one(pool)
+	.await
+	.unwrap_or(false);
+
+	if index_exists {
+		log::info!("Index idx_multi_asset_policy_name_hex already exists, skipping creation.");
+	} else {
+		log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
+		let index_query_result = sqlx::query(
+			r#"
+				CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
+				ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
+			"#,
+		)
+		.execute(pool)
+		.await;
+
+		if let Err(e) = index_query_result {
+			log::warn!(
+				"Warning: failed to create idx_multi_asset_policy_name_hex index (is your db-sync readonly?). Performance may be degraded: {e}"
+			);
+		}
+	}
+}
+
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
 pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
@@ -160,15 +196,7 @@ pub async fn create_cached_data_sources(
 		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.allow_non_ssl).await?;
 
 	// All these pools are connections to the same database, so we can use any pool to create the index
-	log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
-	sqlx::query(
-		r#"
-			CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
-			ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
-		"#,
-	)
-	.execute(&candidates_pool)
-	.await?;
+	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
 		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
