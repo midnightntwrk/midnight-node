@@ -40,12 +40,12 @@ rm deregister-$1-signed.tx 2>/dev/null
 cardano-cli conway transaction build \
   --tx-in $UTXO \
   --tx-in $REGISTRATION_UTXO \
-  --tx-in-script-file auth_token_policy.plutus \
+  --tx-in-script-file mapping_validator.plutus \
   --tx-in-redeemer-value "{}" \
   --tx-out $(< payment-$1.addr)+"2000000" \
   --tx-in-collateral $COLLATERAL \
-  --mint="-1 $(< auth_token.hash)" \
-  --mint-script-file auth_token_policy.plutus \
+  --mint="-1 $(< mapping_validator.hash)" \
+  --mint-script-file mapping_validator.plutus \
   --mint-redeemer-file deregister_red.json  \
   --change-address $(< payment-$1.addr) \
   --required-signer-hash $USER_PKH \
