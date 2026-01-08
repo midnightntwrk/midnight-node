@@ -126,7 +126,7 @@ We make use of several smart contracts on Cardano to support Midnight functional
 $ ./build_contracts.sh <network> verbose
 ```
 
-- `cnight-mapping-validator.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f)
+- `cnight-mapping-validator.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the mapping_validator_address  "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
 
 ## Features
 
