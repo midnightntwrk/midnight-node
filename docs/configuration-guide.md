@@ -178,6 +178,24 @@ Stores the terms and conditions for using the network, and the D parameter using
 
 The D parameter should match the intended mix of permissioned and registered validators for the network. For example, a federated-only network should have `num_permissioned_candidates` >= the initial authorities (in `pc-chain-config.json`) and <= the epoch length (hard-coded to 300), and `num_registered_candidates` set to `0`. If registered nodes are expected, set `num_registered_candidates` higher to allow SPOs to occupy slots in the committee.
 
+## Validator keys
+
+Validator nodes require secret keys for consensus participation. These are configured via environment variables pointing to key files:
+
+| Environment variable | Purpose |
+|---------------------|---------|
+| `AURA_KEY_FILE` | Block production (AURA consensus) |
+| `GRANDPA_KEY_FILE` | Block finalization (GRANDPA consensus) |
+| `CROSS_CHAIN_KEY_FILE` | Cross-chain signing |
+
+Each file should contain a secret seed for the respective key type. The public keys derived from these seeds must match an entry in `initial_authorities` (in `pc-chain-config.json`) for the node to participate in consensus.
+
+**Block production requirements:**
+- For a network to **produce blocks**, at least one validator with valid AURA keys must be online
+- For a network to **finalize blocks**, a 2/3 supermajority of `initial_authorities` must be connected with valid GRANDPA keys
+
+If blocks are being produced but not finalized, check that enough validators are online and their keys match the `initial_authorities` configuration.
+
 ## Passing Substrate CLI arguments
 
 Substrate-native CLI arguments can be passed via the `args` or `append_args` config keys:
