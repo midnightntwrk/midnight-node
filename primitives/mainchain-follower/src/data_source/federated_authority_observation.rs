@@ -156,7 +156,7 @@ impl FederatedAuthorityObservationDataSourceImpl {
 		}
 
 		// Get the 'data' field (index 0) which is Multisig: [total_signers, members_map]
-		let data_field = versioned_list.get(0).ok_or("Expected index 0 to exist")?;
+		let data_field = versioned_list.first().ok_or("Expected index 0 to exist")?;
 		let data_list: Vec<PlutusData> = data_field
 			.as_list()
 			.ok_or("Expected 'data' field (Multisig) to be a list")?
