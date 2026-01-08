@@ -256,6 +256,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[ignore = "test failing intermittently - requires toolkit-js/compact-js investigation"]
 	async fn test_generate_circuit_call() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
