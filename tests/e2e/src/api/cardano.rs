@@ -448,8 +448,8 @@ impl CardanoClient {
         let policies = self.constants.policies.clone();
 
         let policy_id = policies.cnight_token_policy_id();
-        let minting_script = policies.cnight_token_cbor;
-        let network: Network = Network::Custom(self.constants.cost_model.clone());
+        let minting_script = policies.cnight_token_cbor_double_encoding();
+        let network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
 
@@ -499,7 +499,7 @@ impl CardanoClient {
                 &payment_addr,
             )
             .tx_out(&payment_addr, &assets)
-            .mint_plutus_script_v2()
+            .mint_plutus_script_v3()
             .mint(amount.into(), &policy_id, "")
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {

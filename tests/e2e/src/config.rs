@@ -214,8 +214,15 @@ impl Policies {
         whisky::script_to_address(self.network_info.network_id(), &script_hash, None)
     }
 
+    pub fn cnight_token_cbor_double_encoding(&self) -> String {
+        // V3 scripts from Aiken need double CBOR encoding
+        whisky::apply_double_cbor_encoding(&self.cnight_token_cbor)
+            .expect("Failed to encode cnight token script")
+    }
+
     pub fn cnight_token_policy_id(&self) -> String {
-        let script_hash = whisky::get_script_hash(&self.cnight_token_cbor, LanguageVersion::V2);
+        let cbor_double_encoded = self.cnight_token_cbor_double_encoding();
+        let script_hash = whisky::get_script_hash(&cbor_double_encoded, LanguageVersion::V3);
         script_hash.expect("Error calculating `cnight_token_policy_id`")
     }
 }
