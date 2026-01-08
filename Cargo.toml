@@ -266,6 +266,8 @@ tempfile = "3.22.0"
 impl-trait-for-tuples = "0.2.2"
 test-log = "0.2"
 sqlx = { version = "0.8.5", default-features = false }
+prost = { version = "0.13.5", default-features = false}
+reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls" ] }
 
 [profile.release]
 panic = "unwind"
@@ -335,4 +337,3 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
-

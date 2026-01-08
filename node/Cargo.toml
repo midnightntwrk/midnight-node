@@ -120,8 +120,8 @@ sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
 prometheus-endpoint.workspace = true
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-prost = "0.14"
+reqwest.workspace = true
+prost.workspace = true
 snap = "1.1"
 sp-inherents.workspace = true
 sp-keystore.workspace = true
