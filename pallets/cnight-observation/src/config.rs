@@ -31,10 +31,10 @@ mod tests {
 	fn test_validation_ok() {
 		let my_json = r#"{
   "addresses": {
-    "mapping_validator_address": "addr_test1wp5ac30f95jxl6hj85d40h7rkyen6ksy3r8adqwcrr4xkncremdyk",
+    "mapping_validator_address": "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
     "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
     "auth_token_asset_name": "",
-    "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
+    "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
     "cnight_asset_name": ""
   },
   "observed_utxos": {
@@ -75,7 +75,7 @@ mod tests {
     "mapping_validator_address": "nonsense",
     "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
     "auth_token_asset_name": "",
-    "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
+    "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
     "cnight_asset_name": ""
   },
   "observed_utxos": {
