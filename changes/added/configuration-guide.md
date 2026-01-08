@@ -8,4 +8,4 @@ Adds a comprehensive configuration guide for SREs covering:
 - Validator key configuration
 - Troubleshooting common issues
 
-PR: TODO
+PR: https://github.com/midnightntwrk/midnight-node/pull/445
