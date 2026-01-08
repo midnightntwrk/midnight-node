@@ -121,19 +121,43 @@ subxt:
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
+# build-node-only builds only the midnight-node binary
+build-node-only:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay .
+
+    ARG NATIVEARCH
+
+    RUN cargo build -p midnight-node --locked --release
+
+    RUN mkdir -p /artifacts-$NATIVEARCH \
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH
+
+# node-image-minimal creates a minimal node image for metadata extraction
+node-image-minimal:
+    ARG NATIVEARCH
+    FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
+
+    RUN mkdir -p /node
+    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /
+
+    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    SAVE IMAGE localhost/node-minimal:latest
+
 # Grabs metadata.scale file from the latest node
 get-metadata:
-    ARG METADATA_IMAGE_SOURCE="--load"
-    ARG METADATA_IMAGE_NAME="localhost/node:latest"
-    ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
     DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
-    WITH DOCKER --load localhost/node:latest=+node-image
-      RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
+    WITH DOCKER --load localhost/node-minimal:latest=+node-image-minimal
+      RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node-minimal:latest & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /metadata.scale && \
-          docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
+          docker kill $(docker ps -q --filter ancestor=localhost/node-minimal:latest)
     END
     SAVE ARTIFACT /metadata.scale
 

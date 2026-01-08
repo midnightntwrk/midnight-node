@@ -7428,6 +7428,7 @@ name = "midnight-node-metadata"
 version = "0.20.0"
 dependencies = [
  "subxt 0.44.0",
+ "walkdir",
 ]
 
 [[package]]

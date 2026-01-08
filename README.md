@@ -118,6 +118,16 @@ Midnight Node includes six custom runtime pallets that implement core blockchain
 
 **Keystore** - Local cryptographic key management for validators
 
+### Cardano Smart Contracts
+
+We make use of several smart contracts on Cardano to support Midnight functionality. These can be found in [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts). These are built in verbose mode using the command:
+
+```shell
+$ ./build_contracts.sh <network> verbose
+```
+
+- `cnight-mapping-validator.ak`@[f11d27828666e887fb495a85242edf9b8a78192f`](https://github.com/midnightntwrk/midnight-reserve-contracts/commit/f11d27828666e887fb495a85242edf9b8a78192f) provides the mapping_validator_address  "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
+
 ## Features
 
 **Privacy-Preserving Smart Contracts** - Execute contracts with zero-knowledge proofs while maintaining public blockchain state
