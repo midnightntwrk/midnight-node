@@ -11,7 +11,5 @@ This change adds D Parameter RPC support and updates pallet call indices:
 **Breaking changes:**
 - `pallet-midnight`: Pre-encoded transactions referencing `call_index(2)` for `set_tx_size_weight` will fail.
 
-**Note:** Aiken permissioned candidates policy ID migration is in a separate PR (#454).
-
 Ticket: [PM-20993](https://shielded.atlassian.net/browse/PM-20993)
 PR: https://github.com/midnightntwrk/midnight-node/pull/378

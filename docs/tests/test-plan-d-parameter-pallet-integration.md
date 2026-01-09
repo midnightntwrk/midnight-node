@@ -1,19 +1,20 @@
-# Test Plan: Aiken Permissioned Candidates & D Parameter Migration
+# Test Plan: D Parameter Pallet Integration
 
-**ADR:** [adr-aiken-permissioned-candidates-d-parameter-migration](../decisions/adr-aiken-permissioned-candidates-d-parameter-migration.md)
-**Ticket:** [PM-20994](https://shielded.atlassian.net/browse/PM-20994)
+**ADR:** [adr-d-parameter-pallet-integration](../decisions/adr-d-parameter-pallet-integration.md)
+**Ticket:** [PM-20993](https://shielded.atlassian.net/browse/PM-20993)
 **PR:** [#378](https://github.com/midnightntwrk/midnight-node/pull/378)
 
 ---
 
 ## Overview
 
-This test plan validates the migration from Haskell-based Permissioned Candidates contracts to Aiken-based contracts, and the transition of D Parameter sourcing from Cardano contracts to `pallet-system-parameters`.
+This test plan validates the transition of D Parameter sourcing from Cardano contracts to `pallet-system-parameters`.
 
 Key changes validated:
 1. [`get_d_parameter`](../../pallets/system-parameters/src/lib.rs#L243) returns D Parameter from on-chain storage
 2. [`select_authorities_optionally_overriding`](../../runtime/src/lib.rs#L581) uses pallet storage directly
 3. Emergency `DParameterOverride` mechanism removed from `pallet-midnight`
+4. New RPC endpoint `systemParameters_getAriadneParameters` sources D Parameter from pallet
 
 ---
 
@@ -27,8 +28,9 @@ Key changes validated:
 | [PR378-TC-04](../../runtime/src/lib.rs#L1693) | Verify Aura authority rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify Aura authorities updated | Aura authorities rotate as expected | Unit |
 | [PR378-TC-05](../../runtime/src/lib.rs#L1642) | Verify Grandpa authority rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify Grandpa authorities updated | Grandpa authorities rotate as expected | Unit |
 | [PR378-TC-06](../../runtime/src/lib.rs#L1727) | Verify cross-chain committee rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify cross-chain committee updated | Cross-chain committee rotates as expected | Unit |
-| PR378-TC-07 | Verify `systemParameters_getAriadneParameters` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint with epoch number  <br>3. Verify response structure | Response contains D Parameter from pallet (not Cardano) and candidate data from Cardano | Manual |
-| PR378-TC-08 | Verify D Parameter override in live network | 1. Deploy to testnet  <br>2. Update D Parameter via governance  <br>3. Observe authority selection in next epoch | Committee size reflects updated D Parameter values | Manual |
+| PR378-TC-07 | Verify `systemParameters_getAriadneParameters` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint with epoch number  <br>3. Verify response structure | Response contains D Parameter from pallet (not Cardano) and candidate data from Cardano | E2E |
+| PR378-TC-08 | Verify `systemParameters_getDParameter` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint  <br>3. Verify response values | Response contains D Parameter values matching pallet storage | E2E |
+| PR378-TC-09 | Verify D Parameter query at historical block | 1. Record block hash  <br>2. Update D Parameter  <br>3. Query D Parameter at historical block | Historical query returns previous D Parameter value | E2E |
 
 ---
 
