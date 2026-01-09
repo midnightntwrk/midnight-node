@@ -2554,3 +2554,73 @@ async fn d_parameter_from_pallet_matches_config() {
 
     println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
 }
+
+/// TC-PC-002: Verify permissioned candidates match Aiken format.
+///
+/// In local environment, 4 permissioned candidates (Alice, Bob, Charlie, Dave)
+/// are inserted during setup. This test verifies they are returned in the
+/// Aiken contract format with the correct structure.
+#[tokio::test]
+async fn permissioned_candidates_aiken_format() {
+    println!("=== TC-PC-002: Aiken Permissioned Candidates Format Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    if let Some(candidates) = &ariadne_params.permissioned_candidates {
+        println!("Found {} permissioned candidates", candidates.len());
+
+        // Local environment inserts 4 permissioned candidates
+        assert!(
+            candidates.len() >= 4,
+            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len()
+        );
+
+        // Verify each candidate has required keys
+        // With Aiken format, the structure is:
+        // - sidechainPublicKey: hex string
+        // - keys: object with named keys { "aura": "0x...", "gran": "0x..." }
+        // - isValid: boolean
+        for (i, candidate) in candidates.iter().enumerate() {
+            let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
+                || candidate.get("sidechain_public_key").is_some();
+
+            // Check for keys object containing aura and grandpa keys (Aiken format)
+            let keys = candidate.get("keys");
+            let has_keys = keys
+                .and_then(|k| k.as_object())
+                .map(|obj| obj.contains_key("aura") && obj.contains_key("gran"))
+                .unwrap_or(false);
+
+            println!(
+                "  Candidate {}: sidechain={}, has_keys={}",
+                i, has_sidechain_key, has_keys
+            );
+
+            assert!(
+                has_sidechain_key,
+                "Candidate {} should have sidechain public key",
+                i
+            );
+            assert!(
+                has_keys,
+                "Candidate {} should have keys object with aura and gran entries",
+                i
+            );
+        }
+
+        println!("✓ All permissioned candidates have Aiken format with sidechainPublicKey and keys object");
+    } else {
+        // In some test environments, permissioned candidates might not be set
+        println!("⚠ No permissioned candidates returned (may be expected in some environments)");
+    }
+}
