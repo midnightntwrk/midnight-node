@@ -4,6 +4,8 @@ permissions: {}
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "changes/**"
   pull_request:
     branches: [main]
   workflow_dispatch: {}   # so you can still run it manually
