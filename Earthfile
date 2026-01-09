@@ -606,8 +606,8 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
-    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    # FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
+    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
