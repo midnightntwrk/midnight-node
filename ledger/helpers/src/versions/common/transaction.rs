@@ -136,7 +136,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			&& self.fallible_offers.is_empty()
 	}
 
-	pub fn set_wallet_seeds(&mut self, seeds: Vec<WalletSeed>) {
+	pub fn set_funding_seeds(&mut self, seeds: Vec<WalletSeed>) {
 		self.funding_seeds = seeds;
 	}
 
@@ -345,7 +345,18 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				return Ok(spends);
 			}
 			let wallet = wallets.get_mut(seed).ok_or("Unrecognized wallet seed")?;
+
+			{
+				let utxo_count =
+					wallet.dust.dust_local_state.as_ref().map(|s| s.utxos().count()).unwrap_or(0);
+				println!(
+					"gather_dust_spends: seed={:?}, utxo_count={}, remaining={}",
+					seed, utxo_count, remaining
+				);
+			}
+
 			let new_spends = wallet.dust.speculative_spend(remaining, ctime, params)?;
+			println!("gather_dust_spends: got {} spends", new_spends.len());
 			// We asked the wallet to spend `remaining` DUST,
 			// so the total amount spent will be <= `remaining`.
 			for spend in new_spends {
