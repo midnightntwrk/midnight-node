@@ -15,7 +15,6 @@ use std::str::FromStr;
 
 use bip39::Mnemonic;
 use error::UpgraderError;
-use hex::encode;
 use subxt::{
 	OnlineClient, SubstrateConfig,
 	dynamic::{self, Value},
@@ -28,16 +27,14 @@ use subxt_signer::sr25519::Keypair;
 pub mod error;
 
 pub fn get_signer(key_str: &str) -> Result<Keypair, UpgraderError> {
-	let trimmed = key_str.trim();
-
-	// Prefer full SecretUri parsing: supports //dev keys, raw 0x seeds, and mnemonics.
-	if let Ok(uri) = SecretUri::from_str(trimmed) {
-		return Ok(Keypair::from_uri(&uri)?);
+	// Supports seed phrases
+	if key_str.contains('/') {
+		let uri = SecretUri::from_str(key_str)?;
+		Ok(Keypair::from_uri(&uri)?)
+	} else {
+		let phrase = Mnemonic::parse(key_str)?;
+		Ok(Keypair::from_phrase(&phrase, None)?)
 	}
-
-	// Fall back to explicit mnemonic parsing for clearer errors when SecretUri parse fails.
-	let phrase = Mnemonic::parse(trimmed)?;
-	Ok(Keypair::from_phrase(&phrase, None)?)
 }
 
 pub async fn execute_upgrade(
@@ -45,10 +42,7 @@ pub async fn execute_upgrade(
 	signer: &Keypair,
 	code: &[u8],
 ) -> Result<(), UpgraderError> {
-	log::info!(
-		"Executing runtime upgrade via federated authority (rpc_url={rpc_url}, executor={}).",
-		public_key_hex(signer)
-	);
+	log::info!("Executing runtime upgrade via federated authority.");
 
 	// Create a new API client
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
@@ -79,7 +73,6 @@ pub async fn execute_upgrade(
 
 	// Step 4: Council proposes to approve the federated motion
 	log::info!("Council proposing federated motion approval...");
-	log::debug!("Council proposer: {}", public_key_hex(&dave));
 
 	// Compute the proposal hash ourselves (same way the collective pallet does)
 	// We need to encode the full call data including pallet and call indices
@@ -114,7 +107,6 @@ pub async fn execute_upgrade(
 
 	// Step 5: Council members vote (need 2 out of 3: Alice and Bob)
 	log::info!("Council members voting...");
-	log::debug!("Council voters: {}", vec![public_key_hex(&dave), public_key_hex(&eve)].join(", "));
 	vote_on_proposal(&api, &dave, "Council", council_proposal_hash, council_proposal_index, true)
 		.await?;
 	vote_on_proposal(&api, &eve, "Council", council_proposal_hash, council_proposal_index, true)
@@ -127,7 +119,6 @@ pub async fn execute_upgrade(
 
 	// Step 7: Technical Committee proposes to approve the federated motion
 	log::info!("Technical Committee proposing federated motion approval...");
-	log::debug!("Technical proposer: {}", public_key_hex(&alice));
 
 	let tech_proposal_hash = council_proposal_hash;
 
@@ -153,7 +144,6 @@ pub async fn execute_upgrade(
 
 	// Step 8: Technical Committee members vote (need 2 out of 3: Dave and Eve)
 	log::info!("Technical Committee members voting...");
-	log::debug!("Technical voters: {}", vec![public_key_hex(&alice), public_key_hex(&bob)].join(", "));
 	vote_on_proposal(
 		&api,
 		&alice,
@@ -327,8 +317,4 @@ fn extract_proposal_index(
 		}
 	}
 	Err(UpgraderError::ProposalIndexNotFound)
-}
-
-fn public_key_hex(pair: &Keypair) -> String {
-	format!("0x{}", encode(pair.public_key()))
 }

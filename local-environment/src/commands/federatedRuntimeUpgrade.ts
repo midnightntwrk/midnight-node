@@ -238,7 +238,6 @@ function extractProposalInfo(
     throw new Error(`Could not find Proposed event for ${collective}`);
   }
 
-  // const proposalIndex = proposed.event.data[1].toNumber();
   const proposalIndex = proposed.event.data[1].toPrimitive() as number;
   const proposalHash = proposed.event.data[2].toHex();
 
