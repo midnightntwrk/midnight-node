@@ -14,7 +14,7 @@
 //! Execute a call through governance (Council + Technical Committee) with Root origin.
 //!
 //! This command allows executing arbitrary runtime calls through the federated authority
-//! governance mechanism, similar to how `pallet_sudo` worked but using proper governance.
+//! governance mechanism using proper governance.
 
 use clap::Args;
 use subxt::{
@@ -28,7 +28,7 @@ use subxt_signer::sr25519::Keypair;
 use thiserror::Error;
 
 #[derive(Args)]
-pub struct SudoCallArgs {
+pub struct RootCallArgs {
 	/// RPC URL of the node
 	#[arg(long, env = "RPC_URL", default_value = "ws://127.0.0.1:9944")]
 	rpc_url: String,
@@ -51,7 +51,7 @@ pub struct SudoCallArgs {
 }
 
 #[derive(Error, Debug)]
-pub enum SudoCallError {
+pub enum RootCallError {
 	#[error("subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
 	#[error("signer error: {0}")]
@@ -76,13 +76,13 @@ pub enum SudoCallError {
 	CallDecodeError(String),
 }
 
-pub async fn execute(args: SudoCallArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	// Validate we have enough keys
 	if args.council_keys.len() < 2 {
-		return Err(SudoCallError::NotEnoughCouncilKeys.into());
+		return Err(RootCallError::NotEnoughCouncilKeys.into());
 	}
 	if args.tc_keys.len() < 2 {
-		return Err(SudoCallError::NotEnoughTcKeys.into());
+		return Err(RootCallError::NotEnoughTcKeys.into());
 	}
 
 	// Get the encoded call
@@ -118,13 +118,13 @@ pub async fn execute(args: SudoCallArgs) -> Result<(), Box<dyn std::error::Error
 	Ok(())
 }
 
-fn get_encoded_call(args: &SudoCallArgs) -> Result<Vec<u8>, SudoCallError> {
+fn get_encoded_call(args: &RootCallArgs) -> Result<Vec<u8>, RootCallError> {
 	let hex_str = if let Some(ref call) = args.encoded_call {
 		call.clone()
 	} else if let Some(ref path) = args.encoded_call_file {
 		std::fs::read_to_string(path)?.trim().to_string()
 	} else {
-		return Err(SudoCallError::NoEncodedCall);
+		return Err(RootCallError::NoEncodedCall);
 	};
 
 	// Remove 0x prefix if present
@@ -132,13 +132,13 @@ fn get_encoded_call(args: &SudoCallArgs) -> Result<Vec<u8>, SudoCallError> {
 	Ok(hex::decode(hex_str)?)
 }
 
-fn get_signer(key_str: &str) -> Result<Keypair, SudoCallError> {
+fn get_signer(key_str: &str) -> Result<Keypair, RootCallError> {
 	// Parse hex-encoded private key (32-byte sr25519 mini secret key)
 	let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
 	let seed_bytes = hex::decode(hex_str)?;
 
 	if seed_bytes.len() != 32 {
-		return Err(SudoCallError::InvalidPrivateKeyLength(seed_bytes.len()));
+		return Err(RootCallError::InvalidPrivateKeyLength(seed_bytes.len()));
 	}
 
 	let secret_key: [u8; 32] = seed_bytes.try_into().expect("length already checked");
@@ -146,13 +146,13 @@ fn get_signer(key_str: &str) -> Result<Keypair, SudoCallError> {
 }
 
 /// Decode SCALE-encoded call bytes into a Value using runtime metadata
-fn decode_call_to_value(encoded_call: &[u8], metadata: &Metadata) -> Result<Value, SudoCallError> {
+fn decode_call_to_value(encoded_call: &[u8], metadata: &Metadata) -> Result<Value, RootCallError> {
 	// Get the RuntimeCall type ID from metadata
 	let call_ty_id = metadata.outer_enums().call_enum_ty();
 
 	// Decode the bytes into a Value<u32> (with type ID context)
 	let value = decode_as_type(&mut &encoded_call[..], call_ty_id, metadata.types())
-		.map_err(|e| SudoCallError::CallDecodeError(format!("{:?}", e)))?;
+		.map_err(|e| RootCallError::CallDecodeError(format!("{:?}", e)))?;
 
 	// Convert Value<u32> to Value<()> by removing type ID context
 	Ok(value.remove_context())
@@ -163,7 +163,7 @@ async fn execute_governance_call(
 	encoded_call: &[u8],
 	council_keypairs: &[Keypair],
 	tc_keypairs: &[Keypair],
-) -> Result<(), SudoCallError> {
+) -> Result<(), RootCallError> {
 	// The encoded_call is already the full SCALE-encoded call
 	// We need to decode it into a Value and wrap it in FederatedAuthority::motion_approve
 
@@ -179,7 +179,7 @@ async fn execute_governance_call(
 	let fed_auth_tx = dynamic::tx("FederatedAuthority", "motion_approve", vec![call_value.clone()]);
 	let fed_auth_call_data = fed_auth_tx
 		.encode_call_data(&api.metadata())
-		.map_err(|e| SudoCallError::SubxtError(subxt::Error::Other(format!("{:?}", e))))?;
+		.map_err(|e| RootCallError::SubxtError(subxt::Error::Other(format!("{:?}", e))))?;
 	let proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
 	let proposal_hash = H256(proposal_hash);
 
@@ -295,7 +295,7 @@ async fn vote_on_proposal(
 	proposal_hash: H256,
 	proposal_index: u32,
 	approve: bool,
-) -> Result<(), SudoCallError> {
+) -> Result<(), RootCallError> {
 	let vote_call = dynamic::tx(
 		pallet,
 		"vote",
@@ -321,7 +321,7 @@ async fn close_proposal(
 	pallet: &str,
 	proposal_hash: H256,
 	proposal_index: u32,
-) -> Result<(), SudoCallError> {
+) -> Result<(), RootCallError> {
 	let weight_value = Value::named_composite(vec![
 		("ref_time", Value::u128(10_000_000_000)),
 		("proof_size", Value::u128(65536)),
@@ -350,12 +350,12 @@ async fn close_proposal(
 fn extract_proposal_index(
 	events: &subxt::blocks::ExtrinsicEvents<SubstrateConfig>,
 	pallet: &str,
-) -> Result<u32, SudoCallError> {
+) -> Result<u32, RootCallError> {
 	for event in events.iter() {
 		let event = event?;
 		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
 			// Use subxt's field_values() to decode the event fields using metadata
-			let fields = event.field_values().map_err(|e| SudoCallError::SubxtError(e.into()))?;
+			let fields = event.field_values().map_err(|e| RootCallError::SubxtError(e.into()))?;
 
 			// The Proposed event has fields: account, proposal_index, proposal_hash, threshold
 			// Access proposal_index by field name
@@ -366,5 +366,5 @@ fn extract_proposal_index(
 			}
 		}
 	}
-	Err(SudoCallError::ProposalIndexNotFound)
+	Err(RootCallError::ProposalIndexNotFound)
 }

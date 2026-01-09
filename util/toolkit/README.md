@@ -40,7 +40,7 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
-| Execute calls via governance (sudo-call)                             | ✅       |
+| Execute calls via governance (root-call)                             | ✅       |
 | DUST registration command                                            | 🚧       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
@@ -532,13 +532,13 @@ Update parameters based on a serialized value:
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
-### Sudo Call (Execute Call via Governance)
-Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism. This replaces the functionality of `pallet_sudo` using proper governance (Council + Technical Committee approval).
+### Root Call (Execute Call via Governance)
+Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
 
 The command requires private keys from both Council and Technical Committee members to vote and approve the motion.
 
 ```bash
-midnight-node-toolkit sudo-call \
+midnight-node-toolkit root-call \
     --council-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
     --tc-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
     --encoded-call <HEX_ENCODED_CALL>
@@ -553,7 +553,7 @@ Parameters:
 
 Example:
 ```bash
-midnight-node-toolkit sudo-call \
+midnight-node-toolkit root-call \
     --council-keys 0x42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842 \
                    0x868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246 \
     --tc-keys 0x398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89 \

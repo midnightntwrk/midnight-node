@@ -8,6 +8,7 @@ use crate::commands::{
 	generate_txs::{self, GenerateTxsArgs},
 	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
+	root_call::{self, RootCallArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::ShowAddress,
 	show_address::{self, ShowAddressArgs},
@@ -17,7 +18,6 @@ use crate::commands::{
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
-	sudo_call::{self, SudoCallArgs},
 	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use crate::utils;
@@ -89,7 +89,7 @@ pub enum Commands {
 	/// This command allows executing arbitrary runtime calls through the federated authority
 	/// governance mechanism. It requires private keys from both Council and Technical Committee
 	/// members to vote and approve the motion.
-	SudoCall(SudoCallArgs),
+	RootCall(RootCallArgs),
 	/// Get the version information
 	Version,
 	/// Fetch
@@ -234,8 +234,8 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 
 			Ok(())
 		},
-		Commands::SudoCall(args) => {
-			sudo_call::execute(args).await?;
+		Commands::RootCall(args) => {
+			root_call::execute(args).await?;
 			Ok(())
 		},
 		Commands::Fetch(FetchArgs { src }) => {
