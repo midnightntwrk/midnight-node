@@ -11,20 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "runtime-benchmarks")]
-pub mod benchmarking;
-pub mod cfg;
-pub mod chain_spec;
-pub mod cli;
-pub mod cnight_genesis;
-pub mod command;
-pub mod extensions;
-pub mod inherent_data;
-pub mod main_chain_follower;
-pub mod metrics_push;
-pub mod partner_chains;
-pub mod payload;
-pub mod rpc;
-pub mod service;
-pub mod sidechain_params_cmd;
-mod util;
+use walkdir::WalkDir;
+
+fn main() {
+	// Track all files in the static directory
+	for entry in WalkDir::new("static")
+		.into_iter()
+		.filter_map(|e| e.ok())
+		.filter(|e| e.file_type().is_file())
+	{
+		println!("cargo:rerun-if-changed={}", entry.path().display());
+	}
+}

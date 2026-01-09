@@ -596,7 +596,10 @@ async fn deregister_from_dust_production() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -711,7 +714,7 @@ async fn alice_cannot_deregister_bob() {
     );
 
     // Find Bob's registration UTXO
-    let validator_address = bob.constants.policies.auth_token_address();
+    let validator_address = bob.constants.policies.mapping_validator_address();
     let register_tx = bob
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -883,7 +886,10 @@ async fn removing_excessive_registrations() {
         deregistration.unwrap()
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -995,7 +1001,10 @@ async fn create_hundred_registrations() {
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let mut tx_in = faucet.request_tokens(&address_bech32, 500_000_000).await;
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
 
     let mut register_tx_id: [[u8; 32]; 101] = [[0; 32]; 101];
 
@@ -1349,7 +1358,10 @@ async fn register_twice_with_same_cardano_address() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1514,7 +1526,10 @@ async fn deregister_with_valid_cnight_utxo() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -1704,7 +1719,10 @@ async fn deregister_first_mapping() {
         hex::encode(register_tx_id)
     );
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await
@@ -2146,7 +2164,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         .max_by_key(|u| u.value.lovelace)
         .expect("No UTXO with lovelace found");
 
-    let validator_address = cardano_client.constants.policies.auth_token_address();
+    let validator_address = cardano_client
+        .constants
+        .policies
+        .mapping_validator_address();
     let register_tx = cardano_client
         .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
         .await

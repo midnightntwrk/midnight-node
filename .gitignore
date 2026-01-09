@@ -93,3 +93,6 @@ dist
 
 # Toolkit cache
 toolkit.db
+
+# AGENTS.local.md - locally-defined rules for AI agents
+AGENTS.local.md

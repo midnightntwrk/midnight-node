@@ -119,6 +119,10 @@ partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
+prometheus-endpoint.workspace = true
+reqwest.workspace = true
+prost.workspace = true
+snap = "1.1"
 sp-inherents.workspace = true
 sp-keystore.workspace = true
 sp-io.workspace = true
