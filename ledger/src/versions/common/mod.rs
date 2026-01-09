@@ -456,7 +456,6 @@ where
 		api.serialize(&ledger.get_zswap_state_root())
 	}
 
-
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],
