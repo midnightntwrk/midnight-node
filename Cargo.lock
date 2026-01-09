@@ -7550,6 +7550,7 @@ dependencies = [
  "sqlx",
  "structured-logger",
  "subxt 0.44.0",
+ "subxt-signer 0.44.0",
  "tempfile",
  "test-case",
  "thiserror 1.0.69",

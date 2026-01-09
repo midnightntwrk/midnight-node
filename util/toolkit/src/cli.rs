@@ -17,6 +17,7 @@ use crate::commands::{
 	show_transaction::{self, ShowTransactionArgs},
 	show_viewing_key::{self, ShowViewingKeyArgs},
 	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
+	sudo_call::{self, SudoCallArgs},
 	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use crate::utils;
@@ -83,6 +84,12 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Execute a call through governance with Root origin
+	///
+	/// This command allows executing arbitrary runtime calls through the federated authority
+	/// governance mechanism. It requires private keys from both Council and Technical Committee
+	/// members to vote and approve the motion.
+	SudoCall(SudoCallArgs),
 	/// Get the version information
 	Version,
 	/// Fetch
@@ -225,6 +232,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::SudoCall(args) => {
+			sudo_call::execute(args).await?;
 			Ok(())
 		},
 		Commands::Fetch(FetchArgs { src }) => {
