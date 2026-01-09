@@ -209,25 +209,6 @@ pub trait LedgerBridge {
 	}
 
 	/*
-	 * Mints system coins for block rewards
-	 */
-	// Current Enabled Version
-	fn mint_coins(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		amount: PassFatPointerAndDecode<u128>,
-		receiver: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
-		latest::Bridge::<Signature, Database>::mint_coins(
-			state_key,
-			amount,
-			receiver,
-			block_context,
-		)
-	}
-
-	/*
 	 * Returns the unclaimed amount for a provided beneficiary address
 	 */
 	// Current Enabled Version
@@ -482,21 +463,21 @@ pub trait LedgerBridgeHf {
 		)
 	}
 
-	// Hard-fork Version
-	fn mint_coins(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		amount: PassFatPointerAndDecode<u128>, //TODO can we be more efficient?
-		receiver: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
-		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::mint_coins(
-			state_key,
-			amount,
-			receiver,
-			block_context,
-		)
-	}
+	// // Hard-fork Version
+	// fn mint_coins(
+	// 	&mut self,
+	// 	state_key: PassFatPointerAndRead<&[u8]>,
+	// 	amount: PassFatPointerAndDecode<u128>, //TODO can we be more efficient?
+	// 	receiver: PassFatPointerAndRead<&[u8]>,
+	// 	block_context: PassFatPointerAndDecode<BlockContext>,
+	// ) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
+	// 	hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::mint_coins(
+	// 		state_key,
+	// 		amount,
+	// 		receiver,
+	// 		block_context,
+	// 	)
+	// }
 
 	// Hard-fork Version
 	fn get_unclaimed_amount(
