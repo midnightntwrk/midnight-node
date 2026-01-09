@@ -1,6 +1,5 @@
 # Test Plan: D Parameter Pallet Integration
 
-**ADR:** [adr-d-parameter-pallet-integration](../decisions/adr-d-parameter-pallet-integration.md)
 **Ticket:** [PM-20993](https://shielded.atlassian.net/browse/PM-20993)
 **PR:** [#378](https://github.com/midnightntwrk/midnight-node/pull/378)
 
