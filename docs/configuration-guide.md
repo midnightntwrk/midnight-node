@@ -194,9 +194,10 @@ Validator nodes require secret keys for consensus participation. These are confi
 
 | Environment variable | Purpose |
 |---------------------|---------|
-| `AURA_KEY_FILE` | Block production (AURA consensus) |
-| `GRANDPA_KEY_FILE` | Block finalization (GRANDPA consensus) |
-| `CROSS_CHAIN_KEY_FILE` | Cross-chain signing |
+| `AURA_KEY_FILE` | Block production (AURA consensus) | (Sr25519)[https://github.com/w3f/polkadot-wiki/blob/61105e5b014aca11900aae7df68348803ebd4cc6/docs/learn/learn-cryptography.md?plain=1#L22]  |
+| `GRANDPA_KEY_FILE` | Block finalization (GRANDPA consensus) | (Ed25519)[https://en.wikipedia.org/wiki/EdDSA#Ed25519] |
+| `CROSS_CHAIN_KEY_FILE` | Cross-chain signing | (EdDSA)[http://en.wikipedia.org/wiki/EdDSA] |
+| `BEEFY_KEY_FILE` | Aggregated finalisation proof | (EdDSA)[http://en.wikipedia.org/wiki/EdDSA] |
 
 Each file should contain a secret seed for the respective key type. The public keys derived from these seeds must match an entry in `initial_authorities` (in `pc-chain-config.json`) for the node to participate in consensus.
 
