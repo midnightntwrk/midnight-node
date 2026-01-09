@@ -1,0 +1,27 @@
+{
+  "endpoint": "GetAddrs",
+  "addresses": {
+    "CommitteeCandidateValidator": "addr_test1wrtrt7v002utktsuhsnm3nlzrrxg94z32zhw4nmtseangrs5l5x9p",
+    "VersionOracleValidator": "addr_test1wqytlpn0qa3h98ntun6n5jwuertes005tp0wdr2ddzkhg7g9l9y62",
+    "PermissionedCandidatesValidator": "addr_test1wptwu823u9354c6qgsgdvlmdrufemrfaslkf6txx340es6qk4n5m4",
+    "DParameterValidator": "addr_test1wrl99sexf5t0ac7heapdarxdsu4946m8u8ttuau070v3ltqu8rfwl",
+    "ReserveValidator": "addr_test1wqdra4e5m7y7ztd3r2w25ftwt5xc080lvpp677cl3carplchwvh72",
+    "IlliquidCirculationSupplyValidator": "addr_test1wqhte5h5mstpnjmk5pck98mkasfw03d6h9sys0e8yg7mhsswny6py"
+  },
+  "validatorHashes": {
+    "CommitteeCandidateValidator": "d635f98f7ab8bb2e1cbc27b8cfe218cc82d45150aeeacf6b867b340e",
+    "VersionOracleValidator": "08bf866f0763729e6be4f53a49dcc8d7983df4585ee68d4d68ad7479",
+    "PermissionedCandidatesValidator": "56ee1d51e1634ae3404410d67f6d1f139d8d3d87ec9d2cc68d5f9868",
+    "DParameterValidator": "fe52c3264d16fee3d7cf42de8ccd872a5aeb67e1d6be778ff3d91fac",
+    "ReserveValidator": "1a3ed734df89e12db11a9caa256e5d0d879dff6043af7b1f8e3a30ff",
+    "IlliquidCirculationSupplyValidator": "2ebcd2f4dc1619cb76a071629f76ec12e7c5bab960483f27223dbbc2"
+  },
+  "mintingPolicies": {
+    "VersionOraclePolicy": "bcc73bbcf424df336ba4f1c6b578804f37d4e0790cd180d59d5579cb",
+    "PermissionedCandidatesPolicy": "82b78bff2f2409c778e0faf2a36a7814b886ead316d5110387772f8c",
+    "DParameterPolicy": "51a8d059b9b3d831bad5640ed70c54b2c27f051e6eef3d6faa0be6f1",
+    "InitTokenPolicy": "39ca2c7d920ac632ddda72e7a4833ac6005b142f5a1fb08c266efb28",
+    "ReserveAuthPolicy": "e79deb5a0f46edbb0d6e3d44c53eb82d7f43b8150f539061298641f0",
+    "GovernancePolicy": "3915615258f3d910ca6a3eecc5dd7b6432c2d6d4ef60a62a3ec50ccd"
+  }
+}
