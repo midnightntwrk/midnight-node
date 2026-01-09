@@ -81,20 +81,10 @@ impl BuildTxs for SingleTxBuilder {
 		wallet_seeds.extend(self.funding_seed.iter());
 		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
 
-		println!("wallet_seeds: {:?}", &wallet_seeds);
-		println!("funding_seed: {:?}", &funding_seed);
-
 		let network_id = received_tx.network();
 		let context = LedgerContext::new_from_wallet_seeds(network_id, &wallet_seeds);
 		for block in received_tx.blocks {
 			context.update_from_block(block.transactions, block.context, block.state_root.clone());
-		}
-		{
-			let wallets = context.wallets.lock().unwrap();
-			for (seed, wallet) in wallets.iter() {
-				println!("Wallet seed: {:?}", seed);
-				println!("  DUST public_key: {:?}", wallet.dust.public_key);
-			}
 		}
 
 		let context = Arc::new(context);
