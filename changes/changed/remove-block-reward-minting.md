@@ -6,8 +6,9 @@ This removes the ability to mint coins as block rewards through the ledger's min
 This will later be reworked as no NIGHT is being minted when block rewards are paid out.
 
 Changes include:
+
 - Removed `mint_coins` method from `LedgerBridge` trait
 - Removed block reward minting logic from midnight pallet's `on_finalize` hook
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/451
 JIRA: https://shielded.atlassian.net/browse/PM-21159
