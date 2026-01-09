@@ -179,7 +179,6 @@ rebuild-sqlx:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
-    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -209,7 +208,7 @@ rebuild-genesis-state:
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # wallet-seed-3 is the wallet Lace uses for testing.
-    # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel 
+    # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
             echo '{ \
@@ -590,6 +589,7 @@ node-ci-image-single-platform:
     ARG SUBWASM_VERSION=0.21.3
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
     RUN cargo install --locked cargo-shear --version 1.9.1
+    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
