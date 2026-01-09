@@ -11,5 +11,5 @@ Changes include:
 - Updated prep-no-copy to use the new CI image tag
 - Replaced cargo binstall installation of cargo-shear with cargo install in CI image.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/452
 JIRA: https://shielded.atlassian.net/browse/PM-21169
