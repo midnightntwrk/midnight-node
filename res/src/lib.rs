@@ -81,10 +81,10 @@ pub mod cnight_observation_consts {
 		"addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4";
 	// Mapping Validator address
 	pub const TEST_CNIGHT_MAPPING_VALIDATOR_ADDRESS: &str =
-		"addr_test1wp5ac30f95jxl6hj85d40h7rkyen6ksy3r8adqwcrr4xkncremdyk";
+		"addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng";
 	// Known native asset policy id for test cNIGHT
 	pub const TEST_CNIGHT_CURRENCY_POLICY_ID: [u8; 28] =
-		hex_literal::hex!("03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414");
+		hex_literal::hex!("d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1");
 
 	// Known asset name for test cNIGHT
 	pub const TEST_CNIGHT_ASSET_NAME: &str = "";

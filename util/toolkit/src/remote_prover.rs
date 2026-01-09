@@ -16,6 +16,8 @@ use backoff::{ExponentialBackoff, future::retry};
 
 use midnight_node_ledger_helpers::*;
 
+const PROOF_SERVER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub struct RemoteProofServer {
 	url: String,
 }
@@ -23,22 +25,6 @@ pub struct RemoteProofServer {
 impl RemoteProofServer {
 	pub fn new(url: String) -> Self {
 		Self { url }
-	}
-
-	async fn serialize_request_body<D: DB>(
-		&self,
-		tx: &Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-		resolver: &Resolver,
-		cost_model: &CostModel,
-	) -> Vec<u8> {
-		let mut buf = vec![];
-		let provider = ProofServerProvider { base_url: self.url.clone().into(), resolver };
-		tx.prove(provider, cost_model)
-			.await
-			.unwrap_or_else(|err| panic!("Remote Server Request Error: {:?}", err))
-			.serialize(&mut buf)
-			.unwrap_or_else(|err| panic!("Serializing tx error: {:?}", err));
-		buf
 	}
 }
 
@@ -51,42 +37,21 @@ impl<D: DB + Clone> ProofProvider<D> for RemoteProofServer {
 		resolver: &Resolver,
 		cost_model: &CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
-		let url = reqwest::Url::parse(&self.url)
-			.expect("failed to parse proof server URL")
-			.join("prove-tx")
-			.unwrap();
+		log::info!("Proof server URL: {}", self.url);
 
-		println!("Proof server URL: {}", url);
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(PROOF_SERVER_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
 
-		let client = reqwest::ClientBuilder::new().pool_idle_timeout(None).build().unwrap();
-		let response_bytes = retry(ExponentialBackoff::default(), || async {
-			let body = self.serialize_request_body(&tx, resolver, cost_model).await;
-
-			let resp = client.post(url.clone()).body(body).send().await.map_err(|e| {
-				println!("Proof Server Send Error: {:?}", e);
+		retry(backoff, || async {
+			let provider = ProofServerProvider { base_url: self.url.clone().into(), resolver };
+			tx.prove(provider, cost_model).await.map_err(|e| {
+				log::warn!("proof server proving failed, retrying: {e}");
 				backoff::Error::transient(e)
-			})?;
-
-			let resp_err = resp.error_for_status_ref().err();
-			let resp_bytes = resp.bytes().await.map_err(|e| {
-				println!("Proof Server to Bytes Error: {:?}", e);
-				backoff::Error::transient(e)
-			})?;
-
-			if let Some(e) = resp_err {
-				println!("Proof Server Response Error: {:?}. Bytes: {:?}", e, resp_bytes);
-				return Err(backoff::Error::transient(e));
-			}
-
-			Ok::<Vec<u8>, backoff::Error<reqwest::Error>>(resp_bytes.to_vec())
+			})
 		})
 		.await
-		.expect("failed to send request");
-
-		if response_bytes.is_empty() {
-			panic!("Proof server returned empty response");
-		}
-
-		deserialize(&response_bytes[..]).expect("failed to deserialize transaction")
+		.unwrap_or_else(|err| panic!("Failed to prove via remote proof server: {:?}", err))
 	}
 }

@@ -11,6 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod merkle_tree;
+use walkdir::WalkDir;
 
-pub use merkle_tree::*;
+fn main() {
+	// Track all files in the static directory
+	for entry in WalkDir::new("static")
+		.into_iter()
+		.filter_map(|e| e.ok())
+		.filter(|e| e.file_type().is_file())
+	{
+		println!("cargo:rerun-if-changed={}", entry.path().display());
+	}
+}

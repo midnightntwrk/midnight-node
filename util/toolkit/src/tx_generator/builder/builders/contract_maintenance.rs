@@ -272,7 +272,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
 			entrypoints_to_insert
-				.push((entrypoint, ContractOperationVersionedVerifierKey::V2(key)));
+				.push((entrypoint, ContractOperationVersionedVerifierKey::V3(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()

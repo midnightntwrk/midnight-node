@@ -390,86 +390,65 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-# ignore-compact-0.27: re-enable after compact-js is updated to compact 0.27
-#   toolkit-maintenance-e2e:
-#     name: Toolkit Maintenance E2E
-#     needs: [run, test-toolkit]
-#     runs-on: ubuntu-latest-16-core-x64
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
-#       - name: Get Version and git commit
-#         id: meta
-#         run: |
-#           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-#           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-#           echo "version=$version" >> $GITHUB_OUTPUT
-#       - uses: ./.github/actions/reusable-e2e-tests
-#         with:
-#           just-command: toolkit-maintenance-e2e
-#           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-#           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-#           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-# 
-#   toolkit-mint-e2e:
-#     name: Toolkit Mint E2E
-#     needs: [run, test-toolkit]
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
-#       - name: Get Version and git commit
-#         id: meta
-#         run: |
-#           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-#           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-#           echo "version=$version" >> $GITHUB_OUTPUT
-#       - uses: ./.github/actions/reusable-e2e-tests
-#         with:
-#           just-command: toolkit-mint-e2e
-#           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-#           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-#           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-# 
-#   toolkit-ut-e2e:
-#     name: Toolkit Unshielded Token E2E
-#     needs: [run, test-toolkit]
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
-#       - name: Get Version and git commit
-#         id: meta
-#         run: |
-#           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-#           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-#           echo "version=$version" >> $GITHUB_OUTPUT
-#       - uses: ./.github/actions/reusable-e2e-tests
-#         with:
-#           just-command: toolkit-ut-e2e
-#           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-#           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-#           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-# 
-#   toolkit-contracts-e2e:
-#     name: Toolkit Contracts E2E
-#     needs: [run, test-toolkit]
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # 6.0.1
-#       - name: Get Version and git commit
-#         id: meta
-#         run: |
-#           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-#           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-#           echo "version=$version" >> $GITHUB_OUTPUT
-#       - uses: ./.github/actions/reusable-e2e-tests
-#         with:
-#           just-command: toolkit-contracts-e2e
-#           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-#           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-#           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+  toolkit-maintenance-e2e:
+    name: Toolkit Maintenance E2E
+    needs: [run, test-toolkit]
+    runs-on: ubuntu-latest-16-core-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-maintenance-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+  toolkit-mint-e2e:
+    name: Toolkit Mint E2E
+    needs: [run, test-toolkit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+  toolkit-ut-e2e:
+    name: Toolkit Unshielded Token E2E
+    needs: [run, test-toolkit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-ut-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   metadata-check:
     name: Metadata Check
@@ -500,6 +479,26 @@ jobs:
       - name: Run metadata check
         run: |
           . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
+
+  toolkit-contracts-e2e:
+    name: Toolkit Contracts E2E
+    needs: [run, test-toolkit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # 6.0.1
+      - name: Get Version and git commit
+        id: meta
+        run: |
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-contracts-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
     name: Startup E2E in dev mode
