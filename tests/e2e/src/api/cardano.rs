@@ -950,6 +950,156 @@ impl CardanoClient {
         }
     }
 
+    /// Deploy a federated operators contract with the FederatedOps datum format
+    ///
+    /// The FederatedOps datum format is:
+    /// [data: Data, appendix: List<PermissionedCandidateDatumV1>, logic_round: Int]
+    /// where PermissionedCandidateDatumV1 = [partner_chains_key: ByteArray, keys: List<CandidateKey>]
+    /// and CandidateKey = [id: ByteArray, bytes: ByteArray]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn deploy_federated_ops_contract(
+        &self,
+        tx_in: &OgmiosUtxo,
+        collateral_utxo: &OgmiosUtxo,
+        one_shot_utxo: &OgmiosUtxo,
+        script_cbor: &str,
+        script_address: &str,
+        policy_id: &str,
+        sr25519_pubkeys: Vec<String>, // Sr25519 public keys (hex strings)
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let payments = self.constants.payments.clone();
+        let funded_addr = payments.funded_address;
+        let funded_skey_cbor = payments.funded_address_skey_cbor;
+
+        let funded_addr_parsed =
+            Address::from_bech32(&funded_addr).expect("Invalid funded address");
+        let payment_keyhash = funded_addr_parsed
+            .payment_cred()
+            .expect("No payment credential in address")
+            .to_keyhash()
+            .expect("Payment credential is not a keyhash");
+        let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
+
+        // Build the FederatedOps datum
+        // Format: [data, appendix, logic_round]
+        // - data: empty list (constructor 0 with no fields)
+        // - appendix: list of [partner_chains_key, keys] where keys is [[id, bytes], ...]
+        // - logic_round: 0
+        let appendix: Vec<serde_json::Value> = sr25519_pubkeys
+            .iter()
+            .map(|sr25519_key| {
+                // Each PermissionedCandidateDatumV1 is [partner_chains_key, keys]
+                // keys is a list of [id, bytes] pairs
+                // For simplicity, we use "aura" (4 bytes) as the key identifier
+                let aura_id = "61757261"; // "aura" in hex
+                serde_json::json!({
+                    "list": [
+                        {"bytes": sr25519_key},
+                        {"list": [
+                            {"list": [
+                                {"bytes": aura_id},
+                                {"bytes": sr25519_key}
+                            ]}
+                        ]}
+                    ]
+                })
+            })
+            .collect();
+
+        let datum = serde_json::json!({
+            "list": [
+                {"list": []},  // data: empty
+                {"list": appendix},  // appendix: list of candidates
+                {"int": 0}  // logic_round: 0
+            ]
+        });
+
+        // Redeemer for minting - empty map for initialization
+        let redeemer = serde_json::json!({"list": []});
+
+        println!("Deploying federated operators contract");
+        println!("  Script address: {}", script_address);
+        println!("  Policy ID: {}", policy_id);
+        println!("  Candidates: {}", sr25519_pubkeys.len());
+        println!(
+            "  One-shot UTXO: {}#{}",
+            hex::encode(one_shot_utxo.transaction.id),
+            one_shot_utxo.index
+        );
+        println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
+
+        let send_assets = vec![
+            Asset::new_from_str("lovelace", "2000000"),
+            Asset::new_from_str(policy_id, "1"),
+        ];
+
+        let network = Network::Custom(self.constants.cost_model.clone());
+
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
+            .network(network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(tx_in.transaction.id),
+                tx_in.index.into(),
+                &Self::build_asset_vector(tx_in),
+                &funded_addr,
+            )
+            .tx_in(
+                &hex::encode(one_shot_utxo.transaction.id),
+                one_shot_utxo.index.into(),
+                &Self::build_asset_vector(one_shot_utxo),
+                &funded_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(collateral_utxo.transaction.id),
+                collateral_utxo.index.into(),
+                &Self::build_asset_vector(collateral_utxo),
+                &funded_addr,
+            )
+            .tx_out(script_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(datum.to_string()))
+            .mint_plutus_script_v3()
+            .mint(1, policy_id, "")
+            .minting_script(script_cbor)
+            .mint_redeemer_value(&WRedeemer {
+                data: WData::JSON(redeemer.to_string()),
+                ex_units: Budget {
+                    mem: 14000000,
+                    steps: 10000000000,
+                },
+            })
+            .change_address(&funded_addr)
+            .required_signer_hash(&payment_keyhash_hex)
+            .signing_key(&funded_skey_cbor)
+            .complete_sync(None)
+            .map_err(|e| {
+                panic!("Transaction building failed: {:?}", e);
+            })
+            .unwrap()
+            .complete_signing()
+            .map_err(|e| {
+                panic!("Transaction signing failed: {:?}", e);
+            })
+            .unwrap();
+
+        println!("✓ Transaction Built Successfully");
+
+        let signed_tx_hex = tx_builder.tx_hex();
+        let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
+
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
     pub fn reward_address_bytes(&self) -> [u8; 29] {
         let cred = self
             .wallet

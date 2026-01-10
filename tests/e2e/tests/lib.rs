@@ -274,6 +274,74 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 }
 
 #[tokio::test]
+async fn deploy_federated_ops_contract_and_validate_membership() {
+    println!("=== Starting Federated Operators Contract E2E Test ===");
+
+    let settings = Settings::default();
+    let policies = settings.constants.policies.clone();
+    let funded_address = settings.constants.payments.funded_address.clone();
+
+    let cardano_client =
+        CardanoClient::new_from_funded(settings.ogmios_client, settings.constants).await;
+    let _midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Example Sr25519 public keys for testing (Alice and Eve from Substrate)
+    const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
+    const EVE_SR25519: &str = "e659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e";
+
+    println!("Using funded_address for deployment: {}", funded_address);
+
+    // Fund UTxOs for deployment
+    let address_bech32 = cardano_client.address_as_bech32();
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in_utxo = faucet.request_tokens(&address_bech32, 500_000_000).await;
+    println!("Wallet funded for federated operators contract deployment");
+
+    // Load contract CBOR and calculate address and policy ID
+    let federated_ops_cbor = policies.federated_ops_forever_cbor_double_encoding();
+    let federated_ops_address = policies.federated_ops_forever_address();
+    let federated_ops_policy_id = policies.federated_ops_forever_policy_id();
+
+    println!("Federated Operators Forever:");
+    println!("  Policy ID (calculated): {}", federated_ops_policy_id);
+    println!("  Address: {}", federated_ops_address);
+
+    // Get pre-created one-shot UTXO from local-environment
+    let federated_ops_one_shot = cardano_client
+        .one_shot_utxo("federatedops")
+        .await
+        .expect("Failed to get one shot federatedops");
+    println!("✓ Federated Operators one-shot UTXO retrieved from local-environment");
+
+    // Deploy Federated Operators Forever contract
+    println!("\n=== Deploying Federated Operators Forever Contract ===");
+    // FederatedOps uses Sr25519 keys directly (not Cardano key hash mappings)
+    let federated_ops_candidates = vec![ALICE_SR25519.to_string(), EVE_SR25519.to_string()];
+
+    let federated_ops_tx_id = cardano_client
+        .deploy_federated_ops_contract(
+            &tx_in_utxo,
+            &collateral_utxo,
+            &federated_ops_one_shot,
+            &federated_ops_cbor,
+            &federated_ops_address,
+            &federated_ops_policy_id,
+            federated_ops_candidates,
+        )
+        .await
+        .expect("Failed to deploy the federated operators contract")
+        .transaction
+        .id;
+
+    println!(
+        "✓ Federated Operators Forever contract deployed successfully with tx ID: {federated_ops_tx_id:?}"
+    );
+
+    println!("\n=== Federated Operators Contract Deployed Successfully ===");
+}
+
+#[tokio::test]
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
@@ -2618,7 +2686,9 @@ async fn permissioned_candidates_aiken_format() {
             );
         }
 
-        println!("✓ All permissioned candidates have Aiken format with sidechainPublicKey and keys object");
+        println!(
+            "✓ All permissioned candidates have Aiken format with sidechainPublicKey and keys object"
+        );
     } else {
         // In some test environments, permissioned candidates might not be set
         println!("⚠ No permissioned candidates returned (may be expected in some environments)");
