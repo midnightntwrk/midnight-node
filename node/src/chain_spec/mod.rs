@@ -25,7 +25,7 @@ use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
 	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
 	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature,
 	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
@@ -261,7 +261,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			_marker: std::marker::PhantomData,
 		},
 		grandpa: Default::default(),
-		sudo: SudoConfig { key: genesis.root_key().map(|k| k.into()) },
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
