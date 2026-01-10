@@ -25,7 +25,6 @@ zswap-hf = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
-sp-std.workspace = true
 sp-externalities.workspace = true
 sp-tracing.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
@@ -56,7 +55,6 @@ default = [
 std = [
     "sp-runtime-interface/std",
     "sp-runtime/std",
-    "sp-std/std",
     "sp-externalities/std",
     "midnight-primitives-ledger/std",
     "parity-scale-codec/std",

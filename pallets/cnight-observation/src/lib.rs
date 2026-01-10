@@ -18,6 +18,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use derive_new::new;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
