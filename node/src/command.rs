@@ -193,6 +193,27 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				None,
 			)
 			.await?;
+
+		// Build Prometheus push config if endpoint is configured
+		log::debug!(
+			"Prometheus push endpoint config: {:?}",
+			cfg.midnight_cfg.prometheus_push_endpoint
+		);
+		let metrics_push_config =
+			cfg.midnight_cfg.prometheus_push_endpoint.as_ref().map(|endpoint| {
+				crate::metrics_push::MetricsPushConfig {
+					endpoint: endpoint.clone(),
+					interval: std::time::Duration::from_secs(
+						cfg.midnight_cfg.prometheus_push_interval_secs.unwrap_or(15),
+					),
+					job_name: cfg
+						.midnight_cfg
+						.prometheus_push_job_name
+						.clone()
+						.unwrap_or_else(|| "midnight-node".to_string()),
+				}
+			});
+
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
 		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
@@ -200,6 +221,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			data_sources,
 			cfg.storage_monitor_params_cfg.into(),
 			storage_config,
+			metrics_push_config,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)

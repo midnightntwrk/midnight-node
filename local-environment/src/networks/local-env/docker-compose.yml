@@ -41,6 +41,17 @@ services:
     ports:
       - "32000:32000"
 
+  cardano-node-socat:
+    container_name: cardano-node-1-socat
+    image: alpine/socat
+    command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
+    depends_on:
+      - cardano-node-1
+    volumes:
+      - cardano-node-1-data:/data
+    ports:
+      - "30000:30000"
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
@@ -478,6 +489,7 @@ services:
       - ./configurations/midnight-setup/:/midnight-setup/
       - ./configurations/midnight-setup/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/:/midnight-nodes/
+      - ../../../../res/:/res/
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
