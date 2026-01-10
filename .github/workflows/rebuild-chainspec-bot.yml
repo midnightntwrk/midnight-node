@@ -12,6 +12,8 @@ on:
         description: 'Space-separated network names (e.g., "qanet preview")'
         required: true
   push:
+    paths-ignore:
+      - "changes/**"
 
 jobs:
   rebuild-chainspec:
