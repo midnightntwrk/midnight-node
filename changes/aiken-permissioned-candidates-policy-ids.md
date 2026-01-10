@@ -18,4 +18,4 @@ Update permissioned candidates policy IDs to use new Aiken-based contracts inste
 **E2E Test**: Added `permissioned_candidates_aiken_format` test to validate the Aiken format structure.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/454
-JIRA: PM-20994
+JIRA: https://shielded.atlassian.net/browse/PM-20994
