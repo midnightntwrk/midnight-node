@@ -19,9 +19,9 @@ use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
 use midnight_primitives::MidnightSystemTransactionExecutor;
 use sidechain_domain::*;
-use sp_runtime::testing::H256;
 #[cfg(feature = "std")]
 use sp_io::TestExternalities;
+use sp_runtime::testing::H256;
 #[cfg(feature = "std")]
 use std::sync::{LazyLock, Mutex};
 
