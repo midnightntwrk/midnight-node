@@ -40,6 +40,7 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
+| Execute calls via governance (root-call)                             | ✅       |
 | DUST registration command                                            | 🚧       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
@@ -530,6 +531,45 @@ Update parameters based on a serialized value:
 ```ignore
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
+
+### Root Call (Execute Call via Governance)
+Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
+
+The command requires private keys from both Council and Technical Committee members to vote and approve the motion.
+
+```bash
+midnight-node-toolkit root-call \
+    --council-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --tc-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --encoded-call <HEX_ENCODED_CALL>
+```
+
+Parameters:
+- `--council-keys`: Council member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--tc-keys`: Technical Committee member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--encoded-call`: The SCALE-encoded runtime call as a hex string (e.g., `0x00000400`)
+- `--encoded-call-file`: Alternative to `--encoded-call`, path to a file containing the encoded call hex string
+- `--rpc-url`: RPC URL of the node (defaults to `ws://127.0.0.1:9944`, can also be set via `RPC_URL` env var)
+
+Example:
+```bash
+midnight-node-toolkit root-call \
+    --council-keys 0x42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842 \
+                   0x868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246 \
+    --tc-keys 0x398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89 \
+              0xbc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938 \
+    --encoded-call 0x00000400
+```
+
+The command will:
+1. Decode and validate the encoded call
+2. Create a Council proposal for `FederatedAuthority::motion_approve`
+3. Have Council members vote on the proposal
+4. Close the Council proposal
+5. Create a Technical Committee proposal for the same motion
+6. Have TC members vote on the proposal
+7. Close the TC proposal
+8. Close the federated motion to execute the call with Root origin
 
 ---
 
