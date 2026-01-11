@@ -15,6 +15,8 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
+
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 #[cfg(test)]

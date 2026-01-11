@@ -45,6 +45,7 @@ std = [
     "midnight-primitives/std",
     "midnight-primitives-mainchain-follower/std",
     "midnight-primitives-cnight-observation/std",
+    "pallet-cnight-observation-mock/std",
     "derive-new/std",
     "serde_valid"
 ]
