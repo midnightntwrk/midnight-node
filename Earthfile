@@ -58,6 +58,9 @@ generate-preview-keys:
 generate-preview-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
+generate-devnet-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=devnet --OUTPUT_FILE=devnet-genesis-seeds.json
+
 generate-preprod-keys:
     BUILD +generate-keys \
         --DEV=true \
@@ -403,6 +406,12 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-devnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=devnet \
+        --GENERATE_TEST_TXS=false
+
+# rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
         --NETWORK=node-dev-01 \
@@ -429,6 +438,7 @@ rebuild-genesis-state-preprod:
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
+    BUILD +rebuild-genesis-state-devnet
     BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
     BUILD +rebuild-genesis-state-preview

@@ -3,9 +3,9 @@
         "address": "addr_test1wr72etax2u63ele242maw8qheuauq3kfzpp6vwj5wc2tgecwq2put",
         "policy_id": "fcacafa657351cff2aaab7d71c17cf3bc046c91043a63a547614b467",
         "members": [
-            "0x1254f7017f0b8347ce7ab14f96d818802e7e9e0c0d1b7c9acb3c726b080e7a03",
-            "0xb0521e374b0586d6829dad320753c62cdc6ef5edbd37ffdd36da0ae97c521819",
-            "0x1cbd2d43530a44705ad088af313e18f80b53ef16b36177cd4b77b846f2a5f07c"
+            "0xbeac4053a429fb902a2fec87a3ea0a332f8de723ebc6233cf7a8e00ff1341c21",
+            "0x18365c9afbe00ec28c4a3db940707e76634e7ec8aa0252a5d1a5e21656c9cb28",
+            "0x365e58f68b45706801cede47ea4b4baff70e025c6e22b7ab2965f12a1f1ae811"
         ],
         "members_mainchain": [
             "e3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
@@ -17,9 +17,9 @@
         "address": "addr_test1wpuyz5vwavxs9xc27gqeg65mtwjht25ms9c5r0w3hpl5zagmzvluv",
         "policy_id": "7841518eeb0d029b0af201946a9b5ba575aa9b817141bdd1b87f4175",
         "members": [
-            "0x4017e17f10cc5a98731de9f020dbb37986f6e575789152d7fadae2b32eea6c13",
-            "0xe659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e",
-            "0x1880104772db7b947f3f8ccdcab3650d7179c44551d22dd0cca5dc852a140563"
+            "0x5a0f28d9ad427a115aa6517cf2c1cdf7bd2fd166c325800b77f245f1d5c87832",
+            "0xbe4891631f88bee4fd800f55a4a41827475b9bb06dcd4833ca087551bff8dd3c",
+            "0x68ab64ba4f6ffa3ae5b1ab5ffa1169b111549805cab494bb543b01e90a638815"
         ],
         "members_mainchain": [
             "b94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",

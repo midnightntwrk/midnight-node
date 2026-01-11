@@ -4,7 +4,7 @@
         "url": "https://midnight.network/terms-and-conditions"
     },
     "d_parameter": {
-        "num_permissioned_candidates": 10,
+        "num_permissioned_candidates": 6,
         "num_registered_candidates": 0
     }
 }
