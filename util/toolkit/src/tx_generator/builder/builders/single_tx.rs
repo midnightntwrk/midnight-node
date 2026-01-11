@@ -19,7 +19,7 @@ use midnight_node_ledger_helpers::{
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
 	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
 	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo,
-	Wallet, WalletAddress, WalletSeed,
+	WalletAddress, WalletSeed,
 };
 
 use crate::{
@@ -34,7 +34,8 @@ pub struct SingleTxBuilder {
 	shielded_token_type: ShieldedTokenType,
 	unshielded_amount: Option<u128>,
 	unshielded_token_type: UnshieldedTokenType,
-	source_seed: String,
+	source_seed: WalletSeed,
+	funding_seed: Option<WalletSeed>,
 	destination_address: Vec<WalletAddress>,
 	rng_seed: Option<[u8; 32]>,
 }
@@ -47,6 +48,7 @@ impl SingleTxBuilder {
 			unshielded_amount,
 			unshielded_token_type,
 			source_seed,
+			funding_seed,
 			destination_address,
 			rng_seed,
 		} = args;
@@ -56,6 +58,7 @@ impl SingleTxBuilder {
 			unshielded_amount,
 			unshielded_token_type,
 			source_seed,
+			funding_seed,
 			destination_address,
 			rng_seed,
 		}
@@ -74,9 +77,12 @@ impl BuildTxs for SingleTxBuilder {
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		let spin = Spin::new("generating single tx...");
 
-		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.source_seed);
+		let mut wallet_seeds = vec![self.source_seed];
+		wallet_seeds.extend(self.funding_seed.iter());
+		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
+
 		let network_id = received_tx.network();
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &[funding_seed]);
+		let context = LedgerContext::new_from_wallet_seeds(network_id, &wallet_seeds);
 		for block in received_tx.blocks {
 			context.update_from_block(block.transactions, block.context, block.state_root.clone());
 		}
@@ -115,7 +121,7 @@ impl BuildTxs for SingleTxBuilder {
 		if !shielded_wallets.is_empty() {
 			let offer = self.build_shielded_offer(
 				context.clone(),
-				funding_seed,
+				self.source_seed,
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
@@ -125,14 +131,14 @@ impl BuildTxs for SingleTxBuilder {
 		if !unshielded_wallets.is_empty() {
 			let intents = self.build_unshielded_intents(
 				context.clone(),
-				funding_seed,
+				self.source_seed,
 				unshielded_wallets,
 				self.unshielded_amount.unwrap(),
 			);
 			tx_info.set_intents(intents);
 		}
 
-		tx_info.set_wallet_seeds(vec![funding_seed]);
+		tx_info.set_funding_seeds(vec![funding_seed]);
 		tx_info.use_mock_proofs_for_fees(true);
 
 		if tx_info.is_empty() {

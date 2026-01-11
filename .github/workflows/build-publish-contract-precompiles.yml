@@ -2,6 +2,11 @@ name: +contract-precompiles (Build ledger test static data contracts and CI imag
 
 on:
   workflow_dispatch:
+    inputs:
+      rust_version:
+        description: 'Rust version (e.g., 1.90, 1.92)'
+        required: true
+        type: string
   schedule:
     # Once a week
     - cron: "0 0 * * 0"
@@ -62,7 +67,7 @@ jobs:
           # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
           . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
-          export VERSION="1.90"
+          export VERSION="${{ github.event.inputs.rust_version }}"
           docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
 
           echo "Tag and push ${VERSION} images"
@@ -87,7 +92,7 @@ jobs:
 
       - name: Create multiplatform image (Docker Hub)
         run: |
-          export VERSION="1.90"
+          export VERSION="${{ github.event.inputs.rust_version }}"
 
           docker buildx imagetools create \
             -t midnightntwrk/midnight-node-ci:${VERSION} \
