@@ -813,7 +813,7 @@ impl CardanoClient {
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
         // Build the VersionedMultisig datum
-        // Format: Constr(0, [data: [total_signers, members_map], round: Int])
+        // New format uses @list annotation: [[total_signers, members_map], logic_round]
         let multisig_data = serde_json::json!({
             "list": [
                 {"int": total_signers},
@@ -827,11 +827,11 @@ impl CardanoClient {
                 }).collect::<Vec<_>>()}
             ]
         });
+        // VersionedMultisig is now a list: [Multisig, logic_round]
         let datum = serde_json::json!({
-            "constructor": 0,
-            "fields": [
+            "list": [
                 multisig_data,
-                {"int": 0}  // round starts at 0
+                {"int": 0}  // logic_round starts at 0
             ]
         });
 
