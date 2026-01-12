@@ -7793,12 +7793,8 @@ name = "midnight-primitives-system-parameters"
 version = "0.1.0"
 dependencies = [
  "hex",
- "parity-scale-codec",
- "scale-info",
  "serde",
  "sidechain-domain",
- "sp-core",
- "sp-runtime",
 ]
 
 [[package]]
@@ -10004,7 +10000,6 @@ dependencies = [
  "pallet-system-parameters",
  "sc-client-api",
  "serde",
- "sidechain-domain",
  "sp-api",
  "sp-blockchain",
  "sp-core",
