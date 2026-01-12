@@ -21,7 +21,7 @@
 
 use aiken_contracts_lib::{
 	build_deploy_transaction, build_governance_redeemer, build_versioned_multisig_datum,
-	prepare_contract, testnet_network_id, DeployParams, GovernanceMember,
+	convert_cost_models, prepare_contract, testnet_network_id, DeployParams, GovernanceMember,
 };
 use clap::Parser;
 use ogmios_client::jsonrpsee::client_for_url;
@@ -32,7 +32,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use thiserror::Error;
 use whisky::csl::Address;
-use whisky::Network;
 
 #[derive(Parser, Debug)]
 #[command(name = "aiken-deployer")]
@@ -174,6 +173,18 @@ async fn main() -> Result<(), CliError> {
 
 	println!("✓ Using collateral UTxO with {} lovelace", collateral_utxo.value.lovelace);
 
+	// Query protocol parameters for cost models
+	let protocol_params = ogmios_client
+		.query_protocol_parameters()
+		.await
+		.map_err(|e| CliError::Ogmios(format!("Failed to query protocol parameters: {:?}", e)))?;
+
+	let cost_models = convert_cost_models(&protocol_params.plutus_cost_models);
+	println!(
+		"✓ Fetched protocol parameters (V3 cost model has {} entries)",
+		protocol_params.plutus_cost_models.plutus_v3.len()
+	);
+
 	// Extract payment key hash from funded address
 	let funded_addr_parsed =
 		Address::from_bech32(&args.funded_address).expect("Invalid funded address");
@@ -202,7 +213,7 @@ async fn main() -> Result<(), CliError> {
 		signing_key_cbor,
 		datum,
 		redeemer,
-		network: Network::Preprod,
+		cost_models,
 	})?;
 
 	println!("✓ Transaction built and signed");

@@ -16,6 +16,7 @@
 //! This crate provides shared functionality for deploying governance contracts
 //! (council_forever, tech_auth_forever, federated_ops_forever) to the Cardano network.
 
+use ogmios_client::query_ledger_state::PlutusCostModels;
 use ogmios_client::types::OgmiosUtxo;
 use thiserror::Error;
 use whisky::csl::NetworkInfo;
@@ -210,8 +211,19 @@ pub struct DeployParams<'a> {
 	pub datum: serde_json::Value,
 	/// The redeemer JSON value
 	pub redeemer: serde_json::Value,
-	/// The network to use
-	pub network: Network,
+	/// The cost models from protocol parameters (for script integrity hash)
+	pub cost_models: Vec<Vec<i64>>,
+}
+
+/// Converts Ogmios PlutusCostModels to the whisky format (Vec<Vec<i64>>).
+///
+/// The output is a vector of three cost model vectors: [V1, V2, V3].
+pub fn convert_cost_models(cost_models: &PlutusCostModels) -> Vec<Vec<i64>> {
+	vec![
+		cost_models.plutus_v1.iter().map(|&v| v as i64).collect(),
+		cost_models.plutus_v2.iter().map(|&v| v as i64).collect(),
+		cost_models.plutus_v3.iter().map(|&v| v as i64).collect(),
+	]
 }
 
 /// Builds and signs a governance contract deployment transaction.
@@ -228,9 +240,13 @@ pub fn build_deploy_transaction(params: DeployParams<'_>) -> Result<String, Depl
 	let collateral_hash = hex::encode(params.collateral_utxo.transaction.id);
 	let one_shot_hash = hex::encode(params.one_shot_utxo.transaction.id);
 
+	// Use Network::Custom with cost models from protocol parameters
+	// This ensures the script integrity hash matches what the ledger computes
+	let network = Network::Custom(params.cost_models);
+
 	let mut tx_builder = TxBuilder::new_core();
 	tx_builder
-		.network(params.network)
+		.network(network)
 		.set_evaluator(Box::new(OfflineTxEvaluator::new()))
 		// Funding input
 		.tx_in(
