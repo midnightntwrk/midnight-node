@@ -12,21 +12,14 @@
 # limitations under the License.
 
 [package]
-name = "aiken-deployer"
+name = "aiken-contracts-lib"
 version = "0.1.0"
 edition = "2021"
-description = "CLI tool for deploying Aiken governance contracts to Cardano"
+description = "Library for deploying Aiken governance contracts to Cardano"
 license = "Apache-2.0"
 publish = false
 
-[[bin]]
-name = "aiken-deployer"
-path = "src/main.rs"
-
 [dependencies]
-aiken-contracts-lib = { path = "../aiken-contracts-lib" }
-clap = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 hex.workspace = true

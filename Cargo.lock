@@ -272,9 +272,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiken-contracts-lib"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "ogmios-client",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "whisky",
+]
+
+[[package]]
 name = "aiken-deployer"
 version = "0.1.0"
 dependencies = [
+ "aiken-contracts-lib",
  "clap",
  "hex",
  "ogmios-client",
@@ -7339,6 +7352,7 @@ dependencies = [
 name = "midnight-node-e2e"
 version = "0.1.0"
 dependencies = [
+ "aiken-contracts-lib",
  "blake2 0.10.6",
  "hex",
  "midnight-node-ledger-helpers",

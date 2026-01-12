@@ -1,3 +1,7 @@
+use aiken_contracts_lib::{
+    build_federated_ops_datum, build_federated_ops_redeemer, build_governance_redeemer,
+    build_versioned_multisig_datum, FederatedOpsCandidate, GovernanceMember,
+};
 use crate::config::{Constants, OgmiosClientSettings};
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::OgmiosClientError;
@@ -793,7 +797,7 @@ impl CardanoClient {
         script_address: &str,
         policy_id: &str,
         sr25519_pubkeys: Vec<(String, String)>, // (cardano_pubkey_hash, sr25519_pubkey)
-        total_signers: u64,
+        _total_signers: u64,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         // Load the funded_address credentials (owner of all inputs)
         let payments = self.constants.payments.clone();
@@ -812,38 +816,17 @@ impl CardanoClient {
             .expect("Payment credential is not a keyhash");
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-        // Build the VersionedMultisig datum
-        // New format uses @list annotation: [[total_signers, members_map], logic_round]
-        let multisig_data = serde_json::json!({
-            "list": [
-                {"int": total_signers},
-                {"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
-                    // The signer keys must be in "created signer" format: #"8200581c" + cardano_hash
-                    let signer_key = format!("8200581c{}", cardano_hash);
-                    serde_json::json!({
-                        "k": {"bytes": signer_key},
-                        "v": {"bytes": sr25519_key}
-                    })
-                }).collect::<Vec<_>>()}
-            ]
-        });
-        // VersionedMultisig is now a list: [Multisig, logic_round]
-        let datum = serde_json::json!({
-            "list": [
-                multisig_data,
-                {"int": 0}  // logic_round starts at 0
-            ]
-        });
+        // Build the VersionedMultisig datum and redeemer using shared library
+        let members: Vec<GovernanceMember> = sr25519_pubkeys
+            .iter()
+            .map(|(cardano_hash, sr25519_key)| GovernanceMember {
+                cardano_hash: cardano_hash.clone(),
+                sr25519_key: sr25519_key.clone(),
+            })
+            .collect();
 
-        // Build the redeemer
-        let redeemer = serde_json::json!({
-            "map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
-                serde_json::json!({
-                    "k": {"bytes": cardano_hash},
-                    "v": {"bytes": sr25519_key}
-                })
-            }).collect::<Vec<_>>()
-        });
+        let datum = build_versioned_multisig_datum(&members);
+        let redeemer = build_governance_redeemer(&members);
 
         // Validation: Verify script hash matches policy ID
         let calculated_hash = whisky::get_script_hash(script_cbor, LanguageVersion::V3);
@@ -859,7 +842,7 @@ impl CardanoClient {
         println!("Deploying governance contract");
         println!("  Script address: {}", script_address);
         println!("  Policy ID: {}", policy_id);
-        println!("  Total signers: {}", total_signers);
+        println!("  Total signers: {}", members.len());
         println!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
@@ -985,47 +968,22 @@ impl CardanoClient {
             .expect("Payment credential is not a keyhash");
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-        // Build the FederatedOps datum
-        // Format: [data, appendix, logic_round]
-        // - data: empty list (constructor 0 with no fields)
-        // - appendix: list of [partner_chains_key, keys] where keys is [[id, bytes], ...]
-        // - logic_round: 0
-        let appendix: Vec<serde_json::Value> = candidates
+        // Build the FederatedOps datum and redeemer using shared library
+        let fedops_candidates: Vec<FederatedOpsCandidate> = candidates
             .iter()
-            .map(|(ecdsa_key, aura_key)| {
-                // Each PermissionedCandidateDatumV1 is [partner_chains_key, keys]
-                // partner_chains_key is the ECDSA cross-chain key (crch)
-                // keys is a list of [id, bytes] pairs containing consensus keys
-                let aura_id = "61757261"; // "aura" in hex
-                serde_json::json!({
-                    "list": [
-                        {"bytes": ecdsa_key},
-                        {"list": [
-                            {"list": [
-                                {"bytes": aura_id},
-                                {"bytes": aura_key}
-                            ]}
-                        ]}
-                    ]
-                })
+            .map(|(ecdsa_key, aura_key)| FederatedOpsCandidate {
+                ecdsa_key: ecdsa_key.clone(),
+                aura_key: aura_key.clone(),
             })
             .collect();
 
-        let datum = serde_json::json!({
-            "list": [
-                {"list": []},  // data: empty
-                {"list": appendix},  // appendix: list of candidates
-                {"int": 0}  // logic_round: 0
-            ]
-        });
-
-        // Redeemer for minting - empty map for initialization
-        let redeemer = serde_json::json!({"list": []});
+        let datum = build_federated_ops_datum(&fedops_candidates);
+        let redeemer = build_federated_ops_redeemer(&fedops_candidates);
 
         println!("Deploying federated operators contract");
         println!("  Script address: {}", script_address);
         println!("  Policy ID: {}", policy_id);
-        println!("  Candidates: {}", candidates.len());
+        println!("  Candidates: {}", fedops_candidates.len());
         println!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
