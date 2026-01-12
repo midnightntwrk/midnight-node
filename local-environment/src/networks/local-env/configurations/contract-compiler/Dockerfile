@@ -18,9 +18,15 @@
 FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192fbcea21cc8
 
 # Install required tools (curl needed for tarball download)
+# Package versions for Debian Bookworm (node:22-slim base)
 # renovate: datasource=debian depName=jq versioning=deb
+# renovate: datasource=debian depName=curl versioning=deb
+# renovate: datasource=debian depName=ca-certificates versioning=deb
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends jq=1.6-2.1+deb12u1 curl ca-certificates && \
+    apt-get install -y --no-install-recommends \
+        jq=1.6-2.1+deb12u1 \
+        curl=7.88.1-10+deb12u14 \
+        ca-certificates=20230311+deb12u1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install aiken via npm with hash verification for supply chain security
