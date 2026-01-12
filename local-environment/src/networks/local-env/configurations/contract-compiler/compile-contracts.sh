@@ -21,13 +21,19 @@ set -euo pipefail
 echo "=== Governance Contract Compiler ==="
 
 RUNTIME_VALUES="/runtime-values"
-CONTRACTS_DIR="/contracts"
+CONTRACTS_SRC="/contracts"
+CONTRACTS_DIR="/tmp/contracts"
 OUTPUT_DIR="/runtime-values"
 AIKEN_TOML="${CONTRACTS_DIR}/aiken.toml"
 PLUTUS_JSON="${CONTRACTS_DIR}/plutus.json"
 
 # Maximum wait time for hash files (seconds)
 MAX_WAIT_TIME=120
+
+# Copy contracts to writable location
+echo "Copying contracts to writable location..."
+cp -r "${CONTRACTS_SRC}" "${CONTRACTS_DIR}"
+echo "✓ Contracts copied to ${CONTRACTS_DIR}"
 
 # Wait for one-shot hash files to be available
 echo "Waiting for one-shot UTxO hashes..."
@@ -66,9 +72,6 @@ echo "  Federated Ops:  ${FEDERATEDOPS_HASH}#${FEDERATEDOPS_INDEX}"
 
 # Navigate to contracts directory
 cd "${CONTRACTS_DIR}"
-
-# Backup original aiken.toml
-cp "${AIKEN_TOML}" "${AIKEN_TOML}.backup"
 
 # Check if [config.localenv] already exists and remove it
 if grep -q '^\[config\.localenv' "${AIKEN_TOML}"; then
@@ -178,9 +181,6 @@ echo "Compiling Aiken contracts with localenv config..."
 
 # aiken build may return non-zero for test failures but still generate plutus.json
 aiken build --env localenv || true
-
-# Restore original aiken.toml before checking results
-mv "${AIKEN_TOML}.backup" "${AIKEN_TOML}"
 
 # Check if plutus.json was generated
 if [[ ! -f "${PLUTUS_JSON}" ]]; then
