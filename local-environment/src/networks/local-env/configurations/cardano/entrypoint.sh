@@ -18,6 +18,7 @@ set -euxo pipefail
 chmod 600 /keys/*
 chmod +x /busybox
 chmod 777 /shared
+chmod 777 /runtime-values
 
 # Removed: this caused permissions errors on host when running tests locally
 # chown -R $(id -u):$(id -g) /shared /runtime-values /keys /data
