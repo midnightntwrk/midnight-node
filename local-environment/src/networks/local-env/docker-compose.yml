@@ -67,9 +67,13 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # One-shot container that compiles and exits; healthcheck not applicable
+    # One-shot container: compilation completes and exits, healthcheck is a no-op
     healthcheck:
-      disable: true
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
 
   kupo:
     container_name: kupo

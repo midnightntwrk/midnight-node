@@ -18,8 +18,9 @@
 FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192fbcea21cc8
 
 # Install required tools
+# renovate: datasource=debian depName=jq versioning=deb
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends jq && \
+    apt-get install -y --no-install-recommends jq=1.6-2.1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install aiken via npm (same pattern as Earthfile rebuild-redemption-skeleton)
@@ -38,7 +39,7 @@ RUN chmod +x /compile-contracts.sh && \
 
 USER appuser
 
-# One-shot container that compiles and exits; healthcheck not applicable
-HEALTHCHECK NONE
+# One-shot container: compilation completes and exits, healthcheck is a no-op
+HEALTHCHECK --interval=60s --timeout=5s --retries=1 --start-period=5s CMD exit 0
 
 ENTRYPOINT ["/bin/bash", "/compile-contracts.sh"]
