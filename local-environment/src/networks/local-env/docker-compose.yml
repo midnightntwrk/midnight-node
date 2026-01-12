@@ -65,6 +65,8 @@ services:
       - ${MIDNIGHT_RESERVE_CONTRACTS_PATH:-../../../../../midnight-reserve-contracts}:/contracts
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   kupo:
     container_name: kupo
