@@ -21,6 +21,7 @@ pub mod command;
 pub mod extensions;
 pub mod inherent_data;
 pub mod main_chain_follower;
+pub mod metrics_push;
 pub mod partner_chains;
 pub mod payload;
 pub mod rpc;

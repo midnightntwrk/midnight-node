@@ -54,6 +54,7 @@ pub enum SystemTransactionError {
 	GenerationInfoAlreadyPresent,
 	InvalidBasisPoints,
 	InvariantViolation,
+	TreasuryDisabled,
 }
 
 #[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
@@ -323,6 +324,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::GenerationInfoAlreadyPresent => 145,
 					SystemTransactionError::InvalidBasisPoints => 146,
 					SystemTransactionError::InvariantViolation => 147,
+					SystemTransactionError::TreasuryDisabled => 148,
 				},
 			},
 			// Reserved from [150-255) for future Errors

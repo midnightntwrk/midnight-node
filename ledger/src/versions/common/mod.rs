@@ -46,7 +46,6 @@ use {
 		cost_model::NormalizedCost as LedgerNormalizedCost, hash::HashOutput, time::Timestamp,
 	},
 	coin_structure_local::coin::Nonce,
-	coin_structure_local::coin::UnshieldedTokenType,
 	ledger_storage_local::{
 		Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
@@ -457,30 +456,6 @@ where
 		api.serialize(&ledger.get_zswap_state_root())
 	}
 
-	pub fn mint_coins(
-		state_key: &[u8],
-		amount: u128,
-		receiver: &[u8],
-		block_context: BlockContext,
-	) -> Result<Vec<u8>, LedgerApiError> {
-		let api = api::new();
-		let target_address = api.night_address(receiver)?;
-
-		let nonce = create_nonce(MINT_COINS_DOMAIN_SEPARATOR, &block_context.parent_block_hash, 0);
-
-		let sys_tx = api::SystemTransaction::PayFromTreasuryUnshielded {
-			outputs: vec![api::OutputInstructionUnshielded { amount, target_address, nonce }],
-			token_type: UnshieldedTokenType(HashOutput([0u8; 32])), // TODO: UnshieldedTokenType::Reward,
-		};
-		let ledger = Self::get_ledger(&api, state_key)?;
-		let mut ledger =
-			Ledger::apply_system_tx(ledger, &sys_tx, Timestamp::from_secs(block_context.tblock))?;
-
-		// Only update state after no errors
-		ledger.persist();
-		api.tagged_serialize(&ledger.as_typed_key())
-	}
-
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],
@@ -691,6 +666,7 @@ where
 /// * `block_hash`
 /// * `output_number` - its position in the list
 #[cfg(feature = "std")]
+#[allow(dead_code)]
 fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce {
 	use sp_runtime::traits::{BlakeTwo256, Hash};
 

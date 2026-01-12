@@ -314,30 +314,6 @@ pub mod pallet {
 
 			// Flush ledger storage changes to disk
 			LedgerApi::flush_storage();
-
-			let (reward, beneficiary) = T::BlockReward::get();
-			if reward == 0 {
-				return;
-			}
-			if let Some(beneficiary) = beneficiary {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
-
-				match LedgerApi::mint_coins(&state_key, reward, &beneficiary[..], block_context) {
-					Ok(new_state_key) => {
-						log::info!("Minting {reward:?} coins for {beneficiary:?}");
-						Self::deposit_event(Event::PayoutMinted(PayoutDetails {
-							amount: reward,
-							receiver: beneficiary.to_vec(),
-						}));
-						let state_key: BoundedVec<_, _> =
-							new_state_key.try_into().expect("New state key size out of boundaries");
-						StateKey::<T>::put(state_key);
-
-						LedgerApi::flush_storage();
-					},
-					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
-				};
-			}
 		}
 
 		#[cfg(hardfork_test)]

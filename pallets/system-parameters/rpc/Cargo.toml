@@ -19,7 +19,6 @@ sp-runtime.workspace = true
 sp-blockchain.workspace = true
 sp-core.workspace = true
 pallet-system-parameters.workspace = true
-sidechain-domain.workspace = true
 
 [features]
 default = ["std"]
@@ -28,7 +27,6 @@ std = [
     "sp-runtime/std",
     "sp-core/std",
     "pallet-system-parameters/std",
-    "sidechain-domain/std",
 ]
 
 [lints]
