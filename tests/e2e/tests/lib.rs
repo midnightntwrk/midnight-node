@@ -119,7 +119,6 @@ async fn register_for_dust_production() {
 }
 
 #[tokio::test]
-#[ignore = "Scripts have hardcoded one-shot UTxO hashes that don't match local-env - needs script recompilation"]
 async fn deploy_governance_contracts_and_validate_membership_reset() {
     println!("=== Starting Governance Contracts E2E Test ===");
 
@@ -275,7 +274,6 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 }
 
 #[tokio::test]
-#[ignore = "Scripts have hardcoded one-shot UTxO hashes that don't match local-env - needs script recompilation"]
 async fn deploy_federated_ops_contract_and_validate_membership() {
     println!("=== Starting Federated Operators Contract E2E Test ===");
 
