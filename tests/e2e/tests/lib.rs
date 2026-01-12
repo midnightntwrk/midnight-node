@@ -285,9 +285,25 @@ async fn deploy_federated_ops_contract_and_validate_membership() {
         CardanoClient::new_from_funded(settings.ogmios_client, settings.constants).await;
     let _midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Example Sr25519 public keys for testing (Alice and Eve from Substrate)
-    const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
-    const EVE_SR25519: &str = "e659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e";
+    // Derive keys from seeds (Alice and Eve from Substrate)
+    use sp_core::{ecdsa, sr25519, Pair};
+
+    // ECDSA (cross-chain) keys - derived from seed
+    let alice_ecdsa_pair = ecdsa::Pair::from_string("//Alice", None).expect("valid seed");
+    let eve_ecdsa_pair = ecdsa::Pair::from_string("//Eve", None).expect("valid seed");
+    let alice_ecdsa = hex::encode(alice_ecdsa_pair.public().0);
+    let eve_ecdsa = hex::encode(eve_ecdsa_pair.public().0);
+
+    // SR25519 (AURA) keys - derived from seed
+    let alice_sr25519_pair = sr25519::Pair::from_string("//Alice", None).expect("valid seed");
+    let eve_sr25519_pair = sr25519::Pair::from_string("//Eve", None).expect("valid seed");
+    let alice_sr25519 = hex::encode(alice_sr25519_pair.public().0);
+    let eve_sr25519 = hex::encode(eve_sr25519_pair.public().0);
+
+    println!("Alice ECDSA (cross-chain) key: {}", alice_ecdsa);
+    println!("Eve ECDSA (cross-chain) key: {}", eve_ecdsa);
+    println!("Alice SR25519 (AURA) key: {}", alice_sr25519);
+    println!("Eve SR25519 (AURA) key: {}", eve_sr25519);
 
     println!("Using funded_address for deployment: {}", funded_address);
 
@@ -316,8 +332,13 @@ async fn deploy_federated_ops_contract_and_validate_membership() {
 
     // Deploy Federated Operators Forever contract
     println!("\n=== Deploying Federated Operators Forever Contract ===");
-    // FederatedOps uses Sr25519 keys directly (not Cardano key hash mappings)
-    let federated_ops_candidates = vec![ALICE_SR25519.to_string(), EVE_SR25519.to_string()];
+    // FederatedOps uses (ecdsa_key, aura_key) tuples
+    // - ecdsa_key: The cross-chain (crch) key used as partner_chains_key
+    // - aura_key: The SR25519 key for AURA consensus
+    let federated_ops_candidates = vec![
+        (alice_ecdsa.clone(), alice_sr25519.clone()),
+        (eve_ecdsa.clone(), eve_sr25519.clone()),
+    ];
 
     let federated_ops_tx_id = cardano_client
         .deploy_federated_ops_contract(

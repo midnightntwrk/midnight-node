@@ -956,6 +956,11 @@ impl CardanoClient {
     /// [data: Data, appendix: List<PermissionedCandidateDatumV1>, logic_round: Int]
     /// where PermissionedCandidateDatumV1 = [partner_chains_key: ByteArray, keys: List<CandidateKey>]
     /// and CandidateKey = [id: ByteArray, bytes: ByteArray]
+    ///
+    /// # Arguments
+    /// * `candidates` - List of (ecdsa_key, aura_key) tuples where:
+    ///   - ecdsa_key: The cross-chain (crch) ECDSA public key (33 bytes, hex string)
+    ///   - aura_key: The SR25519 public key for AURA consensus (32 bytes, hex string)
     #[allow(clippy::too_many_arguments)]
     pub async fn deploy_federated_ops_contract(
         &self,
@@ -965,7 +970,7 @@ impl CardanoClient {
         script_cbor: &str,
         script_address: &str,
         policy_id: &str,
-        sr25519_pubkeys: Vec<String>, // Sr25519 public keys (hex strings)
+        candidates: Vec<(String, String)>, // (ecdsa_key, aura_key) tuples
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let payments = self.constants.payments.clone();
         let funded_addr = payments.funded_address;
@@ -985,20 +990,20 @@ impl CardanoClient {
         // - data: empty list (constructor 0 with no fields)
         // - appendix: list of [partner_chains_key, keys] where keys is [[id, bytes], ...]
         // - logic_round: 0
-        let appendix: Vec<serde_json::Value> = sr25519_pubkeys
+        let appendix: Vec<serde_json::Value> = candidates
             .iter()
-            .map(|sr25519_key| {
+            .map(|(ecdsa_key, aura_key)| {
                 // Each PermissionedCandidateDatumV1 is [partner_chains_key, keys]
-                // keys is a list of [id, bytes] pairs
-                // For simplicity, we use "aura" (4 bytes) as the key identifier
+                // partner_chains_key is the ECDSA cross-chain key (crch)
+                // keys is a list of [id, bytes] pairs containing consensus keys
                 let aura_id = "61757261"; // "aura" in hex
                 serde_json::json!({
                     "list": [
-                        {"bytes": sr25519_key},
+                        {"bytes": ecdsa_key},
                         {"list": [
                             {"list": [
                                 {"bytes": aura_id},
-                                {"bytes": sr25519_key}
+                                {"bytes": aura_key}
                             ]}
                         ]}
                     ]
@@ -1020,7 +1025,7 @@ impl CardanoClient {
         println!("Deploying federated operators contract");
         println!("  Script address: {}", script_address);
         println!("  Policy ID: {}", policy_id);
-        println!("  Candidates: {}", sr25519_pubkeys.len());
+        println!("  Candidates: {}", candidates.len());
         println!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
