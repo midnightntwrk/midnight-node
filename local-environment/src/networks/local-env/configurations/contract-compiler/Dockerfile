@@ -37,4 +37,7 @@ RUN chmod +x /compile-contracts.sh && \
 
 USER appuser
 
+# One-shot container that compiles and exits; healthcheck not applicable
+HEALTHCHECK NONE
+
 ENTRYPOINT ["/bin/bash", "/compile-contracts.sh"]
