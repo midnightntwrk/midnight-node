@@ -44,7 +44,6 @@ std = [
     "sp-core/std",
     "sp-api/std",
     "sidechain-domain/std",
-    "serde/std",
 ]
 runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
@@ -55,3 +54,6 @@ try-runtime = [
     "frame-support/try-runtime",
     "frame-system/try-runtime",
 ]
+
+[package.metadata.cargo-shear]
+ignored = ["serde"]

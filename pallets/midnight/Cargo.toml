@@ -29,8 +29,6 @@ pallet-timestamp.workspace = true
 hex = { workspace = true, optional = true }
 sp-tracing = { workspace = true}
 
-log.workspace = true
-
 [dev-dependencies]
 sp-core.workspace = true
 sp-io.workspace = true
