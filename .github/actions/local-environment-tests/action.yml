@@ -49,6 +49,16 @@ runs:
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
 
+    - name: Clone midnight-reserve-contracts
+      run: |
+        echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
+        # Clone to parent of workspace so the docker-compose path works
+        # docker-compose.yml expects contracts at ../../../../../midnight-reserve-contracts relative to itself
+        # which resolves to: local-env -> networks -> src -> local-environment -> midnight-node -> parent
+        git clone --depth 1 https://github.com/midnightntwrk/midnight-reserve-contracts.git "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
+        echo "✓ Cloned to $(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+      shell: bash
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."

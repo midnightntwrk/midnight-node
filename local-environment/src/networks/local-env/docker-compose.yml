@@ -52,6 +52,20 @@ services:
     ports:
       - "30000:30000"
 
+  contract-compiler:
+    container_name: contract-compiler
+    build:
+      context: ./configurations/contract-compiler
+      dockerfile: Dockerfile
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ${MIDNIGHT_RESERVE_CONTRACTS_PATH:-../../../../../midnight-reserve-contracts}:/contracts
+    security_opt:
+      - no-new-privileges:true
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
@@ -474,6 +488,8 @@ services:
     depends_on:
       ogmios:
         condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"
