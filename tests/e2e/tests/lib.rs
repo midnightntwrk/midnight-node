@@ -2716,3 +2716,142 @@ async fn permissioned_candidates_aiken_format() {
         println!("⚠ No permissioned candidates returned (may be expected in some environments)");
     }
 }
+
+/// TC-PC-004: Verify authority selection uses Aiken permissioned candidates.
+///
+/// This test verifies the full authority selection flow:
+/// 1. Waits for the chain to reach a stable epoch (epoch >= 2)
+/// 2. Queries the current AURA authorities from the runtime
+/// 3. Queries permissioned candidates from Ariadne parameters
+/// 4. Verifies that AURA authority keys match keys from permissioned candidates
+///
+/// This confirms that the Aiken-format permissioned candidates are correctly
+/// being used in the authority selection process.
+#[tokio::test]
+async fn authority_selection_uses_aiken_candidates() {
+    println!("=== TC-PC-004: Authority Selection with Aiken Candidates ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Step 1: Get current epoch and wait for epoch 2+ if needed
+    // Authority selection needs at least 2 epochs to be stable
+    let current_epoch = midnight_client
+        .get_current_epoch()
+        .await
+        .expect("Failed to get current epoch");
+
+    println!("Current sidechain epoch: {}", current_epoch);
+
+    let target_epoch = if current_epoch < 2 { 2 } else { current_epoch };
+
+    if current_epoch < target_epoch {
+        println!(
+            "Waiting for epoch {} (current: {})...",
+            target_epoch, current_epoch
+        );
+        // Local-env epochs are 30 seconds, so 90 second timeout should be plenty
+        midnight_client
+            .wait_for_epoch(target_epoch, 90)
+            .await
+            .expect("Failed to wait for target epoch");
+    }
+
+    // Wait for a finalized block to ensure authorities are stable
+    let _finalized_hash = midnight_client
+        .wait_for_next_finalized_block()
+        .await
+        .expect("Failed to wait for finalized block");
+
+    // Step 2: Query current AURA authorities
+    let aura_authorities = midnight_client
+        .get_aura_authorities()
+        .await
+        .expect("Failed to get AURA authorities");
+
+    println!("Current AURA authorities ({}):", aura_authorities.len());
+    for (i, auth) in aura_authorities.iter().enumerate() {
+        println!("  [{}] {}", i, auth);
+    }
+
+    assert!(
+        !aura_authorities.is_empty(),
+        "Expected at least one AURA authority"
+    );
+
+    // Step 3: Query permissioned candidates from Ariadne parameters
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(target_epoch, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    let candidates = ariadne_params
+        .permissioned_candidates
+        .expect("Expected permissioned candidates to be present");
+
+    println!(
+        "\nPermissioned candidates from Aiken contracts ({}):",
+        candidates.len()
+    );
+
+    // Step 4: Extract AURA keys from permissioned candidates (Aiken format)
+    // In Aiken format, keys are in: candidate.keys.aura
+    let mut candidate_aura_keys: Vec<String> = Vec::new();
+    for (i, candidate) in candidates.iter().enumerate() {
+        if let Some(keys) = candidate.get("keys") {
+            if let Some(aura_key) = keys.get("aura") {
+                let key_str = aura_key
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| aura_key.to_string());
+                println!("  [{}] AURA key: {}", i, key_str);
+                candidate_aura_keys.push(key_str.trim_matches('"').to_string());
+            }
+        }
+    }
+
+    assert!(
+        !candidate_aura_keys.is_empty(),
+        "Expected to find AURA keys in permissioned candidates"
+    );
+
+    // Step 5: Verify that current AURA authorities match permissioned candidate keys
+    // The authorities should be a subset of the permissioned candidates
+    // (selection is based on D-parameter which may limit the number selected)
+    println!("\nVerifying AURA authorities match permissioned candidates...");
+
+    let mut matched_count = 0;
+    for authority in &aura_authorities {
+        // Normalize the authority key (remove 0x prefix if present for comparison)
+        let auth_normalized = authority.trim_start_matches("0x").to_lowercase();
+
+        let is_match = candidate_aura_keys.iter().any(|candidate_key| {
+            let candidate_normalized = candidate_key.trim_start_matches("0x").to_lowercase();
+            auth_normalized == candidate_normalized
+        });
+
+        if is_match {
+            matched_count += 1;
+            println!("  ✓ Authority {} matches a permissioned candidate", authority);
+        } else {
+            println!(
+                "  ⚠ Authority {} not found in permissioned candidates",
+                authority
+            );
+        }
+    }
+
+    // All AURA authorities should come from permissioned candidates
+    assert_eq!(
+        matched_count,
+        aura_authorities.len(),
+        "All {} AURA authorities should match permissioned candidates, but only {} matched",
+        aura_authorities.len(),
+        matched_count
+    );
+
+    println!(
+        "\n✓ All {} AURA authorities are derived from Aiken permissioned candidates",
+        aura_authorities.len()
+    );
+}

@@ -27,13 +27,17 @@ Key changes validated:
 | [PR378-TC-04](../../runtime/src/lib.rs#L1693) | Verify Aura authority rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify Aura authorities updated | Aura authorities rotate as expected | Unit |
 | [PR378-TC-05](../../runtime/src/lib.rs#L1642) | Verify Grandpa authority rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify Grandpa authorities updated | Grandpa authorities rotate as expected | Unit |
 | [PR378-TC-06](../../runtime/src/lib.rs#L1727) | Verify cross-chain committee rotation continues to work | 1. Configure committee in session  <br>2. Advance to next session  <br>3. Verify cross-chain committee updated | Cross-chain committee rotates as expected | Unit |
-| PR378-TC-07 | Verify `systemParameters_getAriadneParameters` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint with epoch number  <br>3. Verify response structure | Response contains D Parameter from pallet (not Cardano) and candidate data from Cardano | E2E |
-| PR378-TC-08 | Verify `systemParameters_getDParameter` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint  <br>3. Verify response values | Response contains D Parameter values matching pallet storage | E2E |
-| PR378-TC-09 | Verify D Parameter query at historical block | 1. Record block hash  <br>2. Update D Parameter  <br>3. Query D Parameter at historical block | Historical query returns previous D Parameter value | E2E |
+| [PR378-TC-07](../../tests/e2e/tests/lib.rs#L2556) | Verify `systemParameters_getAriadneParameters` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint with epoch number  <br>3. Verify response structure | Response contains D Parameter from pallet (not Cardano) and candidate data from Cardano | E2E |
+| [PR378-TC-08](../../tests/e2e/tests/lib.rs#L2594) | Verify `systemParameters_getDParameter` RPC endpoint | 1. Start node with D Parameter configured  <br>2. Call RPC endpoint  <br>3. Verify response values | Response contains D Parameter values matching pallet storage | E2E |
+| [PR378-TC-09](../../tests/e2e/tests/lib.rs#L2725) | Verify D Parameter query at historical block | 1. Record block hash  <br>2. Update D Parameter  <br>3. Query D Parameter at historical block | Historical query returns previous D Parameter value | E2E |
+| [PR378-TC-10](../../tests/e2e/tests/lib.rs#L2654) | Verify permissioned candidates use Aiken format | 1. Query Ariadne parameters  <br>2. Verify candidates have `keys` object with `aura`/`gran`  <br>3. Verify `sidechainPublicKey` present | Candidates returned in Aiken format (not legacy Haskell format) | E2E |
+| [PR378-TC-11](../../tests/e2e/tests/lib.rs#L2720) | Verify authority selection uses Aiken candidates | 1. Wait for stable epoch  <br>2. Query AURA authorities  <br>3. Query permissioned candidates  <br>4. Verify AURA keys match candidate keys | All AURA authorities are derived from Aiken permissioned candidates | E2E |
 
 ---
 
 ## Running Tests
+
+### Unit Tests
 
 ```bash
 # Run all pallet-system-parameters tests
@@ -55,3 +59,32 @@ cargo build -p midnight-node-runtime
 cargo build -p pallet-system-parameters
 cargo build -p pallet-system-parameters-rpc
 ```
+
+### E2E Tests
+
+E2E tests require the local environment to be running:
+
+```bash
+# Start local environment (if not already running)
+earthly +start-local-env-latest
+
+# Run all Aiken permissioned candidates E2E tests
+cargo test -p midnight-node-e2e --test lib get_ariadne_parameters
+cargo test -p midnight-node-e2e --test lib d_parameter_from_pallet
+cargo test -p midnight-node-e2e --test lib permissioned_candidates_aiken
+cargo test -p midnight-node-e2e --test lib query_d_parameter_at_historical
+cargo test -p midnight-node-e2e --test lib authority_selection_uses_aiken
+
+# Or run all E2E tests at once
+cargo test -p midnight-node-e2e --test lib
+```
+
+### E2E Test Implementation Status
+
+| Test ID | Test Function | Status |
+|---------|---------------|--------|
+| PR378-TC-07 | `get_ariadne_parameters_returns_valid_structure` | ✅ Implemented |
+| PR378-TC-08 | `d_parameter_from_pallet_matches_config` | ✅ Implemented |
+| PR378-TC-09 | `query_d_parameter_at_historical_block` | ✅ Implemented |
+| PR378-TC-10 | `permissioned_candidates_aiken_format` | ✅ Implemented |
+| PR378-TC-11 | `authority_selection_uses_aiken_candidates` | ✅ Implemented |
