@@ -30,7 +30,6 @@ std = [
     "sp-runtime/std",
     "sp-core/std",
     "pallet-system-parameters/std",
-    "sidechain-domain/std",
 ]
 
 [lints]
