@@ -31,7 +31,6 @@ std = [
     "sp-core/std",
     "pallet-system-parameters/std",
     "sidechain-domain/std",
-    "sp-session-validator-management-query/std",
 ]
 
 [lints]
