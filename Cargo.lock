@@ -7333,6 +7333,7 @@ dependencies = [
  "midnight-node-toolkit",
  "ogmios-client",
  "rand 0.9.2",
+ "serde",
  "serde_json",
  "subxt 0.44.0",
  "tiny-bip39",
@@ -9978,15 +9979,18 @@ dependencies = [
 name = "pallet-system-parameters-rpc"
 version = "0.1.0"
 dependencies = [
- "hex",
+ "async-trait",
  "jsonrpsee",
  "pallet-system-parameters",
  "sc-client-api",
  "serde",
+ "serde_json",
+ "sidechain-domain",
  "sp-api",
  "sp-blockchain",
  "sp-core",
  "sp-runtime",
+ "sp-session-validator-management-query",
 ]
 
 [[package]]

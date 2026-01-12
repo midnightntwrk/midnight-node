@@ -12,6 +12,9 @@ description = "Pallet for storing and managing system parameters"
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[package.metadata.cargo-shear]
+ignored = ["serde"]
+
 [dependencies]
 parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
 scale-info = { workspace = true, features = ["derive"] }
@@ -51,6 +54,3 @@ try-runtime = [
     "frame-support/try-runtime",
     "frame-system/try-runtime",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["serde"]

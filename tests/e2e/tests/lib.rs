@@ -1710,6 +1710,117 @@ async fn deregister_with_valid_cnight_utxo() {
     );
 }
 
+/// Verify D-Parameter RPC endpoint accepts block hash parameter for historical queries.
+///
+/// This test verifies:
+/// - systemParameters_getDParameter accepts optional block hash parameter
+/// - Querying at genesis block returns valid values
+/// - Querying at current block returns valid values
+/// - Querying at an invalid block hash returns an error
+///
+/// LIMITATION: Since D-parameter can only be changed via governance (Root origin),
+/// this test cannot fully verify that historical queries return *different* values
+/// at different blocks when the parameter has changed. To fully test that scenario,
+/// a governance transaction would need to update the D-parameter between blocks.
+/// However, this test does verify the historical query code path is exercised
+/// by querying at different block heights and validating error handling.
+#[tokio::test]
+async fn query_d_parameter_at_historical_block() {
+    println!("=== D-Parameter Historical Block Query E2E Test ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Step 1: Get genesis block hash (block 0) to test historical query at earliest block
+    let genesis_block_hash = midnight_client
+        .get_block_hash_at_height(0)
+        .await
+        .expect("Failed to get genesis block hash");
+    println!(
+        "Genesis block hash: 0x{}",
+        hex::encode(genesis_block_hash.as_bytes())
+    );
+
+    // Step 2: Get current best block hash
+    let current_block_hash = midnight_client
+        .get_best_block_hash()
+        .await
+        .expect("Failed to get best block hash");
+    println!(
+        "Current block hash: 0x{}",
+        hex::encode(current_block_hash.as_bytes())
+    );
+
+    // Step 3: Query D-Parameter at genesis block
+    println!("Querying D-param at genesis block...");
+    let d_param_at_genesis = midnight_client
+        .get_d_parameter_at(genesis_block_hash)
+        .await
+        .expect("Failed to query D-param at genesis block");
+    println!(
+        "D-param at genesis: ({}, {})",
+        d_param_at_genesis.num_permissioned_candidates,
+        d_param_at_genesis.num_registered_candidates
+    );
+
+    // Step 4: Query D-Parameter at current block
+    println!("Querying D-param at current block...");
+    let d_param_at_current = midnight_client
+        .get_d_parameter_at(current_block_hash)
+        .await
+        .expect("Failed to query D-param at current block");
+    println!(
+        "D-param at current: ({}, {})",
+        d_param_at_current.num_permissioned_candidates,
+        d_param_at_current.num_registered_candidates
+    );
+
+    // Step 5: Verify both queries returned valid data
+    // Note: Values may be the same since D-parameter hasn't been changed via governance.
+    // This test primarily verifies the historical query code path works, not that
+    // different blocks have different values (which would require governance changes).
+    println!("✓ Historical block queries returned valid D-parameter data");
+
+    // Step 6: Test error handling - query with invalid block hash
+    println!("Testing error handling with invalid block hash...");
+    let invalid_block_hash = subxt::utils::H256::from([0xff; 32]);
+    let invalid_query_result = midnight_client.get_d_parameter_at(invalid_block_hash).await;
+
+    assert!(
+        invalid_query_result.is_err(),
+        "Query with invalid block hash should return an error, but got: {:?}",
+        invalid_query_result
+    );
+    println!(
+        "✓ Invalid block hash correctly rejected: {}",
+        invalid_query_result.unwrap_err()
+    );
+
+    // Step 7: Verify querying the same block hash is idempotent
+    println!("Verifying idempotent queries at same block hash...");
+    let d_param_at_genesis_again = midnight_client
+        .get_d_parameter_at(genesis_block_hash)
+        .await
+        .expect("Failed to query D-param at genesis block again");
+
+    assert_eq!(
+        d_param_at_genesis.num_permissioned_candidates,
+        d_param_at_genesis_again.num_permissioned_candidates,
+        "D-param permissioned at same block hash should be consistent"
+    );
+    assert_eq!(
+        d_param_at_genesis.num_registered_candidates,
+        d_param_at_genesis_again.num_registered_candidates,
+        "D-param registered at same block hash should be consistent"
+    );
+
+    println!("✓ Historical block query verification passed");
+    println!();
+    println!("Note: D-parameter values at genesis and current block are the same");
+    println!("because no governance transaction has updated the parameter.");
+    println!("To fully test historical value differences, use update_d_parameter");
+    println!("via federated authority governance between block queries.");
+}
 #[tokio::test]
 async fn deregister_first_mapping() {
     let settings = Settings::default();
@@ -2411,4 +2522,106 @@ async fn spend_cnight_producing_dust() {
     assert!(
         matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
     );
+}
+
+// ========== Aiken Permissioned Candidates E2E Tests ==========
+// These tests verify permissioned candidates via the new Aiken contracts
+
+/// TC-PC-001: Verify systemParameters_getAriadneParameters returns valid structure.
+///
+/// Tests that the RPC endpoint returns correctly structured data including:
+/// - D-Parameter with permissioned and registered candidate counts
+/// - Block info metadata showing where D-Parameter was fetched from
+/// - Permissioned candidates list (may be None if not set on mainchain)
+#[tokio::test]
+async fn get_ariadne_parameters_returns_valid_structure() {
+    println!("=== TC-PC-001: Ariadne Parameters Structure Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!("Ariadne Parameters Response:");
+    println!(
+        "  D-Parameter: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+    println!(
+        "  Permissioned Candidates: {:?}",
+        ariadne_params
+            .permissioned_candidates
+            .as_ref()
+            .map(|c| c.len())
+    );
+
+    // Verify D-Parameter structure is valid (values can be 0)
+    // The important thing is that the RPC call succeeded and returned valid types
+    println!("✓ Ariadne parameters structure is valid");
+}
+
+/// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
+///
+/// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
+/// In local environment, it's configured as (10, 0) - 10 permissioned, 0 registered.
+#[tokio::test]
+async fn d_parameter_from_pallet_matches_config() {
+    println!("=== TC-PC-003: D-Parameter Pallet Integration ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Query D-Parameter directly via the dedicated RPC
+    let d_param = midnight_client
+        .get_d_parameter()
+        .await
+        .expect("Failed to get D-Parameter");
+
+    println!(
+        "D-Parameter from pallet-system-parameters: ({}, {})",
+        d_param.num_permissioned_candidates, d_param.num_registered_candidates
+    );
+
+    // Also query via getAriadneParameters to verify consistency
+    // Use epoch 2 (minimum supported epoch)
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(2, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!(
+        "D-Parameter from getAriadneParameters: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+
+    // Verify both endpoints return the same D-Parameter
+    assert_eq!(
+        d_param.num_permissioned_candidates, ariadne_params.d_parameter.num_permissioned_candidates,
+        "D-Parameter permissioned count should match between endpoints"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, ariadne_params.d_parameter.num_registered_candidates,
+        "D-Parameter registered count should match between endpoints"
+    );
+
+    // Local environment configures D-Parameter as (10, 0)
+    // This comes from pallet-system-parameters, not Cardano
+    assert_eq!(
+        d_param.num_permissioned_candidates, 10,
+        "Permissioned count should match system-parameters config (expected 10)"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, 0,
+        "Registered count should match system-parameters config (expected 0)"
+    );
+
+    println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
 }
