@@ -25,10 +25,10 @@ subxt.workspace = true
 midnight-node-metadata.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 blake2 = "0.10.6"
-sp-core.workspace = true
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }
+sp-core.workspace = true
 midnight-node-toolkit = { path = "../../util/toolkit" }
 
 [[test]]
