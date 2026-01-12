@@ -568,7 +568,7 @@ async fn cnight_produces_dust() {
 async fn deregister_from_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
@@ -672,6 +672,28 @@ async fn deregister_from_dust_production() {
         "Matching MappingRemoved event found: {:?}",
         mapping_removed.unwrap()
     );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
 }
 
 #[tokio::test]

@@ -669,7 +669,7 @@ pub mod pallet {
 
 		/// Changes the mainchain address for the mapping validator contract
 		///
-		/// This extrinsic must be run either using `sudo` or some other chain governance mechanism.
+		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
 		#[pallet::weight((1, DispatchClass::Normal))]
 		pub fn set_mapping_validator_contract_address(
