@@ -1784,9 +1784,7 @@ async fn query_d_parameter_at_historical_block() {
     // Step 6: Test error handling - query with invalid block hash
     println!("Testing error handling with invalid block hash...");
     let invalid_block_hash = subxt::utils::H256::from([0xff; 32]);
-    let invalid_query_result = midnight_client
-        .get_d_parameter_at(invalid_block_hash)
-        .await;
+    let invalid_query_result = midnight_client.get_d_parameter_at(invalid_block_hash).await;
 
     assert!(
         invalid_query_result.is_err(),
