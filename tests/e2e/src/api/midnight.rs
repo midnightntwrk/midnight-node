@@ -292,6 +292,19 @@ impl MidnightClient {
         Ok(block.hash())
     }
 
+    /// Get block hash at a specific block height/number.
+    pub async fn get_block_hash_at_height(
+        &self,
+        block_number: u32,
+    ) -> Result<H256, Box<dyn std::error::Error>> {
+        let block_hash: Option<H256> = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![block_number])
+            .await?;
+
+        block_hash.ok_or_else(|| format!("No block found at height {}", block_number).into())
+    }
+
     /// Wait for a new finalized block and return its hash.
     pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
         let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
