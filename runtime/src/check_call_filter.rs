@@ -8,7 +8,7 @@ use sp_runtime::{
 	transaction_validity::{InvalidTransaction, TransactionValidityError, ValidTransaction},
 };
 
-/// Filter that whitelists Governance calls and Sudo
+/// Filter that whitelists Governance calls
 struct GovernanceAuthorityCallFilter;
 impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	fn contains(call: &RuntimeCall) -> bool {
@@ -16,7 +16,6 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 			call,
 			RuntimeCall::Council(_)
 				| RuntimeCall::TechnicalCommittee(_)
-				| RuntimeCall::Sudo(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
 				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })

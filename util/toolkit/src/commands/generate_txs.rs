@@ -135,7 +135,8 @@ mod tests {
 		unshielded_amount: Some(100),
 		unshielded_token_type: NIGHT,
 		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.to_string(),
+			.parse().unwrap(),
+		funding_seed: None,
 		destination_address: vec![
 			WalletAddress::from_str(
 				"mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj",

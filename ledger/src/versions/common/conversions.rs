@@ -58,6 +58,7 @@ impl From<LedgerSystemTransactionError> for SystemTransactionError {
 			Lste::GenerationInfoAlreadyPresent(_) => Ste::GenerationInfoAlreadyPresent,
 			Lste::InvalidBasisPoints(_) => Ste::InvalidBasisPoints,
 			Lste::InvariantViolation(_) => Ste::InvariantViolation,
+			Lste::TreasuryDisabled => Ste::TreasuryDisabled,
 		}
 	}
 }
