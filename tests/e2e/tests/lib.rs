@@ -2881,7 +2881,10 @@ async fn authority_selection_uses_aiken_candidates() {
 
         if is_match {
             matched_count += 1;
-            println!("  ✓ Authority {} matches a permissioned candidate", authority);
+            println!(
+                "  ✓ Authority {} matches a permissioned candidate",
+                authority
+            );
         } else {
             println!(
                 "  ⚠ Authority {} not found in permissioned candidates",

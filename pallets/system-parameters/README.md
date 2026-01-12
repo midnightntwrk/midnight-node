@@ -69,6 +69,4 @@ The `getAriadneParameters` endpoint returns the same response schema as `sidecha
 - **candidate_registrations**: Registered candidate data from Cardano
 - **d_parameter_block_info**: Metadata about the block from which D Parameter was fetched
   - `block_hash`: The block hash used to query D Parameter
-  - `block_number`: The block number used to query D Parameter
-
-The `d_parameter_block_info` field ensures transparency about data provenance, especially when mixing historical epoch data from Cardano with on-chain D Parameter values.
+  - `block_number`: The block number used to query D ParameterThe `d_parameter_block_info` field ensures transparency about data provenance, especially when mixing historical epoch data from Cardano with on-chain D Parameter values.
