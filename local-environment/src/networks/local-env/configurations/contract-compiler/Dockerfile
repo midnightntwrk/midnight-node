@@ -26,9 +26,15 @@ RUN apt-get update && \
 ENV AIKEN_VERSION=1.1.19
 RUN npm install -g @aiken-lang/aiken@${AIKEN_VERSION}
 
+# Create non-root user for security
+RUN useradd -u 10001 -m -s /bin/bash appuser
+
 WORKDIR /contracts
 
 COPY compile-contracts.sh /compile-contracts.sh
-RUN chmod +x /compile-contracts.sh
+RUN chmod +x /compile-contracts.sh && \
+    chown -R appuser:appuser /contracts
+
+USER appuser
 
 ENTRYPOINT ["/bin/bash", "/compile-contracts.sh"]
