@@ -67,6 +67,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # One-shot container that compiles and exits; healthcheck not applicable
+    healthcheck:
+      disable: true
 
   kupo:
     container_name: kupo
