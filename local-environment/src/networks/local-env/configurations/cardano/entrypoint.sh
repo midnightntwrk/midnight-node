@@ -441,7 +441,9 @@ echo "  Input: $federatedops_input"
 echo "  Input Amount: $federatedops_input_amount lovelace"
 
 # Federated Ops one-shot transaction
-federatedops_oneshot_amount=10000000
+# Note: Using 12 ADA (different from council's 10 ADA and techauth's 15 ADA)
+# to ensure unique amount matching when querying one-shot UTxOs
+federatedops_oneshot_amount=12000000
 federatedops_fee=200000
 federatedops_change=$((federatedops_input_amount - federatedops_oneshot_amount - federatedops_fee))
 
