@@ -294,12 +294,14 @@ mod tests {
 	fn test_build_versioned_multisig_datum() {
 		let members = vec![
 			GovernanceMember {
-				cardano_hash: "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2a".to_string(),
+				cardano_hash: "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2a"
+					.to_string(),
 				sr25519_key: "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
 					.to_string(),
 			},
 			GovernanceMember {
-				cardano_hash: "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b".to_string(),
+				cardano_hash: "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b"
+					.to_string(),
 				sr25519_key: "e659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e"
 					.to_string(),
 			},
@@ -323,7 +325,8 @@ mod tests {
 		let candidates = vec![FederatedOpsCandidate {
 			ecdsa_key: "020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
 				.to_string(),
-			aura_key: "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d".to_string(),
+			aura_key: "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
+				.to_string(),
 		}];
 
 		let datum = build_federated_ops_datum(&candidates);

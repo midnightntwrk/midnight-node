@@ -1,8 +1,8 @@
-use aiken_contracts_lib::{
-    build_federated_ops_datum, build_federated_ops_redeemer, build_governance_redeemer,
-    build_versioned_multisig_datum, FederatedOpsCandidate, GovernanceMember,
-};
 use crate::config::{Constants, OgmiosClientSettings};
+use aiken_contracts_lib::{
+    FederatedOpsCandidate, GovernanceMember, build_federated_ops_datum,
+    build_federated_ops_redeemer, build_governance_redeemer, build_versioned_multisig_datum,
+};
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::OgmiosClientError;
 use ogmios_client::jsonrpsee::client_for_url;

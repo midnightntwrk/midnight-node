@@ -286,7 +286,7 @@ async fn deploy_federated_ops_contract_and_validate_membership() {
     let _midnight_client = MidnightClient::new(settings.node_client).await;
 
     // Derive keys from seeds (Alice and Eve from Substrate)
-    use sp_core::{ecdsa, sr25519, Pair};
+    use sp_core::{Pair, ecdsa, sr25519};
 
     // ECDSA (cross-chain) keys - derived from seed
     let alice_ecdsa_pair = ecdsa::Pair::from_string("//Alice", None).expect("valid seed");

@@ -124,9 +124,10 @@ async fn main() -> Result<(), CliError> {
 
 	// Connect to Ogmios
 	println!("Connecting to Ogmios at {}...", args.ogmios_url);
-	let ogmios_client = client_for_url(&args.ogmios_url, Duration::from_secs(args.timeout))
-		.await
-		.map_err(|e| CliError::Ogmios(format!("Failed to connect to Ogmios: {:?}", e)))?;
+	let ogmios_client =
+		client_for_url(&args.ogmios_url, Duration::from_secs(args.timeout))
+			.await
+			.map_err(|e| CliError::Ogmios(format!("Failed to connect to Ogmios: {:?}", e)))?;
 	println!("✓ Connected to Ogmios");
 
 	// Query UTxOs at funded address
