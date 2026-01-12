@@ -1,6 +1,6 @@
 #node #breaking
 
-# Aiken Permissioned Candidates Migration
+# Migrate to Aiken-based Permissioned Candidates Contracts
 
 Update permissioned candidates policy IDs to use new Aiken-based contracts instead of the deprecated Haskell-based contracts.
 
@@ -15,7 +15,10 @@ Update permissioned candidates policy IDs to use new Aiken-based contracts inste
 - `keys`: object with `aura` and `gran` keys
 - `isValid`: boolean
 
-**E2E Test**: Added `permissioned_candidates_aiken_format` test to validate the Aiken format structure.
+**Local Environment Updates:**
+- Added dynamic Aiken contract compilation for local-env E2E tests
+- Added federated_ops contract deployment support
+- Governance contracts are now compiled from source during local-env startup
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/454
 JIRA: https://shielded.atlassian.net/browse/PM-20994
