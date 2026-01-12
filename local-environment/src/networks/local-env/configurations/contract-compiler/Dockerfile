@@ -14,7 +14,8 @@
 # Contract compiler image with Aiken for compiling governance contracts
 # Uses Node.js base image since aiken is installed via npm in build_contracts.sh
 
-FROM node:22-slim
+# renovate: datasource=docker depName=node
+FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192fbcea21cc8
 
 # Install required tools
 RUN apt-get update && \
