@@ -13,7 +13,7 @@ description = "Pallet for storing and managing system parameters"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [package.metadata.cargo-shear]
-ignored = ["serde"]  # Required by frame_support::Serialize/Deserialize macros
+ignored = ["serde"]
 
 [dependencies]
 parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
@@ -55,6 +55,3 @@ try-runtime = [
     "frame-support/try-runtime",
     "frame-system/try-runtime",
 ]
-
-[package.metadata.cargo-shear]
-ignored = ["serde"]
