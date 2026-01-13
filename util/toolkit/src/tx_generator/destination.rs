@@ -161,7 +161,7 @@ where
 		let num_per_batch = txs.batches.first().map(|batch| batch.txs.len()).unwrap_or(0);
 		let total_txs = num_per_batch * num_batches;
 
-		let sender = Arc::new(Sender::<S, P>::new(&self.urls).await?);
+		let sender = Arc::new(Sender::<S, P>::new(&self.urls, true).await?);
 
 		println!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;

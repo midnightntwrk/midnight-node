@@ -91,6 +91,7 @@ where
 				src_files.clone(),
 				extension.to_string(),
 				src.dust_warp,
+				src.ignore_block_context,
 			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
