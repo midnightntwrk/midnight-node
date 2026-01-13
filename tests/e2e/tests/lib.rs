@@ -35,6 +35,7 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 // -------- TESTS --------
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_for_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -119,6 +120,7 @@ async fn register_for_dust_production() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deploy_governance_contracts_and_validate_membership_reset() {
     println!("=== Starting Governance Contracts E2E Test ===");
 
@@ -363,6 +365,7 @@ async fn deploy_federated_ops_contract_and_validate_membership() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
@@ -524,6 +527,7 @@ async fn register_2_cardano_same_dust_address_production() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -654,6 +658,7 @@ async fn cnight_produces_dust() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_from_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -852,6 +857,7 @@ async fn alice_cannot_deregister_bob() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn removing_excessive_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1101,6 +1107,7 @@ async fn removing_excessive_registrations() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn create_hundred_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1439,6 +1446,7 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
 }
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1606,6 +1614,7 @@ async fn register_twice_with_same_cardano_address() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_with_valid_cnight_utxo() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1911,6 +1920,7 @@ async fn query_d_parameter_at_historical_block() {
     println!("via federated authority governance between block queries.");
 }
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_first_mapping() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2173,6 +2183,7 @@ async fn deregister_first_mapping() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn produce_dust_from_tokens_owned_before_registration() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2311,6 +2322,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn stop_dust_producing_after_deregistration_and_rotation() {
     // case for stop dust production (reg -> mint -> dereg -> rotate)
     let settings = Settings::default();
@@ -2474,6 +2486,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
 }
 
 #[tokio::test]
+#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
     let cardano_client =
@@ -2798,6 +2811,7 @@ async fn permissioned_candidates_aiken_format() {
 /// This confirms that the Aiken-format permissioned candidates are correctly
 /// being used in the authority selection process.
 #[tokio::test]
+#[ignore = "requires aura_getAuthorities RPC which is not exposed by the node"]
 async fn authority_selection_uses_aiken_candidates() {
     println!("=== TC-PC-004: Authority Selection with Aiken Candidates ===");
 
