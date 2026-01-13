@@ -389,20 +389,6 @@ impl MidnightClient {
         Ok(status.epoch)
     }
 
-    /// Get the current AURA authorities via runtime API.
-    ///
-    /// Returns a list of AURA authority public keys (hex encoded).
-    pub async fn get_aura_authorities(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        // Query AURA authorities via the runtime API
-        let authorities: Vec<String> = self
-            .rpc_client
-            .request("aura_getAuthorities", rpc_params![])
-            .await
-            .map_err(|e| format!("Failed to get AURA authorities: {}", e))?;
-
-        Ok(authorities)
-    }
-
     /// Wait until the sidechain reaches a specific epoch.
     ///
     /// Polls the sidechain status every 2 seconds until the target epoch is reached,
