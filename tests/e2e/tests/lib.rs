@@ -35,7 +35,6 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 // -------- TESTS --------
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_for_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -119,126 +118,89 @@ async fn register_for_dust_production() {
     );
 }
 
+/// Verifies that governance contracts (council_forever and tech_auth_forever) were
+/// deployed by midnight-setup and validates membership reset events.
+///
+/// This test verifies:
+/// 1. Council Forever contract exists at the expected address with NFT
+/// 2. Technical Authority Forever contract exists at the expected address with NFT
+/// 3. Midnight blockchain emits membership reset events for the deployed contracts
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
-async fn deploy_governance_contracts_and_validate_membership_reset() {
-    println!("=== Starting Governance Contracts E2E Test ===");
+async fn verify_governance_contracts_and_validate_membership_reset() {
+    println!("=== Verifying Governance Contracts Deployed by midnight-setup ===");
 
     let settings = Settings::default();
     let policies = settings.constants.policies.clone();
-    let funded_address = settings.constants.payments.funded_address.clone();
 
     let cardano_client =
         CardanoClient::new_from_funded(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Example Sr25519 public keys for testing (Alice and Eve from Substrate)
-    // In production, these would be the actual governance authority member keys
-    const ALICE_SR25519: &str = "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d";
-    const EVE_SR25519: &str = "e659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e";
-
-    // Use the funded_address from config as the deployer
-    // The funded_address owns the one-shot UTxOs, so we use it for all inputs to simplify signing
-    println!("Using funded_address for deployment: {}", funded_address);
-
-    // Alice's Cardano key hash
-    let alice_cardano_hash = "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b";
-
-    // Bob's Cardano key hash
-    let bob_cardano_hash = "e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2c";
-
-    // Fund UTxOs for deployment (these will be owned by funded_address)
-    let address_bech32 = cardano_client.address_as_bech32();
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in_utxo = faucet.request_tokens(&address_bech32, 500_000_000).await;
-    let tx_in_utxo_2 = faucet.request_tokens(&address_bech32, 500_000_000).await;
-    println!("Wallet funded for governance contract deployment");
-
-    // Load contract CBORs and calculate addresses and policy IDs
-    let council_cbor = policies.council_forever_cbor_double_encoding();
+    // Get expected addresses and policy IDs from config
     let council_address = policies.council_forever_address();
     let council_policy_id = policies.council_forever_policy_id();
 
-    let tech_auth_cbor = policies.tech_auth_forever_cbor_double_encoding();
     let tech_auth_address = policies.tech_auth_forever_address();
     let tech_auth_policy_id = policies.tech_auth_forever_policy_id();
 
     println!("Council Forever:");
-    println!("  Policy ID (calculated): {}", council_policy_id);
+    println!("  Policy ID (expected): {}", council_policy_id);
     println!("  Address: {}", council_address);
 
     println!("Technical Authority Forever:");
-    println!("  Policy ID (calculated): {}", tech_auth_policy_id);
+    println!("  Policy ID (expected): {}", tech_auth_policy_id);
     println!("  Address: {}", tech_auth_address);
 
-    // Get pre-created one-shot UTxOs from local-environment
-    // These are created by the Cardano entrypoint.sh script during network setup
-    let council_one_shot = cardano_client
-        .one_shot_utxo("council")
-        .await
-        .expect("Failed to get one shot council");
-    println!("✓ Council one-shot UTXO retrieved from local-environment");
-
-    let tech_auth_one_shot = cardano_client
-        .one_shot_utxo("techauth")
-        .await
-        .expect("Failed to get one shot techauth");
-    println!("✓ Technical Authority one-shot UTXO retrieved from local-environment");
-
-    // Deploy Council Forever contract
-    println!("\n=== Deploying Council Forever Contract ===");
-    let council_members = vec![
-        (alice_cardano_hash.to_string(), ALICE_SR25519.to_string()),
-        (bob_cardano_hash.to_string(), EVE_SR25519.to_string()),
-    ];
-
-    let council_tx_id = cardano_client
-        .deploy_governance_contract(
-            &tx_in_utxo,
-            &collateral_utxo,
-            &council_one_shot,
-            &council_cbor,
-            &council_address,
-            &council_policy_id,
-            council_members.clone(),
-            2, // total_signers
-        )
-        .await
-        .expect("Failed to deploy the governance contract")
-        .transaction
-        .id;
-
-    println!("✓ Council Forever contract deployed successfully with tx ID: {council_tx_id:?}");
-
-    // Deploy Technical Authority Forever contract
-    println!("\n=== Deploying Technical Authority Forever Contract ===");
-    let tech_auth_members = vec![
-        (alice_cardano_hash.to_string(), ALICE_SR25519.to_string()),
-        (bob_cardano_hash.to_string(), EVE_SR25519.to_string()),
-    ];
-
-    let tech_auth_tx_id = cardano_client
-        .deploy_governance_contract(
-            &tx_in_utxo_2,
-            &collateral_utxo,
-            &tech_auth_one_shot,
-            &tech_auth_cbor,
-            &tech_auth_address,
-            &tech_auth_policy_id,
-            tech_auth_members.clone(),
-            2, // total_signers
-        )
-        .await
-        .expect("Failed to deploy the governance contract")
-        .transaction
-        .id;
-
-    println!(
-        "✓ Technical Authority Forever contract deployed successfully with tx ID: {tech_auth_tx_id:?}"
+    // Query UTxOs at council contract address to verify deployment
+    println!("\n=== Verifying Council Forever Contract ===");
+    let council_utxos = cardano_client.query_utxos(&council_address).await;
+    assert!(
+        !council_utxos.is_empty(),
+        "Council Forever contract not found at expected address. Was midnight-setup run?"
     );
 
-    println!("\n=== Both Governance Contracts Deployed Successfully ===");
+    // Verify at least one UTxO has an NFT with the expected policy ID
+    let council_policy_bytes = hex::decode(&council_policy_id).expect("valid policy id hex");
+    let council_has_nft = council_utxos.iter().any(|utxo| {
+        utxo.value
+            .native_tokens
+            .iter()
+            .any(|(policy_id, _)| policy_id.as_ref() == council_policy_bytes.as_slice())
+    });
+    assert!(
+        council_has_nft,
+        "Council Forever contract NFT with policy {} not found",
+        council_policy_id
+    );
+    println!("✓ Council Forever contract verified at {}", council_address);
+
+    // Query UTxOs at tech auth contract address to verify deployment
+    println!("\n=== Verifying Technical Authority Forever Contract ===");
+    let tech_auth_utxos = cardano_client.query_utxos(&tech_auth_address).await;
+    assert!(
+        !tech_auth_utxos.is_empty(),
+        "Technical Authority Forever contract not found at expected address. Was midnight-setup run?"
+    );
+
+    // Verify at least one UTxO has an NFT with the expected policy ID
+    let tech_auth_policy_bytes = hex::decode(&tech_auth_policy_id).expect("valid policy id hex");
+    let tech_auth_has_nft = tech_auth_utxos.iter().any(|utxo| {
+        utxo.value
+            .native_tokens
+            .iter()
+            .any(|(policy_id, _)| policy_id.as_ref() == tech_auth_policy_bytes.as_slice())
+    });
+    assert!(
+        tech_auth_has_nft,
+        "Technical Authority Forever contract NFT with policy {} not found",
+        tech_auth_policy_id
+    );
+    println!(
+        "✓ Technical Authority Forever contract verified at {}",
+        tech_auth_address
+    );
+
+    println!("\n=== Both Governance Contracts Verified Successfully ===");
     println!("Waiting for Midnight blockchain to emit membership reset events...\n");
 
     // Subscribe to federated authority observation events with timeout
@@ -255,117 +217,72 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
             println!("Successfully received federated authority events");
         }
         Ok(Err(e)) => {
-            println!("\n=== Governance Contracts E2E Test PARTIAL SUCCESS ===");
-            println!("Contracts deployed successfully, but event subscription failed.");
-            println!(
-                "The contracts are active on-chain, but event verification could not be completed."
-            );
+            println!("\n=== Governance Contracts Verification PARTIAL SUCCESS ===");
+            println!("Contracts verified on-chain, but event subscription failed.");
             panic!("⚠ Failed to receive federated authority events: {}", e);
         }
         Err(_) => {
-            println!("\n=== Governance Contracts E2E Test PARTIAL SUCCESS ===");
-            println!(
-                "Contracts deployed successfully, but events were not received within timeout."
-            );
-            println!(
-                "The contracts are active on-chain. The Midnight blockchain may need more time to process."
-            );
+            println!("\n=== Governance Contracts Verification PARTIAL SUCCESS ===");
+            println!("Contracts verified on-chain, but events were not received within timeout.");
             panic!("⚠ Timeout waiting for federated authority events (30 seconds elapsed)");
         }
     }
 }
 
+/// Verifies that the federated_ops_forever contract was deployed by midnight-setup.
+///
+/// This test verifies:
+/// 1. Federated Operators Forever contract exists at the expected address
+/// 2. The contract NFT was minted with the expected policy ID
 #[tokio::test]
-async fn deploy_federated_ops_contract_and_validate_membership() {
-    println!("=== Starting Federated Operators Contract E2E Test ===");
+async fn verify_federated_ops_contract_deployment() {
+    println!("=== Verifying Federated Operators Contract Deployed by midnight-setup ===");
 
     let settings = Settings::default();
     let policies = settings.constants.policies.clone();
-    let funded_address = settings.constants.payments.funded_address.clone();
 
     let cardano_client =
         CardanoClient::new_from_funded(settings.ogmios_client, settings.constants).await;
-    let _midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Derive keys from seeds (Alice and Eve from Substrate)
-    use sp_core::{Pair, ecdsa, sr25519};
-
-    // ECDSA (cross-chain) keys - derived from seed
-    let alice_ecdsa_pair = ecdsa::Pair::from_string("//Alice", None).expect("valid seed");
-    let eve_ecdsa_pair = ecdsa::Pair::from_string("//Eve", None).expect("valid seed");
-    let alice_ecdsa = hex::encode(alice_ecdsa_pair.public().0);
-    let eve_ecdsa = hex::encode(eve_ecdsa_pair.public().0);
-
-    // SR25519 (AURA) keys - derived from seed
-    let alice_sr25519_pair = sr25519::Pair::from_string("//Alice", None).expect("valid seed");
-    let eve_sr25519_pair = sr25519::Pair::from_string("//Eve", None).expect("valid seed");
-    let alice_sr25519 = hex::encode(alice_sr25519_pair.public().0);
-    let eve_sr25519 = hex::encode(eve_sr25519_pair.public().0);
-
-    println!("Alice ECDSA (cross-chain) key: {}", alice_ecdsa);
-    println!("Eve ECDSA (cross-chain) key: {}", eve_ecdsa);
-    println!("Alice SR25519 (AURA) key: {}", alice_sr25519);
-    println!("Eve SR25519 (AURA) key: {}", eve_sr25519);
-
-    println!("Using funded_address for deployment: {}", funded_address);
-
-    // Fund UTxOs for deployment
-    let address_bech32 = cardano_client.address_as_bech32();
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in_utxo = faucet.request_tokens(&address_bech32, 500_000_000).await;
-    println!("Wallet funded for federated operators contract deployment");
-
-    // Load contract CBOR and calculate address and policy ID
-    let federated_ops_cbor = policies.federated_ops_forever_cbor_double_encoding();
+    // Get expected address and policy ID from config
     let federated_ops_address = policies.federated_ops_forever_address();
     let federated_ops_policy_id = policies.federated_ops_forever_policy_id();
 
     println!("Federated Operators Forever:");
-    println!("  Policy ID (calculated): {}", federated_ops_policy_id);
+    println!("  Policy ID (expected): {}", federated_ops_policy_id);
     println!("  Address: {}", federated_ops_address);
 
-    // Get pre-created one-shot UTXO from local-environment
-    let federated_ops_one_shot = cardano_client
-        .one_shot_utxo("federatedops")
-        .await
-        .expect("Failed to get one shot federatedops");
-    println!("✓ Federated Operators one-shot UTXO retrieved from local-environment");
-
-    // Deploy Federated Operators Forever contract
-    println!("\n=== Deploying Federated Operators Forever Contract ===");
-    // FederatedOps uses (ecdsa_key, aura_key) tuples
-    // - ecdsa_key: The cross-chain (crch) key used as partner_chains_key
-    // - aura_key: The SR25519 key for AURA consensus
-    let federated_ops_candidates = vec![
-        (alice_ecdsa.clone(), alice_sr25519.clone()),
-        (eve_ecdsa.clone(), eve_sr25519.clone()),
-    ];
-
-    let federated_ops_tx_id = cardano_client
-        .deploy_federated_ops_contract(
-            &tx_in_utxo,
-            &collateral_utxo,
-            &federated_ops_one_shot,
-            &federated_ops_cbor,
-            &federated_ops_address,
-            &federated_ops_policy_id,
-            federated_ops_candidates,
-        )
-        .await
-        .expect("Failed to deploy the federated operators contract")
-        .transaction
-        .id;
-
-    println!(
-        "✓ Federated Operators Forever contract deployed successfully with tx ID: {federated_ops_tx_id:?}"
+    // Query UTxOs at federated ops contract address to verify deployment
+    println!("\n=== Verifying Federated Operators Forever Contract ===");
+    let federated_ops_utxos = cardano_client.query_utxos(&federated_ops_address).await;
+    assert!(
+        !federated_ops_utxos.is_empty(),
+        "Federated Operators Forever contract not found at expected address. Was midnight-setup run?"
     );
 
-    println!("\n=== Federated Operators Contract Deployed Successfully ===");
+    // Verify at least one UTxO has an NFT with the expected policy ID
+    let federated_ops_policy_bytes =
+        hex::decode(&federated_ops_policy_id).expect("valid policy id hex");
+    let has_nft = federated_ops_utxos.iter().any(|utxo| {
+        utxo.value
+            .native_tokens
+            .iter()
+            .any(|(policy_id, _)| policy_id.as_ref() == federated_ops_policy_bytes.as_slice())
+    });
+    assert!(
+        has_nft,
+        "Federated Operators Forever contract NFT with policy {} not found",
+        federated_ops_policy_id
+    );
+
+    println!(
+        "✓ Federated Operators Forever contract verified at {}",
+        federated_ops_address
+    );
+    println!("\n=== Federated Operators Contract Verification Complete ===");
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
@@ -527,7 +444,6 @@ async fn register_2_cardano_same_dust_address_production() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -658,7 +574,6 @@ async fn cnight_produces_dust() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_from_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -857,7 +772,6 @@ async fn alice_cannot_deregister_bob() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn removing_excessive_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1107,7 +1021,6 @@ async fn removing_excessive_registrations() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn create_hundred_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1446,7 +1359,6 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
 }
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1614,7 +1526,6 @@ async fn register_twice_with_same_cardano_address() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_with_valid_cnight_utxo() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1920,7 +1831,6 @@ async fn query_d_parameter_at_historical_block() {
     println!("via federated authority governance between block queries.");
 }
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn deregister_first_mapping() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2183,7 +2093,6 @@ async fn deregister_first_mapping() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn produce_dust_from_tokens_owned_before_registration() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2322,7 +2231,6 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn stop_dust_producing_after_deregistration_and_rotation() {
     // case for stop dust production (reg -> mint -> dereg -> rotate)
     let settings = Settings::default();
@@ -2486,7 +2394,6 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
 }
 
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
     let cardano_client =
@@ -2811,7 +2718,6 @@ async fn permissioned_candidates_aiken_format() {
 /// This confirms that the Aiken-format permissioned candidates are correctly
 /// parsed and available via the systemParameters RPC.
 #[tokio::test]
-#[ignore = "requires local-env chain observation which is not working - see PM-XXXXX"]
 async fn authority_selection_uses_aiken_candidates() {
     println!("=== TC-PC-004: Aiken Permissioned Candidates Validation ===");
 

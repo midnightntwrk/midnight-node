@@ -198,82 +198,71 @@ echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
 SIGNING_KEY_CBOR=$(jq -r '.cborHex | .[4:]' /keys/funded_address.skey)
 echo "$SIGNING_KEY_CBOR" > /tmp/signing_key.cbor
 
-# Skip governance contract deployment if SKIP_GOVERNANCE_DEPLOY is set
-# This is used when E2E tests need to deploy the contracts themselves with specific test data
-if [ "${SKIP_GOVERNANCE_DEPLOY:-false}" = "true" ]; then
-    echo ""
-    echo "=== Skipping Governance Contract Deployment (SKIP_GOVERNANCE_DEPLOY=true) ==="
-    echo "One-shot UTxOs preserved for E2E test deployment:"
-    echo "  Council: ${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}"
-    echo "  Tech Auth: ${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}"
-    echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
+# Deploy council_forever contract
+echo ""
+echo "=== Deploying Council Forever Contract ==="
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
+    --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL"
+
+if [ $? -eq 0 ]; then
+    echo "✓ Council Forever contract deployed successfully!"
 else
-    # Deploy council_forever contract
-    echo ""
-    echo "=== Deploying Council Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
-        --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL"
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Council Forever contract deployed successfully!"
-    else
-        echo "✗ Council Forever contract deployment failed"
-        exit 1
-    fi
-
-    # Wait for transaction to confirm
-    sleep 10
-
-    # Deploy tech_auth_forever contract (uses same members for testing)
-    echo ""
-    echo "=== Deploying Tech Auth Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
-        --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL" \
-        --contract-type tech-auth
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Tech Auth Forever contract deployed successfully!"
-    else
-        echo "✗ Tech Auth Forever contract deployment failed"
-        exit 1
-    fi
-
-    # Wait for transaction to confirm
-    sleep 10
-
-    # Deploy federated_ops_forever contract
-    # Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
-    echo ""
-    echo "=== Deploying Federated Ops Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/federated_ops_forever.cbor" \
-        --one-shot-utxo "${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL" \
-        --contract-type federated-ops
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Federated Ops Forever contract deployed successfully!"
-    else
-        echo "✗ Federated Ops Forever contract deployment failed"
-        exit 1
-    fi
-
-    echo ""
-    echo "=== All Aiken Governance Contracts Deployed Successfully ==="
+    echo "✗ Council Forever contract deployment failed"
+    exit 1
 fi
+
+# Wait for transaction to confirm
+sleep 10
+
+# Deploy tech_auth_forever contract (uses same members for testing)
+echo ""
+echo "=== Deploying Tech Auth Forever Contract ==="
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
+    --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type tech-auth
+
+if [ $? -eq 0 ]; then
+    echo "✓ Tech Auth Forever contract deployed successfully!"
+else
+    echo "✗ Tech Auth Forever contract deployment failed"
+    exit 1
+fi
+
+# Wait for transaction to confirm
+sleep 10
+
+# Deploy federated_ops_forever contract
+# Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
+echo ""
+echo "=== Deploying Federated Ops Forever Contract ==="
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/federated_ops_forever.cbor" \
+    --one-shot-utxo "${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type federated-ops
+
+if [ $? -eq 0 ]; then
+    echo "✓ Federated Ops Forever contract deployed successfully!"
+else
+    echo "✗ Federated Ops Forever contract deployment failed"
+    exit 1
+fi
+
+echo ""
+echo "=== All Aiken Governance Contracts Deployed Successfully ==="
 
 echo "Inserting registered candidate Eve..."
 

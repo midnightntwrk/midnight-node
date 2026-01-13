@@ -641,6 +641,22 @@ impl CardanoClient {
         None
     }
 
+    /// Query all UTxOs at a given address
+    pub async fn query_utxos(&self, address: &str) -> Vec<OgmiosUtxo> {
+        let request = OgmiosRequest::QueryUtxo {
+            address: address.to_string(),
+        };
+
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+
+        match response {
+            OgmiosResponse::QueryUtxo(utxos) => utxos,
+            _ => vec![],
+        }
+    }
+
     pub fn build_asset_vector(utxo: &OgmiosUtxo) -> Vec<Asset> {
         let mut assets: Vec<Asset> = utxo
             .value
