@@ -920,6 +920,7 @@ build-normal:
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH \
+        && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
@@ -990,6 +991,7 @@ node-image:
     RUN mkdir -p node
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build-normal/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -1002,7 +1004,7 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -1305,7 +1307,8 @@ start-local-env-with-indexer-ci:
     ARG WALLET_INDEXER_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    # Skip governance contract deployment so E2E tests can deploy with their own test data
+    RUN SKIP_GOVERNANCE_DEPLOY=true ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 stop-local-env:

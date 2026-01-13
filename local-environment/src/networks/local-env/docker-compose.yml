@@ -52,6 +52,29 @@ services:
     ports:
       - "30000:30000"
 
+  contract-compiler:
+    container_name: contract-compiler
+    build:
+      context: ./configurations/contract-compiler
+      dockerfile: Dockerfile
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ${MIDNIGHT_RESERVE_CONTRACTS_PATH:-../../../../../midnight-reserve-contracts}:/contracts
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # One-shot container: compilation completes and exits, healthcheck is a no-op
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
@@ -474,6 +497,8 @@ services:
     depends_on:
       ogmios:
         condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"
@@ -490,9 +515,12 @@ services:
       - ./configurations/midnight-setup/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/:/midnight-nodes/
       - ../../../../res/:/res/
+      - ./runtime-values:/runtime-values
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
+      # Skip governance contract deployment when E2E tests need to deploy them
+      - SKIP_GOVERNANCE_DEPLOY=${SKIP_GOVERNANCE_DEPLOY:-false}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
 
 volumes:

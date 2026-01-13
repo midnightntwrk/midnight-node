@@ -21,6 +21,8 @@ members = [
     "util/toolkit",
     "util/documented",
     "util/upgrader",
+    "util/aiken-deployer",
+    "util/aiken-contracts-lib",
     "tests/e2e",
     "relay",
     "docs",
