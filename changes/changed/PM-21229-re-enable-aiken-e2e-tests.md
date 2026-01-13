@@ -6,7 +6,7 @@ Fix local-environment Aiken governance contract deployment and re-enable 16 disa
 
 ## Issue
 
-Fixes PM-21229
+Fixes [PM-21229](https://shielded.atlassian.net/browse/PM-21229)
 
 ## PR
 
