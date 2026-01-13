@@ -20,11 +20,23 @@
 //! 3. Creates an output at the script address with a VersionedMultisig datum
 
 use aiken_contracts_lib::{
-	build_deploy_transaction, build_governance_redeemer, build_versioned_multisig_datum,
-	convert_cost_models, prepare_contract, testnet_network_id, DeployParams, GovernanceMember,
+	build_deploy_transaction, build_federated_ops_datum, build_federated_ops_redeemer,
+	build_governance_redeemer, build_versioned_multisig_datum, convert_cost_models,
+	prepare_contract, testnet_network_id, DeployParams, GovernanceMember,
 };
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use ogmios_client::jsonrpsee::client_for_url;
+
+/// The type of governance contract being deployed.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ContractType {
+	/// Council governance contract (Versioned<Multisig> datum)
+	Council,
+	/// Technical authority governance contract (Versioned<Multisig> datum)
+	TechAuth,
+	/// Federated operators contract (FederatedOps datum with appendix field)
+	FederatedOps,
+}
 use ogmios_client::query_ledger_state::QueryLedgerState;
 use ogmios_client::transactions::Transactions;
 use std::fs;
@@ -64,6 +76,13 @@ struct Args {
 	/// Timeout for Ogmios connection in seconds
 	#[arg(long, default_value = "30")]
 	timeout: u64,
+
+	/// Type of governance contract being deployed.
+	/// Determines the datum structure:
+	/// - council/tech-auth: Versioned<Multisig> (2 fields)
+	/// - federated-ops: FederatedOps (3 fields with appendix)
+	#[arg(long, value_enum, default_value = "council")]
+	contract_type: ContractType,
 }
 
 #[derive(Error, Debug)]
@@ -195,11 +214,24 @@ async fn main() -> Result<(), CliError> {
 		.expect("Not a keyhash");
 	let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-	// Build datum and redeemer using library functions
-	let datum = build_versioned_multisig_datum(&members);
-	let redeemer = build_governance_redeemer(&members);
+	// Build datum and redeemer using library functions based on contract type
+	let (datum, redeemer) = match args.contract_type {
+		ContractType::Council | ContractType::TechAuth => {
+			// Council and TechAuth use Versioned<Multisig> datum
+			let datum = build_versioned_multisig_datum(&members);
+			let redeemer = build_governance_redeemer(&members);
+			(datum, redeemer)
+		},
+		ContractType::FederatedOps => {
+			// FederatedOps uses a different datum structure with an appendix field
+			// For initial deployment, we use empty appendix (no candidates yet)
+			let datum = build_federated_ops_datum(&[]);
+			let redeemer = build_federated_ops_redeemer(&[]);
+			(datum, redeemer)
+		},
+	};
 
-	println!("Building transaction...");
+	println!("Building transaction (contract type: {:?})...", args.contract_type);
 	println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
 
 	// Build and sign transaction

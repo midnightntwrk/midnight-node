@@ -228,7 +228,8 @@ echo "=== Deploying Tech Auth Forever Contract ==="
     --signing-key /tmp/signing_key.cbor \
     --funded-address "$FUNDED_ADDRESS" \
     --members-file council_members.json \
-    --ogmios-url "$OGMIOS_URL"
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type tech-auth
 
 if [ $? -eq 0 ]; then
     echo "✓ Tech Auth Forever contract deployed successfully!"
@@ -240,7 +241,8 @@ fi
 # Wait for transaction to confirm
 sleep 10
 
-# Deploy federated_ops_forever contract (uses same members for testing)
+# Deploy federated_ops_forever contract
+# Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
 echo ""
 echo "=== Deploying Federated Ops Forever Contract ==="
 ./aiken-deployer \
@@ -249,7 +251,8 @@ echo "=== Deploying Federated Ops Forever Contract ==="
     --signing-key /tmp/signing_key.cbor \
     --funded-address "$FUNDED_ADDRESS" \
     --members-file council_members.json \
-    --ogmios-url "$OGMIOS_URL"
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type federated-ops
 
 if [ $? -eq 0 ]; then
     echo "✓ Federated Ops Forever contract deployed successfully!"
