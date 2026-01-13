@@ -21,7 +21,6 @@ import type { KeyringPair } from "@polkadot/keyring/types";
 import type { ISubmittableResult } from "@polkadot/types/types";
 import { u8aToHex } from "@polkadot/util";
 import { blake2AsU8a } from "@polkadot/util-crypto";
-import { resolveInputPath } from "./utils";
 
 export const DEFAULT_RPC_URL = "ws://localhost:9944";
 
@@ -34,22 +33,9 @@ export interface WasmArtifact {
 }
 
 export function loadRuntimeWasm(wasmPath: string): WasmArtifact {
-  const resolvedPath = resolveInputPath(wasmPath, {
-    baseDir: process.cwd(),
-    label: "Runtime wasm path",
-    allowAbsoluteOutsideBase: true,
-  });
+  const resolvedPath = path.resolve(wasmPath);
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`Unable to find runtime wasm at ${resolvedPath}`);
-  }
-
-  const stats = fs.statSync(resolvedPath);
-  if (!stats.isFile()) {
-    throw new Error(`Runtime wasm path is not a file: ${resolvedPath}`);
-  }
-
-  if (path.extname(resolvedPath).toLowerCase() !== ".wasm") {
-    throw new Error(`Runtime wasm path must end with .wasm: ${resolvedPath}`);
   }
 
   const bytes = fs.readFileSync(resolvedPath);

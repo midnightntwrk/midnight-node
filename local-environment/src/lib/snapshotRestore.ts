@@ -17,7 +17,6 @@ import path from "path";
 import { spawnSync } from "child_process";
 import YAML from "yaml";
 import { ensureSnapshotCredentials } from "./snapshotEnv";
-import { isPathWithinBase } from "./utils";
 
 interface RestoreSnapshotOptions {
   namespace: string;
@@ -223,7 +222,7 @@ function discoverDataMounts(composeFile: string, dataRoot: string): string[] {
       if (!hostPath) continue;
 
       const resolved = path.resolve(composeDir, hostPath);
-      if (isPathWithinBase(resolved, resolvedDataRoot)) {
+      if (isUnderDataRoot(resolved, resolvedDataRoot)) {
         mountPaths.add(resolved);
       }
     }
@@ -246,6 +245,17 @@ function resolveVolumeSource(volume: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function isUnderDataRoot(candidate: string, dataRoot: string): boolean {
+  const normalized = path.resolve(candidate);
+  const base = path.resolve(dataRoot);
+
+  if (normalized === base) {
+    return true;
+  }
+
+  return normalized.startsWith(`${base}${path.sep}`);
 }
 
 function replicateSnapshot(sourceDir: string, targets: string[]): void {

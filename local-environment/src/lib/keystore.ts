@@ -15,7 +15,6 @@ import fs from "fs";
 import path from "path";
 import { cryptoWaitReady } from "@polkadot/util-crypto";
 import { Keyring } from "@polkadot/keyring";
-import { resolvePathWithinBase } from "./utils";
 
 // "Legacy" describes the old ways of representing seeds on pods. Due to the difference
 // in how to represent them, it's easiest to include it here to distinguish
@@ -122,12 +121,7 @@ function resolveNetworkBasePath(namespace: string, basePath?: string): string {
     return path.resolve(basePath);
   }
 
-  const networksRoot = path.resolve(__dirname, "../networks", "well-known");
-  return resolvePathWithinBase(
-    networksRoot,
-    "Network base path",
-    namespace,
-  );
+  return path.resolve(__dirname, "../networks", "well-known", namespace);
 }
 
 function resolveChainId(namespace: string): string {
@@ -139,20 +133,9 @@ function resolveChainId(namespace: string): string {
     return override;
   }
 
-  const resRoot = path.resolve(__dirname, "../../../res");
   const candidates = [
-    resolvePathWithinBase(
-      resRoot,
-      "Chain spec path",
-      namespace,
-      "chain-spec-raw.json",
-    ),
-    resolvePathWithinBase(
-      resRoot,
-      "Chain spec path",
-      namespace,
-      "chain-spec.json",
-    ),
+    path.resolve(__dirname, "../../../res", namespace, "chain-spec-raw.json"),
+    path.resolve(__dirname, "../../../res", namespace, "chain-spec.json"),
   ];
 
   for (const candidate of candidates) {
