@@ -5,4 +5,4 @@ Updates the toolkit entrypoint.sh to properly mount the MN_FETCH_CACHE directory
 
 Also removes unused MN_SYNC_CACHE handling.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/473
