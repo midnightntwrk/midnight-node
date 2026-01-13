@@ -30,6 +30,7 @@ import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
 import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
 import { setupPreviewProxies } from "../lib/previewProxy";
 import { loadNetworkConfig } from "../lib/networkConfig";
+import { resolvePathWithinBase } from "../lib/utils";
 
 /**
  * Runs a specified network, with passed configuration
@@ -167,10 +168,10 @@ function runLocalEnvironment(runOptions: RunOptions) {
 }
 
 function resolveComposeFile(namespace: string): string {
-  const searchPath = path.resolve(
-    __dirname,
-    "../networks",
-    "well-known",
+  const networksRoot = path.resolve(__dirname, "../networks", "well-known");
+  const searchPath = resolvePathWithinBase(
+    networksRoot,
+    "Compose file search path",
     namespace,
     "*.network.yaml",
   );

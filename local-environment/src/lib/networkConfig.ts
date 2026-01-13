@@ -13,6 +13,7 @@
 
 import fs from "fs";
 import path from "path";
+import { resolvePathWithinBase } from "./utils";
 
 export type DbsyncMode = "k8s" | "public" | "rds-proxy";
 export type SecretsMode = "pods-by-labels" | "preview-style";
@@ -37,10 +38,10 @@ const defaults: Required<NetworkConfig> = {
 };
 
 export function loadNetworkConfig(namespace: string): Required<NetworkConfig> {
-  const configPath = path.resolve(
-    __dirname,
-    "../networks",
-    "well-known",
+  const networksRoot = path.resolve(__dirname, "../networks", "well-known");
+  const configPath = resolvePathWithinBase(
+    networksRoot,
+    "Network config path",
     namespace,
     "config.json",
   );

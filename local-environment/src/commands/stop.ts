@@ -26,6 +26,7 @@ import {
   requiredImageVars,
 } from "../lib/localEnv";
 import { loadNetworkConfig } from "../lib/networkConfig";
+import { resolvePathWithinBase } from "../lib/utils";
 
 export async function stop(network: string, runOptions: RunOptions) {
   // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
@@ -58,14 +59,18 @@ async function stopEphemeralEnvironment(
   console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
   const envObject = getSecrets(namespace);
 
-  const searchPath = path.resolve(
+  const networksRoot = path.resolve(
     __dirname,
     "../networks",
     "well-known",
+  );
+  const globPath = resolvePathWithinBase(
+    networksRoot,
+    "Compose file search path",
     namespace,
     "*.network.yaml",
   );
-  const candidates = globSync(searchPath);
+  const candidates = globSync(globPath);
 
   if (candidates.length === 0) {
     console.error(
