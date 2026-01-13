@@ -97,7 +97,7 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::currency::CurrencyWaiver;
-use sp_std::prelude::*;
+use alloc::{vec, vec::Vec};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -180,12 +180,12 @@ pub mod opaque {
 
 	pub mod cross_chain_app {
 		use super::CROSS_CHAIN;
+		use alloc::vec::Vec;
 		use parity_scale_codec::MaxEncodedLen;
 		use sp_core::crypto::AccountId32;
 		use sp_runtime::MultiSigner;
 		use sp_runtime::app_crypto::{app_crypto, ecdsa};
 		use sp_runtime::traits::IdentifyAccount;
-		use sp_std::vec::Vec;
 
 		app_crypto!(ecdsa, CROSS_CHAIN);
 		impl MaxEncodedLen for Signature {
@@ -514,12 +514,6 @@ impl pallet_timestamp::Config for Runtime {
 
 /// Existential deposit.
 pub const EXISTENTIAL_DEPOSIT: u128 = 500;
-
-impl pallet_sudo::Config for Runtime {
-	type RuntimeEvent = RuntimeEvent;
-	type RuntimeCall = RuntimeCall;
-	type WeightInfo = pallet_sudo::weights::SubstrateWeight<Runtime>;
-}
 
 parameter_types! {
 	pub MbmServiceWeight: Weight = Perbill::from_percent(80) * BlockWeights::get().max_block;
@@ -938,8 +932,6 @@ mod runtime {
 	#[runtime::pallet_index(6)]
 	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
 
-	#[runtime::pallet_index(7)]
-	pub type Sudo = pallet_sudo::Pallet<Runtime>;
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
 	#[runtime::pallet_index(30)]
@@ -1043,10 +1035,7 @@ pub type Executive = frame_executive::Executive<
 >;
 
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (
-	// unreleased
-	migrations::IncrementSudoSufficients<Runtime>,
-);
+pub type Migrations = ();
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benches {
@@ -1055,7 +1044,6 @@ mod benches {
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
 		[pallet_timestamp, Timestamp]
-		[pallet_sudo, Sudo]
 		[pallet_migrations, MultiBlockMigrations]
 		[pallet_session_validator_management, SessionCommitteeManagement]
 		[pallet_midnight, Midnight]
@@ -1154,7 +1142,7 @@ impl_runtime_apis! {
 			Runtime::metadata_at_version(version)
 		}
 
-		fn metadata_versions() -> sp_std::vec::Vec<u32> {
+		fn metadata_versions() -> Vec<u32> {
 			Runtime::metadata_versions()
 		}
 	}

@@ -11,24 +11,71 @@ use midnight_node_metadata::midnight_metadata_latest::{
 	c_night_observation::{self}
 	,
 };
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicEvents;
+use subxt::ext::subxt_rpcs::rpc_params;
 use subxt::tx::TxProgress;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
 
+/// D-Parameter response from RPC
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DParameterResponse {
+    /// Number of permissioned candidates
+    pub num_permissioned_candidates: u16,
+    /// Number of registered candidates
+    pub num_registered_candidates: u16,
+}
+
+/// Sidechain status response from sidechain_getStatus RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidechainStatusResponse {
+    /// Current sidechain epoch number
+    pub epoch: u64,
+    /// Current slot within the epoch
+    pub slot: u64,
+    /// Slots per epoch configuration
+    pub slots_per_epoch: u32,
+    /// Slot duration in milliseconds
+    #[serde(default)]
+    pub slot_duration: Option<u64>,
+}
+
+/// Ariadne parameters response from systemParameters_getAriadneParameters RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AriadneParametersResponse {
+    /// The D-parameter (from pallet-system-parameters)
+    pub d_parameter: DParameterResponse,
+    /// List of permissioned candidates from Cardano Aiken contracts
+    pub permissioned_candidates: Option<Vec<serde_json::Value>>,
+    /// Map of candidate registrations
+    pub candidate_registrations: serde_json::Value,
+}
+
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
+    rpc_client: RpcClient,
 }
 
 impl MidnightClient {
     pub async fn new(node_settings: NodeClientSettings) -> Self {
         let online_client =
-            OnlineClient::<SubstrateConfig>::from_insecure_url(node_settings.base_url)
+            OnlineClient::<SubstrateConfig>::from_insecure_url(&node_settings.base_url)
                 .await
-                .expect("Failed to initialize client");
-        Self { online_client }
+                .expect("Failed to initialize online client");
+        let rpc_client = RpcClient::from_insecure_url(&node_settings.base_url)
+            .await
+            .expect("Failed to initialize RPC client");
+        Self {
+            online_client,
+            rpc_client,
+        }
     }
 
     pub fn new_seed() -> WalletSeed {
@@ -208,13 +255,13 @@ impl MidnightClient {
                 if let Some(event) = &council_reset {
                     println!(
                         "✓ Found CouncilMembersReset event with {} members",
-                        event.members.0.len()
+                        event.members.len()
                     );
                 }
                 if let Some(event) = &tech_committee_reset {
                     println!(
                         "✓ Found TechnicalCommitteeMembersReset event with {} members",
-                        event.members.0.len()
+                        event.members.len()
                     );
                 }
 
@@ -227,6 +274,169 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for federated authority events".into()))
+    }
+
+    /// Get the current D-Parameter via RPC.
+    ///
+    /// Returns the number of permissioned and registered candidates.
+    pub async fn get_d_parameter(&self) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the D-Parameter at a specific block hash.
+    pub async fn get_d_parameter_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![block_hash])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current best block hash from the node.
+    pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let block = self.online_client.blocks().at_latest().await?;
+        Ok(block.hash())
+    }
+
+    /// Get block hash at a specific block height/number.
+    pub async fn get_block_hash_at_height(
+        &self,
+        block_number: u32,
+    ) -> Result<H256, Box<dyn std::error::Error>> {
+        let block_hash: Option<H256> = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![block_number])
+            .await?;
+
+        block_hash.ok_or_else(|| format!("No block found at height {}", block_number).into())
+    }
+
+    /// Wait for a new finalized block and return its hash.
+    pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+
+        let result = timeout(Duration::from_secs(30), async {
+            if let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+                println!("New finalized block #{}", block.header().number);
+                return Ok(block.hash());
+            }
+            Err("No block received".into())
+        })
+        .await;
+
+        result.unwrap_or_else(|_| Err("Timeout waiting for finalized block".into()))
+    }
+
+    /// Get Ariadne parameters including permissioned candidates and D-Parameter.
+    ///
+    /// The D-Parameter is sourced from pallet-system-parameters (on-chain),
+    /// while permissioned candidates come from Cardano Aiken contracts.
+    pub async fn get_ariadne_parameters(
+        &self,
+        epoch_number: u64,
+        d_parameter_at: Option<H256>,
+    ) -> Result<AriadneParametersResponse, Box<dyn std::error::Error>> {
+        let response: AriadneParametersResponse = match d_parameter_at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number],
+                    )
+                    .await?
+            }
+        };
+
+        Ok(response)
+    }
+
+    // ========== Sidechain Status and Authority Methods ==========
+    // Used for authority selection verification
+
+    /// Get the current sidechain status including epoch number.
+    pub async fn get_sidechain_status(
+        &self,
+    ) -> Result<SidechainStatusResponse, Box<dyn std::error::Error>> {
+        let response: SidechainStatusResponse = self
+            .rpc_client
+            .request("sidechain_getStatus", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current sidechain epoch number.
+    pub async fn get_current_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let status = self.get_sidechain_status().await?;
+        Ok(status.epoch)
+    }
+
+    /// Get the current AURA authorities via runtime API.
+    ///
+    /// Returns a list of AURA authority public keys (hex encoded).
+    pub async fn get_aura_authorities(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        // Query AURA authorities via the runtime API
+        let authorities: Vec<String> = self
+            .rpc_client
+            .request("aura_getAuthorities", rpc_params![])
+            .await
+            .map_err(|e| format!("Failed to get AURA authorities: {}", e))?;
+
+        Ok(authorities)
+    }
+
+    /// Wait until the sidechain reaches a specific epoch.
+    ///
+    /// Polls the sidechain status every 2 seconds until the target epoch is reached,
+    /// with a maximum timeout.
+    pub async fn wait_for_epoch(
+        &self,
+        target_epoch: u64,
+        timeout_secs: u64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let start = Instant::now();
+        let poll_interval = Duration::from_secs(2);
+
+        loop {
+            let status = self.get_sidechain_status().await?;
+            println!(
+                "Current epoch: {}, slot: {}, target: {}",
+                status.epoch, status.slot, target_epoch
+            );
+
+            if status.epoch >= target_epoch {
+                println!("✓ Reached target epoch {}", status.epoch);
+                return Ok(status.epoch);
+            }
+
+            if start.elapsed() > Duration::from_secs(timeout_secs) {
+                return Err(format!(
+                    "Timeout waiting for epoch {} (current: {})",
+                    target_epoch, status.epoch
+                )
+                .into());
+            }
+
+            sleep(poll_interval).await;
+        }
     }
 
     // ========== Midnight Transaction Submission Methods ==========

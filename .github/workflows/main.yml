@@ -382,6 +382,7 @@ jobs:
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main
 
       - name: Create and push `latest-main` images (Docker Hub)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 

@@ -6,7 +6,6 @@ description = "Extensions to Partnerchains mainchain follower"
 license-file.workspace = true
 
 [dependencies]
-sp-std.workspace = true
 parity-scale-codec.workspace = true
 midnight-primitives-cnight-observation.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
@@ -35,7 +34,6 @@ tokio = { workspace = true, features = ["full"]}
 default = ["std"]
 std = [
     "parity-scale-codec/std",
-    "sp-std/std",
     "sp-runtime/std",
     "sidechain-domain/std",
     "midnight-primitives-federated-authority-observation/std",
