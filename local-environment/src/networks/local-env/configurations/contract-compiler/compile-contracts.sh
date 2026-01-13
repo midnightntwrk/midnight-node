@@ -97,8 +97,13 @@ fi
 
 # Append [config.localenv] section with dynamic values
 echo "Adding [config.localenv] section with local-env one-shot hashes..."
-cat >> "${AIKEN_TOML}" << EOF
 
+# Ensure file ends with newline before appending (prevents TOML parsing issues)
+if [ -n "$(tail -c1 "${AIKEN_TOML}")" ]; then
+    echo "" >> "${AIKEN_TOML}"
+fi
+
+cat >> "${AIKEN_TOML}" << EOF
 # Dynamically generated config for local-environment testing
 [config.localenv]
 cnight_name = "NIGHT"
@@ -215,11 +220,22 @@ fi
 # multi-stage compilation. For forever contracts, a simple aiken build suffices.
 echo "Compiling Aiken contracts with localenv config..."
 
+# Show Aiken version for debugging
+echo "Aiken version:"
+aiken --version
+
 # Clean build directory to ensure no stale artifacts
 rm -rf build/
 
+# Debug: Show the localenv section of aiken.toml
+echo "=== aiken.toml localenv section ==="
+grep -A5 "^\[config\.localenv\]" "${AIKEN_TOML}" || echo "No [config.localenv] section found!"
+grep -A2 "^\[config\.localenv\.council_one_shot_hash\]" "${AIKEN_TOML}" || echo "No council_one_shot_hash found!"
+echo "==================================="
+
 # aiken build may return non-zero for test failures but still generate plutus.json
-aiken build --env localenv || true
+# Use --trace-level silent to reduce output noise
+aiken build --env localenv --trace-level silent || true
 
 # Check if plutus.json was generated
 if [[ ! -f "${PLUTUS_JSON}" ]]; then
@@ -228,6 +244,21 @@ if [[ ! -f "${PLUTUS_JSON}" ]]; then
 fi
 
 echo "✓ Contracts compiled successfully"
+
+# Debug: Show compiled policy IDs to verify localenv config was applied
+echo "Compiled validator hashes:"
+echo "  council_forever: $(jq -r '.validators[] | select(.title | contains("council_forever")) | .hash' "${PLUTUS_JSON}" 2>/dev/null || echo "not found")"
+echo "  tech_auth_forever: $(jq -r '.validators[] | select(.title | contains("tech_auth_forever")) | .hash' "${PLUTUS_JSON}" 2>/dev/null || echo "not found")"
+echo "  federated_ops_forever: $(jq -r '.validators[] | select(.title | contains("federated_ops_forever")) | .hash' "${PLUTUS_JSON}" 2>/dev/null || echo "not found")"
+
+# Verify the compiled contract uses localenv config by checking hash differs from default
+DEFAULT_COUNCIL_HASH="fe98bfeaa4af53bcf84ddc097c3f7d4b1acf76e5ce83fa920049b2c1"
+COMPILED_COUNCIL_HASH=$(jq -r '.validators[] | select(.title == "permissioned.council_forever.else") | .hash' "${PLUTUS_JSON}" 2>/dev/null || echo "")
+if [[ "${COMPILED_COUNCIL_HASH}" == "${DEFAULT_COUNCIL_HASH}" ]]; then
+    echo "WARNING: Compiled council_forever hash matches default config!"
+    echo "  This suggests --env localenv was not applied correctly."
+    echo "  Expected a different hash when using localenv one-shot hashes."
+fi
 
 # Extract CBOR for each validator and write to runtime-values
 echo "Extracting contract CBOR to runtime-values..."

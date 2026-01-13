@@ -31,9 +31,9 @@ RUN apt-get update && \
 
 # Install aiken via npm with hash verification for supply chain security
 # renovate: datasource=npm packageName=@aiken-lang/aiken
-ENV AIKEN_VERSION=1.1.19
+ENV AIKEN_VERSION=1.1.21
 # To update hash: curl -sL "https://registry.npmjs.org/@aiken-lang/aiken/-/aiken-${AIKEN_VERSION}.tgz" | sha256sum
-ENV AIKEN_SHA256=0fa8be946e585ee73e629b93aad6b25b212e3f1703d86733e1416d09ff3110f4
+ENV AIKEN_SHA256=46a86bbe3835113e090e8d3a2af3dda63f22d099705be4001e1fd208d9dc47d1
 RUN curl -fsSL "https://registry.npmjs.org/@aiken-lang/aiken/-/aiken-${AIKEN_VERSION}.tgz" -o /tmp/aiken.tgz && \
     echo "${AIKEN_SHA256}  /tmp/aiken.tgz" | sha256sum -c - && \
     npm install -g /tmp/aiken.tgz && \
