@@ -2807,7 +2807,10 @@ async fn authority_selection_uses_aiken_candidates() {
     // Use epoch 2 for local environment (minimum supported epoch)
     // This matches the pattern used by other Aiken tests in this file
     let target_epoch = 2u64;
-    println!("Using epoch {} for authority selection verification", target_epoch);
+    println!(
+        "Using epoch {} for authority selection verification",
+        target_epoch
+    );
 
     // Wait for a finalized block to ensure authorities are stable
     let _finalized_hash = midnight_client
