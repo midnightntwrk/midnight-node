@@ -35,6 +35,13 @@ echo "Copying contracts to writable location..."
 cp -r "${CONTRACTS_SRC}" "${CONTRACTS_DIR}"
 echo "✓ Contracts copied to ${CONTRACTS_DIR}"
 
+# Clean any existing build artifacts to ensure fresh compilation
+if [[ -d "${CONTRACTS_DIR}/build" ]]; then
+    echo "Removing existing build directory..."
+    rm -rf "${CONTRACTS_DIR}/build"
+    echo "✓ Build directory cleaned"
+fi
+
 # Wait for one-shot hash files to be available
 echo "Waiting for one-shot UTxO hashes..."
 start_time=$(date +%s)
@@ -170,14 +177,46 @@ encoding = "hex"
 [config.localenv.collateral_utxo_hash]
 bytes = "0000000000000000000000000000000000000000000000000000000000000000"
 encoding = "hex"
+
+# Required for forever_contract validation - use default cnight policy
+[config.localenv.cnight_policy]
+bytes = "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+encoding = "hex"
 EOF
 
+# Debug: Show the localenv config section
+echo "Verifying localenv config:"
+echo "  Council one-shot hash: ${COUNCIL_HASH}"
+echo "  Council one-shot index: ${COUNCIL_INDEX}"
+echo "  Tech Auth one-shot hash: ${TECHAUTH_HASH}"
+echo "  Federated Ops one-shot hash: ${FEDERATEDOPS_HASH}"
+
 echo "✓ Config section added"
+
+# Verify the aiken.toml localenv section was added correctly
+echo "Verifying aiken.toml localenv section..."
+if grep -q "^\[config\.localenv\.council_one_shot_hash\]" "${AIKEN_TOML}"; then
+    CONFIGURED_HASH=$(grep -A1 "^\[config\.localenv\.council_one_shot_hash\]" "${AIKEN_TOML}" | grep "bytes" | sed 's/.*= "\(.*\)"/\1/')
+    echo "  Configured council_one_shot_hash: ${CONFIGURED_HASH}"
+    if [[ "${CONFIGURED_HASH}" != "${COUNCIL_HASH}" ]]; then
+        echo "ERROR: aiken.toml council_one_shot_hash mismatch!"
+        echo "  Expected: ${COUNCIL_HASH}"
+        echo "  Found:    ${CONFIGURED_HASH}"
+        exit 1
+    fi
+    echo "✓ aiken.toml localenv config verified"
+else
+    echo "ERROR: [config.localenv.council_one_shot_hash] section not found in aiken.toml"
+    exit 1
+fi
 
 # Compile contracts using aiken directly with localenv config
 # Note: We don't use build_contracts.sh as it requires toml-cli and does
 # multi-stage compilation. For forever contracts, a simple aiken build suffices.
 echo "Compiling Aiken contracts with localenv config..."
+
+# Clean build directory to ensure no stale artifacts
+rm -rf build/
 
 # aiken build may return non-zero for test failures but still generate plutus.json
 aiken build --env localenv || true
