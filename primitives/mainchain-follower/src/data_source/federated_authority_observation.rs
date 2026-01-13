@@ -122,14 +122,14 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
 	///
-	/// Expected format (VersionedMultisig):
+	/// Expected format (VersionedMultisig)
 	/// ```text
-	/// {
-	///   data: [total_signers: Int, {...(CborBytes, Sr25519Keys)}],
-	///   round: Int
-	/// }
+	/// [
+	///   [total_signers: Int, {...(CborBytes, Sr25519Keys)}],  // Multisig (also @list)
+	///   logic_round: Int
+	/// ]
 	/// ```
-	/// The `data` field contains:
+	/// The first element (Multisig) contains:
 	/// - total_signers: the threshold number of signers required
 	/// - a map where the key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
 	///   and Sr25519Keys is a 32-byte public key
@@ -138,52 +138,56 @@ impl FederatedAuthorityObservationDataSourceImpl {
 	fn decode_governance_datum(
 		datum: &PlutusData,
 	) -> Result<GovernanceAuthorityDatums, Box<dyn std::error::Error + Send + Sync>> {
-		// The new format is a Constr with fields: [data, round]
-		// where data is [total_signers, members_map]
-		let constr = datum
-			.as_constr_plutus_data()
-			.ok_or("Expected PlutusData to be a constructor (VersionedMultisig)")?;
+		// The new format uses @list annotation, so VersionedMultisig is a list: [data, logic_round]
+		// where data (Multisig) is also a list: [total_signers, members_map]
+		let versioned_list: Vec<PlutusData> = datum
+			.as_list()
+			.ok_or("Expected PlutusData to be a list (VersionedMultisig with @list annotation)")?
+			.into_iter()
+			.cloned()
+			.collect();
 
-		let fields = constr.data();
-
-		if fields.len() < 2 {
+		if versioned_list.len() < 2 {
 			return Err(format!(
-				"Expected at least 2 fields in VersionedMultisig constructor, got {}",
-				fields.len()
+				"Expected at least 2 elements in VersionedMultisig list, got {}",
+				versioned_list.len()
 			)
 			.into());
 		}
 
-		// Get the 'data' field (index 0) which is [total_signers, members_map]
-		let data_field = fields.get(0);
+		// Get the 'data' field (index 0) which is Multisig: [total_signers, members_map]
+		let data_field = versioned_list.first().ok_or("Expected index 0 to exist")?;
 		let data_list: Vec<PlutusData> = data_field
 			.as_list()
-			.ok_or("Expected 'data' field to be a list")?
+			.ok_or("Expected 'data' field (Multisig) to be a list")?
 			.into_iter()
 			.cloned()
 			.collect();
 
 		if data_list.len() < 2 {
 			return Err(format!(
-				"Expected at least 2 elements in data list, got {}",
+				"Expected at least 2 elements in Multisig list, got {}",
 				data_list.len()
 			)
 			.into());
 		}
 
-		// Get the 'round' field (index 1)
-		let round_field = fields.get(1);
-		let round_bigint =
-			round_field.as_integer().ok_or("Expected 'round' field to be an integer")?;
+		// Get the 'logic_round' field (index 1)
+		let round_field = versioned_list.get(1).ok_or("Expected index 1 to exist")?;
+		let round_bigint = round_field
+			.as_integer()
+			.ok_or("Expected 'logic_round' field to be an integer")?;
 		// Convert BigInt to u64, then to u8
 		let round_u64: u64 = round_bigint
 			.as_u64()
-			.ok_or("Expected 'round' to be a non-negative integer that fits in u64")?
+			.ok_or("Expected 'logic_round' to be a non-negative integer that fits in u64")?
 			.into();
-		let round = u8::try_from(round_u64).map_err(|_| "Expected 'round' to fit in u8 (0-255)")?;
+		let round =
+			u8::try_from(round_u64).map_err(|_| "Expected 'logic_round' to fit in u8 (0-255)")?;
 
 		// Get the members map from data_list[1]
-		let members_data = data_list.get(1).ok_or("Expected index 1 to exist in the data list")?;
+		let members_data =
+			data_list.get(1).ok_or("Expected index 1 to exist in the Multisig list")?;
 
 		let mut authority_members = Vec::new();
 

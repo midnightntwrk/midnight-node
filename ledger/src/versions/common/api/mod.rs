@@ -39,8 +39,6 @@ pub(crate) type ZswapState<D> = zswap_local::ledger::State<D>;
 pub(crate) type ContractAddress = coin_structure_local::contract::ContractAddress;
 pub(crate) type DustPublicKey = mn_ledger_local::dust::DustPublicKey;
 pub(crate) type UserAddress = coin_structure_local::coin::UserAddress;
-pub(crate) type OutputInstructionUnshielded =
-	mn_ledger_local::structure::OutputInstructionUnshielded;
 pub(crate) type SystemTransaction = mn_ledger_local::structure::SystemTransaction;
 pub(crate) type CNightGeneratesDustEvent = mn_ledger_local::structure::CNightGeneratesDustEvent;
 pub(crate) type Transaction<S, D> = transaction::Transaction<S, D>;
