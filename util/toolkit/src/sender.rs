@@ -79,6 +79,7 @@ struct Progress {
 pub struct Sender<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static> {
 	clients: Vec<ClientHandle>,
 	counter: AtomicUsize,
+	watch_progress: bool,
 	_marker: PhantomData<(P, S)>,
 }
 
@@ -101,7 +102,22 @@ where
 				})
 			}))
 			.await;
-		Ok(Self { clients: clients?, counter: AtomicUsize::new(0), _marker: Default::default() })
+
+		let watch_progress_var = std::env::var("MN_DONT_WATCH_PROGRESS");
+		let watch_progress = match watch_progress_var {
+			Ok(var) if var == "1" || var.to_ascii_lowercase() == "true" => {
+				log::warn!("toolkit send will not wait for finalization when sending txs");
+				false
+			},
+			_ => true,
+		};
+
+		Ok(Self {
+			clients: clients?,
+			counter: AtomicUsize::new(0),
+			watch_progress,
+			_marker: Default::default(),
+		})
 	}
 
 	pub fn get_client(&self) -> ClientHandle {
@@ -114,7 +130,9 @@ where
 		tx: &SerdeTransaction<S, P, DefaultDB>,
 	) -> Result<(), SendToUrlError> {
 		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
-		self.send_and_log(&tx_hash_string, tx_progress).await;
+		if self.watch_progress {
+			self.send_and_log(&tx_hash_string, tx_progress).await;
+		}
 		Ok(())
 	}
 
@@ -132,7 +150,9 @@ where
 			let task = tokio::spawn(async move {
 				let (tx_hashes, tx_progress) =
 					self_clone.send_tx_no_wait(&tx.tx).await.expect("Failed to send tx");
-				self_clone.send_and_log(&tx_hashes, tx_progress).await;
+				if self_clone.watch_progress {
+					self_clone.send_and_log(&tx_hashes, tx_progress).await;
+				}
 			});
 			pending_finalized.push(task);
 		}

@@ -113,6 +113,7 @@ mod tests {
 					fetch_concurrency: 20,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
+					ignore_block_context: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 				},
 				destination: Destination {

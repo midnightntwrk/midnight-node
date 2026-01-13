@@ -115,6 +115,7 @@ mod tests {
 				fetch_concurrency: 1,
 				src_files: Some(src_files),
 				dust_warp: true,
+				ignore_block_context: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed,
