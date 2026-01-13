@@ -8,6 +8,10 @@ Fix local-environment Aiken governance contract deployment and re-enable 16 disa
 
 Fixes PM-21229
 
+## PR
+
+https://github.com/midnightntwrk/midnight-node/pull/471
+
 ## Type
 
 Bug Fix

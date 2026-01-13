@@ -2819,28 +2819,10 @@ async fn authority_selection_uses_aiken_candidates() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Step 1: Get current epoch and wait for epoch 2+ if needed
-    // Authority selection needs at least 2 epochs to be stable
-    let current_epoch = midnight_client
-        .get_current_epoch()
-        .await
-        .expect("Failed to get current epoch");
-
-    println!("Current sidechain epoch: {}", current_epoch);
-
-    let target_epoch = if current_epoch < 2 { 2 } else { current_epoch };
-
-    if current_epoch < target_epoch {
-        println!(
-            "Waiting for epoch {} (current: {})...",
-            target_epoch, current_epoch
-        );
-        // Local-env epochs are 30 seconds, so 90 second timeout should be plenty
-        midnight_client
-            .wait_for_epoch(target_epoch, 90)
-            .await
-            .expect("Failed to wait for target epoch");
-    }
+    // Use epoch 2 for local environment (minimum supported epoch)
+    // This matches the pattern used by other Aiken tests in this file
+    let target_epoch = 2u64;
+    println!("Using epoch {} for authority selection verification", target_epoch);
 
     // Wait for a finalized block to ensure authorities are stable
     let _finalized_hash = midnight_client
