@@ -20,7 +20,6 @@ frame-support.workspace = true
 frame-system.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
-sp-std.workspace = true
 
 [features]
 default = ["std"]
@@ -29,7 +28,6 @@ std = [
 	"frame-system/std",
 	"scale-info/std",
 	"midnight-node-ledger/std",
-	"sp-std/std",
     "midnight-primitives/std",
 ]
 experimental = []

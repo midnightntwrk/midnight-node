@@ -13,9 +13,9 @@
 
 //! Runtime API definition for Midnight pallet
 
+use alloc::vec::Vec;
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use scale_info::prelude::string::String;
-use sp_std::vec::Vec;
 
 sp_api::decl_runtime_apis! {
 	#[api_version(5)]

@@ -31,6 +31,21 @@ pub struct DParameterResponse {
     pub num_registered_candidates: u16,
 }
 
+/// Sidechain status response from sidechain_getStatus RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidechainStatusResponse {
+    /// Current sidechain epoch number
+    pub epoch: u64,
+    /// Current slot within the epoch
+    pub slot: u64,
+    /// Slots per epoch configuration
+    pub slots_per_epoch: u32,
+    /// Slot duration in milliseconds
+    #[serde(default)]
+    pub slot_duration: Option<u64>,
+}
+
 /// Ariadne parameters response from systemParameters_getAriadneParameters RPC
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -351,6 +366,77 @@ impl MidnightClient {
         };
 
         Ok(response)
+    }
+
+    // ========== Sidechain Status and Authority Methods ==========
+    // Used for authority selection verification
+
+    /// Get the current sidechain status including epoch number.
+    pub async fn get_sidechain_status(
+        &self,
+    ) -> Result<SidechainStatusResponse, Box<dyn std::error::Error>> {
+        let response: SidechainStatusResponse = self
+            .rpc_client
+            .request("sidechain_getStatus", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current sidechain epoch number.
+    pub async fn get_current_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let status = self.get_sidechain_status().await?;
+        Ok(status.epoch)
+    }
+
+    /// Get the current AURA authorities via runtime API.
+    ///
+    /// Returns a list of AURA authority public keys (hex encoded).
+    pub async fn get_aura_authorities(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        // Query AURA authorities via the runtime API
+        let authorities: Vec<String> = self
+            .rpc_client
+            .request("aura_getAuthorities", rpc_params![])
+            .await
+            .map_err(|e| format!("Failed to get AURA authorities: {}", e))?;
+
+        Ok(authorities)
+    }
+
+    /// Wait until the sidechain reaches a specific epoch.
+    ///
+    /// Polls the sidechain status every 2 seconds until the target epoch is reached,
+    /// with a maximum timeout.
+    pub async fn wait_for_epoch(
+        &self,
+        target_epoch: u64,
+        timeout_secs: u64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let start = Instant::now();
+        let poll_interval = Duration::from_secs(2);
+
+        loop {
+            let status = self.get_sidechain_status().await?;
+            println!(
+                "Current epoch: {}, slot: {}, target: {}",
+                status.epoch, status.slot, target_epoch
+            );
+
+            if status.epoch >= target_epoch {
+                println!("✓ Reached target epoch {}", status.epoch);
+                return Ok(status.epoch);
+            }
+
+            if start.elapsed() > Duration::from_secs(timeout_secs) {
+                return Err(format!(
+                    "Timeout waiting for epoch {} (current: {})",
+                    target_epoch, status.epoch
+                )
+                .into());
+            }
+
+            sleep(poll_interval).await;
+        }
     }
 
     // ========== Midnight Transaction Submission Methods ==========

@@ -17,6 +17,9 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use frame_support::{
 	dispatch::{Pays, PostDispatchInfo},
 	pallet_prelude::*,
@@ -29,7 +32,6 @@ use midnight_primitives_federated_authority_observation::{
 };
 pub use pallet::*;
 use sidechain_domain::{MainchainAddress, PolicyId};
-use sp_std::vec::Vec;
 
 #[cfg(test)]
 mod mock;
@@ -543,7 +545,7 @@ pub mod pallet {
 
 		/// Check if there are duplicated members in the set
 		fn has_duplicated_members<S: Ord, M, MAX>(members: BoundedVec<(S, M), MAX>) -> bool {
-			use sp_std::collections::btree_set::BTreeSet;
+			use alloc::collections::BTreeSet;
 			// Only check Substrate/Midnight members
 			let (members, _): (Vec<_>, Vec<_>) = members.into_iter().unzip();
 			let members_vec_len = members.len();

@@ -12,6 +12,7 @@ qanet = []
 default = ["local-ci"]
 
 [dependencies]
+aiken-contracts-lib = { path = "../../util/aiken-contracts-lib" }
 hex.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 whisky = { git = "https://github.com/rsporny/whisky", branch = "wasm-bindgen-update" }
@@ -27,6 +28,7 @@ blake2 = "0.10.6"
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }
+sp-core.workspace = true
 midnight-node-toolkit = { path = "../../util/toolkit" }
 
 [[test]]

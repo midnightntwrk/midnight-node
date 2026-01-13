@@ -19,6 +19,8 @@
 //! This means we can use the same code for two different versions of the ledger crate
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 #[cfg(feature = "std")]
 pub mod json;
 
