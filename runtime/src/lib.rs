@@ -97,7 +97,7 @@ pub use sp_runtime::{Perbill, Permill};
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::currency::CurrencyWaiver;
-use sp_std::prelude::*;
+use alloc::{vec, vec::Vec};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -180,12 +180,12 @@ pub mod opaque {
 
 	pub mod cross_chain_app {
 		use super::CROSS_CHAIN;
+		use alloc::vec::Vec;
 		use parity_scale_codec::MaxEncodedLen;
 		use sp_core::crypto::AccountId32;
 		use sp_runtime::MultiSigner;
 		use sp_runtime::app_crypto::{app_crypto, ecdsa};
 		use sp_runtime::traits::IdentifyAccount;
-		use sp_std::vec::Vec;
 
 		app_crypto!(ecdsa, CROSS_CHAIN);
 		impl MaxEncodedLen for Signature {
@@ -1142,7 +1142,7 @@ impl_runtime_apis! {
 			Runtime::metadata_at_version(version)
 		}
 
-		fn metadata_versions() -> sp_std::vec::Vec<u32> {
+		fn metadata_versions() -> Vec<u32> {
 			Runtime::metadata_versions()
 		}
 	}

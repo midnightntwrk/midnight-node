@@ -35,12 +35,10 @@ pub use {
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
-	sp_std::boxed::Box,
 };
 
 #[cfg(feature = "std")]
 pub mod inherent_provider {
-	use super::*;
 	use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 	use midnight_primitives_federated_authority_observation::{
 		FederatedAuthorityData, FederatedAuthorityObservationConfig,

@@ -18,11 +18,12 @@ use frame_support::sp_runtime::{
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
 use sidechain_domain::*;
-use sp_io::TestExternalities;
 use sp_runtime::testing::H256;
 
 #[cfg(feature = "std")]
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+#[cfg(feature = "std")]
+use sp_io::TestExternalities;
 
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
