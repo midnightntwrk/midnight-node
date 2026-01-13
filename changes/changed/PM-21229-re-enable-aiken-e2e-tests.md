@@ -2,7 +2,9 @@
 
 ## Summary
 
-Fix local-environment Aiken governance contract deployment and re-enable 16 disabled E2E tests.
+Enable the subset of Aiken E2E tests that can run without full chain observation.
+9 tests now run and pass. 14 tests remain ignored pending local-environment
+infrastructure fixes (chain observation not working).
 
 ## Issue
 
