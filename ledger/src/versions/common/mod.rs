@@ -23,9 +23,9 @@ use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
+use alloc::vec::Vec;
 use frame_support::{StorageHasher, Twox128};
 use sp_externalities::{Externalities, ExternalitiesExt};
-use sp_std::vec::Vec;
 
 pub mod types;
 use types::LedgerApiError;

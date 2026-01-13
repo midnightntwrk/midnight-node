@@ -11,11 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::{vec, vec::Vec};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::prelude::string::String;
 use scale_info_derive::TypeInfo;
-use sp_runtime::Vec;
-use sp_std::vec;
 
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
