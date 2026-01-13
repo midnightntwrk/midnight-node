@@ -13,16 +13,25 @@
 
 use midnight_node_ledger_helpers::*;
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+	marker::PhantomData,
+	sync::{
+		Arc,
+		atomic::{self, AtomicUsize},
+	},
+};
 use subxt::{
-	OnlineClient, PolkadotConfig,
+	OnlineClient,
 	ext::{codec::Encode, subxt_core::config::Hash},
 	tx::{TxInBlock, TxProgress},
 };
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
-use crate::hash_to_str;
+use crate::{
+	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
+	hash_to_str,
+};
 
 // Display from what url the sending error occurred
 #[derive(Debug, Error)]
@@ -56,11 +65,21 @@ impl TxHashes {
 	}
 }
 
-pub struct Sender<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static> {
-	api: OnlineClient<PolkadotConfig>,
+#[derive(Clone)]
+pub struct ClientHandle {
 	url: String,
-	_marker_p: PhantomData<P>,
-	_marker_s: PhantomData<S>,
+	client: Arc<MidnightNodeClient>,
+}
+
+struct Progress {
+	url: String,
+	tx_progress: TxProgress<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+}
+
+pub struct Sender<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static> {
+	clients: Vec<ClientHandle>,
+	counter: AtomicUsize,
+	_marker: PhantomData<(P, S)>,
 }
 
 impl<
@@ -73,8 +92,21 @@ where
 	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub fn new(api: OnlineClient<PolkadotConfig>, url: String) -> Self {
-		Self { api, url, _marker_p: PhantomData, _marker_s: PhantomData }
+	pub async fn new(urls: &[String]) -> Result<Self, ClientError> {
+		let clients: Result<Vec<ClientHandle>, ClientError> =
+			futures::future::try_join_all(urls.iter().map(|url| async move {
+				Ok(ClientHandle {
+					url: url.clone(),
+					client: Arc::new(MidnightNodeClient::new(url).await?),
+				})
+			}))
+			.await;
+		Ok(Self { clients: clients?, counter: AtomicUsize::new(0), _marker: Default::default() })
+	}
+
+	pub fn get_client(&self) -> ClientHandle {
+		let i = self.counter.fetch_add(1, atomic::Ordering::SeqCst);
+		self.clients[i % self.clients.len()].clone()
 	}
 
 	pub async fn send_tx(
@@ -113,42 +145,49 @@ where
 	async fn send_tx_no_wait(
 		&self,
 		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(TxHashes, TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>), SendToUrlError>
-	{
+	) -> Result<(TxHashes, Progress), SendToUrlError> {
+		let client = self.get_client();
+
 		let midnight_tx_hash = tx.transaction_hash();
-		let tx_serialize = tx.serialize_inner().map_err(|e| self.error(e.into()))?;
+		let tx_serialize = tx.serialize_inner().map_err(|e| self.error(&client.url, e.into()))?;
 		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_serialize.clone());
 
-		let unsigned_extrinsic =
-			self.api.tx().create_unsigned(&mn_tx).map_err(|e| self.error(e.into()))?;
+		let unsigned_extrinsic = client
+			.client
+			.api
+			.tx()
+			.create_unsigned(&mn_tx)
+			.map_err(|e| self.error(&client.url, e.into()))?;
 
 		log::info!(
-			url = self.url,
+			url = client.url,
 			midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash);
 			"SENDING"
 		);
-		let tx_progress =
-			unsigned_extrinsic.submit_and_watch().await.map_err(|e| self.error(e.into()))?;
+		let tx_progress = unsigned_extrinsic
+			.submit_and_watch()
+			.await
+			.map_err(|e| self.error(&client.url, e.into()))?;
 
 		let extrinsic_hash = tx_progress.extrinsic_hash();
 		let tx_hashes = TxHashes::new(&midnight_tx_hash, &extrinsic_hash);
 
 		log::info!(
-			url = self.url,
+			url = client.url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,
 			midnight_tx_hash = &tx_hashes.midnight_tx_hash;
 			"SENT"
 		);
-		Ok((tx_hashes, tx_progress))
+		Ok((tx_hashes, Progress { url: client.url.clone(), tx_progress }))
 	}
 
 	async fn wait_for_best_block(
-		mut progress: TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>,
+		mut progress: Progress,
 	) -> (
-		TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>,
-		Option<TxInBlock<PolkadotConfig, OnlineClient<PolkadotConfig>>>,
+		Progress,
+		Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>>,
 	) {
-		while let Some(prog) = progress.next().await {
+		while let Some(prog) = progress.tx_progress.next().await {
 			if let Ok(subxt::tx::TxStatus::InBestBlock(info)) = prog {
 				return (progress, Some(info));
 			}
@@ -158,9 +197,9 @@ where
 	}
 
 	async fn wait_for_finalized(
-		mut progress: TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>,
-	) -> Option<TxInBlock<PolkadotConfig, OnlineClient<PolkadotConfig>>> {
-		while let Some(prog) = progress.next().await {
+		mut progress: Progress,
+	) -> Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>> {
+		while let Some(prog) = progress.tx_progress.next().await {
 			if let Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) = prog {
 				return Some(info);
 			}
@@ -169,15 +208,12 @@ where
 		None
 	}
 
-	async fn send_and_log(
-		&self,
-		tx_hashes: &TxHashes,
-		tx: TxProgress<PolkadotConfig, OnlineClient<PolkadotConfig>>,
-	) {
+	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) {
+		let url = tx.url.clone();
 		let (progress, best_block) = Self::wait_for_best_block(tx).await;
 		if best_block.is_none() {
 			log::info!(
-				url = self.url,
+				url = &url,
 				extrinsic_hash = &tx_hashes.extrinsic_hash,
 				midnight_tx_hash = &tx_hashes.midnight_tx_hash;
 				"FAILED_TO_REACH_BEST_BLOCK"
@@ -186,7 +222,7 @@ where
 		}
 		let best_block = best_block.unwrap();
 		log::info!(
-			url = self.url,
+			url = &url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,
 			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
@@ -196,7 +232,7 @@ where
 		let finalized = Self::wait_for_finalized(progress).await;
 		let message = if finalized.is_some() { "FINALIZED" } else { "FAILED_TO_FINALIZE" };
 		log::info!(
-			url = self.url,
+			url = &url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,
 			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
@@ -204,7 +240,7 @@ where
 		);
 	}
 
-	fn error(&self, e: subxt::Error) -> SendToUrlError {
-		SendToUrlError { url: self.url.clone(), source: e }
+	fn error(&self, url: &str, e: subxt::Error) -> SendToUrlError {
+		SendToUrlError { url: url.to_string(), source: e }
 	}
 }

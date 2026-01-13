@@ -14,7 +14,6 @@
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::*;
 use std::{fs::File, io::Write, marker::PhantomData, sync::Arc, time::Duration};
-use subxt::{OnlineClient, PolkadotConfig};
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -75,7 +74,7 @@ pub struct SendTxsToUrl<
 	S: SignatureKind<DefaultDB>,
 	P: ProofKind<DefaultDB> + Send + Sync + 'static,
 > {
-	url: String,
+	urls: Vec<String>,
 	rate: f32,
 	_marker: PhantomData<(S, P)>,
 }
@@ -85,8 +84,8 @@ impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'stati
 where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 {
-	pub fn new(url: String, rate: f32) -> Self {
-		Self { url, rate, _marker: Default::default() }
+	pub fn new(urls: Vec<String>, rate: f32) -> Self {
+		Self { urls, rate, _marker: Default::default() }
 	}
 }
 
@@ -162,8 +161,7 @@ where
 		let num_per_batch = txs.batches.first().map(|batch| batch.txs.len()).unwrap_or(0);
 		let total_txs = num_per_batch * num_batches;
 
-		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(self.url.clone()).await?;
-		let sender = Arc::new(Sender::<S, P>::new(api, self.url.clone()));
+		let sender = Arc::new(Sender::<S, P>::new(&self.urls).await?);
 
 		println!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;
