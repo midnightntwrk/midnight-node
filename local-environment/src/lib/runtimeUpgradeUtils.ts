@@ -33,20 +33,30 @@ export interface WasmArtifact {
 }
 
 export function loadRuntimeWasm(wasmPath: string): WasmArtifact {
-  const resolvedPath = path.resolve(wasmPath);
-  if (!fs.existsSync(resolvedPath)) {
-    throw new Error(`Unable to find runtime wasm at ${resolvedPath}`);
+  const trimmed = wasmPath?.trim();
+  if (!trimmed) throw new Error("Runtime wasm path is required and cannot be empty");
+  if (trimmed.includes("\0")) throw new Error("Runtime wasm path cannot include null bytes");
+
+  const allowedRoot = fs.realpathSync(path.resolve(process.cwd(), "artifacts"));
+  const candidate = path.resolve(allowedRoot, trimmed);
+  const realCandidate = fs.realpathSync(candidate);
+
+  const rel = path.relative(allowedRoot, realCandidate);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("Runtime wasm path must be within the artifacts directory");
   }
 
-  const bytes = fs.readFileSync(resolvedPath);
-  if (bytes.length === 0) {
-    throw new Error(`Runtime wasm at ${resolvedPath} is empty`);
+  if (path.extname(realCandidate) !== ".wasm") {
+    throw new Error("Runtime wasm must be a .wasm file");
   }
+
+  const bytes = fs.readFileSync(realCandidate);
+  if (bytes.length === 0) throw new Error(`Runtime wasm at ${realCandidate} is empty`);
 
   const u8 = new Uint8Array(bytes);
 
   return {
-    path: resolvedPath,
+    path: rel,
     length: bytes.length,
     bytes: u8,
     hex: u8aToHex(u8),
