@@ -23,7 +23,7 @@
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wpjk64an8tdr07jzt0pu8nc3prh9fu4gwkgl05cs9xgeqtgclvru6",
     "d_parameter_policy_id": "0x03417b48a605e8b3f5475c42b6c2643822607e6593d02cc5c8da9326",
-    "permissioned_candidates_policy_id": "0x5fb62dd789b4f311a3bef9be54f19170976041af6c3093187646cd02",
+    "permissioned_candidates_policy_id": "0x4057188de00d74c6679263989745309f02bf55f8806061943124489b",
     "bridge": {
       "illiquid_circulation_supply_validator_address": "addr_test1wpuxep5ecfmrx46p9lhz7xqdhv3ymgk4jugwqjsnvk9dt9qxnjlr8",
       "asset": {

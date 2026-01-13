@@ -25,13 +25,17 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: write
       security-events: write
       statuses: write
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  #v6.0.1
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da  # v3.7.0
+
       - name: Scan code
-        uses: midnightntwrk/upload-sarif-github-action/scan@27fad937a82cb810d954795f7d29c1702be17960
+        uses: midnightntwrk/upload-sarif-github-action/scan@7cbeb33c4a8f084beabe0fb223467ca9a7056ac0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

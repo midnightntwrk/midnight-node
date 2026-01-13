@@ -1,8 +1,8 @@
+use alloc::{collections::BTreeMap, vec::Vec};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
 use serde::{Deserialize, Serialize};
-use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 
 use crate::MappingEntry;
 

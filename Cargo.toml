@@ -21,6 +21,8 @@ members = [
     "util/toolkit",
     "util/documented",
     "util/upgrader",
+    "util/aiken-deployer",
+    "util/aiken-contracts-lib",
     "tests/e2e",
     "relay",
     "docs",
@@ -208,7 +210,6 @@ sc-rpc-api = { default-features = false, git = "https://github.com/paritytech/po
 sc-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-storage-monitor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 
-sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-runtime-interface = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-chain-spec = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -336,3 +337,6 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
+
+[workspace.metadata.cargo-shear]
+ignored = ["frame-storage-access-test-runtime"]
