@@ -352,6 +352,8 @@ mod tests {
 				.to_string(),
 			aura_key: "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
 				.to_string(),
+			grandpa_key: "88dc3417d5058ec4b4503e0c12ea1a0a89be200fe98922423d4334014fa6b0ee"
+				.to_string(),
 		}];
 
 		let datum = build_federated_ops_datum(&candidates);
