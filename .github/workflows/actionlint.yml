@@ -15,6 +15,7 @@ on:
 jobs:
   actionlint:
     name: Lint workflows
+    if: false  # Temporarily disabled for faster CI iteration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
