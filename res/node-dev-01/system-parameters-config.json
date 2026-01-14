@@ -1,0 +1,10 @@
+{
+    "terms_and_conditions": {
+        "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "url": "https://midnight.network/terms-and-conditions"
+    },
+    "d_parameter": {
+        "num_permissioned_candidates": 10,
+        "num_registered_candidates": 0
+    }
+}

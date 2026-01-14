@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "0.18.1"
+version = "0.20.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -29,7 +29,6 @@ futures.workspace = true
 sc-cli.workspace = true
 sc-chain-spec.workspace = true
 sp-core.workspace = true
-sp-std = { workspace = true, features = ["std"] }
 sp-keyring.workspace = true
 sc-keystore.workspace = true
 sc-executor.workspace = true
@@ -82,9 +81,12 @@ midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
+midnight-primitives-system-parameters = { workspace = true, default-features = true }
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
+pallet-system-parameters = { workspace = true, default-features = true }
+pallet-system-parameters-rpc = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
@@ -116,6 +118,10 @@ partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
+prometheus-endpoint.workspace = true
+reqwest.workspace = true
+prost.workspace = true
+snap = "1.1"
 sp-inherents.workspace = true
 sp-keystore.workspace = true
 sp-io.workspace = true

@@ -13,15 +13,11 @@
 
 use midnight_node_ledger_helpers::*;
 use std::{path::Path, sync::Arc};
-use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
-	client::MidnightNodeClient,
-	indexer::Indexer,
 	remote_prover::RemoteProofServer,
-	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 };
 
@@ -102,11 +98,12 @@ where
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer =
-				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromUrl::new(indexer, src.dust_warp));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+				&url,
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))
@@ -141,10 +138,8 @@ where
 				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 				continue;
 			}
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api, url));
 			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::new(sender, dest.rate));
+				Box::new(SendTxsToUrl::<S, P>::new(url.clone(), dest.rate));
 
 			dests.push(destination);
 		}

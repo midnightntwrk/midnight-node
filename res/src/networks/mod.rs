@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
 	serde::{Deserialize, Deserializer, Serialize},
@@ -153,6 +154,7 @@ pub trait MidnightNetwork {
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
+	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {

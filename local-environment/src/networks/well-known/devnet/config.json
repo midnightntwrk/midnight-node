@@ -1,0 +1,13 @@
+{
+  "dbsync": {
+    "mode": "rds-proxy"
+  },
+  "secrets": {
+    "mode": "preview-style"
+  },
+  "boot": {
+    "podNames": [
+      "midnight-18-midnight-node-boot-18-0"
+    ]
+  }
+}

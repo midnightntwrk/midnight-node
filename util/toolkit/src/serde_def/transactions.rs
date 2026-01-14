@@ -16,18 +16,20 @@ use std::{
 	fmt::Debug,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use subxt::utils::H256;
 
+use crate::fetcher::fetch_storage::BlockData;
 use midnight_node_ledger_helpers::*;
 
 #[derive(Clone, Debug)]
-pub struct SourceTransactions<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB>>
+pub struct SourceTransactions<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>>
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub blocks: Vec<SourceBlockTransactions<S, P>>,
+	pub blocks: Vec<BlockData<S, P, DefaultDB>>,
 }
 
-impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB>> SourceTransactions<S, P>
+impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>> SourceTransactions<S, P>
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
@@ -38,19 +40,27 @@ where
 		let mut blocks = vec![];
 		let mut current_batch = vec![];
 		let mut last_context: Option<BlockContext> = None;
+		let mut number = 0;
 		for tx in txs {
 			if last_context.as_ref().is_some_and(|c| c.tblock != tx.block_context.tblock) {
-				blocks.push(SourceBlockTransactions {
+				blocks.push(BlockData {
+					hash: H256::zero(),
+					parent_hash: H256::zero(),
+					number,
 					transactions: std::mem::take(&mut current_batch),
 					context: last_context.unwrap(),
 					state_root: None,
 				});
+				number += 1;
 			}
 			current_batch.push(tx.tx);
 			last_context = Some(tx.block_context);
 		}
 		if let Some(context) = last_context {
-			blocks.push(SourceBlockTransactions {
+			blocks.push(BlockData {
+				hash: H256::zero(),
+				parent_hash: H256::zero(),
+				number,
 				transactions: current_batch,
 				context,
 				state_root: None,
@@ -67,7 +77,10 @@ where
 			);
 			let context =
 				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
-			blocks.push(SourceBlockTransactions {
+			blocks.push(BlockData {
+				hash: H256::zero(),
+				parent_hash: H256::zero(),
+				number: 0,
 				transactions: Vec::new(),
 				context,
 				state_root: None,
@@ -192,37 +205,5 @@ impl SerializedTransactionsWithContext {
 			.collect::<Result<Vec<_>, Box<_>>>()?;
 
 		Ok(SerializedTransactionsWithContext { initial_tx, batches })
-	}
-}
-
-pub(crate) mod block_vec {
-	use super::*;
-	use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-	pub(crate) fn serialize<SE, S, P>(
-		txes: &Vec<SourceBlockTransactions<S, P>>,
-		s: SE,
-	) -> Result<SE::Ok, SE::Error>
-	where
-		SE: Serializer,
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB>,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		// Delegate to Vec's default serialization
-		Serialize::serialize(txes, s)
-	}
-
-	pub(crate) fn deserialize<'de, DE, S, P>(
-		deserializer: DE,
-	) -> Result<Vec<SourceBlockTransactions<S, P>>, DE::Error>
-	where
-		DE: Deserializer<'de>,
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB>,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		// Delegate to Vec's default deserialization
-		Deserialize::deserialize(deserializer)
 	}
 }

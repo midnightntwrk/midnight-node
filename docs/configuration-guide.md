@@ -1,0 +1,245 @@
+# Configuration Guide
+
+## Configuration sources
+
+Configuration can be loaded either from and are applied in the following order:
+(later sources override earlier)
+
+- Default values: stored in `res/cfg/default.toml` (Midnight + Substrate)
+- Configuration Preset files: stored in `res/cfg/<preset>.toml`, loaded at runtime (Midnight + Substrate)
+- Environment Variables (Midnight + Substrate)
+- CLI arguments (Substrate-only)
+
+For example, if `default.toml` sets `validator = false` and you set `VALIDATOR=1` in the environment, the node runs as a validator.
+
+The CLI supports the same arguments as Substrate/PolkadotSDK-based nodes. Some commonly-used Substrate variables can be set via our env-var config system. Midnight-specific variables are all set via default values, env-vars or config preset files.
+
+### Environment variable naming
+
+Config keys use `snake_case` in TOML files. Environment variables are case-insensitive.
+
+| TOML key | Environment variable |
+|----------|----------------------|
+| `validator` | `VALIDATOR` |
+| `cardano_security_parameter` | `CARDANO_SECURITY_PARAMETER` |
+| `mc__first_epoch_timestamp_millis` | `MC__FIRST_EPOCH_TIMESTAMP_MILLIS` |
+
+Double underscores (`__`) denote nested configuration groups.
+
+Boolean values accept any truthy value: `1`, `true`, `TRUE`, `True`, etc.
+
+## Inspecting configuration
+
+When run with `SHOW_CONFIG=1`, the node will print all it's configuration values, including a short description of each, and the source of the value i.e. where the configuration was loaded from. Example:
+
+```sh
+$ docker run --rm -e CFG_PRESET=dev -e CHAINSPEC_ID=my_new_chain_id -e SHOW_CONFIG=1 midnightntwrk/midnight-node:latest-main
+
+================================================================================
+ChainSpecCfg
+================================================================================
+
+NAME:          chainspec_name
+HELP:          Required for generic Live network chain spec
+               Name of the network e.g. devnet1
+TYPE:          Option < String >
+DEFAULT:
+SOURCES:       preset
+CURRENT_VALUE: Midnight Undeployed
+
+NAME:          chainspec_id
+HELP:          Required for generic Live network chain spec
+               Id of the network e.g. devnet
+TYPE:          Option < String >
+DEFAULT:
+SOURCES:       env-vars
+CURRENT_VALUE: my_new_chain_id
+
+...
+```
+
+## Chainspecs
+
+To run the node, you must supply a chainspec file. Chainspec files for known networks are stored in `res/<network-name>/` and are named `chain-spec.json` (human-readable) or `chain-spec-raw.json` (encoded for production use).
+
+The raw chainspec can be generated from `chain-spec.json`, and contains the raw storage values for the node genesis.
+
+**Raw vs non-raw chainspecs:**
+
+- **Non-raw (plain)**: Human-readable keys and values (e.g., `"sudo": { "key": "5Grwva..." }`). Used for editing and customization.
+- **Raw**: Encoded storage keys suitable for the Substrate storage trie. Required for production deployment and syncing after runtime upgrades.
+
+Always distribute **raw** chainspecs to production nodes. Use non-raw specs only for inspection or modification.
+
+To generate a chainspec, you need all the `chainspec_` config values defined:
+
+```sh
+$ docker run --rm -e SHOW_CONFIG=1 midnightntwrk/midnight-node:latest-main 2>&1 | rg 'NAME:.*chainspec_.*$'
+NAME:          chainspec_name
+NAME:          chainspec_id
+NAME:          chainspec_genesis_state
+NAME:          chainspec_genesis_block
+NAME:          chainspec_chain_type
+NAME:          chainspec_pc_chain_config
+NAME:          chainspec_cnight_genesis
+NAME:          chainspec_federated_authority_config
+```
+
+Once all those config values are defined, running the node with `build-spec` will export the chainspec:
+
+```sh
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main build-spec
+...
+```
+
+This works because the `res/cfg/qanet.toml` config preset has all the `chainspec_` variables defined.
+
+`qanet.toml`:
+
+```toml
+...
+chainspec_name = "Midnight QANet"
+chainspec_id = "midnight_qanet"
+chainspec_genesis_state = "res/genesis/genesis_state_qanet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_qanet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/qanet/pc-chain-config.json"
+chainspec_cnight_genesis = "res/qanet/cnight-genesis.json"
+chainspec_federated_authority_config = "res/qanet/federated-authority-config.json"
+chainspec_system_parameters_config = "res/qanet/system-parameters-config.json"
+```
+
+The process for building chainspecs is automated via Earthly build commands:
+
+```sh
+$ earthly +rebuild-chainspec --NETWORK=<network>
+$ earthly +rebuild-all-chainspecs
+```
+
+## `genesis_state_<network>mn` and `genesis_block_<network>.mn`: Building Ledger state
+
+Each chain requires a genesis ledger state. All test networks contain a set of seeds pre-funded with NIGHT, Shielded tokens, and DUST. To generate genesis for these test networks, we must have the genesis seeds for the networks on the filesystem.
+
+The exception to this is the `undeployed` network, which uses the following well-known seeds:
+
+```json
+{
+    "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001",
+    "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002",
+    "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003",
+    "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9"
+}
+```
+
+Genesis is rebuilt using the toolkit's `generate-genesis` command:
+
+```sh
+$ docker run --rm midnightntwrk/midnight-node-toolkit:latest-main generate-genesis --network qanet --seeds-file genesis-seeds-qanet.json
+```
+
+This process is automated via Earthly build commands:
+
+```sh
+$ earthly +rebuild-genesis-state-<network>
+$ earthly +rebuild-all-genesis-states
+```
+
+New seeds can be generated via Earthly too - the generated file is written to `./secrets/`:
+
+```sh
+$ earthly +generate-seeds --NETWORK=<network> --OUTPUT_FILE=<network>-genesis-seeds.json
+```
+
+## `pc-chain-config.json`: PartnerChains Configuration
+
+The `pc-chain-config.json` is an output of the PartnerChains chain initialisation. See the [Partner Chains Chain Builder Documentation](https://github.com/input-output-hk/partner-chains/blob/898ee1cb082dd1002afdd8bcf01b4aee494c03f3/docs/user-guides/chain-builder.md#storing-the-main-chain-configuration) for more information on this.
+
+We use the `initial_authorities` field as the initial committee for the node. After the first epoch, the committee is loaded via the Ariadne selection algorithm from the list of registered and permissioned nodes indexed from the connected Cardano chain.
+
+## `cnight-genesis.json`
+
+Contains mappings between Cardano and Dust addresses, and which addresses the cnight main-chain-follower should track.
+
+The addresses in this file are stateless - all networks connected to Cardano preview should use the same `cnight-genesis.json` file, unless the network needs a different set of cNight mappings (advanced usage).
+
+The `cnight-genesis.json` file is generated using the `generate-c-night-genesis` command on the node:
+
+```sh
+$ docker run --rm midnightntwrk/midnight-node:latest-main generate-c-night-genesis -h
+```
+
+## `federated-authority-config.json`
+
+This file contains the set of governance authorities for both the technical committee and the council. These values will vary across different chains if the governance authorities should differ.
+
+This file is manually created when setting up a new chain. Each collective (`council` and `technical_committee`) requires:
+
+- `members`: Array of Substrate SS58 account IDs (hex-encoded)
+- `members_mainchain`: Corresponding Cardano payment key hashes
+- `address`: Cardano address for governance transactions
+- `policy_id`: Minting policy ID for governance NFTs
+
+For test networks, you can copy from an existing network (e.g., `res/qanet/federated-authority-config.json`) and update the member keys.
+
+## `system-parameters-config.json`: Midnight Governance Parameters
+
+Stores the terms and conditions for using the network, and the D parameter using in the Partner-chains Ariadne Selection Algorithm.
+
+The D parameter should match the intended mix of permissioned and registered validators for the network. For example, a federated-only network should have `num_permissioned_candidates` >= the initial authorities (in `pc-chain-config.json`) and <= the epoch length (hard-coded to 300), and `num_registered_candidates` set to `0`. If registered nodes are expected, set `num_registered_candidates` higher to allow SPOs to occupy slots in the committee.
+
+## Validator keys
+
+Validator nodes require secret keys for consensus participation. These are configured via environment variables pointing to key files:
+
+| Environment variable | Purpose | Key type |
+| -------------------- | ------- | -------- |
+| `AURA_KEY_FILE` | Block production (AURA consensus) | [Sr25519](https://github.com/w3f/polkadot-wiki/blob/61105e5b014aca11900aae7df68348803ebd4cc6/docs/learn/learn-cryptography.md?plain=1#L22) |
+| `GRANDPA_KEY_FILE` | Block finalization (GRANDPA consensus) | [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) |
+| `CROSS_CHAIN_KEY_FILE` | Cross-chain signing | [EdDSA](http://en.wikipedia.org/wiki/EdDSA) |
+| `BEEFY_KEY_FILE` | Aggregated finalisation proof | [EdDSA](http://en.wikipedia.org/wiki/EdDSA) |
+
+Each file should contain a secret seed for the respective key type. The public keys derived from these seeds must match an entry in `initial_authorities` (in `pc-chain-config.json`) for the node to participate in consensus.
+
+**Block production requirements:**
+
+- For a network to **produce blocks**, at least one validator with valid AURA keys must be online
+- For a network to **finalize blocks**, a 2/3 supermajority of `initial_authorities` must be connected with valid GRANDPA keys
+
+If blocks are being produced but not finalized, check that enough validators are online and their keys match the `initial_authorities` configuration.
+
+## Passing Substrate CLI arguments
+
+Substrate-native CLI arguments can be passed via the `args` or `append_args` config keys:
+
+```toml
+# In preset file - replaces all default args
+args = ["--rpc-external", "--rpc-cors=all"]
+
+# Or append to existing args
+append_args = ["--prometheus-external"]
+```
+
+Common Substrate flags for SREs:
+
+- `--state-pruning archive` - Keep full state history
+- `--blocks-pruning archive` - Keep all blocks
+- `--rpc-external` - Expose RPC to external connections
+- `--prometheus-external` - Expose metrics endpoint
+
+See `midnight-node --help` for all available options.
+
+## Troubleshooting
+
+### Diagnosing configuration issues
+
+1. **Always start with `SHOW_CONFIG=1`** to verify values and their sources
+2. Check for typos in environment variable names
+3. Verify `CFG_PRESET` matches an existing file in `res/cfg/`
+
+### Common issues
+
+| Symptom | Likely cause | Fix |
+| ------- | ------------ | --- |
+| Node fails to start with "chainspec not found" | Missing or incorrect `chain` config | Verify chainspec path exists and `CFG_PRESET` is set |
+| "Genesis mismatch" when syncing | Wrong chainspec version | Ensure all nodes use identical `chain-spec-raw.json` |
+| Node starts but won't produce blocks | Keys (`{AURA, GRANDPA, CROSS_CHAIN}_SEED_FILE`) don't match initial authorities. | Verify the secret keys for each node match `initial_authorities` |
