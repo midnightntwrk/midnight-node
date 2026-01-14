@@ -36,8 +36,8 @@ use sqlx::PgPool;
 /// A wrapper around `CandidatesDataSourceImpl` that adds Aiken datum parsing support.
 ///
 /// This data source implements `AuthoritySelectionDataSource` by:
-/// 1. Attempting to use the inner data source first
-/// 2. If permissioned candidates parsing fails, falling back to Aiken parser
+/// 1. Using the Aiken parser for permissioned candidates
+/// 2. Delegating D-parameter queries to the inner data source
 /// 3. Delegating all other methods to the inner data source
 pub struct AikenAuthoritySelectionDataSource<T> {
 	inner: T,
@@ -89,7 +89,8 @@ where
 
 		// Get D parameter from the inner data source
 		// Note: D parameter is stored separately from permissioned candidates
-		let d_parameter = match self
+		// We pass a dummy policy ID for permissioned candidates since we handle those via Aiken parser
+		let inner_params = self
 			.inner
 			.get_ariadne_parameters(
 				epoch_number,
@@ -97,17 +98,9 @@ where
 				// Pass a dummy policy ID - we're only interested in d_parameter
 				PolicyId([0u8; 28]),
 			)
-			.await
-		{
-			Ok(params) => params.d_parameter,
-			Err(_) => {
-				// If we can't get d_parameter from inner source, construct a reasonable default
-				sidechain_domain::DParameter {
-					num_permissioned_candidates: candidates.len() as u16,
-					num_registered_candidates: 0,
-				}
-			},
-		};
+			.await?;
+
+		let d_parameter = inner_params.d_parameter;
 
 		Ok(AriadneParameters { d_parameter, permissioned_candidates: Some(candidates) })
 	}
