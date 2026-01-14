@@ -2674,7 +2674,7 @@ async fn permissioned_candidates_aiken_format() {
             let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
                 || candidate.get("sidechain_public_key").is_some();
 
-            // Check for keys object containing aura and grandpa keys (Aiken format)
+            // Check for keys object containing aura and gran keys (Aiken format)
             let keys = candidate.get("keys");
             let has_keys = keys
                 .and_then(|k| k.as_object())
@@ -2759,7 +2759,7 @@ async fn authority_selection_uses_aiken_candidates() {
     );
 
     // Validate each candidate has the expected Aiken key structure
-    // Keys should include: aura, grandpa, and sidechain_public_key
+    // Structure: { sidechainPublicKey: "0x...", keys: { "aura": "0x...", "gran": "0x..." } }
     let mut valid_candidates = 0;
     for (i, candidate) in candidates.iter().enumerate() {
         let keys = candidate
@@ -2773,10 +2773,10 @@ async fn authority_selection_uses_aiken_candidates() {
         let aura_str = aura_key.as_str().unwrap_or("");
         assert!(!aura_str.is_empty(), "Candidate {} has empty AURA key", i);
 
-        // Validate GRANDPA key
+        // Validate GRANDPA key (key type is "gran" - 4-byte identifier)
         let grandpa_key = keys
-            .get("grandpa")
-            .expect(&format!("Candidate {} missing 'grandpa' key", i));
+            .get("gran")
+            .expect(&format!("Candidate {} missing 'gran' key", i));
         let grandpa_str = grandpa_key.as_str().unwrap_or("");
         assert!(
             !grandpa_str.is_empty(),
@@ -2784,14 +2784,15 @@ async fn authority_selection_uses_aiken_candidates() {
             i
         );
 
-        // Validate sidechain public key
-        let sidechain_key = keys
-            .get("sidechain_public_key")
-            .expect(&format!("Candidate {} missing 'sidechain_public_key'", i));
+        // Validate sidechain public key (at candidate level, not inside keys)
+        let sidechain_key = candidate
+            .get("sidechainPublicKey")
+            .or_else(|| candidate.get("sidechain_public_key"))
+            .expect(&format!("Candidate {} missing 'sidechainPublicKey'", i));
         let sidechain_str = sidechain_key.as_str().unwrap_or("");
         assert!(
             !sidechain_str.is_empty(),
-            "Candidate {} has empty sidechain_public_key",
+            "Candidate {} has empty sidechainPublicKey",
             i
         );
 
