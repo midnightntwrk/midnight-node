@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::aiken_authority_selection::AikenAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
+use midnight_primitives_mainchain_follower::AikenFederatedOpsConfig;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
@@ -199,9 +201,29 @@ pub async fn create_cached_data_sources(
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool.clone(), metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
+
+	// Wrap with Aiken parser if Aiken config is provided
+	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
+		if let Some(policy_id_str) = cfg.aiken_federated_ops_policy_id.as_ref() {
+			log::info!(
+				"Aiken FederatedOps policy ID provided, enabling Aiken datum parser for permissioned candidates"
+			);
+			let policy_id = sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str);
+			let aiken_config = AikenFederatedOpsConfig { policy_id };
+			Arc::new(AikenAuthoritySelectionDataSource::new(
+				candidates_data_source_cached,
+				candidates_pool,
+				aiken_config,
+			))
+		} else {
+			log::info!(
+				"No Aiken FederatedOps config provided, using SDK parser for permissioned candidates"
+			);
+			Arc::new(candidates_data_source_cached)
+		};
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
@@ -266,7 +288,7 @@ pub async fn create_cached_data_sources(
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
-		authority_selection: Arc::new(candidates_data_source_cached),
+		authority_selection,
 		cnight_observation: Arc::new(cnight_observation),
 		governed_map: Arc::new(governed_map),
 		bridge: Arc::new(bridge),
