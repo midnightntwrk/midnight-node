@@ -627,7 +627,8 @@ $ midnight-node-toolkit dust-balance
   "source": {
 ...
   },
-  "total": 12500000000000000000000000
+  "total": 12500000000000000000000000,
+  "capacity": 12500000000000000000000000
 }
 
 ```
