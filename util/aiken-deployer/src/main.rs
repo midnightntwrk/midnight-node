@@ -230,16 +230,16 @@ async fn main() -> Result<(), CliError> {
 		ContractType::FederatedOps => {
 			// FederatedOps uses a different datum structure with an appendix field
 			// Read candidates from file if provided, otherwise use empty list
-			let candidates: Vec<FederatedOpsCandidate> = if let Some(ref path) = args.candidates_file
-			{
-				let content = fs::read_to_string(path)?;
-				let candidates: Vec<FederatedOpsCandidate> = serde_json::from_str(&content)?;
-				println!("✓ Loaded {} permissioned candidates", candidates.len());
-				candidates
-			} else {
-				println!("No candidates file provided, deploying with empty candidates list");
-				vec![]
-			};
+			let candidates: Vec<FederatedOpsCandidate> =
+				if let Some(ref path) = args.candidates_file {
+					let content = fs::read_to_string(path)?;
+					let candidates: Vec<FederatedOpsCandidate> = serde_json::from_str(&content)?;
+					println!("✓ Loaded {} permissioned candidates", candidates.len());
+					candidates
+				} else {
+					println!("No candidates file provided, deploying with empty candidates list");
+					vec![]
+				};
 			let datum = build_federated_ops_datum(&candidates);
 			let redeemer = build_federated_ops_redeemer(&candidates);
 			(datum, redeemer)
