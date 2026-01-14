@@ -391,6 +391,17 @@ jq --arg council_addr "$COUNCIL_SCRIPT_ADDRESS" \
 echo "Patched federated-authority-config.json:"
 cat /tmp/federated-authority-config.json
 
+# Patch system-parameters-config.json to use the same D-parameter values as deployed on Cardano.
+# This ensures the genesis D-parameter matches what was deployed, avoiding finality issues during
+# the initial epochs before the on-chain D-parameter propagates to the sidechain.
+echo "Patching system-parameters-config.json with D-parameter values..."
+jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
+   '.d_parameter.num_permissioned_candidates = $d_perm | .d_parameter.num_registered_candidates = $d_reg' \
+   /res/dev/system-parameters-config.json > /tmp/system-parameters-config.json
+
+echo "Patched system-parameters-config.json:"
+cat /tmp/system-parameters-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -401,7 +412,7 @@ export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
-export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/res/dev/system-parameters-config.json
+export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 
