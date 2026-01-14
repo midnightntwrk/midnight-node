@@ -49,21 +49,35 @@ runs:
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
 
+    - name: Clone midnight-reserve-contracts
+      run: |
+        echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
+        git clone --depth 1 "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git" "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
+        echo "✓ Cloned to $(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+      shell: bash
+      env:
+        GHCR_PASSWORD: ${{ inputs.ghcr-password }}
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."
-        echo "NODE_IMAGE: ${{ inputs.image }}"
-        echo "INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}"
-        echo "CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}"
-        echo "WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}"
+        echo "NODE_IMAGE: ${NODE_IMAGE}"
+        echo "INDEXER_API_IMAGE: ${INDEXER_API_IMAGE}"
+        echo "CHAIN_INDEXER_IMAGE: ${CHAIN_INDEXER_IMAGE}"
+        echo "WALLET_INDEXER_IMAGE: ${WALLET_INDEXER_IMAGE}"
 
         echo "🚀 Running Earthly command..."
         earthly +start-local-env-with-indexer-ci \
-          --NODE_IMAGE=${{ inputs.image }} \
-          --INDEXER_API_IMAGE=${{ inputs.indexer-api-image }} \
-          --CHAIN_INDEXER_IMAGE=${{ inputs.chain-indexer-image }} \
-          --WALLET_INDEXER_IMAGE=${{ inputs.wallet-indexer-image }}
+          --NODE_IMAGE="${NODE_IMAGE}" \
+          --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
+          --CHAIN_INDEXER_IMAGE="${CHAIN_INDEXER_IMAGE}" \
+          --WALLET_INDEXER_IMAGE="${WALLET_INDEXER_IMAGE}"
       shell: bash
+      env:
+        NODE_IMAGE: ${{ inputs.image }}
+        INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
+        CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
+        WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
 
 #    - name: Run Indexer E2E Tests
 #      uses: ./.github/actions/reusable-e2e-tests

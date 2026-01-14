@@ -1,4 +1,8 @@
 use crate::config::{Constants, OgmiosClientSettings};
+use aiken_contracts_lib::{
+    FederatedOpsCandidate, GovernanceMember, build_federated_ops_datum,
+    build_federated_ops_redeemer, build_governance_redeemer, build_versioned_multisig_datum,
+};
 use bip39::{Language, Mnemonic, MnemonicType};
 use ogmios_client::OgmiosClientError;
 use ogmios_client::jsonrpsee::client_for_url;
@@ -793,7 +797,7 @@ impl CardanoClient {
         script_address: &str,
         policy_id: &str,
         sr25519_pubkeys: Vec<(String, String)>, // (cardano_pubkey_hash, sr25519_pubkey)
-        total_signers: u64,
+        _total_signers: u64,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         // Load the funded_address credentials (owner of all inputs)
         let payments = self.constants.payments.clone();
@@ -812,38 +816,17 @@ impl CardanoClient {
             .expect("Payment credential is not a keyhash");
         let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
 
-        // Build the VersionedMultisig datum
-        // New format uses @list annotation: [[total_signers, members_map], logic_round]
-        let multisig_data = serde_json::json!({
-            "list": [
-                {"int": total_signers},
-                {"map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
-                    // The signer keys must be in "created signer" format: #"8200581c" + cardano_hash
-                    let signer_key = format!("8200581c{}", cardano_hash);
-                    serde_json::json!({
-                        "k": {"bytes": signer_key},
-                        "v": {"bytes": sr25519_key}
-                    })
-                }).collect::<Vec<_>>()}
-            ]
-        });
-        // VersionedMultisig is now a list: [Multisig, logic_round]
-        let datum = serde_json::json!({
-            "list": [
-                multisig_data,
-                {"int": 0}  // logic_round starts at 0
-            ]
-        });
+        // Build the VersionedMultisig datum and redeemer using shared library
+        let members: Vec<GovernanceMember> = sr25519_pubkeys
+            .iter()
+            .map(|(cardano_hash, sr25519_key)| GovernanceMember {
+                cardano_hash: cardano_hash.clone(),
+                sr25519_key: sr25519_key.clone(),
+            })
+            .collect();
 
-        // Build the redeemer
-        let redeemer = serde_json::json!({
-            "map": sr25519_pubkeys.iter().map(|(cardano_hash, sr25519_key)| {
-                serde_json::json!({
-                    "k": {"bytes": cardano_hash},
-                    "v": {"bytes": sr25519_key}
-                })
-            }).collect::<Vec<_>>()
-        });
+        let datum = build_versioned_multisig_datum(&members);
+        let redeemer = build_governance_redeemer(&members);
 
         // Validation: Verify script hash matches policy ID
         let calculated_hash = whisky::get_script_hash(script_cbor, LanguageVersion::V3);
@@ -859,7 +842,7 @@ impl CardanoClient {
         println!("Deploying governance contract");
         println!("  Script address: {}", script_address);
         println!("  Policy ID: {}", policy_id);
-        println!("  Total signers: {}", total_signers);
+        println!("  Total signers: {}", members.len());
         println!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
@@ -936,6 +919,136 @@ impl CardanoClient {
 
         let signed_tx_hex = tx_builder.tx_hex();
 
+        let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
+
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
+    /// Deploy a federated operators contract with the FederatedOps datum format
+    ///
+    /// The FederatedOps datum format is:
+    /// [data: Data, appendix: List<PermissionedCandidateDatumV1>, logic_round: Int]
+    /// where PermissionedCandidateDatumV1 = [partner_chains_key: ByteArray, keys: List<CandidateKey>]
+    /// and CandidateKey = [id: ByteArray, bytes: ByteArray]
+    ///
+    /// # Arguments
+    /// * `candidates` - List of (ecdsa_key, aura_key) tuples where:
+    ///   - ecdsa_key: The cross-chain (crch) ECDSA public key (33 bytes, hex string)
+    ///   - aura_key: The SR25519 public key for AURA consensus (32 bytes, hex string)
+    #[allow(clippy::too_many_arguments)]
+    pub async fn deploy_federated_ops_contract(
+        &self,
+        tx_in: &OgmiosUtxo,
+        collateral_utxo: &OgmiosUtxo,
+        one_shot_utxo: &OgmiosUtxo,
+        script_cbor: &str,
+        script_address: &str,
+        policy_id: &str,
+        candidates: Vec<(String, String)>, // (ecdsa_key, aura_key) tuples
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let payments = self.constants.payments.clone();
+        let funded_addr = payments.funded_address;
+        let funded_skey_cbor = payments.funded_address_skey_cbor;
+
+        let funded_addr_parsed =
+            Address::from_bech32(&funded_addr).expect("Invalid funded address");
+        let payment_keyhash = funded_addr_parsed
+            .payment_cred()
+            .expect("No payment credential in address")
+            .to_keyhash()
+            .expect("Payment credential is not a keyhash");
+        let payment_keyhash_hex = hex::encode(payment_keyhash.to_bytes());
+
+        // Build the FederatedOps datum and redeemer using shared library
+        let fedops_candidates: Vec<FederatedOpsCandidate> = candidates
+            .iter()
+            .map(|(ecdsa_key, aura_key)| FederatedOpsCandidate {
+                ecdsa_key: ecdsa_key.clone(),
+                aura_key: aura_key.clone(),
+            })
+            .collect();
+
+        let datum = build_federated_ops_datum(&fedops_candidates);
+        let redeemer = build_federated_ops_redeemer(&fedops_candidates);
+
+        println!("Deploying federated operators contract");
+        println!("  Script address: {}", script_address);
+        println!("  Policy ID: {}", policy_id);
+        println!("  Candidates: {}", fedops_candidates.len());
+        println!(
+            "  One-shot UTXO: {}#{}",
+            hex::encode(one_shot_utxo.transaction.id),
+            one_shot_utxo.index
+        );
+        println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
+
+        let send_assets = vec![
+            Asset::new_from_str("lovelace", "2000000"),
+            Asset::new_from_str(policy_id, "1"),
+        ];
+
+        let network = Network::Custom(self.constants.cost_model.clone());
+
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
+            .network(network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(tx_in.transaction.id),
+                tx_in.index.into(),
+                &Self::build_asset_vector(tx_in),
+                &funded_addr,
+            )
+            .tx_in(
+                &hex::encode(one_shot_utxo.transaction.id),
+                one_shot_utxo.index.into(),
+                &Self::build_asset_vector(one_shot_utxo),
+                &funded_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(collateral_utxo.transaction.id),
+                collateral_utxo.index.into(),
+                &Self::build_asset_vector(collateral_utxo),
+                &funded_addr,
+            )
+            .tx_out(script_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(datum.to_string()))
+            .mint_plutus_script_v3()
+            .mint(1, policy_id, "")
+            .minting_script(script_cbor)
+            .mint_redeemer_value(&WRedeemer {
+                data: WData::JSON(redeemer.to_string()),
+                ex_units: Budget {
+                    mem: 14000000,
+                    steps: 10000000000,
+                },
+            })
+            .change_address(&funded_addr)
+            .required_signer_hash(&payment_keyhash_hex)
+            .signing_key(&funded_skey_cbor)
+            .complete_sync(None)
+            .map_err(|e| {
+                panic!("Transaction building failed: {:?}", e);
+            })
+            .unwrap()
+            .complete_signing()
+            .map_err(|e| {
+                panic!("Transaction signing failed: {:?}", e);
+            })
+            .unwrap();
+
+        println!("✓ Transaction Built Successfully");
+
+        let signed_tx_hex = tx_builder.tx_hex();
         let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
 
         let request = OgmiosRequest::SubmitTx { tx_bytes };

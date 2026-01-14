@@ -14,7 +14,6 @@ parity-scale-codec.workspace = true
 scale-info.workspace = true
 log.workspace = true
 sp-inherents.workspace = true
-sp-std.workspace = true
 frame-benchmarking = { workspace = true, optional = true }
 
 
@@ -31,7 +30,6 @@ std = [
     "frame-support/std",
     "frame-system/std",
     "scale-info/std",
-    "sp-std/std",
     "sp-inherents/std",
     "pallet-collective/std",
     "pallet-membership/std",

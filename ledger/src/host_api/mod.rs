@@ -18,12 +18,12 @@ use crate::{
 	},
 	hard_fork_test, latest,
 };
+use alloc::vec::Vec;
 use sp_runtime_interface::pass_by::{
 	AllocateAndReturnByCodec, AllocateAndReturnFatPointer, PassFatPointerAndDecode,
 	PassFatPointerAndRead,
 };
 use sp_runtime_interface::runtime_interface;
-use sp_std::vec::Vec;
 
 #[cfg(feature = "std")]
 type Database = ledger_storage::db::ParityDb;
