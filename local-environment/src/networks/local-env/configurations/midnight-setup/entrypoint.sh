@@ -250,6 +250,17 @@ fi
 # Wait for transaction to confirm
 sleep 10
 
+# Generate permissioned candidates file for federated_ops_forever
+# Extract the first 4 candidates from the chain config (matching the chain-spec generation)
+echo ""
+echo "=== Generating Permissioned Candidates File ==="
+jq '[.initial_permissioned_candidates[:4] | .[] | {
+    ecdsa_key: .sidechain_pub_key[2:],
+    aura_key: .aura_pub_key[2:]
+}]' res/qanet/pc-chain-config.json > permissioned_candidates.json
+echo "Created permissioned_candidates.json:"
+cat permissioned_candidates.json
+
 # Deploy federated_ops_forever contract
 # Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
 echo ""
@@ -261,7 +272,8 @@ echo "=== Deploying Federated Ops Forever Contract ==="
     --funded-address "$FUNDED_ADDRESS" \
     --members-file council_members.json \
     --ogmios-url "$OGMIOS_URL" \
-    --contract-type federated-ops
+    --contract-type federated-ops \
+    --candidates-file permissioned_candidates.json
 
 if [ $? -eq 0 ]; then
     echo "✓ Federated Ops Forever contract deployed successfully!"
