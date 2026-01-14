@@ -394,7 +394,7 @@ impl<T> MidnightAuthoritySelectionDataSource<T> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use cardano_serialization_lib::{BigInt, PlutusList};
+	use cardano_serialization_lib::{BigInt, BigNum, PlutusList};
 
 	fn create_candidate_key(id: &[u8], key_bytes: &[u8]) -> PlutusData {
 		let mut key_list = PlutusList::new();
@@ -417,7 +417,7 @@ mod tests {
 
 	fn create_federated_ops(candidates: Vec<PlutusData>, logic_round: u64) -> PlutusData {
 		// Create Unit data (constr 0 with empty fields)
-		let unit_data = PlutusData::new_empty_constr_plutus_data(&BigInt::from(0u64));
+		let unit_data = PlutusData::new_empty_constr_plutus_data(&BigNum::zero());
 
 		let mut appendix_list = PlutusList::new();
 		for candidate in candidates {
