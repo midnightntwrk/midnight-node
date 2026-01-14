@@ -136,7 +136,6 @@ jobs:
 
   hardfork:
     name: Build hardfork images
-    if: false  # Temporarily disabled for faster CI iteration
     permissions:
       id-token: write
       contents: read
@@ -197,8 +196,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-pallet-fixtures]
+    needs: [run, test-pallet-fixtures, local-environment-tests]
     permissions:
       id-token: write
       contents: read
@@ -248,10 +246,10 @@ jobs:
 
   hardfork-e2e:
     name: Hardfork E2E
-    if: false  # Temporarily disabled for faster CI iteration
     needs:
       - run
       - hardfork
+      - local-environment-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -271,8 +269,7 @@ jobs:
 
   ledger-rollback-e2e:
     name: Ledger Rollback E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: run
+    needs: [run, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -295,8 +292,7 @@ jobs:
 
   node-e2e:
     name: Node E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: run
+    needs: [run, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -320,7 +316,6 @@ jobs:
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
     name: Test Pallet Fixtures
-    if: false  # Temporarily disabled for faster CI iteration
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
@@ -341,7 +336,6 @@ jobs:
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     name: Test Toolkit
-    if: false  # Temporarily disabled for faster CI iteration
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
@@ -361,8 +355,7 @@ jobs:
 
   toolkit-e2e:
     name: Toolkit E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -382,8 +375,7 @@ jobs:
 
   toolkit-update-ledger-parameters-e2e:
     name: Toolkit Update Ledger Parameters E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -403,8 +395,7 @@ jobs:
 
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -424,8 +415,7 @@ jobs:
 
   toolkit-mint-e2e:
     name: Toolkit Mint E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -445,8 +435,7 @@ jobs:
 
   toolkit-ut-e2e:
     name: Toolkit Unshielded Token E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -466,8 +455,7 @@ jobs:
 
   metadata-check:
     name: Metadata Check
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: run
+    needs: [run, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -497,8 +485,7 @@ jobs:
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: [run, test-toolkit]
+    needs: [run, test-toolkit, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -518,8 +505,7 @@ jobs:
 
   startup-dev-e2e:
     name: Startup E2E in dev mode
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: run
+    needs: [run, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -538,8 +524,7 @@ jobs:
 
   genesis-undeployed-e2e:
     name: Genesis Wallets E2E for Undeployed network
-    if: false  # Temporarily disabled for faster CI iteration
-    needs: run
+    needs: [run, local-environment-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -725,7 +710,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ephemeral-environment-tests:
-    if: false  # Temporarily disabled for faster CI iteration
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
+    needs: local-environment-tests
     # needs:
     #   - hardfork-e2e
     #   - ledger-rollback-e2e
