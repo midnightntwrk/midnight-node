@@ -58,10 +58,8 @@ impl<T> AikenAuthoritySelectionDataSource<T> {
 		&self,
 		block_number: u32,
 	) -> Result<Vec<PermissionedCandidateData>, Box<dyn std::error::Error + Send + Sync>> {
-		let candidates = self
-			.aiken_data_source
-			.get_aiken_permissioned_candidates(block_number)
-			.await?;
+		let candidates =
+			self.aiken_data_source.get_aiken_permissioned_candidates(block_number).await?;
 
 		Ok(MidnightAuthoritySelectionDataSource::<()>::convert_candidates(candidates))
 	}
@@ -110,9 +108,7 @@ where
 		epoch_number: McEpochNumber,
 		committee_candidate_address: MainchainAddress,
 	) -> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
-		self.inner
-			.get_candidates(epoch_number, committee_candidate_address)
-			.await
+		self.inner.get_candidates(epoch_number, committee_candidate_address).await
 	}
 
 	async fn get_epoch_nonce(

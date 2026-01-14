@@ -2771,11 +2771,7 @@ async fn authority_selection_uses_aiken_candidates() {
             .get("aura")
             .expect(&format!("Candidate {} missing 'aura' key", i));
         let aura_str = aura_key.as_str().unwrap_or("");
-        assert!(
-            !aura_str.is_empty(),
-            "Candidate {} has empty AURA key",
-            i
-        );
+        assert!(!aura_str.is_empty(), "Candidate {} has empty AURA key", i);
 
         // Validate GRANDPA key
         let grandpa_key = keys
