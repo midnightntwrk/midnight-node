@@ -77,7 +77,8 @@ where
 		_permissioned_candidates_policy: PolicyId,
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
 		// Use Aiken parser directly for permissioned candidates
-		let candidates = self.get_aiken_permissioned_candidates(u32::MAX).await?;
+		// Note: Use i32::MAX to avoid overflow when cast to i32 in SQL query
+		let candidates = self.get_aiken_permissioned_candidates(i32::MAX as u32).await?;
 
 		log::info!(
 			"Aiken parser found {} permissioned candidates for epoch {}",
