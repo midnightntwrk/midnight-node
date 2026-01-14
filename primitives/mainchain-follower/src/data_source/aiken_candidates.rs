@@ -46,7 +46,9 @@
 //! uses a more structured approach with key identifiers.
 
 use cardano_serialization_lib::PlutusData;
-use sidechain_domain::{CandidateKey, CandidateKeys, PermissionedCandidateData, SidechainPublicKey};
+use sidechain_domain::{
+	CandidateKey, CandidateKeys, PermissionedCandidateData, SidechainPublicKey,
+};
 use sp_runtime::KeyTypeId;
 use std::error::Error;
 
@@ -96,10 +98,7 @@ impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
 			CandidateKey::new(GRANDPA_KEY_TYPE, candidate.grandpa_public_key),
 		]);
 
-		Self {
-			sidechain_public_key: SidechainPublicKey(candidate.sidechain_public_key),
-			keys,
-		}
+		Self { sidechain_public_key: SidechainPublicKey(candidate.sidechain_public_key), keys }
 	}
 }
 
@@ -134,9 +133,7 @@ impl AikenFederatedOpsDatum {
 	/// ```text
 	/// [data, [[partner_chains_key, [[key_id, key_bytes], ...]], ...], logic_round]
 	/// ```
-	pub fn from_plutus_data(
-		datum: &PlutusData,
-	) -> Result<Self, Box<dyn Error + Send + Sync>> {
+	pub fn from_plutus_data(datum: &PlutusData) -> Result<Self, Box<dyn Error + Send + Sync>> {
 		// FederatedOps uses @list annotation, so it's a list: [data, appendix, logic_round]
 		let list: Vec<PlutusData> = datum
 			.as_list()
@@ -169,19 +166,14 @@ impl AikenFederatedOpsDatum {
 			match Self::parse_candidate(candidate_data) {
 				Ok(candidate) => candidates.push(candidate),
 				Err(e) => {
-					log::warn!(
-						"Failed to parse candidate at index {}: {}. Skipping.",
-						idx,
-						e
-					);
+					log::warn!("Failed to parse candidate at index {}: {}. Skipping.", idx, e);
 				},
 			}
 		}
 
 		// Element 2: logic_round
-		let logic_round_bigint = list[2]
-			.as_integer()
-			.ok_or("Expected logic_round to be an integer")?;
+		let logic_round_bigint =
+			list[2].as_integer().ok_or("Expected logic_round to be an integer")?;
 		let logic_round: u64 = logic_round_bigint
 			.as_u64()
 			.ok_or("Expected logic_round to be a non-negative integer that fits in u64")?
@@ -215,9 +207,8 @@ impl AikenFederatedOpsDatum {
 		}
 
 		// Element 0: partner_chains_key (SidechainPublicKey = ByteArray)
-		let sidechain_public_key = list[0]
-			.as_bytes()
-			.ok_or("Expected partner_chains_key to be bytes")?;
+		let sidechain_public_key =
+			list[0].as_bytes().ok_or("Expected partner_chains_key to be bytes")?;
 
 		// Validate sidechain key length (33 bytes for compressed ECDSA)
 		if sidechain_public_key.len() != 33 {
@@ -300,13 +291,9 @@ impl AikenFederatedOpsDatum {
 				.into());
 			}
 
-			let id = key_list[0]
-				.as_bytes()
-				.ok_or("Expected key id to be bytes")?;
+			let id = key_list[0].as_bytes().ok_or("Expected key id to be bytes")?;
 
-			let bytes = key_list[1]
-				.as_bytes()
-				.ok_or("Expected key bytes to be bytes")?;
+			let bytes = key_list[1].as_bytes().ok_or("Expected key bytes to be bytes")?;
 
 			keys.push(AikenCandidateKey { id, bytes });
 		}
