@@ -17,7 +17,6 @@ log = { workspace = true }
 scale-info = { workspace = true, features = ["derive"] }
 frame-support.workspace = true
 frame-system.workspace = true
-sp-std.workspace = true
 sp-runtime.workspace = true
 frame-benchmarking = { workspace = true, optional = true}
 pallet-collective = { workspace = true, optional = true}
@@ -39,7 +38,6 @@ std = [
     "pallet-membership/std",
     "pallet-collective/std",
 	"scale-info/std",
-	"sp-std/std",
 ]
 runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",

@@ -12,7 +12,7 @@
 ### Run with local node
 You may need to insert the BEEFY key manually, after the node starts.  
 
-Note: Omit `--unsafe-rpc-external` when running the midnight node. This is to allow unsafe rpc calls, like `author_insertKey`.  
+Note: Use `--unsafe-rpc-external` when running the midnight node. This is to allow unsafe rpc calls, like `author_insertKey`.
 
 #### How to insert
 Make sure to have ready the following details:

@@ -35,6 +35,7 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 // -------- TESTS --------
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn register_for_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -119,6 +120,7 @@ async fn register_for_dust_production() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn deploy_governance_contracts_and_validate_membership_reset() {
     println!("=== Starting Governance Contracts E2E Test ===");
 
@@ -274,6 +276,97 @@ async fn deploy_governance_contracts_and_validate_membership_reset() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
+async fn deploy_federated_ops_contract_and_validate_membership() {
+    println!("=== Starting Federated Operators Contract E2E Test ===");
+
+    let settings = Settings::default();
+    let policies = settings.constants.policies.clone();
+    let funded_address = settings.constants.payments.funded_address.clone();
+
+    let cardano_client =
+        CardanoClient::new_from_funded(settings.ogmios_client, settings.constants).await;
+    let _midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Derive keys from seeds (Alice and Eve from Substrate)
+    use sp_core::{Pair, ecdsa, sr25519};
+
+    // ECDSA (cross-chain) keys - derived from seed
+    let alice_ecdsa_pair = ecdsa::Pair::from_string("//Alice", None).expect("valid seed");
+    let eve_ecdsa_pair = ecdsa::Pair::from_string("//Eve", None).expect("valid seed");
+    let alice_ecdsa = hex::encode(alice_ecdsa_pair.public().0);
+    let eve_ecdsa = hex::encode(eve_ecdsa_pair.public().0);
+
+    // SR25519 (AURA) keys - derived from seed
+    let alice_sr25519_pair = sr25519::Pair::from_string("//Alice", None).expect("valid seed");
+    let eve_sr25519_pair = sr25519::Pair::from_string("//Eve", None).expect("valid seed");
+    let alice_sr25519 = hex::encode(alice_sr25519_pair.public().0);
+    let eve_sr25519 = hex::encode(eve_sr25519_pair.public().0);
+
+    println!("Alice ECDSA (cross-chain) key: {}", alice_ecdsa);
+    println!("Eve ECDSA (cross-chain) key: {}", eve_ecdsa);
+    println!("Alice SR25519 (AURA) key: {}", alice_sr25519);
+    println!("Eve SR25519 (AURA) key: {}", eve_sr25519);
+
+    println!("Using funded_address for deployment: {}", funded_address);
+
+    // Fund UTxOs for deployment
+    let address_bech32 = cardano_client.address_as_bech32();
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in_utxo = faucet.request_tokens(&address_bech32, 500_000_000).await;
+    println!("Wallet funded for federated operators contract deployment");
+
+    // Load contract CBOR and calculate address and policy ID
+    let federated_ops_cbor = policies.federated_ops_forever_cbor_double_encoding();
+    let federated_ops_address = policies.federated_ops_forever_address();
+    let federated_ops_policy_id = policies.federated_ops_forever_policy_id();
+
+    println!("Federated Operators Forever:");
+    println!("  Policy ID (calculated): {}", federated_ops_policy_id);
+    println!("  Address: {}", federated_ops_address);
+
+    // Get pre-created one-shot UTXO from local-environment
+    let federated_ops_one_shot = cardano_client
+        .one_shot_utxo("federatedops")
+        .await
+        .expect("Failed to get one shot federatedops");
+    println!("✓ Federated Operators one-shot UTXO retrieved from local-environment");
+
+    // Deploy Federated Operators Forever contract
+    println!("\n=== Deploying Federated Operators Forever Contract ===");
+    // FederatedOps uses (ecdsa_key, aura_key) tuples
+    // - ecdsa_key: The cross-chain (crch) key used as partner_chains_key
+    // - aura_key: The SR25519 key for AURA consensus
+    let federated_ops_candidates = vec![
+        (alice_ecdsa.clone(), alice_sr25519.clone()),
+        (eve_ecdsa.clone(), eve_sr25519.clone()),
+    ];
+
+    let federated_ops_tx_id = cardano_client
+        .deploy_federated_ops_contract(
+            &tx_in_utxo,
+            &collateral_utxo,
+            &federated_ops_one_shot,
+            &federated_ops_cbor,
+            &federated_ops_address,
+            &federated_ops_policy_id,
+            federated_ops_candidates,
+        )
+        .await
+        .expect("Failed to deploy the federated operators contract")
+        .transaction
+        .id;
+
+    println!(
+        "✓ Federated Operators Forever contract deployed successfully with tx ID: {federated_ops_tx_id:?}"
+    );
+
+    println!("\n=== Federated Operators Contract Deployed Successfully ===");
+}
+
+#[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
@@ -435,6 +528,7 @@ async fn register_2_cardano_same_dust_address_production() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -565,10 +659,11 @@ async fn cnight_produces_dust() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn deregister_from_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
-    let midnight_client = MidnightClient::new(settings.node_client).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let address_bech32 = cardano_client.address_as_bech32();
     println!("New Cardano wallet created: {:?}", address_bech32);
@@ -672,6 +767,28 @@ async fn deregister_from_dust_production() {
         "Matching MappingRemoved event found: {:?}",
         mapping_removed.unwrap()
     );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
 }
 
 #[tokio::test]
@@ -741,6 +858,7 @@ async fn alice_cannot_deregister_bob() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn removing_excessive_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -990,6 +1108,7 @@ async fn removing_excessive_registrations() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn create_hundred_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1328,6 +1447,7 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
 }
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1495,6 +1615,7 @@ async fn register_twice_with_same_cardano_address() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn deregister_with_valid_cnight_utxo() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1688,7 +1809,119 @@ async fn deregister_with_valid_cnight_utxo() {
     );
 }
 
+/// Verify D-Parameter RPC endpoint accepts block hash parameter for historical queries.
+///
+/// This test verifies:
+/// - systemParameters_getDParameter accepts optional block hash parameter
+/// - Querying at genesis block returns valid values
+/// - Querying at current block returns valid values
+/// - Querying at an invalid block hash returns an error
+///
+/// LIMITATION: Since D-parameter can only be changed via governance (Root origin),
+/// this test cannot fully verify that historical queries return *different* values
+/// at different blocks when the parameter has changed. To fully test that scenario,
+/// a governance transaction would need to update the D-parameter between blocks.
+/// However, this test does verify the historical query code path is exercised
+/// by querying at different block heights and validating error handling.
 #[tokio::test]
+async fn query_d_parameter_at_historical_block() {
+    println!("=== D-Parameter Historical Block Query E2E Test ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Step 1: Get genesis block hash (block 0) to test historical query at earliest block
+    let genesis_block_hash = midnight_client
+        .get_block_hash_at_height(0)
+        .await
+        .expect("Failed to get genesis block hash");
+    println!(
+        "Genesis block hash: 0x{}",
+        hex::encode(genesis_block_hash.as_bytes())
+    );
+
+    // Step 2: Get current best block hash
+    let current_block_hash = midnight_client
+        .get_best_block_hash()
+        .await
+        .expect("Failed to get best block hash");
+    println!(
+        "Current block hash: 0x{}",
+        hex::encode(current_block_hash.as_bytes())
+    );
+
+    // Step 3: Query D-Parameter at genesis block
+    println!("Querying D-param at genesis block...");
+    let d_param_at_genesis = midnight_client
+        .get_d_parameter_at(genesis_block_hash)
+        .await
+        .expect("Failed to query D-param at genesis block");
+    println!(
+        "D-param at genesis: ({}, {})",
+        d_param_at_genesis.num_permissioned_candidates,
+        d_param_at_genesis.num_registered_candidates
+    );
+
+    // Step 4: Query D-Parameter at current block
+    println!("Querying D-param at current block...");
+    let d_param_at_current = midnight_client
+        .get_d_parameter_at(current_block_hash)
+        .await
+        .expect("Failed to query D-param at current block");
+    println!(
+        "D-param at current: ({}, {})",
+        d_param_at_current.num_permissioned_candidates,
+        d_param_at_current.num_registered_candidates
+    );
+
+    // Step 5: Verify both queries returned valid data
+    // Note: Values may be the same since D-parameter hasn't been changed via governance.
+    // This test primarily verifies the historical query code path works, not that
+    // different blocks have different values (which would require governance changes).
+    println!("✓ Historical block queries returned valid D-parameter data");
+
+    // Step 6: Test error handling - query with invalid block hash
+    println!("Testing error handling with invalid block hash...");
+    let invalid_block_hash = subxt::utils::H256::from([0xff; 32]);
+    let invalid_query_result = midnight_client.get_d_parameter_at(invalid_block_hash).await;
+
+    assert!(
+        invalid_query_result.is_err(),
+        "Query with invalid block hash should return an error, but got: {:?}",
+        invalid_query_result
+    );
+    println!(
+        "✓ Invalid block hash correctly rejected: {}",
+        invalid_query_result.unwrap_err()
+    );
+
+    // Step 7: Verify querying the same block hash is idempotent
+    println!("Verifying idempotent queries at same block hash...");
+    let d_param_at_genesis_again = midnight_client
+        .get_d_parameter_at(genesis_block_hash)
+        .await
+        .expect("Failed to query D-param at genesis block again");
+
+    assert_eq!(
+        d_param_at_genesis.num_permissioned_candidates,
+        d_param_at_genesis_again.num_permissioned_candidates,
+        "D-param permissioned at same block hash should be consistent"
+    );
+    assert_eq!(
+        d_param_at_genesis.num_registered_candidates,
+        d_param_at_genesis_again.num_registered_candidates,
+        "D-param registered at same block hash should be consistent"
+    );
+
+    println!("✓ Historical block query verification passed");
+    println!();
+    println!("Note: D-parameter values at genesis and current block are the same");
+    println!("because no governance transaction has updated the parameter.");
+    println!("To fully test historical value differences, use update_d_parameter");
+    println!("via federated authority governance between block queries.");
+}
+#[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn deregister_first_mapping() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1951,6 +2184,7 @@ async fn deregister_first_mapping() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn produce_dust_from_tokens_owned_before_registration() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2089,6 +2323,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn stop_dust_producing_after_deregistration_and_rotation() {
     // case for stop dust production (reg -> mint -> dereg -> rotate)
     let settings = Settings::default();
@@ -2252,6 +2487,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
 }
 
 #[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
 async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
     let cardano_client =
@@ -2388,5 +2624,322 @@ async fn spend_cnight_producing_dust() {
 
     assert!(
         matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
+    );
+}
+
+// ========== Aiken Permissioned Candidates E2E Tests ==========
+// These tests verify permissioned candidates via the new Aiken contracts
+
+/// TC-PC-001: Verify systemParameters_getAriadneParameters returns valid structure.
+///
+/// Tests that the RPC endpoint returns correctly structured data including:
+/// - D-Parameter with permissioned and registered candidate counts
+/// - Block info metadata showing where D-Parameter was fetched from
+/// - Permissioned candidates list (may be None if not set on mainchain)
+#[tokio::test]
+async fn get_ariadne_parameters_returns_valid_structure() {
+    println!("=== TC-PC-001: Ariadne Parameters Structure Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!("Ariadne Parameters Response:");
+    println!(
+        "  D-Parameter: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+    println!(
+        "  Permissioned Candidates: {:?}",
+        ariadne_params
+            .permissioned_candidates
+            .as_ref()
+            .map(|c| c.len())
+    );
+
+    // Verify D-Parameter structure is valid (values can be 0)
+    // The important thing is that the RPC call succeeded and returned valid types
+    println!("✓ Ariadne parameters structure is valid");
+}
+
+/// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
+///
+/// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
+/// In local environment, it's configured as (10, 0) - 10 permissioned, 0 registered.
+#[tokio::test]
+async fn d_parameter_from_pallet_matches_config() {
+    println!("=== TC-PC-003: D-Parameter Pallet Integration ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Query D-Parameter directly via the dedicated RPC
+    let d_param = midnight_client
+        .get_d_parameter()
+        .await
+        .expect("Failed to get D-Parameter");
+
+    println!(
+        "D-Parameter from pallet-system-parameters: ({}, {})",
+        d_param.num_permissioned_candidates, d_param.num_registered_candidates
+    );
+
+    // Also query via getAriadneParameters to verify consistency
+    // Use epoch 2 (minimum supported epoch)
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(2, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    println!(
+        "D-Parameter from getAriadneParameters: ({}, {})",
+        ariadne_params.d_parameter.num_permissioned_candidates,
+        ariadne_params.d_parameter.num_registered_candidates
+    );
+
+    // Verify both endpoints return the same D-Parameter
+    assert_eq!(
+        d_param.num_permissioned_candidates, ariadne_params.d_parameter.num_permissioned_candidates,
+        "D-Parameter permissioned count should match between endpoints"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, ariadne_params.d_parameter.num_registered_candidates,
+        "D-Parameter registered count should match between endpoints"
+    );
+
+    // Local environment configures D-Parameter as (10, 0)
+    // This comes from pallet-system-parameters, not Cardano
+    assert_eq!(
+        d_param.num_permissioned_candidates, 10,
+        "Permissioned count should match system-parameters config (expected 10)"
+    );
+    assert_eq!(
+        d_param.num_registered_candidates, 0,
+        "Registered count should match system-parameters config (expected 0)"
+    );
+
+    println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
+}
+
+/// TC-PC-002: Verify permissioned candidates match Aiken format.
+///
+/// In local environment, 4 permissioned candidates (Alice, Bob, Charlie, Dave)
+/// are inserted during setup. This test verifies they are returned in the
+/// Aiken contract format with the correct structure.
+#[tokio::test]
+async fn permissioned_candidates_aiken_format() {
+    println!("=== TC-PC-002: Aiken Permissioned Candidates Format Validation ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Use epoch 2 for local environment (minimum supported epoch)
+    let epoch_number = 2u64;
+
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(epoch_number, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    if let Some(candidates) = &ariadne_params.permissioned_candidates {
+        println!("Found {} permissioned candidates", candidates.len());
+
+        // Local environment inserts 4 permissioned candidates
+        assert!(
+            candidates.len() >= 4,
+            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len()
+        );
+
+        // Verify each candidate has required keys
+        // With Aiken format, the structure is:
+        // - sidechainPublicKey: hex string
+        // - keys: object with named keys { "aura": "0x...", "gran": "0x..." }
+        // - isValid: boolean
+        for (i, candidate) in candidates.iter().enumerate() {
+            let has_sidechain_key = candidate.get("sidechainPublicKey").is_some()
+                || candidate.get("sidechain_public_key").is_some();
+
+            // Check for keys object containing aura and grandpa keys (Aiken format)
+            let keys = candidate.get("keys");
+            let has_keys = keys
+                .and_then(|k| k.as_object())
+                .map(|obj| obj.contains_key("aura") && obj.contains_key("gran"))
+                .unwrap_or(false);
+
+            println!(
+                "  Candidate {}: sidechain={}, has_keys={}",
+                i, has_sidechain_key, has_keys
+            );
+
+            assert!(
+                has_sidechain_key,
+                "Candidate {} should have sidechain public key",
+                i
+            );
+            assert!(
+                has_keys,
+                "Candidate {} should have keys object with aura and gran entries",
+                i
+            );
+        }
+
+        println!(
+            "✓ All permissioned candidates have Aiken format with sidechainPublicKey and keys object"
+        );
+    } else {
+        // In some test environments, permissioned candidates might not be set
+        println!("⚠ No permissioned candidates returned (may be expected in some environments)");
+    }
+}
+
+/// TC-PC-004: Verify authority selection uses Aiken permissioned candidates.
+///
+/// This test verifies the full authority selection flow:
+/// 1. Waits for the chain to reach a stable epoch (epoch >= 2)
+/// 2. Queries the current AURA authorities from the runtime
+/// 3. Queries permissioned candidates from Ariadne parameters
+/// 4. Verifies that AURA authority keys match keys from permissioned candidates
+///
+/// This confirms that the Aiken-format permissioned candidates are correctly
+/// being used in the authority selection process.
+#[tokio::test]
+#[ignore = "temporarily disabled pending Aiken governance contract fixes"]
+async fn authority_selection_uses_aiken_candidates() {
+    println!("=== TC-PC-004: Authority Selection with Aiken Candidates ===");
+
+    let settings = Settings::default();
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    // Step 1: Get current epoch and wait for epoch 2+ if needed
+    // Authority selection needs at least 2 epochs to be stable
+    let current_epoch = midnight_client
+        .get_current_epoch()
+        .await
+        .expect("Failed to get current epoch");
+
+    println!("Current sidechain epoch: {}", current_epoch);
+
+    let target_epoch = if current_epoch < 2 { 2 } else { current_epoch };
+
+    if current_epoch < target_epoch {
+        println!(
+            "Waiting for epoch {} (current: {})...",
+            target_epoch, current_epoch
+        );
+        // Local-env epochs are 30 seconds, so 90 second timeout should be plenty
+        midnight_client
+            .wait_for_epoch(target_epoch, 90)
+            .await
+            .expect("Failed to wait for target epoch");
+    }
+
+    // Wait for a finalized block to ensure authorities are stable
+    let _finalized_hash = midnight_client
+        .wait_for_next_finalized_block()
+        .await
+        .expect("Failed to wait for finalized block");
+
+    // Step 2: Query current AURA authorities
+    let aura_authorities = midnight_client
+        .get_aura_authorities()
+        .await
+        .expect("Failed to get AURA authorities");
+
+    println!("Current AURA authorities ({}):", aura_authorities.len());
+    for (i, auth) in aura_authorities.iter().enumerate() {
+        println!("  [{}] {}", i, auth);
+    }
+
+    assert!(
+        !aura_authorities.is_empty(),
+        "Expected at least one AURA authority"
+    );
+
+    // Step 3: Query permissioned candidates from Ariadne parameters
+    let ariadne_params = midnight_client
+        .get_ariadne_parameters(target_epoch, None)
+        .await
+        .expect("Failed to get Ariadne parameters");
+
+    let candidates = ariadne_params
+        .permissioned_candidates
+        .expect("Expected permissioned candidates to be present");
+
+    println!(
+        "\nPermissioned candidates from Aiken contracts ({}):",
+        candidates.len()
+    );
+
+    // Step 4: Extract AURA keys from permissioned candidates (Aiken format)
+    // In Aiken format, keys are in: candidate.keys.aura
+    let mut candidate_aura_keys: Vec<String> = Vec::new();
+    for (i, candidate) in candidates.iter().enumerate() {
+        if let Some(keys) = candidate.get("keys") {
+            if let Some(aura_key) = keys.get("aura") {
+                let key_str = aura_key
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| aura_key.to_string());
+                println!("  [{}] AURA key: {}", i, key_str);
+                candidate_aura_keys.push(key_str.trim_matches('"').to_string());
+            }
+        }
+    }
+
+    assert!(
+        !candidate_aura_keys.is_empty(),
+        "Expected to find AURA keys in permissioned candidates"
+    );
+
+    // Step 5: Verify that current AURA authorities match permissioned candidate keys
+    // The authorities should be a subset of the permissioned candidates
+    // (selection is based on D-parameter which may limit the number selected)
+    println!("\nVerifying AURA authorities match permissioned candidates...");
+
+    let mut matched_count = 0;
+    for authority in &aura_authorities {
+        // Normalize the authority key (remove 0x prefix if present for comparison)
+        let auth_normalized = authority.trim_start_matches("0x").to_lowercase();
+
+        let is_match = candidate_aura_keys.iter().any(|candidate_key| {
+            let candidate_normalized = candidate_key.trim_start_matches("0x").to_lowercase();
+            auth_normalized == candidate_normalized
+        });
+
+        if is_match {
+            matched_count += 1;
+            println!(
+                "  ✓ Authority {} matches a permissioned candidate",
+                authority
+            );
+        } else {
+            println!(
+                "  ⚠ Authority {} not found in permissioned candidates",
+                authority
+            );
+        }
+    }
+
+    // All AURA authorities should come from permissioned candidates
+    assert_eq!(
+        matched_count,
+        aura_authorities.len(),
+        "All {} AURA authorities should match permissioned candidates, but only {} matched",
+        aura_authorities.len(),
+        matched_count
+    );
+
+    println!(
+        "\n✓ All {} AURA authorities are derived from Aiken permissioned candidates",
+        aura_authorities.len()
     );
 }

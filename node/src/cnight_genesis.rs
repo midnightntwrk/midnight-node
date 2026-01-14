@@ -1,3 +1,4 @@
+use alloc::collections::BTreeMap;
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
@@ -14,7 +15,6 @@ use pallet_cnight_observation_mock::mock_with_capture as mock;
 use sidechain_domain::McBlockHash;
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
-use sp_std::collections::btree_map::BTreeMap;
 use std::{path::Path, sync::Arc};
 
 use serde_json;
