@@ -90,13 +90,6 @@ pub struct MainChainScripts {
 	committee_candidates_address: String,
 	d_parameter_policy_id: String,
 	permissioned_candidates_policy_id: String,
-	governed_map: Option<GovernedMapMainChainScripts>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct GovernedMapMainChainScripts {
-	validator_address: String,
-	policy_id: String,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -117,21 +110,6 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 			d_parameter_policy_id,
 			permissioned_candidates_policy_id,
 		}
-	}
-}
-
-impl From<MainChainScripts> for Option<sp_governed_map::MainChainScriptsV1> {
-	fn from(value: MainChainScripts) -> Self {
-		value.governed_map.map(|governed_map_mainchain_scripts| {
-			let validator_address =
-				FromStr::from_str(&governed_map_mainchain_scripts.validator_address)
-					.expect("failed to decode governed_map.validator_address");
-
-			let policy_id = FromStr::from_str(&governed_map_mainchain_scripts.policy_id)
-				.expect("failed to convert governed_map.policy_id");
-
-			sp_governed_map::MainChainScriptsV1 { validator_address, asset_policy_id: policy_id }
-		})
 	}
 }
 
