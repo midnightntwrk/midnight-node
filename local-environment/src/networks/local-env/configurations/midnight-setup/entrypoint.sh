@@ -256,7 +256,8 @@ echo ""
 echo "=== Generating Permissioned Candidates File ==="
 jq '[.initial_permissioned_candidates[:4] | .[] | {
     ecdsa_key: .sidechain_pub_key[2:],
-    aura_key: .aura_pub_key[2:]
+    aura_key: .aura_pub_key[2:],
+    grandpa_key: .grandpa_pub_key[2:]
 }]' res/qanet/pc-chain-config.json > permissioned_candidates.json
 echo "Created permissioned_candidates.json:"
 cat permissioned_candidates.json
