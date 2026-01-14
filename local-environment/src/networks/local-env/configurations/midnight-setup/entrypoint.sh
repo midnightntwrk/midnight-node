@@ -164,11 +164,12 @@ export PERMISSIONED_CANDIDATES_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_
 FUNDED_ADDRESS=$(cat /shared/FUNDED_ADDRESS)
 echo "Using funded address: $FUNDED_ADDRESS"
 
-# Read sidechain keys from midnight nodes
-alice_sidechain_vkey=$(cat /midnight-nodes/midnight-node-1/keys/sidechain.vkey)
-bob_sidechain_vkey=$(cat /midnight-nodes/midnight-node-2/keys/sidechain.vkey)
-charlie_sidechain_vkey=$(cat /midnight-nodes/midnight-node-3/keys/sidechain.vkey)
-dave_sidechain_vkey=$(cat /midnight-nodes/midnight-node-4/keys/sidechain.vkey)
+# Read Sr25519 (aura) keys from midnight nodes for council/tech-auth contracts
+# Note: council/tech-auth use Sr25519 keys (32 bytes), NOT ECDSA sidechain keys (33 bytes)
+alice_aura_vkey=$(cat /midnight-nodes/midnight-node-1/keys/aura.vkey)
+bob_aura_vkey=$(cat /midnight-nodes/midnight-node-2/keys/aura.vkey)
+charlie_aura_vkey=$(cat /midnight-nodes/midnight-node-3/keys/aura.vkey)
+dave_aura_vkey=$(cat /midnight-nodes/midnight-node-4/keys/aura.vkey)
 
 # Use deterministic Cardano key hashes for testing (28 bytes each)
 # These are test values that match the format used in E2E tests
@@ -178,12 +179,13 @@ charlie_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2c"
 dave_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2d"
 
 # Create members.json for council_forever contract
+# Uses Sr25519 (aura) keys which are 32 bytes
 cat <<EOF > council_members.json
 [
-  {"cardano_hash": "$alice_cardano_hash", "sr25519_key": "$alice_sidechain_vkey"},
-  {"cardano_hash": "$bob_cardano_hash", "sr25519_key": "$bob_sidechain_vkey"},
-  {"cardano_hash": "$charlie_cardano_hash", "sr25519_key": "$charlie_sidechain_vkey"},
-  {"cardano_hash": "$dave_cardano_hash", "sr25519_key": "$dave_sidechain_vkey"}
+  {"cardano_hash": "$alice_cardano_hash", "sr25519_key": "$alice_aura_vkey"},
+  {"cardano_hash": "$bob_cardano_hash", "sr25519_key": "$bob_aura_vkey"},
+  {"cardano_hash": "$charlie_cardano_hash", "sr25519_key": "$charlie_aura_vkey"},
+  {"cardano_hash": "$dave_cardano_hash", "sr25519_key": "$dave_aura_vkey"}
 ]
 EOF
 
