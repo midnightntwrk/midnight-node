@@ -210,18 +210,26 @@ echo "$SIGNING_KEY_CBOR" > /tmp/signing_key.cbor
 # Deploy council_forever contract
 echo ""
 echo "=== Deploying Council Forever Contract ==="
+COUNCIL_OUTPUT_FILE=/tmp/council_deploy_output.txt
 ./aiken-deployer \
     --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
     --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
     --signing-key /tmp/signing_key.cbor \
     --funded-address "$FUNDED_ADDRESS" \
     --members-file council_members.json \
-    --ogmios-url "$OGMIOS_URL"
+    --ogmios-url "$OGMIOS_URL" 2>&1 | tee "$COUNCIL_OUTPUT_FILE"
+COUNCIL_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $? -eq 0 ]; then
+if [ $COUNCIL_EXIT_CODE -eq 0 ]; then
     echo "✓ Council Forever contract deployed successfully!"
+    # Parse policy ID and script address from output
+    COUNCIL_POLICY_ID=$(grep "Policy ID:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    COUNCIL_SCRIPT_ADDRESS=$(grep "Script address:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    echo "  Captured council policy ID: $COUNCIL_POLICY_ID"
+    echo "  Captured council script address: $COUNCIL_SCRIPT_ADDRESS"
 else
     echo "✗ Council Forever contract deployment failed"
+    cat "$COUNCIL_OUTPUT_FILE"
     exit 1
 fi
 
@@ -231,6 +239,7 @@ sleep 10
 # Deploy tech_auth_forever contract (uses same members for testing)
 echo ""
 echo "=== Deploying Tech Auth Forever Contract ==="
+TECHAUTH_OUTPUT_FILE=/tmp/techauth_deploy_output.txt
 ./aiken-deployer \
     --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
     --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
@@ -238,12 +247,19 @@ echo "=== Deploying Tech Auth Forever Contract ==="
     --funded-address "$FUNDED_ADDRESS" \
     --members-file council_members.json \
     --ogmios-url "$OGMIOS_URL" \
-    --contract-type tech-auth
+    --contract-type tech-auth 2>&1 | tee "$TECHAUTH_OUTPUT_FILE"
+TECHAUTH_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $? -eq 0 ]; then
+if [ $TECHAUTH_EXIT_CODE -eq 0 ]; then
     echo "✓ Tech Auth Forever contract deployed successfully!"
+    # Parse policy ID and script address from output
+    TECHAUTH_POLICY_ID=$(grep "Policy ID:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    TECHAUTH_SCRIPT_ADDRESS=$(grep "Script address:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    echo "  Captured tech-auth policy ID: $TECHAUTH_POLICY_ID"
+    echo "  Captured tech-auth script address: $TECHAUTH_SCRIPT_ADDRESS"
 else
     echo "✗ Tech Auth Forever contract deployment failed"
+    cat "$TECHAUTH_OUTPUT_FILE"
     exit 1
 fi
 
@@ -352,6 +368,23 @@ jq 'env as $env | . + {
   }
 }' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
 
+# Create patched federated-authority-config.json with Aiken policy IDs and addresses
+echo "Patching federated-authority-config.json with deployed Aiken contract values..."
+echo "  Council policy ID: $COUNCIL_POLICY_ID"
+echo "  Council address: $COUNCIL_SCRIPT_ADDRESS"
+echo "  Tech-auth policy ID: $TECHAUTH_POLICY_ID"
+echo "  Tech-auth address: $TECHAUTH_SCRIPT_ADDRESS"
+
+jq --arg council_addr "$COUNCIL_SCRIPT_ADDRESS" \
+   --arg council_policy "$COUNCIL_POLICY_ID" \
+   --arg techauth_addr "$TECHAUTH_SCRIPT_ADDRESS" \
+   --arg techauth_policy "$TECHAUTH_POLICY_ID" \
+   '.council.address = $council_addr | .council.policy_id = $council_policy | .technical_committee.address = $techauth_addr | .technical_committee.policy_id = $techauth_policy' \
+   /res/dev/federated-authority-config.json > /tmp/federated-authority-config.json
+
+echo "Patched federated-authority-config.json:"
+cat /tmp/federated-authority-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -361,7 +394,7 @@ export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 comp
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
-export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/dev/federated-authority-config.json
+export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/res/dev/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
