@@ -49,13 +49,15 @@ pub struct GovernanceMember {
 }
 
 /// A candidate for the federated operators contract.
-/// Maps an ECDSA cross-chain key to an SR25519 AURA key.
+/// Maps an ECDSA cross-chain key to SR25519 AURA and ED25519 GRANDPA keys.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FederatedOpsCandidate {
 	/// The ECDSA cross-chain public key (33 bytes compressed, 66 hex chars)
 	pub ecdsa_key: String,
 	/// The SR25519 AURA public key (32 bytes, 64 hex chars)
 	pub aura_key: String,
+	/// The ED25519 GRANDPA public key (32 bytes, 64 hex chars)
+	pub grandpa_key: String,
 }
 
 /// Result of preparing a contract for deployment.
@@ -137,11 +139,13 @@ pub fn build_governance_redeemer(members: &[GovernanceMember]) -> serde_json::Va
 /// - logic_round: 0
 pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_json::Value {
 	let aura_id = "61757261"; // "aura" in hex
+	let gran_id = "6772616e"; // "gran" in hex
 
 	let appendix: Vec<serde_json::Value> = candidates
 		.iter()
 		.map(|c| {
 			// Each PermissionedCandidateDatumV1 is [partner_chains_key, keys]
+			// keys is a list of [key_id, key_bytes] pairs
 			serde_json::json!({
 				"list": [
 					{"bytes": c.ecdsa_key},
@@ -149,6 +153,10 @@ pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_
 						{"list": [
 							{"bytes": aura_id},
 							{"bytes": c.aura_key}
+						]},
+						{"list": [
+							{"bytes": gran_id},
+							{"bytes": c.grandpa_key}
 						]}
 					]}
 				]
