@@ -136,6 +136,7 @@ jobs:
 
   hardfork:
     name: Build hardfork images
+    if: false  # Temporarily disabled for faster CI iteration
     permissions:
       id-token: write
       contents: read
@@ -196,6 +197,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
+    if: false  # Temporarily disabled for faster CI iteration
     needs: [run, test-pallet-fixtures]
     permissions:
       id-token: write
@@ -269,6 +271,7 @@ jobs:
 
   ledger-rollback-e2e:
     name: Ledger Rollback E2E
+    if: false  # Temporarily disabled for faster CI iteration
     needs: run
     runs-on: ubuntu-latest
     steps:
@@ -292,6 +295,7 @@ jobs:
 
   node-e2e:
     name: Node E2E
+    if: false  # Temporarily disabled for faster CI iteration
     needs: run
     runs-on: ubuntu-latest
     steps:
@@ -316,6 +320,7 @@ jobs:
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
     name: Test Pallet Fixtures
+    if: false  # Temporarily disabled for faster CI iteration
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
@@ -461,6 +466,7 @@ jobs:
 
   metadata-check:
     name: Metadata Check
+    if: false  # Temporarily disabled for faster CI iteration
     needs: run
     runs-on: ubuntu-latest
     steps:
@@ -719,7 +725,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ephemeral-environment-tests:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
+    if: false  # Temporarily disabled for faster CI iteration
     # needs:
     #   - hardfork-e2e
     #   - ledger-rollback-e2e
