@@ -122,42 +122,157 @@ else
     exit 1
 fi
 
-# sidechain.vkey:aura.vkey:grandpa.vkey
-echo "Inserting permissioned candidates for Alice and Bob..."
+# ============================================================================
+# DEPLOY AIKEN GOVERNANCE CONTRACTS
+# ============================================================================
+echo "Deploying Aiken governance contracts..."
 
+# Wait for contract-compiler to output CBOR files
+echo "Waiting for Aiken contract CBOR files..."
+RUNTIME_VALUES="/runtime-values"
+MAX_WAIT=120
+start_time=$(date +%s)
+while true; do
+    if [[ -f "${RUNTIME_VALUES}/council_forever.cbor" ]] && \
+       [[ -f "${RUNTIME_VALUES}/tech_auth_forever.cbor" ]] && \
+       [[ -f "${RUNTIME_VALUES}/federated_ops_forever.cbor" ]]; then
+        echo "✓ All contract CBOR files found"
+        break
+    fi
+    
+    elapsed=$(($(date +%s) - start_time))
+    if [[ $elapsed -ge $MAX_WAIT ]]; then
+        echo "ERROR: Timeout waiting for contract CBOR files after ${MAX_WAIT}s"
+        ls -la "${RUNTIME_VALUES}/" || true
+        exit 1
+    fi
+    
+    echo "Waiting for contract CBOR files (${elapsed}s elapsed)..."
+    sleep 5
+done
+
+# Get the funded address from the shared volume
+FUNDED_ADDRESS=$(cat /shared/FUNDED_ADDRESS)
+echo "Using funded address: $FUNDED_ADDRESS"
+
+# Read sidechain keys from midnight nodes
 alice_sidechain_vkey=$(cat /midnight-nodes/midnight-node-1/keys/sidechain.vkey)
-alice_aura_vkey=$(cat /midnight-nodes/midnight-node-1/keys/aura.vkey)
-alice_grandpa_vkey=$(cat /midnight-nodes/midnight-node-1/keys/grandpa.vkey)
-
 bob_sidechain_vkey=$(cat /midnight-nodes/midnight-node-2/keys/sidechain.vkey)
-bob_aura_vkey=$(cat /midnight-nodes/midnight-node-2/keys/aura.vkey)
-bob_grandpa_vkey=$(cat /midnight-nodes/midnight-node-2/keys/grandpa.vkey)
-
 charlie_sidechain_vkey=$(cat /midnight-nodes/midnight-node-3/keys/sidechain.vkey)
-charlie_aura_vkey=$(cat /midnight-nodes/midnight-node-3/keys/aura.vkey)
-charlie_grandpa_vkey=$(cat /midnight-nodes/midnight-node-3/keys/grandpa.vkey)
-
 dave_sidechain_vkey=$(cat /midnight-nodes/midnight-node-4/keys/sidechain.vkey)
-dave_aura_vkey=$(cat /midnight-nodes/midnight-node-4/keys/aura.vkey)
-dave_grandpa_vkey=$(cat /midnight-nodes/midnight-node-4/keys/grandpa.vkey)
 
-cat <<EOF > permissioned_candidates.csv
-$alice_sidechain_vkey:$alice_aura_vkey:$alice_grandpa_vkey
-$bob_sidechain_vkey:$bob_aura_vkey:$bob_grandpa_vkey
-$charlie_sidechain_vkey:$charlie_aura_vkey:$charlie_grandpa_vkey
-$dave_sidechain_vkey:$dave_aura_vkey:$dave_grandpa_vkey
+# Use deterministic Cardano key hashes for testing (28 bytes each)
+# These are test values that match the format used in E2E tests
+alice_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2a"
+bob_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b"
+charlie_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2c"
+dave_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2d"
+
+# Create members.json for council_forever contract
+cat <<EOF > council_members.json
+[
+  {"cardano_hash": "$alice_cardano_hash", "sr25519_key": "$alice_sidechain_vkey"},
+  {"cardano_hash": "$bob_cardano_hash", "sr25519_key": "$bob_sidechain_vkey"},
+  {"cardano_hash": "$charlie_cardano_hash", "sr25519_key": "$charlie_sidechain_vkey"},
+  {"cardano_hash": "$dave_cardano_hash", "sr25519_key": "$dave_sidechain_vkey"}
+]
 EOF
 
-./midnight-node smart-contracts upsert-permissioned-candidates \
-    --genesis-utxo $GENESIS_UTXO \
-    --permissioned-candidates-file permissioned_candidates.csv \
-    --payment-key-file /keys/funded_address.skey
+echo "Created council_members.json:"
+cat council_members.json
 
-if [ $? -eq 0 ]; then
-    echo "Permissioned candidates Alice and Bob inserted successfully!"
+# Read one-shot UTxO references
+COUNCIL_ONESHOT_HASH=$(cat ${RUNTIME_VALUES}/council_oneshot_hash.txt | tr -d '\n\r')
+COUNCIL_ONESHOT_INDEX=$(cat ${RUNTIME_VALUES}/council_oneshot_index.txt | tr -d '\n\r')
+TECHAUTH_ONESHOT_HASH=$(cat ${RUNTIME_VALUES}/techauth_oneshot_hash.txt | tr -d '\n\r')
+TECHAUTH_ONESHOT_INDEX=$(cat ${RUNTIME_VALUES}/techauth_oneshot_index.txt | tr -d '\n\r')
+FEDOPS_ONESHOT_HASH=$(cat ${RUNTIME_VALUES}/federatedops_oneshot_hash.txt | tr -d '\n\r')
+FEDOPS_ONESHOT_INDEX=$(cat ${RUNTIME_VALUES}/federatedops_oneshot_index.txt | tr -d '\n\r')
+
+echo "One-shot UTxO references:"
+echo "  Council: ${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}"
+echo "  Tech Auth: ${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}"
+echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
+
+# Get signing key CBOR (extract cborHex from skey file, skip first 4 chars)
+SIGNING_KEY_CBOR=$(jq -r '.cborHex | .[4:]' /keys/funded_address.skey)
+echo "$SIGNING_KEY_CBOR" > /tmp/signing_key.cbor
+
+# Skip governance contract deployment if SKIP_GOVERNANCE_DEPLOY is set
+# This is used when E2E tests need to deploy the contracts themselves with specific test data
+if [ "${SKIP_GOVERNANCE_DEPLOY:-false}" = "true" ]; then
+    echo ""
+    echo "=== Skipping Governance Contract Deployment (SKIP_GOVERNANCE_DEPLOY=true) ==="
+    echo "One-shot UTxOs preserved for E2E test deployment:"
+    echo "  Council: ${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}"
+    echo "  Tech Auth: ${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}"
+    echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
 else
-    echo "Permission candidates Alice and Bob failed to be added..."
-    exit 1
+    # Deploy council_forever contract
+    echo ""
+    echo "=== Deploying Council Forever Contract ==="
+    ./aiken-deployer \
+        --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
+        --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
+        --signing-key /tmp/signing_key.cbor \
+        --funded-address "$FUNDED_ADDRESS" \
+        --members-file council_members.json \
+        --ogmios-url "$OGMIOS_URL"
+
+    if [ $? -eq 0 ]; then
+        echo "✓ Council Forever contract deployed successfully!"
+    else
+        echo "✗ Council Forever contract deployment failed"
+        exit 1
+    fi
+
+    # Wait for transaction to confirm
+    sleep 10
+
+    # Deploy tech_auth_forever contract (uses same members for testing)
+    echo ""
+    echo "=== Deploying Tech Auth Forever Contract ==="
+    ./aiken-deployer \
+        --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
+        --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
+        --signing-key /tmp/signing_key.cbor \
+        --funded-address "$FUNDED_ADDRESS" \
+        --members-file council_members.json \
+        --ogmios-url "$OGMIOS_URL" \
+        --contract-type tech-auth
+
+    if [ $? -eq 0 ]; then
+        echo "✓ Tech Auth Forever contract deployed successfully!"
+    else
+        echo "✗ Tech Auth Forever contract deployment failed"
+        exit 1
+    fi
+
+    # Wait for transaction to confirm
+    sleep 10
+
+    # Deploy federated_ops_forever contract
+    # Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
+    echo ""
+    echo "=== Deploying Federated Ops Forever Contract ==="
+    ./aiken-deployer \
+        --contract-cbor "${RUNTIME_VALUES}/federated_ops_forever.cbor" \
+        --one-shot-utxo "${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}" \
+        --signing-key /tmp/signing_key.cbor \
+        --funded-address "$FUNDED_ADDRESS" \
+        --members-file council_members.json \
+        --ogmios-url "$OGMIOS_URL" \
+        --contract-type federated-ops
+
+    if [ $? -eq 0 ]; then
+        echo "✓ Federated Ops Forever contract deployed successfully!"
+    else
+        echo "✗ Federated Ops Forever contract deployment failed"
+        exit 1
+    fi
+
+    echo ""
+    echo "=== All Aiken Governance Contracts Deployed Successfully ==="
 fi
 
 echo "Inserting registered candidate Eve..."

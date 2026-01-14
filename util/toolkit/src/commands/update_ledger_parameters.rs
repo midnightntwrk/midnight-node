@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::cli_parsers::{self as cli};
 use midnight_node_ledger_helpers::{
-	Duration, FeePrices, FixedPoint, Keypair, deserialize,
+	Duration, DustParameters, FeePrices, FixedPoint, Keypair, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction},
 	serialize,
 };
@@ -114,6 +114,10 @@ pub struct UpdateLedgerParametersArgs {
 	/// Ledger's `c_to_m_bridge_min_amount` parameter.
 	#[arg(long)]
 	c_to_m_bridge_min_amount: Option<u128>,
+
+	/// Ledger's `dust.dust_grace_period` parameter (in seconds).
+	#[arg(long)]
+	dust_grace_period: Option<u64>,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
@@ -197,6 +201,13 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		c_to_m_bridge_min_amount: args
 			.c_to_m_bridge_min_amount
 			.unwrap_or(base.c_to_m_bridge_min_amount),
+		dust: DustParameters {
+			dust_grace_period: args
+				.dust_grace_period
+				.map(|d| Duration::from_secs(d as i128))
+				.unwrap_or(base.dust.dust_grace_period),
+			..base.dust
+		},
 		..base
 	};
 

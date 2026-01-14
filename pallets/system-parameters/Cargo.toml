@@ -42,6 +42,7 @@ std = [
     "sp-core/std",
     "sp-api/std",
     "sidechain-domain/std",
+    "serde/std",
 ]
 runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
