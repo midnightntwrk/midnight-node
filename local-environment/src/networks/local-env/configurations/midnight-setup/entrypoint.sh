@@ -106,7 +106,11 @@ export ILLIQUID_SUPPLY_VALIDATOR_ADDRESS="addr_test1wpy8ewg646rg4ce78nl3aassmkqu
 
 echo "Inserting D parameter..."
 
-D_PERMISSIONED=10
+# D_PERMISSIONED must match the number of permissioned candidates deployed via Aiken contracts.
+# Currently deploying 4 candidates (Alice, Bob, Charlie, Dave) in the federated_ops_forever contract.
+# If D_PERMISSIONED > number of candidates, the committee selection will duplicate validators,
+# causing GRANDPA finality to stall.
+D_PERMISSIONED=4
 D_REGISTERED=0
 
 ./midnight-node smart-contracts upsert-d-parameter \
