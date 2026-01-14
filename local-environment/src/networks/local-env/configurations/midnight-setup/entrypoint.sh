@@ -135,8 +135,9 @@ start_time=$(date +%s)
 while true; do
     if [[ -f "${RUNTIME_VALUES}/council_forever.cbor" ]] && \
        [[ -f "${RUNTIME_VALUES}/tech_auth_forever.cbor" ]] && \
-       [[ -f "${RUNTIME_VALUES}/federated_ops_forever.cbor" ]]; then
-        echo "✓ All contract CBOR files found"
+       [[ -f "${RUNTIME_VALUES}/federated_ops_forever.cbor" ]] && \
+       [[ -f "${RUNTIME_VALUES}/council_forever_policy_id.txt" ]]; then
+        echo "✓ All contract CBOR files and policy IDs found"
         break
     fi
     
@@ -150,6 +151,14 @@ while true; do
     echo "Waiting for contract CBOR files (${elapsed}s elapsed)..."
     sleep 5
 done
+
+# Override PERMISSIONED_CANDIDATES_POLICY_ID with the Aiken federated_ops_forever policy ID
+# This ensures the chain-spec uses the Aiken contract policy ID for permissioned candidates
+AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID=$(cat "${RUNTIME_VALUES}/federated_ops_forever_policy_id.txt")
+echo "Overriding permissioned candidates policy ID with Aiken federated_ops_forever:"
+echo "  Old (partner-chains): $PERMISSIONED_CANDIDATES_POLICY_ID"
+echo "  New (Aiken):          $AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
+export PERMISSIONED_CANDIDATES_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
 
 # Get the funded address from the shared volume
 FUNDED_ADDRESS=$(cat /shared/FUNDED_ADDRESS)
@@ -260,6 +269,16 @@ else
     echo "✗ Federated Ops Forever contract deployment failed"
     exit 1
 fi
+
+# Export the federated ops policy ID for the node to use
+export AIKEN_FEDERATED_OPS_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
+echo "Aiken FederatedOps policy ID for node: $AIKEN_FEDERATED_OPS_POLICY_ID"
+
+# Append Aiken config to mc.env so midnight nodes can use it
+echo "" >> /shared/mc.env
+echo "# Aiken FederatedOps configuration for permissioned candidates parsing" >> /shared/mc.env
+echo "export AIKEN_FEDERATED_OPS_POLICY_ID=\"$AIKEN_FEDERATED_OPS_POLICY_ID\"" >> /shared/mc.env
+echo "Appended Aiken config to /shared/mc.env"
 
 echo ""
 echo "=== All Aiken Governance Contracts Deployed Successfully ==="

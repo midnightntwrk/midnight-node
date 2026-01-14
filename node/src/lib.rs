@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+pub mod aiken_authority_selection;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 pub mod cfg;

@@ -15,11 +15,16 @@
 //!
 //! This module uses the types and functions provided by the `db` module
 
+pub mod aiken_candidates;
 pub mod cnight_observation;
 pub mod cnight_observation_mock;
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
 
+pub use aiken_candidates::{
+	AikenCandidateKey, AikenFederatedOpsConfig, AikenFederatedOpsDatum, AikenPermissionedCandidate,
+	MidnightAuthoritySelectionDataSource,
+};
 pub use cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
 	TxPosition,
