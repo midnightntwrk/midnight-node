@@ -238,9 +238,9 @@ pub fn convert_cost_models(cost_models: &PlutusCostModels) -> Vec<Vec<i64>> {
 ///
 /// Returns the signed transaction hex.
 pub fn build_deploy_transaction(params: DeployParams<'_>) -> Result<String, DeployError> {
-	// Use 3 ADA to ensure minimum UTXO requirement is met with large datums
+	// Use 5 ADA to ensure minimum UTXO requirement is met with large datums
 	let send_assets = vec![
-		Asset::new_from_str("lovelace", "3000000"),
+		Asset::new_from_str("lovelace", "5000000"),
 		Asset::new_from_str(&params.contract.policy_id, "1"),
 	];
 
