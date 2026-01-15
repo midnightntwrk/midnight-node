@@ -33,6 +33,11 @@ use sidechain_domain::{
 };
 use sqlx::PgPool;
 
+/// A placeholder policy ID used when the actual value is not needed.
+/// This is passed to inner data source calls where we only care about D-parameter,
+/// not permissioned candidates (which are handled by the Aiken parser).
+const UNUSED_POLICY_ID: PolicyId = PolicyId([0u8; 28]);
+
 /// A wrapper around `CandidatesDataSourceImpl` that adds Aiken datum parsing support.
 ///
 /// This data source implements `AuthoritySelectionDataSource` by:
@@ -88,15 +93,9 @@ where
 
 		// Get D parameter from the inner data source
 		// Note: D parameter is stored separately from permissioned candidates
-		// We pass a dummy policy ID for permissioned candidates since we handle those via Aiken parser
 		let inner_params = self
 			.inner
-			.get_ariadne_parameters(
-				epoch_number,
-				d_parameter_policy,
-				// Pass a dummy policy ID - we're only interested in d_parameter
-				PolicyId([0u8; 28]),
-			)
+			.get_ariadne_parameters(epoch_number, d_parameter_policy, UNUSED_POLICY_ID)
 			.await?;
 
 		let d_parameter = inner_params.d_parameter;

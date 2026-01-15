@@ -92,7 +92,6 @@ pub struct AikenCandidateKey {
 
 impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
 	fn from(candidate: AikenPermissionedCandidate) -> Self {
-		// Build the CandidateKeys from the parsed aura and grandpa keys
 		let keys = CandidateKeys(vec![
 			CandidateKey::new(AURA_KEY_TYPE, candidate.aura_public_key),
 			CandidateKey::new(GRANDPA_KEY_TYPE, candidate.grandpa_public_key),
@@ -105,7 +104,6 @@ impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
 impl AikenPermissionedCandidate {
 	/// Convert to the partner-chains SDK PermissionedCandidateData type
 	pub fn to_permissioned_candidate_data(&self) -> PermissionedCandidateData {
-		// Build the CandidateKeys from the parsed aura and grandpa keys
 		let keys = CandidateKeys(vec![
 			CandidateKey::new(AURA_KEY_TYPE, self.aura_public_key.clone()),
 			CandidateKey::new(GRANDPA_KEY_TYPE, self.grandpa_public_key.clone()),

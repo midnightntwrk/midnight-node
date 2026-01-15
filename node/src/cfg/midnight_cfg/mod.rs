@@ -82,7 +82,6 @@ pub struct MidnightCfg {
 	pub federated_authority_config_file: Option<String>,
 
 	/// Policy ID of the federated_ops_forever contract (for Aiken permissioned candidates)
-	/// Required when using Aiken governance contracts
 	pub aiken_federated_ops_policy_id: Option<String>,
 
 	/// Size of ledger storage cache (number of nodes)

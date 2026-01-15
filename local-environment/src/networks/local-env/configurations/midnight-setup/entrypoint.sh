@@ -430,40 +430,8 @@ else
     echo "WARNING: cnight_token_policy_id.txt not found, cNIGHT tests may fail"
 fi
 
-# Calculate Cardano bech32 addresses from policy IDs (script hashes)
-# For testnet preview, the address prefix is "addr_test1w" for script addresses
-# Script credential = 01 (script) + script_hash, then bech32 encode with network byte
-# Using midnight-node to calculate addresses if available, otherwise use static fallback
-
 if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" && -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
-    # Calculate mapping_validator_address using the script hash
-    # For Cardano testnet preview: network byte 0x00 + script credential type 0x70 + 28-byte script hash
-    # The address is: 0x70 (script, no staking) + script_hash, then bech32 with prefix "addr_test1w"
-    
-    # Use whisky-style calculation: For a script-only address on testnet preview:
-    # - Header byte: 0x70 (script payment, no staking, testnet)
-    # - Then 28-byte script hash
-    # We'll use cardano-cli if available, or calculate via shell
-    
-    # For now, construct the address manually using the known format
-    # Testnet preview script address = addr_test1w + bech32(0x70 + script_hash)
-    
-    # Actually, we need proper bech32 encoding. Let's use a simpler approach:
-    # Read the addresses from the compiled contract output if available,
-    # or calculate them in entrypoint.sh using a helper script
-    
-    # For the MVP, we'll use jq to patch with the policy IDs (which the chain-spec needs)
-    # The script addresses can be calculated from policy IDs by the test framework
-    
     echo "Patching cnight-genesis.json with compiled cNIGHT contract values..."
-    
-    # The mapping_validator_address needs to be calculated from the policy ID
-    # Since we don't have bech32 encoding tools in the container, we'll:
-    # 1. Store the policy IDs for the test framework to use
-    # 2. Use a placeholder address format that tests can verify
-    
-    # For proper address calculation, we'll add a helper to convert script hash to address
-    # For now, patch what we can (the policy ID is the key value for on-chain lookup)
     
     jq --arg cnight_policy "$CNIGHT_TOKEN_POLICY_ID" \
        '.addresses.cnight_policy_id = $cnight_policy' \
@@ -490,6 +458,7 @@ fi
 
 echo ""
 echo "=== cNIGHT Genesis Config Complete ==="
+
 
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
