@@ -262,6 +262,50 @@ mod tests {
 		assert!(storage.get_cached_block_height(chain_id, wallet_id).await.is_none());
 	}
 
+	#[test]
+	fn test_wallet_cache_config_parse_disabled() {
+		let config: WalletCacheConfig = "disabled".parse().unwrap();
+		assert!(matches!(config, WalletCacheConfig::Disabled));
+
+		let config: WalletCacheConfig = "none".parse().unwrap();
+		assert!(matches!(config, WalletCacheConfig::Disabled));
+
+		let config: WalletCacheConfig = "off".parse().unwrap();
+		assert!(matches!(config, WalletCacheConfig::Disabled));
+	}
+
+	#[test]
+	fn test_wallet_cache_config_parse_inmemory() {
+		let config: WalletCacheConfig = "inmemory".parse().unwrap();
+		assert!(matches!(config, WalletCacheConfig::InMemory));
+	}
+
+	#[test]
+	fn test_wallet_cache_config_parse_redb() {
+		let config: WalletCacheConfig = "redb:wallet.db".parse().unwrap();
+		match config {
+			WalletCacheConfig::Redb { filename } => assert_eq!(filename, "wallet.db"),
+			_ => panic!("Expected Redb variant"),
+		}
+	}
+
+	#[test]
+	fn test_wallet_cache_config_parse_postgres() {
+		let config: WalletCacheConfig = "postgres://user:pass@localhost/db".parse().unwrap();
+		match config {
+			WalletCacheConfig::Postgres { database_url } => {
+				assert_eq!(database_url, "postgres://user:pass@localhost/db")
+			},
+			_ => panic!("Expected Postgres variant"),
+		}
+	}
+
+	#[test]
+	fn test_wallet_cache_config_parse_unknown() {
+		let result: Result<WalletCacheConfig, _> = "unknown".parse();
+		assert!(result.is_err());
+	}
+
 	#[tokio::test]
 	async fn test_inmemory_cache_hit() {
 		let storage = InMemory::new();
