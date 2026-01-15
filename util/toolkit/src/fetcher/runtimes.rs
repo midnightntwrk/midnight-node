@@ -60,9 +60,7 @@ pub trait MidnightMetadata {
 	type SystemTransactionAppliedEvent: subxt::ext::subxt_core::events::StaticEvent;
 
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
-	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn timestamp_set(call: &Self::Call) -> Option<u64>;
-	fn check_for_events(call: &Self::Call) -> bool;
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8>;
 }
 
@@ -88,19 +86,6 @@ macro_rules! impl_midnight_metadata {
 				}
 			}
 
-			fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
-				if let $meta_ident::Call::MidnightSystem(
-					$meta_ident::midnight_system::Call::send_mn_system_transaction {
-						midnight_system_tx,
-					},
-				) = call
-				{
-					Some(midnight_system_tx.clone())
-				} else {
-					None
-				}
-			}
-
 			fn timestamp_set(call: &Self::Call) -> Option<u64> {
 				if let $meta_ident::Call::Timestamp($meta_ident::timestamp::Call::set { now }) =
 					call
@@ -109,10 +94,6 @@ macro_rules! impl_midnight_metadata {
 				} else {
 					None
 				}
-			}
-
-			fn check_for_events(call: &Self::Call) -> bool {
-				matches!(call, $meta_ident::Call::CNightObservation(_))
 			}
 
 			fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
@@ -173,19 +154,6 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		}
 	}
 
-	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
-		if let mn_meta_0_17_0::Call::MidnightSystem(
-			mn_meta_0_17_0::midnight_system::Call::send_mn_system_transaction {
-				midnight_system_tx,
-			},
-		) = call
-		{
-			Some(midnight_system_tx.clone())
-		} else {
-			None
-		}
-	}
-
 	fn timestamp_set(call: &Self::Call) -> Option<u64> {
 		if let mn_meta_0_17_0::Call::Timestamp(mn_meta_0_17_0::timestamp::Call::set { now }) = call
 		{
@@ -193,10 +161,6 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		} else {
 			None
 		}
-	}
-
-	fn check_for_events(call: &Self::Call) -> bool {
-		matches!(call, mn_meta_0_17_0::Call::NativeTokenObservation(_))
 	}
 
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
