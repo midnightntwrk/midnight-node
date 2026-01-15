@@ -28,7 +28,9 @@ use crate::{
 		SourceTransactions,
 	},
 	tx_generator::builder::builders::RegisterDustAddressBuilder,
+	wallet_state_storage::{WalletCacheConfig, WalletStateStorage},
 };
+use subxt::utils::H256;
 
 pub mod builders;
 
@@ -419,6 +421,173 @@ pub trait BuildTxsExt {
 		);
 
 		(context_arc, tx_info)
+	}
+}
+
+/// Build context with optional wallet state caching.
+///
+/// This function wraps the standard context building with cache support:
+/// 1. If cache exists and is valid, restore from cache
+/// 2. Only replay blocks since the cache checkpoint
+/// 3. Save updated cache after processing
+///
+/// # Arguments
+///
+/// * `wallet_seeds` - The wallet seeds to initialize/restore
+/// * `received_tx` - The source transactions (blocks) from the network
+/// * `prover_arc` - The proof provider
+/// * `rng_seed` - Optional RNG seed
+/// * `chain_id` - The chain identity (block 1 hash)
+/// * `cache_config` - The wallet cache configuration
+///
+/// # Returns
+///
+/// A tuple of (context_arc, tx_info, blocks_replayed) where blocks_replayed indicates
+/// how many blocks were replayed (0 if fully cached).
+pub async fn build_context_with_cache(
+	wallet_seeds: Vec<WalletSeed>,
+	received_tx: SourceTransactions<SignatureType, ProofType>,
+	prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
+	rng_seed: Option<[u8; 32]>,
+	chain_id: H256,
+	cache_config: &WalletCacheConfig,
+) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64) {
+	use crate::wallet_state_storage::{cache_helpers, postgres_backend, redb_backend};
+
+	let network_id = received_tx.network().to_string();
+	let total_blocks = received_tx.blocks.len() as u64;
+
+	// Try to restore from cache if enabled
+	let (context, start_block) = match cache_config {
+		WalletCacheConfig::Disabled => {
+			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+			(ctx, 0u64)
+		},
+		WalletCacheConfig::InMemory => {
+			// InMemory doesn't persist, so always start fresh
+			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+			(ctx, 0u64)
+		},
+		WalletCacheConfig::Redb { filename } => {
+			let storage = redb_backend::RedbBackend::new(filename);
+			let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
+
+			if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
+				match cache_helpers::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
+					Ok((ctx, height)) => {
+						log::info!("Restored wallet state from cache at block {}", height);
+						(ctx, height + 1)
+					},
+					Err(e) => {
+						log::warn!("Failed to restore from cache: {}, starting fresh", e);
+						let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+						(ctx, 0u64)
+					},
+				}
+			} else {
+				let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+				(ctx, 0u64)
+			}
+		},
+		WalletCacheConfig::Postgres { database_url } => {
+			let storage = postgres_backend::PostgresBackend::new(database_url).await;
+			let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
+
+			if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
+				match cache_helpers::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
+					Ok((ctx, height)) => {
+						log::info!("Restored wallet state from cache at block {}", height);
+						(ctx, height + 1)
+					},
+					Err(e) => {
+						log::warn!("Failed to restore from cache: {}, starting fresh", e);
+						let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+						(ctx, 0u64)
+					},
+				}
+			} else {
+				let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+				(ctx, 0u64)
+			}
+		},
+	};
+
+	// Replay only blocks since start_block
+	let blocks_to_replay: Vec<_> =
+		received_tx.blocks.into_iter().filter(|b| b.number >= start_block).collect();
+
+	let blocks_replayed = blocks_to_replay.len() as u64;
+
+	if blocks_replayed > 0 {
+		log::info!(
+			"Replaying {} blocks (from {} to {})",
+			blocks_replayed,
+			start_block,
+			start_block + blocks_replayed - 1
+		);
+	}
+
+	for block in blocks_to_replay {
+		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+	}
+
+	// Save updated cache if enabled and blocks were replayed
+	if blocks_replayed > 0 || start_block == 0 {
+		let final_height = start_block + blocks_replayed.saturating_sub(1);
+		save_context_to_cache(&context, chain_id, final_height, cache_config).await;
+	}
+
+	let context_arc = Arc::new(context);
+	let tx_info =
+		StandardTrasactionInfo::new_from_context(context_arc.clone(), prover_arc.clone(), rng_seed);
+
+	(context_arc, tx_info, total_blocks - blocks_replayed)
+}
+
+/// Compute a wallet identity from seeds.
+fn compute_wallet_id_for_seeds(seeds: &[WalletSeed], network_id: &str) -> H256 {
+	use sha2::{Digest, Sha256};
+
+	let mut hasher = Sha256::new();
+	hasher.update(network_id.as_bytes());
+	for seed in seeds {
+		hasher.update(seed.as_bytes());
+	}
+	H256::from_slice(&hasher.finalize())
+}
+
+/// Save context state to cache.
+async fn save_context_to_cache(
+	context: &LedgerContext<DefaultDB>,
+	chain_id: H256,
+	block_height: u64,
+	cache_config: &WalletCacheConfig,
+) {
+	use crate::wallet_state_storage::{cache_helpers, postgres_backend, redb_backend};
+
+	let cache =
+		match cache_helpers::create_cache_from_context(context, chain_id, block_height, None) {
+			Ok(c) => c,
+			Err(e) => {
+				log::warn!("Failed to create cache: {}", e);
+				return;
+			},
+		};
+
+	let wallet_id = cache.wallet_id;
+
+	match cache_config {
+		WalletCacheConfig::Disabled | WalletCacheConfig::InMemory => {},
+		WalletCacheConfig::Redb { filename } => {
+			let storage = redb_backend::RedbBackend::new(filename);
+			storage.set_wallet_state(chain_id, wallet_id, cache).await;
+			log::info!("Saved wallet state cache to {} at block {}", filename, block_height);
+		},
+		WalletCacheConfig::Postgres { database_url } => {
+			let storage = postgres_backend::PostgresBackend::new(database_url).await;
+			storage.set_wallet_state(chain_id, wallet_id, cache).await;
+			log::info!("Saved wallet state cache to PostgreSQL at block {}", block_height);
+		},
 	}
 }
 
