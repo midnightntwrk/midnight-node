@@ -15,8 +15,8 @@ use std::{convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder,
-	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
+	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 };
 
@@ -35,11 +35,7 @@ pub struct DeregisterDustAddressBuilder {
 
 impl DeregisterDustAddressBuilder {
 	pub fn new(args: DeregisterDustAddressArgs) -> Self {
-		Self {
-			seed: args.wallet_seed,
-			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
-		}
+		Self { seed: args.wallet_seed, rng_seed: args.rng_seed, funding_seed: args.funding_seed }
 	}
 }
 
