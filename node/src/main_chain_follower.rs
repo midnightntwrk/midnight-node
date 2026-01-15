@@ -11,9 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::aiken_authority_selection::AikenAuthoritySelectionDataSource;
+use crate::aiken_authority_selection::FederatedOpsAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
-use midnight_primitives_mainchain_follower::AikenFederatedOpsConfig;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
@@ -205,26 +204,14 @@ pub async fn create_cached_data_sources(
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
-	// Aiken contracts use a different datum format than partner-chains SDK expects
+	// Wrap with FederatedOps format detection - automatically tries FederatedOps (Aiken)
+	// datum format first, falls back to partner-chains SDK format if parsing fails.
+	// This allows the same node binary to work with either contract implementation.
 	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
-		if let Some(policy_id_str) = cfg.aiken_federated_ops_policy_id.as_ref() {
-			log::info!(
-				"Aiken FederatedOps policy ID provided, enabling Aiken datum parser for permissioned candidates"
-			);
-			let policy_id = sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str);
-			let aiken_config = AikenFederatedOpsConfig { policy_id };
-			Arc::new(AikenAuthoritySelectionDataSource::new(
-				candidates_data_source_cached,
-				candidates_pool,
-				aiken_config,
-			))
-		} else {
-			log::warn!(
-				"No Aiken FederatedOps config provided. If using Aiken contracts, \
-			     permissioned candidates will NOT be found. Set aiken_federated_ops_policy_id."
-			);
-			Arc::new(candidates_data_source_cached)
-		};
+		Arc::new(FederatedOpsAuthoritySelectionDataSource::new(
+			candidates_data_source_cached,
+			candidates_pool,
+		));
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;

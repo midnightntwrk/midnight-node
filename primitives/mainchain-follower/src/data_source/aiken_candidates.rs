@@ -101,21 +101,6 @@ impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
 	}
 }
 
-impl AikenPermissionedCandidate {
-	/// Convert to the partner-chains SDK PermissionedCandidateData type
-	pub fn to_permissioned_candidate_data(&self) -> PermissionedCandidateData {
-		let keys = CandidateKeys(vec![
-			CandidateKey::new(AURA_KEY_TYPE, self.aura_public_key.clone()),
-			CandidateKey::new(GRANDPA_KEY_TYPE, self.grandpa_public_key.clone()),
-		]);
-
-		PermissionedCandidateData {
-			sidechain_public_key: SidechainPublicKey(self.sidechain_public_key.clone()),
-			keys,
-		}
-	}
-}
-
 /// Known key identifiers in Aiken FederatedOps datum
 pub mod key_ids {
 	/// Aura session key identifier

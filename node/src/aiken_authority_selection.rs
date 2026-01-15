@@ -11,67 +11,91 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Aiken-aware Authority Selection Data Source
+//! FederatedOps Authority Selection Data Source with Runtime Format Detection
 //!
 //! This module provides a wrapper around `CandidatesDataSourceImpl` that can parse
-//! the Aiken FederatedOps datum format for permissioned candidates.
+//! multiple datum formats for permissioned candidates:
 //!
-//! The partner-chains SDK expects permissioned candidate datums in the format:
-//! `[[sidechain_key, aura_key, grandpa_key], ...]`
+//! 1. **FederatedOps format** (Aiken contracts): Used by `federated_ops_forever` contract
+//!    `[data, [[partner_chains_key, [[key_id, key_bytes], ...]], ...], logic_round]`
 //!
-//! But Aiken contracts use:
-//! `[data, [[partner_chains_key, [[key_id, key_bytes], ...]], ...], logic_round]`
+//! 2. **Partner-chains SDK format**: Legacy format
+//!    `[[sidechain_key, aura_key, grandpa_key], ...]`
 //!
-//! This wrapper intercepts the datum parsing and converts between formats.
+//! The wrapper automatically detects which format is in use by attempting to parse
+//! the FederatedOps format first, falling back to the inner data source if parsing fails.
 
 use authority_selection_inherents::{AriadneParameters, AuthoritySelectionDataSource};
-use midnight_primitives_mainchain_follower::{
-	AikenFederatedOpsConfig, MidnightAuthoritySelectionDataSource,
-};
+use midnight_primitives_mainchain_follower::MidnightAuthoritySelectionDataSource;
 use sidechain_domain::{
 	CandidateRegistrations, MainchainAddress, McEpochNumber, PermissionedCandidateData, PolicyId,
 };
 use sqlx::PgPool;
 
-/// A placeholder policy ID used when the actual value is not needed.
-/// This is passed to inner data source calls where we only care about D-parameter,
-/// not permissioned candidates (which are handled by the Aiken parser).
-const UNUSED_POLICY_ID: PolicyId = PolicyId([0u8; 28]);
-
-/// A wrapper around `CandidatesDataSourceImpl` that adds Aiken datum parsing support.
+/// A wrapper around `CandidatesDataSourceImpl` that adds FederatedOps datum parsing
+/// with automatic format detection.
 ///
 /// This data source implements `AuthoritySelectionDataSource` by:
-/// 1. Using the Aiken parser for permissioned candidates
-/// 2. Delegating D-parameter queries to the inner data source
-/// 3. Delegating all other methods to the inner data source
-pub struct AikenAuthoritySelectionDataSource<T> {
+/// 1. Attempting to parse permissioned candidates using FederatedOps format
+/// 2. Falling back to the inner data source if FederatedOps parsing fails
+/// 3. Always delegating D-parameter and other queries to the inner data source
+pub struct FederatedOpsAuthoritySelectionDataSource<T> {
 	inner: T,
-	aiken_data_source: MidnightAuthoritySelectionDataSource<()>,
+	pool: PgPool,
 }
 
-impl<T> AikenAuthoritySelectionDataSource<T> {
-	/// Create a new Aiken-aware authority selection data source
-	pub fn new(inner: T, pool: PgPool, config: AikenFederatedOpsConfig) -> Self {
-		Self {
-			inner,
-			aiken_data_source: MidnightAuthoritySelectionDataSource::new((), pool, config),
-		}
+impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
+	/// Create a new authority selection data source with FederatedOps format detection
+	pub fn new(inner: T, pool: PgPool) -> Self {
+		Self { inner, pool }
 	}
 
-	/// Get permissioned candidates from the Aiken FederatedOps contract
-	async fn get_aiken_permissioned_candidates(
+	/// Try to get permissioned candidates from the FederatedOps contract.
+	/// Returns Ok(Some(candidates)) if found and parsed successfully,
+	/// Ok(None) if not found or parsing failed (should fall back to inner).
+	async fn try_federated_ops_candidates(
 		&self,
-		block_number: u32,
-	) -> Result<Vec<PermissionedCandidateData>, Box<dyn std::error::Error + Send + Sync>> {
-		let candidates =
-			self.aiken_data_source.get_aiken_permissioned_candidates(block_number).await?;
+		policy_id: &PolicyId,
+	) -> Result<Option<Vec<PermissionedCandidateData>>, Box<dyn std::error::Error + Send + Sync>> {
+		// Create a temporary data source to query with this policy ID
+		let config = midnight_primitives_mainchain_follower::AikenFederatedOpsConfig {
+			policy_id: policy_id.clone(),
+		};
+		let data_source =
+			MidnightAuthoritySelectionDataSource::new((), self.pool.clone(), config);
 
-		Ok(MidnightAuthoritySelectionDataSource::<()>::convert_candidates(candidates))
+		// The federated_ops_forever contract uses a static datum - the candidate list doesn't
+		// change per epoch (hence "forever"). We query the latest UTxO state using i32::MAX
+		// as the block number to avoid overflow when cast to i32 in SQL query.
+		match data_source.get_aiken_permissioned_candidates(i32::MAX as u32).await {
+			Ok(candidates) if !candidates.is_empty() => {
+				let converted =
+					MidnightAuthoritySelectionDataSource::<()>::convert_candidates(candidates);
+				log::info!(
+					"FederatedOps parser found {} permissioned candidates",
+					converted.len()
+				);
+				Ok(Some(converted))
+			},
+			Ok(_) => {
+				log::debug!(
+					"FederatedOps parser found no candidates, will try inner data source"
+				);
+				Ok(None)
+			},
+			Err(e) => {
+				log::debug!(
+					"FederatedOps parsing failed ({}), will try inner data source",
+					e
+				);
+				Ok(None)
+			},
+		}
 	}
 }
 
 #[async_trait::async_trait]
-impl<T> AuthoritySelectionDataSource for AikenAuthoritySelectionDataSource<T>
+impl<T> AuthoritySelectionDataSource for FederatedOpsAuthoritySelectionDataSource<T>
 where
 	T: AuthoritySelectionDataSource + Send + Sync,
 {
@@ -79,28 +103,37 @@ where
 		&self,
 		epoch_number: McEpochNumber,
 		d_parameter_policy: PolicyId,
-		_permissioned_candidates_policy: PolicyId,
+		permissioned_candidates_policy: PolicyId,
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
-		// Use Aiken parser directly for permissioned candidates
-		// Note: Use i32::MAX to avoid overflow when cast to i32 in SQL query
-		let candidates = self.get_aiken_permissioned_candidates(i32::MAX as u32).await?;
+		// Try FederatedOps format first
+		let federated_ops_candidates =
+			self.try_federated_ops_candidates(&permissioned_candidates_policy).await?;
 
-		log::info!(
-			"Aiken parser found {} permissioned candidates for epoch {}",
-			candidates.len(),
+		if let Some(candidates) = federated_ops_candidates {
+			// FederatedOps format succeeded - get D-parameter from inner and combine
+			let inner_params = self
+				.inner
+				.get_ariadne_parameters(
+					epoch_number,
+					d_parameter_policy,
+					permissioned_candidates_policy,
+				)
+				.await?;
+
+			return Ok(AriadneParameters {
+				d_parameter: inner_params.d_parameter,
+				permissioned_candidates: Some(candidates),
+			});
+		}
+
+		// Fall back to inner data source for both D-parameter and candidates
+		log::debug!(
+			"Using inner data source for permissioned candidates (epoch {})",
 			epoch_number.0
 		);
-
-		// Get D parameter from the inner data source
-		// Note: D parameter is stored separately from permissioned candidates
-		let inner_params = self
-			.inner
-			.get_ariadne_parameters(epoch_number, d_parameter_policy, UNUSED_POLICY_ID)
-			.await?;
-
-		let d_parameter = inner_params.d_parameter;
-
-		Ok(AriadneParameters { d_parameter, permissioned_candidates: Some(candidates) })
+		self.inner
+			.get_ariadne_parameters(epoch_number, d_parameter_policy, permissioned_candidates_policy)
+			.await
 	}
 
 	async fn get_candidates(

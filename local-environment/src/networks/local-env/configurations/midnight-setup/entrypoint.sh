@@ -303,16 +303,6 @@ else
     exit 1
 fi
 
-# Export the federated ops policy ID for the node to use
-export AIKEN_FEDERATED_OPS_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
-echo "Aiken FederatedOps policy ID for node: $AIKEN_FEDERATED_OPS_POLICY_ID"
-
-# Append Aiken config to mc.env so midnight nodes can use it
-echo "" >> /shared/mc.env
-echo "# Aiken FederatedOps configuration for permissioned candidates parsing" >> /shared/mc.env
-echo "export AIKEN_FEDERATED_OPS_POLICY_ID=\"$AIKEN_FEDERATED_OPS_POLICY_ID\"" >> /shared/mc.env
-echo "Appended Aiken config to /shared/mc.env"
-
 echo ""
 echo "=== All Aiken Governance Contracts Deployed Successfully ==="
 
