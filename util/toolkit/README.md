@@ -460,6 +460,20 @@ midnight-node-toolkit \
     --destination-dust "mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y"
 ```
 
+### Deregister DUST Address
+
+- Deregister (unlink) a wallet's DUST address mapping. This is useful when migrating to a new DUST address, cleaning up test registrations, or revoking access before rotating wallet keys.
+
+```bash
+midnight-node-toolkit \
+    generate-txs \
+    --src-url "wss://rpc.qanet.dev.midnight.network" \
+    --dest-url "wss://rpc.qanet.dev.midnight.network" \
+    deregister-dust-address \
+    --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
+```
+
 ---
 
 ### Get a serialized `Transaction` from a serialized `TransactionWithContext`
