@@ -196,7 +196,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run, test-pallet-fixtures, local-environment-tests]
+    needs: [run, test-pallet-fixtures]
     permissions:
       id-token: write
       contents: read
@@ -249,7 +249,6 @@ jobs:
     needs:
       - run
       - hardfork
-      - local-environment-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -269,7 +268,7 @@ jobs:
 
   ledger-rollback-e2e:
     name: Ledger Rollback E2E
-    needs: [run, local-environment-tests]
+    needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -292,7 +291,7 @@ jobs:
 
   node-e2e:
     name: Node E2E
-    needs: [run, local-environment-tests]
+    needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -355,7 +354,7 @@ jobs:
 
   toolkit-e2e:
     name: Toolkit E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -375,7 +374,7 @@ jobs:
 
   toolkit-update-ledger-parameters-e2e:
     name: Toolkit Update Ledger Parameters E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -395,7 +394,7 @@ jobs:
 
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest-16-core-x64
     steps:
       - name: Checkout
@@ -415,7 +414,7 @@ jobs:
 
   toolkit-mint-e2e:
     name: Toolkit Mint E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -435,7 +434,7 @@ jobs:
 
   toolkit-ut-e2e:
     name: Toolkit Unshielded Token E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -455,7 +454,7 @@ jobs:
 
   metadata-check:
     name: Metadata Check
-    needs: [run, local-environment-tests]
+    needs: run
     runs-on: ubuntu-latest
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -485,7 +484,7 @@ jobs:
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
-    needs: [run, test-toolkit, local-environment-tests]
+    needs: [run, test-toolkit]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -505,7 +504,7 @@ jobs:
 
   startup-dev-e2e:
     name: Startup E2E in dev mode
-    needs: [run, local-environment-tests]
+    needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -524,7 +523,7 @@ jobs:
 
   genesis-undeployed-e2e:
     name: Genesis Wallets E2E for Undeployed network
-    needs: [run, local-environment-tests]
+    needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -711,7 +710,6 @@ jobs:
 
   ephemeral-environment-tests:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: local-environment-tests
     # needs:
     #   - hardfork-e2e
     #   - ledger-rollback-e2e
