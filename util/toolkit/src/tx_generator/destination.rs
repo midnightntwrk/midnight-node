@@ -13,8 +13,7 @@
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::*;
-use std::{fs::File, io::Write, marker::PhantomData, sync::Arc, time::Duration};
-use tokio::sync::Semaphore;
+use std::{fs::File, io::Write, marker::PhantomData, sync::Arc};
 
 use crate::{
 	sender::Sender,
@@ -157,28 +156,19 @@ where
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		let num_batches = txs.batches.len();
-		let num_per_batch = txs.batches.first().map(|batch| batch.txs.len()).unwrap_or(0);
-		let total_txs = num_per_batch * num_batches;
+		if self.rate <= 0.0 {
+			return Err("rate must be greater than 0".into());
+		}
 
 		let sender = Arc::new(Sender::<S, P>::new(&self.urls).await?);
 
-		println!("Sending initial tx...");
+		log::info!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;
 
 		for (i, batch) in txs.batches.iter().enumerate() {
-			println!("Sending batch {}...", i);
-			let semaphore = Arc::new(Semaphore::new(0));
+			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
-			let worker = tokio::spawn(sender.send_worker(semaphore.clone(), batch.txs.clone()));
-
-			// Trigger sending
-			for _i in 0..total_txs {
-				semaphore.add_permits(1);
-				tokio::time::sleep(Duration::from_secs_f32(1f32 / self.rate)).await;
-			}
-
-			worker.await?;
+			sender.send_worker(self.rate, batch.txs.clone()).await;
 		}
 		Ok(())
 	}
