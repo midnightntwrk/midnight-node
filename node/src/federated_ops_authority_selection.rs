@@ -79,16 +79,11 @@ where
 		permissioned_candidates_policy: PolicyId,
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
 		// Use override policy ID if set (local-env), otherwise use the one from chain config
-		let effective_policy = self
-			.override_policy_id
-			.clone()
-			.unwrap_or(permissioned_candidates_policy);
+		let effective_policy =
+			self.override_policy_id.clone().unwrap_or(permissioned_candidates_policy);
 
 		if self.override_policy_id.is_some() {
-			log::debug!(
-				"Using overridden FederatedOps policy ID for epoch {}",
-				epoch_number.0
-			);
+			log::debug!("Using overridden FederatedOps policy ID for epoch {}", epoch_number.0);
 		}
 
 		self.inner
