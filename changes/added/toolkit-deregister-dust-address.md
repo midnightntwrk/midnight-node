@@ -9,5 +9,5 @@ This enables users to:
 - Clean up test registrations
 - Revoke access before rotating wallet keys
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/482
 Ticket: https://shielded.atlassian.net/browse/PM-20855
