@@ -1,0 +1,77 @@
+{
+  "bootnodes": [
+    "/dns/preview/tcp/30333/p2p/12D3KooWSrpKYvoBiAJvGwvfJAheJX8qksix8XaBKSyB96NwwmUc"
+  ],
+  "chain_parameters": {
+    "genesis_utxo": "623d4aa68a836a7572ff3886da4a273d35aa97fa78fce3b3ce63fd35ed4754b8#1"
+  },
+  "initial_governance": {
+    "authorities": [
+      "0x2fbddf6456c21871a4eba1b2e684f59e4a14a5413de5d0243ef8d0e7"
+    ],
+    "threshold": 1
+  },
+  "cardano": {
+    "security_parameter": 432,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000,
+    "slot_duration_millis": 1000
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wpjk64an8tdr07jzt0pu8nc3prh9fu4gwkgl05cs9xgeqtgclvru6",
+    "d_parameter_policy_id": "0x03417b48a605e8b3f5475c42b6c2643822607e6593d02cc5c8da9326",
+    "permissioned_candidates_policy_id": "0x5fb62dd789b4f311a3bef9be54f19170976041af6c3093187646cd02",
+    "bridge": {
+      "illiquid_circulation_supply_validator_address": "addr_test1wpuxep5ecfmrx46p9lhz7xqdhv3ymgk4jugwqjsnvk9dt9qxnjlr8",
+      "asset": {
+        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+        "asset_name": "0x"
+      }
+    },
+    "governed_map": {
+      "validator_address": "addr_test1wrhyyutqn7s4trm3njctlasmctlfh8zdupmepctxw34688qqw9ds4",
+      "policy_id": "0x4a2b38c5811e3a7f3bd403d3ddcc3b23c562c13967f61725e7eb2eee"
+    }
+  },
+  "initial_permissioned_candidates": [
+    {
+      "aura_pub_key": "0xe8e46b127d09736f37f7c715fba0e89c7c5f6587ba5979981c5d5573eba82036",
+      "grandpa_pub_key": "0xda11574716503115f6368404f21fd820ba73c34d0a22fb960852b590d530e627",
+      "sidechain_pub_key": "0x03fa5a4af3cea3a176e9739421497c4f174e617b46b828793e557f2d00f7b19556",
+      "beefy_pub_key": "0x03fa5a4af3cea3a176e9739421497c4f174e617b46b828793e557f2d00f7b19556"
+    },
+    {
+      "aura_pub_key": "0xe2796d7f497224088de4384edcc0e4ca080edab12c0f396993bde5a24217716d",
+      "grandpa_pub_key": "0x832770eceba218f414bfc8a4633c8db3e9c93ff99a7eedaed9dff7b454414d40",
+      "sidechain_pub_key": "0x023d81ed13d2986b9e6460dde7408152ef55d35f876c6ee127d60ecf978c41318b",
+      "beefy_pub_key": "0x023d81ed13d2986b9e6460dde7408152ef55d35f876c6ee127d60ecf978c41318b"
+    },
+    {
+      "aura_pub_key": "0x0854514cf62f0622c5ac94963202e5c2a97763573f97b48c2ae8eb2684b25b21",
+      "grandpa_pub_key": "0x4ccbd68347661d1e2e73623fac0b9d93e67f3b59b67ceed780c1185d97065a3c",
+      "sidechain_pub_key": "0x03fc6b3feaf2536f47b41b01ed972b5ad072a94fadf1d1dc7ff0affa553633c74c",
+      "beefy_pub_key": "0x03fc6b3feaf2536f47b41b01ed972b5ad072a94fadf1d1dc7ff0affa553633c74c"
+    },
+    {
+      "aura_pub_key": "0x9ab58c441c2795fc8187904f0282f64c13f1fff27f96ef070c1bbd333eed7177",
+      "grandpa_pub_key": "0xdc0d9f1d732e78629849a2ced7cff67303c8f4ab1989fd0a70823b8df1c67c00",
+      "sidechain_pub_key": "0x025278987f89fe684e824cee23b3b4a336e4aa0bcd5927e7a222a2bdcb0ba18e97",
+      "beefy_pub_key": "0x025278987f89fe684e824cee23b3b4a336e4aa0bcd5927e7a222a2bdcb0ba18e97"
+    },
+    {
+      "aura_pub_key": "0xaac1007473b75e9159116e4d0be17a3b6c842aad8c0441645b9468a135600b3d",
+      "grandpa_pub_key": "0x8633fa2b3ae03e96b538bb8e7df9a1bb4786f7a5832401255d2d80f8d4c9345b",
+      "sidechain_pub_key": "0x02da6afcfd860c7479fcc5c5ffd1507ac8393214ecee0487b1caade94515956c1d",
+      "beefy_pub_key": "0x02da6afcfd860c7479fcc5c5ffd1507ac8393214ecee0487b1caade94515956c1d"
+    },
+    {
+      "aura_pub_key": "0xd40c30c25b7d0ae6d83f7a81babc0fa288e4032196fa36f9e44c384d04a04824",
+      "grandpa_pub_key": "0xf6ce3f6589e1ac5b6de4bd6351d3860e31009e23ff1122154109f6e5d6c42e8a",
+      "sidechain_pub_key": "0x0304503a50c912e8519af0e4e44934434c3afb7ab5d63da70f7cdf183f9ee36456",
+      "beefy_pub_key": "0x0304503a50c912e8519af0e4e44934434c3afb7ab5d63da70f7cdf183f9ee36456"
+    }
+  ]
+}
