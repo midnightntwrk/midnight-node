@@ -108,8 +108,6 @@ echo "Inserting D parameter..."
 
 # D_PERMISSIONED must match the number of permissioned candidates deployed via Aiken contracts.
 # Currently deploying 4 candidates (Alice, Bob, Charlie, Dave) in the federated_ops_forever contract.
-# If D_PERMISSIONED > number of candidates, the committee selection will duplicate validators,
-# causing GRANDPA finality to stall.
 D_PERMISSIONED=4
 D_REGISTERED=0
 
