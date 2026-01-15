@@ -17,7 +17,10 @@
 set -euxo pipefail
 
 apt -qq update
-apt -qq -y install curl jq ncat uuid-runtime
+apt -qq -y install curl jq ncat uuid-runtime python3-pip
+
+# Install bech32 for address calculation (used by cNIGHT genesis patching)
+pip3 install -q bech32 2>/dev/null || true
 
 check_json_validity() {
   local file="$1"
@@ -433,8 +436,34 @@ fi
 if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" && -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
     echo "Patching cnight-genesis.json with compiled cNIGHT contract values..."
     
+    # Calculate mapping_validator_address from script hash using bech32 encoding
+    # For testnet script address: header byte 0x70 + 28-byte script hash
+    # This uses Python's bech32 library which should be available in the container
+    MAPPING_VALIDATOR_ADDRESS=$(python3 -c "
+import bech32
+
+script_hash = '${CNIGHT_MAPPING_POLICY_ID}'
+# Header byte 0x70 = script payment credential, no staking, testnet
+header = bytes([0x70])
+script_bytes = bytes.fromhex(script_hash)
+data = header + script_bytes
+# Convert to 5-bit groups for bech32
+converted = bech32.convertbits(list(data), 8, 5, True)
+address = bech32.bech32_encode('addr_test', converted)
+print(address)
+" 2>/dev/null || echo "")
+
+    if [[ -n "${MAPPING_VALIDATOR_ADDRESS}" ]]; then
+        echo "Calculated mapping_validator_address: ${MAPPING_VALIDATOR_ADDRESS}"
+    else
+        echo "WARNING: Could not calculate mapping_validator_address, using static address from template"
+        # Fall back to extracting from existing config
+        MAPPING_VALIDATOR_ADDRESS=$(jq -r '.addresses.mapping_validator_address' /res/dev/cnight-genesis.json)
+    fi
+    
     jq --arg cnight_policy "$CNIGHT_TOKEN_POLICY_ID" \
-       '.addresses.cnight_policy_id = $cnight_policy' \
+       --arg mapping_addr "$MAPPING_VALIDATOR_ADDRESS" \
+       '.addresses.cnight_policy_id = $cnight_policy | .addresses.mapping_validator_address = $mapping_addr' \
        /res/dev/cnight-genesis.json > /tmp/cnight-genesis.json
     
     echo "Patched cnight-genesis.json:"
