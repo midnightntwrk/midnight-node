@@ -204,7 +204,7 @@ pub async fn create_cached_data_sources(
 		CandidatesDataSourceImpl::new(candidates_pool.clone(), metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
-	
+
 	// Aiken contracts use a different datum format than partner-chains SDK expects
 	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
 		if let Some(policy_id_str) = cfg.aiken_federated_ops_policy_id.as_ref() {
@@ -220,7 +220,7 @@ pub async fn create_cached_data_sources(
 			))
 		} else {
 			log::warn!(
-			    "No Aiken FederatedOps config provided. If using Aiken contracts, \
+				"No Aiken FederatedOps config provided. If using Aiken contracts, \
 			     permissioned candidates will NOT be found. Set aiken_federated_ops_policy_id."
 			);
 			Arc::new(candidates_data_source_cached)
