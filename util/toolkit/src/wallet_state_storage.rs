@@ -24,6 +24,7 @@
 //! - [`RedbBackend`](redb_backend::RedbBackend) - File-based storage using redb
 //! - [`PostgresBackend`](postgres_backend::PostgresBackend) - PostgreSQL storage for multi-instance deployments
 
+pub mod cache_helpers;
 pub mod postgres_backend;
 pub mod redb_backend;
 
