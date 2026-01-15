@@ -220,7 +220,7 @@ impl BuildTxs for CustomContractBuilder {
 
 		tx_info.set_guaranteed_offer(offer_info);
 
-		tx_info.set_wallet_seeds(vec![self.funding_seed()]);
+		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(false);
 
 		#[cfg(not(feature = "erase-proof"))]

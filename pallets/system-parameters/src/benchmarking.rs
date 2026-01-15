@@ -14,9 +14,9 @@
 //! Benchmarking for system-parameters pallet
 
 use super::*;
+use alloc::{vec, vec::Vec};
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use sp_std::{vec, vec::Vec};
 
 #[benchmarks]
 mod benchmarks {

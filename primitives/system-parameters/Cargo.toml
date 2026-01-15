@@ -7,20 +7,12 @@ license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
-parity-scale-codec.workspace = true
-scale-info.workspace = true
-sp-runtime.workspace = true
-sp-core.workspace = true
 sidechain-domain.workspace = true
 serde = { workspace = true, features = ["derive"], optional = true }
 
 [features]
 default = ["std"]
 std = [
-    "parity-scale-codec/std",
-    "scale-info/std",
-    "sp-runtime/std",
     "sidechain-domain/std",
-    "sp-core/std",
     "serde",
 ]
