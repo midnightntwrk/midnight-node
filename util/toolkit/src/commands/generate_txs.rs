@@ -121,6 +121,7 @@ mod tests {
 					rate: 1.0,
 					dest_file: Some("out.tx".to_string()),
 					to_bytes: true,
+					no_watch_progress: false,
 				},
 				proof_server: None,
 				dry_run: false,

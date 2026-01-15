@@ -36,6 +36,9 @@ pub struct Destination {
 	/// Save generated tx file as bytes rather than JSON.
 	#[arg(long, default_value = "false", conflicts_with = "dest_urls", global = true)]
 	pub to_bytes: bool,
+	/// Do not wait for finalization when sending transactions. May cause errors when sending batches.
+	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
+	pub no_watch_progress: bool,
 }
 
 pub struct SendTxsToFile<S, P> {
@@ -75,6 +78,7 @@ pub struct SendTxsToUrl<
 > {
 	urls: Vec<String>,
 	rate: f32,
+	no_watch_progress: bool,
 	_marker: PhantomData<(S, P)>,
 }
 
@@ -83,8 +87,8 @@ impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'stati
 where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 {
-	pub fn new(urls: Vec<String>, rate: f32) -> Self {
-		Self { urls, rate, _marker: Default::default() }
+	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
+		Self { urls, rate, no_watch_progress, _marker: Default::default() }
 	}
 }
 
@@ -160,7 +164,7 @@ where
 			return Err("rate must be greater than 0".into());
 		}
 
-		let sender = Arc::new(Sender::<S, P>::new(&self.urls).await?);
+		let sender = Arc::new(Sender::<S, P>::new(&self.urls, self.no_watch_progress).await?);
 
 		log::info!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;

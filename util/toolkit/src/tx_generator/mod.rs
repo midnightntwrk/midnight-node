@@ -138,8 +138,11 @@ where
 			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
 
-		let destination: Box<dyn SendTxs<S, P>> =
-			Box::new(SendTxsToUrl::<S, P>::new(dest.dest_urls.clone(), dest.rate));
+		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+		));
 
 		dests.push(destination);
 

@@ -93,7 +93,7 @@ where
 	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub async fn new(urls: &[String]) -> Result<Self, ClientError> {
+	pub async fn new(urls: &[String], no_watch_progress: bool) -> Result<Self, ClientError> {
 		let clients: Result<Vec<ClientHandle>, ClientError> =
 			futures::future::try_join_all(urls.iter().map(|url| async move {
 				Ok(ClientHandle {
@@ -103,19 +103,14 @@ where
 			}))
 			.await;
 
-		let watch_progress_var = std::env::var("MN_DONT_WATCH_PROGRESS");
-		let watch_progress = match watch_progress_var {
-			Ok(var) if var == "1" || var.to_ascii_lowercase() == "true" => {
-				log::warn!("toolkit send will not wait for finalization when sending txs");
-				false
-			},
-			_ => true,
-		};
+		if no_watch_progress {
+			log::warn!("toolkit send will not wait for finalization when sending txs");
+		}
 
 		Ok(Self {
 			clients: clients?,
 			counter: AtomicUsize::new(0),
-			watch_progress,
+			watch_progress: !no_watch_progress,
 			_marker: Default::default(),
 		})
 	}
