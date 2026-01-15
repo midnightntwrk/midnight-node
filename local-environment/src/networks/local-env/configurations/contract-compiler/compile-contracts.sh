@@ -269,7 +269,42 @@ else
     exit 1
 fi
 
+# ============================================================================
+# EXTRACT cNIGHT CONTRACTS
+# ============================================================================
+echo ""
+echo "=== Extracting cNIGHT Contracts ==="
+
+# Extract cnight_generates_dust CBOR (this is the mapping_validator)
+# Matches: cnight_generates_dust.cnight_generates_dust.else
+MAPPING_VALIDATOR_CBOR=$(jq -r '.validators[] | select(.title | test("cnight_generates_dust"; "i")) | .compiledCode' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
+MAPPING_VALIDATOR_HASH=$(jq -r '.validators[] | select(.title | test("cnight_generates_dust"; "i")) | .hash' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
+if [[ -n "${MAPPING_VALIDATOR_CBOR}" && "${MAPPING_VALIDATOR_CBOR}" != "null" ]]; then
+    echo "${MAPPING_VALIDATOR_CBOR}" > "${OUTPUT_DIR}/mapping_validator.cbor"
+    echo "${MAPPING_VALIDATOR_HASH}" > "${OUTPUT_DIR}/mapping_validator_policy_id.txt"
+    echo "✓ Wrote mapping_validator.cbor (${#MAPPING_VALIDATOR_CBOR} chars)"
+    echo "✓ Wrote mapping_validator_policy_id.txt: ${MAPPING_VALIDATOR_HASH}"
+else
+    echo "WARNING: Could not extract cnight_generates_dust CBOR (cNIGHT tests will use fallback)"
+fi
+
+# Extract tcnight_mint_infinite CBOR (this is the cnight_token minting policy for testing)
+# Matches: test_cnight_no_audit.tcnight_mint_infinite.else
+CNIGHT_TOKEN_CBOR=$(jq -r '.validators[] | select(.title | test("tcnight_mint_infinite"; "i")) | .compiledCode' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
+CNIGHT_TOKEN_HASH=$(jq -r '.validators[] | select(.title | test("tcnight_mint_infinite"; "i")) | .hash' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
+if [[ -n "${CNIGHT_TOKEN_CBOR}" && "${CNIGHT_TOKEN_CBOR}" != "null" ]]; then
+    echo "${CNIGHT_TOKEN_CBOR}" > "${OUTPUT_DIR}/cnight_token.cbor"
+    echo "${CNIGHT_TOKEN_HASH}" > "${OUTPUT_DIR}/cnight_token_policy_id.txt"
+    echo "✓ Wrote cnight_token.cbor (${#CNIGHT_TOKEN_CBOR} chars)"
+    echo "✓ Wrote cnight_token_policy_id.txt: ${CNIGHT_TOKEN_HASH}"
+else
+    echo "WARNING: Could not extract tcnight_mint_infinite CBOR (cNIGHT tests will use fallback)"
+fi
+
 echo ""
 echo "=== Contract Compilation Complete ==="
 echo "CBOR files in ${OUTPUT_DIR}:"
 ls -la "${OUTPUT_DIR}"/*.cbor 2>/dev/null || echo "  No .cbor files found"
+echo ""
+echo "Policy ID files in ${OUTPUT_DIR}:"
+ls -la "${OUTPUT_DIR}"/*_policy_id.txt 2>/dev/null || echo "  No policy ID files found"

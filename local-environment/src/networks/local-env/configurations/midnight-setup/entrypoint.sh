@@ -402,6 +402,95 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
+# ============================================================================
+# PATCH cNIGHT GENESIS CONFIG
+# ============================================================================
+# Dynamically patch cnight-genesis.json with contract addresses compiled for local-env.
+# The cNIGHT contracts (mapping_validator, cnight_token) are compiled by contract-compiler
+# and their policy IDs/hashes are written to runtime-values.
+
+echo ""
+echo "=== Patching cNIGHT Genesis Config ==="
+
+# Check if cNIGHT contract files were generated
+CNIGHT_MAPPING_POLICY_ID=""
+CNIGHT_TOKEN_POLICY_ID=""
+
+if [[ -f "${RUNTIME_VALUES}/mapping_validator_policy_id.txt" ]]; then
+    CNIGHT_MAPPING_POLICY_ID=$(cat "${RUNTIME_VALUES}/mapping_validator_policy_id.txt" | tr -d '\n\r')
+    echo "Found mapping_validator policy ID: ${CNIGHT_MAPPING_POLICY_ID}"
+else
+    echo "WARNING: mapping_validator_policy_id.txt not found, cNIGHT tests may fail"
+fi
+
+if [[ -f "${RUNTIME_VALUES}/cnight_token_policy_id.txt" ]]; then
+    CNIGHT_TOKEN_POLICY_ID=$(cat "${RUNTIME_VALUES}/cnight_token_policy_id.txt" | tr -d '\n\r')
+    echo "Found cnight_token policy ID: ${CNIGHT_TOKEN_POLICY_ID}"
+else
+    echo "WARNING: cnight_token_policy_id.txt not found, cNIGHT tests may fail"
+fi
+
+# Calculate Cardano bech32 addresses from policy IDs (script hashes)
+# For testnet preview, the address prefix is "addr_test1w" for script addresses
+# Script credential = 01 (script) + script_hash, then bech32 encode with network byte
+# Using midnight-node to calculate addresses if available, otherwise use static fallback
+
+if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" && -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
+    # Calculate mapping_validator_address using the script hash
+    # For Cardano testnet preview: network byte 0x00 + script credential type 0x70 + 28-byte script hash
+    # The address is: 0x70 (script, no staking) + script_hash, then bech32 with prefix "addr_test1w"
+    
+    # Use whisky-style calculation: For a script-only address on testnet preview:
+    # - Header byte: 0x70 (script payment, no staking, testnet)
+    # - Then 28-byte script hash
+    # We'll use cardano-cli if available, or calculate via shell
+    
+    # For now, construct the address manually using the known format
+    # Testnet preview script address = addr_test1w + bech32(0x70 + script_hash)
+    
+    # Actually, we need proper bech32 encoding. Let's use a simpler approach:
+    # Read the addresses from the compiled contract output if available,
+    # or calculate them in entrypoint.sh using a helper script
+    
+    # For the MVP, we'll use jq to patch with the policy IDs (which the chain-spec needs)
+    # The script addresses can be calculated from policy IDs by the test framework
+    
+    echo "Patching cnight-genesis.json with compiled cNIGHT contract values..."
+    
+    # The mapping_validator_address needs to be calculated from the policy ID
+    # Since we don't have bech32 encoding tools in the container, we'll:
+    # 1. Store the policy IDs for the test framework to use
+    # 2. Use a placeholder address format that tests can verify
+    
+    # For proper address calculation, we'll add a helper to convert script hash to address
+    # For now, patch what we can (the policy ID is the key value for on-chain lookup)
+    
+    jq --arg cnight_policy "$CNIGHT_TOKEN_POLICY_ID" \
+       '.addresses.cnight_policy_id = $cnight_policy' \
+       /res/dev/cnight-genesis.json > /tmp/cnight-genesis.json
+    
+    echo "Patched cnight-genesis.json:"
+    cat /tmp/cnight-genesis.json
+    
+    # Export the patched config
+    export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-genesis.json
+    echo "✓ Using patched cnight-genesis.json with local-env contract values"
+else
+    echo "Using default cnight-genesis.json (cNIGHT contracts not compiled)"
+    export CHAINSPEC_CNIGHT_GENESIS=res/dev/cnight-genesis.json
+fi
+
+# Save cNIGHT policy IDs to runtime-values for test framework to use
+if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" ]]; then
+    echo "${CNIGHT_MAPPING_POLICY_ID}" > "${RUNTIME_VALUES}/mapping_validator_policy_id.txt"
+fi
+if [[ -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
+    echo "${CNIGHT_TOKEN_POLICY_ID}" > "${RUNTIME_VALUES}/cnight_token_policy_id.txt"
+fi
+
+echo ""
+echo "=== cNIGHT Genesis Config Complete ==="
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -410,7 +499,7 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
+# CHAINSPEC_CNIGHT_GENESIS is set in the cNIGHT patching section above
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json

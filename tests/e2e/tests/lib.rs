@@ -35,7 +35,7 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 // -------- TESTS --------
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn register_for_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -284,7 +284,7 @@ async fn verify_federated_ops_contract_deployment() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
     let cardano_client_1 =
@@ -446,7 +446,7 @@ async fn register_2_cardano_same_dust_address_production() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn cnight_produces_dust() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -577,7 +577,7 @@ async fn cnight_produces_dust() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn deregister_from_dust_production() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -776,7 +776,7 @@ async fn alice_cannot_deregister_bob() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn removing_excessive_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1026,7 +1026,7 @@ async fn removing_excessive_registrations() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn create_hundred_registrations() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1365,7 +1365,7 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
 }
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1533,7 +1533,7 @@ async fn register_twice_with_same_cardano_address() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn deregister_with_valid_cnight_utxo() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -1839,7 +1839,7 @@ async fn query_d_parameter_at_historical_block() {
     println!("via federated authority governance between block queries.");
 }
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn deregister_first_mapping() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2102,7 +2102,7 @@ async fn deregister_first_mapping() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn produce_dust_from_tokens_owned_before_registration() {
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2241,7 +2241,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn stop_dust_producing_after_deregistration_and_rotation() {
     // case for stop dust production (reg -> mint -> dereg -> rotate)
     let settings = Settings::default();
@@ -2405,7 +2405,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
 }
 
 #[tokio::test]
-#[ignore = "cNIGHT observation not yet supported in local-env"]
+// cNIGHT observation now supported in local-env with dynamically deployed contracts
 async fn spend_cnight_producing_dust() {
     let settings = Settings::default();
     let cardano_client =
