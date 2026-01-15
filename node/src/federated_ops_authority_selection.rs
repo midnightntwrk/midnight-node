@@ -51,6 +51,12 @@ use sidechain_domain::{
 };
 use sqlx::PgPool;
 
+/// A placeholder policy ID used when calling the inner data source for D-parameter only.
+/// When FederatedOps parsing succeeds, we don't want the inner SDK to try parsing
+/// permissioned candidates (it would fail on FederatedOps datum format).
+/// Using an all-zeros policy ID ensures no UTxOs are found for candidate parsing.
+const UNUSED_POLICY_ID: PolicyId = PolicyId([0u8; 28]);
+
 /// A wrapper around `CandidatesDataSourceImpl` that adds FederatedOps datum parsing
 /// with automatic format detection.
 ///
@@ -134,14 +140,13 @@ where
 		let federated_ops_candidates = self.try_federated_ops_candidates(policy_id_to_try).await?;
 
 		if let Some(candidates) = federated_ops_candidates {
-			// FederatedOps format succeeded - get D-parameter from inner and combine
+			// FederatedOps format succeeded - get D-parameter from inner and combine.
+			// Use UNUSED_POLICY_ID for permissioned_candidates_policy to prevent the
+			// inner SDK from trying to parse the FederatedOps datum (which would fail
+			// because the SDK interprets `logic_round` as `version`).
 			let inner_params = self
 				.inner
-				.get_ariadne_parameters(
-					epoch_number,
-					d_parameter_policy,
-					permissioned_candidates_policy,
-				)
+				.get_ariadne_parameters(epoch_number, d_parameter_policy, UNUSED_POLICY_ID)
 				.await?;
 
 			return Ok(AriadneParameters {

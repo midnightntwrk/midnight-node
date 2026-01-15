@@ -205,17 +205,42 @@ pub async fn create_cached_data_sources(
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
 	// Parse optional FederatedOps policy ID override (for local-env with dynamic deployment)
-	let override_policy_id = cfg.federated_ops_policy_id.as_ref().map(|policy_id_str| {
-		log::info!("FederatedOps policy ID override set: {}", policy_id_str);
-		sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str)
-	});
-
-	if override_policy_id.is_none() {
-		log::info!(
-			"No FederatedOps policy ID override set. Will use runtime detection \
-			 with permissioned_candidates_policy from chain config."
-		);
-	}
+	let override_policy_id = match cfg.federated_ops_policy_id.as_ref() {
+		Some(policy_id_str) => {
+			let trimmed = policy_id_str.trim();
+			match hex::decode(trimmed) {
+				Ok(bytes) if bytes.len() == 28 => {
+					log::info!("FederatedOps policy ID override set: {}", trimmed);
+					let mut arr = [0u8; 28];
+					arr.copy_from_slice(&bytes);
+					Some(sidechain_domain::PolicyId(arr))
+				},
+				Ok(bytes) => {
+					log::error!(
+						"Invalid FederatedOps policy ID '{}': expected 28 bytes, got {}. Falling back to runtime detection.",
+						trimmed,
+						bytes.len()
+					);
+					None
+				},
+				Err(e) => {
+					log::error!(
+						"Invalid FederatedOps policy ID '{}': {}. Falling back to runtime detection.",
+						trimmed,
+						e
+					);
+					None
+				},
+			}
+		},
+		None => {
+			log::info!(
+				"No FederatedOps policy ID override set. Will use runtime detection \
+				 with permissioned_candidates_policy from chain config."
+			);
+			None
+		},
+	};
 
 	// Wrap with FederatedOps format detection - tries FederatedOps (Aiken) datum format first,
 	// falls back to partner-chains SDK format if parsing fails.
