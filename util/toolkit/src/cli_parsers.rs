@@ -16,6 +16,7 @@ use std::str::FromStr;
 use midnight_node_ledger_helpers::*;
 
 use crate::tx_generator::source::FetchCacheConfig;
+use crate::wallet_state_storage::WalletCacheConfig;
 
 pub trait TokenDecode: Sized + Send + Sync + Clone {
 	fn decode(token_id: [u8; 32]) -> Self;
@@ -187,6 +188,19 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 		err.insert(
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid utxo id: {}", error)),
+		);
+
+		err
+	})
+}
+
+pub fn wallet_cache_config(input: &str) -> Result<WalletCacheConfig, clap::Error> {
+	WalletCacheConfig::from_str(input).map_err(|error| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("invalid wallet cache config: {}", error)),
 		);
 
 		err

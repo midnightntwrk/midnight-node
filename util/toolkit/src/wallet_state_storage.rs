@@ -200,6 +200,54 @@ impl WalletStateStorage for InMemory {
 	}
 }
 
+/// Configuration for wallet state caching backend.
+///
+/// Similar to [`FetchCacheConfig`](crate::tx_generator::source::FetchCacheConfig),
+/// this enum specifies which storage backend to use for wallet state caching.
+#[derive(Clone, Debug)]
+pub enum WalletCacheConfig {
+	/// No caching - wallet state is always rebuilt from genesis.
+	Disabled,
+	/// In-memory caching (no persistence across restarts).
+	InMemory,
+	/// File-based caching using redb embedded database.
+	Redb { filename: String },
+	/// PostgreSQL-based caching for multi-instance deployments.
+	Postgres { database_url: String },
+}
+
+impl Default for WalletCacheConfig {
+	fn default() -> Self {
+		Self::Disabled
+	}
+}
+
+/// Error parsing wallet cache configuration.
+#[derive(Debug, thiserror::Error)]
+pub enum WalletCacheConfigParseError {
+	#[error("unknown prefix for wallet cache config: {0}")]
+	UnknownPrefix(String),
+}
+
+impl std::str::FromStr for WalletCacheConfig {
+	type Err = WalletCacheConfigParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (prefix, opts) = match s.split_once(':') {
+			Some((p, o)) => (p.to_string(), o.to_string()),
+			None => (s.to_string(), String::new()),
+		};
+
+		match prefix.as_str() {
+			"disabled" | "none" | "off" => Ok(Self::Disabled),
+			"inmemory" => Ok(Self::InMemory),
+			"redb" => Ok(Self::Redb { filename: opts }),
+			"postgres" => Ok(Self::Postgres { database_url: s.to_string() }),
+			_ => Err(WalletCacheConfigParseError::UnknownPrefix(prefix)),
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

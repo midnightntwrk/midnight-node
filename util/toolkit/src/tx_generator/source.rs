@@ -113,6 +113,21 @@ pub struct Source {
 	/// - "redb:<filename>" (file-cache, single-writer)
 	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
 	pub fetch_cache: FetchCacheConfig,
+
+	#[arg(
+		long,
+		global = true,
+		value_parser = cli::wallet_cache_config,
+		default_value = "disabled",
+		env = "MN_WALLET_CACHE"
+	)]
+	/// Wallet state cache config. Caches LedgerContext to speed up subsequent runs.
+	/// Available options:
+	/// - "disabled" (no caching, default)
+	/// - "inmemory" (RAM-only, no persistence)
+	/// - "redb:<filename>" (file-cache, single-writer)
+	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db)
+	pub wallet_cache: crate::wallet_state_storage::WalletCacheConfig,
 }
 
 #[derive(Error, Debug)]
