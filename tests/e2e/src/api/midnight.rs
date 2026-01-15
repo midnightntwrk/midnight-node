@@ -238,39 +238,42 @@ impl MidnightClient {
         let mut found_tech_committee_reset = false;
 
         // Helper to check events in a block
-        let check_block_events =
-            |events: subxt::events::Events<SubstrateConfig>,
-             block_number: u32,
-             found_council: &mut bool,
-             found_tech: &mut bool| {
-                // Check for CouncilMembersReset event
-                if let Some(event) = events.find::<CouncilMembersReset>().flatten().next() {
-                    println!(
-                        "✓ Found CouncilMembersReset event in block #{} with {} members",
-                        block_number,
-                        event.members.len()
-                    );
-                    *found_council = true;
-                }
+        let check_block_events = |events: subxt::events::Events<SubstrateConfig>,
+                                  block_number: u32,
+                                  found_council: &mut bool,
+                                  found_tech: &mut bool| {
+            // Check for CouncilMembersReset event
+            if let Some(event) = events.find::<CouncilMembersReset>().flatten().next() {
+                println!(
+                    "✓ Found CouncilMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_council = true;
+            }
 
-                // Check for TechnicalCommitteeMembersReset event
-                if let Some(event) = events
-                    .find::<TechnicalCommitteeMembersReset>()
-                    .flatten()
-                    .next()
-                {
-                    println!(
-                        "✓ Found TechnicalCommitteeMembersReset event in block #{} with {} members",
-                        block_number,
-                        event.members.len()
-                    );
-                    *found_tech = true;
-                }
-            };
+            // Check for TechnicalCommitteeMembersReset event
+            if let Some(event) = events
+                .find::<TechnicalCommitteeMembersReset>()
+                .flatten()
+                .next()
+            {
+                println!(
+                    "✓ Found TechnicalCommitteeMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_tech = true;
+            }
+        };
 
         // First, check historical finalized blocks for the events
         // The events may have been emitted before we started listening
-        let finalized_hash = self.online_client.backend().latest_finalized_block_ref().await?;
+        let finalized_hash = self
+            .online_client
+            .backend()
+            .latest_finalized_block_ref()
+            .await?;
         let finalized_block = self
             .online_client
             .blocks()
