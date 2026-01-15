@@ -31,9 +31,7 @@ pub mod data_source;
 pub use {
 	data_source::{
 		CNightObservationDataSourceMock, FederatedAuthorityObservationDataSourceImpl,
-		FederatedAuthorityObservationDataSourceMock, FederatedOpsCandidate,
-		FederatedOpsCandidateKey, FederatedOpsConfig, FederatedOpsDatum,
-		MidnightAuthoritySelectionDataSource, MidnightCNightObservationDataSourceImpl,
+		FederatedAuthorityObservationDataSourceMock, MidnightCNightObservationDataSourceImpl,
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::federated_ops_authority_selection::FederatedOpsAuthoritySelectionDataSource;
+use crate::federated_ops_authority_selection::LocalEnvAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
@@ -242,13 +242,12 @@ pub async fn create_cached_data_sources(
 		},
 	};
 
-	// Wrap with FederatedOps format detection - tries FederatedOps (Aiken) datum format first,
-	// falls back to partner-chains SDK format if parsing fails.
-	// If override_policy_id is set (local-env), uses that. Otherwise uses runtime detection.
+	// Wrap with optional policy ID override for local-env.
+	// If override_policy_id is set (local-env), uses that instead of chain config.
+	// The SDK parses FederatedOps datums directly since logic_round=1 matches V1 format.
 	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
-		Arc::new(FederatedOpsAuthoritySelectionDataSource::new(
+		Arc::new(LocalEnvAuthoritySelectionDataSource::new(
 			candidates_data_source_cached,
-			candidates_pool,
 			override_policy_id,
 		));
 
