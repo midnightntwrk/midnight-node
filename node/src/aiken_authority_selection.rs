@@ -42,12 +42,22 @@ use sqlx::PgPool;
 pub struct FederatedOpsAuthoritySelectionDataSource<T> {
 	inner: T,
 	pool: PgPool,
+	/// Optional policy ID override for FederatedOps contracts.
+	/// If set, uses this instead of the permissioned_candidates_policy from chain config.
+	/// Required for local-env where contracts are dynamically deployed.
+	override_policy_id: Option<PolicyId>,
 }
 
 impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
 	/// Create a new authority selection data source with FederatedOps format detection
-	pub fn new(inner: T, pool: PgPool) -> Self {
-		Self { inner, pool }
+	///
+	/// # Arguments
+	/// * `inner` - The underlying data source for D-parameter and fallback candidate queries
+	/// * `pool` - Database connection pool for FederatedOps queries
+	/// * `override_policy_id` - Optional policy ID override. If set, uses this for FederatedOps
+	///   parsing instead of the permissioned_candidates_policy from chain config.
+	pub fn new(inner: T, pool: PgPool, override_policy_id: Option<PolicyId>) -> Self {
+		Self { inner, pool, override_policy_id }
 	}
 
 	/// Try to get permissioned candidates from the FederatedOps contract.
@@ -61,8 +71,7 @@ impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
 		let config = midnight_primitives_mainchain_follower::AikenFederatedOpsConfig {
 			policy_id: policy_id.clone(),
 		};
-		let data_source =
-			MidnightAuthoritySelectionDataSource::new((), self.pool.clone(), config);
+		let data_source = MidnightAuthoritySelectionDataSource::new((), self.pool.clone(), config);
 
 		// The federated_ops_forever contract uses a static datum - the candidate list doesn't
 		// change per epoch (hence "forever"). We query the latest UTxO state using i32::MAX
@@ -71,23 +80,15 @@ impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
 			Ok(candidates) if !candidates.is_empty() => {
 				let converted =
 					MidnightAuthoritySelectionDataSource::<()>::convert_candidates(candidates);
-				log::info!(
-					"FederatedOps parser found {} permissioned candidates",
-					converted.len()
-				);
+				log::info!("FederatedOps parser found {} permissioned candidates", converted.len());
 				Ok(Some(converted))
 			},
 			Ok(_) => {
-				log::debug!(
-					"FederatedOps parser found no candidates, will try inner data source"
-				);
+				log::debug!("FederatedOps parser found no candidates, will try inner data source");
 				Ok(None)
 			},
 			Err(e) => {
-				log::debug!(
-					"FederatedOps parsing failed ({}), will try inner data source",
-					e
-				);
+				log::debug!("FederatedOps parsing failed ({}), will try inner data source", e);
 				Ok(None)
 			},
 		}
@@ -105,9 +106,15 @@ where
 		d_parameter_policy: PolicyId,
 		permissioned_candidates_policy: PolicyId,
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
+		// Use override policy ID if set (local-env), otherwise try runtime detection
+		// with the permissioned_candidates_policy from chain config
+		let policy_id_to_try = self
+			.override_policy_id
+			.as_ref()
+			.unwrap_or(&permissioned_candidates_policy);
+
 		// Try FederatedOps format first
-		let federated_ops_candidates =
-			self.try_federated_ops_candidates(&permissioned_candidates_policy).await?;
+		let federated_ops_candidates = self.try_federated_ops_candidates(policy_id_to_try).await?;
 
 		if let Some(candidates) = federated_ops_candidates {
 			// FederatedOps format succeeded - get D-parameter from inner and combine
@@ -132,7 +139,11 @@ where
 			epoch_number.0
 		);
 		self.inner
-			.get_ariadne_parameters(epoch_number, d_parameter_policy, permissioned_candidates_policy)
+			.get_ariadne_parameters(
+				epoch_number,
+				d_parameter_policy,
+				permissioned_candidates_policy,
+			)
 			.await
 	}
 

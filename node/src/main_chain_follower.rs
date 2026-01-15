@@ -204,13 +204,30 @@ pub async fn create_cached_data_sources(
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
-	// Wrap with FederatedOps format detection - automatically tries FederatedOps (Aiken)
-	// datum format first, falls back to partner-chains SDK format if parsing fails.
-	// This allows the same node binary to work with either contract implementation.
+	// Parse optional FederatedOps policy ID override (for local-env with dynamic deployment)
+	let override_policy_id = cfg.aiken_federated_ops_policy_id.as_ref().map(|policy_id_str| {
+		log::info!(
+			"FederatedOps policy ID override set: {}",
+			policy_id_str
+		);
+		sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str)
+	});
+
+	if override_policy_id.is_none() {
+		log::info!(
+			"No FederatedOps policy ID override set. Will use runtime detection \
+			 with permissioned_candidates_policy from chain config."
+		);
+	}
+
+	// Wrap with FederatedOps format detection - tries FederatedOps (Aiken) datum format first,
+	// falls back to partner-chains SDK format if parsing fails.
+	// If override_policy_id is set (local-env), uses that. Otherwise uses runtime detection.
 	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
 		Arc::new(FederatedOpsAuthoritySelectionDataSource::new(
 			candidates_data_source_cached,
 			candidates_pool,
+			override_policy_id,
 		));
 
 	let sidechain_pool =
