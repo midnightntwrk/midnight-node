@@ -108,10 +108,8 @@ where
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
 		// Use override policy ID if set (local-env), otherwise try runtime detection
 		// with the permissioned_candidates_policy from chain config
-		let policy_id_to_try = self
-			.override_policy_id
-			.as_ref()
-			.unwrap_or(&permissioned_candidates_policy);
+		let policy_id_to_try =
+			self.override_policy_id.as_ref().unwrap_or(&permissioned_candidates_policy);
 
 		// Try FederatedOps format first
 		let federated_ops_candidates = self.try_federated_ops_candidates(policy_id_to_try).await?;

@@ -206,10 +206,7 @@ pub async fn create_cached_data_sources(
 
 	// Parse optional FederatedOps policy ID override (for local-env with dynamic deployment)
 	let override_policy_id = cfg.aiken_federated_ops_policy_id.as_ref().map(|policy_id_str| {
-		log::info!(
-			"FederatedOps policy ID override set: {}",
-			policy_id_str
-		);
+		log::info!("FederatedOps policy ID override set: {}", policy_id_str);
 		sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str)
 	});
 
