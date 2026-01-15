@@ -13,7 +13,6 @@
 
 extern crate alloc;
 
-pub mod aiken_authority_selection;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 pub mod cfg;
@@ -22,6 +21,7 @@ pub mod cli;
 pub mod cnight_genesis;
 pub mod command;
 pub mod extensions;
+pub mod federated_ops_authority_selection;
 pub mod inherent_data;
 pub mod main_chain_follower;
 pub mod metrics_push;

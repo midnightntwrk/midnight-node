@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::aiken_authority_selection::FederatedOpsAuthoritySelectionDataSource;
+use crate::federated_ops_authority_selection::FederatedOpsAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
@@ -205,7 +205,7 @@ pub async fn create_cached_data_sources(
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
 	// Parse optional FederatedOps policy ID override (for local-env with dynamic deployment)
-	let override_policy_id = cfg.aiken_federated_ops_policy_id.as_ref().map(|policy_id_str| {
+	let override_policy_id = cfg.federated_ops_policy_id.as_ref().map(|policy_id_str| {
 		log::info!("FederatedOps policy ID override set: {}", policy_id_str);
 		sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str)
 	});

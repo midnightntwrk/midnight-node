@@ -11,11 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Aiken FederatedOps Datum Parser for Permissioned Candidates
+//! FederatedOps Datum Parser for Permissioned Candidates
 //!
 //! This module provides types and parsing logic for the Aiken `FederatedOps` datum format
-//! used by the `federated_ops_forever` contract. The datum structure differs from the
-//! partner-chains SDK expected format, so we parse and convert it here.
+//! used by the `federated_ops_forever` contract.
+//!
+//! ## Why This Parser Is Needed
+//!
+//! The FederatedOps datum structure is **structurally identical** to the partner-chains SDK
+//! `VersionedGenericDatum` format, but there is a **semantic mismatch** in the last field:
+//!
+//! | Format | Structure | Last Field Meaning |
+//! |--------|-----------|-------------------|
+//! | SDK `VersionedGenericDatum` | `[data, appendix, version]` | Datum format version (0 or 1) |
+//! | Aiken `FederatedOps` | `[data, appendix, logic_round]` | Governance logic round (0, 1, 2, ...) |
+//!
+//! The SDK interprets the last field as a version selector:
+//! - version=0 → parse appendix as V0 (flat: `[sidechain_key, aura_key, grandpa_key]`)
+//! - version=1 → parse appendix as V1 (named: `[partner_chains_key, [[key_id, key_bytes], ...]]`)
+//! - version≥2 → error "Unknown version"
+//!
+//! Since FederatedOps always uses V1 appendix format but `logic_round` can be 0, 2, 3, etc.,
+//! the SDK parsing fails when `logic_round != 1`. This parser always interprets the appendix
+//! as V1 format, ignoring the `logic_round` value for parsing purposes.
 //!
 //! ## Aiken FederatedOps Datum Format (from types.ak)
 //!
@@ -23,8 +41,8 @@
 //! @list
 //! pub type FederatedOps {
 //!   data: Data,                                    // Usually Unit (121([]))
-//!   appendix: List<PermissionedCandidateDatumV1>,  // The actual candidates
-//!   logic_round: Int,
+//!   appendix: List<PermissionedCandidateDatumV1>,  // The actual candidates (always V1 format)
+//!   logic_round: Int,                              // Governance versioning, NOT datum format version
 //! }
 //!
 //! @list
@@ -40,10 +58,8 @@
 //! }
 //! ```
 //!
-//! ## Partner-chains SDK Expected Format
-//!
-//! The SDK expects `[[sidechain_key, aura_key, grandpa_key], ...]` but the Aiken format
-//! uses a more structured approach with key identifiers.
+//! Note: The appendix format matches partner-chains SDK V1 exactly. The only difference
+//! is that `logic_round` is used for governance upgrades, not datum format versioning.
 
 use cardano_serialization_lib::PlutusData;
 use sidechain_domain::{
@@ -57,22 +73,22 @@ const AURA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"aura");
 /// GRANDPA key type id (from sp_runtime::key_types)
 const GRANDPA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"gran");
 
-/// Represents a parsed Aiken FederatedOps datum
+/// Represents a parsed FederatedOps datum
 #[derive(Debug, Clone)]
-pub struct AikenFederatedOpsDatum {
+pub struct FederatedOpsDatum {
 	/// The data field (usually Unit/empty)
 	#[allow(dead_code)]
 	pub data: PlutusData,
 	/// List of permissioned candidates from the appendix field
-	pub candidates: Vec<AikenPermissionedCandidate>,
+	pub candidates: Vec<FederatedOpsCandidate>,
 	/// The logic round number
 	#[allow(dead_code)]
 	pub logic_round: u64,
 }
 
-/// Represents a single permissioned candidate from the Aiken datum
+/// Represents a single permissioned candidate from the FederatedOps datum
 #[derive(Debug, Clone)]
-pub struct AikenPermissionedCandidate {
+pub struct FederatedOpsCandidate {
 	/// The partner chains (sidechain) ECDSA public key (33 bytes compressed)
 	pub sidechain_public_key: Vec<u8>,
 	/// The Aura session key (32 bytes Sr25519)
@@ -81,17 +97,17 @@ pub struct AikenPermissionedCandidate {
 	pub grandpa_public_key: Vec<u8>,
 }
 
-/// A key with its identifier from the Aiken datum
+/// A key with its identifier from the FederatedOps datum
 #[derive(Debug, Clone)]
-pub struct AikenCandidateKey {
+pub struct FederatedOpsCandidateKey {
 	/// 4-byte identifier (e.g., b"aura", b"gran")
 	pub id: Vec<u8>,
 	/// Key bytes
 	pub bytes: Vec<u8>,
 }
 
-impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
-	fn from(candidate: AikenPermissionedCandidate) -> Self {
+impl From<FederatedOpsCandidate> for PermissionedCandidateData {
+	fn from(candidate: FederatedOpsCandidate) -> Self {
 		let keys = CandidateKeys(vec![
 			CandidateKey::new(AURA_KEY_TYPE, candidate.aura_public_key),
 			CandidateKey::new(GRANDPA_KEY_TYPE, candidate.grandpa_public_key),
@@ -101,7 +117,7 @@ impl From<AikenPermissionedCandidate> for PermissionedCandidateData {
 	}
 }
 
-/// Known key identifiers in Aiken FederatedOps datum
+/// Known key identifiers in FederatedOps datum
 pub mod key_ids {
 	/// Aura session key identifier
 	pub const AURA: &[u8] = b"aura";
@@ -109,8 +125,8 @@ pub mod key_ids {
 	pub const GRANDPA: &[u8] = b"gran";
 }
 
-impl AikenFederatedOpsDatum {
-	/// Parse a PlutusData datum as an Aiken FederatedOps structure
+impl FederatedOpsDatum {
+	/// Parse a PlutusData datum as a FederatedOps structure
 	///
 	/// Expected format (with @list annotation):
 	/// ```text
@@ -173,7 +189,7 @@ impl AikenFederatedOpsDatum {
 	/// ```
 	fn parse_candidate(
 		data: &PlutusData,
-	) -> Result<AikenPermissionedCandidate, Box<dyn Error + Send + Sync>> {
+	) -> Result<FederatedOpsCandidate, Box<dyn Error + Send + Sync>> {
 		let list: Vec<PlutusData> = data
 			.as_list()
 			.ok_or("Expected PermissionedCandidateDatumV1 to be a list")?
@@ -233,7 +249,7 @@ impl AikenFederatedOpsDatum {
 			.into());
 		}
 
-		Ok(AikenPermissionedCandidate {
+		Ok(FederatedOpsCandidate {
 			sidechain_public_key,
 			aura_public_key: aura_key.bytes.clone(),
 			grandpa_public_key: grandpa_key.bytes.clone(),
@@ -248,7 +264,7 @@ impl AikenFederatedOpsDatum {
 	/// ```
 	fn parse_candidate_keys(
 		data: &PlutusData,
-	) -> Result<Vec<AikenCandidateKey>, Box<dyn Error + Send + Sync>> {
+	) -> Result<Vec<FederatedOpsCandidateKey>, Box<dyn Error + Send + Sync>> {
 		let keys_list: Vec<PlutusData> = data
 			.as_list()
 			.ok_or("Expected keys to be a list")?
@@ -278,45 +294,45 @@ impl AikenFederatedOpsDatum {
 
 			let bytes = key_list[1].as_bytes().ok_or("Expected key bytes to be bytes")?;
 
-			keys.push(AikenCandidateKey { id, bytes });
+			keys.push(FederatedOpsCandidateKey { id, bytes });
 		}
 
 		Ok(keys)
 	}
 }
 
-/// Configuration for the Aiken FederatedOps data source
+/// Configuration for the FederatedOps data source
 #[derive(Debug, Clone)]
-pub struct AikenFederatedOpsConfig {
+pub struct FederatedOpsConfig {
 	/// The policy ID of the federated_ops_forever contract
 	pub policy_id: sidechain_domain::PolicyId,
 }
 
-/// A wrapper data source that parses Aiken FederatedOps datums for permissioned candidates.
+/// A wrapper data source that parses FederatedOps datums for permissioned candidates.
 ///
 /// This data source delegates to the underlying `CandidatesDataSourceImpl` for most operations,
-/// but overrides the permissioned candidates query to parse the Aiken datum format instead of
+/// but overrides the permissioned candidates query to parse the FederatedOps datum format instead of
 /// the partner-chains SDK expected format.
 pub struct MidnightAuthoritySelectionDataSource<T> {
 	/// The inner data source (CandidatesDataSourceImpl or similar)
 	inner: T,
 	/// Database connection pool for querying federated_ops_forever UTxOs
 	pool: sqlx::PgPool,
-	/// Configuration for the Aiken data source
-	config: AikenFederatedOpsConfig,
+	/// Configuration for the FederatedOps data source
+	config: FederatedOpsConfig,
 }
 
 impl<T> MidnightAuthoritySelectionDataSource<T> {
 	/// Create a new Midnight authority selection data source
-	pub fn new(inner: T, pool: sqlx::PgPool, config: AikenFederatedOpsConfig) -> Self {
+	pub fn new(inner: T, pool: sqlx::PgPool, config: FederatedOpsConfig) -> Self {
 		Self { inner, pool, config }
 	}
 
-	/// Query the federated_ops_forever UTxO and parse the Aiken datum to extract permissioned candidates
-	pub async fn get_aiken_permissioned_candidates(
+	/// Query the federated_ops_forever UTxO and parse the datum to extract permissioned candidates
+	pub async fn get_permissioned_candidates(
 		&self,
 		block_number: u32,
-	) -> Result<Vec<AikenPermissionedCandidate>, Box<dyn Error + Send + Sync>> {
+	) -> Result<Vec<FederatedOpsCandidate>, Box<dyn Error + Send + Sync>> {
 		// Query the UTxO by policy ID only (no need for script address with one-shot minting)
 		let utxo =
 			crate::db::get_utxo_by_policy_id(&self.pool, &self.config.policy_id, block_number)
@@ -324,7 +340,7 @@ impl<T> MidnightAuthoritySelectionDataSource<T> {
 
 		match utxo {
 			Some(row) => {
-				let datum = AikenFederatedOpsDatum::from_plutus_data(&row.full_datum.0)?;
+				let datum = FederatedOpsDatum::from_plutus_data(&row.full_datum.0)?;
 				Ok(datum.candidates)
 			},
 			None => {
@@ -353,9 +369,9 @@ impl<T> MidnightAuthoritySelectionDataSource<T> {
 		self.inner
 	}
 
-	/// Convert Aiken candidates to partner-chains PermissionedCandidateData format
+	/// Convert FederatedOps candidates to partner-chains PermissionedCandidateData format
 	pub fn convert_candidates(
-		candidates: Vec<AikenPermissionedCandidate>,
+		candidates: Vec<FederatedOpsCandidate>,
 	) -> Vec<PermissionedCandidateData> {
 		candidates.into_iter().map(|c| c.into()).collect()
 	}
@@ -405,7 +421,7 @@ mod tests {
 	#[test]
 	fn test_parse_empty_federated_ops() {
 		let datum = create_federated_ops(vec![], 0);
-		let parsed = AikenFederatedOpsDatum::from_plutus_data(&datum).unwrap();
+		let parsed = FederatedOpsDatum::from_plutus_data(&datum).unwrap();
 
 		assert!(parsed.candidates.is_empty());
 		assert_eq!(parsed.logic_round, 0);
@@ -422,7 +438,7 @@ mod tests {
 		let candidate = create_candidate(&sidechain_key, &aura_key, &grandpa_key);
 		let datum = create_federated_ops(vec![candidate], 5);
 
-		let parsed = AikenFederatedOpsDatum::from_plutus_data(&datum).unwrap();
+		let parsed = FederatedOpsDatum::from_plutus_data(&datum).unwrap();
 
 		assert_eq!(parsed.candidates.len(), 1);
 		assert_eq!(parsed.logic_round, 5);
@@ -451,7 +467,7 @@ mod tests {
 		let datum = create_federated_ops(vec![candidate], 0);
 
 		// Should succeed but with empty candidates (invalid candidate is skipped)
-		let parsed = AikenFederatedOpsDatum::from_plutus_data(&datum).unwrap();
+		let parsed = FederatedOpsDatum::from_plutus_data(&datum).unwrap();
 		assert!(parsed.candidates.is_empty());
 	}
 }

@@ -30,9 +30,9 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		AikenCandidateKey, AikenFederatedOpsConfig, AikenFederatedOpsDatum,
-		AikenPermissionedCandidate, CNightObservationDataSourceMock,
-		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+		CNightObservationDataSourceMock, FederatedAuthorityObservationDataSourceImpl,
+		FederatedAuthorityObservationDataSourceMock, FederatedOpsCandidate,
+		FederatedOpsCandidateKey, FederatedOpsConfig, FederatedOpsDatum,
 		MidnightAuthoritySelectionDataSource, MidnightCNightObservationDataSourceImpl,
 	},
 	inherent_provider::*,

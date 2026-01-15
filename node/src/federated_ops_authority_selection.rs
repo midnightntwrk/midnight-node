@@ -11,19 +11,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! FederatedOps Authority Selection Data Source with Runtime Format Detection
+//! FederatedOps Authority Selection Data Source
 //!
-//! This module provides a wrapper around `CandidatesDataSourceImpl` that can parse
-//! multiple datum formats for permissioned candidates:
+//! This module provides a wrapper around `CandidatesDataSourceImpl` that handles
+//! the semantic mismatch between FederatedOps datums and partner-chains SDK parsing.
 //!
-//! 1. **FederatedOps format** (Aiken contracts): Used by `federated_ops_forever` contract
-//!    `[data, [[partner_chains_key, [[key_id, key_bytes], ...]], ...], logic_round]`
+//! ## Why This Wrapper Is Needed
 //!
-//! 2. **Partner-chains SDK format**: Legacy format
-//!    `[[sidechain_key, aura_key, grandpa_key], ...]`
+//! The FederatedOps datum structure is **structurally identical** to the SDK's
+//! `VersionedGenericDatum`, but the last field has different semantics:
 //!
-//! The wrapper automatically detects which format is in use by attempting to parse
-//! the FederatedOps format first, falling back to the inner data source if parsing fails.
+//! | Format | Last Field | Purpose |
+//! |--------|------------|---------|
+//! | SDK `VersionedGenericDatum` | `version` | Datum format version (0=V0, 1=V1) |
+//! | `FederatedOps` | `logic_round` | Governance upgrade counter (0, 1, 2, ...) |
+//!
+//! The SDK uses the last field to select parsing strategy:
+//! - version=0 → V0 format: `[sidechain_key, aura_key, grandpa_key]`
+//! - version=1 → V1 format: `[partner_chains_key, [[key_id, key_bytes], ...]]`
+//! - version≥2 → Error: "Unknown version"
+//!
+//! FederatedOps always uses V1 appendix format, but `logic_round` can be any value.
+//! When `logic_round=0`, the SDK tries V0 parsing and fails. When `logic_round≥2`,
+//! the SDK rejects it as an unknown version. Only `logic_round=1` works by accident.
+//!
+//! This wrapper bypasses the SDK's version-based parsing by always treating the
+//! appendix as V1 format, regardless of the `logic_round` value.
+//!
+//! ## Additional Considerations
+//!
+//! - **Policy ID**: FederatedOps uses a different policy ID than the SDK's
+//!   `permissioned_candidates_policy`, requiring separate UTxO queries.
+//! - **Fallback**: If FederatedOps parsing fails, falls back to the inner SDK data source.
 
 use authority_selection_inherents::{AriadneParameters, AuthoritySelectionDataSource};
 use midnight_primitives_mainchain_follower::MidnightAuthoritySelectionDataSource;
@@ -68,7 +87,7 @@ impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
 		policy_id: &PolicyId,
 	) -> Result<Option<Vec<PermissionedCandidateData>>, Box<dyn std::error::Error + Send + Sync>> {
 		// Create a temporary data source to query with this policy ID
-		let config = midnight_primitives_mainchain_follower::AikenFederatedOpsConfig {
+		let config = midnight_primitives_mainchain_follower::FederatedOpsConfig {
 			policy_id: policy_id.clone(),
 		};
 		let data_source = MidnightAuthoritySelectionDataSource::new((), self.pool.clone(), config);
@@ -76,7 +95,7 @@ impl<T> FederatedOpsAuthoritySelectionDataSource<T> {
 		// The federated_ops_forever contract uses a static datum - the candidate list doesn't
 		// change per epoch (hence "forever"). We query the latest UTxO state using i32::MAX
 		// as the block number to avoid overflow when cast to i32 in SQL query.
-		match data_source.get_aiken_permissioned_candidates(i32::MAX as u32).await {
+		match data_source.get_permissioned_candidates(i32::MAX as u32).await {
 			Ok(candidates) if !candidates.is_empty() => {
 				let converted =
 					MidnightAuthoritySelectionDataSource::<()>::convert_candidates(candidates);

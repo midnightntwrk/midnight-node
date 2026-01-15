@@ -15,16 +15,12 @@
 //!
 //! This module uses the types and functions provided by the `db` module
 
-pub mod aiken_candidates;
 pub mod cnight_observation;
 pub mod cnight_observation_mock;
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
+pub mod federated_ops_observation;
 
-pub use aiken_candidates::{
-	AikenCandidateKey, AikenFederatedOpsConfig, AikenFederatedOpsDatum, AikenPermissionedCandidate,
-	MidnightAuthoritySelectionDataSource,
-};
 pub use cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
 	TxPosition,
@@ -32,6 +28,10 @@ pub use cnight_observation::{
 pub use cnight_observation_mock::CNightObservationDataSourceMock;
 pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;
 pub use federated_authority_observation_mock::FederatedAuthorityObservationDataSourceMock;
+pub use federated_ops_observation::{
+	FederatedOpsCandidate, FederatedOpsCandidateKey, FederatedOpsConfig, FederatedOpsDatum,
+	MidnightAuthoritySelectionDataSource,
+};
 
 pub use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
