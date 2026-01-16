@@ -111,8 +111,6 @@ echo "Inserting D parameter..."
 
 # D_PERMISSIONED must match the number of permissioned candidates deployed via Aiken contracts.
 # Currently deploying 4 candidates (Alice, Bob, Charlie, Dave) in the federated_ops_forever contract.
-# If D_PERMISSIONED > number of candidates, the committee selection will duplicate validators,
-# causing GRANDPA finality to stall.
 D_PERMISSIONED=4
 D_REGISTERED=0
 
@@ -308,18 +306,11 @@ else
     exit 1
 fi
 
-# Export the federated ops policy ID for the node to use
-export AIKEN_FEDERATED_OPS_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
-echo "Aiken FederatedOps policy ID for node: $AIKEN_FEDERATED_OPS_POLICY_ID"
-
-# Append Aiken config to mc.env so midnight nodes can use it
-echo "" >> /shared/mc.env
-echo "# Aiken FederatedOps configuration for permissioned candidates parsing" >> /shared/mc.env
-echo "export AIKEN_FEDERATED_OPS_POLICY_ID=\"$AIKEN_FEDERATED_OPS_POLICY_ID\"" >> /shared/mc.env
-echo "Appended Aiken config to /shared/mc.env"
+# The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
+# which was overridden earlier and will be included in pc-chain-config.json
 
 echo ""
-echo "=== All Aiken Governance Contracts Deployed Successfully ==="
+echo "=== All Governance Contracts Deployed Successfully ==="
 
 echo "Inserting registered candidate Eve..."
 
@@ -521,14 +512,15 @@ echo -e "\n===== Partnerchain Configuration Complete =====\n"
 echo -e "Container will now idle, but will remain available for accessing the midnight-node commands as follows:\n"
 echo "docker exec midnight-setup midnight-node smart-contracts --help"
 
-echo "Waiting 2 epochs for DParam to become active..."
+echo "Waiting 3 epochs for DParam to become active and contracts to be queryable..."
+echo "(SDK applies 2-epoch offset, so epoch 4 is needed to query data from epoch 2)"
 epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
-n_2_epoch=$((epoch + 2))
+n_3_epoch=$((epoch + 3))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_2_epoch ]; do
+while [ $epoch -lt $n_3_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \

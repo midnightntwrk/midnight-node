@@ -81,9 +81,6 @@ pub struct MidnightCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub federated_authority_config_file: Option<String>,
 
-	/// Policy ID of the federated_ops_forever contract (for Aiken permissioned candidates)
-	pub aiken_federated_ops_policy_id: Option<String>,
-
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 

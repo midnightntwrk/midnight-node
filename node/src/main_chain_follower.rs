@@ -11,22 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::aiken_authority_selection::AikenAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
-use midnight_primitives_mainchain_follower::AikenFederatedOpsConfig;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
-	DbSyncBlockDataSourceConfig, GovernedMapDataSourceCachedImpl, McFollowerMetrics,
-	McHashDataSourceImpl, SidechainRpcDataSourceImpl,
+	DbSyncBlockDataSourceConfig, McFollowerMetrics, McHashDataSourceImpl,
+	SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
-	AuthoritySelectionDataSourceMock, BlockDataSourceMock, GovernedMapDataSourceMock,
-	McHashDataSourceMock, SidechainRpcDataSourceMock, TokenBridgeDataSourceMock,
+	AuthoritySelectionDataSourceMock, BlockDataSourceMock, McHashDataSourceMock,
+	SidechainRpcDataSourceMock, TokenBridgeDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
-use sp_governed_map::GovernedMapDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
@@ -51,7 +48,6 @@ pub struct DataSources {
 	pub authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	pub cnight_observation: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	pub sidechain_rpc: Arc<dyn SidechainRpcDataSource + Send + Sync>,
-	pub governed_map: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	pub federated_authority_observation:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 	pub bridge: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
@@ -101,7 +97,6 @@ pub async fn create_mock_data_sources(
 		mc_hash: Arc::new(McHashDataSourceMock::new(block)),
 		authority_selection: Arc::new(authority_selection_data_source_mock),
 		cnight_observation: Arc::new(CNightObservationDataSourceMock::new()),
-		governed_map: Arc::new(GovernedMapDataSourceMock::default()),
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
 		),
@@ -145,7 +140,6 @@ pub async fn create_index_if_not_exists(pool: &Pool<Postgres>) {
 }
 
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
-pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
 pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
 
 // FIXME: these should almost certainly be Cfg in MidnightCfg, so users can tweak as needed
@@ -156,8 +150,6 @@ const SIDECHAIN_POOL_CFG: DbPoolCfg =
 const MC_HASH_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
-const GOVERNED_MAP_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
@@ -201,30 +193,9 @@ pub async fn create_cached_data_sources(
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool.clone(), metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
-
-	// Aiken contracts use a different datum format than partner-chains SDK expects
-	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
-		if let Some(policy_id_str) = cfg.aiken_federated_ops_policy_id.as_ref() {
-			log::info!(
-				"Aiken FederatedOps policy ID provided, enabling Aiken datum parser for permissioned candidates"
-			);
-			let policy_id = sidechain_domain::PolicyId::from_hex_unsafe(policy_id_str);
-			let aiken_config = AikenFederatedOpsConfig { policy_id };
-			Arc::new(AikenAuthoritySelectionDataSource::new(
-				candidates_data_source_cached,
-				candidates_pool,
-				aiken_config,
-			))
-		} else {
-			log::warn!(
-				"No Aiken FederatedOps config provided. If using Aiken contracts, \
-			     permissioned candidates will NOT be found. Set aiken_federated_ops_policy_id."
-			);
-			Arc::new(candidates_data_source_cached)
-		};
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
@@ -253,21 +224,6 @@ pub async fn create_cached_data_sources(
 		1000,
 	);
 
-	let governed_map_pool =
-		get_connection(postgres_uri, GOVERNED_MAP_POOL_CFG, cfg.allow_non_ssl).await?;
-	let governed_map_block_data_source = BlockDataSourceImpl::from_config(
-		governed_map_pool.clone(),
-		db_sync_block_data_source_config.clone(),
-		&mc,
-	);
-	let governed_map = GovernedMapDataSourceCachedImpl::new(
-		governed_map_pool,
-		metrics_opt.clone(),
-		GOVERNED_MAP_CACHE_SIZE,
-		Arc::new(governed_map_block_data_source),
-	)
-	.await?;
-
 	let federated_authority_observation_pool =
 		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
 			.await?;
@@ -289,9 +245,8 @@ pub async fn create_cached_data_sources(
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
-		authority_selection,
+		authority_selection: Arc::new(candidates_data_source_cached),
 		cnight_observation: Arc::new(cnight_observation),
-		governed_map: Arc::new(governed_map),
 		bridge: Arc::new(bridge),
 		federated_authority_observation: Arc::new(federated_authority_observation),
 	})
