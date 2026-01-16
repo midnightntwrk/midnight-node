@@ -32,7 +32,6 @@ pallet-tx-pause.workspace = true
 pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
-pallet-governed-map.workspace = true
 pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-block-builder.workspace = true
@@ -51,7 +50,6 @@ sp-staking.workspace = true
 sp-transaction-pool.workspace = true
 sp-version.workspace = true
 sp-storage.workspace = true
-sp-governed-map.workspace = true
 
 # Sidechains primitives
 sp-session-validator-management = { workspace = true, features = ["serde"] }
@@ -131,7 +129,6 @@ std = [
     "pallet-migrations/std",
     "pallet-membership/std",
     "pallet-collective/std",
-    "pallet-governed-map/std",
     "pallet-federated-authority/std",
     "sp-api/std",
     "sp-block-builder/std",
@@ -153,7 +150,6 @@ std = [
     "sp-version/std",
     "sp-storage/std",
     "sp-genesis-builder/std",
-    "sp-governed-map/std",
     "substrate-wasm-builder",
     "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
@@ -190,7 +186,6 @@ runtime-benchmarks = [
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
     "pallet-system-parameters/runtime-benchmarks",
-    "pallet-governed-map/runtime-benchmarks",
     "pallet-session-validator-management/runtime-benchmarks",
 ]
 try-runtime = [

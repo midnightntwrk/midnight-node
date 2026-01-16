@@ -17,7 +17,6 @@ chain-spec = [
     "sp-core/std",
     "sc-service",
     "sp-session-validator-management",
-    "sp-governed-map/std",
     "sidechain-domain"
 ]
 test = ["chain-spec"]
@@ -32,7 +31,6 @@ serde_json = { workspace = true, features = ["alloc"] }
 sp-core = { workspace = true, optional = true }
 sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
-sp-governed-map = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
 midnight-primitives-federated-authority-observation = { workspace = true, optional = true }
 midnight-primitives-system-parameters = { workspace = true, optional = true }
