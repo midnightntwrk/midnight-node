@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::federated_ops_authority_selection::LocalEnvAuthoritySelectionDataSource;
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
@@ -204,52 +203,10 @@ pub async fn create_cached_data_sources(
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
-	// Parse optional FederatedOps policy ID override (for local-env with dynamic deployment)
-	let override_policy_id = match cfg.federated_ops_policy_id.as_ref() {
-		Some(policy_id_str) => {
-			let trimmed = policy_id_str.trim();
-			match hex::decode(trimmed) {
-				Ok(bytes) if bytes.len() == 28 => {
-					log::info!("FederatedOps policy ID override set: {}", trimmed);
-					let mut arr = [0u8; 28];
-					arr.copy_from_slice(&bytes);
-					Some(sidechain_domain::PolicyId(arr))
-				},
-				Ok(bytes) => {
-					log::error!(
-						"Invalid FederatedOps policy ID '{}': expected 28 bytes, got {}. Falling back to runtime detection.",
-						trimmed,
-						bytes.len()
-					);
-					None
-				},
-				Err(e) => {
-					log::error!(
-						"Invalid FederatedOps policy ID '{}': {}. Falling back to runtime detection.",
-						trimmed,
-						e
-					);
-					None
-				},
-			}
-		},
-		None => {
-			log::info!(
-				"No FederatedOps policy ID override set. Will use runtime detection \
-				 with permissioned_candidates_policy from chain config."
-			);
-			None
-		},
-	};
-
-	// Wrap with optional policy ID override for local-env.
-	// If override_policy_id is set (local-env), uses that instead of chain config.
 	// The SDK parses FederatedOps datums directly since logic_round=1 matches V1 format.
+	// The policy ID comes from permissioned_candidates_policy_id in pc-chain-config.json.
 	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
-		Arc::new(LocalEnvAuthoritySelectionDataSource::new(
-			candidates_data_source_cached,
-			override_policy_id,
-		));
+		Arc::new(candidates_data_source_cached);
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;

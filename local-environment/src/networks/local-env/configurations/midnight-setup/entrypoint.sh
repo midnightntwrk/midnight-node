@@ -303,17 +303,11 @@ else
     exit 1
 fi
 
-# Export the federated ops policy ID for the node to use (overrides runtime detection)
-export FEDERATED_OPS_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
-echo "FederatedOps policy ID override for node: $FEDERATED_OPS_POLICY_ID"
-
-# Append config to mc.env so midnight nodes use the dynamically-deployed policy ID
-echo "" >> /shared/mc.env
-echo "# FederatedOps policy ID override (dynamically deployed in local-env)" >> /shared/mc.env
-echo "export FEDERATED_OPS_POLICY_ID=\"$FEDERATED_OPS_POLICY_ID\"" >> /shared/mc.env
+# The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
+# which was overridden earlier and will be included in pc-chain-config.json
 
 echo ""
-echo "=== All FederatedOps Governance Contracts Deployed Successfully ==="
+echo "=== All Governance Contracts Deployed Successfully ==="
 
 echo "Inserting registered candidate Eve..."
 

@@ -81,12 +81,6 @@ pub struct MidnightCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub federated_authority_config_file: Option<String>,
 
-	/// Policy ID override for FederatedOps permissioned candidates contract.
-	/// If set, uses this policy ID for FederatedOps datum parsing.
-	/// If not set, falls back to runtime detection using permissioned_candidates_policy from chain config.
-	/// Required for local-env where contracts are dynamically deployed with generated policy IDs.
-	pub federated_ops_policy_id: Option<String>,
-
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 
