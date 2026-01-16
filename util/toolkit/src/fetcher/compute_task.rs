@@ -198,6 +198,9 @@ impl ComputeTask {
 		let mut timestamp_ms = None;
 		let mut transactions = vec![];
 
+		// Get block number to determine extraction strategy
+		let block_number = block.block.number() as u64;
+
 		// Extract timestamp and regular midnight transactions from extrinsics
 		for ext in extrinsics.iter() {
 			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
@@ -212,24 +215,34 @@ impl ComputeTask {
 				let tx = tagged_deserialize(&mut bytes.as_slice())
 					.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
 				transactions.push(FetchedTransaction::Midnight(tx));
+			} else if block_number == 0 {
+				// Genesis block: extract system transactions from extrinsics directly
+				// (genesis has no events since events are emitted during block execution)
+				if let Some(bytes) = M::send_mn_system_transaction(&call) {
+					let tx = tagged_deserialize(&mut bytes.as_slice())
+						.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
+					transactions.push(FetchedTransaction::System(tx));
+				}
 			}
 		}
 
-		// Extract system transactions from ALL SystemTransactionApplied events in the block.
+		// For non-genesis blocks: extract system transactions from events.
 		// This handles system transactions regardless of how they were triggered:
 		// - Direct send_mn_system_transaction calls
 		// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
 		// - CNightObservation-triggered system transactions
 		// - Any future wrapper patterns
-		for ev in events.iter() {
-			let Ok(ev) = ev else {
-				continue;
-			};
-			if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
-				let bytes = M::system_transaction_applied(event);
-				let tx = tagged_deserialize(&mut bytes.as_slice())
-					.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
-				transactions.push(FetchedTransaction::System(tx));
+		if block_number > 0 {
+			for ev in events.iter() {
+				let Ok(ev) = ev else {
+					continue;
+				};
+				if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
+					let bytes = M::system_transaction_applied(event);
+					let tx = tagged_deserialize(&mut bytes.as_slice())
+						.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
+					transactions.push(FetchedTransaction::System(tx));
+				}
 			}
 		}
 

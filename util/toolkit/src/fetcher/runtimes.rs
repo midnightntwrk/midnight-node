@@ -60,6 +60,7 @@ pub trait MidnightMetadata {
 	type SystemTransactionAppliedEvent: subxt::ext::subxt_core::events::StaticEvent;
 
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
+	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn timestamp_set(call: &Self::Call) -> Option<u64>;
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8>;
 }
@@ -81,6 +82,19 @@ macro_rules! impl_midnight_metadata {
 				) = call
 				{
 					Some(midnight_tx.clone())
+				} else {
+					None
+				}
+			}
+
+			fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
+				if let $meta_ident::Call::MidnightSystem(
+					$meta_ident::midnight_system::Call::send_mn_system_transaction {
+						midnight_system_tx,
+					},
+				) = call
+				{
+					Some(midnight_system_tx.clone())
 				} else {
 					None
 				}
@@ -149,6 +163,19 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		) = call
 		{
 			Some(midnight_tx.clone())
+		} else {
+			None
+		}
+	}
+
+	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
+		if let mn_meta_0_17_0::Call::MidnightSystem(
+			mn_meta_0_17_0::midnight_system::Call::send_mn_system_transaction {
+				midnight_system_tx,
+			},
+		) = call
+		{
+			Some(midnight_system_tx.clone())
 		} else {
 			None
 		}
