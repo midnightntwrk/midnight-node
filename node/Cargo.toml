@@ -101,18 +101,16 @@ authority-selection-inherents.workspace = true
 #sp-block-rewards = { workspace = true, optional = true }
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
-partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map", "bridge"] }
-partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "governed-map", "bridge"] }
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
+partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
 pallet-session-validator-management-rpc.workspace = true
 pallet-sidechain-rpc.workspace = true
-pallet-governed-map.workspace = true
 sidechain-slots.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-mc-hash = { workspace = true, features = ["mock"] }
 sp-partner-chains-consensus-aura.workspace = true
 sc-partner-chains-consensus-aura.workspace = true
 sp-session-validator-management-query.workspace = true
-sp-governed-map.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }

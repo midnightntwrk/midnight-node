@@ -1,5 +1,5 @@
 x-common-variables: &common-variables
-  CFG_PRESET: "node-dev-01"
+  CFG_PRESET: "devnet"
   SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
   CARDANO_SECURITY_PARAMETER: 432
   CARDANO_ACTIVE_SLOTS_COEFF: 0.05
@@ -14,50 +14,13 @@ x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
   volumes:
     - ./res:/res
-    - ./data/boot-node:/data
+    - ./data/node1:/data
 
 services:
-  boot-node:
-    <<: *node-common
-    hostname: boot-node
-    container_name: boot-node
-    volumes:
-      - ./data/boot-node:/data
-    ports:
-      - "9933:9933"
-      - "9944:9944"
-      - "30333:30333"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
-    environment:
-      <<: *common-variables
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_BOOT_MIDNIGHT_NODE_BOOT_18_0}
-      ARGS: >
-        --node-key=0000000000000000000000000000000000000000000000000000000000000001
-        --port 30333
-        --rpc-port 9944
-        --base-path=/data
-        --unsafe-rpc-external
-        --rpc-external
-        --rpc-methods=Unsafe
-        --rpc-cors=all
-        --no-telemetry
-        --name MidnightBootNode_Local
-        --public-addr /dns4/boot-node/tcp/30333/ws
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   node1:
     <<: *node-common
     hostname: node1
     container_name: node1
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9950:9944"
       - "30334:30334"
@@ -74,7 +37,6 @@ services:
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --rpc-cors=all
         --public-addr /dns4/node1/tcp/30334
     healthcheck:
@@ -88,9 +50,6 @@ services:
     <<: *node-common
     hostname: node2
     container_name: node2
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9951:9944"
       - "30335:30335"
@@ -103,7 +62,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000003
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
         --port 30335
         --rpc-port 9944
         --base-path=/data
@@ -122,9 +81,6 @@ services:
     <<: *node-common
     hostname: node3
     container_name: node3
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9952:9944"
       - "30336:30336"
@@ -137,7 +93,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000004
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
         --port 30336
         --rpc-port 9944
         --base-path=/data
@@ -155,9 +111,6 @@ services:
     <<: *node-common
     hostname: node4
     container_name: node4
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9953:9944"
       - "30337:30337"
@@ -170,7 +123,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000005
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
         --port 30337
         --rpc-port 9944
         --public-addr /dns4/node4/tcp/30337
@@ -188,9 +141,6 @@ services:
     <<: *node-common
     hostname: node5
     container_name: node5
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9954:9944"
       - "30338:30338"
@@ -203,7 +153,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000006
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
         --port 30338
         --rpc-port 9944
         --base-path=/data
@@ -221,9 +171,6 @@ services:
     <<: *node-common
     hostname: node6
     container_name: node6
-    depends_on:
-      boot-node:
-        condition: service_healthy
     ports:
       - "9955:9944"
       - "30339:30333"
@@ -236,8 +183,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000007
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD 
         --port 30339
         --rpc-port 9944
         --public-addr /dns4/node6/tcp/30339
@@ -252,7 +198,6 @@ services:
       start_period: 30s
 
 volumes:
-  boot-node-data:
   node-data-1:
   node-data-2:
   node-data-3:
