@@ -431,14 +431,15 @@ echo -e "\n===== Partnerchain Configuration Complete =====\n"
 echo -e "Container will now idle, but will remain available for accessing the midnight-node commands as follows:\n"
 echo "docker exec midnight-setup midnight-node smart-contracts --help"
 
-echo "Waiting 2 epochs for DParam to become active..."
+echo "Waiting 3 epochs for DParam to become active and contracts to be queryable..."
+echo "(SDK applies 2-epoch offset, so epoch 4 is needed to query data from epoch 2)"
 epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
-n_2_epoch=$((epoch + 2))
+n_3_epoch=$((epoch + 3))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_2_epoch ]; do
+while [ $epoch -lt $n_3_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \

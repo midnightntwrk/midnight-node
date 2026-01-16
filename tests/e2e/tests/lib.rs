@@ -2561,8 +2561,9 @@ async fn get_ariadne_parameters_returns_valid_structure() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Use epoch 2 for local environment (minimum supported epoch)
-    let epoch_number = 2u64;
+    // Use epoch 4 to query data from epoch 2 (SDK applies 2-epoch offset).
+    // Contracts are deployed in epoch 2, so querying epoch 4 returns data from epoch 2.
+    let epoch_number = 4u64;
 
     let ariadne_params = midnight_client
         .get_ariadne_parameters(epoch_number, None)
@@ -2659,8 +2660,9 @@ async fn permissioned_candidates_aiken_format() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Use epoch 2 for local environment (minimum supported epoch)
-    let epoch_number = 2u64;
+    // Use epoch 4 to query data from epoch 2 (SDK applies 2-epoch offset).
+    // Contracts are deployed in epoch 2, so querying epoch 4 returns data from epoch 2.
+    let epoch_number = 4u64;
 
     let ariadne_params = midnight_client
         .get_ariadne_parameters(epoch_number, None)
@@ -2736,11 +2738,13 @@ async fn authority_selection_uses_aiken_candidates() {
     let settings = Settings::default();
     let midnight_client = MidnightClient::new(settings.node_client).await;
 
-    // Use epoch 2 for local environment (minimum supported epoch)
-    let target_epoch = 2u64;
+    // Use epoch 4 to query data from epoch 2 (SDK applies 2-epoch offset).
+    // Contracts are deployed in epoch 2, so querying epoch 4 returns data from epoch 2.
+    let target_epoch = 4u64;
     println!(
-        "Using epoch {} for permissioned candidates validation",
-        target_epoch
+        "Using epoch {} for permissioned candidates validation (data_epoch = {})",
+        target_epoch,
+        target_epoch - 2
     );
 
     // Wait for a finalized block to ensure chain state is stable
