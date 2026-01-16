@@ -85,9 +85,9 @@ runs:
 #        just-command: indexer-api-e2e
 #        ghcr-password: ${{ inputs.ghcr-password }}
 
-    - name: Wait for midnight-setup to complete
+    - name: Wait for local environment to be ready
       run: |
-        echo "⏳ Waiting for midnight-setup to complete..."
+        echo "⏳ Waiting for midnight-setup container to complete..."
         EXIT_CODE=$(docker wait midnight-setup)
         if [[ "$EXIT_CODE" != "0" ]]; then
           echo "❌ midnight-setup failed with exit code $EXIT_CODE"
@@ -95,11 +95,25 @@ runs:
           exit 1
         fi
         echo "✅ midnight-setup completed successfully"
+        
+        # Verify contract files are present
+        RUNTIME_VALUES="local-environment/src/networks/local-env/runtime-values"
+        echo "📁 Verifying runtime-values directory..."
+        ls -la "${RUNTIME_VALUES}/" || { echo "❌ runtime-values directory not found"; exit 1; }
+        
+        # Check for required cNIGHT contract files
+        for file in mapping_validator.cbor cnight_token.cbor mapping_validator_policy_id.txt cnight_token_policy_id.txt; do
+          if [[ -f "${RUNTIME_VALUES}/${file}" ]]; then
+            echo "  ✓ ${file}"
+          else
+            echo "  ✗ ${file} - MISSING"
+          fi
+        done
       shell: bash
 
     - name: e2e tests
       id: e2e-tests
-      run: earthly +local-env-e2e
+      run: earthly --no-cache +local-env-e2e
       shell: bash
 
     - name: node-e2e-tests
