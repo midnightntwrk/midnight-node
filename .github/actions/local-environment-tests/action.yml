@@ -85,9 +85,9 @@ runs:
 #        just-command: indexer-api-e2e
 #        ghcr-password: ${{ inputs.ghcr-password }}
 
-    - name: Wait for local environment to be ready
+    - name: Wait for midnight-setup to complete
       run: |
-        echo "⏳ Waiting for midnight-setup container to complete..."
+        echo "⏳ Waiting for midnight-setup to complete..."
         EXIT_CODE=$(docker wait midnight-setup)
         if [[ "$EXIT_CODE" != "0" ]]; then
           echo "❌ midnight-setup failed with exit code $EXIT_CODE"
