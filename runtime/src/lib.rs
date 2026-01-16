@@ -22,7 +22,7 @@
 extern crate frame_benchmarking;
 
 extern crate alloc;
-use alloc::{collections::BTreeMap, string::String};
+use alloc::string::String;
 use authority_selection_inherents::{
 	AuthoritySelectionInputs, CommitteeMember, PermissionedCandidateDataError,
 	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
@@ -64,7 +64,7 @@ use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
 	MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData, ScEpochNumber,
-	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId, byte_string::ByteString,
+	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -74,7 +74,6 @@ use sp_consensus_beefy::{
 	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
-use sp_governed_map::MainChainScriptsV1;
 use sp_partner_chains_bridge::{
 	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
 };
@@ -868,25 +867,6 @@ impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 }
 
-parameter_types! {
-	pub const MaxChanges: u32 = 16;
-	pub const MaxKeyLength: u32 = 64;
-	pub const MaxValueLength: u32 = 512;
-}
-
-impl pallet_governed_map::Config for Runtime {
-	type MaxChanges = MaxChanges;
-	type MaxKeyLength = MaxKeyLength;
-	type MaxValueLength = MaxValueLength;
-	type WeightInfo = pallet_governed_map::weights::SubstrateWeight<Runtime>;
-
-	type OnGovernedMappingChange = ();
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
-}
-
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
@@ -972,9 +952,6 @@ mod runtime {
 	pub type Mmr = pallet_mmr::Pallet<Runtime>;
 	#[runtime::pallet_index(23)]
 	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
-
-	#[runtime::pallet_index(31)]
-	pub type GovernedMap = pallet_governed_map::Pallet<Runtime>;
 
 	#[runtime::pallet_index(32)]
 	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
@@ -1528,21 +1505,6 @@ impl_runtime_apis! {
 
 		fn get_auth_token_asset_name() -> Vec<u8> {
 			pallet_cnight_observation::MainChainAuthTokenAssetName::<Runtime>::get().into_inner()
-		}
-	}
-
-	impl sp_governed_map::GovernedMapIDPApi<Block> for Runtime {
-		fn is_initialized() -> bool {
-			GovernedMap::is_initialized()
-		}
-		fn get_current_state() -> BTreeMap<String, ByteString> {
-			GovernedMap::get_all_key_value_pairs_unbounded().collect()
-		}
-		fn get_main_chain_scripts() -> Option<MainChainScriptsV1> {
-			GovernedMap::get_main_chain_scripts()
-		}
-		fn get_pallet_version() -> u32 {
-			GovernedMap::get_version()
 		}
 	}
 
