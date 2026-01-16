@@ -28,7 +28,7 @@ A brief summary of what the scripts do:
   * `receive_cnight.sh` - mint 10 cNIGHT tokens.  These are dummy tokens made
     only for testing.
 
-  * `rotate_tokens.sh` - rotation of 10 (this is a configurable parameter in the scrip ) cNIGHT tokens is carried out by sending them back to your own address. If deregistration happens, the   UTxO that contains cNIGHT no longer participates in DUST generation. 
+  * `rotate_tokens.sh` - rotation of 10 (this is a configurable parameter in the script) cNIGHT tokens is carried out by sending them back to your own address. If deregistration happens, the   UTxO that contains cNIGHT no longer participates in DUST generation. 
 
 Test procedure:
 
