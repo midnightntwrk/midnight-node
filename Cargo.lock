@@ -7788,7 +7788,6 @@ name = "midnight-primitives-mainchain-follower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "authority-selection-inherents",
  "cardano-serialization-lib 14.1.2",
  "db-sync-sqlx",
  "derive-new",

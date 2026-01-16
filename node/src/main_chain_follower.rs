@@ -199,14 +199,9 @@ pub async fn create_cached_data_sources(
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool.clone(), metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
-
-	// The SDK parses FederatedOps datums directly since logic_round=1 matches V1 format.
-	// The policy ID comes from permissioned_candidates_policy_id in pc-chain-config.json.
-	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
-		Arc::new(candidates_data_source_cached);
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
@@ -271,7 +266,7 @@ pub async fn create_cached_data_sources(
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
-		authority_selection,
+		authority_selection: Arc::new(candidates_data_source_cached),
 		cnight_observation: Arc::new(cnight_observation),
 		governed_map: Arc::new(governed_map),
 		bridge: Arc::new(bridge),
