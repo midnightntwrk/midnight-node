@@ -1,4 +1,4 @@
-chain = "res/preview/chain-spec.json"
+chain = "res/preview/chain-spec-raw.json"
 base_path = "node/chain"
 
 chainspec_name = "Midnight Preview"
