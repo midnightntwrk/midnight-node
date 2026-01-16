@@ -256,10 +256,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.collect(),
 			genesis_block: Some(One::one()),
 		},
-		governed_map: pallet_governed_map::GenesisConfig {
-			main_chain_scripts: genesis.main_chain_scripts().into(),
-			_marker: std::marker::PhantomData,
-		},
 		grandpa: Default::default(),
 		midnight: MidnightConfig {
 			_config: Default::default(),
