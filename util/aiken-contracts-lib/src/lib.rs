@@ -136,7 +136,7 @@ pub fn build_governance_redeemer(members: &[GovernanceMember]) -> serde_json::Va
 /// - appendix: list of `[partner_chains_key, keys]` where:
 ///   - partner_chains_key: ECDSA cross-chain key
 ///   - keys: list of `[id, bytes]` pairs (e.g., `[aura_id, aura_key]`)
-/// - logic_round: 0
+/// - logic_round: 1 (required for partner-chains SDK compatibility - maps to version=1 parsing)
 pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_json::Value {
 	let aura_id = "61757261"; // "aura" in hex
 	let gran_id = "6772616e"; // "gran" in hex
@@ -168,7 +168,7 @@ pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_
 		"list": [
 			{"list": []},           // data: empty
 			{"list": appendix},     // appendix: list of candidates
-			{"int": 0}              // logic_round: 0
+			{"int": 1}              // logic_round: 1 (SDK parses as version=1 for V1 appendix format)
 		]
 	})
 }
@@ -364,8 +364,8 @@ mod tests {
 		let outer = list.as_array().unwrap();
 		assert_eq!(outer.len(), 3); // [data, appendix, logic_round]
 
-		// Check logic_round is 0
+		// Check logic_round is 1 (required for SDK V1 parsing)
 		let logic_round = outer[2].get("int").expect("should have int");
-		assert_eq!(logic_round.as_u64(), Some(0));
+		assert_eq!(logic_round.as_u64(), Some(1));
 	}
 }
