@@ -106,10 +106,11 @@ export ILLIQUID_SUPPLY_VALIDATOR_ADDRESS="addr_test1wpy8ewg646rg4ce78nl3aassmkqu
 
 echo "Inserting D parameter..."
 
-# D_PERMISSIONED must match the number of permissioned candidates deployed via Aiken contracts.
-# Currently deploying 4 candidates (Alice, Bob, Charlie, Dave) in the federated_ops_forever contract.
+# D_PERMISSIONED + D_REGISTERED must be >= 5 for a functioning partner chains network.
+# Using 4 permissioned (Alice, Bob, Charlie, Dave from qanet config) + 1 registered (Eve using actual keystore).
+# This ensures GRANDPA finality works since nodes 1-4 use well-known keys matching qanet config.
 D_PERMISSIONED=4
-D_REGISTERED=0
+D_REGISTERED=1
 
 ./midnight-node smart-contracts upsert-d-parameter \
     --genesis-utxo $GENESIS_UTXO \
