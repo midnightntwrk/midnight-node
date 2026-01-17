@@ -54,6 +54,7 @@ services:
 
   contract-compiler:
     container_name: contract-compiler
+    platform: linux/amd64
     build:
       context: ./configurations/contract-compiler
       dockerfile: Dockerfile
