@@ -17,8 +17,7 @@
 set -euxo pipefail
 
 apt -qq update
-apt -qq -y install curl jq ncat uuid-runtime python3-pip
-
+apt -qq -y install curl jq ncat uuid-runtime
 
 check_json_validity() {
   local file="$1"
@@ -394,9 +393,6 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
-# Use static cNIGHT genesis config - the hardcoded CBOR in tests matches these values
-export CHAINSPEC_CNIGHT_GENESIS=res/dev/cnight-genesis.json
-
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -405,6 +401,7 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
+export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
