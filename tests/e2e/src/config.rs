@@ -89,20 +89,10 @@ impl Settings {
                     },
                     policies: Policies {
                         network_info,
-                        // Load cNIGHT contracts from runtime-values if available,
-                        // otherwise fall back to hardcoded CBOR
-                        mapping_validator_cbor: load_contract_cbor("mapping_validator")
-                            .unwrap_or_else(|| {
-                                eprintln!("WARNING: mapping_validator.cbor not found in runtime-values, using fallback CBOR");
-                                MAPPING_VALIDATOR_CBOR_FALLBACK.to_string()
-                            }),
-                        cnight_token_cbor: load_contract_cbor("cnight_token")
-                            .unwrap_or_else(|| {
-                                eprintln!("WARNING: cnight_token.cbor not found in runtime-values, using fallback CBOR");
-                                CNIGHT_TOKEN_CBOR_FALLBACK.to_string()
-                            }),
-                        // Load governance contracts from runtime-values if available,
-                        // otherwise fall back to hardcoded CBOR (which may have wrong one-shot hashes)
+                        // cNIGHT contracts use static CBOR that matches the static cnight-genesis.json
+                        mapping_validator_cbor: MAPPING_VALIDATOR_CBOR_FALLBACK.to_string(),
+                        cnight_token_cbor: CNIGHT_TOKEN_CBOR_FALLBACK.to_string(),
+                        // Load governance contracts from runtime-values (they have dynamic one-shot hashes)
                         council_forever_cbor: load_contract_cbor("council_forever")
                             .unwrap_or_else(|| {
                                 eprintln!("WARNING: council_forever.cbor not found in runtime-values, using fallback CBOR");

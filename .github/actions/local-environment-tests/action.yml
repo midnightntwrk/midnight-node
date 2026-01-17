@@ -96,19 +96,18 @@ runs:
         fi
         echo "✅ midnight-setup completed successfully"
         
-        # Verify contract files are present
+        # Verify governance contract files are present (cNIGHT uses static CBOR)
         RUNTIME_VALUES="local-environment/src/networks/local-env/runtime-values"
-        echo "📁 Verifying runtime-values directory..."
-        ls -la "${RUNTIME_VALUES}/" || { echo "❌ runtime-values directory not found"; exit 1; }
-        
-        # Check for required cNIGHT contract files
-        for file in mapping_validator.cbor cnight_token.cbor mapping_validator_policy_id.txt cnight_token_policy_id.txt; do
+        echo "📁 Verifying governance contract files in runtime-values..."
+        for file in council_forever.cbor tech_auth_forever.cbor federated_ops_forever.cbor; do
           if [[ -f "${RUNTIME_VALUES}/${file}" ]]; then
             echo "  ✓ ${file}"
           else
             echo "  ✗ ${file} - MISSING"
+            exit 1
           fi
         done
+        echo "✅ All required governance contract files present"
       shell: bash
 
     - name: e2e tests

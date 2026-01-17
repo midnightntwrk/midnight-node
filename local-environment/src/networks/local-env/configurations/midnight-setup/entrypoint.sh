@@ -19,8 +19,6 @@ set -euxo pipefail
 apt -qq update
 apt -qq -y install curl jq ncat uuid-runtime python3-pip
 
-# Install bech32 for address calculation (used by cNIGHT genesis patching)
-pip3 install -q bech32 2>/dev/null || true
 
 check_json_validity() {
   local file="$1"
@@ -396,89 +394,8 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
-# ============================================================================
-# PATCH cNIGHT GENESIS CONFIG
-# ============================================================================
-# Dynamically patch cnight-genesis.json with contract addresses compiled for local-env.
-# The cNIGHT contracts (mapping_validator, cnight_token) are compiled by contract-compiler
-# and their policy IDs/hashes are written to runtime-values.
-
-echo ""
-echo "=== Patching cNIGHT Genesis Config ==="
-
-# Check if cNIGHT contract files were generated
-CNIGHT_MAPPING_POLICY_ID=""
-CNIGHT_TOKEN_POLICY_ID=""
-
-if [[ -f "${RUNTIME_VALUES}/mapping_validator_policy_id.txt" ]]; then
-    CNIGHT_MAPPING_POLICY_ID=$(cat "${RUNTIME_VALUES}/mapping_validator_policy_id.txt" | tr -d '\n\r')
-    echo "Found mapping_validator policy ID: ${CNIGHT_MAPPING_POLICY_ID}"
-else
-    echo "WARNING: mapping_validator_policy_id.txt not found, cNIGHT tests may fail"
-fi
-
-if [[ -f "${RUNTIME_VALUES}/cnight_token_policy_id.txt" ]]; then
-    CNIGHT_TOKEN_POLICY_ID=$(cat "${RUNTIME_VALUES}/cnight_token_policy_id.txt" | tr -d '\n\r')
-    echo "Found cnight_token policy ID: ${CNIGHT_TOKEN_POLICY_ID}"
-else
-    echo "WARNING: cnight_token_policy_id.txt not found, cNIGHT tests may fail"
-fi
-
-if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" && -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
-    echo "Patching cnight-genesis.json with compiled cNIGHT contract values..."
-    
-    # Calculate mapping_validator_address from script hash using bech32 encoding
-    # For testnet script address: header byte 0x70 + 28-byte script hash
-    # This uses Python's bech32 library which should be available in the container
-    MAPPING_VALIDATOR_ADDRESS=$(python3 -c "
-import bech32
-
-script_hash = '${CNIGHT_MAPPING_POLICY_ID}'
-# Header byte 0x70 = script payment credential, no staking, testnet
-header = bytes([0x70])
-script_bytes = bytes.fromhex(script_hash)
-data = header + script_bytes
-# Convert to 5-bit groups for bech32
-converted = bech32.convertbits(list(data), 8, 5, True)
-address = bech32.bech32_encode('addr_test', converted)
-print(address)
-" 2>/dev/null || echo "")
-
-    if [[ -n "${MAPPING_VALIDATOR_ADDRESS}" ]]; then
-        echo "Calculated mapping_validator_address: ${MAPPING_VALIDATOR_ADDRESS}"
-    else
-        echo "WARNING: Could not calculate mapping_validator_address, using static address from template"
-        # Fall back to extracting from existing config
-        MAPPING_VALIDATOR_ADDRESS=$(jq -r '.addresses.mapping_validator_address' /res/dev/cnight-genesis.json)
-    fi
-    
-    jq --arg cnight_policy "$CNIGHT_TOKEN_POLICY_ID" \
-       --arg mapping_addr "$MAPPING_VALIDATOR_ADDRESS" \
-       '.addresses.cnight_policy_id = $cnight_policy | .addresses.mapping_validator_address = $mapping_addr' \
-       /res/dev/cnight-genesis.json > /tmp/cnight-genesis.json
-    
-    echo "Patched cnight-genesis.json:"
-    cat /tmp/cnight-genesis.json
-    
-    # Export the patched config
-    export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-genesis.json
-    echo "✓ Using patched cnight-genesis.json with local-env contract values"
-else
-    echo "Using default cnight-genesis.json (cNIGHT contracts not compiled)"
-    export CHAINSPEC_CNIGHT_GENESIS=res/dev/cnight-genesis.json
-fi
-
-# Save cNIGHT policy IDs to runtime-values for test framework to use
-if [[ -n "${CNIGHT_MAPPING_POLICY_ID}" ]]; then
-    echo "${CNIGHT_MAPPING_POLICY_ID}" > "${RUNTIME_VALUES}/mapping_validator_policy_id.txt"
-fi
-if [[ -n "${CNIGHT_TOKEN_POLICY_ID}" ]]; then
-    echo "${CNIGHT_TOKEN_POLICY_ID}" > "${RUNTIME_VALUES}/cnight_token_policy_id.txt"
-fi
-
-echo ""
-echo "=== cNIGHT Genesis Config Complete ==="
-
+# Use static cNIGHT genesis config - the hardcoded CBOR in tests matches these values
+export CHAINSPEC_CNIGHT_GENESIS=res/dev/cnight-genesis.json
 
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
@@ -488,7 +405,6 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-# CHAINSPEC_CNIGHT_GENESIS is set in the cNIGHT patching section above
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
