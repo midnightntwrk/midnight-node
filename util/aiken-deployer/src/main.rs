@@ -22,7 +22,7 @@
 use aiken_contracts_lib::{
 	build_deploy_transaction, build_federated_ops_datum, build_federated_ops_redeemer,
 	build_governance_redeemer, build_versioned_multisig_datum, convert_cost_models,
-	prepare_contract, testnet_network_id, DeployParams, GovernanceMember,
+	prepare_contract, testnet_network_id, DeployParams, FederatedOpsCandidate, GovernanceMember,
 };
 use clap::{Parser, ValueEnum};
 use ogmios_client::jsonrpsee::client_for_url;
@@ -83,6 +83,11 @@ struct Args {
 	/// - federated-ops: FederatedOps (3 fields with appendix)
 	#[arg(long, value_enum, default_value = "council")]
 	contract_type: ContractType,
+
+	/// Path to JSON file with permissioned candidates (for federated-ops only)
+	/// Array of {ecdsa_key, aura_key} objects
+	#[arg(long)]
+	candidates_file: Option<PathBuf>,
 }
 
 #[derive(Error, Debug)]
@@ -224,9 +229,19 @@ async fn main() -> Result<(), CliError> {
 		},
 		ContractType::FederatedOps => {
 			// FederatedOps uses a different datum structure with an appendix field
-			// For initial deployment, we use empty appendix (no candidates yet)
-			let datum = build_federated_ops_datum(&[]);
-			let redeemer = build_federated_ops_redeemer(&[]);
+			// Read candidates from file if provided, otherwise use empty list
+			let candidates: Vec<FederatedOpsCandidate> =
+				if let Some(ref path) = args.candidates_file {
+					let content = fs::read_to_string(path)?;
+					let candidates: Vec<FederatedOpsCandidate> = serde_json::from_str(&content)?;
+					println!("✓ Loaded {} permissioned candidates", candidates.len());
+					candidates
+				} else {
+					println!("No candidates file provided, deploying with empty candidates list");
+					vec![]
+				};
+			let datum = build_federated_ops_datum(&candidates);
+			let redeemer = build_federated_ops_redeemer(&candidates);
 			(datum, redeemer)
 		},
 	};
