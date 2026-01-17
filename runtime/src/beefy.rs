@@ -16,9 +16,9 @@ use sp_consensus_beefy::{
 	OnNewValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet,
 };
 
+use alloc::vec::Vec;
 use sp_core::H256;
 use sp_runtime::traits::Convert;
-use sp_std::vec::Vec;
 
 type CommitteeInfoOf<T> = CommitteeInfo<
 	<T as SessionValidatorMngConfig>::ScEpochNumber,

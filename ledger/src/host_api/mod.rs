@@ -18,12 +18,12 @@ use crate::{
 	},
 	hard_fork_test, latest,
 };
+use alloc::vec::Vec;
 use sp_runtime_interface::pass_by::{
 	AllocateAndReturnByCodec, AllocateAndReturnFatPointer, PassFatPointerAndDecode,
 	PassFatPointerAndRead,
 };
 use sp_runtime_interface::runtime_interface;
-use sp_std::vec::Vec;
 
 #[cfg(feature = "std")]
 type Database = ledger_storage::db::ParityDb;
@@ -153,6 +153,28 @@ pub trait LedgerBridge {
 	}
 
 	/*
+	 * validate_guaranteed_execution()
+	 *
+	 * Validates that the guaranteed part of a transaction will succeed.
+	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 */
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), latest::types::LedgerApiError>> {
+		latest::Bridge::<Signature, Database>::validate_guaranteed_execution(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+		)
+	}
+
+	/*
 	 * get_contract_state()
 	 */
 	// Current Enabled Version
@@ -184,25 +206,6 @@ pub trait LedgerBridge {
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
 		latest::Bridge::<Signature, Database>::get_zswap_chain_state(state_key, contract_address)
-	}
-
-	/*
-	 * Mints system coins for block rewards
-	 */
-	// Current Enabled Version
-	fn mint_coins(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		amount: PassFatPointerAndDecode<u128>,
-		receiver: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
-		latest::Bridge::<Signature, Database>::mint_coins(
-			state_key,
-			amount,
-			receiver,
-			block_context,
-		)
 	}
 
 	/*
@@ -391,6 +394,23 @@ pub trait LedgerBridgeHf {
 	}
 
 	// Hard-fork Version
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), hard_fork_test::types::LedgerApiError>> {
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_guaranteed_execution(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+		)
+	}
+
+	// Hard-fork Version
 	fn get_contract_state(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -440,22 +460,6 @@ pub trait LedgerBridgeHf {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::construct_cnight_generates_dust_system_tx(
 			events,
-		)
-	}
-
-	// Hard-fork Version
-	fn mint_coins(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		amount: PassFatPointerAndDecode<u128>, //TODO can we be more efficient?
-		receiver: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, hard_fork_test::types::LedgerApiError>> {
-		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::mint_coins(
-			state_key,
-			amount,
-			receiver,
-			block_context,
 		)
 	}
 

@@ -60,3 +60,20 @@ export interface SnapshotOptions {
   /** timeout window in minutes */
   timeoutMinutes?: number;
 }
+
+export const WELL_KNOWN_NAMESPACES = [
+  "devnet",
+  "node-dev-01",
+  "preview",
+  "qanet",
+  "testnet-02",
+] as const;
+export type WellKnownNamespace = (typeof WELL_KNOWN_NAMESPACES)[number];
+export type Namespace = WellKnownNamespace | "local-env";
+export function assertWellKnownNamespace(
+  ns: string,
+): asserts ns is WellKnownNamespace {
+  if (!WELL_KNOWN_NAMESPACES.includes(ns as WellKnownNamespace)) {
+    throw new Error(`Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`);
+  }
+}

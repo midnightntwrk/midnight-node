@@ -14,13 +14,17 @@
 import net from "net";
 import { execSync, spawn } from "child_process";
 
-const BASE_LOCAL_PORT = 15432;
+const BASE_LOCAL_PORT = parseInt(
+  process.env.PREVIEW_PROXY_BASE_PORT ?? "15432",
+  10,
+);
 
 interface ProxySpec {
   proxyName: string;
-  secretName: string;
   envKeys: string[];
   connectionString: string;
+  targetHost: string;
+  targetPort: number;
 }
 
 export async function setupPreviewProxies(
@@ -41,7 +45,7 @@ export async function setupPreviewProxies(
   let nextPort = BASE_LOCAL_PORT;
 
   for (const spec of proxySpecs) {
-    ensureProxyPod(namespace, spec.proxyName, spec.secretName);
+    ensureProxyPod(namespace, spec.proxyName, spec.targetHost, spec.targetPort);
 
     const localPort = await findAvailablePort(nextPort);
     portForwardProxy(namespace, spec.proxyName, localPort);
@@ -60,9 +64,7 @@ export async function setupPreviewProxies(
 }
 
 function buildProxySpecs(env: Record<string, string>): ProxySpec[] {
-  const proxyBySecret: Record<string, ProxySpec> = {};
-  const envKeyToSecret: Record<string, string> = {};
-
+  const proxyById: Record<string, ProxySpec> = {};
   const regex =
     /^DB_SYNC_POSTGRES_CONNECTION_STRING_(?:BOOT_|NODE_)?MIDNIGHT_NODE_(?:BOOT_)?(\d+)_0$/;
 
@@ -78,29 +80,47 @@ function buildProxySpecs(env: Record<string, string>): ProxySpec[] {
     if (Number.isNaN(idNum)) {
       continue;
     }
-    const secretName = `rds-connection-details-dbsync-${idNum}`;
     const proxyName = `rds-proxy-${idNum}`;
+    let targetHost = "";
+    let targetPort = 5432;
+    try {
+      const url = new URL(connString.replace(/^psql:/, "postgres:"));
+      targetHost = url.hostname;
+      targetPort = url.port ? parseInt(url.port, 10) : 5432;
+    } catch (error) {
+      console.warn(
+        `Failed to parse connection string for ${envKey}: ${(error as Error).message}`,
+      );
+      continue;
+    }
 
-    if (!proxyBySecret[secretName]) {
-      proxyBySecret[secretName] = {
+    if (!targetHost) {
+      console.warn(`Skipping ${envKey}: missing target host in connection string`);
+      continue;
+    }
+
+    if (!proxyById[proxyName]) {
+      proxyById[proxyName] = {
         proxyName,
-        secretName,
         envKeys: [],
         connectionString: connString,
+        targetHost,
+        targetPort,
       };
     }
 
-    envKeyToSecret[envKey] = secretName;
+    proxyById[proxyName].envKeys.push(envKey);
   }
 
-  for (const [envKey, secretName] of Object.entries(envKeyToSecret)) {
-    proxyBySecret[secretName].envKeys.push(envKey);
-  }
-
-  return Object.values(proxyBySecret);
+  return Object.values(proxyById);
 }
 
-function ensureProxyPod(namespace: string, podName: string, secretName: string) {
+function ensureProxyPod(
+  namespace: string,
+  podName: string,
+  targetHost: string,
+  targetPort: number,
+) {
   const manifest = `
 apiVersion: v1
 kind: Pod
@@ -121,12 +141,9 @@ spec:
           socat TCP-LISTEN:5432,fork,reuseaddr TCP:\${POSTGRES_HOST}:\${POSTGRES_PORT}
       env:
         - name: POSTGRES_HOST
-          valueFrom:
-            secretKeyRef:
-              name: ${secretName}
-              key: endpoint
+          value: "${targetHost}"
         - name: POSTGRES_PORT
-          value: "5432"
+          value: "${targetPort}"
       ports:
         - containerPort: 5432
           name: postgres
@@ -198,7 +215,7 @@ function rewriteConnectionString(connString: string, localPort: number): string 
 }
 
 function findAvailablePort(start: number): Promise<number> {
-  const MAX_SEARCH = 100;
+  const MAX_SEARCH = 1000;
   let attempt = start;
 
   return new Promise((resolve, reject) => {

@@ -11,20 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "can-panic")]
+//! MerkleTree contract implementation.
 
 use async_trait::async_trait;
 use lazy_static::lazy_static;
 use std::{any::Any, borrow::Cow, sync::Arc};
 
 use super::super::{
-	AlignedValue, ChargedState, Contract, ContractAddress, ContractCallPrototype, ContractDeploy,
-	ContractMaintenanceAuthority, ContractOperation, ContractState, DB, EntryPointBuf,
+	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
+	LedgerContext, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
+	ValueReprAlignedValue,
+};
+use super::{
+	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
-	KeyLocation, LedgerContext, MerkleTree, Op, PreTranscript, QueryContext, Resolver,
-	ResultModeGather, ResultModeVerify, Rng, Sp, StateValue, StdRng, Transcripts,
-	ValueReprAlignedValue, VerifyingKey, key, leaf_hash, partition_transcripts, stval,
-	verifier_key,
+	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, VerifyingKey, key,
+	leaf_hash, partition_transcripts, stval, verifier_key,
 };
 
 #[cfg(feature = "test-utils")]
@@ -33,7 +35,7 @@ lazy_static! {
 }
 
 #[cfg(not(feature = "test-utils"))]
-use super::super::{
+use super::{
 	DUST_EXPECTED_FILES, DustResolver, FetchMode, MidnightDataProvider, OutputMode, PUBLIC_PARAMS,
 };
 
@@ -120,7 +122,7 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 					let context = QueryContext::new(contract_state.data, *address);
 					let program = HistoricMerkleTree_insert!([key!(0u8)], false, 10, u32, input);
 					let pre_transcript =
-						PreTranscript { context: &context, program: &program, comm_comm: None };
+						PreTranscript { context, program: program.to_vec(), comm_comm: None };
 					let transcripts =
 						partition_transcripts(&[pre_transcript], &ledger_state.parameters)
 							.expect("Transcript arguments should be valid");
@@ -147,8 +149,7 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 						&HistoricMerkleTree_check_root!([key!(0u8)], false, 10, u32, path.root()),
 						&[true.into()],
 					);
-					let pre_transcript =
-						PreTranscript { context: &context, program: &program, comm_comm: None };
+					let pre_transcript = PreTranscript { context, program, comm_comm: None };
 					let transcripts =
 						partition_transcripts(&[pre_transcript], &ledger_state.parameters)
 							.expect("Transcript arguments should be valid");

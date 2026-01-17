@@ -177,6 +177,153 @@ fn test_validation_fails() {
 }
 
 #[test]
+fn test_pre_dispatch_accepts_valid_transaction() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+
+		// pre_dispatch should succeed for a valid transaction
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+	})
+}
+
+#[test]
+fn test_pre_dispatch_rejects_contract_not_present() {
+	// STORE_TX requires a deployed contract, so without DEPLOY_TX it will fail
+	// This tests the DDoS mitigation: transactions that would fail the guaranteed
+	// part are rejected at pre_dispatch time, before consuming blockspace.
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+		// Note: DEPLOY_TX not applied - contract doesn't exist
+
+		// pre_dispatch should fail because the contract doesn't exist
+		let result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
+		assert!(
+			result.is_err(),
+			"pre_dispatch should reject transaction with missing contract dependency"
+		);
+	});
+}
+
+#[test]
+fn test_pre_dispatch_rejects_malformed_transaction() {
+	let call = MidnightCall::send_mn_transaction { midnight_tx: vec![1, 2, 3] };
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// pre_dispatch should fail for malformed transaction
+		assert_err!(
+			<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call),
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(
+				LedgerApiError::Deserialization(DeserializationError::Transaction).into()
+			))
+		);
+	});
+}
+
+/// PR367-TC-0003-02: ReplayProtection Rejection
+/// Verify that a replayed transaction is rejected at `pre_dispatch`.
+#[test]
+fn test_pre_dispatch_rejects_replay_attack() {
+	mock::new_test_ext().execute_with(|| {
+		// Set up ledger state and deploy contract
+		let (deploy_tx, block_context_deploy) =
+			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+		let (store_tx, block_context_store) =
+			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+
+		init_ledger_state(block_context_deploy.into());
+
+		// Step 1: Deploy the contract
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
+
+		// Process block and advance to store transaction context
+		process_block(2, block_context_store.into());
+
+		// Step 2: Apply STORE_TX successfully via the pallet (not pre_dispatch)
+		let store_tx_clone = store_tx.clone();
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), store_tx));
+
+		// Step 3: Try to replay the same STORE_TX via pre_dispatch
+		// This should fail because the replay protection counter has been consumed
+		let call = MidnightCall::send_mn_transaction { midnight_tx: store_tx_clone };
+		let result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
+
+		// pre_dispatch should reject the replay attempt
+		assert!(result.is_err(), "pre_dispatch should reject replayed transaction");
+	});
+}
+
+/// PR367-TC-0003-05: Validation Does Not Modify State
+/// Verify that `validate_guaranteed_execution` (via pre_dispatch) is read-only.
+#[test]
+fn test_pre_dispatch_validation_does_not_modify_state() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context.into());
+
+		// Record state before validation
+		let state_root_before =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
+
+		// Create call and run pre_dispatch
+		let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+		let _result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
+
+		// Record state after validation
+		let state_root_after =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
+
+		// State should be unchanged - validation must be read-only
+		assert_eq!(
+			state_root_before, state_root_after,
+			"State should not be modified by pre_dispatch validation"
+		);
+	});
+}
+
+/// PR367-TC-0003-05 (variant): Verify validation doesn't modify state even for failing validation
+#[test]
+fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
+	mock::new_test_ext().execute_with(|| {
+		// STORE_TX will fail (no contract deployed) but should not modify state
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+
+		init_ledger_state(block_context.into());
+
+		// Record state before validation
+		let state_root_before =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
+
+		// Create call and run pre_dispatch (will fail)
+		let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+		let result = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&call);
+		assert!(result.is_err(), "pre_dispatch should fail for missing contract");
+
+		// Record state after validation
+		let state_root_after =
+			mock::Midnight::get_zswap_state_root().expect("Should be able to get state root");
+
+		// State should be unchanged - even failed validation must be read-only
+		assert_eq!(
+			state_root_before, state_root_after,
+			"State should not be modified by failed pre_dispatch validation"
+		);
+	});
+}
+
+#[test]
 fn sets_extra_transaction_size_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_transaction_size_weight();

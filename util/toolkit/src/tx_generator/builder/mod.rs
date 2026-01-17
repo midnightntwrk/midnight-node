@@ -236,8 +236,11 @@ pub struct SingleTxArgs {
 	)]
 	pub unshielded_token_type: UnshieldedTokenType,
 	/// Seed for source wallet
-	#[arg(long)]
-	pub source_seed: String,
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	pub source_seed: WalletSeed,
+	/// Funding seed for transaction. If not set, uses source_seed
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	pub funding_seed: Option<WalletSeed>,
 	/// Destination address, both shielded and unshielded
 	#[arg(long, required = true)]
 	pub destination_address: Vec<WalletAddress>,

@@ -32,3 +32,6 @@ std = [
     "sp-version/std",
     "sp-runtime/std",
 ]
+
+[package.metadata.cargo-shear]
+ignored = ["scale-info"]

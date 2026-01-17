@@ -14,9 +14,9 @@
 // //! Benchmarking setup for pallet-midnight
 
 use super::*;
+use alloc::vec::Vec;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use sp_std::vec::Vec;
 
 // TODO
 #[benchmarks]

@@ -13,6 +13,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// <https://docs.substrate.io/reference/frame-pallets/>
@@ -314,30 +316,6 @@ pub mod pallet {
 
 			// Flush ledger storage changes to disk
 			LedgerApi::flush_storage();
-
-			let (reward, beneficiary) = T::BlockReward::get();
-			if reward == 0 {
-				return;
-			}
-			if let Some(beneficiary) = beneficiary {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
-
-				match LedgerApi::mint_coins(&state_key, reward, &beneficiary[..], block_context) {
-					Ok(new_state_key) => {
-						log::info!("Minting {reward:?} coins for {beneficiary:?}");
-						Self::deposit_event(Event::PayoutMinted(PayoutDetails {
-							amount: reward,
-							receiver: beneficiary.to_vec(),
-						}));
-						let state_key: BoundedVec<_, _> =
-							new_state_key.try_into().expect("New state key size out of boundaries");
-						StateKey::<T>::put(state_key);
-
-						LedgerApi::flush_storage();
-					},
-					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
-				};
-			}
 		}
 
 		#[cfg(hardfork_test)]
@@ -418,7 +396,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(2)]
+		#[pallet::call_index(1)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		// A system transaction for configuring contract call weights
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
@@ -454,7 +432,24 @@ pub mod pallet {
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
 			let block_context = Self::get_block_context();
 
-			Self::validate_unsigned(call, block_context).map(|_| ())
+			// First, perform existing structural validation
+			Self::validate_unsigned(call, block_context.clone())?;
+
+			// Then, validate that the guaranteed part will succeed.
+			if let Call::send_mn_transaction { midnight_tx } = call {
+				let state_key = StateKey::<T>::get().expect("Failed to get state key");
+				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+
+				LedgerApi::validate_guaranteed_execution(
+					&state_key,
+					midnight_tx,
+					block_context,
+					runtime_version,
+				)
+				.map_err(|e| Self::invalid_transaction(e.into()))?;
+			}
+
+			Ok(())
 		}
 	}
 
@@ -562,10 +557,10 @@ pub mod pallet {
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let gas_cost =
-				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-
-			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
+			Self::get_transaction_cost(tx)
+				.map(|gas_cost| Weight::from_parts(gas_cost, 0))
+				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE)
+				+ ConfigurableTransactionSizeWeight::<T>::get()
 		}
 	}
 }

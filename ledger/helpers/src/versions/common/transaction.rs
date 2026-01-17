@@ -136,7 +136,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			&& self.fallible_offers.is_empty()
 	}
 
-	pub fn set_wallet_seeds(&mut self, seeds: Vec<WalletSeed>) {
+	pub fn set_funding_seeds(&mut self, seeds: Vec<WalletSeed>) {
 		self.funding_seeds = seeds;
 	}
 

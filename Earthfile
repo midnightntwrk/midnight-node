@@ -58,6 +58,9 @@ generate-preview-keys:
 generate-preview-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preview --OUTPUT_FILE=preview-genesis-seeds.json
 
+generate-devnet-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=devnet --OUTPUT_FILE=devnet-genesis-seeds.json
+
 generate-preprod-keys:
     BUILD +generate-keys \
         --DEV=true \
@@ -109,7 +112,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.90-trixie
+    FROM rust:1.92-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -121,19 +124,43 @@ subxt:
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
+# build-node-only builds only the midnight-node binary
+build-node-only:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay .
+
+    ARG NATIVEARCH
+
+    RUN cargo build -p midnight-node --locked --release
+
+    RUN mkdir -p /artifacts-$NATIVEARCH \
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH
+
+    SAVE ARTIFACT /artifacts-$NATIVEARCH
+
+# node-image-minimal creates a minimal node image for metadata extraction
+node-image-minimal:
+    ARG NATIVEARCH
+    FROM DOCKERFILE -f ./images/node/Dockerfile .
+    USER root
+
+    RUN mkdir -p /node
+    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /
+
+    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    SAVE IMAGE localhost/node-minimal:latest
+
 # Grabs metadata.scale file from the latest node
 get-metadata:
-    ARG METADATA_IMAGE_SOURCE="--load"
-    ARG METADATA_IMAGE_NAME="localhost/node:latest"
-    ARG METADATA_TARGET="${METADATA_IMAGE_NAME}=+load-image"
     FROM +subxt
     DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
-    WITH DOCKER --load localhost/node:latest=+node-image
-      RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node:latest & \
+    WITH DOCKER --load localhost/node-minimal:latest=+node-image-minimal
+      RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node-minimal:latest & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /metadata.scale && \
-          docker kill $(docker ps -q --filter ancestor=localhost/node:latest)
+          docker kill $(docker ps -q --filter ancestor=localhost/node-minimal:latest)
     END
     SAVE ARTIFACT /metadata.scale
 
@@ -155,7 +182,6 @@ rebuild-sqlx:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
-    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -181,18 +207,18 @@ rebuild-genesis-state:
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    # Use generic genesis-seeds.json, then override with network-specific if it exists (re-enable temporarily before genesis rebuilds)
-    #COPY --if-exists secrets/genesis-seeds.json /secrets/genesis-seeds.json
+    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # wallet-seed-3 is the wallet Lace uses for testing.
+    # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
             mkdir -p /secrets/; \
             echo '{ \
                 "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001", \
                 "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002", \
                 "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003", \
-                "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d" \
+                "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9" \
             }' > /secrets/genesis-seeds.json; \
         fi
 
@@ -298,73 +324,72 @@ rebuild-genesis-state:
             && cp out/serialized_* /res/test-tx-deserialize \
         ; fi
 
-    # TODO: Re-enable when toolkit-js is updated to use compact >= 0.27
-    # RUN mkdir -p /res/test-data/contract/counter \
-    #     && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-    #         /midnight-node-toolkit generate-intent deploy \
-    #             --coin-public $( \
-    #                 /midnight-node-toolkit \
-    #                 show-address \
-    #                 --network $NETWORK \
-    #                 --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    #                 --coin-public \
-    #             ) \
-    #             -c /toolkit-js/test/contract/contract.config.ts \
-    #             --output-intent /res/test-data/contract/counter/deploy.bin \
-    #             --output-private-state /res/test-data/contract/counter/initial_state.json \
-    #             --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
-    #             0 \
-    #         && /midnight-node-toolkit send-intent \
-    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-    #             --dust-warp \
-    #             --intent-file /res/test-data/contract/counter/deploy.bin \
-    #             --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
-    #             --rng-seed "$RNG_SEED" \
-    #             --to-bytes \
-    #             --dest-file /res/test-data/contract/counter/deploy_tx.mn \
-    #         && /midnight-node-toolkit contract-address \
-    #             --src-file /res/test-data/contract/counter/deploy_tx.mn \
-    #             | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
-    #         && /midnight-node-toolkit contract-state \
-    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-    #             --src-file /res/test-data/contract/counter/deploy_tx.mn \
-    #             --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
-    #             --dest-file /res/test-data/contract/counter/contract_state.mn \
-    #     ; fi
-    # RUN mkdir -p /res/test-data/contract/mint \
-    #     && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
-    #         /midnight-node-toolkit generate-intent deploy \
-    #             --coin-public $( \
-    #                 /midnight-node-toolkit \
-    #                 show-address \
-    #                 --network $NETWORK \
-    #                 --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    #                 --coin-public \
-    #             ) \
-    #             -c /toolkit-js/mint/mint.config.ts \
-    #             --output-intent /res/test-data/contract/mint/deploy.bin \
-    #             --output-private-state /res/test-data/contract/mint/initial_state.json \
-    #             --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
-    #         && /midnight-node-toolkit send-intent \
-    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-    #             --dust-warp \
-    #             --intent-file /res/test-data/contract/mint/deploy.bin \
-    #             --compiled-contract-dir /toolkit-js/mint/out \
-    #             --rng-seed "$RNG_SEED" \
-    #             --to-bytes \
-    #             --dest-file /res/test-data/contract/mint/deploy_tx.mn \
-    #         && /midnight-node-toolkit contract-address \
-    #             --src-file /res/test-data/contract/mint/deploy_tx.mn \
-    #             | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
-    #         && /midnight-node-toolkit contract-state \
-    #             --src-file /res/genesis/genesis_block_${NETWORK}.mn \
-    #             --src-file /res/test-data/contract/mint/deploy_tx.mn \
-    #             --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
-    #             --dest-file /res/test-data/contract/mint/contract_state.mn \
-    #     ; fi
-    # IF [ "$GENERATE_TEST_TXS" = "true" ]
-    #     COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
-    # END
+    RUN mkdir -p /res/test-data/contract/counter \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public \
+                ) \
+                -c /toolkit-js/test/contract/contract.config.ts \
+                --output-intent /res/test-data/contract/counter/deploy.bin \
+                --output-private-state /res/test-data/contract/counter/initial_state.json \
+                --output-zswap-state /res/test-data/contract/counter/initial_zswap_state.json \
+                0 \
+            && /midnight-node-toolkit send-intent \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
+                --intent-file /res/test-data/contract/counter/deploy.bin \
+                --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/counter/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
+                | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --src-file /res/test-data/contract/counter/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/counter/contract_address.mn) \
+                --dest-file /res/test-data/contract/counter/contract_state.mn \
+        ; fi
+    RUN mkdir -p /res/test-data/contract/mint \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+            /midnight-node-toolkit generate-intent deploy \
+                --coin-public $( \
+                    /midnight-node-toolkit \
+                    show-address \
+                    --network $NETWORK \
+                    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+                    --coin-public \
+                ) \
+                -c /toolkit-js/mint/mint.config.ts \
+                --output-intent /res/test-data/contract/mint/deploy.bin \
+                --output-private-state /res/test-data/contract/mint/initial_state.json \
+                --output-zswap-state /res/test-data/contract/mint/initial_zswap_state.json \
+            && /midnight-node-toolkit send-intent \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --dust-warp \
+                --intent-file /res/test-data/contract/mint/deploy.bin \
+                --compiled-contract-dir /toolkit-js/mint/out \
+                --rng-seed "$RNG_SEED" \
+                --to-bytes \
+                --dest-file /res/test-data/contract/mint/deploy_tx.mn \
+            && /midnight-node-toolkit contract-address \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
+            && /midnight-node-toolkit contract-state \
+                --src-file /res/genesis/genesis_block_${NETWORK}.mn \
+                --src-file /res/test-data/contract/mint/deploy_tx.mn \
+                --contract-address $(cat /res/test-data/contract/mint/contract_address.mn) \
+                --dest-file /res/test-data/contract/mint/contract_state.mn \
+        ; fi
+    IF [ "$GENERATE_TEST_TXS" = "true" ]
+        COPY +toolkit-js-prep/toolkit-js/test/contract/managed/counter/keys /res/test-data/contract/counter/keys
+    END
 
     SAVE ARTIFACT /res/genesis/* AS LOCAL res/genesis/
     SAVE ARTIFACT --if-exists /res/test-contract/* AS LOCAL res/test-contract/
@@ -372,13 +397,19 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/test-tx-deserialize/* AS LOCAL res/test-tx-deserialize/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
-    # SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
-    # SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
+    SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed
+
+# rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-devnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=devnet \
+        --GENERATE_TEST_TXS=false
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
@@ -407,6 +438,7 @@ rebuild-genesis-state-preprod:
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
+    BUILD +rebuild-genesis-state-devnet
     BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
     BUILD +rebuild-genesis-state-preview
@@ -526,7 +558,7 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.90-trixie
+    FROM rust:1.92-trixie
 
     # Install build dependencies
     RUN apt-get update -qq && \
@@ -566,13 +598,15 @@ node-ci-image-single-platform:
     # renovate: datasource=github-releases packageName=chevdor/subwasm
     ARG SUBWASM_VERSION=0.21.3
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
+    RUN cargo install --locked cargo-shear --version 1.9.1
+    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
 
     # SAVE IMAGE under the rust version used.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.90"
+    ENV IMAGE_TAG="1.92"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -583,7 +617,7 @@ node-ci-image-single-platform:
 prep-no-copy:
     ARG NATIVEARCH
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:1.90-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN apt-get update -qq \
@@ -609,7 +643,7 @@ prep:
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
 
-# prepares the toolkit-js, in time for testing
+# Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
     ARG NATIVEARCH
     FROM node:22-trixie
@@ -630,7 +664,7 @@ toolkit-js-prep:
 
     SAVE ARTIFACT /toolkit-js
 
-# toolkit-js-prep-local saves toolkit-js build artifacts
+# toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     FROM --platform=linux/amd64 +toolkit-js-prep
@@ -642,8 +676,7 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo binstall --no-confirm cargo-shear
+    RUN cargo install cargo-shear --version 1.6.6 --locked
 
     # shear
     RUN cargo shear
@@ -717,7 +750,7 @@ check:
     BUILD +check-rust
 
 # test runs the tests in parallel with code coverage.
-# Core tests - excludes midnight-node-toolkit (which requires toolkit-js/midnight-js packages)
+# Core tests - excludes Midnight Node Toolkit (requires Node Toolkit (JS) npm packages from midnight-js)
 test:
     ARG NATIVEARCH
     FROM +prep
@@ -734,8 +767,8 @@ test:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
     # Run all tests EXCEPT:
-    # - midnight-node-toolkit (depends on toolkit-js/midnight-js npm packages)
-    # - pallet-midnight fixture tests (depend on .mn files that need regenerating with toolkit)
+    # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
+    # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
         --exclude midnight-node-toolkit \
         -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
@@ -768,7 +801,7 @@ test-pallet-fixtures:
 
     SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
-# Toolkit tests - requires toolkit-js which depends on midnight-js npm packages
+# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
@@ -795,11 +828,11 @@ test-toolkit:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # extract the toolkit-js
+    # Extract Node Toolkit (JS)
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run midnight-node-toolkit package tests only (requires toolkit-js)
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
     RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
         -E 'package(midnight-node-toolkit)'
     RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
@@ -887,6 +920,7 @@ build-normal:
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH \
+        && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
@@ -957,6 +991,7 @@ node-image:
     RUN mkdir -p node
 
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build-normal/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -969,7 +1004,7 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
