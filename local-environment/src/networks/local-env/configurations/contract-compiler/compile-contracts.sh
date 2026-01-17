@@ -208,32 +208,12 @@ else
     echo "  New policy ID: ${COMPILED_COUNCIL_HASH}"
 fi
 
-# Write policy IDs to runtime-values for use in chain-spec generation
-echo "Writing Aiken policy IDs to runtime-values..."
-COUNCIL_POLICY_ID=$(jq -r '.validators[] | select(.title | test("council_forever"; "i")) | .hash' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
-TECHAUTH_POLICY_ID=$(jq -r '.validators[] | select(.title | test("tech_auth_forever"; "i")) | .hash' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
-FEDOPS_POLICY_ID=$(jq -r '.validators[] | select(.title | test("federated_ops_forever"; "i")) | .hash' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
-
-if [[ -n "${COUNCIL_POLICY_ID}" && "${COUNCIL_POLICY_ID}" != "null" ]]; then
-    echo "${COUNCIL_POLICY_ID}" > "${OUTPUT_DIR}/council_forever_policy_id.txt"
-    echo "✓ Wrote council_forever_policy_id.txt: ${COUNCIL_POLICY_ID}"
-else
-    echo "ERROR: Could not extract council_forever policy ID"
-    exit 1
-fi
-
-if [[ -n "${TECHAUTH_POLICY_ID}" && "${TECHAUTH_POLICY_ID}" != "null" ]]; then
-    echo "${TECHAUTH_POLICY_ID}" > "${OUTPUT_DIR}/tech_auth_forever_policy_id.txt"
-    echo "✓ Wrote tech_auth_forever_policy_id.txt: ${TECHAUTH_POLICY_ID}"
-fi
-
-if [[ -n "${FEDOPS_POLICY_ID}" && "${FEDOPS_POLICY_ID}" != "null" ]]; then
-    echo "${FEDOPS_POLICY_ID}" > "${OUTPUT_DIR}/federated_ops_forever_policy_id.txt"
-    echo "✓ Wrote federated_ops_forever_policy_id.txt: ${FEDOPS_POLICY_ID}"
-fi
-
 # Extract CBOR for each validator and write to runtime-values
 echo "Extracting contract CBOR to runtime-values..."
+
+# List available validators for debugging
+echo "Available validators in plutus.json:"
+jq -r '.validators[].title' "${PLUTUS_JSON}" 2>/dev/null | grep -i "forever" || echo "  (none matching 'forever')"
 
 # Extract council_forever CBOR (matches permissioned.council_forever.else)
 COUNCIL_CBOR=$(jq -r '.validators[] | select(.title | test("council_forever"; "i")) | .compiledCode' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
@@ -266,9 +246,6 @@ else
 fi
 
 echo ""
-echo "=== Governance Contract Compilation Complete ==="
+echo "=== Contract Compilation Complete ==="
 echo "CBOR files in ${OUTPUT_DIR}:"
 ls -la "${OUTPUT_DIR}"/*.cbor 2>/dev/null || echo "  No .cbor files found"
-echo ""
-echo "Policy ID files in ${OUTPUT_DIR}:"
-ls -la "${OUTPUT_DIR}"/*_policy_id.txt 2>/dev/null || echo "  No policy ID files found"

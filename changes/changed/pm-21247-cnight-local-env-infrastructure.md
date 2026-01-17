@@ -1,7 +1,7 @@
 #local-env #e2e-tests
-# Enable cNIGHT observation E2E tests in local environment
+# Re-enable cNIGHT observation E2E tests in local environment
 
-Deploy cNIGHT smart contracts (mapping_validator, redemption_validator) in the local environment and dynamically configure the chain-spec genesis to enable 12 previously disabled cNIGHT/DUST observation E2E tests.
+Re-enable 12 cNIGHT/DUST observation E2E tests that were disabled as collateral damage during the Aiken governance contract migration (PR #454). The cNIGHT tests use static pre-compiled contracts that match the static cnight-genesis.json configuration.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/480
 JIRA: https://shielded.atlassian.net/browse/PM-21247

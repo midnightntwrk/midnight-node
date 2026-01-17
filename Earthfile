@@ -1233,12 +1233,6 @@ local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
-    # Explicitly copy runtime-values (gitignored but needed for tests)
-    COPY --if-exists local-environment/src/networks/local-env/runtime-values/* \
-        ./local-environment/src/networks/local-env/runtime-values/
-    # Debug: show what contract files are available
-    RUN echo "=== Runtime values files ===" && \
-        ls -la local-environment/src/networks/local-env/runtime-values/ 2>/dev/null || echo "No runtime-values directory"
     WORKDIR tests/e2e
     RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
 

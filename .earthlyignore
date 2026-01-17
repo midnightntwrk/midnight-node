@@ -3,6 +3,3 @@ target
 **/node_modules
 **/dist
 !/tests/.papi/descriptors/dist
-# Include runtime-values even though it's gitignored - needed for local-env e2e tests
-!local-environment/**/runtime-values
-!local-environment/**/runtime-values/**

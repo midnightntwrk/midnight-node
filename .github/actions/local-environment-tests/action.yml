@@ -85,34 +85,9 @@ runs:
 #        just-command: indexer-api-e2e
 #        ghcr-password: ${{ inputs.ghcr-password }}
 
-    - name: Wait for local environment to be ready
-      run: |
-        echo "⏳ Waiting for midnight-setup container to complete..."
-        EXIT_CODE=$(docker wait midnight-setup)
-        if [[ "$EXIT_CODE" != "0" ]]; then
-          echo "❌ midnight-setup failed with exit code $EXIT_CODE"
-          docker logs midnight-setup
-          exit 1
-        fi
-        echo "✅ midnight-setup completed successfully"
-        
-        # Verify governance contract files are present (cNIGHT uses static CBOR)
-        RUNTIME_VALUES="local-environment/src/networks/local-env/runtime-values"
-        echo "📁 Verifying governance contract files in runtime-values..."
-        for file in council_forever.cbor tech_auth_forever.cbor federated_ops_forever.cbor; do
-          if [[ -f "${RUNTIME_VALUES}/${file}" ]]; then
-            echo "  ✓ ${file}"
-          else
-            echo "  ✗ ${file} - MISSING"
-            exit 1
-          fi
-        done
-        echo "✅ All required governance contract files present"
-      shell: bash
-
     - name: e2e tests
       id: e2e-tests
-      run: earthly --no-cache +local-env-e2e
+      run: earthly +local-env-e2e
       shell: bash
 
     - name: node-e2e-tests
