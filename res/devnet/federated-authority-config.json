@@ -1,0 +1,36 @@
+{
+  "council": {
+    "address": "addr_test1wz28tz6e9zdpvr6f7qsxmyyw5zq0520h334087984ttskpcnczun7",
+    "policy_id": "94758b59289a160f49f0206d908ea080fa29f78c6af3f8a7aad70b07",
+    "members": [
+      "0x5edcff6670cb5c9db274dac8871a8fa6f159f38715b0ef95e7c6a788a10dc738",
+      "0x2abf1d9cf6cc8d1e7b1a7bb24ac0008aa48a8f6e13bf24ffc47ba94c39acab46",
+      "0xb25af407731e87bb70fb473150035a32c974835778f4aa015c69a9dff658ec4c",
+      "0xeed3cc0442beb10d0f5645d004fe7fc7179531a99ddb18dcca14f3d77f00c577",
+      "0xce9cadcbd7f6b81abba367928d325fe2ec93961d5d21fefab398d6622e01b04f",
+      "0x2e7bc4e1c90356b021476dd836dd6d1110713965432662f0ca70a8c006d90748"
+    ],
+    "members_mainchain": [
+      "e3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
+      "a5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
+      "1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+    ]
+  },
+  "technical_committee": {
+    "address": "addr_test1wpj3t7yvs489kjgzlayd37ft6wg9eu6vguem8jgdgu2kengayhe62",
+    "policy_id": "6515f88c854e5b4902ff48d8f92bd3905cf34c4733b3c90d47156ccd",
+    "members": [
+      "0x5edcff6670cb5c9db274dac8871a8fa6f159f38715b0ef95e7c6a788a10dc738",
+      "0x2abf1d9cf6cc8d1e7b1a7bb24ac0008aa48a8f6e13bf24ffc47ba94c39acab46",
+      "0xb25af407731e87bb70fb473150035a32c974835778f4aa015c69a9dff658ec4c",
+      "0xeed3cc0442beb10d0f5645d004fe7fc7179531a99ddb18dcca14f3d77f00c577",
+      "0xce9cadcbd7f6b81abba367928d325fe2ec93961d5d21fefab398d6622e01b04f",
+      "0x2e7bc4e1c90356b021476dd836dd6d1110713965432662f0ca70a8c006d90748"
+    ],
+    "members_mainchain": [
+      "b94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
+      "de14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
+      "1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+    ]
+  }
+}
