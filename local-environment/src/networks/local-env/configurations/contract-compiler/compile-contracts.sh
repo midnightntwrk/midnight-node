@@ -236,8 +236,10 @@ fi
 echo "Extracting contract CBOR to runtime-values..."
 
 # List available validators for debugging
-echo "Available validators in plutus.json:"
+echo "Available validators in plutus.json (count: $(jq -r '.validators | length' "${PLUTUS_JSON}" 2>/dev/null || echo 0)):"
 jq -r '.validators[].title' "${PLUTUS_JSON}" 2>/dev/null | grep -i "forever" || echo "  (none matching 'forever')"
+echo "cNIGHT validators:"
+jq -r '.validators[].title' "${PLUTUS_JSON}" 2>/dev/null | grep -iE "cnight|tcnight" || echo "  (none matching 'cnight' or 'tcnight')"
 
 # Extract council_forever CBOR (matches permissioned.council_forever.else)
 COUNCIL_CBOR=$(jq -r '.validators[] | select(.title | test("council_forever"; "i")) | .compiledCode' "${PLUTUS_JSON}" 2>/dev/null | head -1 || echo "")
