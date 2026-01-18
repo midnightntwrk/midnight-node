@@ -126,10 +126,7 @@ sp-partner-chains-bridge = { default-features = false, git = "https://github.com
 pallet-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-pallet-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-
 sp-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 sidechain-mc-hash = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 sidechain-domain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 authority-selection-inherents = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }

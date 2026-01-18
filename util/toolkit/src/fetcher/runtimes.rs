@@ -62,7 +62,6 @@ pub trait MidnightMetadata {
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn timestamp_set(call: &Self::Call) -> Option<u64>;
-	fn check_for_events(call: &Self::Call) -> bool;
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8>;
 }
 
@@ -109,10 +108,6 @@ macro_rules! impl_midnight_metadata {
 				} else {
 					None
 				}
-			}
-
-			fn check_for_events(call: &Self::Call) -> bool {
-				matches!(call, $meta_ident::Call::CNightObservation(_))
 			}
 
 			fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
@@ -193,10 +188,6 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		} else {
 			None
 		}
-	}
-
-	fn check_for_events(call: &Self::Call) -> bool {
-		matches!(call, mn_meta_0_17_0::Call::NativeTokenObservation(_))
 	}
 
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {

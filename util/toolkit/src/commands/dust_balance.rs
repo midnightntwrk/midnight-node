@@ -34,6 +34,7 @@ pub struct DustBalanceJson {
 	pub generation_infos: Vec<GenerationInfoPair>,
 	pub source: HashMap<String, u128>,
 	pub total: u128,
+	pub capacity: u128,
 }
 
 pub enum DustBalanceResult {
@@ -70,11 +71,17 @@ pub async fn execute(
 		let timestamp = Timestamp::from_secs(now);
 		let total = dust_state.wallet_balance(timestamp);
 
+		let mut capacity = 0u128;
+
 		let mut generation_infos = Vec::new();
 		let mut source = HashMap::new();
 		for dust_output in dust_state.utxos() {
 			let dust_output_ser: QualifiedDustOutputSer = dust_output.into();
 			let gen_info = dust_state.generation_info(&dust_output);
+			capacity += gen_info
+				.as_ref()
+				.map(|g| g.value * dust_state.params.night_dust_ratio as u128)
+				.unwrap_or(0);
 			let gen_info_pair = GenerationInfoPair {
 				dust_output: dust_output_ser.clone(),
 				generation_info: gen_info.map(|g| g.into()),
@@ -90,7 +97,7 @@ pub async fn execute(
 				source.insert(dust_output_ser.nonce, balance);
 			}
 		}
-		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total }))
+		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total, capacity }))
 	})
 }
 
