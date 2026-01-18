@@ -231,8 +231,93 @@ impl MidnightClient {
     pub async fn subscribe_to_federated_authority_events(
         &self,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Subscribing to federated authority observation events");
+        println!("Checking for federated authority observation events");
 
+        // Track which events we've found
+        let mut found_council_reset = false;
+        let mut found_tech_committee_reset = false;
+
+        // Helper to check events in a block
+        let check_block_events = |events: subxt::events::Events<SubstrateConfig>,
+                                  block_number: u32,
+                                  found_council: &mut bool,
+                                  found_tech: &mut bool| {
+            // Check for CouncilMembersReset event
+            if let Some(event) = events.find::<CouncilMembersReset>().flatten().next() {
+                println!(
+                    "✓ Found CouncilMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_council = true;
+            }
+
+            // Check for TechnicalCommitteeMembersReset event
+            if let Some(event) = events
+                .find::<TechnicalCommitteeMembersReset>()
+                .flatten()
+                .next()
+            {
+                println!(
+                    "✓ Found TechnicalCommitteeMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_tech = true;
+            }
+        };
+
+        // First, check historical finalized blocks for the events
+        // The events may have been emitted before we started listening
+        let finalized_hash = self
+            .online_client
+            .backend()
+            .latest_finalized_block_ref()
+            .await?;
+        let finalized_block = self
+            .online_client
+            .blocks()
+            .at(finalized_hash.hash())
+            .await?;
+        let current_finalized = finalized_block.header().number;
+
+        println!(
+            "Checking historical blocks 1 to {} for federated authority events...",
+            current_finalized
+        );
+
+        // Check historical blocks from genesis (block 1) up to current finalized
+        // We start from block 1 because events are typically emitted early when
+        // the mainchain follower first observes the governance contracts
+        for block_num in 1..=current_finalized {
+            let block_hash: H256 = self
+                .rpc_client
+                .request("chain_getBlockHash", rpc_params![block_num])
+                .await?;
+
+            let block = self.online_client.blocks().at(block_hash).await?;
+            let events = block.events().await?;
+
+            check_block_events(
+                events,
+                block_num,
+                &mut found_council_reset,
+                &mut found_tech_committee_reset,
+            );
+
+            if found_council_reset && found_tech_committee_reset {
+                println!("✓ Both federated authority events found in historical blocks");
+                return Ok(());
+            }
+        }
+
+        println!(
+            "Events not found in historical blocks. Council: {}, TechCommittee: {}",
+            found_council_reset, found_tech_committee_reset
+        );
+
+        // If not found in history, subscribe to new finalized blocks
+        println!("Subscribing to new finalized blocks for remaining events...");
         let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
 
         let result = timeout(Duration::from_secs(120), async {
@@ -243,29 +328,14 @@ impl MidnightClient {
 
                 let events = block.events().await?;
 
-                // Check for CouncilMembersReset event
-                let council_reset = events.find::<CouncilMembersReset>().flatten().next();
+                check_block_events(
+                    events,
+                    block_number,
+                    &mut found_council_reset,
+                    &mut found_tech_committee_reset,
+                );
 
-                // Check for TechnicalCommitteeMembersReset event
-                let tech_committee_reset = events
-                    .find::<TechnicalCommitteeMembersReset>()
-                    .flatten()
-                    .next();
-
-                if let Some(event) = &council_reset {
-                    println!(
-                        "✓ Found CouncilMembersReset event with {} members",
-                        event.members.len()
-                    );
-                }
-                if let Some(event) = &tech_committee_reset {
-                    println!(
-                        "✓ Found TechnicalCommitteeMembersReset event with {} members",
-                        event.members.len()
-                    );
-                }
-
-                if council_reset.is_some() && tech_committee_reset.is_some() {
+                if found_council_reset && found_tech_committee_reset {
                     return Ok(());
                 }
             }
@@ -387,20 +457,6 @@ impl MidnightClient {
     pub async fn get_current_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let status = self.get_sidechain_status().await?;
         Ok(status.epoch)
-    }
-
-    /// Get the current AURA authorities via runtime API.
-    ///
-    /// Returns a list of AURA authority public keys (hex encoded).
-    pub async fn get_aura_authorities(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        // Query AURA authorities via the runtime API
-        let authorities: Vec<String> = self
-            .rpc_client
-            .request("aura_getAuthorities", rpc_params![])
-            .await
-            .map_err(|e| format!("Failed to get AURA authorities: {}", e))?;
-
-        Ok(authorities)
     }
 
     /// Wait until the sidechain reaches a specific epoch.
