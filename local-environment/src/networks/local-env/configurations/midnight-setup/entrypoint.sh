@@ -106,8 +106,11 @@ export ILLIQUID_SUPPLY_VALIDATOR_ADDRESS="addr_test1wpy8ewg646rg4ce78nl3aassmkqu
 
 echo "Inserting D parameter..."
 
-D_PERMISSIONED=10
-D_REGISTERED=0
+# D_PERMISSIONED + D_REGISTERED must be >= 5 for a functioning partner chains network.
+# Using 4 permissioned (Alice, Bob, Charlie, Dave from qanet config) + 1 registered (Eve using actual keystore).
+# This ensures GRANDPA finality works since nodes 1-4 use well-known keys matching qanet config.
+D_PERMISSIONED=4
+D_REGISTERED=1
 
 ./midnight-node smart-contracts upsert-d-parameter \
     --genesis-utxo $GENESIS_UTXO \
@@ -135,8 +138,9 @@ start_time=$(date +%s)
 while true; do
     if [[ -f "${RUNTIME_VALUES}/council_forever.cbor" ]] && \
        [[ -f "${RUNTIME_VALUES}/tech_auth_forever.cbor" ]] && \
-       [[ -f "${RUNTIME_VALUES}/federated_ops_forever.cbor" ]]; then
-        echo "✓ All contract CBOR files found"
+       [[ -f "${RUNTIME_VALUES}/federated_ops_forever.cbor" ]] && \
+       [[ -f "${RUNTIME_VALUES}/council_forever_policy_id.txt" ]]; then
+        echo "✓ All contract CBOR files and policy IDs found"
         break
     fi
     
@@ -151,30 +155,37 @@ while true; do
     sleep 5
 done
 
+# Override PERMISSIONED_CANDIDATES_POLICY_ID with the Aiken federated_ops_forever policy ID
+# This ensures the chain-spec uses the Aiken contract policy ID for permissioned candidates
+AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID=$(cat "${RUNTIME_VALUES}/federated_ops_forever_policy_id.txt")
+echo "Overriding permissioned candidates policy ID with Aiken federated_ops_forever:"
+echo "  Old (partner-chains): $PERMISSIONED_CANDIDATES_POLICY_ID"
+echo "  New (Aiken):          $AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
+export PERMISSIONED_CANDIDATES_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
+
 # Get the funded address from the shared volume
 FUNDED_ADDRESS=$(cat /shared/FUNDED_ADDRESS)
 echo "Using funded address: $FUNDED_ADDRESS"
 
-# Read sidechain keys from midnight nodes
-alice_sidechain_vkey=$(cat /midnight-nodes/midnight-node-1/keys/sidechain.vkey)
-bob_sidechain_vkey=$(cat /midnight-nodes/midnight-node-2/keys/sidechain.vkey)
-charlie_sidechain_vkey=$(cat /midnight-nodes/midnight-node-3/keys/sidechain.vkey)
-dave_sidechain_vkey=$(cat /midnight-nodes/midnight-node-4/keys/sidechain.vkey)
+# Read Sr25519 (aura) keys from midnight nodes for council/tech-auth contracts
+# Note: council/tech-auth use Sr25519 keys (32 bytes), NOT ECDSA sidechain keys (33 bytes)
+alice_aura_vkey=$(cat /midnight-nodes/midnight-node-1/keys/aura.vkey)
+bob_aura_vkey=$(cat /midnight-nodes/midnight-node-2/keys/aura.vkey)
+charlie_aura_vkey=$(cat /midnight-nodes/midnight-node-3/keys/aura.vkey)
 
 # Use deterministic Cardano key hashes for testing (28 bytes each)
 # These are test values that match the format used in E2E tests
 alice_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2a"
 bob_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b"
 charlie_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2c"
-dave_cardano_hash="e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2d"
 
 # Create members.json for council_forever contract
+# Uses Sr25519 (aura) keys which are 32 bytes
 cat <<EOF > council_members.json
 [
-  {"cardano_hash": "$alice_cardano_hash", "sr25519_key": "$alice_sidechain_vkey"},
-  {"cardano_hash": "$bob_cardano_hash", "sr25519_key": "$bob_sidechain_vkey"},
-  {"cardano_hash": "$charlie_cardano_hash", "sr25519_key": "$charlie_sidechain_vkey"},
-  {"cardano_hash": "$dave_cardano_hash", "sr25519_key": "$dave_sidechain_vkey"}
+  {"cardano_hash": "$alice_cardano_hash", "sr25519_key": "$alice_aura_vkey"},
+  {"cardano_hash": "$bob_cardano_hash", "sr25519_key": "$bob_aura_vkey"},
+  {"cardano_hash": "$charlie_cardano_hash", "sr25519_key": "$charlie_aura_vkey"}
 ]
 EOF
 
@@ -198,82 +209,103 @@ echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
 SIGNING_KEY_CBOR=$(jq -r '.cborHex | .[4:]' /keys/funded_address.skey)
 echo "$SIGNING_KEY_CBOR" > /tmp/signing_key.cbor
 
-# Skip governance contract deployment if SKIP_GOVERNANCE_DEPLOY is set
-# This is used when E2E tests need to deploy the contracts themselves with specific test data
-if [ "${SKIP_GOVERNANCE_DEPLOY:-false}" = "true" ]; then
-    echo ""
-    echo "=== Skipping Governance Contract Deployment (SKIP_GOVERNANCE_DEPLOY=true) ==="
-    echo "One-shot UTxOs preserved for E2E test deployment:"
-    echo "  Council: ${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}"
-    echo "  Tech Auth: ${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}"
-    echo "  Federated Ops: ${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}"
+# Deploy council_forever contract
+echo ""
+echo "=== Deploying Council Forever Contract ==="
+COUNCIL_OUTPUT_FILE=/tmp/council_deploy_output.txt
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
+    --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL" 2>&1 | tee "$COUNCIL_OUTPUT_FILE"
+COUNCIL_EXIT_CODE=${PIPESTATUS[0]}
+
+if [ $COUNCIL_EXIT_CODE -eq 0 ]; then
+    echo "✓ Council Forever contract deployed successfully!"
+    # Parse policy ID and script address from output
+    COUNCIL_POLICY_ID=$(grep "Policy ID:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    COUNCIL_SCRIPT_ADDRESS=$(grep "Script address:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    echo "  Captured council policy ID: $COUNCIL_POLICY_ID"
+    echo "  Captured council script address: $COUNCIL_SCRIPT_ADDRESS"
 else
-    # Deploy council_forever contract
-    echo ""
-    echo "=== Deploying Council Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/council_forever.cbor" \
-        --one-shot-utxo "${COUNCIL_ONESHOT_HASH}#${COUNCIL_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL"
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Council Forever contract deployed successfully!"
-    else
-        echo "✗ Council Forever contract deployment failed"
-        exit 1
-    fi
-
-    # Wait for transaction to confirm
-    sleep 10
-
-    # Deploy tech_auth_forever contract (uses same members for testing)
-    echo ""
-    echo "=== Deploying Tech Auth Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
-        --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL" \
-        --contract-type tech-auth
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Tech Auth Forever contract deployed successfully!"
-    else
-        echo "✗ Tech Auth Forever contract deployment failed"
-        exit 1
-    fi
-
-    # Wait for transaction to confirm
-    sleep 10
-
-    # Deploy federated_ops_forever contract
-    # Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
-    echo ""
-    echo "=== Deploying Federated Ops Forever Contract ==="
-    ./aiken-deployer \
-        --contract-cbor "${RUNTIME_VALUES}/federated_ops_forever.cbor" \
-        --one-shot-utxo "${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}" \
-        --signing-key /tmp/signing_key.cbor \
-        --funded-address "$FUNDED_ADDRESS" \
-        --members-file council_members.json \
-        --ogmios-url "$OGMIOS_URL" \
-        --contract-type federated-ops
-
-    if [ $? -eq 0 ]; then
-        echo "✓ Federated Ops Forever contract deployed successfully!"
-    else
-        echo "✗ Federated Ops Forever contract deployment failed"
-        exit 1
-    fi
-
-    echo ""
-    echo "=== All Aiken Governance Contracts Deployed Successfully ==="
+    echo "✗ Council Forever contract deployment failed"
+    cat "$COUNCIL_OUTPUT_FILE"
+    exit 1
 fi
+
+# Wait for transaction to confirm
+sleep 10
+
+# Deploy tech_auth_forever contract (uses same members for testing)
+echo ""
+echo "=== Deploying Tech Auth Forever Contract ==="
+TECHAUTH_OUTPUT_FILE=/tmp/techauth_deploy_output.txt
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/tech_auth_forever.cbor" \
+    --one-shot-utxo "${TECHAUTH_ONESHOT_HASH}#${TECHAUTH_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type tech-auth 2>&1 | tee "$TECHAUTH_OUTPUT_FILE"
+TECHAUTH_EXIT_CODE=${PIPESTATUS[0]}
+
+if [ $TECHAUTH_EXIT_CODE -eq 0 ]; then
+    echo "✓ Tech Auth Forever contract deployed successfully!"
+    # Parse policy ID and script address from output
+    TECHAUTH_POLICY_ID=$(grep "Policy ID:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    TECHAUTH_SCRIPT_ADDRESS=$(grep "Script address:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
+    echo "  Captured tech-auth policy ID: $TECHAUTH_POLICY_ID"
+    echo "  Captured tech-auth script address: $TECHAUTH_SCRIPT_ADDRESS"
+else
+    echo "✗ Tech Auth Forever contract deployment failed"
+    cat "$TECHAUTH_OUTPUT_FILE"
+    exit 1
+fi
+
+# Wait for transaction to confirm
+sleep 10
+
+# Generate permissioned candidates file for federated_ops_forever
+# Extract the first 4 candidates from the chain config (matching the chain-spec generation)
+echo ""
+echo "=== Generating Permissioned Candidates File ==="
+jq '[.initial_permissioned_candidates[:4] | .[] | {
+    ecdsa_key: .sidechain_pub_key[2:],
+    aura_key: .aura_pub_key[2:],
+    grandpa_key: .grandpa_pub_key[2:]
+}]' res/qanet/pc-chain-config.json > permissioned_candidates.json
+echo "Created permissioned_candidates.json:"
+cat permissioned_candidates.json
+
+# Deploy federated_ops_forever contract
+# Note: federated-ops uses a different datum structure (FederatedOps with appendix field)
+echo ""
+echo "=== Deploying Federated Ops Forever Contract ==="
+./aiken-deployer \
+    --contract-cbor "${RUNTIME_VALUES}/federated_ops_forever.cbor" \
+    --one-shot-utxo "${FEDOPS_ONESHOT_HASH}#${FEDOPS_ONESHOT_INDEX}" \
+    --signing-key /tmp/signing_key.cbor \
+    --funded-address "$FUNDED_ADDRESS" \
+    --members-file council_members.json \
+    --ogmios-url "$OGMIOS_URL" \
+    --contract-type federated-ops \
+    --candidates-file permissioned_candidates.json
+
+if [ $? -eq 0 ]; then
+    echo "✓ Federated Ops Forever contract deployed successfully!"
+else
+    echo "✗ Federated Ops Forever contract deployment failed"
+    exit 1
+fi
+
+# The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
+# which was overridden earlier and will be included in pc-chain-config.json
+
+echo ""
+echo "=== All Governance Contracts Deployed Successfully ==="
 
 echo "Inserting registered candidate Eve..."
 
@@ -331,6 +363,34 @@ jq 'env as $env | . + {
   }
 }' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
 
+# Create patched federated-authority-config.json with Aiken policy IDs and addresses
+echo "Patching federated-authority-config.json with deployed Aiken contract values..."
+echo "  Council policy ID: $COUNCIL_POLICY_ID"
+echo "  Council address: $COUNCIL_SCRIPT_ADDRESS"
+echo "  Tech-auth policy ID: $TECHAUTH_POLICY_ID"
+echo "  Tech-auth address: $TECHAUTH_SCRIPT_ADDRESS"
+
+jq --arg council_addr "$COUNCIL_SCRIPT_ADDRESS" \
+   --arg council_policy "$COUNCIL_POLICY_ID" \
+   --arg techauth_addr "$TECHAUTH_SCRIPT_ADDRESS" \
+   --arg techauth_policy "$TECHAUTH_POLICY_ID" \
+   '.council.address = $council_addr | .council.policy_id = $council_policy | .technical_committee.address = $techauth_addr | .technical_committee.policy_id = $techauth_policy' \
+   /res/dev/federated-authority-config.json > /tmp/federated-authority-config.json
+
+echo "Patched federated-authority-config.json:"
+cat /tmp/federated-authority-config.json
+
+# Patch system-parameters-config.json to use the same D-parameter values as deployed on Cardano.
+# This ensures the genesis D-parameter matches what was deployed, avoiding finality issues during
+# the initial epochs before the on-chain D-parameter propagates to the sidechain.
+echo "Patching system-parameters-config.json with D-parameter values..."
+jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
+   '.d_parameter.num_permissioned_candidates = $d_perm | .d_parameter.num_registered_candidates = $d_reg' \
+   /res/dev/system-parameters-config.json > /tmp/system-parameters-config.json
+
+echo "Patched system-parameters-config.json:"
+cat /tmp/system-parameters-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -340,8 +400,8 @@ export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 comp
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
-export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/dev/federated-authority-config.json
-export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/res/dev/system-parameters-config.json
+export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
+export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 
@@ -363,14 +423,15 @@ echo -e "\n===== Partnerchain Configuration Complete =====\n"
 echo -e "Container will now idle, but will remain available for accessing the midnight-node commands as follows:\n"
 echo "docker exec midnight-setup midnight-node smart-contracts --help"
 
-echo "Waiting 2 epochs for DParam to become active..."
+echo "Waiting 3 epochs for DParam to become active and contracts to be queryable..."
+echo "(SDK applies 2-epoch offset, so epoch 4 is needed to query data from epoch 2)"
 epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
-n_2_epoch=$((epoch + 2))
+n_3_epoch=$((epoch + 3))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_2_epoch ]; do
+while [ $epoch -lt $n_3_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
