@@ -1,4 +1,4 @@
-chain = "res/qanet/chain-spec-raw.json"
+chain = "res/qanet/chain-spec.json"
 base_path = "node/chain"
 
 chainspec_name = "Midnight QANet"
