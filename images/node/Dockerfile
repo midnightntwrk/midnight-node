@@ -1,4 +1,4 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1
@@ -8,12 +8,9 @@ ENV RUST_BACKTRACE=1
 RUN microdnf -y update && \
     microdnf -y install ca-certificates curl-minimal procps-ng strace gdb vim jq tree gcc gcc-c++ make git cmake wget libtool autoconf automake && \
     # Build libfaketime with FORCE_MONOTONIC_FIX and FORCE_PTHREAD_NONVER
-    git clone https://github.com/wolfcw/libfaketime.git && \
-    cd /libfaketime/src && \
-    make clean && \
-    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make && \
-    make install && \
-    cd / && rm -rf /libfaketime && \
+    git clone --depth 1 https://github.com/wolfcw/libfaketime.git && \
+    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make -C /libfaketime/src install && \
+    rm -rf /libfaketime && \
     # Download bytehound
     wget -q https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
     [ -f bytehound-x86_64-unknown-linux-gnu.tgz ] && \

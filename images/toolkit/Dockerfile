@@ -1,4 +1,4 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 # ntp to keep correct time
 # curl to enable compose healthchecks
 RUN microdnf -y update && \
