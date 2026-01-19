@@ -1055,12 +1055,18 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
 
     # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Add toolkit-js
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
