@@ -80,7 +80,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 		});
 
-		let outputs: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
+		let mut outputs: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
 			.iter()
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
@@ -92,7 +92,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 			.collect();
 
-		let inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
+		let mut inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
 			.into_iter()
 			.map(|input| {
 				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
@@ -100,10 +100,18 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 			.collect::<Vec<_>>();
 
+		let fallible_inputs = inputs.split_off(1);
+		let fallible_outputs = outputs.split_off(1);
+
 		let guaranteed_unshielded_offer = UnshieldedOfferInfo { inputs, outputs };
+		let fallible_unshielded_offer = if fallible_inputs.len() > 1 && fallible_outputs.len() > 1 {
+			Some(UnshieldedOfferInfo { inputs: fallible_inputs, outputs: fallible_outputs })
+		} else {
+			None
+		};
 		let intent_info = IntentInfo {
 			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer),
-			fallible_unshielded_offer: None,
+			fallible_unshielded_offer,
 			actions: vec![],
 		};
 
