@@ -24,7 +24,6 @@ pub mod serde_def;
 pub mod toolkit_js;
 pub mod tx_generator;
 pub mod utils;
-pub mod wallet_state_storage;
 
 use progress::{Progress, Spin};
 use rand::{SeedableRng, rngs::StdRng};

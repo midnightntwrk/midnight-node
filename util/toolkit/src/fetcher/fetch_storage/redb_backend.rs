@@ -21,7 +21,8 @@ use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
 use tokio::sync::RwLock;
 
-use super::{BlockData, FetchStorage};
+use super::{BlockData, FetchStorage, WalletStateCache, WalletStateCaching};
+use crate::fetcher::wallet_state_cache::{WalletCacheKey, compress, decompress};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockKey {
@@ -32,11 +33,13 @@ pub struct BlockKey {
 /// Persistent [`FetchStorage`] backend using [redb](https://github.com/cberner/redb).
 ///
 /// Data is serialized as BSON. Uses `RwLock` for concurrent read access.
+/// Wallet state is compressed with zstd for efficient storage.
 #[derive(Clone)]
 pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
 	pub db: Arc<RwLock<Database>>,
 	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<S, P, D>>>,
 	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
+	pub wallet_state_table: TableDefinition<'static, Serde<WalletCacheKey>, &'static [u8]>,
 }
 
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
@@ -53,6 +56,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbB
 			)),
 			block_data_table: TableDefinition::new("block_data"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
+			wallet_state_table: TableDefinition::new("wallet_state"),
 		}
 	}
 }
@@ -144,6 +148,145 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 			table.insert(&chain_id.0, height).expect("failed to insert highest verified");
 		}
 		write_txn.commit().expect("failed to commit write")
+	}
+
+	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
+		let key = WalletCacheKey::new(chain_id, wallet_id);
+		let read_txn = match self.db.read().await.begin_read() {
+			Ok(txn) => txn,
+			Err(e) => {
+				log::warn!("Failed to begin read transaction for wallet state: {e}");
+				return None;
+			},
+		};
+		let Ok(table) = read_txn.open_table(self.wallet_state_table) else { return None };
+
+		let compressed = match table.get(key) {
+			Ok(Some(data)) => data,
+			Ok(None) => return None,
+			Err(e) => {
+				log::warn!("Failed to get wallet state from table: {e}");
+				return None;
+			},
+		};
+
+		// Decompress and deserialize
+		let decompressed = match decompress(compressed.value()) {
+			Ok(data) => data,
+			Err(e) => {
+				log::warn!("Failed to decompress wallet state cache: {e}");
+				return None;
+			},
+		};
+
+		match bson::deserialize_from_slice(&decompressed) {
+			Ok(cache) => Some(cache),
+			Err(e) => {
+				log::warn!("Failed to deserialize wallet state cache: {e}");
+				None
+			},
+		}
+	}
+
+	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
+		let key = WalletCacheKey::new(chain_id, wallet_id);
+		let block_height = cache.block_height;
+
+		// Serialize and compress
+		let serialized = match bson::serialize_to_vec(&cache) {
+			Ok(data) => data,
+			Err(e) => {
+				log::warn!("Failed to serialize wallet state: {e}");
+				return;
+			},
+		};
+		let compressed = match compress(&serialized) {
+			Ok(data) => data,
+			Err(e) => {
+				log::warn!("Failed to compress wallet state: {e}");
+				return;
+			},
+		};
+
+		let write_txn = match self.db.write().await.begin_write() {
+			Ok(txn) => txn,
+			Err(e) => {
+				log::warn!("Failed to begin write transaction for wallet state: {e}");
+				return;
+			},
+		};
+		{
+			let mut table = match write_txn.open_table(self.wallet_state_table) {
+				Ok(t) => t,
+				Err(e) => {
+					log::warn!("Failed to open wallet state table: {e}");
+					return;
+				},
+			};
+			if let Err(e) = table.insert(key, compressed.as_slice()) {
+				log::warn!("Failed to insert wallet state: {e}");
+				return;
+			}
+		}
+		if let Err(e) = write_txn.commit() {
+			log::warn!("Failed to commit wallet state write: {e}");
+			return;
+		}
+
+		log::info!(
+			"Cached wallet state at block {} (compressed: {} bytes)",
+			block_height,
+			compressed.len()
+		);
+	}
+
+	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
+		// For efficiency, we could store block_height separately, but for now
+		// we just load the full cache and extract the height
+		<Self as FetchStorage<S, P, D>>::get_wallet_state(self, chain_id, wallet_id)
+			.await
+			.map(|c| c.block_height)
+	}
+
+	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
+		let key = WalletCacheKey::new(chain_id, wallet_id);
+		let write_txn = match self.db.write().await.begin_write() {
+			Ok(txn) => txn,
+			Err(e) => {
+				log::warn!("Failed to begin write transaction for wallet state deletion: {e}");
+				return;
+			},
+		};
+		{
+			if let Ok(mut table) = write_txn.open_table(self.wallet_state_table) {
+				let _ = table.remove(key);
+			}
+		}
+		if let Err(e) = write_txn.commit() {
+			log::warn!("Failed to commit wallet state deletion: {e}");
+		}
+	}
+}
+
+// Implement WalletStateCaching for RedbBackend (delegates to FetchStorage impl)
+#[async_trait]
+impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> WalletStateCaching
+	for RedbBackend<S, P, D>
+{
+	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
+		<Self as FetchStorage<S, P, D>>::get_wallet_state(self, chain_id, wallet_id).await
+	}
+
+	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
+		<Self as FetchStorage<S, P, D>>::set_wallet_state(self, chain_id, wallet_id, cache).await
+	}
+
+	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
+		<Self as FetchStorage<S, P, D>>::get_cached_block_height(self, chain_id, wallet_id).await
+	}
+
+	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
+		<Self as FetchStorage<S, P, D>>::delete_wallet_state(self, chain_id, wallet_id).await
 	}
 }
 
