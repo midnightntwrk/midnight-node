@@ -22,7 +22,6 @@
     },
     "cardano_addresses": {
         "committee_candidates_address": "addr_test1wrahchgp7x6l8c3lamt4egk7dcwhjdvz3npdwq8mz4q9tecylsqww",
-        "d_parameter_policy_id": "0x907345b2b1e61424d83af0d0d3b32de8d67882fcb1a6d45f28a8714c",
         "permissioned_candidates_policy_id": "0xfaf0b64110b3cfc265297ae2f5d4a11dc66c53b563e7c14d4701d45c",
         "bridge": {
             "illiquid_circulation_supply_validator_address": "addr_test1wzue5jtnfjqg6adr25d9vsjnqm3hhnpdgam5tfm0e3qqpdce0appd",

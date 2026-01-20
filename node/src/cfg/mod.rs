@@ -35,7 +35,6 @@ use self::{
 
 type CfgSourcesMap = BTreeMap<&'static str, config::Config>;
 
-pub mod addresses;
 pub mod chain_spec_cfg;
 pub mod meta_cfg;
 pub mod midnight_cfg;
