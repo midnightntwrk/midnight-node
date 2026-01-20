@@ -1,0 +1,43 @@
+name: nightly runs
+
+on:
+  schedule:
+    - cron: "10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  qanet_rust_e2e:
+    runs-on: ubuntu-latest-8-core-x64
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout e2e branch
+        uses: actions/checkout@v4
+        with:
+          ref: e2e-cngd-for-cardano-preview
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run qanet e2e test
+        working-directory: tests/e2e/tests
+        run: |
+          cargo test --test e2e_tests --no-default-features --features qanet -- \
+            register_for_dust_production --no-capture
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_E2E_NODE: ${{ secrets.SLACK_WEBHOOK_E2E_NODE }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            MESSAGE="✅ Nightly qanet e2e PASSED\n$RUN_URL"
+          else
+            MESSAGE="❌ Nightly qanet e2e FAILED\n$RUN_URL"
+          fi
+
+          curl -X POST -H "Content-type: application/json" \
+            --data "{\"text\":\"$MESSAGE\"}" \
+            "$SLACK_WEBHOOK_E2E_NODE"
