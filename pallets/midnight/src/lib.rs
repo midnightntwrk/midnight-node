@@ -557,10 +557,10 @@ pub mod pallet {
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let gas_cost =
-				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-
-			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
+			Self::get_transaction_cost(tx)
+				.map(|gas_cost| Weight::from_parts(gas_cost, 0))
+				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE)
+				+ ConfigurableTransactionSizeWeight::<T>::get()
 		}
 	}
 }
