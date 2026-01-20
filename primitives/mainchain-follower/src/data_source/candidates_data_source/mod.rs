@@ -18,7 +18,7 @@ use itertools::Itertools;
 use log::error;
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_plutus_data::{
-	d_param::DParamDatum, permissioned_candidates::PermissionedCandidateDatums,
+	permissioned_candidates::PermissionedCandidateDatums,
 	registered_candidates::RegisterValidatorDatum,
 };
 use sidechain_domain::*;
@@ -65,26 +65,18 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 	async fn get_ariadne_parameters(
 			&self,
 			epoch: McEpochNumber,
-			d_parameter_policy: PolicyId,
+			_d_parameter_policy: PolicyId,
 			permissioned_candidate_policy: PolicyId
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
 		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
-		let d_parameter_asset = Asset::new(d_parameter_policy);
 		let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
 
-		let (candidates_output_opt, d_output_opt) = tokio::try_join!(
-			db_model::get_token_utxo_for_epoch(&self.pool, &permissioned_candidate_asset, epoch),
-			db_model::get_token_utxo_for_epoch(&self.pool, &d_parameter_asset, epoch)
-		)?;
+		let candidates_output_opt =
+			db_model::get_token_utxo_for_epoch(&self.pool, &permissioned_candidate_asset, epoch).await?;
 
-		let d_output = d_output_opt.ok_or(db_model::DataSourceError::ExpectedDataNotFound("DParameter".to_string()))?;
-
-		let d_datum = d_output
-			.datum
-			.map(|d| d.0)
-			.ok_or(db_model::DataSourceError::ExpectedDataNotFound("DParameter Datum".to_string()))?;
-
-		let d_parameter = DParamDatum::try_from(d_datum)?.into();
+		// DParameter is now read from pallet_system_parameters storage, not from mainchain.
+		// This hardcoded value is unused - the actual d_parameter comes from the runtime.
+		let d_parameter = DParameter { num_permissioned_candidates: 0, num_registered_candidates: 0 };
 
 		let permissioned_candidates = match candidates_output_opt {
 			None => None,
