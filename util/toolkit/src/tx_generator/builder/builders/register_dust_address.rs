@@ -104,7 +104,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		let fallible_outputs = outputs.split_off(1);
 
 		let guaranteed_unshielded_offer = UnshieldedOfferInfo { inputs, outputs };
-		let fallible_unshielded_offer = if fallible_inputs.len() > 1 && fallible_outputs.len() > 1 {
+		let fallible_unshielded_offer = if fallible_inputs.len() > 0 && fallible_outputs.len() > 0 {
 			Some(UnshieldedOfferInfo { inputs: fallible_inputs, outputs: fallible_outputs })
 		} else {
 			None
