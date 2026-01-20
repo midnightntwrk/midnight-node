@@ -15,11 +15,14 @@
 //!
 //! This module uses the types and functions provided by the `db` module
 
+pub mod candidates_data_source;
 pub mod cnight_observation;
 pub mod cnight_observation_mock;
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
 
+pub use candidates_data_source::CandidatesDataSourceImpl;
+pub use candidates_data_source::cached::CandidateDataSourceCached;
 pub use cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
 	TxPosition,
