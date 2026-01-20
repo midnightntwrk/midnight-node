@@ -73,8 +73,8 @@ impl BuildTxs for RegisterDustAddressBuilder {
 						value: utxo.value,
 						owner: seed,
 						token_type: NIGHT,
-						intent_hash: None,
-						output_number: None,
+						intent_hash: Some(utxo.intent_hash),
+						output_number: Some(utxo.output_no),
 					})
 					.collect::<Vec<_>>()
 			})
