@@ -49,7 +49,7 @@ where
 
 /// Error type returned by Db-Sync based data sources
 #[derive(Debug, PartialEq, thiserror::Error)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 pub enum DataSourceError {
 	/// Indicates that the Db-Sync database rejected a request as invalid
 	#[error("Bad request: `{0}`.")]
@@ -142,7 +142,7 @@ impl DbSyncConfigurationProvider {
 	) -> std::result::Result<TxInConfiguration, DataSourceError> {
 		let lock = self.tx_in_config.lock().await;
 		if let Some(tx_in_config) = lock.get() {
-			return Ok(*tx_in_config);
+			Ok(*tx_in_config)
 		} else {
 			let tx_in_config = TxInConfiguration::from_connection(&self.pool).await?;
 			lock.set(tx_in_config).map_err(|_| {
@@ -150,7 +150,7 @@ impl DbSyncConfigurationProvider {
 					"Failed to set tx_in_config in DbSyncConfigurationProvider".into(),
 				)
 			})?;
-			return Ok(tx_in_config);
+			Ok(tx_in_config)
 		}
 	}
 }

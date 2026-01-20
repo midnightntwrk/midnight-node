@@ -143,11 +143,11 @@ impl CandidateDataSourceCached {
 	) -> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
 		log::debug!("get_candidates_with_caching({:?})", epoch.0);
 		let key = (epoch, committee_candidate_address.to_string());
-		if let Ok(mut cache) = self.get_candidates_for_epoch_cache.lock() {
-			if let Some(resp) = cache.get(&key) {
-				log::debug!("Serving cached candidates for epoch: {:?}", epoch.0);
-				return Ok(resp.clone());
-			}
+		if let Ok(mut cache) = self.get_candidates_for_epoch_cache.lock()
+			&& let Some(resp) = cache.get(&key)
+		{
+			log::debug!("Serving cached candidates for epoch: {:?}", epoch.0);
+			return Ok(resp.clone());
 		}
 
 		let response = self.inner.get_candidates(epoch, committee_candidate_address).await?;
@@ -167,11 +167,11 @@ impl CandidateDataSourceCached {
 	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
 		log::debug!("get_ariadne_parameters_with_caching({:?})", epoch.0);
 		let key = (epoch, d_parameter_validator.clone(), permissioned_candidates_validator.clone());
-		if let Ok(mut cache) = self.get_ariadne_parameters_for_epoch_cache.lock() {
-			if let Some(resp) = cache.get(&key) {
-				log::debug!("Serving cached ariadne parameters for epoch: {:?}", epoch.0);
-				return Ok(resp.clone());
-			}
+		if let Ok(mut cache) = self.get_ariadne_parameters_for_epoch_cache.lock()
+			&& let Some(resp) = cache.get(&key)
+		{
+			log::debug!("Serving cached ariadne parameters for epoch: {:?}", epoch.0);
+			return Ok(resp.clone());
 		}
 
 		let response = self
@@ -190,10 +190,10 @@ impl CandidateDataSourceCached {
 		request_epoch: McEpochNumber,
 	) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
 		let data_epoch = self.inner.data_epoch(request_epoch).await?;
-		if let Ok(stable_epoch) = self.highest_seen_stable_epoch.lock() {
-			if stable_epoch.map_or(false, |stable_epoch| stable_epoch >= data_epoch) {
-				return Ok(true);
-			}
+		if let Ok(stable_epoch) = self.highest_seen_stable_epoch.lock()
+			&& stable_epoch.is_some_and(|stable_epoch| stable_epoch >= data_epoch)
+		{
+			return Ok(true);
 		}
 		match db_model::get_latest_stable_epoch(&self.inner.pool, self.security_parameter).await? {
 			Some(stable_epoch) => {
