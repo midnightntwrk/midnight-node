@@ -163,8 +163,8 @@ echo "Compiling Aiken contracts with modified default config..."
 echo "Aiken version:"
 aiken --version
 
-# Clean build directory to ensure no stale artifacts
-rm -rf build/
+# Clean build artifacts to ensure fresh compilation and blueprint generation
+rm -rf build/ .aiken/ plutus.json
 
 # Debug: Show the updated default section of aiken.toml
 echo "=== aiken.toml config.default one-shot values ==="
