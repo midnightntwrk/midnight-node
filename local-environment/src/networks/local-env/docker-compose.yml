@@ -63,7 +63,7 @@ services:
         condition: service_healthy
     volumes:
       - ./runtime-values:/runtime-values
-      - ${MIDNIGHT_RESERVE_CONTRACTS_PATH:-../../../../../midnight-reserve-contracts}:/contracts
+      - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
     security_opt:
       - no-new-privileges:true
     cap_drop:
