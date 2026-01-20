@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 
@@ -11,10 +13,10 @@ pub mod pallet {
 		LedgerBlockContextProvider, LedgerStateProviderMut, MidnightSystemTransactionExecutor,
 	};
 
+	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
 		Hash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use sp_std::vec::Vec;
 
 	use super::*;
 
@@ -75,16 +77,23 @@ pub mod pallet {
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 
-			<T as Config>::LedgerStateProviderMut::mut_ledger_state(move |state_key| {
+			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 				let result = LedgerApi::apply_system_transaction(
 					&state_key,
-					&midnight_system_tx,
+					&midnight_system_tx.clone(),
 					block_context,
 					runtime_version,
 				)
 				.map_err(Error::<T>::from)?;
-				Ok::<(Vec<u8>, ()), Error<T>>((result.state_root, ()))
+				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
 			})?;
+
+			Self::deposit_event(Event::<T>::SystemTransactionApplied(
+				super::SystemTransactionApplied {
+					hash,
+					serialized_system_transaction: midnight_system_tx,
+				},
+			));
 
 			Ok(())
 		}

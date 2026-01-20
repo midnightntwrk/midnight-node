@@ -272,7 +272,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
 			entrypoints_to_insert
-				.push((entrypoint, ContractOperationVersionedVerifierKey::V2(key)));
+				.push((entrypoint, ContractOperationVersionedVerifierKey::V3(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()
@@ -298,7 +298,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 		tx_info.set_guaranteed_offer(offer_info);
 
-		tx_info.set_wallet_seeds(vec![self.funding_seed()]);
+		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(true);
 
 		#[cfg(not(feature = "erase-proof"))]

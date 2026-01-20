@@ -61,7 +61,6 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			context.clone(),
 			prover_arc.clone(),
 			self.rng_seed,
-			None,
 		);
 
 		let inputs = context.with_ledger_state(|ledger_state| {
@@ -126,7 +125,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			});
 		});
 
-		tx_info.set_wallet_seeds(vec![funding_seed]);
+		tx_info.set_funding_seeds(vec![funding_seed]);
 		tx_info.use_mock_proofs_for_fees(true);
 
 		let tx = tx_info.prove().await.expect("Balancing TX failed");

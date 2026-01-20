@@ -9,15 +9,20 @@ members = [
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
+    "pallets/system-parameters",
+    "pallets/system-parameters/rpc",
     "pallets/version",
     "primitives/beefy",
     "primitives/midnight",
     "primitives/ledger",
+    "primitives/system-parameters",
     "res",
     "runtime",
     "util/toolkit",
     "util/documented",
     "util/upgrader",
+    "util/aiken-deployer",
+    "util/aiken-contracts-lib",
     "tests/e2e",
     "relay",
     "docs",
@@ -55,28 +60,28 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 
 [workspace.dependencies]
 # Midnight dependencies
-mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-6.1.0-alpha.5" }
-ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-6.1.0-alpha.5", features = ["parity-db"] }
-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-6.1.0-alpha.5" }
-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-6.1.0-alpha.5" }
-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-6.1.0-alpha.5" }
-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-6.1.0-alpha.5" }
-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-6.1.0-alpha.5" }
-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-6.1.0-alpha.5" }
+mn-ledger = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-7.0.0-rc.1" }
+ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-7.0.0-rc.1", features = ["parity-db"] }
+coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "ledger-7.0.0-rc.1" }
+onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-7.0.0-rc.1" }
+base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "ledger-7.0.0-rc.1" }
+transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "ledger-7.0.0-rc.1" }
+zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-7.0.0-rc.1" }
+zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "ledger-7.0.0-rc.1" }
 
 # Hard-fork test dependencies
-mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-6.1.0-alpha.5", features = ["parity-db"] }
-coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
-zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
+mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-7.0.0-rc.1", features = ["parity-db"] }
+coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
+zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "zkir", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-6.1.0-alpha.5" }
-midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-6.1.0-alpha.5" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-7.0.0-rc.1" }
+midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-7.0.0-rc.1" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
@@ -89,7 +94,9 @@ pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false 
 pallet-cnight-observation = { path = "pallets/cnight-observation", default-features = false }
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
-pallet-federated-authority = {path = "pallets/federated-authority", default-features = false }
+pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
+pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
+pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
 documented = { path = "util/documented", default-features = false }
 
@@ -100,6 +107,7 @@ midnight-primitives-ledger = { path = "primitives/ledger", default-features = fa
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
+midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 
 runtime-common = { path = "runtime/common", default-features = false }
 
@@ -118,10 +126,7 @@ sp-partner-chains-bridge = { default-features = false, git = "https://github.com
 pallet-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-pallet-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-
 sp-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-governed-map = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 sidechain-mc-hash = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 sidechain-domain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 authority-selection-inherents = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
@@ -133,8 +138,8 @@ sp-session-validator-management = { default-features = false, git = "https://git
 sp-session-validator-management-query = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 time-source = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 pallet-partner-chains-session = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1", features = ["pallet-session-compat"] }
-sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
-sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
+sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 # Substrate dependencies
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -161,7 +166,7 @@ sp-transaction-pool = { default-features = false, git = "https://github.com/pari
 sp-version = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-genesis-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-externalities = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-partner-chains-node-commands = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1"  }
+partner-chains-node-commands = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 partner-chains-cli = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
 
 substrate-wasm-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -174,7 +179,7 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-frame-storage-access-test-runtime  = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
+frame-storage-access-test-runtime = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-io = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -202,7 +207,6 @@ sc-rpc-api = { default-features = false, git = "https://github.com/paritytech/po
 sc-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-storage-monitor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 
-sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-runtime-interface = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-chain-spec = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -217,7 +221,6 @@ sc-cli = { default-features = false, git = "https://github.com/paritytech/polkad
 sc-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-consensus-grandpa-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-consensus-beefy-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-pallet-sudo = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-staking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-storage = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-inherents = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -231,7 +234,7 @@ scale-info = { version = "2.1.1", default-features = false }
 scale-info-derive = { version = "2.1.1", default-features = false }
 
 env_logger = "0.11.3"
-itertools = { default-features = false, version = "0.14.0", features = [ "use_alloc" ] }
+itertools = { default-features = false, version = "0.14.0", features = ["use_alloc"] }
 
 jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"] }
 
@@ -259,7 +262,9 @@ derive-where = "1.5.0"
 tempfile = "3.22.0"
 impl-trait-for-tuples = "0.2.2"
 test-log = "0.2"
-sqlx = { version = "0.8.5",  default-features = false}
+sqlx = { version = "0.8.5", default-features = false }
+prost = { version = "0.13.5", default-features = false}
+reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls" ] }
 
 [profile.release]
 panic = "unwind"

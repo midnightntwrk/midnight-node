@@ -1,9 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use parity_scale_codec::{Codec, Decode};
 use sp_consensus_beefy::mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet};
 use sp_runtime::RuntimeAppPublic;
-use sp_std::vec::Vec;
 
 /// The key type for inserting Beefy keys into the keystore
 pub const BEEFY_KEY_TYPE: &str = "beef";
@@ -14,8 +16,10 @@ pub const BEEFY_LOG_TARGET: &str = "midnight-beefy";
 pub type Stake = u64;
 pub type BeefyAuthoritySetOf<Hash> = BeefyAuthoritySet<Hash>;
 
+pub type BeefyStake<AuthorityId> = (AuthorityId, Stake);
+
 /// A List of tuple (Beefy Ids, stake)
-pub type BeefyStakes<AuthorityId> = Vec<(AuthorityId, Stake)>;
+pub type BeefyStakes<AuthorityId> = Vec<BeefyStake<AuthorityId>>;
 
 /// Ids to identify Beefy stakes
 pub mod known_payloads {

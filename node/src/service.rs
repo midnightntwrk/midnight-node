@@ -17,6 +17,7 @@ use crate::{
 	extensions::ExtensionsFactory,
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
+	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
 };
 use futures::FutureExt;
@@ -365,7 +366,6 @@ pub fn new_partial(
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
 			data_sources.cnight_observation.clone(),
-			data_sources.governed_map.clone(),
 			data_sources.federated_authority_observation.clone(),
 			data_sources.bridge.clone(),
 		),
@@ -405,6 +405,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	data_sources: DataSources,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
 	storage_config: StorageInit,
+	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
@@ -526,6 +527,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let name = config.network.node_name.clone();
 	let enable_grandpa = !config.disable_grandpa;
 	let prometheus_registry = config.prometheus_registry().cloned();
+	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
 	let rpc_extensions_builder = {
@@ -627,7 +629,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
 				data_sources.cnight_observation.clone(),
-				data_sources.governed_map.clone(),
 				data_sources.federated_authority_observation.clone(),
 				data_sources.bridge.clone(),
 			),
@@ -748,6 +749,22 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			&task_manager.spawn_essential_handle(),
 		)
 		.map_err(|e| ServiceError::Application(e.into()))?;
+	}
+
+	// Spawn Prometheus metrics push task if configured
+	if let Some(push_config) = metrics_push_config {
+		if let Some(registry) = prometheus_registry_for_push {
+			task_manager.spawn_handle().spawn(
+				"prometheus-push",
+				None,
+				run_metrics_push_task(registry, push_config),
+			);
+		} else {
+			log::warn!(
+				"Prometheus push endpoint configured but no Prometheus registry available. \
+				 Enable Prometheus with --prometheus-port to use push functionality."
+			);
+		}
 	}
 
 	Ok(task_manager)

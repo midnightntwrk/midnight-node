@@ -43,7 +43,7 @@ impl<D: DB + Clone> IntoWalletAddress for ShieldedWallet<D> {
 		let mut enc_pub_key = Vec::new();
 		Serializable::serialize(&self.enc_public_key, &mut enc_pub_key)
 			.unwrap_or_else(|err| panic!("Error Serializing `enc_public_key`: {err}"));
-		let data = [&coin_pub_key[..], &[3, 0], &enc_pub_key[..]].concat();
+		let data = [&coin_pub_key[..], &enc_pub_key[..]].concat();
 
 		WalletAddress::new(hrp, data)
 	}
@@ -137,10 +137,9 @@ impl<D: DB + Clone> TryFrom<&WalletAddress> for ShieldedWallet<D> {
 			return Err(ShieldedAddressParseError::AddressNotShielded);
 		}
 
-		assert_eq!(data.len(), 66);
+		assert_eq!(data.len(), 64);
 		let coin_bytes = &data[..32];
-		assert_eq!(&data[32..34], &[3, 0]);
-		let mut enc_bytes = &data[34..];
+		let mut enc_bytes = &data[32..];
 
 		let coin_public_key = CoinPublicKey(HashOutput(coin_bytes.try_into().unwrap()));
 		let enc_public_key: EncryptionPublicKey = Deserializable::deserialize(&mut enc_bytes, 0)

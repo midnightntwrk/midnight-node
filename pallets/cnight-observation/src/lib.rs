@@ -18,6 +18,8 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use derive_new::new;
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
@@ -669,7 +671,7 @@ pub mod pallet {
 
 		/// Changes the mainchain address for the mapping validator contract
 		///
-		/// This extrinsic must be run either using `sudo` or some other chain governance mechanism.
+		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
 		#[pallet::weight((1, DispatchClass::Normal))]
 		pub fn set_mapping_validator_contract_address(

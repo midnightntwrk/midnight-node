@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use frame_system::pallet_prelude::BlockNumberFor;
 use log::info;
 use sidechain_domain::ScEpochNumber;
 use sp_session_validator_management::CommitteeMember as _;
 use sp_staking::SessionIndex;
-use sp_std::vec::Vec;
 
 pub struct ValidatorManagementSessionManager<T> {
 	_phantom: PhantomData<T>,
