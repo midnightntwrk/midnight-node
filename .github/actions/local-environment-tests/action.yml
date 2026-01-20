@@ -53,7 +53,9 @@ runs:
       run: |
         echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
         git clone --depth 1 "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git" "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
-        echo "✓ Cloned to $(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+        CONTRACTS_PATH="$(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+        echo "✓ Cloned to ${CONTRACTS_PATH}"
+        echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${CONTRACTS_PATH}" >> $GITHUB_ENV
       shell: bash
       env:
         GHCR_PASSWORD: ${{ inputs.ghcr-password }}

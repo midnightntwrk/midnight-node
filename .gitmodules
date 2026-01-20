@@ -1,6 +1,3 @@
 [submodule "indexer"]
 	path = indexer
 	url = https://github.com/midnightntwrk/midnight-indexer
-[submodule "midnight-reserve-contracts"]
-	path = midnight-reserve-contracts
-	url = https://github.com/midnightntwrk/midnight-reserve-contracts.git
