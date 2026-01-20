@@ -18,9 +18,9 @@ use crate::{
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, ObservedUtxos,
 };
+use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;
