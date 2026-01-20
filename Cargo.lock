@@ -7359,7 +7359,6 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "sp-core",
  "subxt 0.44.0",
  "tiny-bip39",
  "tokio",

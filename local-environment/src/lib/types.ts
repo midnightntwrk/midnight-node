@@ -27,6 +27,8 @@ export interface ImageUpgradeOptions extends RunOptions {
   includePattern?: string;
   /** regex to exclude services */
   excludePattern?: string;
+  /** time (ms) to wait before starting any service rollout default 30000 */
+  waitBeforeMs?: number;
   /** time (ms) to wait between each service rollout default 5000 */
   waitBetweenMs?: number;
   /** max seconds to wait for a service to report healthy after restart default 180 */
@@ -35,17 +37,30 @@ export interface ImageUpgradeOptions extends RunOptions {
   requireHealthy?: boolean;
 }
 
-export interface RuntimeUpgradeOptions extends RunOptions {
+export interface RuntimeUpgradeBaseOptions extends RunOptions {
   /** absolute or relative path to the runtime wasm artifact */
   wasmPath: string;
-  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
-  sudoUri?: string;
-  /** how many blocks to wait before submitting the sudo upgrade */
-  delayBlocks?: number;
   /** skip bringing up docker-compose before submitting the upgrade */
   skipRun?: boolean;
   /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
   rpcUrl?: string;
+}
+
+export interface RuntimeUpgradeOptions extends RuntimeUpgradeBaseOptions {
+  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
+  sudoUri?: string;
+  /** how many blocks to wait before submitting the sudo upgrade */
+  delayBlocks?: number;
+}
+
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions {
+  /** URIs for council members who will propose/vote to approve the motion */
+  councilUris: string[];
+  /** URIs for technical committee members who will propose/vote to approve the motion */
+  techCommitteeUris: string[];
+  /** URI used to close the federated motion and apply the authorized upgrade */
+  motionExecutorUri: string;
 }
 
 export interface SnapshotOptions {
