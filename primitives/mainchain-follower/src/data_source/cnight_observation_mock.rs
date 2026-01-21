@@ -56,8 +56,8 @@ impl CNightObservationDataSourceMock {
 		hash[0..4].copy_from_slice(&block_number.to_le_bytes());
 		hash[4] = salt;
 		// Fill rest with a deterministic pattern based on block number
-		for i in 5..32 {
-			hash[i] = ((block_number as u64 * (i as u64 + 1) * 31) % 256) as u8;
+		for (i, byte) in hash.iter_mut().enumerate().skip(5) {
+			*byte = ((block_number as u64 * (i as u64 + 1) * 31) % 256) as u8;
 		}
 		hash
 	}
@@ -72,15 +72,15 @@ impl CNightObservationDataSourceMock {
 
 		// Deterministic reward address (29 bytes)
 		let mut reward_addr = [0u8; 29];
-		for i in 0..29 {
-			reward_addr[i] = ((block_num as u64 * (i as u64 + 7) * 17) % 256) as u8;
+		for (i, byte) in reward_addr.iter_mut().enumerate() {
+			*byte = ((block_num as u64 * (i as u64 + 7) * 17) % 256) as u8;
 		}
 
 		// Deterministic dust public key (33 bytes compressed)
 		let mut dust_pk = [0u8; 33];
 		dust_pk[0] = 0x02; // Compressed public key prefix
-		for i in 1..33 {
-			dust_pk[i] = ((block_num as u64 * (i as u64 + 3) * 23) % 256) as u8;
+		for (i, byte) in dust_pk.iter_mut().enumerate().skip(1) {
+			*byte = ((block_num as u64 * (i as u64 + 3) * 23) % 256) as u8;
 		}
 
 		vec![ObservedUtxo {
