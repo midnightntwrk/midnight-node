@@ -33,6 +33,10 @@ struct Cli {
 	#[arg(short, long, env, default_value = "//Alice")]
 	signer_key: String,
 
+	/// Run the upgrade once and exit (no HTTP server)
+	#[arg(long, env, default_value_t = false)]
+	execute_once: bool,
+
 	/// Activate upgrade after a timeout (seconds)
 	#[arg(short, long, env)]
 	timeout: Option<u64>,
@@ -61,7 +65,10 @@ async fn execute(data: web::Data<AppData>) -> Result<impl Responder, UpgraderErr
 		Ok(HttpResponse::Conflict().body("upgrade has already been executed"))
 	} else {
 		*data.busy.lock().await = true;
-		execute_upgrade(&data.rpc_url, &data.signer, &data.code).await?;
+		if let Err(err) = execute_upgrade(&data.rpc_url, &data.signer, &data.code).await {
+			log::error!("Upgrade failed via HTTP /execute: {err:?}");
+			return Err(err);
+		}
 		*data.already_executed.lock().await = true;
 		Ok(HttpResponse::Ok().body("upgrade executed"))
 	}
@@ -82,12 +89,27 @@ async fn main() -> std::io::Result<()> {
 	let code = std::fs::read(&cli.runtime_path)?;
 
 	log::info!("Loaded new runtime code from path: {}", cli.runtime_path.display());
+
+	if cli.execute_once {
+		if let Some(timeout) = cli.timeout {
+			log::info!("Sleeping for {timeout} seconds before executing upgrade...");
+			std::thread::sleep(Duration::from_secs(timeout));
+		}
+
+		if let Err(err) = execute_upgrade(&cli.rpc_url, &signer, &code).await {
+			log::error!("Upgrade failed in execute-once mode: {err:?}");
+			std::process::exit(1);
+		}
+		return Ok(());
+	}
+
 	if let Some(timeout) = cli.timeout {
 		log::info!("Sleeping for {timeout} seconds...");
 		std::thread::sleep(Duration::from_secs(timeout));
-		execute_upgrade(&cli.rpc_url, &signer, &code)
-			.await
-			.expect("failed to execute upgrade");
+		if let Err(err) = execute_upgrade(&cli.rpc_url, &signer, &code).await {
+			log::error!("Upgrade failed after timeout: {err:?}");
+			std::process::exit(1);
+		}
 		Ok(())
 	} else {
 		let port = cli.port;
