@@ -12,11 +12,11 @@
 // limitations under the License.
 
 use authority_selection_inherents::AuthoritySelectionDataSource;
+use midnight_primitives_mainchain_follower::CandidatesDataSourceImpl;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
-	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, CandidatesDataSourceImpl,
-	DbSyncBlockDataSourceConfig, McFollowerMetrics, McHashDataSourceImpl,
-	SidechainRpcDataSourceImpl,
+	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, DbSyncBlockDataSourceConfig,
+	McFollowerMetrics, McHashDataSourceImpl, SidechainRpcDataSourceImpl,
 };
 use partner_chains_mock_data_sources::{
 	AuthoritySelectionDataSourceMock, BlockDataSourceMock, McHashDataSourceMock,
