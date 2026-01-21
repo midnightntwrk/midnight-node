@@ -29,7 +29,7 @@ on:
       notify_slack:
         description: "Send Slack notification"
         required: true
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "false"
@@ -84,8 +84,17 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install system dependencies (protoc)
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
       - name: Run e2e tests
         working-directory: tests/e2e/tests
+        env:
+          RUST_BACKTRACE: "1"
         run: |
           cargo test --test e2e_tests --no-default-features --features ${{ steps.vars.outputs.env }} -- \
             register_for_dust_production --no-capture
