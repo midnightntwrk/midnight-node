@@ -16,7 +16,6 @@
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wzp7wnerffnkkhlkvvy9wps0zgwke48ycjpnhv0wrramn5gs8ajnx",
-    "d_parameter_policy_id": "0xa2402f25a5dceef7b742b6a5ef11ff07f62c7d4ef2610830e5d81050",
     "permissioned_candidates_policy_id": "0x726d95cdbca96843b5710f560ae452623b63f8d3fac434442f8d8715"
   },
   "initial_permissioned_candidates": [
