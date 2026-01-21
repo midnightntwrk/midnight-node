@@ -1,16 +1,13 @@
 name: nightly runs
 
 on:
-  # Debug trigger: runs on every push to the specified test branch
   push:
     branches:
       - e2e-cnight-nightly-run
 
-  # Scheduled trigger: only runs from the default branch (e.g. main)
   schedule:
     - cron: "10 * * * *"
 
-  # Manual trigger: can be run from UI on any branch
   workflow_dispatch:
     inputs:
       env:
@@ -26,20 +23,11 @@ on:
         description: "Git ref to checkout for e2e tests (branch / tag / SHA)"
         required: true
         default: "e2e-cngd-for-cardano-preview"
-      notify_slack:
-        description: "Send Slack notification"
-        required: true
-        default: "true"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 permissions:
   contents: read
 
 concurrency:
-  # Prevent overlapping runs for the same environment on the same ref
   group: nightly-e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
@@ -57,7 +45,6 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "env=qanet" >> "$GITHUB_OUTPUT"
             echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
-            echo "notify_slack=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -65,14 +52,12 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "env=qanet" >> "$GITHUB_OUTPUT"
             echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
-            echo "notify_slack=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           # workflow_dispatch uses user-provided inputs
           echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
           echo "e2e_ref=${{ inputs.e2e_ref }}" >> "$GITHUB_OUTPUT"
-          echo "notify_slack=${{ inputs.notify_slack }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout e2e branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
@@ -91,16 +76,15 @@ jobs:
           sudo apt-get install -y protobuf-compiler
           protoc --version
 
-      - name: Run e2e tests
+      - name: Run e2e tests (all)
         working-directory: tests/e2e/tests
         env:
           RUST_BACKTRACE: "1"
         run: |
-          cargo test --test e2e_tests --no-default-features --features ${{ steps.vars.outputs.env }} -- \
-            register_for_dust_production --no-capture
+          cargo test --test e2e_tests --no-default-features --features ${{ steps.vars.outputs.env }} -- --no-capture
 
       - name: Notify Slack
-        if: always() && steps.vars.outputs.notify_slack == 'true'
+        if: always()
         env:
           SLACK_WEBHOOK_E2E_NODE: ${{ secrets.SLACK_WEBHOOK_E2E_NODE }}
           STATUS: ${{ job.status }}
@@ -110,9 +94,9 @@ jobs:
         shell: bash
         run: |
           if [ "$STATUS" = "success" ]; then
-            MESSAGE="✅ Nightly ${ENV_NAME} rust e2e PASSED (ref: ${E2E_REF})\n${RUN_URL}"
+            MESSAGE="✅ ${ENV_NAME} env nightly e2e cNgD passed successfully\n${RUN_URL}"
           else
-            MESSAGE="❌ Nightly ${ENV_NAME} rust e2e FAILED (ref: ${E2E_REF})\n${RUN_URL}"
+            MESSAGE="❌ ${ENV_NAME} env nightly e2e cNgD failed\n${RUN_URL}"
           fi
 
           curl -X POST -H "Content-type: application/json" \
