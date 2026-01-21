@@ -12,7 +12,6 @@
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wqgdltkw2egyzv7q65j285dmvqcs3223qw9fp4q3y79jnvsefxzwg",
-    "d_parameter_policy_id": "f61808fc43f0c4bad6b7aff7e92d09e9ced29ff8c41b449e9e103235",
     "permissioned_candidates_policy_id": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5",
     "governed_map": {
       "policy_id": "00000000000000000000000000000000000000000000000000000001",
