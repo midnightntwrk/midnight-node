@@ -1,9 +1,16 @@
 name: nightly runs
 
 on:
+  # Debug trigger: runs on every push to the specified test branch
+  push:
+    branches:
+      - e2e-cnight-nightly-run
+
+  # Scheduled trigger: only runs from the default branch (e.g. main)
   schedule:
-    # Runs every hour at minute 10 (scheduled workflows run from the default branch, e.g. main)
     - cron: "10 * * * *"
+
+  # Manual trigger: can be run from UI on any branch
   workflow_dispatch:
     inputs:
       env:
@@ -29,13 +36,12 @@ on:
           - "true"
 
 concurrency:
-  # Prevent overlapping runs for the same environment
-  group: nightly-e2e-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.env || 'qanet' }}
+  # Prevent overlapping runs for the same environment on the same ref
+  group: nightly-e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   rust_e2e:
-    name: ${{ (github.event_name == 'schedule' && 'qanet') || inputs.env }} rust e2e
     runs-on: ubuntu-latest-8-core-x64
     timeout-minutes: 120
 
@@ -49,11 +55,21 @@ jobs:
             echo "env=qanet" >> "$GITHUB_OUTPUT"
             echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
             echo "notify_slack=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
-            echo "e2e_ref=${{ inputs.e2e_ref }}" >> "$GITHUB_OUTPUT"
-            echo "notify_slack=${{ inputs.notify_slack }}" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # push does not support inputs either, so set defaults for push-based debug runs
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "env=qanet" >> "$GITHUB_OUTPUT"
+            echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
+            echo "notify_slack=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # workflow_dispatch uses user-provided inputs
+          echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
+          echo "e2e_ref=${{ inputs.e2e_ref }}" >> "$GITHUB_OUTPUT"
+          echo "notify_slack=${{ inputs.notify_slack }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout e2e branch
         uses: actions/checkout@v4
