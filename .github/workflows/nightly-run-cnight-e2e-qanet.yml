@@ -72,12 +72,12 @@ jobs:
           echo "notify_slack=${{ inputs.notify_slack }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout e2e branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
         with:
           ref: ${{ steps.vars.outputs.e2e_ref }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
 
       - name: Run e2e tests
         working-directory: tests/e2e/tests
