@@ -153,7 +153,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
 						hex_encode(&expected_root),
 						hex_encode(&actual_root),
-						hex_encode(&block_context.parent_block_hash.0),
+						hex_encode(block_context.parent_block_hash.0),
 					);
 				},
 				Some(_) => {},
