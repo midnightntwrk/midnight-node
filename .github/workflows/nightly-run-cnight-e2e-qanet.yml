@@ -2,40 +2,87 @@ name: nightly runs
 
 on:
   schedule:
+    # Runs every hour at minute 10 (scheduled workflows run from the default branch, e.g. main)
     - cron: "10 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment (maps to Rust feature flag)"
+        required: true
+        default: "qanet"
+        type: choice
+        options:
+          - qanet
+          - staging
+          - prod
+      e2e_ref:
+        description: "Git ref to checkout for e2e tests (branch / tag / SHA)"
+        required: true
+        default: "e2e-cngd-for-cardano-preview"
+      notify_slack:
+        description: "Send Slack notification"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  # Prevent overlapping runs for the same environment
+  group: nightly-e2e-${{ github.workflow }}-${{ github.event_name }}-${{ inputs.env || 'qanet' }}
+  cancel-in-progress: false
 
 jobs:
-  qanet_rust_e2e:
+  rust_e2e:
+    name: ${{ (github.event_name == 'schedule' && 'qanet') || inputs.env }} rust e2e
     runs-on: ubuntu-latest-8-core-x64
     timeout-minutes: 120
 
     steps:
+      - name: Resolve runtime settings
+        id: vars
+        shell: bash
+        run: |
+          # schedule does not support inputs, so set defaults for cron runs
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "env=qanet" >> "$GITHUB_OUTPUT"
+            echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
+            echo "notify_slack=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
+            echo "e2e_ref=${{ inputs.e2e_ref }}" >> "$GITHUB_OUTPUT"
+            echo "notify_slack=${{ inputs.notify_slack }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout e2e branch
         uses: actions/checkout@v4
         with:
-          ref: e2e-cngd-for-cardano-preview
+          ref: ${{ steps.vars.outputs.e2e_ref }}
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run qanet e2e test
+      - name: Run e2e tests
         working-directory: tests/e2e/tests
         run: |
-          cargo test --test e2e_tests --no-default-features --features qanet -- \
+          cargo test --test e2e_tests --no-default-features --features ${{ steps.vars.outputs.env }} -- \
             register_for_dust_production --no-capture
 
       - name: Notify Slack
-        if: always()
+        if: always() && steps.vars.outputs.notify_slack == 'true'
         env:
           SLACK_WEBHOOK_E2E_NODE: ${{ secrets.SLACK_WEBHOOK_E2E_NODE }}
           STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ENV_NAME: ${{ steps.vars.outputs.env }}
+          E2E_REF: ${{ steps.vars.outputs.e2e_ref }}
+        shell: bash
         run: |
           if [ "$STATUS" = "success" ]; then
-            MESSAGE="✅ Nightly qanet e2e PASSED\n$RUN_URL"
+            MESSAGE="✅ Nightly ${ENV_NAME} rust e2e PASSED (ref: ${E2E_REF})\n${RUN_URL}"
           else
-            MESSAGE="❌ Nightly qanet e2e FAILED\n$RUN_URL"
+            MESSAGE="❌ Nightly ${ENV_NAME} rust e2e FAILED (ref: ${E2E_REF})\n${RUN_URL}"
           fi
 
           curl -X POST -H "Content-type: application/json" \
