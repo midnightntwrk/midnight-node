@@ -65,7 +65,7 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "env=qanet" >> "$GITHUB_OUTPUT"
             echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
-            echo "notify_slack=false" >> "$GITHUB_OUTPUT"
+            echo "notify_slack=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
