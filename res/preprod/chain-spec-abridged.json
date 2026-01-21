@@ -105,9 +105,6 @@
             197
           ]
         },
-        "sudo": {
-          "key": "5H5xtgi9gMzj7uyeUWpw2LDJr5a4omn5WM1NiFGhukY2V9AF"
-        },
         "sessionCommitteeManagement": {
           "initialAuthorities": [
             {
@@ -204,7 +201,7 @@
           "mainChainScripts": {
             "committee_candidate_address": "addr_test1wrq0lldlvfdgay9tsdvpe2m5qk29e9g4ktzky7wz3nrmygcty5y4c",
             "d_parameter_policy_id": "0x3c0d30f4aace7d53243371bd30c0ca1f36b033d9d39734709770c172",
-            "permissioned_candidates_policy_id": "0xf98fd74a9f2a38517be40cd8e81098a82103cabe140fc19a3f18ed41"
+            "permissioned_candidates_policy_id": "0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec"
           }
         },
         "cNightObservation": {
@@ -339,13 +336,6 @@
             ]
           ]
         },
-        "governedMap": {
-          "mainChainScripts": {
-            "validator_address": "addr_test1wz6ehdggmynhnwyq3c40763w0jwwquzmvx7yrupys3dmz7smprat8",
-            "asset_policy_id": "0xdd818a9264a8cb86989fe04c3791058277e4004a1a7955e2f80a3e25"
-          },
-          "marker": null
-        },
         "bridge": {
           "mainChainScripts": null,
           "initialCheckpoint": null,
@@ -389,8 +379,8 @@
         },
         "systemParameters": {
           "termsAndConditions": {
-            "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "url": "https://midnight.network/terms-and-conditions"
+            "hash": "0xca85ed77bce68288e55300f006ccd5cce5d4940dc39fc41173a9c2ecd1eb616e",
+            "url": "https://www.midnight.gd/global-terms-txt"
           },
           "dParameter": {
             "num_permissioned_candidates": 10,
