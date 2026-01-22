@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
@@ -37,7 +36,6 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
-use sp_session_validator_management::MainChainScripts;
 use std::{fmt, str::FromStr};
 
 pub enum ChainSpecInitError {
@@ -103,35 +101,6 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 
 pub fn runtime_wasm() -> &'static [u8] {
 	WASM_BINARY.expect("Runtime wasm not available")
-}
-
-pub fn read_mainchain_scripts_from_addresses_json(
-	path: &str,
-) -> Result<MainChainScripts, ChainSpecInitError> {
-	let addresses = Addresses::load(path)
-		.map_err(|e| ChainSpecInitError::ParseError(format!("{e} while trying to load {path}")))?;
-
-	let err = |var: &str| {
-		ChainSpecInitError::ParseError(format!("Failed to parse {var} from addresses_json"))
-	};
-
-	Ok(MainChainScripts {
-		committee_candidate_address: addresses
-			.addresses
-			.committee_candidate_validator
-			.parse()
-			.map_err(|_| err("committee_candidate_validator"))?,
-		d_parameter_policy_id: addresses
-			.policy_ids
-			.d_parameter
-			.parse()
-			.map_err(|_| err("d_parameter"))?,
-		permissioned_candidates_policy_id: addresses
-			.policy_ids
-			.permissioned_candidates
-			.parse()
-			.map_err(|_| err("permissioned_candidates"))?,
-	})
 }
 
 pub fn get_chainspec_extrinsics(
