@@ -105,9 +105,6 @@
             102
           ]
         },
-        "sudo": {
-          "key": "5CUjxa4wVKMj3FqKdqAUf7zcEMr4MYAjXeWmUf44B41neLmJ"
-        },
         "sessionCommitteeManagement": {
           "initialAuthorities": [
             {
@@ -195,7 +192,7 @@
           "mainChainScripts": {
             "committee_candidate_address": "addr_test1wrahchgp7x6l8c3lamt4egk7dcwhjdvz3npdwq8mz4q9tecylsqww",
             "d_parameter_policy_id": "0x907345b2b1e61424d83af0d0d3b32de8d67882fcb1a6d45f28a8714c",
-            "permissioned_candidates_policy_id": "0xf06e34dcab3daedbe041cd8586c3e8555e7350f9c5cef1980d3365c3"
+            "permissioned_candidates_policy_id": "0xfaf0b64110b3cfc265297ae2f5d4a11dc66c53b563e7c14d4701d45c"
           }
         },
         "cNightObservation": {
@@ -322,13 +319,6 @@
             ]
           ]
         },
-        "governedMap": {
-          "mainChainScripts": {
-            "validator_address": "addr_test1wr7faeyz8mqekzcppspsrs5y6rdlnfnllt8l0cpfs6m9gng78tg6z",
-            "asset_policy_id": "0x9d3a19404df5a19fc1d58bd6d924c4bac3ad1fba48b85fc0a43ba789"
-          },
-          "marker": null
-        },
         "bridge": {
           "mainChainScripts": null,
           "initialCheckpoint": null,
@@ -355,10 +345,10 @@
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wr72etax2u63ele242maw8qheuauq3kfzpp6vwj5wc2tgecwq2put",
-          "councilPolicyId": "0xfcacafa657351cff2aaab7d71c17cf3bc046c91043a63a547614b467",
-          "technicalCommitteeAddress": "addr_test1wpuyz5vwavxs9xc27gqeg65mtwjht25ms9c5r0w3hpl5zagmzvluv",
-          "technicalCommitteePolicyId": "0x7841518eeb0d029b0af201946a9b5ba575aa9b817141bdd1b87f4175",
+          "councilAddress": "addr_test1wpfh06m8pgzyny0yqt3j30g7srmckwg4m98fwl6z9pf5f2c3zwgal",
+          "councilPolicyId": "0x5377eb670a044991e402e328bd1e80f78b3915d94e977f42285344ab",
+          "technicalCommitteeAddress": "addr_test1wru89zfj76mjlrrs70w5euqyw28gsy48k9t7vgvekgjaeqsfkk9z3",
+          "technicalCommitteePolicyId": "0xf8728932f6b72f8c70f3dd4cf004728e8812a7b157e62199b225dc82",
           "councilMembersMainchain": [
             "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
             "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
@@ -372,11 +362,11 @@
         },
         "systemParameters": {
           "termsAndConditions": {
-            "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "url": "https://midnight.network/terms-and-conditions"
+            "hash": "0xca85ed77bce68288e55300f006ccd5cce5d4940dc39fc41173a9c2ecd1eb616e",
+            "url": "https://www.midnight.gd/global-terms-txt"
           },
           "dParameter": {
-            "num_permissioned_candidates": 10,
+            "num_permissioned_candidates": 9,
             "num_registered_candidates": 0
           }
         }

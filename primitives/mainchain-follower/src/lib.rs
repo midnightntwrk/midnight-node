@@ -30,8 +30,9 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		CNightObservationDataSourceMock, FederatedAuthorityObservationDataSourceImpl,
-		FederatedAuthorityObservationDataSourceMock, MidnightCNightObservationDataSourceImpl,
+		CNightObservationDataSourceMock, CandidateDataSourceCached, CandidatesDataSourceImpl,
+		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+		MidnightCNightObservationDataSourceImpl,
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
