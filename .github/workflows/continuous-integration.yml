@@ -691,7 +691,7 @@ jobs:
           echo "indexer_tag=$indexer_tag" >> "$GITHUB_OUTPUT"
 
           # Tag for node and toolkit images
-          node_tag="${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64"
+          node_tag="${version}-${short_hash}-amd64"
           echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
 
           echo "Get Version and git commit"

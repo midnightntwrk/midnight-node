@@ -107,7 +107,9 @@ runs:
 
     - name: toolkit-multi-dest-e2e
       id: toolkit-multi-dest-e2e
-      run: just toolkit-multi-dest-e2e "${{ inputs.toolkit-image }}"
+      env:
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
+      run: just toolkit-multi-dest-e2e "$TOOLKIT_IMAGE"
       shell: bash
 
     - name: Upload Test Results
