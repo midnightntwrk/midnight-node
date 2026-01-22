@@ -59,8 +59,8 @@ FROM tx_out
 WHERE tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
@@ -120,8 +120,8 @@ FROM tx_out
 WHERE tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index, tx_tx_out.hash, tx_out.index
 LIMIT $8 OFFSET $9;
         "#,
@@ -173,8 +173,8 @@ WHERE tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
     AND ma_tx_out.quantity = 1
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
@@ -226,8 +226,8 @@ FROM tx_out
     JOIN datum ON datum.hash = tx_out.data_hash
     JOIN block ON block.id = tx.block_id
 WHERE tx_out.address = $1
-    AND (block.block_no, tx.block_index) >= ($2, $3)
-    AND (block.block_no, tx.block_index) < ($4, $5)
+    AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))
+    AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
 ORDER BY block.block_no, tx.block_index
 LIMIT $6 OFFSET $7;
         "#,
@@ -273,8 +273,8 @@ FROM ma_tx_out
     JOIN block ON tx.block_id = block.id
 WHERE ma.policy = $1
     AND ma.name = $2
-    AND (block.block_no, tx.block_index) >= ($3, $4)
-    AND (block.block_no, tx.block_index) < ($5, $6)
+    AND (block.block_no > $3 OR (block.block_no = $3 AND tx.block_index >= $4))
+    AND (block.block_no < $5 OR (block.block_no = $5 AND tx.block_index < $6))
 ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,
@@ -325,8 +325,8 @@ FROM ma_tx_out
     JOIN block AS spending_block ON spending_tx.block_id = spending_block.id
 WHERE ma.policy = $1
     AND ma.name = $2
-    AND (spending_block.block_no, spending_tx.block_index) >= ($3, $4)
-    AND (spending_block.block_no, spending_tx.block_index) < ($5, $6)
+    AND (spending_block.block_no > $3 OR (spending_block.block_no = $3 AND spending_tx.block_index >= $4))
+    AND (spending_block.block_no < $5 OR (spending_block.block_no = $5 AND spending_tx.block_index < $6))
 ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,
