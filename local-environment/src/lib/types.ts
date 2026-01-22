@@ -46,13 +46,6 @@ export interface RuntimeUpgradeBaseOptions extends RunOptions {
   rpcUrl?: string;
 }
 
-export interface RuntimeUpgradeOptions extends RuntimeUpgradeBaseOptions {
-  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
-  sudoUri?: string;
-  /** how many blocks to wait before submitting the sudo upgrade */
-  delayBlocks?: number;
-}
-
 export interface FederatedRuntimeUpgradeOptions
   extends RuntimeUpgradeBaseOptions {
   /** URIs for council members who will propose/vote to approve the motion */

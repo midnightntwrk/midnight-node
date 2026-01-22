@@ -125,7 +125,7 @@ export async function federatedRuntimeUpgrade(
 
     console.log("Applying authorized upgrade...");
     const applyResult = await signAndWait(
-      api.tx.system.applyAuthorizedUpgrade(wasm.bytes),
+      api.tx.system.applyAuthorizedUpgrade(wasm.hex),
       motionExecutor,
       "system.applyAuthorizedUpgrade",
     );

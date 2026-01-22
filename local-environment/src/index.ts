@@ -15,13 +15,11 @@ import { Command } from "commander";
 import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
-import { runtimeUpgrade } from "./commands/runtimeUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { snapshot } from "./commands/snapshot";
 import {
   RunOptions,
   ImageUpgradeOptions,
-  RuntimeUpgradeOptions,
   FederatedRuntimeUpgradeOptions,
   SnapshotOptions,
 } from "./lib/types";
@@ -40,17 +38,6 @@ interface ImageUpgradeCliOpts {
   requireHealthy?: boolean;
   fromSnapshot?: string;
   waitBefore?: number;
-}
-
-interface RuntimeUpgradeCliOpts {
-  wasm: string;
-  rpcUrl?: string;
-  sudoUri?: string;
-  delayBlocks?: number;
-  profiles?: string[];
-  envFile?: string[];
-  skipRun?: boolean;
-  fromSnapshot?: string;
 }
 
 interface FederatedRuntimeUpgradeCliOpts {
@@ -186,52 +173,6 @@ program
   )
   .action(async (network: string, options: RunOptions) => {
     await stop(network, options);
-  });
-
-program
-  .command("runtime-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
-  .option(
-    "--skip-run",
-    "Do not ensure docker-compose is running before upgrading",
-  )
-  .option(
-    "--rpc-url <url>",
-    "WebSocket RPC endpoint (default ws://localhost:9944)",
-  )
-  .option(
-    "--sudo-uri <uri>",
-    "Keyring URI used to submit the sudo upgrade (default env or //Alice)",
-  )
-  .option(
-    "--delay-blocks <value>",
-    "Blocks to wait from the current head before sending the upgrade",
-    parseInt,
-  )
-  .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
-  .option("--env-file <path...>", "specify one or more env files")
-  .option(
-    "--from-snapshot <id>",
-    "Restore a bootnode snapshot before launching services",
-  )
-  .description("Submit a sudo runtime upgrade after an optional block delay")
-  .action(async (network: string, cliOpts: RuntimeUpgradeCliOpts) => {
-    const profiles = cliOpts.profiles
-      ?.map((s: string) => s.trim())
-      .filter(Boolean);
-
-    const opts: RuntimeUpgradeOptions = {
-      wasmPath: cliOpts.wasm,
-      sudoUri: cliOpts.sudoUri,
-      delayBlocks: cliOpts.delayBlocks,
-      profiles,
-      envFile: cliOpts.envFile,
-      rpcUrl: cliOpts.rpcUrl,
-      skipRun: cliOpts.skipRun,
-      fromSnapshot: cliOpts.fromSnapshot,
-    };
-
-    await runtimeUpgrade(network, opts);
   });
 
 program

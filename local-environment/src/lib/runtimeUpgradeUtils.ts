@@ -13,7 +13,6 @@
 
 import fs from "fs";
 import path from "path";
-import BN from "bn.js";
 import { ApiPromise, WsProvider } from "@polkadot/api";
 import type { SubmittableExtrinsic } from "@polkadot/api/promise/types";
 import { Keyring } from "@polkadot/keyring";
@@ -101,38 +100,6 @@ export function createKeyringPair(uri: string, label: string): KeyringPair {
   const keyring = new Keyring({ type: "sr25519" });
   console.log(`Using ${label} key URI '${trimmed}'`);
   return keyring.addFromUri(trimmed, { name: label });
-}
-
-export function waitForTargetBlock(api: ApiPromise, target: BN) {
-  return new Promise<void>((resolve, reject) => {
-    let unsub: (() => void) | undefined;
-
-    const cleanup = () => {
-      if (unsub) {
-        unsub();
-        unsub = undefined;
-      }
-    };
-
-    api.rpc.chain
-      .subscribeNewHeads((header) => {
-        const number = header.number.toBn();
-        if (number.gte(target)) {
-          console.log(
-            `Reached block: ${number.toString()} (target: ${target.toString()})`,
-          );
-          cleanup();
-          resolve();
-        }
-      })
-      .then((subscription) => {
-        unsub = subscription;
-      })
-      .catch((error) => {
-        cleanup();
-        reject(error);
-      });
-  });
 }
 
 export async function signAndWait(

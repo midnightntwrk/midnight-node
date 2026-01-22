@@ -1,0 +1,15 @@
+{
+  "dbsync": {
+    "mode": "k8s"
+  },
+  "secrets": {
+    "mode": "pods-by-labels"
+  },
+  "boot": {
+    "podNames": [
+      "midnight-node-boot-01-0",
+      "midnight-node-boot-02-0",
+      "midnight-node-boot-03-0"
+    ]
+  }
+}
