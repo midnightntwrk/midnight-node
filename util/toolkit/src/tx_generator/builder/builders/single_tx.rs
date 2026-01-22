@@ -29,6 +29,8 @@ use crate::{
 	tx_generator::builder::{BuildTxs, SingleTxArgs},
 };
 
+const MAX_GUARANTEED_OUTPUTS: usize = 2;
+
 pub struct SingleTxBuilder {
 	shielded_amount: Option<u128>,
 	shielded_token_type: ShieldedTokenType,
@@ -125,7 +127,7 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
-			if offer.outputs.len() > 2 {
+			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
 			} else {
 				tx_info.set_guaranteed_offer(offer);
@@ -260,11 +262,10 @@ impl SingleTxBuilder {
 		}
 
 		let outputs_len = outputs_info.len();
-		let max_guaranteed_outputs = 2;
 		let unshielded_offer =
 			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
 
-		let intent_info = if outputs_len > max_guaranteed_outputs {
+		let intent_info = if outputs_len > MAX_GUARANTEED_OUTPUTS {
 			IntentInfo {
 				guaranteed_unshielded_offer: None,
 				fallible_unshielded_offer: Some(unshielded_offer),
