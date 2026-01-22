@@ -53,11 +53,7 @@ use sp_runtime::{
 	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
 };
 use sp_runtime::{Digest, DigestItem};
-use std::{
-	marker::PhantomData,
-	sync::{Arc, Mutex},
-	time::Duration,
-};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
@@ -206,6 +202,24 @@ type MidnightService = sc_service::PartialComponents<
 	),
 >;
 
+fn register_ledger_metrics(
+	prometheus_registry: Option<&prometheus_endpoint::Registry>,
+) -> Arc<Option<LedgerMetrics>> {
+	let metrics = prometheus_registry.and_then(|registry| {
+		LedgerMetrics::register(registry)
+			.map(|metrics| {
+				log::debug!(target: "prometheus", "Registered Ledger metrics");
+				metrics
+			})
+			.map_err(|err| {
+				log::warn!(target: "prometheus", "Failed to register Ledger metrics: {err:?}");
+			})
+			.ok()
+	});
+
+	Arc::new(metrics)
+}
+
 #[allow(clippy::result_large_err)]
 pub fn new_partial(
 	config: &Configuration,
@@ -285,29 +299,13 @@ pub fn new_partial(
 	let client = Arc::new(client);
 
 	// Register Prometheus Ledger Metrics
-	let ledger_metrics =
-		config
-			.prometheus_registry()
-			.map(LedgerMetrics::register)
-			.and_then(|result| match result {
-				Ok(metrics) => {
-					log::debug!(target: "prometheus", "Registered Ledger metrics");
-					Some(metrics)
-				},
-				Err(_err) => {
-					log::error!(target: "prometheus", "Failed to register Ledger metrics");
-					None
-				},
-			});
+	let ledger_metrics = register_ledger_metrics(config.prometheus_registry());
 
 	let ledger_storage = LedgerStorage::new(parity_db_path, storage_config.cache_size);
 
 	client
 		.execution_extensions()
-		.set_extensions_factory(ExtensionsFactory::<Block>::new(
-			Arc::new(Mutex::new(ledger_metrics)),
-			ledger_storage,
-		));
+		.set_extensions_factory(ExtensionsFactory::<Block>::new(ledger_metrics, ledger_storage));
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());

@@ -14,12 +14,8 @@
 use prometheus_endpoint::{
 	self as prometheus, HistogramOpts, HistogramVec, PrometheusError, Registry,
 };
-use std::{
-	path::PathBuf,
-	sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
-const LOG_TARGET: &str = "ledger::primitives";
 /// Ledger metrics exposed through Prometheus
 #[derive(Clone, Debug)]
 pub struct LedgerMetrics {
@@ -156,11 +152,11 @@ impl LedgerMetrics {
 sp_externalities::decl_extension! {
 	/// The `LedgerMetrics`` extension to register/retrieve from the externalities.
 	#[derive(Debug)]
-	pub struct LedgerMetricsExt(Arc<Mutex<Option<LedgerMetrics>>>);
+	pub struct LedgerMetricsExt(Arc<Option<LedgerMetrics>>);
 }
 
 impl LedgerMetricsExt {
-	pub fn new(metrics: Arc<Mutex<Option<LedgerMetrics>>>) -> Self {
+	pub fn new(metrics: Arc<Option<LedgerMetrics>>) -> Self {
 		LedgerMetricsExt(metrics)
 	}
 
@@ -168,15 +164,8 @@ impl LedgerMetricsExt {
 	where
 		F: FnOnce(&LedgerMetrics),
 	{
-		let metrics = self.0.clone();
-		let metrics_result = metrics.lock();
-
-		if let Ok(write_metrics) = metrics_result {
-			if let Some(m) = write_metrics.as_ref() {
-				op(m);
-			}
-		} else {
-			log::error!(target: LOG_TARGET, "Ledger Metrics's lock is already held by the current thread");
+		if let Some(m) = self.0.as_ref() {
+			op(m);
 		}
 	}
 

@@ -17,23 +17,17 @@ use midnight_primitives_ledger::{
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sp_externalities::Extensions;
 use sp_runtime::traits::{Block as BlockT, NumberFor};
-use std::{
-	marker::PhantomData,
-	sync::{Arc, Mutex},
-};
+use std::{marker::PhantomData, sync::Arc};
 
 /// Extensions factory
 pub struct ExtensionsFactory<Block> {
-	ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
+	ledger_metrics: Arc<Option<LedgerMetrics>>,
 	ledger_storage: LedgerStorage,
 	_marker: PhantomData<Block>,
 }
 
 impl<Block> ExtensionsFactory<Block> {
-	pub fn new(
-		ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
-		ledger_storage: LedgerStorage,
-	) -> Self {
+	pub fn new(ledger_metrics: Arc<Option<LedgerMetrics>>, ledger_storage: LedgerStorage) -> Self {
 		Self { ledger_metrics, ledger_storage, _marker: Default::default() }
 	}
 }
