@@ -276,7 +276,7 @@ jq '[.initial_permissioned_candidates[:4] | .[] | {
     ecdsa_key: .sidechain_pub_key[2:],
     aura_key: .aura_pub_key[2:],
     grandpa_key: .grandpa_pub_key[2:]
-}]' res/qanet/pc-chain-config.json > permissioned_candidates.json
+}]' res/local-environment/pc-chain-config.json > permissioned_candidates.json
 echo "Created permissioned_candidates.json:"
 cat permissioned_candidates.json
 
@@ -350,7 +350,7 @@ fi
 
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
+cat res/local-environment/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-local.json
 
 jq 'env as $env | . + {
   "chain_parameters": {
@@ -361,7 +361,7 @@ jq 'env as $env | . + {
     "d_parameter_policy_id": $env.D_PARAMETER_POLICY_ID,
     "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID,
   }
-}' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
+}' /tmp/pc-chain-config-local.json > /tmp/pc-chain-config.json
 
 # Create patched federated-authority-config.json with Aiken policy IDs and addresses
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
@@ -375,7 +375,7 @@ jq --arg council_addr "$COUNCIL_SCRIPT_ADDRESS" \
    --arg techauth_addr "$TECHAUTH_SCRIPT_ADDRESS" \
    --arg techauth_policy "$TECHAUTH_POLICY_ID" \
    '.council.address = $council_addr | .council.policy_id = $council_policy | .technical_committee.address = $techauth_addr | .technical_committee.policy_id = $techauth_policy' \
-   /res/dev/federated-authority-config.json > /tmp/federated-authority-config.json
+   /res/local-environment/federated-authority-config.json > /tmp/federated-authority-config.json
 
 echo "Patched federated-authority-config.json:"
 cat /tmp/federated-authority-config.json
@@ -386,20 +386,20 @@ cat /tmp/federated-authority-config.json
 echo "Patching system-parameters-config.json with D-parameter values..."
 jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
    '.d_parameter.num_permissioned_candidates = $d_perm | .d_parameter.num_registered_candidates = $d_reg' \
-   /res/dev/system-parameters-config.json > /tmp/system-parameters-config.json
+   /res/local-environment/system-parameters-config.json > /tmp/system-parameters-config.json
 
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
-export CHAINSPEC_NETWORK_ID=devnet
+export CHAINSPEC_NETWORK_ID=local-environment
 export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
 export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
+export CHAINSPEC_CNIGHT_GENESIS=res/local-environment/cnight-genesis.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
