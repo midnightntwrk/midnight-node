@@ -3,13 +3,7 @@
     "/dns/preprod/tcp/30333/p2p/12D3KooWDU3ydya1JaGttYuorL2e6EnZrEBzmWH1fGef1NnsSmtF"
   ],
   "chain_parameters": {
-    "genesis_utxo": "7177988904dc53037187962ecdbcb5dd245ac5c3e220a2122df81fea7c604eea#1"
-  },
-  "initial_governance": {
-    "authorities": [
-      "0xf50d4250ef32d62516433c1db13b3e6f73b1570fe1747dd493c4ba28"
-    ],
-    "threshold": 1
+    "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
   },
   "cardano": {
     "security_parameter": 2160,
@@ -22,18 +16,7 @@
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wrq0lldlvfdgay9tsdvpe2m5qk29e9g4ktzky7wz3nrmygcty5y4c",
-    "permissioned_candidates_policy_id": "0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec",
-    "bridge": {
-      "illiquid_circulation_supply_validator_address": "addr_test1wq8vp65petn7n65gd8r8tvmxk4nstm9uxk8qxal5kytzgtgtzeaeq",
-      "asset": {
-        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
-        "asset_name": "0x"
-      }
-    },
-    "governed_map": {
-      "validator_address": "addr_test1wz6ehdggmynhnwyq3c40763w0jwwquzmvx7yrupys3dmz7smprat8",
-      "policy_id": "0xdd818a9264a8cb86989fe04c3791058277e4004a1a7955e2f80a3e25"
-    }
+    "permissioned_candidates_policy_id": "0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec"
   },
   "initial_permissioned_candidates": [
     {

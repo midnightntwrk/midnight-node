@@ -12,18 +12,7 @@
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wqgdltkw2egyzv7q65j285dmvqcs3223qw9fp4q3y79jnvsefxzwg",
-    "permissioned_candidates_policy_id": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5",
-    "governed_map": {
-      "policy_id": "00000000000000000000000000000000000000000000000000000001",
-      "validator_address": "test_addr1"
-    },
-    "native_token": {
-      "illiquid_supply_address": "addr_test1wz7yr698kyeuqtc5hkf6k3w72wjlm85juhnpck9795ll5rsr82luq",
-      "asset": {
-        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
-        "asset_name": "0x"
-      }
-    }
+    "permissioned_candidates_policy_id": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5"
   },
   "initial_permissioned_candidates": [
     {
