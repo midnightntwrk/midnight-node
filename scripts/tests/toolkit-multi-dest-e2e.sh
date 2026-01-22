@@ -16,40 +16,27 @@
 # Test script to verify the toolkit doesn't hang when using multiple --dest-url options.
 #
 # Usage:
-#   ./toolkit-multi-dest-e2e.sh <node-image> <toolkit-image>     # CI mode (starts Docker nodes)
-#   ./toolkit-multi-dest-e2e.sh <toolkit-binary>                 # Local mode (uses local-environment)
+#   ./toolkit-multi-dest-e2e.sh <toolkit-binary-or-image>                 # Local mode (uses local-environment)
 #
 # Examples:
 #   ./toolkit-multi-dest-e2e.sh ./target/release/midnight-node-toolkit
-#   ./toolkit-multi-dest-e2e.sh ghcr.io/midnight-ntwrk/midnight-node:latest ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
+#   ./toolkit-multi-dest-e2e.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest
 
 set -euxo pipefail
 
 # Detect mode based on arguments
-if [[ $# -eq 2 ]]; then
-    # CI mode: two args = node image + toolkit image
-    NODE_IMAGE="$1"
-    TOOLKIT_IMAGE="$2"
-    TOOLKIT_BINARY=""
-    CI_MODE=true
-    echo "CI mode: NODE_IMAGE=$NODE_IMAGE, TOOLKIT_IMAGE=$TOOLKIT_IMAGE"
-elif [[ $# -eq 1 && -x "$1" ]]; then
+if [[ $# -eq 1 && -x "$1" ]]; then
     # Local mode: single executable = toolkit binary (requires local-environment)
     TOOLKIT_BINARY="$(realpath "$1")"
     TOOLKIT_IMAGE=""
-    NODE_IMAGE=""
-    CI_MODE=false
-    echo "Local mode: TOOLKIT_BINARY=$TOOLKIT_BINARY"
+    echo "TOOLKIT_BINARY=$TOOLKIT_BINARY"
 elif [[ $# -eq 1 ]]; then
     # CI mode with just toolkit image (for backwards compatibility) - requires local-environment
-    NODE_IMAGE=""
     TOOLKIT_IMAGE="$1"
     TOOLKIT_BINARY=""
-    CI_MODE=false
     echo "Docker mode (requires local-environment): TOOLKIT_IMAGE=$TOOLKIT_IMAGE"
 else
-    echo "Usage: $0 <node-image> <toolkit-image>   # CI mode"
-    echo "       $0 <toolkit-binary>               # Local mode (requires local-environment)"
+    echo "Usage: $0 <toolkit-binary-or-image>               # requires local-environment"
     exit 1
 fi
 
@@ -67,54 +54,21 @@ echo "Using temp directory: $tempdir"
 
 cleanup() {
     echo "Cleaning up..."
-    if [[ "$CI_MODE" == "true" ]]; then
-        echo "Stopping node containers..."
-        docker container stop midnight-node-1 midnight-node-2 midnight-node-3 midnight-node-4 2>/dev/null || true
-        docker network rm multi-dest-e2e-net 2>/dev/null || true
-    fi
     echo "Removing tempdir..."
     rm -rf "$tempdir"
 }
 trap cleanup EXIT
 
-if [[ "$CI_MODE" == "true" ]]; then
-    # CI mode: start 4 Docker nodes
-    echo "Starting 4 node containers for multi-destination test..."
+NODE_1="ws://localhost:9933"
+NODE_2="ws://localhost:9934"
+NODE_3="ws://localhost:9935"
+NODE_4="ws://localhost:9936"
 
-    docker network create multi-dest-e2e-net || true
-
-    for i in 1 2 3 4; do
-        port=$((9932 + i))
-        echo "Starting node $i on port $port..."
-        docker run -d --rm \
-            --name "midnight-node-$i" \
-            --network multi-dest-e2e-net \
-            -p "$port:9944" \
-            -e CFG_PRESET=dev \
-            "$NODE_IMAGE"
-    done
-
-    # Node URLs for CI mode (host network access)
-    NODE_1="ws://localhost:9933"
-    NODE_2="ws://localhost:9934"
-    NODE_3="ws://localhost:9935"
-    NODE_4="ws://localhost:9936"
-
-    echo "Waiting for nodes to boot..."
-    sleep 20
-else
-    # Local mode: use local-environment
-    NODE_1="ws://localhost:9933"
-    NODE_2="ws://localhost:9934"
-    NODE_3="ws://localhost:9935"
-    NODE_4="ws://localhost:9936"
-
-    echo "Checking if local-environment is running..."
-    if ! ./local-environment/check-health.sh -u http://localhost:9933 -t 30; then
-        echo "ERROR: local-environment is not running"
-        echo "Please start it with: cd local-environment && npm run run:local-env"
-        exit 1
-    fi
+echo "Checking if local-environment is running..."
+if ! ./local-environment/check-health.sh -u http://localhost:9933 -t 30; then
+    echo "ERROR: local-environment is not running"
+    echo "Please start it with: cd local-environment && npm run run:local-env"
+    exit 1
 fi
 
 echo "Running Toolkit Multi-Destination URL E2E Test"
@@ -199,9 +153,6 @@ for ((i=0; i<${#DEST_ADDRESSES[@]}; i+=2)); do
             -d "$NODE_1"
     fi
 done
-
-echo "Waiting for UTXOs to be confirmed..."
-sleep 10
 
 echo "Step 3: Pre-generate transactions to .mn files"
 # Generate transactions from funded wallets back to seed 0x01

@@ -37,8 +37,8 @@ toolkit-ut-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-ut-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit UnshieldedToken E2E test completed successfully."
 
-toolkit-multi-dest-e2e NODE_IMAGE TOOLKIT_IMAGE:
-  @scripts/tests/toolkit-multi-dest-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+toolkit-multi-dest-e2e TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-multi-dest-e2e.sh {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Multi-Destination URL E2E test completed successfully."
 
 startup-dev-e2e NODE_IMAGE:

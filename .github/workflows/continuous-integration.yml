@@ -452,26 +452,6 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  toolkit-multi-dest-e2e:
-    name: Toolkit Multi-Destination URL E2E
-    needs: [run, test-toolkit]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
-      - uses: ./.github/actions/reusable-e2e-tests
-        with:
-          just-command: toolkit-multi-dest-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-
   metadata-check:
     name: Metadata Check
     needs: run
@@ -710,16 +690,22 @@ jobs:
           popd >/dev/null
           echo "indexer_tag=$indexer_tag" >> "$GITHUB_OUTPUT"
 
+          # Tag for node and toolkit images
+          node_tag="${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64"
+          echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
+
           echo "Get Version and git commit"
           echo "short_hash: $short_hash"
           echo "version: $version"
           echo "indexer_tag: $indexer_tag"
+          echo "node_tag: $node_tag"
 
       - name: Deploy and test against local environment
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.node_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.node_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}
