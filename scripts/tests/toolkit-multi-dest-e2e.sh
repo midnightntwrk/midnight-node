@@ -55,7 +55,11 @@ echo "Using temp directory: $tempdir"
 cleanup() {
     echo "Cleaning up..."
     echo "Removing tempdir..."
-    rm -rf "$tempdir"
+    if [[ -n "$TOOLKIT_IMAGE" ]] && [[ -d "$tempdir" ]]; then
+        # Use Docker to remove files created by container (as root)
+        docker run --rm -v "$tempdir:/out" alpine rm -rf /out/* 2>/dev/null || true
+    fi
+    rm -rf "$tempdir" || true
 }
 trap cleanup EXIT
 
