@@ -1,4 +1,4 @@
-use std::{convert::Infallible, sync::Arc};
+use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
@@ -80,7 +80,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 		});
 
-		let mut outputs: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
+		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
 			.iter()
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
@@ -92,20 +92,21 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 			.collect();
 
-		let mut inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
+		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
 			.into_iter()
 			.map(|input| {
 				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
 				input
 			})
-			.collect::<Vec<_>>();
+			.collect();
 
-		let fallible_inputs = inputs.split_off(1);
-		let fallible_outputs = outputs.split_off(1);
+		let guaranteed_inputs = inputs.pop_front().into_iter().collect();
+		let guaranteed_outputs = outputs.pop_front().into_iter().collect();
+		let guaranteed_unshielded_offer =
+			UnshieldedOfferInfo { inputs: guaranteed_inputs, outputs: guaranteed_outputs };
 
-		let guaranteed_unshielded_offer = UnshieldedOfferInfo { inputs, outputs };
-		let fallible_unshielded_offer = if fallible_inputs.len() > 0 && fallible_outputs.len() > 0 {
-			Some(UnshieldedOfferInfo { inputs: fallible_inputs, outputs: fallible_outputs })
+		let fallible_unshielded_offer = if inputs.len() > 0 && outputs.len() > 0 {
+			Some(UnshieldedOfferInfo { inputs: inputs.into(), outputs: outputs.into() })
 		} else {
 			None
 		};
