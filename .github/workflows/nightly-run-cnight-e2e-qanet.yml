@@ -6,7 +6,7 @@ on:
       - e2e-cnight-nightly-run
 
   schedule:
-    - cron: "10 * * * *"
+    - cron: "11 * * * *"
 
   workflow_dispatch:
     inputs:
