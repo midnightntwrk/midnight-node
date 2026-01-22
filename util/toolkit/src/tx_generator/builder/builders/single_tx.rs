@@ -125,7 +125,11 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
-			tx_info.set_guaranteed_offer(offer);
+			if offer.outputs.len() > 2 {
+				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
+			} else {
+				tx_info.set_guaranteed_offer(offer);
+			}
 		}
 
 		if !unshielded_wallets.is_empty() {
