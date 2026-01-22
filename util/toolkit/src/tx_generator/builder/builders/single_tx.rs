@@ -11,11 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-	collections::{HashMap, VecDeque},
-	convert::Infallible,
-	sync::Arc,
-};
+use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
@@ -233,7 +229,7 @@ impl SingleTxBuilder {
 		let input_info: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(utxo_spend_info);
 
 		// Outputs info
-		let mut outputs_info: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
+		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
 			.iter()
 			.map(|wallet| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
@@ -256,24 +252,26 @@ impl SingleTxBuilder {
 		});
 
 		if remaining_nights > 0 {
-			outputs_info.push_back(output_info_refund);
+			outputs_info.push(output_info_refund);
 		}
 
-		let guaranteed_outputs = outputs_info.pop_front().into_iter().collect();
+		let outputs_len = outputs_info.len();
+		let max_guaranteed_outputs = 2;
+		let unshielded_offer =
+			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
 
-		let guaranteed_unshielded_offer_info =
-			UnshieldedOfferInfo { inputs: vec![input_info], outputs: guaranteed_outputs };
-
-		let fallible_unshielded_offer = if outputs_info.len() > 0 {
-			Some(UnshieldedOfferInfo { inputs: vec![], outputs: outputs_info.into() })
+		let intent_info = if outputs_len > max_guaranteed_outputs {
+			IntentInfo {
+				guaranteed_unshielded_offer: None,
+				fallible_unshielded_offer: Some(unshielded_offer),
+				actions: vec![],
+			}
 		} else {
-			None
-		};
-
-		let intent_info = IntentInfo {
-			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer_info),
-			fallible_unshielded_offer,
-			actions: vec![],
+			IntentInfo {
+				guaranteed_unshielded_offer: Some(unshielded_offer),
+				fallible_unshielded_offer: None,
+				actions: vec![],
+			}
 		};
 		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
 
