@@ -29,6 +29,8 @@ use crate::{
 	tx_generator::builder::{BuildTxs, SingleTxArgs},
 };
 
+const MAX_GUARANTEED_OUTPUTS: usize = 2;
+
 pub struct SingleTxBuilder {
 	shielded_amount: Option<u128>,
 	shielded_token_type: ShieldedTokenType,
@@ -125,7 +127,11 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 			);
-			tx_info.set_guaranteed_offer(offer);
+			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
+				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
+			} else {
+				tx_info.set_guaranteed_offer(offer);
+			}
 		}
 
 		if !unshielded_wallets.is_empty() {
@@ -255,13 +261,22 @@ impl SingleTxBuilder {
 			outputs_info.push(output_info_refund);
 		}
 
-		let guaranteed_unshielded_offer_info =
+		let outputs_len = outputs_info.len();
+		let unshielded_offer =
 			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
 
-		let intent_info = IntentInfo {
-			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer_info),
-			fallible_unshielded_offer: None,
-			actions: vec![],
+		let intent_info = if outputs_len > MAX_GUARANTEED_OUTPUTS {
+			IntentInfo {
+				guaranteed_unshielded_offer: None,
+				fallible_unshielded_offer: Some(unshielded_offer),
+				actions: vec![],
+			}
+		} else {
+			IntentInfo {
+				guaranteed_unshielded_offer: Some(unshielded_offer),
+				fallible_unshielded_offer: None,
+				actions: vec![],
+			}
 		};
 		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
 

@@ -690,16 +690,22 @@ jobs:
           popd >/dev/null
           echo "indexer_tag=$indexer_tag" >> "$GITHUB_OUTPUT"
 
+          # Tag for node and toolkit images
+          node_tag="${version}-${short_hash}-amd64"
+          echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
+
           echo "Get Version and git commit"
           echo "short_hash: $short_hash"
           echo "version: $version"
           echo "indexer_tag: $indexer_tag"
+          echo "node_tag: $node_tag"
 
       - name: Deploy and test against local environment
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.node_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.node_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}

@@ -24,7 +24,7 @@
           "authorities": []
         },
         "sidechain": {
-          "genesisUtxo": "bf9075696b4d042bca82938fb1ef107b1dedc0a3971ccfe1ab3ac297aab59265#0",
+          "genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
           "slotsPerEpoch": 300
         },
         "midnight": {
@@ -217,8 +217,8 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "addr_test1wzp7wnerffnkkhlkvvy9wps0zgwke48ycjpnhv0wrramn5gs8ajnx",
-            "d_parameter_policy_id": "0xa2402f25a5dceef7b742b6a5ef11ff07f62c7d4ef2610830e5d81050",
+            "committee_candidate_address": "addr_test1wzj9h8pzkxvkqv0s3c9f53j9hrmnrjku3hajhnpswzft2ags02c2l",
+            "d_parameter_policy_id": "0x00000000000000000000000000000000000000000000000000000000",
             "permissioned_candidates_policy_id": "0x726d95cdbca96843b5710f560ae452623b63f8d3fac434442f8d8715"
           }
         },
@@ -227,9 +227,9 @@
             "addresses": {
               "mapping_validator_address": "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
               "auth_token_asset_name": "",
-              "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
+              "redemption_validator_address": "addr_test1wzgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqjylc3j",
               "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-              "cnight_asset_name": ""
+              "cnight_asset_name": "NIGHT"
             },
             "observed_utxos": {
               "start": {
