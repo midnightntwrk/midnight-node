@@ -52,11 +52,6 @@ FROM tx_out
 WHERE tx_out.address = $1
     AND ma.policy = $2
     AND block.block_no <= $3
-    AND NOT EXISTS (
-        SELECT 1 FROM tx_in
-        WHERE tx_in.tx_out_id = tx_out.tx_id
-        AND tx_in.tx_out_index = tx_out.index
-    )
 ORDER BY block.block_no DESC, tx.block_index DESC
 LIMIT 1
         "#,
