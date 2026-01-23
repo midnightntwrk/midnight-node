@@ -24,7 +24,7 @@
           "authorities": []
         },
         "sidechain": {
-          "genesisUtxo": "7177988904dc53037187962ecdbcb5dd245ac5c3e220a2122df81fea7c604eea#1",
+          "genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
           "slotsPerEpoch": 300
         },
         "midnight": {
@@ -199,9 +199,9 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "addr_test1wrq0lldlvfdgay9tsdvpe2m5qk29e9g4ktzky7wz3nrmygcty5y4c",
-            "d_parameter_policy_id": "0x3c0d30f4aace7d53243371bd30c0ca1f36b033d9d39734709770c172",
-            "permissioned_candidates_policy_id": "0x369ee95be4c68a2984733a8c727ecd28df3039a3e5f1e80290b08eec"
+            "committee_candidate_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
+            "d_parameter_policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+            "permissioned_candidates_policy_id": "0xd962fc619efb2b904e5a8443838500ef2145452af117ab8f9cc3f97f"
           }
         },
         "cNightObservation": {
@@ -209,9 +209,9 @@
             "addresses": {
               "mapping_validator_address": "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
               "auth_token_asset_name": "",
-              "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
+              "redemption_validator_address": "addr_test1wzgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqjylc3j",
               "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-              "cnight_asset_name": ""
+              "cnight_asset_name": "NIGHT"
             },
             "observed_utxos": {
               "start": {
@@ -362,19 +362,19 @@
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wpfywxjxl0wdynjnccut556vkncg0xw90xr2xgchx7qg45c6qg50c",
-          "councilPolicyId": "0x52471a46fbdcd24e53c638ba534cb4f08799c57986a3231737808ad3",
-          "technicalCommitteeAddress": "addr_test1wpn7h9gtlkszq6n9gaacak3tdlxjxncth86xnuaqmrg86ns359jgs",
-          "technicalCommitteePolicyId": "0x67eb950bfda0206a65477b8eda2b6fcd234f0bb9f469f3a0d8d07d4e",
+          "councilAddress": "addr_test1wz76eeh439esrzt00h4m7kecd45e0ez43sfrw7lrajeze6qamp2sp",
+          "councilPolicyId": "0xbdace6f5897301896f7debbf5b386d6997e4558c12377be3ecb22ce8",
+          "technicalCommitteeAddress": "addr_test1wp3fqhht7q4kqz5vtadn607p0kh0c7kask5javqyzk96uac8ua2lc",
+          "technicalCommitteePolicyId": "0x62905eebf02b600a8c5f5b3d3fc17daefc7add85a92eb004158bae77",
           "councilMembersMainchain": [
-            "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
-            "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
-            "0x1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+            "0xf932cb4c0de84606b3da87214324887270f5fb0e04a6870dc7df5f23",
+            "0x1ef4e15cba8217811b9a9b2a7ec4a24a110418a38c2a9f0ae7127e04",
+            "0x8585125fa41171f55c23cdadc3d0ad3692be927c6ed1b92d1f048335"
           ],
           "technicalCommitteeMembersMainchain": [
-            "0xb94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
-            "0xde14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
-            "0x1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+            "0x3958ae4a79fa36f52c9e0f5fab7aac2d4c4446a290b44e2d2f53d387",
+            "0xc6f2de5adbbf0b77adcc6883d562a4f5a535017eaedc6804c5e55b33",
+            "0xa7b42151bbc97e9ecd40f454d6dd0a24cf3e579c675f6552bd059c82"
           ]
         },
         "systemParameters": {

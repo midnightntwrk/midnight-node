@@ -7,6 +7,9 @@ inputs:
   image:
     description: "Node Image"
     required: true
+  toolkit-image:
+    description: "Toolkit Image"
+    required: true
   tag:
     description: "PC Artifact Tag"
     required: true
@@ -48,6 +51,11 @@ runs:
         registry: ghcr.io
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
+
+    - name: Install just
+      uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+      with:
+        tool: just
 
     - name: Clone midnight-reserve-contracts
       run: |
@@ -95,6 +103,13 @@ runs:
     - name: node-e2e-tests
       id: node-e2e-tests
       run: earthly +node-e2e-test
+      shell: bash
+
+    - name: toolkit-multi-dest-e2e
+      id: toolkit-multi-dest-e2e
+      env:
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
+      run: just toolkit-multi-dest-e2e "$TOOLKIT_IMAGE"
       shell: bash
 
     - name: Upload Test Results
