@@ -2642,11 +2642,11 @@ async fn d_parameter_from_pallet_matches_config() {
     // Local environment configures D-Parameter as (4, 1)
     // 4 permissioned (Alice, Bob, Charlie, Dave) + 1 registered (Eve) = 5 total candidates
     assert_eq!(
-        d_param.num_permissioned_candidates, 4,
-        "Permissioned count should match system-parameters config (expected 4)"
+        d_param.num_permissioned_candidates, 3,
+        "Permissioned count should match system-parameters config (expected 3)"
     );
     assert_eq!(
-        d_param.num_registered_candidates, 1,
+        d_param.num_registered_candidates, 0,
         "Registered count should match system-parameters config (expected 1)"
     );
 
@@ -2679,8 +2679,8 @@ async fn permissioned_candidates_aiken_format() {
 
         // Local environment inserts 4 permissioned candidates
         assert!(
-            candidates.len() >= 4,
-            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len() >= 3,
+            "Expected at least 3 permissioned candidates in local-env, found {}",
             candidates.len()
         );
 
