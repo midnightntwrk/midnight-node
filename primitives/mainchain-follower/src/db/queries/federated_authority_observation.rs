@@ -21,13 +21,10 @@ use crate::db::GovernanceBodyUtxoRow;
 use sidechain_domain::PolicyId;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
-/// Query to get the UTXO for a governance body (council or technical committee) at a specific Cardano block
-///
-/// This query finds the most recent unspent UTXO up to and including the specified block that matches:
+/// This query finds the most recent UTXO up to and including the specified block that matches:
 /// - A provided script address
 /// - A provided policy ID (for the native asset)
-///
-/// The datum of this UTXO contains the Sr25519 public keys of the governance body members
+/// It is assumed that spending governance UTXO is always replacement and never removal, so the query does not check if the UTXO is spend.
 pub async fn get_governance_body_utxo(
 	pool: &Pool<Postgres>,
 	script_address: &str,
