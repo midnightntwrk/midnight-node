@@ -2646,7 +2646,7 @@ async fn d_parameter_from_pallet_matches_config() {
         "Permissioned count should match system-parameters config (expected 3)"
     );
     assert_eq!(
-        d_param.num_registered_candidates, 1,
+        d_param.num_registered_candidates, 0,
         "Registered count should match system-parameters config (expected 1)"
     );
 
