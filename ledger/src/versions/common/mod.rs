@@ -603,8 +603,12 @@ where
 			tx.0.cost(&ledger.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
 
+		log::trace!(target: LOG_TARGET, "⏱️  Estimated cost: {cost:?}");
+
 		let limits = ledger.state.parameters.limits.block_limits;
 		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
+
+		log::trace!(target: LOG_TARGET, "⏱️  Normalized cost: {normalized:?}");
 
 		let gas_cost = scale_normalized_cost(&normalized, max_weight);
 
