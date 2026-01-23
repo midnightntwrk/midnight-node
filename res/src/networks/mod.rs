@@ -88,7 +88,6 @@ pub struct EndowedAccount {
 #[derive(Clone, Debug, Deserialize)]
 pub struct MainChainScripts {
 	committee_candidates_address: String,
-	d_parameter_policy_id: String,
 	permissioned_candidates_policy_id: String,
 }
 
@@ -97,9 +96,10 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 		let committee_candidate_address = FromStr::from_str(&value.committee_candidates_address)
 			.expect("failed to convert committee_candidate_address");
 
-		let d_parameter_policy_id =
-			sidechain_domain::PolicyId::decode_hex(&value.d_parameter_policy_id)
-				.expect("failed to decode d_parameter_policy_id as hex");
+		// TODO: The d_parameter_policy_id field should be removed from
+		// sp_session_validator_management::MainChainScripts or made Optional in the future.
+		// The DParameter is now read from pallet_system_parameters storage instead of from mainchain.
+		let d_parameter_policy_id = sidechain_domain::PolicyId([0u8; 28]);
 
 		let permissioned_candidates_policy_id =
 			sidechain_domain::PolicyId::decode_hex(&value.permissioned_candidates_policy_id)
