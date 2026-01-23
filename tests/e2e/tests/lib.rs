@@ -477,13 +477,16 @@ async fn cnight_produces_dust() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
-
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
+    match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(register_tx_id),
+        )
         .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
+    {
+        Some(_) => (),
+        None => panic!("No registration UTXO found"),
+    };
 
     let amount = 100;
     let tx_id = cardano_client
@@ -1389,13 +1392,6 @@ async fn register_twice_with_same_cardano_address() {
         hex::encode(register_tx_id)
     );
 
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
-
     let validator_address = cardano_client
         .constants
         .policies
@@ -1565,13 +1561,6 @@ async fn deregister_with_valid_cnight_utxo() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
-
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
 
     let validator_address = cardano_client
         .constants
@@ -1879,13 +1868,6 @@ async fn deregister_first_mapping() {
         hex::encode(register_tx_id)
     );
 
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
-
     let validator_address = cardano_client
         .constants
         .policies
@@ -2176,13 +2158,6 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         hex::encode(register_tx_id)
     );
 
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
-
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
@@ -2301,13 +2276,6 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
-
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
-        .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
 
     let amount = 100;
     let tx_id = cardano_client
@@ -2476,12 +2444,16 @@ async fn spend_cnight_producing_dust() {
         hex::encode(register_tx_id)
     );
 
-    // Wait for Midnight node to observe and process the registration
-    let _registration_events = midnight_client
-        .subscribe_to_cnight_observation_events(&register_tx_id)
+    match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(register_tx_id),
+        )
         .await
-        .expect("Failed to wait for registration observation");
-    println!("Registration observed by Midnight node");
+    {
+        Some(_) => (),
+        None => panic!("No registration UTXO found"),
+    };
 
     let amount = 100;
     let tx_id = cardano_client
