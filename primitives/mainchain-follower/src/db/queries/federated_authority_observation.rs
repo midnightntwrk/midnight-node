@@ -24,7 +24,8 @@ use sqlx::{Pool, Postgres, error::Error as SqlxError};
 /// This query finds the most recent UTXO up to and including the specified block that matches:
 /// - A provided script address
 /// - A provided policy ID (for the native asset)
-/// It is assumed that spending governance UTXO is always replacement and never removal, so the query does not check if the UTXO is spend.
+///
+/// It is assumed that spending governance UTXO is always replacement and never removal, so the query does not check if the UTXO is spent.
 pub async fn get_governance_body_utxo(
 	pool: &Pool<Postgres>,
 	script_address: &str,
