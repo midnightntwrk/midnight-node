@@ -6,5 +6,5 @@ The previous query checked if that utxo had been spent, including in blocks
 that are not yet stable, leading to unexpected behaviour and a potential
 vulnerability.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/529
 Ticket: https://shielded.atlassian.net/browse/PM-21534
