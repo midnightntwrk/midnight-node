@@ -29,6 +29,9 @@ jobs:
     steps:
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+        if: >
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.fork == false
         with:
           registry: ghcr.io/midnight-ntwrk
           username: MidnightCI
@@ -39,6 +42,8 @@ jobs:
 
       - name: Get PR details
         id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
@@ -51,10 +56,12 @@ jobs:
             LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> $GITHUB_OUTPUT
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check changes can be rendered
+        # TODO: make season image public
+        if: >
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.fork == false
         run: docker run -v "$PWD/changes:/changes" ghcr.io/midnight-ntwrk/season:0.3.1 build /changes
 
       - name: Check changes files for link to PR

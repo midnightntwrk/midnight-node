@@ -7,6 +7,9 @@ inputs:
   image:
     description: "Node Image"
     required: true
+  toolkit-image:
+    description: "Toolkit Image"
+    required: true
   tag:
     description: "PC Artifact Tag"
     required: true
@@ -49,11 +52,18 @@ runs:
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
 
+    - name: Install just
+      uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
+      with:
+        tool: just
+
     - name: Clone midnight-reserve-contracts
       run: |
         echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
         git clone --depth 1 "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git" "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
-        echo "✓ Cloned to $(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+        CONTRACTS_PATH="$(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+        echo "✓ Cloned to ${CONTRACTS_PATH}"
+        echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${CONTRACTS_PATH}" >> $GITHUB_ENV
       shell: bash
       env:
         GHCR_PASSWORD: ${{ inputs.ghcr-password }}
@@ -93,6 +103,13 @@ runs:
     - name: node-e2e-tests
       id: node-e2e-tests
       run: earthly +node-e2e-test
+      shell: bash
+
+    - name: toolkit-multi-dest-e2e
+      id: toolkit-multi-dest-e2e
+      env:
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
+      run: just toolkit-multi-dest-e2e "$TOOLKIT_IMAGE"
       shell: bash
 
     - name: Upload Test Results

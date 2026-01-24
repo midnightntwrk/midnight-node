@@ -16,6 +16,7 @@ use midnight_node_ledger_helpers::{
 	midnight_serialize::tagged_deserialize,
 };
 use subxt::{
+	blocks::ExtrinsicEvents,
 	config::substrate::{ConsensusEngineId, DigestItem},
 	utils::H256,
 };
@@ -224,19 +225,15 @@ impl ComputeTask {
 					transactions.push(FetchedTransaction::System(tx));
 				}
 			}
-		}
 
-		// For non-genesis blocks: extract system transactions from events.
-		// This handles system transactions regardless of how they were triggered:
-		// - Direct send_mn_system_transaction calls
-		// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
-		// - CNightObservation-triggered system transactions
-		// - Any future wrapper patterns
-		if block_number > 0 {
-			for ev in events.iter() {
-				let Ok(ev) = ev else {
-					continue;
-				};
+			// For non-genesis blocks: extract system transactions from events.
+			// This handles system transactions regardless of how they were triggered:
+			// - Direct send_mn_system_transaction calls
+			// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
+			// - CNightObservation-triggered system transactions
+			// - Any future wrapper patterns
+			let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
+			for ev in ext_events.iter().filter_map(Result::ok) {
 				if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
 					let bytes = M::system_transaction_applied(event);
 					let tx = tagged_deserialize(&mut bytes.as_slice())
