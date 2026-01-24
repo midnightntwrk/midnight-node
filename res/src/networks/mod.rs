@@ -11,9 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
-	serde::{Deserialize, Deserializer, Serialize, de::IntoDeserializer},
+	serde::{Deserialize, Deserializer, Serialize},
 	sp_core::crypto::CryptoBytes,
 	std::str::FromStr,
 };
@@ -29,21 +31,6 @@ where
 	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).expect("hex decode failed");
 	let bytes = CryptoBytes::from_raw(bytes.try_into().expect("slice to array failed"));
 	Ok(bytes)
-}
-
-fn from_hex_vec<'de, D>(deserializer: D) -> Result<Vec<sp_core::sr25519::Public>, D::Error>
-where
-	D: Deserializer<'de>,
-{
-	let strings: Vec<String> = Vec::deserialize(deserializer)?;
-	strings
-		.into_iter()
-		.map(|s| {
-			// Reuse `from_hex` via `serde::de::IntoDeserializer`
-			from_hex::<_, sp_core::sr25519::Public, 32>(s.into_deserializer())
-				.map(|crypto_bytes| sp_core::sr25519::Public::from_raw(crypto_bytes.0))
-		})
-		.collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,15 +88,7 @@ pub struct EndowedAccount {
 #[derive(Clone, Debug, Deserialize)]
 pub struct MainChainScripts {
 	committee_candidates_address: String,
-	d_parameter_policy_id: String,
 	permissioned_candidates_policy_id: String,
-	governed_map: Option<GovernedMapMainChainScripts>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct GovernedMapMainChainScripts {
-	validator_address: String,
-	policy_id: String,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -117,9 +96,10 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 		let committee_candidate_address = FromStr::from_str(&value.committee_candidates_address)
 			.expect("failed to convert committee_candidate_address");
 
-		let d_parameter_policy_id =
-			sidechain_domain::PolicyId::decode_hex(&value.d_parameter_policy_id)
-				.expect("failed to decode d_parameter_policy_id as hex");
+		// TODO: The d_parameter_policy_id field should be removed from
+		// sp_session_validator_management::MainChainScripts or made Optional in the future.
+		// The DParameter is now read from pallet_system_parameters storage instead of from mainchain.
+		let d_parameter_policy_id = sidechain_domain::PolicyId([0u8; 28]);
 
 		let permissioned_candidates_policy_id =
 			sidechain_domain::PolicyId::decode_hex(&value.permissioned_candidates_policy_id)
@@ -133,21 +113,6 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 	}
 }
 
-impl From<MainChainScripts> for Option<sp_governed_map::MainChainScriptsV1> {
-	fn from(value: MainChainScripts) -> Self {
-		value.governed_map.map(|governed_map_mainchain_scripts| {
-			let validator_address =
-				FromStr::from_str(&governed_map_mainchain_scripts.validator_address)
-					.expect("failed to decode governed_map.validator_address");
-
-			let policy_id = FromStr::from_str(&governed_map_mainchain_scripts.policy_id)
-				.expect("failed to convert governed_map.policy_id");
-
-			sp_governed_map::MainChainScriptsV1 { validator_address, asset_policy_id: policy_id }
-		})
-	}
-}
-
 impl MainChainScripts {
 	pub fn load_from_pc_chain_config(config: &serde_json::Value) -> Self {
 		let value = config
@@ -155,45 +120,6 @@ impl MainChainScripts {
 			.expect("no \"cardano_addresses\" exists")
 			.clone();
 		serde_json::value::from_value(value).expect("failed to parse \"cardano_addresses\"")
-	}
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InitialFederedatedAuthority {
-	#[serde(deserialize_with = "from_hex_vec")]
-	pub members: Vec<sp_core::sr25519::Public>,
-}
-
-impl InitialFederedatedAuthority {
-	pub fn new_from_uris(uris: Vec<&str>) -> Self {
-		use sp_core::Pair as _;
-
-		let sr25519_pubkeys = uris
-			.iter()
-			.map(|uri| {
-				sp_core::sr25519::Pair::from_string(uri, None)
-					.expect("failed to generate sr25519 keypair from uri")
-					.public()
-			})
-			.collect();
-
-		InitialFederedatedAuthority { members: sr25519_pubkeys }
-	}
-
-	pub fn load_initial_federated_authority(data: &str) -> Vec<Self> {
-		serde_json::from_str(data).expect("failed to parse initial federared authority")
-	}
-
-	pub fn load_from_federated_authority_config(
-		config: &serde_json::Value,
-		authority_body: &str,
-	) -> Self {
-		let authorities_value = config
-			.get(authority_body)
-			.expect(&format!("no \"{:?}\" exists", authority_body))
-			.clone();
-		serde_json::value::from_value(authorities_value)
-			.expect(&format!("failed to parse \"{:?}\"", authority_body))
 	}
 }
 
@@ -205,14 +131,13 @@ pub trait MidnightNetwork {
 	fn genesis_utxo(&self) -> &str;
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
+	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
+	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
-	fn council(&self) -> InitialFederedatedAuthority;
-	fn technical_committee(&self) -> InitialFederedatedAuthority;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)
 	}
-
 	fn chain_type(&self) -> sc_service::ChainType {
 		sc_service::ChainType::Live
 	}

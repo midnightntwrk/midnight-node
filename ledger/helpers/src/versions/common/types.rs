@@ -11,9 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::super::{ContractAddress, Transcript};
+use super::super::{
+	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
+	ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
+	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
+	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+};
 use bip39::Mnemonic;
-use std::{collections::HashMap, str::FromStr};
+use derive_where::derive_where;
+use itertools::Itertools;
+use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+use std::str::FromStr;
+use std::{
+	collections::HashMap,
+	marker::PhantomData,
+	time::{SystemTime, UNIX_EPOCH},
+};
+use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum WalletSeed {
@@ -36,10 +50,13 @@ pub enum WalletSeedError {
 	InvalidLength(usize),
 	#[error("{0}")]
 	InvalidMnemonic(#[from] bip39::Error),
+	#[error("lazy hex must only contain one '..'")]
+	LazyHexTwoPartsOnly,
+	#[error("lazy hex length too long")]
+	LazyHexLengthTooLong(usize),
 }
 
 impl WalletSeed {
-	#[cfg(feature = "can-panic")]
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
 		match bytes.len() {
@@ -47,6 +64,32 @@ impl WalletSeed {
 			32 => Ok(Self::Medium(bytes.try_into().unwrap())),
 			64 => Ok(Self::Long(bytes.try_into().unwrap())),
 			len => Err(WalletSeedError::InvalidLength(len)),
+		}
+	}
+
+	/// Allow decoding from seeds in the form e.g. 00..01
+	/// Works for Medium and Long seeds only
+	pub fn try_from_lazy_hex(value: &str) -> Result<Self, WalletSeedError> {
+		let parts: Vec<_> = value.split("..").collect();
+		if parts.len() != 2 {
+			return Err(WalletSeedError::LazyHexTwoPartsOnly);
+		}
+
+		let mut seed = hex::decode(parts[0])?;
+		let seed_tail = hex::decode(parts[1])?;
+
+		let total_len = seed.len() + seed_tail.len();
+
+		let extend_to = |l| {
+			seed.extend(std::iter::repeat_n(0, l - total_len));
+			seed.extend(&seed_tail);
+			seed
+		};
+
+		match total_len {
+			l if l <= 32 => Ok(Self::Medium(extend_to(32).try_into().unwrap())),
+			l if l <= 64 => Ok(Self::Long(extend_to(64).try_into().unwrap())),
+			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
 		}
 	}
 
@@ -70,12 +113,71 @@ impl From<[u8; 32]> for WalletSeed {
 	}
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum WalletSeedParseError {
+	#[error("failed to parse as any type: hex: {0}, lazy_hex: {1}, mnemonic: {2}")]
+	FailedToParseAny(WalletSeedError, WalletSeedError, WalletSeedError),
+}
+
 impl FromStr for WalletSeed {
-	type Err = WalletSeedError;
+	type Err = WalletSeedParseError;
 
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let s = s.trim();
-		if let Ok(seed) = Self::try_from_hex_str(s) { Ok(seed) } else { Self::try_from_mnemonic(s) }
+
+		let mut errs = vec![];
+
+		match Self::try_from_hex_str(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+		match Self::try_from_lazy_hex(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+		match Self::try_from_mnemonic(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => errs.push(e),
+		}
+
+		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
+		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
+	}
+}
+
+#[derive(Clone)]
+pub struct Keypair(pub sr25519::Keypair);
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeypairParseError {
+	#[error("Secret URI parse error: {0}")]
+	UriParseFailed(#[from] SecretUriError),
+	#[error("Subxt signer error: {0}")]
+	SubxtSignerError(#[from] sr25519::Error),
+	#[error("Subxt error: {0}")]
+	SubxtError(#[from] subxt::Error),
+	#[error("BIP error: {0}")]
+	BipError(#[from] bip39::Error),
+}
+
+impl From<sr25519::Keypair> for Keypair {
+	fn from(val: sr25519::Keypair) -> Self {
+		Keypair(val)
+	}
+}
+
+impl FromStr for Keypair {
+	type Err = KeypairParseError;
+	fn from_str(key_str: &str) -> Result<Self, Self::Err> {
+		let key_str = key_str.trim();
+		// Supports seed phrases
+		if key_str.contains('/') {
+			let uri = SecretUri::from_str(key_str)?;
+			Ok(sr25519::Keypair::from_uri(&uri)?.into())
+		} else {
+			let phrase = Mnemonic::parse(key_str)?;
+			Ok(sr25519::Keypair::from_phrase(&phrase, None)?.into())
+		}
 	}
 }
 
@@ -160,9 +262,291 @@ impl From<Segment> for u16 {
 	}
 }
 
+impl From<Segment> for Option<u16> {
+	fn from(val: Segment) -> Self {
+		Some(val.into())
+	}
+}
+
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+pub struct StorableSyntheticCost<D: DB> {
+	read_time: u64,
+	compute_time: u64,
+	block_usage: u64,
+	bytes_written: u64,
+	bytes_churned: u64,
+	_marker: PhantomData<D>,
+}
+
+impl<D: DB> StorableSyntheticCost<D> {
+	pub fn zero() -> Self {
+		Self {
+			read_time: 0,
+			compute_time: 0,
+			block_usage: 0,
+			bytes_written: 0,
+			bytes_churned: 0,
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
+	fn from(value: SyntheticCost) -> Self {
+		Self {
+			read_time: value.read_time.into_picoseconds(),
+			compute_time: value.compute_time.into_picoseconds(),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+			_marker: PhantomData,
+		}
+	}
+}
+impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
+	fn from(value: StorableSyntheticCost<D>) -> Self {
+		Self {
+			read_time: CostDuration::from_picoseconds(value.read_time),
+			compute_time: CostDuration::from_picoseconds(value.compute_time),
+			block_usage: value.block_usage,
+			bytes_written: value.bytes_written,
+			bytes_churned: value.bytes_churned,
+		}
+	}
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TransactionWithContext<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	#[serde(bound = "")]
+	pub tx: SerdeTransaction<S, P, D>,
+	pub block_context: BlockContext,
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	pub fn new(
+		tx: Transaction<S, P, PureGeneratorPedersen, D>,
+		parent_block_hash_seed: Option<u64>,
+	) -> Self {
+		let now = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("Time went backwards")
+			.as_secs();
+		let delay: u64 = 0;
+		let ttl = now + delay;
+		let timestamp = Timestamp::from_secs(ttl);
+
+		// In case `parent_block_hash_seed` wasn't specified, a randmon one is chosen
+		let parent_block_hash_seed =
+			parent_block_hash_seed.unwrap_or_else(|| rand::thread_rng().r#gen());
+
+		// Calculate a deterministic `parent_block_hash` based on the seed
+		let mut rng = SmallRng::seed_from_u64(parent_block_hash_seed);
+		let mut array = [0u8; 32];
+		rng.fill_bytes(&mut array);
+		let parent_block_hash = HashOutput(array);
+
+		let block_context = BlockContext { tblock: timestamp, tblock_err: 30, parent_block_hash };
+
+		Self { tx: SerdeTransaction::Midnight(tx), block_context }
+	}
+
+	pub fn block_context(&self) -> BlockContext {
+		self.block_context.clone()
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for TransactionWithContext<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn deserialize(
+		reader: &mut impl std::io::Read,
+		recursion_depth: u32,
+	) -> Result<Self, std::io::Error> {
+		Ok(TransactionWithContext {
+			tx: Deserializable::deserialize(reader, recursion_depth)?,
+			block_context: Deserializable::deserialize(reader, recursion_depth)?,
+		})
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for TransactionWithContext<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn serialize(&self, writer: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+		Serializable::serialize(&self.tx, writer)?;
+		Serializable::serialize(&self.block_context, writer)?;
+		Ok(())
+	}
+
+	fn serialized_size(&self) -> usize {
+		Serializable::serialized_size(&self.tx) + Serializable::serialized_size(&self.block_context)
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Tagged for TransactionWithContext<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn tag() -> std::borrow::Cow<'static, str> {
+		std::borrow::Cow::Borrowed("transaction-with-context[v1]")
+	}
+
+	fn tag_unique_factor() -> String {
+		format!(
+			"({},{})",
+			Transaction::<S, P, PureGeneratorPedersen, D>::tag(),
+			BlockContext::tag()
+		)
+	}
+}
+
+#[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)] // Transaction has the same thing internally
+pub enum SerdeTransaction<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	Midnight(Transaction<S, P, PureGeneratorPedersen, D>),
+	System(SystemTransaction),
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> SerdeTransaction<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	pub fn as_midnight(&self) -> Option<&Transaction<S, P, PureGeneratorPedersen, D>> {
+		match &self {
+			Self::Midnight(tx) => Some(tx),
+			_ => None,
+		}
+	}
+
+	pub fn network_id(&self) -> Option<&str> {
+		match &self {
+			Self::Midnight(Transaction::Standard(StandardTransaction { network_id, .. })) => {
+				Some(network_id)
+			},
+			_ => None,
+		}
+	}
+
+	pub fn serialize_inner(&self) -> Result<Vec<u8>, std::io::Error> {
+		match &self {
+			Self::Midnight(tx) => super::serialize(tx),
+			Self::System(tx) => super::serialize(tx),
+		}
+	}
+
+	pub fn transaction_hash(&self) -> TransactionHash {
+		match self {
+			SerdeTransaction::Midnight(transaction) => transaction.transaction_hash(),
+			SerdeTransaction::System(system_transaction) => system_transaction.transaction_hash(),
+		}
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for SerdeTransaction<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn serialize(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+		match self {
+			Self::Midnight(tx) => {
+				<u8 as Serializable>::serialize(&0, writer)?;
+				Transaction::serialize(tx, writer)?;
+			},
+			Self::System(tx) => {
+				<u8 as Serializable>::serialize(&1, writer)?;
+				SystemTransaction::serialize(tx, writer)?;
+			},
+		}
+		Ok(())
+	}
+
+	fn serialized_size(&self) -> usize {
+		match self {
+			Self::Midnight(tx) => 1 + Transaction::serialized_size(tx),
+			Self::System(tx) => 1 + SystemTransaction::serialized_size(tx),
+		}
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for SerdeTransaction<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn deserialize(reader: &mut impl std::io::Read, recursion_depth: u32) -> std::io::Result<Self> {
+		let discriminant = <u8 as Deserializable>::deserialize(reader, recursion_depth)?;
+		match discriminant {
+			0 => Ok(Self::Midnight(Transaction::deserialize(reader, recursion_depth)?)),
+			1 => Ok(Self::System(SystemTransaction::deserialize(reader, recursion_depth)?)),
+			_ => Err(::std::io::Error::new(
+				::std::io::ErrorKind::InvalidData,
+				"unrecognised discriminant for SerdeTransaction",
+			)),
+		}
+	}
+}
+
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Serialize for SerdeTransaction<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn serialize<SE: serde::Serializer>(&self, serializer: SE) -> Result<SE::Ok, SE::Error> {
+		let serialized_bytes = match self {
+			Self::Midnight(tx) => super::serialize(tx),
+			Self::System(tx) => super::serialize(tx),
+		}
+		.map_err(serde::ser::Error::custom)?;
+
+		serde::Serialize::serialize(&serialized_bytes, serializer)
+	}
+}
+
+impl<'a, S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Deserialize<'a>
+	for SerdeTransaction<S, P, D>
+where
+	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+{
+	fn deserialize<DE: serde::Deserializer<'a>>(deserializer: DE) -> Result<Self, DE::Error> {
+		let bytes = <Vec<u8> as serde::Deserialize>::deserialize(deserializer)?;
+		if !bytes.starts_with(serialize::GLOBAL_TAG.as_bytes()) {
+			return Err(serde::de::Error::custom("missing global tag"));
+		}
+
+		macro_rules! try_deserialize_as {
+			($ty:ident, $ctor:ident) => {
+				if bytes[serialize::GLOBAL_TAG.as_bytes().len()..]
+					.starts_with($ty::tag().as_bytes())
+				{
+					return Ok(Self::$ctor(
+						deserialize(bytes.as_slice()).map_err(serde::de::Error::custom)?,
+					));
+				}
+			};
+		}
+
+		try_deserialize_as!(Transaction, Midnight);
+		try_deserialize_as!(SystemTransaction, System);
+
+		Err(serde::de::Error::custom("unrecognized tag"))
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use crate::WalletSeed;
+	use crate::{WalletSeedError, WalletSeedParseError};
 
 	#[test]
 	fn should_decode_wallet_seeds_in_different_formats() {
@@ -171,5 +555,23 @@ mod tests {
 		let hex = "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9";
 		let hex_seed: WalletSeed = hex.parse().unwrap();
 		assert_eq!(mnemonic_seed, hex_seed);
+	}
+
+	#[test]
+	fn try_from_lazy_hex() {
+		let lazy_hex = "0002..1101";
+		let lazy_seed: WalletSeed = lazy_hex.parse().unwrap();
+		let hex = "0002000000000000000000000000000000000000000000000000000000001101";
+		let hex_seed: WalletSeed = hex.parse().unwrap();
+		assert_eq!(lazy_seed, hex_seed);
+	}
+
+	#[test]
+	fn lazy_hex_invalid() {
+		let lazy_hex = "000..01";
+		assert!(matches!(
+			lazy_hex.parse::<WalletSeed>(),
+			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
+		));
 	}
 }

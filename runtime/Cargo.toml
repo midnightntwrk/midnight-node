@@ -15,6 +15,7 @@ log.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 
+binary-merkle-tree.workspace = true
 frame-support.workspace = true
 frame-system.workspace = true
 frame-try-runtime = { workspace = true, optional = true }
@@ -25,14 +26,12 @@ pallet-beefy-mmr.workspace = true
 pallet-grandpa.workspace = true
 pallet-preimage.workspace = true
 pallet-mmr.workspace = true
-pallet-sudo.workspace = true
 pallet-scheduler.workspace = true
 pallet-timestamp.workspace = true
 pallet-tx-pause.workspace = true
 pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
-pallet-governed-map.workspace = true
 pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-block-builder.workspace = true
@@ -43,16 +42,14 @@ sp-consensus-slots.workspace = true
 sp-core.workspace = true
 sp-genesis-builder.workspace = true
 sp-inherents.workspace = true
-#sp-partner-chains-bridge.workspace = true
+sp-partner-chains-bridge.workspace = true
 sp-offchain.workspace = true
 sp-runtime.workspace = true
 sp-session.workspace = true
 sp-staking.workspace = true
-sp-std.workspace = true
 sp-transaction-pool.workspace = true
 sp-version.workspace = true
 sp-storage.workspace = true
-sp-governed-map.workspace = true
 
 # Sidechains primitives
 sp-session-validator-management = { workspace = true, features = ["serde"] }
@@ -69,12 +66,11 @@ frame-system-benchmarking = { workspace = true, optional = true }
 authority-selection-inherents.workspace = true
 #pallet-block-rewards.workspace = true
 #sp-block-rewards.workspace = true
-pallet-partner-chains-session.workspace = true
-#pallet-partner-chains-bridge.workspace = true
+pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
-pallet-session-validator-management-benchmarking = { workspace = true, optional = true }
+pallet-partner-chains-session.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots.workspace = true
 
@@ -82,9 +78,13 @@ sidechain-slots.workspace = true
 midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
+pallet-system-parameters.workspace = true
 pallet-version.workspace = true
+midnight-primitives-beefy.workspace = true
+midnight-primitives-federated-authority-observation.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
+midnight-primitives.workspace = true
 pallet-federated-authority-observation.workspace = true
 runtime-common.workspace = true
 
@@ -101,6 +101,7 @@ frame-storage-access-test-runtime = { workspace = true, optional = true, default
 [features]
 default = ["std"]
 std = [
+    "binary-merkle-tree/std",
     "authority-selection-inherents/std",
     "frame-try-runtime?/std",
     "frame-system-benchmarking?/std",
@@ -116,19 +117,18 @@ std = [
     "pallet-beefy-mmr/std",
     "pallet-grandpa/std",
     "pallet-midnight/std",
+    "pallet-system-parameters/std",
     "pallet-mmr/std",
-    #"pallet-partner-chains-bridge/std",
+    "pallet-partner-chains-bridge/std",
     "pallet-version/std",
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
-    "pallet-sudo/std",
     "pallet-scheduler/std",
     "pallet-timestamp/std",
     "pallet-migrations/std",
     "pallet-membership/std",
     "pallet-collective/std",
-    "pallet-governed-map/std",
     "pallet-federated-authority/std",
     "sp-api/std",
     "sp-block-builder/std",
@@ -139,31 +139,30 @@ std = [
     "sp-consensus-slots/std",
     "sp-core/std",
     "sp-inherents/std",
-    #"sp-partner-chains-bridge/std",
+    "sp-partner-chains-bridge/std",
     "sp-offchain/std",
     "sp-runtime/std",
     "sp-session/std",
     "sp-session-validator-management/std",
     "sp-sidechain/std",
     "sp-staking/std",
-    "sp-std/std",
     "sp-transaction-pool/std",
     "sp-version/std",
     "sp-storage/std",
     "sp-genesis-builder/std",
-    "sp-governed-map/std",
     "substrate-wasm-builder",
     "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
-    "pallet-partner-chains-session/std",
     "pallet-session-validator-management/std",
-    "pallet-session-validator-management-benchmarking?/std",
+    "pallet-partner-chains-session/std",
     "pallet-tx-pause/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
+    "midnight-primitives/std",
+    "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
     "runtime-common/std"
 ]
@@ -178,17 +177,16 @@ runtime-benchmarks = [
     # TODO: Enable native-token-mgmt benchmarks when available
     # "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
-    "pallet-sudo/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
     "pallet-migrations/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
-    "pallet-session-validator-management-benchmarking/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
-    "pallet-governed-map/runtime-benchmarks"
+    "pallet-system-parameters/runtime-benchmarks",
+    "pallet-session-validator-management/runtime-benchmarks",
 ]
 try-runtime = [
     "frame-try-runtime/try-runtime",
@@ -204,7 +202,6 @@ try-runtime = [
     # "pallet-partner-chains-bridge/try-runtime",
     "pallet-mmr/try-runtime",
     "pallet-scheduler/try-runtime",
-    "pallet-sudo/try-runtime",
     "pallet-timestamp/try-runtime",
     "pallet-tx-pause/try-runtime",
     "pallet-migrations/try-runtime",
@@ -214,4 +211,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["scale-info", "parity-scale-codec", "serde", "frame-storage-access-test-runtime"]
+ignored = ["serde", "frame-storage-access-test-runtime"]

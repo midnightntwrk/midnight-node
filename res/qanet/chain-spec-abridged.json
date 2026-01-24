@@ -24,7 +24,7 @@
           "authorities": []
         },
         "sidechain": {
-          "genesisUtxo": "c79a414c8d8cf691caa654861cfb0555c6a7f2016d0b2ae79cc4fc4377372e74#1",
+          "genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
           "slotsPerEpoch": 300
         },
         "midnight": {
@@ -65,46 +65,45 @@
             101,
             91,
             118,
-            57,
+            49,
+            51,
             93,
             41,
             58,
-            136,
-            199,
-            171,
-            153,
-            186,
-            107,
-            173,
-            118,
-            198,
-            196,
-            79,
-            147,
-            156,
-            103,
-            142,
-            205,
-            216,
-            230,
-            69,
-            115,
-            136,
-            250,
-            7,
-            152,
-            131,
-            182,
-            150,
-            196,
+            0,
+            172,
             74,
-            9,
-            7,
-            44
+            255,
+            197,
+            169,
+            25,
+            27,
+            177,
+            79,
+            38,
+            156,
+            16,
+            10,
+            246,
+            77,
+            231,
+            84,
+            208,
+            116,
+            237,
+            249,
+            74,
+            137,
+            94,
+            196,
+            216,
+            60,
+            4,
+            183,
+            90,
+            253,
+            103
           ]
-        },
-        "sudo": {
-          "key": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
         },
         "sessionCommitteeManagement": {
           "initialAuthorities": [
@@ -218,28 +217,29 @@
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "addr_test1wrhpp7gmzt5plx3dx7sz25gl0pjx322z4p3pjtkmfpnpfpcqgckjk",
-            "d_parameter_policy_id": "0x0499e919fc1040af975ea1dc7b8a414c99f0e1d070e547dc81999010",
-            "permissioned_candidates_policy_id": "0xca3c98056e6bce7df274f0a9161ad53208bdb1cef072f0743307ad2f"
+            "committee_candidate_address": "addr_test1wzj9h8pzkxvkqv0s3c9f53j9hrmnrjku3hajhnpswzft2ags02c2l",
+            "d_parameter_policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+            "permissioned_candidates_policy_id": "0x726d95cdbca96843b5710f560ae452623b63f8d3fac434442f8d8715"
           }
         },
         "cNightObservation": {
           "config": {
             "addresses": {
-              "mapping_validator_address": "addr_test1wral0lzw5kpjytmw0gmsdcgctx09au24nt85zma38py8g3crwvpwe",
-              "redemption_validator_address": "addr_test1wz3t0v4r0kwdfnh44m87z4rasp4nj0rcplfpmwxvhhrzhdgl45vx4",
-              "cnight_policy_id": "03cf16101d110dcad9cacb225f0d1e63a8809979e7feb60426995414",
+              "mapping_validator_address": "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
+              "auth_token_asset_name": "",
+              "redemption_validator_address": "addr_test1wzgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqjylc3j",
+              "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
               "cnight_asset_name": ""
             },
             "observed_utxos": {
               "start": {
-                "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "block_number": 0,
                 "block_timestamp": 0,
                 "tx_index_in_block": 0
               },
               "end": {
-                "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "block_number": 0,
                 "block_timestamp": 0,
                 "tx_index_in_block": 0
@@ -249,7 +249,7 @@
             "mappings": {},
             "utxo_owners": {},
             "next_cardano_position": {
-              "block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+              "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
               "block_number": 0,
               "block_timestamp": 0,
               "tx_index_in_block": 0
@@ -370,8 +370,9 @@
             ]
           ]
         },
-        "governedMap": {
+        "bridge": {
           "mainChainScripts": null,
+          "initialCheckpoint": null,
           "marker": null
         },
         "council": {
@@ -393,6 +394,32 @@
             "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw",
             "5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL"
           ]
+        },
+        "federatedAuthorityObservation": {
+          "councilAddress": "addr_test1wpsyqmlhdvepckw4d659nw0gwqjm9dqpmgvly0m8wy759fq9ktez7",
+          "councilPolicyId": "0x60406ff76b321c59d56ea859b9e87025b2b401da19f23f67713d42a4",
+          "technicalCommitteeAddress": "addr_test1wzy6xm8ue9fa8cm99gaqx3mv9plze3cfqkgav3zsqk06w0gakkpkt",
+          "technicalCommitteePolicyId": "0x89a36cfcc953d3e3652a3a03476c287e2cc7090591d64450059fa73d",
+          "councilMembersMainchain": [
+            "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
+            "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
+            "0x1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+          ],
+          "technicalCommitteeMembersMainchain": [
+            "0xb94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
+            "0xde14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
+            "0x1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+          ]
+        },
+        "systemParameters": {
+          "termsAndConditions": {
+            "hash": "0xca85ed77bce68288e55300f006ccd5cce5d4940dc39fc41173a9c2ecd1eb616e",
+            "url": "https://www.midnight.gd/global-terms-txt"
+          },
+          "dParameter": {
+            "num_permissioned_candidates": 12,
+            "num_registered_candidates": 0
+          }
         }
       }
     }

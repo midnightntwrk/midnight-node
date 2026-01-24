@@ -28,13 +28,15 @@ A brief summary of what the scripts do:
   * `receive_cnight.sh` - mint 10 cNIGHT tokens.  These are dummy tokens made
     only for testing.
 
+  * `rotate_tokens.sh` - rotation of 10 (this is a configurable parameter in the script) cNIGHT tokens is carried out by sending them back to your own address. If deregistration happens, the   UTxO that contains cNIGHT no longer participates in DUST generation. 
+
 Test procedure:
 
   1. Create wallet using `mkWallets.sh`.
 
-  2. Modify `datum-alice.json` to include Base16-encoded wallet address returned
-     by `mkWallets.sh`.  Put it into the first `bytes` field.  Do the same for
-     Bob.  NOTE: DUST address field in both datums is garbage at the moment.
+  2. Modify `datum-alice.json` to include key-hash wallet address returned
+     by `mkWallets.sh`. Put it into the first `bytes` field.  Do the same for
+     Bob. The second `bytes` field contains DUST public key for seeds 0..10 (alice) and 0..11 (bob) (33 bytes)
 
   3. Add funds to wallets, e.f. from [faucet](https://docs.cardano.org/cardano-testnets/tools/faucet)
 
@@ -54,4 +56,8 @@ Test procedure:
      users for DUST production.  Can be repeated as long as they are registered.
      This script requires supplying registration UTxO manually, meaning it must
      be edited before every call.
+     Note: At this stage, DUST may still be produced because the UTxO rotation has not been performed yet.
 
+  9. Run rotate_tokens.sh alice or rotate_tokens.sh bob to rotate the UTxOs.
+     As a result, the UTxOs that previously contained the cNIGHT tokens will no longer
+     participate in DUST production (provided that deregistration has already occurred).

@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 
@@ -11,12 +13,14 @@ pub mod pallet {
 		LedgerBlockContextProvider, LedgerStateProviderMut, MidnightSystemTransactionExecutor,
 	};
 
+	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
 		Hash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use sp_std::vec::Vec;
 
 	use super::*;
+
+	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
@@ -51,10 +55,19 @@ pub mod pallet {
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
+	#[pallet::type_value]
+	pub fn DefaultTransactionSizeWeight() -> Weight {
+		EXTRA_WEIGHT_TX_SIZE
+	}
+
+	#[pallet::storage]
+	pub type ConfigurableSystemTxWeight<T> =
+		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight({0})]
+		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
 		pub fn send_mn_system_transaction(
 			origin: OriginFor<T>,
 			midnight_system_tx: Vec<u8>,
@@ -64,16 +77,23 @@ pub mod pallet {
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 
-			<T as Config>::LedgerStateProviderMut::mut_ledger_state(move |state_key| {
+			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 				let result = LedgerApi::apply_system_transaction(
 					&state_key,
-					&midnight_system_tx,
+					&midnight_system_tx.clone(),
 					block_context,
 					runtime_version,
 				)
 				.map_err(Error::<T>::from)?;
-				Ok::<(Vec<u8>, ()), Error<T>>((result.state_root, ()))
+				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
 			})?;
+
+			Self::deposit_event(Event::<T>::SystemTransactionApplied(
+				super::SystemTransactionApplied {
+					hash,
+					serialized_system_transaction: midnight_system_tx,
+				},
+			));
 
 			Ok(())
 		}

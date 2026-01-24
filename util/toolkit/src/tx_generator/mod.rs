@@ -13,15 +13,11 @@
 
 use midnight_node_ledger_helpers::*;
 use std::{path::Path, sync::Arc};
-use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
-	client::MidnightNodeClient,
-	indexer::Indexer,
 	remote_prover::RemoteProofServer,
-	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 };
 
@@ -91,18 +87,24 @@ where
 			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+				src_files.clone(),
+				extension.to_string(),
+				src.dust_warp,
+				src.ignore_block_context,
+			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
 			if dry_run {
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer =
-				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
+			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+				&url,
+				src.fetch_concurrency,
+				src.dust_warp,
+				src.fetch_cache,
+			));
 			Ok(source)
 		} else {
 			Err(SourceError::InvalidSourceArgs(src))
@@ -131,19 +133,18 @@ where
 
 		// ------ accept multiple urls ------
 		let mut dests = vec![];
-		for url in dest.dest_urls {
-			if dry_run {
-				println!("Dry-run: Destination RPC: {:?}", &url);
-				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
-				continue;
-			}
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api, url));
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::new(sender, dest.rate));
-
-			dests.push(destination);
+		if dry_run {
+			println!("Dry-run: Destination RPC(s): {:?}", &dest.dest_urls);
+			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
+
+		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+		));
+
+		dests.push(destination);
 
 		Ok(dests)
 	}

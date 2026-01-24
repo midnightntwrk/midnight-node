@@ -22,7 +22,11 @@ pub use super::types::{self, DeserializationError, LedgerApiError, Serialization
 
 use base_crypto_local::hash::HashOutput;
 use coin_structure_local::coin::UserAddress as UserAddressLedger;
-use ledger_storage_local::{WellBehavedHasher, arena::TypedArenaKey, db::DB};
+use ledger_storage_local::{
+	WellBehavedHasher,
+	arena::{ArenaHash, TypedArenaKey},
+	db::DB,
+};
 use midnight_serialize_local::{Deserializable, Tagged};
 
 pub mod ledger;
@@ -33,9 +37,8 @@ pub(crate) type LedgerParameters = mn_ledger_local::structure::LedgerParameters;
 pub(crate) type ContractState<D> = onchain_runtime_local::state::ContractState<D>;
 pub(crate) type ZswapState<D> = zswap_local::ledger::State<D>;
 pub(crate) type ContractAddress = coin_structure_local::contract::ContractAddress;
+pub(crate) type DustPublicKey = mn_ledger_local::dust::DustPublicKey;
 pub(crate) type UserAddress = coin_structure_local::coin::UserAddress;
-pub(crate) type OutputInstructionUnshielded =
-	mn_ledger_local::structure::OutputInstructionUnshielded;
 pub(crate) type SystemTransaction = mn_ledger_local::structure::SystemTransaction;
 pub(crate) type CNightGeneratesDustEvent = mn_ledger_local::structure::CNightGeneratesDustEvent;
 pub(crate) type Transaction<S, D> = transaction::Transaction<S, D>;
@@ -64,9 +67,21 @@ impl DeserializableError for ContractAddress {
 	}
 }
 
+impl DeserializableError for DustPublicKey {
+	fn error() -> DeserializationError {
+		DeserializationError::DustPublicKey
+	}
+}
+
 impl<T, H: WellBehavedHasher> SerializableError for TypedArenaKey<T, H> {
 	fn error() -> SerializationError {
 		SerializationError::TypedArenaKey
+	}
+}
+
+impl<H: WellBehavedHasher> SerializableError for ArenaHash<H> {
+	fn error() -> SerializationError {
+		SerializationError::ArenaHash
 	}
 }
 

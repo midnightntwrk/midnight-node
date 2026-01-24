@@ -1,2 +1,3 @@
 pub mod api;
-pub mod cfg;
+pub mod config;
+pub mod faucet;

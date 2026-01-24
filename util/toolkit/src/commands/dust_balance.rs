@@ -3,24 +3,24 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{LedgerContext, ProofType, SignatureType, Source, TxGenerator, WalletSeed};
-use clap::Args;
-use midnight_node_ledger_helpers::{DustOutput, Timestamp};
-use midnight_node_toolkit::{
+use crate::{LedgerContext, ProofType, SignatureType, TxGenerator, WalletSeed, source::Source};
+use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
 };
+use clap::Args;
+use midnight_node_ledger_helpers::{DustOutput, Timestamp};
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	/// The seed of the wallet to show wallet state for, including private state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	seed: WalletSeed,
+	pub seed: WalletSeed,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -31,9 +31,10 @@ pub struct GenerationInfoPair {
 
 #[derive(Debug, serde::Serialize)]
 pub struct DustBalanceJson {
-	generation_infos: Vec<GenerationInfoPair>,
-	source: HashMap<String, u128>,
-	total: u128,
+	pub generation_infos: Vec<GenerationInfoPair>,
+	pub source: HashMap<String, u128>,
+	pub total: u128,
+	pub capacity: u128,
 }
 
 pub enum DustBalanceResult {
@@ -70,11 +71,17 @@ pub async fn execute(
 		let timestamp = Timestamp::from_secs(now);
 		let total = dust_state.wallet_balance(timestamp);
 
+		let mut capacity = 0u128;
+
 		let mut generation_infos = Vec::new();
 		let mut source = HashMap::new();
 		for dust_output in dust_state.utxos() {
 			let dust_output_ser: QualifiedDustOutputSer = dust_output.into();
 			let gen_info = dust_state.generation_info(&dust_output);
+			capacity += gen_info
+				.as_ref()
+				.map(|g| g.value * dust_state.params.night_dust_ratio as u128)
+				.unwrap_or(0);
 			let gen_info_pair = GenerationInfoPair {
 				dust_output: dust_output_ser.clone(),
 				generation_info: gen_info.map(|g| g.into()),
@@ -90,13 +97,14 @@ pub async fn execute(
 				source.insert(dust_output_ser.nonce, balance);
 			}
 		}
-		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total }))
+		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total, capacity }))
 	})
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
 	/// Test data
@@ -109,7 +117,14 @@ mod tests {
 	async fn check_balance_non_zero(seed: &str, src_files: Vec<String>) {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = DustBalanceArgs {
-			source: Source { src_url: None, fetch_concurrency: 1, src_files: Some(src_files) },
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 1,
+				src_files: Some(src_files),
+				dust_warp: true,
+				ignore_block_context: false,
+				fetch_cache: FetchCacheConfig::InMemory,
+			},
 			seed,
 			dry_run: false,
 		};

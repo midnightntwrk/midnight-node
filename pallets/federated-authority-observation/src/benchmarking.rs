@@ -16,12 +16,43 @@
 use super::*;
 
 use crate::Pallet as FederatedAuthorityObservation;
+use core::str::FromStr;
 use frame_benchmarking::{account, v2::*};
+use frame_support::BoundedVec;
 use frame_system::RawOrigin;
+use midnight_primitives_federated_authority_observation::MainchainMember;
+use sidechain_domain::{MainchainAddress, PolicyId};
 
-/// Helper function to generate a list of accounts
-fn generate_accounts<T: Config>(count: u32) -> Vec<T::AccountId> {
-	(0..count).map(|i| account("member", i, 0)).collect()
+/// Helper function to generate accounts with mainchain members for council
+fn generate_council_members<T: Config>(
+	count: u32,
+) -> BoundedVec<(T::AccountId, MainchainMember), T::CouncilMaxMembers> {
+	let members: Vec<_> = (0..count)
+		.map(|i| {
+			let account_id = account("member", i, 0);
+			let mut bytes = [0u8; 28];
+			bytes[0] = i as u8;
+			let mainchain_member = PolicyId(bytes);
+			(account_id, mainchain_member)
+		})
+		.collect();
+	members.try_into().expect("too many council members")
+}
+
+/// Helper function to generate accounts with mainchain members for technical committee
+fn generate_tc_members<T: Config>(
+	count: u32,
+) -> BoundedVec<(T::AccountId, MainchainMember), T::TechnicalCommitteeMaxMembers> {
+	let members: Vec<_> = (0..count)
+		.map(|i| {
+			let account_id = account("tc_member", i, 0);
+			let mut bytes = [0u8; 28];
+			bytes[0] = i as u8;
+			let mainchain_member = PolicyId(bytes);
+			(account_id, mainchain_member)
+		})
+		.collect();
+	members.try_into().expect("too many tc members")
 }
 
 #[benchmarks]
@@ -37,8 +68,8 @@ mod benchmarks {
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
 		// Setup: Create initial state with some members
-		let initial_council = generate_accounts::<T>(a + 1);
-		let initial_tc = generate_accounts::<T>(b);
+		let initial_council = generate_council_members::<T>(a + 1);
+		let initial_tc = generate_tc_members::<T>(b);
 
 		let _ = FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
@@ -47,7 +78,7 @@ mod benchmarks {
 		);
 
 		// Create new council members
-		let new_council_members = generate_accounts::<T>(a);
+		let new_council_members = generate_council_members::<T>(a);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, new_council_members, initial_tc);
@@ -66,8 +97,8 @@ mod benchmarks {
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
 		// Setup: Create initial state with some members
-		let initial_council = generate_accounts::<T>(a);
-		let initial_tc = generate_accounts::<T>(b + 1);
+		let initial_council = generate_council_members::<T>(a);
+		let initial_tc = generate_tc_members::<T>(b + 1);
 
 		let _ = FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
@@ -76,7 +107,7 @@ mod benchmarks {
 		);
 
 		// Create new TC members
-		let new_tc_members = generate_accounts::<T>(b);
+		let new_tc_members = generate_tc_members::<T>(b);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, initial_council, new_tc_members);
@@ -95,8 +126,8 @@ mod benchmarks {
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
 		// Setup: Create initial state with some members
-		let initial_council = generate_accounts::<T>(a + 1);
-		let initial_tc = generate_accounts::<T>(b + 1);
+		let initial_council = generate_council_members::<T>(a + 1);
+		let initial_tc = generate_tc_members::<T>(b + 1);
 
 		let _ = FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
@@ -105,8 +136,8 @@ mod benchmarks {
 		);
 
 		// Create new members for both committees
-		let new_council_members = generate_accounts::<T>(a);
-		let new_tc_members = generate_accounts::<T>(b);
+		let new_council_members = generate_council_members::<T>(a);
+		let new_tc_members = generate_tc_members::<T>(b);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, new_council_members, new_tc_members);
@@ -125,8 +156,8 @@ mod benchmarks {
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() }>,
 	) {
 		// Setup: Create initial state with some members
-		let council_members = generate_accounts::<T>(a);
-		let tc_members = generate_accounts::<T>(b);
+		let council_members = generate_council_members::<T>(a);
+		let tc_members = generate_tc_members::<T>(b);
 
 		let _ = FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
@@ -142,6 +173,66 @@ mod benchmarks {
 		let tc_current = T::TechnicalCommitteeMembershipHandler::sorted_members();
 		assert_eq!(council_current.len(), a as usize);
 		assert_eq!(tc_current.len(), b as usize);
+	}
+
+	/// Benchmark setting the Council address
+	#[benchmark]
+	fn set_council_address() {
+		// Create a valid Cardano address (bech32 encoded)
+		let address = "addr_test1wzxc44c4lly82v5ta02y3calrlgdn7j3rakymxntwl2ezjcsndcha";
+		let mainchain_address =
+			MainchainAddress::from_str(address).expect("Failed encoding address");
+
+		#[extrinsic_call]
+		set_council_address(RawOrigin::Root, mainchain_address.clone());
+
+		// Verify the address was set
+		assert_eq!(MainChainCouncilAddress::<T>::get(), mainchain_address);
+	}
+
+	/// Benchmark setting the Technical Committee address
+	#[benchmark]
+	fn set_technical_committee_address() {
+		// Create a valid Cardano address (bech32 encoded)
+		let address = "addr_test1wruef4lsh5rvqnvumksksmm3f5n8j7e2sp5xc384y29ac2q2lrux2";
+		let mainchain_address =
+			MainchainAddress::from_str(address).expect("Failed encoding address");
+
+		#[extrinsic_call]
+		set_technical_committee_address(RawOrigin::Root, mainchain_address.clone());
+
+		// Verify the address was set
+		assert_eq!(MainChainTechnicalCommitteeAddress::<T>::get(), mainchain_address);
+	}
+
+	/// Benchmark setting the Council policy ID
+	#[benchmark]
+	fn set_council_policy_id() {
+		// Create a valid policy ID (28 bytes - decoded from hex)
+		let policy_id =
+			PolicyId::from_str("8d8ad715ffc875328bebd448e3bf1fd0d9fa511f6c4d9a6b77d5914b")
+				.expect("Failed encoding policy id");
+
+		#[extrinsic_call]
+		set_council_policy_id(RawOrigin::Root, policy_id.clone());
+
+		// Verify the policy ID was set
+		assert_eq!(MainChainCouncilPolicyId::<T>::get(), policy_id);
+	}
+
+	/// Benchmark setting the Technical Committee policy ID
+	#[benchmark]
+	fn set_technical_committee_policy_id() {
+		// Create a valid policy ID (28 bytes - decoded from hex)
+		let policy_id =
+			PolicyId::from_str("f994d7f0bd06c04d9cdda1686f714d26797b2a80686c44f5228bdc28")
+				.expect("Failed encoding policy id");
+
+		#[extrinsic_call]
+		set_technical_committee_policy_id(RawOrigin::Root, policy_id.clone());
+
+		// Verify the policy ID was set
+		assert_eq!(MainChainTechnicalCommitteePolicyId::<T>::get(), policy_id);
 	}
 
 	impl_benchmark_test_suite!(

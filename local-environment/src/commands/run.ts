@@ -24,10 +24,12 @@ import {
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
-import { RunOptions } from "../lib/types";
+import { assertWellKnownNamespace, RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
 import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
 import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
+import { setupPreviewProxies } from "../lib/previewProxy";
+import { loadNetworkConfig } from "../lib/networkConfig";
 
 /**
  * Runs a specified network, with passed configuration
@@ -40,6 +42,7 @@ export async function run(network: string, runOptions: RunOptions) {
     console.log("Running environment with local Cardano/PC resources");
     runLocalEnvironment(runOptions);
   } else {
+    assertWellKnownNamespace(network);
     console.log(
       `Running ${network} chain from genesis with ${network} Cardano/PC resources`,
     );
@@ -51,8 +54,17 @@ async function runEphemeralEnvironment(
   namespace: string,
   runOptions: RunOptions,
 ) {
-  console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  await connectToPostgres(namespace);
+  const networkConfig = loadNetworkConfig(namespace);
+  const dbsyncMode = networkConfig.dbsync.mode;
+
+  switch(dbsyncMode) {
+  case "public":
+    console.log("Skipping port-forward: DB marked as publicly reachable");
+  case "rds-proxy":
+    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
+  default:
+    await connectToPostgres(namespace);
+  }
 
   console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
   const envObject = getSecrets(namespace);
@@ -66,6 +78,11 @@ async function runEphemeralEnvironment(
     } else {
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
+  }
+
+  if (dbsyncMode === "rds-proxy") {
+    const proxyOverrides = await setupPreviewProxies(env, namespace);
+    env = { ...env, ...proxyOverrides };
   }
 
   const composeFile = resolveComposeFile(namespace);

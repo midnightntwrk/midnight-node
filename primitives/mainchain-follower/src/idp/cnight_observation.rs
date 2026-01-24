@@ -19,6 +19,7 @@ use midnight_primitives_cnight_observation::{
 	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
+use sidechain_domain::McBlockHash;
 use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
@@ -45,6 +46,8 @@ pub enum IDPCreationError {
 	McHashError(Box<dyn Error + Send + Sync>),
 	#[error("Onchain state for CNight invalid: {0:?}")]
 	InvalidOnchainStateCNight(String),
+	#[error("Auth token asset name is not a string")]
+	AuthTokenAssetNameNotString,
 }
 
 impl MidnightCNightObservationInherentDataProvider {
@@ -70,7 +73,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			Ok(Self {
 				utxos: vec![],
 				next_cardano_position: CardanoPosition {
-					block_hash: [0; 32],
+					block_hash: McBlockHash([0; 32]),
 					block_number: 0,
 					block_timestamp: TimestampUnixMillis(0),
 					tx_index_in_block: 0,
@@ -98,12 +101,17 @@ impl MidnightCNightObservationInherentDataProvider {
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
 
-		let (cnight_policy_id, cnight_asset_name) = api.get_native_token_identifier(parent_hash)?;
+		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
+		let auth_token_asset_name: String = api
+			.get_auth_token_asset_name(parent_hash)?
+			.try_into()
+			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
 			redemption_validator_address,
+			auth_token_asset_name,
 			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
 				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
 			})?,
@@ -115,7 +123,7 @@ impl MidnightCNightObservationInherentDataProvider {
 		let observed_utxos = data_source
 			.get_utxos_up_to_capacity(
 				&config,
-				cardano_position_start,
+				&cardano_position_start,
 				mc_hash,
 				utxo_capacity as usize,
 			)
@@ -136,7 +144,7 @@ impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDat
 			INHERENT_IDENTIFIER,
 			&MidnightObservationTokenMovement {
 				utxos: self.utxos.clone(),
-				next_cardano_position: self.next_cardano_position,
+				next_cardano_position: self.next_cardano_position.clone(),
 			},
 		)
 	}

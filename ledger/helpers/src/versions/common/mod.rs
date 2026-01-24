@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "std")]
 pub use super::{
 	base_crypto::{
-		cost_model::{CostDuration, FeePrices, FixedPoint, RunningCost, SyntheticCost},
+		cost_model::{
+			CostDuration, FeePrices, FixedPoint, NormalizedCost, RunningCost, SyntheticCost,
+		},
 		data_provider::{FetchMode, MidnightDataProvider, OutputMode},
 		fab::AlignedValue,
 		hash::{HashOutput, PERSISTENT_HASH_BYTES, persistent_commit, persistent_hash},
@@ -107,35 +108,45 @@ pub use rand::{
 	rngs::{OsRng, StdRng},
 };
 
+// Module declarations with can-panic feature
+#[cfg(feature = "can-panic")]
 pub mod context;
+#[cfg(feature = "can-panic")]
 pub mod contract;
+#[cfg(feature = "can-panic")]
 mod input;
+#[cfg(feature = "can-panic")]
 mod intent;
+#[cfg(feature = "can-panic")]
 mod offer;
+#[cfg(feature = "can-panic")]
 mod output;
-mod proving;
+#[cfg(feature = "can-panic")]
 pub mod transaction;
+#[cfg(feature = "can-panic")]
 mod transient;
-pub mod types;
+#[cfg(feature = "can-panic")]
 mod unshielded_offer;
+#[cfg(feature = "can-panic")]
 mod utxo_output;
+#[cfg(feature = "can-panic")]
 mod utxo_spend;
+#[cfg(feature = "can-panic")]
 pub mod wallet;
 
-pub use context::*;
-pub use contract::*;
-pub use input::*;
-pub use intent::*;
-pub use offer::*;
-pub use output::*;
-pub use proving::*;
-pub use transaction::*;
-pub use transient::*;
+// Module declarations without can-panic feature
+mod proving;
+pub mod types;
+
+// Re-exports with can-panic feature
+#[cfg(feature = "can-panic")]
+pub use {
+	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
+	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+};
+
+// Re-exports without can-panic feature
 pub use types::*;
-pub use unshielded_offer::*;
-pub use utxo_output::*;
-pub use utxo_spend::*;
-pub use wallet::*;
 
 /// Serializes a mn_ledger::serialize-able type into bytes
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
@@ -154,7 +165,6 @@ pub fn deserialize_untagged<T: Deserializable + Tagged>(
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes
-#[cfg(feature = "std")]
 pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = mn_ledger_serialize::tagged_serialized_size(value);
 	let mut bytes = Vec::with_capacity(size);
@@ -163,7 +173,6 @@ pub fn serialize<T: Serializable + Tagged>(value: &T) -> Result<Vec<u8>, std::io
 }
 
 /// Deserializes a mn_ledger::serialize-able type from bytes
-#[cfg(feature = "std")]
 pub fn deserialize<T: Deserializable + Tagged, H: std::io::Read>(
 	bytes: H,
 ) -> Result<T, std::io::Error> {
@@ -171,7 +180,26 @@ pub fn deserialize<T: Deserializable + Tagged, H: std::io::Read>(
 	Ok(val)
 }
 
-#[cfg(all(feature = "std", feature = "can-panic"))]
+/// Computes the overall block fullness as the maximum across all cost dimensions.
+///
+/// This value is used by the ledger's fee adjustment algorithm to update prices
+/// based on block utilization. The overall fullness represents the most congested
+/// dimension of the block.
+///
+/// TODO: Confirm that "max of all dimensions" is the correct semantic for overall
+//  fullness. This was inferred from ledger API usage patterns but not explicitly
+//  documented.
+pub fn compute_overall_fullness(normalized: &NormalizedCost) -> FixedPoint {
+	FixedPoint::max(
+		FixedPoint::max(
+			FixedPoint::max(normalized.read_time, normalized.compute_time),
+			normalized.block_usage,
+		),
+		FixedPoint::max(normalized.bytes_written, normalized.bytes_churned),
+	)
+}
+
+#[cfg(feature = "can-panic")]
 pub fn token_type_decode(input: &str) -> TokenType {
 	let bytes = hex::decode(input).expect("Token value should be an hex");
 
@@ -180,7 +208,7 @@ pub fn token_type_decode(input: &str) -> TokenType {
 	TokenType::Shielded(ShieldedTokenType(HashOutput(tt_bytes)))
 }
 
-#[cfg(all(feature = "std", feature = "can-panic"))]
+#[cfg(feature = "can-panic")]
 pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext) {
 	let tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB> =
 		deserialize(bytes)

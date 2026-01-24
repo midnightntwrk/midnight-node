@@ -11,24 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "can-panic")]
-
 use super::{
-	ArenaKey, BlockContext, CostDuration, DB, DUST_EXPECTED_FILES, Deserializable, DustResolver,
-	Event, FetchMode, HashOutput, LedgerState, Loader, MidnightDataProvider, Offer, OutputMode,
-	PUBLIC_PARAMS, ProofKind, PureGeneratorPedersen, Resolver, Serializable, SignatureKind,
-	StandardTransaction, Storable, SyntheticCost, SystemTransaction, Tagged, Timestamp,
-	Transaction, TransactionContext, TransactionHash, TransactionResult, Utxo, VerifiedTransaction,
-	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
+	Loader, MidnightDataProvider, NormalizedCost, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
+	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
+	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
+	compute_overall_fullness, default_storage, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
-use hex::encode as hex_encode;
+use hex::{ToHex, encode as hex_encode};
 use lazy_static::lazy_static;
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{
 	collections::{HashMap, HashSet},
-	marker::PhantomData,
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
@@ -51,6 +47,7 @@ lazy_static! {
 
 pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<LedgerState<D>>,
+	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
 }
@@ -61,31 +58,6 @@ pub struct LedgerContext<D: DB + Clone> {
 struct StorableLedgerState<D: DB> {
 	state: LedgerState<D>,
 	block_fullness: StorableSyntheticCost<D>,
-}
-
-#[derive(Debug, Storable)]
-#[derive_where(Clone)]
-#[storable(db = D)]
-pub struct StorableSyntheticCost<D: DB> {
-	read_time: u64,
-	compute_time: u64,
-	block_usage: u64,
-	bytes_written: u64,
-	bytes_churned: u64,
-	_marker: PhantomData<D>,
-}
-
-impl<D: DB> StorableSyntheticCost<D> {
-	fn zero() -> Self {
-		Self {
-			read_time: 0,
-			compute_time: 0,
-			block_usage: 0,
-			bytes_written: 0,
-			bytes_churned: 0,
-			_marker: PhantomData,
-		}
-	}
 }
 
 impl<D: DB> StorableLedgerState<D> {
@@ -104,36 +76,13 @@ impl<D: DB> Tagged for StorableLedgerState<D> {
 	}
 }
 
-impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
-	fn from(value: SyntheticCost) -> Self {
-		Self {
-			read_time: value.read_time.into_picoseconds(),
-			compute_time: value.compute_time.into_picoseconds(),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-			_marker: PhantomData,
-		}
-	}
-}
-impl<D: DB> From<StorableSyntheticCost<D>> for SyntheticCost {
-	fn from(value: StorableSyntheticCost<D>) -> Self {
-		Self {
-			read_time: CostDuration::from_picoseconds(value.read_time),
-			compute_time: CostDuration::from_picoseconds(value.compute_time),
-			block_usage: value.block_usage,
-			bytes_written: value.bytes_written,
-			bytes_churned: value.bytes_churned,
-		}
-	}
-}
-
 impl<D: DB + Clone> LedgerContext<D> {
 	pub fn new(network_id: impl Into<String>) -> Self {
 		Self {
 			ledger_state: Mutex::new(LedgerState::new(network_id)),
 			wallets: Mutex::new(HashMap::new()),
 			resolver: MutexTokio::new(&DEFAULT_RESOLVER),
+			latest_block_context: Mutex::new(None),
 		}
 	}
 
@@ -155,7 +104,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.insert(*seed, wallet);
 		}
 
-		Self { ledger_state: Mutex::new(ledger_state), wallets, resolver }
+		Self {
+			ledger_state: Mutex::new(ledger_state),
+			wallets,
+			resolver,
+			latest_block_context: Mutex::new(None),
+		}
 	}
 
 	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -172,10 +126,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
-				if let Err(error) = wallet.update_dust_from_tx(&events) {
-					// TODO: should we have better error handling here?
-					println!("Failed to replay events for Dust monitoring: {error}");
-				}
+				wallet.update_dust_from_tx(&events).unwrap_or_else(|e| {
+					panic!(
+						"failed to replay dust events for tx {}: {e}",
+						tx.transaction_hash().0.0.encode_hex::<String>()
+					)
+				});
 			}
 			total_cost = total_cost + cost;
 		}
@@ -183,16 +139,21 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// Only when done processing txs for the same block, it's time to call `post_block_update`
 		let mut latest_ledger_state =
 			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let block_limits = latest_ledger_state.parameters.limits.block_limits;
+		let normalized_fullness =
+			total_cost.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		*latest_ledger_state = latest_ledger_state
-			.post_block_update(block_context.tblock, total_cost)
+			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 			.expect("Error applying block updates");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != expected_root => {
 					panic!(
-						"Ledger state root mismatch: expected {}, actual {}",
+						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
 						hex_encode(&expected_root),
 						hex_encode(&actual_root),
+						hex_encode(block_context.parent_block_hash.0),
 					);
 				},
 				Some(_) => {},
@@ -205,13 +166,33 @@ impl<D: DB + Clone> LedgerContext<D> {
 		{
 			wallet.update_dust_from_block(&block_context);
 		}
+		// Update latest block context
+		*self.latest_block_context.lock().expect("error locking latest_block_context") =
+			Some(block_context.clone());
+	}
+
+	pub fn latest_block_context(&self) -> BlockContext {
+		self.latest_block_context
+			.lock()
+			.expect("failed to lock latest_block_context")
+			.as_ref()
+			.cloned()
+			.unwrap_or_else(|| {
+				let now = Timestamp::from_secs(
+					SystemTime::now()
+						.duration_since(UNIX_EPOCH)
+						.expect("time has run backwards")
+						.as_secs(),
+				);
+				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() }
+			})
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
 		let storage = default_storage::<D>();
 		let ledger = StorableLedgerState::new(state.clone());
 		let sp = storage.arena.alloc(ledger);
-		super::serialize(&sp.hash()).ok()
+		super::serialize(&sp.as_typed_key()).ok()
 	}
 
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -248,14 +229,16 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Partially failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
 						);
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {failure:?} of applying tx 0x{hash} \nto update Local Ledger State"
 						);
 						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
@@ -266,8 +249,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match tx_context.ref_state.apply_system_tx(tx, block_context.tblock) {
 					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {err:#?}\nof applying system tx {tx:#?}\nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {err:?} of applying system tx {hash} to update Local Ledger State"
 						);
 						(tx_context.ref_state.clone(), vec![], vec![], cost)
 					},
@@ -409,231 +393,5 @@ impl<D: DB + Clone> LedgerContext<D> {
 			block_context,
 			whitelist: None,
 		})
-	}
-}
-
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)] // Transaction has the same thing internally
-pub enum SerdeTransaction<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	Midnight(Transaction<S, P, PureGeneratorPedersen, D>),
-	System(SystemTransaction),
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> SerdeTransaction<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	pub fn as_midnight(&self) -> Option<&Transaction<S, P, PureGeneratorPedersen, D>> {
-		match &self {
-			Self::Midnight(tx) => Some(tx),
-			_ => None,
-		}
-	}
-
-	pub fn network_id(&self) -> Option<&str> {
-		match &self {
-			Self::Midnight(Transaction::Standard(StandardTransaction { network_id, .. })) => {
-				Some(network_id)
-			},
-			_ => None,
-		}
-	}
-
-	pub fn serialize_inner(&self) -> Result<Vec<u8>, std::io::Error> {
-		match &self {
-			Self::Midnight(tx) => super::serialize(tx),
-			Self::System(tx) => super::serialize(tx),
-		}
-	}
-
-	pub fn transaction_hash(&self) -> TransactionHash {
-		match self {
-			SerdeTransaction::Midnight(transaction) => transaction.transaction_hash(),
-			SerdeTransaction::System(system_transaction) => system_transaction.transaction_hash(),
-		}
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for SerdeTransaction<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn serialize(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-		match self {
-			Self::Midnight(tx) => {
-				<u8 as Serializable>::serialize(&0, writer)?;
-				Transaction::serialize(tx, writer)?;
-			},
-			Self::System(tx) => {
-				<u8 as Serializable>::serialize(&1, writer)?;
-				SystemTransaction::serialize(tx, writer)?;
-			},
-		}
-		Ok(())
-	}
-
-	fn serialized_size(&self) -> usize {
-		match self {
-			Self::Midnight(tx) => 1 + Transaction::serialized_size(tx),
-			Self::System(tx) => 1 + SystemTransaction::serialized_size(tx),
-		}
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for SerdeTransaction<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn deserialize(reader: &mut impl std::io::Read, recursion_depth: u32) -> std::io::Result<Self> {
-		let discriminant = <u8 as Deserializable>::deserialize(reader, recursion_depth)?;
-		match discriminant {
-			0 => Ok(Self::Midnight(Transaction::deserialize(reader, recursion_depth)?)),
-			1 => Ok(Self::System(SystemTransaction::deserialize(reader, recursion_depth)?)),
-			_ => Err(::std::io::Error::new(
-				::std::io::ErrorKind::InvalidData,
-				"unrecognised discriminant for SerdeTransaction",
-			)),
-		}
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Serialize for SerdeTransaction<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn serialize<SE: serde::Serializer>(&self, serializer: SE) -> Result<SE::Ok, SE::Error> {
-		let serialized_bytes = match self {
-			Self::Midnight(tx) => super::serialize(tx),
-			Self::System(tx) => super::serialize(tx),
-		}
-		.map_err(serde::ser::Error::custom)?;
-
-		serde::Serialize::serialize(&serialized_bytes, serializer)
-	}
-}
-
-impl<'a, S: SignatureKind<D>, P: ProofKind<D>, D: DB> serde::Deserialize<'a>
-	for SerdeTransaction<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn deserialize<DE: serde::Deserializer<'a>>(deserializer: DE) -> Result<Self, DE::Error> {
-		let bytes = <Vec<u8> as serde::Deserialize>::deserialize(deserializer)?;
-		if !bytes.starts_with(serialize::GLOBAL_TAG.as_bytes()) {
-			return Err(serde::de::Error::custom("missing global tag"));
-		}
-
-		macro_rules! try_deserialize_as {
-			($ty:ident, $ctor:ident) => {
-				if bytes[serialize::GLOBAL_TAG.as_bytes().len()..]
-					.starts_with($ty::tag().as_bytes())
-				{
-					return Ok(Self::$ctor(
-						deserialize(bytes.as_slice()).map_err(serde::de::Error::custom)?,
-					));
-				}
-			};
-		}
-
-		try_deserialize_as!(Transaction, Midnight);
-		try_deserialize_as!(SystemTransaction, System);
-
-		Err(serde::de::Error::custom("unrecognized tag"))
-	}
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct TransactionWithContext<S: SignatureKind<D>, P: ProofKind<D>, D: DB>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	#[serde(bound = "")]
-	pub tx: SerdeTransaction<S, P, D>,
-	pub block_context: BlockContext,
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	pub fn new(
-		tx: Transaction<S, P, PureGeneratorPedersen, D>,
-		parent_block_hash_seed: Option<u64>,
-	) -> Self {
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards")
-			.as_secs();
-		let delay: u64 = 0;
-		let ttl = now + delay;
-		let timestamp = Timestamp::from_secs(ttl);
-
-		// In case `parent_block_hash_seed` wasn't specified, a randmon one is chosen
-		let parent_block_hash_seed =
-			parent_block_hash_seed.unwrap_or_else(|| rand::thread_rng().r#gen());
-
-		// Calculate a deterministic `parent_block_hash` based on the seed
-		let mut rng = SmallRng::seed_from_u64(parent_block_hash_seed);
-		let mut array = [0u8; 32];
-		rng.fill_bytes(&mut array);
-		let parent_block_hash = HashOutput(array);
-
-		let block_context = BlockContext { tblock: timestamp, tblock_err: 30, parent_block_hash };
-
-		Self { tx: SerdeTransaction::Midnight(tx), block_context }
-	}
-
-	pub fn block_context(&self) -> BlockContext {
-		self.block_context.clone()
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for TransactionWithContext<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn deserialize(
-		reader: &mut impl std::io::Read,
-		recursion_depth: u32,
-	) -> Result<Self, std::io::Error> {
-		Ok(TransactionWithContext {
-			tx: Deserializable::deserialize(reader, recursion_depth)?,
-			block_context: Deserializable::deserialize(reader, recursion_depth)?,
-		})
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Serializable for TransactionWithContext<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn serialize(&self, writer: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-		Serializable::serialize(&self.tx, writer)?;
-		Serializable::serialize(&self.block_context, writer)?;
-		Ok(())
-	}
-
-	fn serialized_size(&self) -> usize {
-		Serializable::serialized_size(&self.tx) + Serializable::serialized_size(&self.block_context)
-	}
-}
-
-impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Tagged for TransactionWithContext<S, P, D>
-where
-	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
-{
-	fn tag() -> std::borrow::Cow<'static, str> {
-		std::borrow::Cow::Borrowed("transaction-with-context[v1]")
-	}
-
-	fn tag_unique_factor() -> String {
-		format!(
-			"({},{})",
-			Transaction::<S, P, PureGeneratorPedersen, D>::tag(),
-			BlockContext::tag()
-		)
 	}
 }

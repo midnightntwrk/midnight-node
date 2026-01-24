@@ -13,9 +13,17 @@ node-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/node-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Node E2E test completed successfully."
 
+toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Update Ledger Parameters E2E test completed successfully."
+
 toolkit-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit E2E test completed successfully."
+
+toolkit-maintenance-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-maintenance-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Maintenance E2E test completed successfully."
 
 toolkit-contracts-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-contracts-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
@@ -28,6 +36,10 @@ toolkit-mint-e2e NODE_IMAGE TOOLKIT_IMAGE:
 toolkit-ut-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-ut-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit UnshieldedToken E2E test completed successfully."
+
+toolkit-multi-dest-e2e TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-multi-dest-e2e.sh {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Multi-Destination URL E2E test completed successfully."
 
 startup-dev-e2e NODE_IMAGE:
   @scripts/tests/startup-dev-e2e.sh {{NODE_IMAGE}}

@@ -8,6 +8,7 @@
     "run:qanet": "ts-node src/index.ts run qanet",
     "run:devnet": "ts-node src/index.ts run devnet",
     "run:testnet-02": "ts-node src/index.ts run testnet-02",
+    "run:preview": "ts-node src/index.ts run preview",
     "run:local-env": "ts-node src/index.ts run local-env",
     "run:local-env-with-indexer": "ts-node src/index.ts run local-env -p withindexer",
     "image-upgrade:node-dev-01": "ts-node src/index.ts image-upgrade node-dev-01",
@@ -29,6 +30,11 @@
     "runtime-upgrade:devnet": "ts-node src/index.ts runtime-upgrade devnet",
     "runtime-upgrade:testnet-02": "ts-node src/index.ts runtime-upgrade testnet-02",
     "runtime-upgrade:local-env": "ts-node src/index.ts runtime-upgrade local-env",
+    "governance-runtime-upgrade:node-dev-01": "ts-node src/index.ts governance-runtime-upgrade node-dev-01",
+    "governance-runtime-upgrade:qanet": "ts-node src/index.ts governance-runtime-upgrade qanet",
+    "governance-runtime-upgrade:devnet": "ts-node src/index.ts governance-runtime-upgrade devnet",
+    "governance-runtime-upgrade:testnet-02": "ts-node src/index.ts governance-runtime-upgrade testnet-02",
+    "governance-runtime-upgrade:local-env": "ts-node src/index.ts governance-runtime-upgrade local-env",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "help": "ts-node src/index.ts -h"
@@ -49,14 +55,14 @@
     "typescript-eslint": "^8.34.1",
     "commander": "^14.0.0",
     "dotenv": "^16.5.0",
-    "glob": "^11.0.3",
+    "glob": "^11.1.0",
     "wait-on": "^8.0.3",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
-    "@types/node": "^24.1.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "@types/node": "24.7.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
   },
   "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
 }

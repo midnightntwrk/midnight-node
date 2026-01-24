@@ -41,12 +41,16 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 		let recipient: Recipient = self.encoded_output.recipient.clone().into();
 
 		match recipient {
-			Recipient::User(public_key) => {
-				Output::new(rng, &coin_info, self.segment, &public_key, self.encryption_public_key)
-					.expect("failed to construct output")
-			},
+			Recipient::User(public_key) => Output::new(
+				rng,
+				&coin_info,
+				Some(self.segment),
+				&public_key,
+				self.encryption_public_key,
+			)
+			.expect("failed to construct output"),
 			Recipient::Contract(contract_address) => {
-				Output::new_contract_owned(rng, &coin_info, self.segment, contract_address)
+				Output::new_contract_owned(rng, &coin_info, Some(self.segment), contract_address)
 					.expect("failed to construct output")
 			},
 		}
@@ -74,6 +78,11 @@ impl EncodedOutputInfo {
 				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
 			{
 				encryption_public_key = Some(wallet.enc_public_key);
+			} else {
+				println!(
+					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
+					hex::encode(&encoded_output.coin_info.nonce)
+				);
 			}
 		}
 

@@ -1,4 +1,4 @@
-# Substrate Front End Template
+# Polkadot SDK Front End Template
 
 This is a barebones UI that can be used to interact with the midnight blockchain.
 It is based off the now archived [Substrate front end template](https://github.com/jimmychu0807/substrate-front-end-template).

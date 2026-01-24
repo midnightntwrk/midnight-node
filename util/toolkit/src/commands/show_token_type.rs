@@ -1,6 +1,6 @@
+use crate::cli_parsers::{self as cli};
 use clap::Args;
 use midnight_node_ledger_helpers::{ContractAddress, HashOutput};
-use midnight_node_toolkit::cli_parsers::{self as cli};
 use serde::Serialize;
 
 #[derive(Args, Clone)]

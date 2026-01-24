@@ -1,15 +1,15 @@
-use clap::Args;
-use midnight_node_toolkit::{
+use crate::{
 	ProofType, SignatureType,
 	tx_generator::{
 		TxGenerator,
 		builder::{
 			ContractCall, IntentToFile,
-			builders::{ContractCallBuilder, ContractDeployBuilder, ContractMaintenanceBuilder},
+			builders::{ContractCallBuilder, ContractDeployBuilder},
 		},
 		source::Source,
 	},
 };
+use clap::Args;
 
 #[derive(Args)]
 pub struct GenerateSampleIntentArgs {
@@ -35,9 +35,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 		match args.contract_call.clone() {
 			ContractCall::Deploy(args) => (Box::new(ContractDeployBuilder::new(args)), "deploy"),
 			ContractCall::Call(args) => (Box::new(ContractCallBuilder::new(args)), "call"),
-			ContractCall::Maintenance(args) => {
-				(Box::new(ContractMaintenanceBuilder::new(args)), "maintenance")
-			},
+			ContractCall::Maintenance(_args) => unimplemented!("not implemented for Maintenance"),
 		};
 	let mut builder = builder_and_contract_type.0;
 	let partial_file_name = builder_and_contract_type.1;
@@ -65,8 +63,9 @@ mod test {
 	use std::fs;
 	use std::fs::remove_file;
 
-	use midnight_node_toolkit::cli_parsers::hex_str_decode;
-	use midnight_node_toolkit::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use crate::cli_parsers::hex_str_decode;
+	use crate::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
+	use crate::tx_generator::source::FetchCacheConfig;
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
@@ -76,8 +75,12 @@ mod test {
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");
-		let deploy_args =
-			ContractDeployArgs { funding_seed: FUNDING_SEED.to_string(), rng_seed: Some(rng_seed) };
+		let deploy_args = ContractDeployArgs {
+			funding_seed: FUNDING_SEED.to_string(),
+			authority_seeds: vec![],
+			authority_threshold: None,
+			rng_seed: Some(rng_seed),
+		};
 
 		let contract_call = ContractCall::Deploy(deploy_args);
 
@@ -85,6 +88,9 @@ mod test {
 			src_url: None,
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
+			dust_warp: true,
+			ignore_block_context: false,
+			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
 		let args = GenerateSampleIntentArgs {
