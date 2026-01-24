@@ -49,13 +49,15 @@ pub struct GovernanceMember {
 }
 
 /// A candidate for the federated operators contract.
-/// Maps an ECDSA cross-chain key to an SR25519 AURA key.
+/// Maps an ECDSA cross-chain key to SR25519 AURA and ED25519 GRANDPA keys.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FederatedOpsCandidate {
 	/// The ECDSA cross-chain public key (33 bytes compressed, 66 hex chars)
 	pub ecdsa_key: String,
 	/// The SR25519 AURA public key (32 bytes, 64 hex chars)
 	pub aura_key: String,
+	/// The ED25519 GRANDPA public key (32 bytes, 64 hex chars)
+	pub grandpa_key: String,
 }
 
 /// Result of preparing a contract for deployment.
@@ -134,14 +136,16 @@ pub fn build_governance_redeemer(members: &[GovernanceMember]) -> serde_json::Va
 /// - appendix: list of `[partner_chains_key, keys]` where:
 ///   - partner_chains_key: ECDSA cross-chain key
 ///   - keys: list of `[id, bytes]` pairs (e.g., `[aura_id, aura_key]`)
-/// - logic_round: 0
+/// - logic_round: 1 (required for partner-chains SDK compatibility - maps to version=1 parsing)
 pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_json::Value {
 	let aura_id = "61757261"; // "aura" in hex
+	let gran_id = "6772616e"; // "gran" in hex
 
 	let appendix: Vec<serde_json::Value> = candidates
 		.iter()
 		.map(|c| {
 			// Each PermissionedCandidateDatumV1 is [partner_chains_key, keys]
+			// keys is a list of [key_id, key_bytes] pairs
 			serde_json::json!({
 				"list": [
 					{"bytes": c.ecdsa_key},
@@ -149,6 +153,10 @@ pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_
 						{"list": [
 							{"bytes": aura_id},
 							{"bytes": c.aura_key}
+						]},
+						{"list": [
+							{"bytes": gran_id},
+							{"bytes": c.grandpa_key}
 						]}
 					]}
 				]
@@ -160,7 +168,7 @@ pub fn build_federated_ops_datum(candidates: &[FederatedOpsCandidate]) -> serde_
 		"list": [
 			{"list": []},           // data: empty
 			{"list": appendix},     // appendix: list of candidates
-			{"int": 0}              // logic_round: 0
+			{"int": 1}              // logic_round: 1 (SDK parses as version=1 for V1 appendix format)
 		]
 	})
 }
@@ -230,9 +238,9 @@ pub fn convert_cost_models(cost_models: &PlutusCostModels) -> Vec<Vec<i64>> {
 ///
 /// Returns the signed transaction hex.
 pub fn build_deploy_transaction(params: DeployParams<'_>) -> Result<String, DeployError> {
-	// Use 3 ADA to ensure minimum UTXO requirement is met with large datums
+	// Use 5 ADA to ensure minimum UTXO requirement is met with large datums
 	let send_assets = vec![
-		Asset::new_from_str("lovelace", "3000000"),
+		Asset::new_from_str("lovelace", "5000000"),
 		Asset::new_from_str(&params.contract.policy_id, "1"),
 	];
 
@@ -344,6 +352,8 @@ mod tests {
 				.to_string(),
 			aura_key: "d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
 				.to_string(),
+			grandpa_key: "88dc3417d5058ec4b4503e0c12ea1a0a89be200fe98922423d4334014fa6b0ee"
+				.to_string(),
 		}];
 
 		let datum = build_federated_ops_datum(&candidates);
@@ -354,8 +364,8 @@ mod tests {
 		let outer = list.as_array().unwrap();
 		assert_eq!(outer.len(), 3); // [data, appendix, logic_round]
 
-		// Check logic_round is 0
+		// Check logic_round is 1 (required for SDK V1 parsing)
 		let logic_round = outer[2].get("int").expect("should have int");
-		assert_eq!(logic_round.as_u64(), Some(0));
+		assert_eq!(logic_round.as_u64(), Some(1));
 	}
 }

@@ -24,7 +24,7 @@
           "authorities": []
         },
         "sidechain": {
-          "genesisUtxo": "0c1eb8afd160f4fc028d91f6c2d5c2adb8b8f32a0422fe395a425bff5c097f92#1",
+          "genesisUtxo": "586f8f479825c0a0fed3af3af417151f86f193f0df993c518cfebc79c23991d0#1",
           "slotsPerEpoch": 300
         },
         "midnight": {
@@ -71,104 +71,101 @@
             41,
             58,
             0,
-            12,
-            204,
-            193,
-            57,
-            149,
-            158,
-            249,
+            25,
+            51,
+            70,
+            22,
+            47,
+            162,
+            198,
+            223,
+            98,
+            33,
+            48,
+            173,
+            90,
+            156,
+            131,
+            104,
+            29,
+            130,
+            120,
             203,
-            240,
-            194,
-            3,
-            236,
-            234,
-            69,
-            164,
-            52,
-            126,
-            89,
-            101,
-            141,
-            230,
-            127,
-            168,
-            150,
-            96,
-            43,
-            101,
-            200,
-            3,
-            251,
-            180,
-            203
+            85,
+            210,
+            253,
+            165,
+            83,
+            10,
+            196,
+            0,
+            56,
+            247,
+            212,
+            133
           ]
-        },
-        "sudo": {
-          "key": "5GNi8BK3DJFrHQGWVnPYmguFM3J4BZxH2yA72SQh83BYoMMk"
         },
         "sessionCommitteeManagement": {
           "initialAuthorities": [
             {
               "Permissioned": {
-                "id": "KWCREwTCnq2iNqJvkU7BGjLtE4B5YbHCgg9ub3DxXMnMxGyG3",
+                "id": "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W",
                 "keys": {
-                  "aura": "5GNi8BK3DJFrHQGWVnPYmguFM3J4BZxH2yA72SQh83BYoMMk",
-                  "grandpa": "5HpXpSTZSJAiGvBNt8XWTAd1VHu6GTXSFQE5fmCgUBgFQgyv"
+                  "aura": "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
+                  "grandpa": "5EmZ3vxkGEVjcTNvCt8bLN3hY5DqPKJ1gvRvnxZFcetqkGLm"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW5z6u7uXLev6XgjWbmPYJPqCaXu3VtN3t5q7WnTrbunDJ129",
+                "id": "KWE4aogM7533QGnCcVbviF96x5Xs7cEwJQY4iocGQuWU3FDcn",
                 "keys": {
-                  "aura": "5CcT9xMf2TqGt8GLaGzFL8U2bUsetqTit4RYS9i1zmMYxvEN",
-                  "grandpa": "5GpxRNyynqKhprFyJtufJyKgjUzK2QhBeRjr3WVP2HRcotEw"
+                  "aura": "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
+                  "grandpa": "5F3JDGSM8EYKG6h1b7NmAEwwjEWbeoceJp1WfYQfNS6TtMZj"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KWAuG8GWMv4LAAHLRDeDKysYonTXSum8iGjbbVvCj3wFtnnKZ",
+                "id": "KWCCcbpNMY46M79KcwVvYKimntzCixbbAsPk9tCrT3H1w3n8R",
                 "keys": {
-                  "aura": "5DHzUDLExJpiU8PmJeLmag62BsXdoB9oFZZg8GoqELvL4rqu",
-                  "grandpa": "5D7mcWCFbD5D9VFbk3NvcHvX3KujFexqNMJcnR6djTfM6cdM"
+                  "aura": "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
+                  "grandpa": "5HiCVz6nUqPBznrBrxzr6CD4CJNP6CQNAPP8ChBKLAFHTnnP"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW6A3FjNWs4tjnunpKd7tML2jghFfSm92SfKUd8xQHdzQn5Ny",
+                "id": "KW9cAQRoPXFxNyhUfCnJYc3gA3KPBoC5JLEyBo7i24a1nWSAM",
                 "keys": {
-                  "aura": "5E6nfpXZPzLDjhKGD9mrJuU6mJuoJ6L9LSuLMTqDS8yax98c",
-                  "grandpa": "5DzLBePFCpks66Wp5WmkhyACSBznsZ79wVYRsjjMQ6v2XBP9"
+                  "aura": "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
+                  "grandpa": "5Ch6sdsd98grj3WroSpaAiV4awpHEchoLu9RKN41PWQwx28t"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW5Q8fsPDut8zrU7uByTDJ1J2AMZTpFjKptt9DiCfQzmJdSS6",
+                "id": "KW3SLTJQ82b4GKi4vjqTTr8YrfDoi9hdpjjZygGvmRWU8NiNU",
                 "keys": {
-                  "aura": "5GNCWg4h6NkErSLnKPpmkzGQQmG5SkQ4hL6bUoGZhW9LNjQZ",
-                  "grandpa": "5FEyE4iZiWULwLRvLCM9yiU4jWsrnRz6GZ45bgidYEYqwJ8J"
+                  "aura": "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
+                  "grandpa": "5FTay3ZiQgtBtWmHCtXgggF6D1414GdziLnwUKnK6yDUCR6y"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KWDmTMpJvTDt6uLPNkRrA6hwiD6MQKzVxZXEdxj4h9ySrTNCX",
+                "id": "KW3JHdizpVr8HSMtwtFQZRgRepBmM9H831ABr8o96VXP4x2qj",
                 "keys": {
-                  "aura": "5ERwkYrRcEfAakqu2cYgUgPrxQ6diSaF7A58iDrPHFU7xRcK",
-                  "grandpa": "5FPbQtG1aEZ5gYWDc6z8LfJW1tyyvY2GiPeBk7rsycwpx8Vo"
+                  "aura": "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH",
+                  "grandpa": "5HnpFQnj7eW4oaQhSFV2u8kD9UQTR6HpJHHFvnYBMGMe74Lo"
                 }
               }
             }
           ],
           "mainChainScripts": {
-            "committee_candidate_address": "addr_test1wp03qfa0rs7mj63fyg2surgllejayjgz4eqxeezc89njy4suz6ue0",
-            "d_parameter_policy_id": "0x54262b2d6facd454026472dae38f8a955b24fcb2998ca7e852af510b",
-            "permissioned_candidates_policy_id": "0xfbbcc0b1497607ded3d4b743221c2a8fea64e1e170754c81919dcd2e"
+            "committee_candidate_address": "addr_test1wz9hj8jjypagjyqguex9nmxs6e4nsxgd28vf54j4w4nn9jc780j4w",
+            "d_parameter_policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+            "permissioned_candidates_policy_id": "0xb9f5feb256614159cf4de996f36824db60edd2cb930c8da6b29ee7e0"
           }
         },
         "cNightObservation": {
@@ -216,67 +213,60 @@
         },
         "beefy": {
           "authorities": [
-            "KWCREwTCnq2iNqJvkU7BGjLtE4B5YbHCgg9ub3DxXMnMxGyG3",
-            "KW5z6u7uXLev6XgjWbmPYJPqCaXu3VtN3t5q7WnTrbunDJ129",
-            "KWAuG8GWMv4LAAHLRDeDKysYonTXSum8iGjbbVvCj3wFtnnKZ",
-            "KW6A3FjNWs4tjnunpKd7tML2jghFfSm92SfKUd8xQHdzQn5Ny",
-            "KW5Q8fsPDut8zrU7uByTDJ1J2AMZTpFjKptt9DiCfQzmJdSS6",
-            "KWDmTMpJvTDt6uLPNkRrA6hwiD6MQKzVxZXEdxj4h9ySrTNCX"
+            "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W",
+            "KWE4aogM7533QGnCcVbviF96x5Xs7cEwJQY4iocGQuWU3FDcn",
+            "KWCCcbpNMY46M79KcwVvYKimntzCixbbAsPk9tCrT3H1w3n8R",
+            "KW9cAQRoPXFxNyhUfCnJYc3gA3KPBoC5JLEyBo7i24a1nWSAM",
+            "KW3SLTJQ82b4GKi4vjqTTr8YrfDoi9hdpjjZygGvmRWU8NiNU",
+            "KW3JHdizpVr8HSMtwtFQZRgRepBmM9H831ABr8o96VXP4x2qj"
           ],
           "genesisBlock": 1
         },
         "session": {
           "initialValidators": [
             [
-              "5HR7x4CNh9XoaKpEGCrQLuySsfPPQQunTb61pbyZXn25F2Cq",
+              "5CxuaKqvaX6QvkSkqQcAHbTQBbyYdRWyoNsgUkEFmHPQ1811",
               {
-                "aura": "5GNi8BK3DJFrHQGWVnPYmguFM3J4BZxH2yA72SQh83BYoMMk",
-                "grandpa": "5HpXpSTZSJAiGvBNt8XWTAd1VHu6GTXSFQE5fmCgUBgFQgyv"
+                "aura": "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
+                "grandpa": "5EmZ3vxkGEVjcTNvCt8bLN3hY5DqPKJ1gvRvnxZFcetqkGLm"
               }
             ],
             [
-              "5Ce19ecoTeMe762sbTTaTyFnvGZhbKHdz9ihc549dwWHeT6N",
+              "5DtbwGz4VjpjBruikJZwGBvfNrB3tsbpjAYRcfkv2iCbFx4S",
               {
-                "aura": "5CcT9xMf2TqGt8GLaGzFL8U2bUsetqTit4RYS9i1zmMYxvEN",
-                "grandpa": "5GpxRNyynqKhprFyJtufJyKgjUzK2QhBeRjr3WVP2HRcotEw"
+                "aura": "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
+                "grandpa": "5F3JDGSM8EYKG6h1b7NmAEwwjEWbeoceJp1WfYQfNS6TtMZj"
               }
             ],
             [
-              "5H3bJwHgRaMZ3APbgzpnNGPK5oSgkgEFFEzXhPKaNMxQr9wF",
+              "5HgwDfFo7msuQ3ZcjDe1tNTM4UEebQbPh7jZu4hJeb2eXp17",
               {
-                "aura": "5DHzUDLExJpiU8PmJeLmag62BsXdoB9oFZZg8GoqELvL4rqu",
-                "grandpa": "5D7mcWCFbD5D9VFbk3NvcHvX3KujFexqNMJcnR6djTfM6cdM"
+                "aura": "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
+                "grandpa": "5HiCVz6nUqPBznrBrxzr6CD4CJNP6CQNAPP8ChBKLAFHTnnP"
               }
             ],
             [
-              "5CHjAadgx9c2VAzhzWmaJdq6HZQS2qFEEJdyp19XE2c6tWPw",
+              "5FbTDnFb6rtzWy6YEk3R14F3ofo8uF1UyPbSNbA4uQV1fKt9",
               {
-                "aura": "5E6nfpXZPzLDjhKGD9mrJuU6mJuoJ6L9LSuLMTqDS8yax98c",
-                "grandpa": "5DzLBePFCpks66Wp5WmkhyACSBznsZ79wVYRsjjMQ6v2XBP9"
+                "aura": "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
+                "grandpa": "5Ch6sdsd98grj3WroSpaAiV4awpHEchoLu9RKN41PWQwx28t"
               }
             ],
             [
-              "5Fgm8njnjQUo3dPFktUYiSjkm7QLmzcvNLXZMZSf2RiQ9LZd",
+              "5EFAPuM4NzUT5JKAsirVQZXb6Eh6MC18FySKCNnBAApLTtag",
               {
-                "aura": "5GNCWg4h6NkErSLnKPpmkzGQQmG5SkQ4hL6bUoGZhW9LNjQZ",
-                "grandpa": "5FEyE4iZiWULwLRvLCM9yiU4jWsrnRz6GZ45bgidYEYqwJ8J"
+                "aura": "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
+                "grandpa": "5FTay3ZiQgtBtWmHCtXgggF6D1414GdziLnwUKnK6yDUCR6y"
               }
             ],
             [
-              "5FWrPXyP1XGP2Q59cho25BjxrUoVjFQAzjWREnYwYvPbVua6",
+              "5GX9Cjt7eVC5Yth2kvLkWQQ4HwZwdS2iU49MrdfyCLEB3TgD",
               {
-                "aura": "5ERwkYrRcEfAakqu2cYgUgPrxQ6diSaF7A58iDrPHFU7xRcK",
-                "grandpa": "5FPbQtG1aEZ5gYWDc6z8LfJW1tyyvY2GiPeBk7rsycwpx8Vo"
+                "aura": "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH",
+                "grandpa": "5HnpFQnj7eW4oaQhSFV2u8kD9UQTR6HpJHHFvnYBMGMe74Lo"
               }
             ]
           ]
-        },
-        "governedMap": {
-          "mainChainScripts": {
-            "validator_address": "addr_test1wpgljzd8t6t9ctvf9ertpn0yxmh4ly6q6s3y4tk4mnlcflcc7p7zt",
-            "asset_policy_id": "0x3ded3c43ca19d81b3d766ae6407458aedbbc7bc7f1bed4b818d1af4d"
-          },
-          "marker": null
         },
         "bridge": {
           "mainChainScripts": null,
@@ -288,9 +278,12 @@
         },
         "councilMembership": {
           "members": [
-            "5GNi8BK3DJFrHQGWVnPYmguFM3J4BZxH2yA72SQh83BYoMMk",
-            "5CcT9xMf2TqGt8GLaGzFL8U2bUsetqTit4RYS9i1zmMYxvEN",
-            "5DHzUDLExJpiU8PmJeLmag62BsXdoB9oFZZg8GoqELvL4rqu"
+            "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
+            "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
+            "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
+            "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
+            "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
+            "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH"
           ]
         },
         "technicalCommittee": {
@@ -298,16 +291,19 @@
         },
         "technicalCommitteeMembership": {
           "members": [
-            "5E6nfpXZPzLDjhKGD9mrJuU6mJuoJ6L9LSuLMTqDS8yax98c",
-            "5GNCWg4h6NkErSLnKPpmkzGQQmG5SkQ4hL6bUoGZhW9LNjQZ",
-            "5ERwkYrRcEfAakqu2cYgUgPrxQ6diSaF7A58iDrPHFU7xRcK"
+            "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
+            "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
+            "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
+            "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
+            "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
+            "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH"
           ]
         },
         "federatedAuthorityObservation": {
-          "councilAddress": "addr_test1wr72etax2u63ele242maw8qheuauq3kfzpp6vwj5wc2tgecwq2put",
-          "councilPolicyId": "0xfcacafa657351cff2aaab7d71c17cf3bc046c91043a63a547614b467",
-          "technicalCommitteeAddress": "addr_test1wpuyz5vwavxs9xc27gqeg65mtwjht25ms9c5r0w3hpl5zagmzvluv",
-          "technicalCommitteePolicyId": "0x7841518eeb0d029b0af201946a9b5ba575aa9b817141bdd1b87f4175",
+          "councilAddress": "addr_test1wz28tz6e9zdpvr6f7qsxmyyw5zq0520h334087984ttskpcnczun7",
+          "councilPolicyId": "0x94758b59289a160f49f0206d908ea080fa29f78c6af3f8a7aad70b07",
+          "technicalCommitteeAddress": "addr_test1wpj3t7yvs489kjgzlayd37ft6wg9eu6vguem8jgdgu2kengayhe62",
+          "technicalCommitteePolicyId": "0x6515f88c854e5b4902ff48d8f92bd3905cf34c4733b3c90d47156ccd",
           "councilMembersMainchain": [
             "0xe3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
             "0xa5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",

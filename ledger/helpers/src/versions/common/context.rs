@@ -150,9 +150,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != expected_root => {
 					panic!(
-						"Ledger state root mismatch: expected {}, actual {}",
+						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
 						hex_encode(&expected_root),
 						hex_encode(&actual_root),
+						hex_encode(block_context.parent_block_hash.0),
 					);
 				},
 				Some(_) => {},
