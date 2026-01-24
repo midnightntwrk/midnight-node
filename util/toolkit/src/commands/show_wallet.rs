@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 
+use crate::source::Source;
 use crate::{
-	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, Source,
-	TxGenerator, Utxo, Wallet, WalletAddress, WalletSeed,
+	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, TxGenerator,
+	Utxo, Wallet, WalletAddress, WalletSeed,
+};
+use crate::{
+	cli_parsers::{self as cli},
+	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::serialize_untagged;
-use midnight_node_toolkit::{
-	cli_parsers::{self as cli},
-	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
-};
 
 #[derive(Debug)]
 pub struct WalletInfo<D: DB + Clone> {
@@ -127,6 +128,7 @@ mod tests {
 	//use std::str::FromStr;
 
 	use super::*;
+	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
 	macro_rules! test_fixture {
@@ -160,6 +162,8 @@ mod tests {
 				fetch_concurrency: 20,
 				src_files: Some(src_files),
 				dust_warp: false,
+				ignore_block_context: false,
+				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -185,7 +189,7 @@ mod tests {
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
-	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d", "genesis/genesis_block_undeployed.mn") =>
+	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9", "genesis/genesis_block_undeployed.mn") =>
 	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
@@ -206,6 +210,8 @@ mod tests {
 				fetch_concurrency: 20,
 				src_files: Some(src_files),
 				dust_warp: true,
+				ignore_block_context: false,
+				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: Some(seed),
 			address: None,

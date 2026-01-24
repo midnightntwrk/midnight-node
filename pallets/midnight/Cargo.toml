@@ -22,14 +22,11 @@ frame-support.workspace = true
 frame-system.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
-sp-std.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
 pallet-timestamp.workspace = true
 hex = { workspace = true, optional = true }
 sp-tracing = { workspace = true}
-
-log.workspace = true
 
 [dev-dependencies]
 sp-core.workspace = true
@@ -41,7 +38,8 @@ midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 assert_matches.workspace = true
 #pallet-block-rewards.workspace = true
 tempfile.workspace = true
-midnight-node-ledger-helpers.workspace = true
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
+midnight-node-ledger = { workspace = true, features = ["std", "test-utils"] }
 test-log.workspace = true
 
 [features]
@@ -56,7 +54,6 @@ std = [
 	"sp-api/std",
 	"sp-runtime/std",
     #"sp-block-rewards/std",
-	"sp-std/std",
     "midnight-primitives/std",
     #"pallet-block-rewards/std",
     "sp-tracing/std",

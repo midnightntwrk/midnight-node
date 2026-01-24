@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
 	serde::{Deserialize, Deserializer, Serialize},
@@ -87,15 +88,7 @@ pub struct EndowedAccount {
 #[derive(Clone, Debug, Deserialize)]
 pub struct MainChainScripts {
 	committee_candidates_address: String,
-	d_parameter_policy_id: String,
 	permissioned_candidates_policy_id: String,
-	governed_map: Option<GovernedMapMainChainScripts>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct GovernedMapMainChainScripts {
-	validator_address: String,
-	policy_id: String,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -103,9 +96,10 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 		let committee_candidate_address = FromStr::from_str(&value.committee_candidates_address)
 			.expect("failed to convert committee_candidate_address");
 
-		let d_parameter_policy_id =
-			sidechain_domain::PolicyId::decode_hex(&value.d_parameter_policy_id)
-				.expect("failed to decode d_parameter_policy_id as hex");
+		// TODO: The d_parameter_policy_id field should be removed from
+		// sp_session_validator_management::MainChainScripts or made Optional in the future.
+		// The DParameter is now read from pallet_system_parameters storage instead of from mainchain.
+		let d_parameter_policy_id = sidechain_domain::PolicyId([0u8; 28]);
 
 		let permissioned_candidates_policy_id =
 			sidechain_domain::PolicyId::decode_hex(&value.permissioned_candidates_policy_id)
@@ -116,21 +110,6 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 			d_parameter_policy_id,
 			permissioned_candidates_policy_id,
 		}
-	}
-}
-
-impl From<MainChainScripts> for Option<sp_governed_map::MainChainScriptsV1> {
-	fn from(value: MainChainScripts) -> Self {
-		value.governed_map.map(|governed_map_mainchain_scripts| {
-			let validator_address =
-				FromStr::from_str(&governed_map_mainchain_scripts.validator_address)
-					.expect("failed to decode governed_map.validator_address");
-
-			let policy_id = FromStr::from_str(&governed_map_mainchain_scripts.policy_id)
-				.expect("failed to convert governed_map.policy_id");
-
-			sp_governed_map::MainChainScriptsV1 { validator_address, asset_policy_id: policy_id }
-		})
 	}
 }
 
@@ -153,6 +132,7 @@ pub trait MidnightNetwork {
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
+	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {

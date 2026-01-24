@@ -7,13 +7,13 @@ use subxt::{
 };
 use thiserror::Error;
 
+use crate::cli_parsers::{self as cli};
 use midnight_node_ledger_helpers::{
-	Duration, FeePrices, FixedPoint, Keypair, deserialize,
+	Duration, DustParameters, FeePrices, FixedPoint, Keypair, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction},
 	serialize,
 };
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use midnight_node_toolkit::cli_parsers::{self as cli};
 
 #[derive(Error, Debug)]
 pub enum LedgerParametersError {
@@ -114,6 +114,10 @@ pub struct UpdateLedgerParametersArgs {
 	/// Ledger's `c_to_m_bridge_min_amount` parameter.
 	#[arg(long)]
 	c_to_m_bridge_min_amount: Option<u128>,
+
+	/// Ledger's `dust.dust_grace_period` parameter (in seconds).
+	#[arg(long)]
+	dust_grace_period: Option<u64>,
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
@@ -140,29 +144,30 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let parameters = LedgerParameters {
 		fee_prices: FeePrices {
-			read_price: match (args.read_price_a, args.read_price_b) {
+			overall_price: base.fee_prices.overall_price,
+			read_factor: match (args.read_price_a, args.read_price_b) {
 				(Some(read_price_a), Some(read_price_b)) => {
 					FixedPoint::from_u64_div(read_price_a, read_price_b)
 				},
-				_ => base.fee_prices.read_price,
+				_ => base.fee_prices.read_factor,
 			},
-			compute_price: match (args.compute_price_a, args.compute_price_b) {
+			compute_factor: match (args.compute_price_a, args.compute_price_b) {
 				(Some(compute_price_a), Some(compute_price_b)) => {
 					FixedPoint::from_u64_div(compute_price_a, compute_price_b)
 				},
-				_ => base.fee_prices.compute_price,
+				_ => base.fee_prices.compute_factor,
 			},
-			block_usage_price: match (args.block_usage_price_a, args.block_usage_price_b) {
+			block_usage_factor: match (args.block_usage_price_a, args.block_usage_price_b) {
 				(Some(block_usage_price_a), Some(block_usage_price_b)) => {
 					FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
 				},
-				_ => base.fee_prices.block_usage_price,
+				_ => base.fee_prices.block_usage_factor,
 			},
-			write_price: match (args.write_price_a, args.write_price_b) {
+			write_factor: match (args.write_price_a, args.write_price_b) {
 				(Some(write_price_a), Some(write_price_b)) => {
 					FixedPoint::from_u64_div(write_price_a, write_price_b)
 				},
-				_ => base.fee_prices.write_price,
+				_ => base.fee_prices.write_factor,
 			},
 		},
 		global_ttl: args
@@ -196,6 +201,13 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		c_to_m_bridge_min_amount: args
 			.c_to_m_bridge_min_amount
 			.unwrap_or(base.c_to_m_bridge_min_amount),
+		dust: DustParameters {
+			dust_grace_period: args
+				.dust_grace_period
+				.map(|d| Duration::from_secs(d as i128))
+				.unwrap_or(base.dust.dust_grace_period),
+			..base.dust
+		},
 		..base
 	};
 

@@ -16,9 +16,9 @@ use sp_consensus_beefy::{
 	OnNewValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet,
 };
 
+use alloc::vec::Vec;
 use sp_core::H256;
 use sp_runtime::traits::Convert;
-use sp_std::vec::Vec;
 
 type CommitteeInfoOf<T> = CommitteeInfo<
 	<T as SessionValidatorMngConfig>::ScEpochNumber,
@@ -135,12 +135,11 @@ fn compute_beefy_stakes(
 		if let Some(pos) = position {
 			let _ = committee_members.remove(pos);
 			beefy_with_stakes.push((
-				validator, // default stake
-				1,
+				validator, 1, // default stake
 			));
 		} else {
-			log::warn!("🥩 No match found for {validator}, setting stake to 0");
-			beefy_with_stakes.push((validator, 0));
+			log::warn!(target: BEEFY_LOG_TARGET, "🥩 No match found for {validator}, still setting stake to 1");
+			beefy_with_stakes.push((validator, 1));
 		}
 	}
 

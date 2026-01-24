@@ -68,13 +68,15 @@ impl<D: DB + Clone> Wallet<D> {
 
 	pub fn unshielded_utxos(&self, ledger_state: &LedgerState<D>) -> Vec<Utxo> {
 		let address = self.unshielded.user_address;
-		ledger_state
+		let mut utxos: Vec<Utxo> = ledger_state
 			.utxo
 			.utxos
 			.iter()
 			.filter(|utxo| utxo.0.owner == address)
 			.map(|utxo| (*utxo.0).clone())
-			.collect()
+			.collect();
+		utxos.sort();
+		utxos
 	}
 
 	#[cfg(feature = "can-panic")]

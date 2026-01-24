@@ -40,6 +40,7 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
+| Execute calls via governance (root-call)                             | ✅       |
 | DUST registration command                                            | 🚧       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
@@ -112,12 +113,20 @@ Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGene
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-from-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
 
+### Caching fetched transactions
+
+The toolkit implements a caching mechanism to avoid fetching the entire chain each time you generate a new transaction. The caching mechanism implements three backends, which can be set using the `MN_FETCH_CACHE` environment variable:
+
+- `inmemory` - no persistence, fetched transactions are not stored to disk
+- `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
+- `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
 Dry-run: local prover (no proof server)
@@ -162,7 +171,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
@@ -209,7 +218,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
   * The contract must have been compiled using `compact`. For this example, the contract is found in `util/toolkit-js/test/contract/managed`
   * Also, `toolkit-js` should already be built, and be specified either via the `--toolkit_js_path` argument, or the `TOOLKIT_JS_PATH' environment
     * export TOOLKIT_JS_PATH="util/toolkit-js"
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent deploy
 >   -c ../toolkit-js/test/contract/contract.config.ts \
 >    --toolkit-js-path ../toolkit-js/
@@ -279,7 +288,7 @@ $ midnight-node-toolkit show-address
 >    --network undeployed
 >    --seed 0000000000000000000000000000000000000000000000000000000000000001
 >    --coin-public
-aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+1bd4f827be97ff013c4a702e4b08f30ec378728a54670cf7cc92cb9b1a14eff6
 
 ```
 
@@ -331,7 +340,7 @@ $ midnight-node-toolkit send-intent --dry-run
 ```
 
 - Get the contract address
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit contract-address
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
 3f418f852023931a1f2f507500a3879cdeb357415418cce083946fedb6afe299
@@ -339,7 +348,7 @@ $ midnight-node-toolkit contract-address
 ```
 
 - Get the contract on-chain state
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit contract-state
 >   --src-file ../../res/genesis/genesis_block_undeployed.mn
 >   --src-file ./test-data/contract/counter/deploy_tx.mn
@@ -348,7 +357,7 @@ $ midnight-node-toolkit contract-state
 ```
 
 - Generate a circuit call intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
@@ -371,7 +380,7 @@ written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 To send it, see "Generate and send a tx from an intent" above
 
 - Generate a contract maintenance intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent maintain-contract
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
@@ -391,7 +400,7 @@ written: out/intent.bin
 To send it, see "Generate and send a tx from an intent" above
 
 - Generate a circuit maintenance intent
-```console
+```ignore-compact-0.27
 $ midnight-node-toolkit generate-intent maintain-circuit
 >   -c ../toolkit-js/test/contract/contract.config.ts
 >   --toolkit-js-path ../toolkit-js/
@@ -523,6 +532,45 @@ Update parameters based on a serialized value:
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
+### Root Call (Execute Call via Governance)
+Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
+
+The command requires private keys from both Council and Technical Committee members to vote and approve the motion.
+
+```bash
+midnight-node-toolkit root-call \
+    --council-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --tc-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --encoded-call <HEX_ENCODED_CALL>
+```
+
+Parameters:
+- `--council-keys`: Council member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--tc-keys`: Technical Committee member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--encoded-call`: The SCALE-encoded runtime call as a hex string (e.g., `0x00000400`)
+- `--encoded-call-file`: Alternative to `--encoded-call`, path to a file containing the encoded call hex string
+- `--rpc-url`: RPC URL of the node (defaults to `ws://127.0.0.1:9944`, can also be set via `RPC_URL` env var)
+
+Example:
+```bash
+midnight-node-toolkit root-call \
+    --council-keys 0x42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842 \
+                   0x868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246 \
+    --tc-keys 0x398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89 \
+              0xbc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938 \
+    --encoded-call 0x00000400
+```
+
+The command will:
+1. Decode and validate the encoded call
+2. Create a Council proposal for `FederatedAuthority::motion_approve`
+3. Have Council members vote on the proposal
+4. Close the Council proposal
+5. Create a Technical Committee proposal for the same motion
+6. Have TC members vote on the proposal
+7. Close the TC proposal
+8. Close the federated motion to execute the call with Root origin
+
 ---
 
 ### Show Wallet (JSON output)
@@ -536,12 +584,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "c230c54a599a3d3472c5ee3f350c94745f1231412a4be729ea9f40db5e6776df#0",
-      "initial_nonce": "ba356be982b6a8b77635cb5e8602d2889049c6f0080af6cd7403feab3b71eadf",
+      "id": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a#0",
+      "initial_nonce": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
       "value": 500000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "c230c54a599a3d3472c5ee3f350c94745f1231412a4be729ea9f40db5e6776df",
+      "intent_hash": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a",
       "output_number": 0
     },
 ...
@@ -550,11 +598,11 @@ $ midnight-node-toolkit show-wallet
     {
       "initial_value": 0,
       "dust_public": "73ff4aaccbb878703e922c8ab5da32a349ca7b5a6e0a2b0950ac68c6a3e273471a",
-      "nonce": "732ccb837ef1fa8cf30c5e4f1beafb9973c47ac6a67529a5541aff0f6625edf72e",
+      "nonce": "73532e6df7512310fd192fb8ad04c56cf865b2e4ad748267983dcb034b70e04464",
       "seq": 0,
       "ctime": 1754395200,
-      "backing_night": "c7b64d5aa64262705b14735aa8eba798d072aa962ac1cb7f9da9693421410552",
-      "mt_index": 0
+      "backing_night": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
+      "mt_index": 3
     },
 ...
   ]
@@ -579,7 +627,8 @@ $ midnight-node-toolkit dust-balance
   "source": {
 ...
   },
-  "total": 12500000000000000000000000
+  "total": 12500000000000000000000000,
+  "capacity": 12500000000000000000000000
 }
 
 ```
@@ -592,7 +641,7 @@ $ midnight-node-toolkit show-address
 >   --network undeployed
 >   --shielded
 >   --seed 0000000000000000000000000000000000000000000000000000000000000001
-mn_shield-addr_undeployed14gxh9wmhafr0np4gqrrx6awyus52jk7huyjy78kstym5ucnxawvtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqm9zs2g
+mn_shield-addr_undeployed1r020sfa7jllsz0z2wqhykz8npmphsu5223nsea7vjt9ekxs5almtvtnrpgpszud4uyd0yjrlqyp7v5xvwqljsng2g79j5w4al9c4kuqy0xtw4
 
 ```
 

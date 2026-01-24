@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::cfg::addresses::Addresses;
 use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
@@ -25,9 +24,9 @@ use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
 	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
 	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
-	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, TimestampCall,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature,
+	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
+	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
@@ -37,7 +36,6 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
-use sp_session_validator_management::MainChainScripts;
 use std::{fmt, str::FromStr};
 
 pub enum ChainSpecInitError {
@@ -103,35 +101,6 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 
 pub fn runtime_wasm() -> &'static [u8] {
 	WASM_BINARY.expect("Runtime wasm not available")
-}
-
-pub fn read_mainchain_scripts_from_addresses_json(
-	path: &str,
-) -> Result<MainChainScripts, ChainSpecInitError> {
-	let addresses = Addresses::load(path)
-		.map_err(|e| ChainSpecInitError::ParseError(format!("{e} while trying to load {path}")))?;
-
-	let err = |var: &str| {
-		ChainSpecInitError::ParseError(format!("Failed to parse {var} from addresses_json"))
-	};
-
-	Ok(MainChainScripts {
-		committee_candidate_address: addresses
-			.addresses
-			.committee_candidate_validator
-			.parse()
-			.map_err(|_| err("committee_candidate_validator"))?,
-		d_parameter_policy_id: addresses
-			.policy_ids
-			.d_parameter
-			.parse()
-			.map_err(|_| err("d_parameter"))?,
-		permissioned_candidates_policy_id: addresses
-			.policy_ids
-			.permissioned_candidates
-			.parse()
-			.map_err(|_| err("permissioned_candidates"))?,
-	})
 }
 
 pub fn get_chainspec_extrinsics(
@@ -256,12 +225,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.collect(),
 			genesis_block: Some(One::one()),
 		},
-		governed_map: pallet_governed_map::GenesisConfig {
-			main_chain_scripts: genesis.main_chain_scripts().into(),
-			_marker: std::marker::PhantomData,
-		},
 		grandpa: Default::default(),
-		sudo: SudoConfig { key: genesis.root_key().map(|k| k.into()) },
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
@@ -349,6 +313,24 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			..Default::default()
 		},
 		bridge: Default::default(),
+		system_parameters: {
+			let system_params = genesis.system_parameters_config();
+			let hash_bytes = system_params
+				.terms_and_conditions_hash_bytes()
+				.expect("Failed to parse terms_and_conditions hash");
+			let d_param: sidechain_domain::DParameter = system_params.d_parameter.clone().into();
+			SystemParametersConfig {
+				terms_and_conditions: pallet_system_parameters::TermsAndConditionsGenesisConfig {
+					hash: Some(H256::from(hash_bytes)),
+					url: Some(system_params.terms_and_conditions.url.clone()),
+				},
+				d_parameter: pallet_system_parameters::DParameterGenesisConfig {
+					num_permissioned_candidates: Some(d_param.num_permissioned_candidates),
+					num_registered_candidates: Some(d_param.num_registered_candidates),
+				},
+				_marker: Default::default(),
+			}
+		},
 	};
 
 	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))

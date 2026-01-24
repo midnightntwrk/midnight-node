@@ -54,6 +54,7 @@ pub enum SystemTransactionError {
 	GenerationInfoAlreadyPresent,
 	InvalidBasisPoints,
 	InvariantViolation,
+	TreasuryDisabled,
 }
 
 #[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
@@ -121,6 +122,7 @@ pub enum SerializationError {
 	VersionedArenaKey,
 	CNightGeneratesDustEvent,
 	SystemTransaction,
+	ArenaHash,
 }
 
 #[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
@@ -197,6 +199,9 @@ impl core::fmt::Display for LedgerApiError {
 				SerializationError::SystemTransaction => {
 					write!(f, "Error serializing: SystemTransaction")
 				},
+				SerializationError::ArenaHash => {
+					write!(f, "Error serializing: ArenaHash")
+				},
 			},
 			LedgerApiError::Transaction(error) => match error {
 				Invalid(e) => write!(f, "Transaction Error: Invalid({e:?})"),
@@ -261,6 +266,7 @@ impl From<LedgerApiError> for u8 {
 				SerializationError::TypedArenaKey => 60,
 				SerializationError::CNightGeneratesDustEvent => 61,
 				SerializationError::SystemTransaction => 62,
+				SerializationError::ArenaHash => 63,
 			},
 			// Reserved from [100-150)
 			LedgerApiError::Transaction(error) => match error {
@@ -318,6 +324,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::GenerationInfoAlreadyPresent => 145,
 					SystemTransactionError::InvalidBasisPoints => 146,
 					SystemTransactionError::InvariantViolation => 147,
+					SystemTransactionError::TreasuryDisabled => 148,
 				},
 			},
 			// Reserved from [150-255) for future Errors

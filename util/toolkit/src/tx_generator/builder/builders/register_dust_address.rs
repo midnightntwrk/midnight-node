@@ -1,4 +1,4 @@
-use std::{convert::Infallible, sync::Arc};
+use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
@@ -73,14 +73,14 @@ impl BuildTxs for RegisterDustAddressBuilder {
 						value: utxo.value,
 						owner: seed,
 						token_type: NIGHT,
-						intent_hash: None,
-						output_number: None,
+						intent_hash: Some(utxo.intent_hash),
+						output_number: Some(utxo.output_no),
 					})
 					.collect::<Vec<_>>()
 			})
 		});
 
-		let outputs: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
+		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
 			.iter()
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
@@ -92,18 +92,27 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			})
 			.collect();
 
-		let inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
+		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
 			.into_iter()
 			.map(|input| {
 				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
 				input
 			})
-			.collect::<Vec<_>>();
+			.collect();
 
-		let guaranteed_unshielded_offer = UnshieldedOfferInfo { inputs, outputs };
+		let guaranteed_inputs = inputs.pop_front().into_iter().collect();
+		let guaranteed_outputs = outputs.pop_front().into_iter().collect();
+		let guaranteed_unshielded_offer =
+			UnshieldedOfferInfo { inputs: guaranteed_inputs, outputs: guaranteed_outputs };
+
+		let fallible_unshielded_offer = if inputs.len() > 0 && outputs.len() > 0 {
+			Some(UnshieldedOfferInfo { inputs: inputs.into(), outputs: outputs.into() })
+		} else {
+			None
+		};
 		let intent_info = IntentInfo {
 			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer),
-			fallible_unshielded_offer: None,
+			fallible_unshielded_offer,
 			actions: vec![],
 		};
 
@@ -125,7 +134,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			});
 		});
 
-		tx_info.set_wallet_seeds(vec![funding_seed]);
+		tx_info.set_funding_seeds(vec![funding_seed]);
 		tx_info.use_mock_proofs_for_fees(true);
 
 		let tx = tx_info.prove().await.expect("Balancing TX failed");

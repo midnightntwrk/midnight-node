@@ -41,6 +41,41 @@ services:
     ports:
       - "32000:32000"
 
+  cardano-node-socat:
+    container_name: cardano-node-1-socat
+    image: alpine/socat
+    command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
+    depends_on:
+      - cardano-node-1
+    volumes:
+      - cardano-node-1-data:/data
+    ports:
+      - "30000:30000"
+
+  contract-compiler:
+    container_name: contract-compiler
+    platform: linux/amd64
+    build:
+      context: ./configurations/contract-compiler
+      dockerfile: Dockerfile
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # One-shot container: compilation completes and exits, healthcheck is a no-op
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
@@ -297,6 +332,7 @@ services:
       MC__FIRST_EPOCH_NUMBER: "0"
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
+      ALLOW_NON_SSL: true
       BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
@@ -333,6 +369,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30334:30334"
@@ -367,6 +404,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30335:30335"
@@ -403,6 +441,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30336:30336"
@@ -439,6 +478,7 @@ services:
       MC__FIRST_SLOT_NUMBER: "0"
       MC__EPOCH_DURATION_MILLIS: "30000"
       BLOCK_STABILITY_MARGIN: "0"
+      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30337:30337"
@@ -458,6 +498,8 @@ services:
     depends_on:
       ogmios:
         condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"
@@ -473,6 +515,8 @@ services:
       - ./configurations/midnight-setup/:/midnight-setup/
       - ./configurations/midnight-setup/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/:/midnight-nodes/
+      - ../../../../res/:/res/
+      - ./runtime-values:/runtime-values
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
