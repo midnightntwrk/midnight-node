@@ -9,6 +9,7 @@ x-common-variables: &common-variables
   MC__EPOCH_DURATION_MILLIS: 86400000
   MC__FIRST_SLOT_NUMBER: 0
   MC__SLOT_DURATION_MILLIS: 1000
+  ALLOW_NON_SSL: false
 
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
@@ -34,7 +35,7 @@ services:
       start_period: 20s
     environment:
       <<: *common-variables
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_BOOT_MIDNIGHT_NODE_BOOT_01_0}
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_01_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000001
         --port 30333

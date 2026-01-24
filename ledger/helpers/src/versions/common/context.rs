@@ -13,18 +13,20 @@
 
 use super::{
 	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
-	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
+	Loader, MidnightDataProvider, NormalizedCost, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
-	Tagged, Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction, Wallet,
-	WalletAddress, WalletSeed, WellFormedStrictness, default_storage,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
+	compute_overall_fullness, default_storage, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
-use hex::encode as hex_encode;
+use hex::{ToHex, encode as hex_encode};
 use lazy_static::lazy_static;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Mutex,
+	time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex as MutexTokio;
 
@@ -45,6 +47,7 @@ lazy_static! {
 
 pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<LedgerState<D>>,
+	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
 }
@@ -79,6 +82,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			ledger_state: Mutex::new(LedgerState::new(network_id)),
 			wallets: Mutex::new(HashMap::new()),
 			resolver: MutexTokio::new(&DEFAULT_RESOLVER),
+			latest_block_context: Mutex::new(None),
 		}
 	}
 
@@ -100,7 +104,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.insert(*seed, wallet);
 		}
 
-		Self { ledger_state: Mutex::new(ledger_state), wallets, resolver }
+		Self {
+			ledger_state: Mutex::new(ledger_state),
+			wallets,
+			resolver,
+			latest_block_context: Mutex::new(None),
+		}
 	}
 
 	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -117,10 +126,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
-				if let Err(error) = wallet.update_dust_from_tx(&events) {
-					// TODO: should we have better error handling here?
-					println!("Failed to replay events for Dust monitoring: {error}");
-				}
+				wallet.update_dust_from_tx(&events).unwrap_or_else(|e| {
+					panic!(
+						"failed to replay dust events for tx {}: {e}",
+						tx.transaction_hash().0.0.encode_hex::<String>()
+					)
+				});
 			}
 			total_cost = total_cost + cost;
 		}
@@ -128,16 +139,21 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// Only when done processing txs for the same block, it's time to call `post_block_update`
 		let mut latest_ledger_state =
 			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let block_limits = latest_ledger_state.parameters.limits.block_limits;
+		let normalized_fullness =
+			total_cost.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		*latest_ledger_state = latest_ledger_state
-			.post_block_update(block_context.tblock, total_cost)
+			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 			.expect("Error applying block updates");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != expected_root => {
 					panic!(
-						"Ledger state root mismatch: expected {}, actual {}",
+						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
 						hex_encode(&expected_root),
 						hex_encode(&actual_root),
+						hex_encode(block_context.parent_block_hash.0),
 					);
 				},
 				Some(_) => {},
@@ -150,13 +166,33 @@ impl<D: DB + Clone> LedgerContext<D> {
 		{
 			wallet.update_dust_from_block(&block_context);
 		}
+		// Update latest block context
+		*self.latest_block_context.lock().expect("error locking latest_block_context") =
+			Some(block_context.clone());
+	}
+
+	pub fn latest_block_context(&self) -> BlockContext {
+		self.latest_block_context
+			.lock()
+			.expect("failed to lock latest_block_context")
+			.as_ref()
+			.cloned()
+			.unwrap_or_else(|| {
+				let now = Timestamp::from_secs(
+					SystemTime::now()
+						.duration_since(UNIX_EPOCH)
+						.expect("time has run backwards")
+						.as_secs(),
+				);
+				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() }
+			})
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
 		let storage = default_storage::<D>();
 		let ledger = StorableLedgerState::new(state.clone());
 		let sp = storage.arena.alloc(ledger);
-		super::serialize(&sp.hash()).ok()
+		super::serialize(&sp.as_typed_key()).ok()
 	}
 
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -193,14 +229,16 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Partially failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
 						);
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {failure:#?}\nof applying tx {tx:#?} \nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {failure:?} of applying tx 0x{hash} \nto update Local Ledger State"
 						);
 						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
@@ -211,8 +249,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match tx_context.ref_state.apply_system_tx(tx, block_context.tblock) {
 					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
+						let hash = hex::encode(tx.transaction_hash().0.0);
 						println!(
-							"Failing result {err:#?}\nof applying system tx {tx:#?}\nto update Local Ledger State for tx_context {tx_context:#?}\n"
+							"Failing result {err:?} of applying system tx {hash} to update Local Ledger State"
 						);
 						(tx_context.ref_state.clone(), vec![], vec![], cost)
 					},

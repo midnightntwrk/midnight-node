@@ -24,7 +24,7 @@ COLLATERAL=ea22bb7b5f8787dc31985fd86d3d209459018180486074165e29401705de8795#0
 # Pick the first UTxO on the wallet that is not a collateral. This should be entered manually
 UTXO=87fb4d421a2e19babe592047e37e41b219e60dcbff49227f0ba3cf3f610298a3#0
 
-USER_PKH=$(cardano-cli address key-hash --payment-verification-key-file payment-$1.vkey)
+USER_PKH=$(cardano-cli address key-hash --payment-verification-key-file stake-$1.vkey)
 
 rm register-$1.tx 2>/dev/null
 rm register-$1-signed.tx 2>/dev/null
@@ -32,11 +32,11 @@ rm register-$1-signed.tx 2>/dev/null
 # Build transaction body, fees included
 cardano-cli conway transaction build \
   --tx-in $UTXO \
-  --tx-out $(< mapping_validator.addr)+"2000000 lovelace + 1 $(< auth_token.hash)" \
+  --tx-out $(< mapping_validator.addr)+"2000000 lovelace + 1 $(< mapping_validator.hash)" \
   --tx-out-inline-datum-file datum-$1.json \
   --tx-in-collateral $COLLATERAL \
-  --mint="1 $(< auth_token.hash)" \
-  --mint-script-file auth_token_policy.plutus \
+  --mint="1 $(< mapping_validator.hash)" \
+  --mint-script-file mapping_validator.plutus \
   --mint-redeemer-file register_red.json  \
   --change-address $(< payment-$1.addr) \
   --required-signer-hash $USER_PKH \
@@ -46,6 +46,7 @@ cardano-cli conway transaction build \
 cardano-cli conway transaction sign \
   --tx-file register-$1.tx \
   --signing-key-file payment-$1.skey \
+  --signing-key-file stake-$1.skey \
   --out-file register-$1-signed.tx || exit
 
 cardano-cli conway transaction submit \

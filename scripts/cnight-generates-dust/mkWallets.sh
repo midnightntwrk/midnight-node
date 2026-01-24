@@ -23,9 +23,9 @@ if [[ !(-f payment-alice.vkey || -f payment-alice.skey) ]]; then
     --verification-key-file payment-alice.vkey \
     --signing-key-file payment-alice.skey
 
-  cardano-cli conway address key-gen \
-    --verification-key-file payment-alice.vkey \
-    --signing-key-file payment-alice.skey
+  cardano-cli conway stake-address key-gen \
+    --verification-key-file stake-alice.vkey \
+    --signing-key-file stake-alice.skey
   echo "Created wallet for Alice"
 fi
 
@@ -36,29 +36,39 @@ if [[ !(-f payment-bob.vkey || -f payment-bob.skey) ]]; then
     --verification-key-file payment-bob.vkey \
     --signing-key-file payment-bob.skey
 
-  cardano-cli conway address key-gen \
-    --verification-key-file payment-bob.vkey \
-    --signing-key-file payment-bob.skey
+  cardano-cli conway stake-address key-gen \
+    --verification-key-file stake-bob.vkey \
+    --signing-key-file stake-bob.skey
   echo "Created wallet for Bob"
 fi
 
 # Create address files
 cardano-cli conway address build \
   --payment-verification-key-file payment-alice.vkey \
-  --out-file payment-alice.addr \
+  --stake-verification-key-file stake-alice.vkey \
+  --out-file payment-alice.addr
+
+cardano-cli conway stake-address build \
+    --stake-verification-key-file stake-alice.vkey \
+    --out-file stake-alice.addr
 
 cardano-cli conway address build \
   --payment-verification-key-file payment-bob.vkey \
-  --out-file payment-bob.addr \
+  --stake-verification-key-file stake-bob.vkey \
+  --out-file payment-bob.addr
+
+cardano-cli conway stake-address build \
+    --stake-verification-key-file stake-bob.vkey \
+    --out-file stake-bob.addr
 
 echo "Wallet address for Alice: `cat payment-alice.addr`"
 echo "Wallet address for Bob  : `cat payment-bob.addr`"
 
-cardano-cli address key-hash --payment-verification-key-file payment-alice.vkey
-echo "Wallet PKH for Alice   : `cardano-cli address key-hash --payment-verification-key-file payment-alice.vkey`"
+echo "Stake address for Alice  : `cat stake-alice.addr`"
+echo "Stake address for Bob    : `cat stake-bob.addr`"
 
-cardano-cli address key-hash --payment-verification-key-file payment-bob.vkey
-echo "Wallet PKH for Bob     : `cardano-cli address key-hash --payment-verification-key-file payment-bob.vkey`"
+echo "Stake PKH for Alice   : `cardano-cli address key-hash --payment-verification-key-file stake-alice.vkey`"
+echo "Stake PKH for Bob     : `cardano-cli address key-hash --payment-verification-key-file stake-bob.vkey`"
 
 echo "Update datum-*.json files with the above PKHs before proceeding."
 echo "Done."

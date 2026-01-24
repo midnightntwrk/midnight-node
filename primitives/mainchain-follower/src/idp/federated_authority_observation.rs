@@ -54,12 +54,14 @@ impl FederatedAuthorityInherentDataProvider {
 			address: council_address,
 			policy_id: council_policy_id,
 			members: vec![],
+			members_mainchain: vec![],
 		};
 
 		let technical_committee = AuthBodyConfig {
 			address: technical_committee_address,
 			policy_id: technical_committee_policy_id,
 			members: vec![],
+			members_mainchain: vec![],
 		};
 
 		let config = FederatedAuthorityObservationConfig { council, technical_committee };
@@ -78,11 +80,7 @@ impl sp_inherents::InherentDataProvider for FederatedAuthorityInherentDataProvid
 	) -> Result<(), sp_inherents::Error> {
 		inherent_data.put_data(
 			midnight_primitives_federated_authority_observation::INHERENT_IDENTIFIER,
-			&FederatedAuthorityData {
-				council_authorities: self.data.council_authorities.clone(),
-				technical_committee_authorities: self.data.technical_committee_authorities.clone(),
-				mc_block_hash: self.data.mc_block_hash.clone(),
-			},
+			&self.data,
 		)
 	}
 

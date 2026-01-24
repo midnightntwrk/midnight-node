@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
 use authority_selection_inherents::{
 	AriadneInherentDataProvider, AuthoritySelectionInputs, CommitteeMember, MaybeFromCandidateKeys,
 	RegisterValidatorSignedMessage, filter_trustless_candidates_registrations,
@@ -32,8 +33,9 @@ use sp_runtime::{
 	key_types::{AURA, GRANDPA},
 	traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, OpaqueKeys},
 };
-use sp_std::vec::Vec;
 use std::cmp::max;
+
+use crate::CurrencyWaiver;
 
 pub const MILLISECS_PER_BLOCK: u64 = 6000;
 pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
@@ -153,6 +155,8 @@ impl pallet_partner_chains_session::Config for Test {
 	type SessionManager = ValidatorManagementSessionManager<Test>;
 	type SessionHandler = <TestSessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = TestSessionKeys;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
 }
 
 impl pallet_sidechain::Config for Test {
@@ -192,6 +196,8 @@ impl pallet_session_validator_management::Config for Test {
 	type WeightInfo = ();
 
 	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 impl pallet_timestamp::Config for Test {

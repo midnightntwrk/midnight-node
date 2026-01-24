@@ -15,10 +15,11 @@ use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utx
 use cardano_serialization_lib::PlutusData;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
+	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
+	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
-use sidechain_domain::McBlockHash;
+use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
 
 #[derive(new)]
@@ -55,29 +56,26 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		)
 		.await?;
 
-		let council_authorities = match council_utxo {
+		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => {
-					log::info!(
-						"Successfully decoded {} council members from block {}",
-						keys.len(),
-						utxo.block_number.0
-					);
-					keys
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
-					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
-					vec![]
+					log::warn!(
+						"Failed to decode council datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
+					);
+					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No council UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No council UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.council.address,
 					config.council.policy_id
 				);
-				vec![]
+				AuthoritiesData { authorities: vec![], round: 0 }
 			},
 		};
 
@@ -90,32 +88,26 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		)
 		.await?;
 
-		let technical_committee_authorities = match technical_committee_utxo {
+		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(keys) => {
-					log::info!(
-						"Successfully decoded {} technical committee members from block {}",
-						keys.len(),
-						utxo.block_number.0
-					);
-					keys
-				},
+				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!(
-						"Failed to decode technical committee datum: {}. Using empty list.",
-						e
+						"Failed to decode technical committee datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
 					);
-					vec![]
+					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No technical committee UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No technical committee UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.technical_committee.address,
 					config.technical_committee.policy_id
 				);
-				vec![]
+				AuthoritiesData { authorities: vec![], round: 0 }
 			},
 		};
 
@@ -130,33 +122,74 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
 	///
-	/// Expected format: `[total_signers: Int, [...(CborBytes, Sr25519Keys)]]`
-	/// where Sr25519Keys is a 32-byte public key
+	/// Expected format (VersionedMultisig)
+	/// ```text
+	/// [
+	///   [total_signers: Int, {...(CborBytes, Sr25519Keys)}],  // Multisig (also @list)
+	///   logic_round: Int
+	/// ]
+	/// ```
+	/// The first element (Multisig) contains:
+	/// - total_signers: the threshold number of signers required
+	/// - a map where the key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
+	///   and Sr25519Keys is a 32-byte public key
 	///
-	/// Returns a vector of AuthorityMemberPublicKey
+	/// Returns a GovernanceAuthorityDatums enum containing the authorities and round
 	fn decode_governance_datum(
 		datum: &PlutusData,
-	) -> Result<Vec<AuthorityMemberPublicKey>, Box<dyn std::error::Error + Send + Sync>> {
-		// Try to parse as a Vec of `PlutusData`
-		// We use a Vec here because the `get` method on `PlutusList` can panic
-		let list: Vec<PlutusData> = datum
+	) -> Result<GovernanceAuthorityDatums, Box<dyn std::error::Error + Send + Sync>> {
+		// The new format uses @list annotation, so VersionedMultisig is a list: [data, logic_round]
+		// where data (Multisig) is also a list: [total_signers, members_map]
+		let versioned_list: Vec<PlutusData> = datum
 			.as_list()
-			.ok_or("Expected PlutusData to be a list")?
+			.ok_or("Expected PlutusData to be a list (VersionedMultisig with @list annotation)")?
 			.into_iter()
 			.cloned()
 			.collect();
 
-		if list.len() < 2 {
-			return Err(
-				format!("Expected at least 2 elements in datum list, got {}", list.len()).into()
-			);
+		if versioned_list.len() < 2 {
+			return Err(format!(
+				"Expected at least 2 elements in VersionedMultisig list, got {}",
+				versioned_list.len()
+			)
+			.into());
 		}
 
-		// Get the second element which contains the members
-		// The Multisig type with @list annotation encodes the signers field as a map
-		let members_data = list.get(1).ok_or("Expected index 1 to exist in the list")?;
+		// Get the 'data' field (index 0) which is Multisig: [total_signers, members_map]
+		let data_field = versioned_list.first().ok_or("Expected index 0 to exist")?;
+		let data_list: Vec<PlutusData> = data_field
+			.as_list()
+			.ok_or("Expected 'data' field (Multisig) to be a list")?
+			.into_iter()
+			.cloned()
+			.collect();
 
-		let mut authority_keys = Vec::new();
+		if data_list.len() < 2 {
+			return Err(format!(
+				"Expected at least 2 elements in Multisig list, got {}",
+				data_list.len()
+			)
+			.into());
+		}
+
+		// Get the 'logic_round' field (index 1)
+		let round_field = versioned_list.get(1).ok_or("Expected index 1 to exist")?;
+		let round_bigint = round_field
+			.as_integer()
+			.ok_or("Expected 'logic_round' field to be an integer")?;
+		// Convert BigInt to u64, then to u8
+		let round_u64: u64 = round_bigint
+			.as_u64()
+			.ok_or("Expected 'logic_round' to be a non-negative integer that fits in u64")?
+			.into();
+		let round =
+			u8::try_from(round_u64).map_err(|_| "Expected 'logic_round' to fit in u8 (0-255)")?;
+
+		// Get the members map from data_list[1]
+		let members_data =
+			data_list.get(1).ok_or("Expected index 1 to exist in the Multisig list")?;
+
+		let mut authority_members = Vec::new();
 
 		// Try to parse as a map (Pairs<NativeScriptSigner, Sr25519PubKey>)
 		if let Some(members_map) = members_data.as_map() {
@@ -164,6 +197,31 @@ impl FederatedAuthorityObservationDataSourceImpl {
 			let keys: Vec<PlutusData> = members_map.keys().into_iter().cloned().collect();
 			for i in 0..keys.len() {
 				let key = keys.get(i).ok_or("Index {i:?} not found in members_map keys")?;
+
+				// Extract the Cardano public key hash from the map key
+				// The key is CBOR-encoded (32 bytes), we need to ditch the first 4 bytes
+				let key_bytes = match key.as_bytes() {
+					Some(bytes) => bytes,
+					None => {
+						log::warn!("Map key at index {} is not bytes, skipping", i);
+						continue;
+					},
+				};
+
+				// Extract 28 bytes for MainchainMember by skipping first 4 bytes
+				if key_bytes.len() != 32 {
+					return Err(format!(
+						"Expected 32 bytes for Cardano public key hash, got {}",
+						key_bytes.len()
+					)
+					.into());
+				}
+				let mainchain_member_bytes = &key_bytes[4..32];
+				let mainchain_member = {
+					let mut bytes = [0u8; 28];
+					bytes.copy_from_slice(mainchain_member_bytes);
+					PolicyId(bytes)
+				};
 
 				// Get the value for this key
 				// PlutusMapValues is a collection of PlutusData elements
@@ -193,19 +251,23 @@ impl FederatedAuthorityObservationDataSourceImpl {
 
 				// Sr25519 public keys are exactly 32 bytes
 				if sr25519_key_data.len() != 32 {
-					log::warn!(
-						"Expected 32 bytes for Sr25519 public key, got {}. Skipping.",
+					return Err(format!(
+						"Expected 32 bytes for Sr25519 public key, got {}.",
 						sr25519_key_data.len()
-					);
-					continue;
+					)
+					.into());
 				}
 
-				authority_keys.push(AuthorityMemberPublicKey(sr25519_key_data.to_vec()));
+				authority_members
+					.push((AuthorityMemberPublicKey(sr25519_key_data.to_vec()), mainchain_member));
 			}
 		} else {
 			return Err("Expected second element to be a map".into());
 		}
 
-		Ok(authority_keys)
+		Ok(GovernanceAuthorityDatums::R0(GovernanceAuthorityDatumR0 {
+			authorities: authority_members,
+			round,
+		}))
 	}
 }

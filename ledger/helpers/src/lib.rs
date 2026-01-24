@@ -17,7 +17,6 @@ pub use utils::find_dependency_version;
 
 #[path = "versions"]
 pub mod hard_fork_test {
-	#[cfg(feature = "std")]
 	pub use {
 		base_crypto_hf as base_crypto, coin_structure_hf as coin_structure,
 		ledger_storage_hf as ledger_storage, midnight_serialize_hf as midnight_serialize,
@@ -32,7 +31,6 @@ pub mod hard_fork_test {
 
 #[path = "versions"]
 pub mod latest {
-	#[cfg(feature = "std")]
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,

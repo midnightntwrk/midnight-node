@@ -22,6 +22,7 @@ use midnight_node_runtime::{
 	CrossChainPublic,
 	opaque::{Block, SessionKeys},
 };
+use midnight_primitives::BridgeRecipient;
 use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
@@ -34,8 +35,10 @@ use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::{Slot, sr25519::AuthorityPair as AuraPair};
 use sp_core::Pair;
-use sp_governed_map::{GovernedMapDataSource, GovernedMapIDPApi, GovernedMapInherentDataProvider};
 use sp_inherents::CreateInherentDataProviders;
+use sp_partner_chains_bridge::{
+	TokenBridgeDataSource, TokenBridgeIDPRuntimeApi, TokenBridgeInherentDataProvider,
+};
 use sp_partner_chains_consensus_aura::CurrentSlotProvider;
 use sp_runtime::traits::{Block as BlockT, Header, Zero};
 use sp_session_validator_management::SessionValidatorManagementApi;
@@ -58,9 +61,9 @@ pub(crate) struct ProposalCIDP<T> {
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
-	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
 #[async_trait]
@@ -75,8 +78,8 @@ where
 			ScEpochNumber,
 		>,
 	T::Api: CNightObservationApi<Block>,
-	T::Api: GovernedMapIDPApi<Block>,
 	T::Api: FederatedAuthorityObservationApi<Block>,
+	T::Api: TokenBridgeIDPRuntimeApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_consensus_aura::inherents::InherentDataProvider,
@@ -85,8 +88,8 @@ where
 		AriadneIDP,
 		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
 		MidnightCNightObservationInherentDataProvider,
-		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
+		TokenBridgeInherentDataProvider<BridgeRecipient>,
 	);
 
 	async fn create_inherent_data_providers(
@@ -100,8 +103,8 @@ where
 			mc_hash_data_source,
 			authority_selection_data_source,
 			cnight_observation_data_source,
-			governed_map_data_source,
 			federated_authority_observation_data_source,
+			bridge_data_source,
 		} = self;
 
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source } = config;
@@ -146,20 +149,19 @@ where
 		)
 		.await?;
 
-		let governed_map = GovernedMapInherentDataProvider::new(
-			client.as_ref(),
-			parent_hash,
-			mc_hash.mc_hash(),
-			mc_hash.previous_mc_hash(),
-			governed_map_data_source.as_ref(),
-		)
-		.await?;
-
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
 			parent_hash,
 			&mc_hash.mc_hash(),
+		)
+		.await?;
+
+		let bridge = TokenBridgeInherentDataProvider::new(
+			client.as_ref(),
+			parent_hash,
+			mc_hash.mc_hash(),
+			bridge_data_source.as_ref(),
 		)
 		.await?;
 
@@ -171,8 +173,8 @@ where
 			//#[cfg(feature = "experimental")]
 			//block_beneficiary_provider,
 			cnight_observation,
-			governed_map,
 			federated_authority,
+			bridge,
 		))
 	}
 }
@@ -185,9 +187,9 @@ pub struct VerifierCIDP<T> {
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
-	governed_map_data_source: Arc<dyn GovernedMapDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
 impl<T: Send + Sync> CurrentSlotProvider for VerifierCIDP<T> {
@@ -207,15 +209,15 @@ where
 			ScEpochNumber,
 		>,
 	T::Api: CNightObservationApi<Block>,
-	T::Api: GovernedMapIDPApi<Block>,
 	T::Api: FederatedAuthorityObservationApi<Block>,
+	T::Api: TokenBridgeIDPRuntimeApi<Block>,
 {
 	type InherentDataProviders = (
 		sp_timestamp::InherentDataProvider,
 		AriadneIDP,
 		MidnightCNightObservationInherentDataProvider,
-		GovernedMapInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
+		TokenBridgeInherentDataProvider<BridgeRecipient>,
 	);
 
 	async fn create_inherent_data_providers(
@@ -229,8 +231,8 @@ where
 			mc_hash_data_source,
 			authority_selection_data_source,
 			cnight_observation_data_source,
-			governed_map_data_source,
 			federated_authority_observation_data_source,
+			bridge_data_source,
 		} = self;
 
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source, .. } = config;
@@ -269,15 +271,6 @@ where
 		)
 		.await?;
 
-		let governed_map = GovernedMapInherentDataProvider::new(
-			client.as_ref(),
-			parent_hash,
-			mc_hash.clone(),
-			mc_state_reference.previous_mc_hash(),
-			governed_map_data_source.as_ref(),
-		)
-		.await?;
-
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			client.clone(),
 			federated_authority_observation_data_source.as_ref(),
@@ -286,13 +279,15 @@ where
 		)
 		.await?;
 
-		Ok((
-			timestamp,
-			ariadne_data_provider,
-			cnight_observation,
-			governed_map,
-			federated_authority,
-		))
+		let bridge = TokenBridgeInherentDataProvider::new(
+			client.as_ref(),
+			parent_hash,
+			mc_hash,
+			bridge_data_source.as_ref(),
+		)
+		.await?;
+
+		Ok((timestamp, ariadne_data_provider, cnight_observation, federated_authority, bridge))
 	}
 }
 

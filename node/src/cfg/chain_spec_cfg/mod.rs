@@ -61,6 +61,12 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_federated_authority_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// System parameters config file e.g. devnet/system-parameters-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_system_parameters_config: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
@@ -72,6 +78,7 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		|| cfg.chainspec_pc_chain_config.is_some()
 		|| cfg.chainspec_cnight_genesis.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
+		|| cfg.chainspec_system_parameters_config.is_some()
 	{
 		if cfg.chainspec_name.is_none() {
 			missing.push("chainspec_name".to_string());
@@ -96,6 +103,9 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		}
 		if cfg.chainspec_federated_authority_config.is_none() {
 			missing.push("chainspec_federated_authority_config".to_string());
+		}
+		if cfg.chainspec_system_parameters_config.is_none() {
+			missing.push("chainspec_system_parameters_config".to_string());
 		}
 	}
 

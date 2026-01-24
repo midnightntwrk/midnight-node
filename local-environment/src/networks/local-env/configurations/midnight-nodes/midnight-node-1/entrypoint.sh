@@ -25,12 +25,14 @@ set -euxo pipefail
   --node-key=0000000000000000000000000000000000000000000000000000000000000001 \
   --base-path=/data \
   --unsafe-rpc-external \
+  --rpc-methods=Unsafe \
   --rpc-port=9933 \
   --rpc-cors=all \
   --prometheus-port=9615 \
   --prometheus-external \
   --state-pruning=archive \
-  --blocks-pruning=archive &
+  --blocks-pruning=archive \
+  --enable-offchain-indexing true &
 
   touch /shared/midnight-node-1.ready
 

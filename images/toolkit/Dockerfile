@@ -1,4 +1,4 @@
-FROM debian:trixie-slim
+FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
 # ntp to keep correct time
 # curl to enable compose healthchecks
 RUN apt-get update -qq \
@@ -16,7 +16,7 @@ COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 ENV MIDNIGHT_PP=/.cache/midnight/zk-params
-ENV MN_SYNC_CACHE=/.cache/sync
+ENV MN_FETCH_CACHE=redb:/.cache/fetch/toolkit.db
 
 # Get node version for the image tag
 COPY node/Cargo.toml /node/

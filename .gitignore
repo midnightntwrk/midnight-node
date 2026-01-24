@@ -24,6 +24,7 @@ artifacts/
 artifacts-arm64/
 artifacts-amd64/
 test-artifacts/
+scan_reports/
 
 ui/tests/.yarn
 ui/tests/logs
@@ -89,3 +90,9 @@ dist
 
 # Handy to locally save images
 .bin
+
+# Toolkit cache
+toolkit.db
+
+# AGENTS.local.md - locally-defined rules for AI agents
+AGENTS.local.md

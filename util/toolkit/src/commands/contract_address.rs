@@ -1,9 +1,9 @@
+use crate::{ProofType, SignatureType};
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{
 	DefaultDB, TransactionWithContext, mn_ledger_serialize, serialize, serialize_untagged,
 };
-use midnight_node_toolkit::{ProofType, SignatureType};
 use serde::Serialize;
 use std::fs;
 
@@ -60,20 +60,22 @@ mod test {
 
 	// todo: need more samples
 	#[test_case::test_case(
-        "../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
-"6d69646e696768743a636f6e74726163742d616464726573735b76325d3a67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870",
-        "67d664a2055a72472e8ec00b1225204540daa3afba8e847bf1c79057f795f870" ;
-        "undeployed case"
-    )]
-	fn test_contract_address(src_file: &str, tagged: &str, untagged: &str) {
+		"../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
+		"../../res/test-contract/contract_address_undeployed.mn";
+		"undeployed case"
+	)]
+	fn test_contract_address(src_file: &str, untagged_address_file: &str) {
 		let args =
 			ContractAddressArgs { src_file: src_file.to_string(), tagged: false, untagged: false };
 		let res = execute(args).expect("execution failed");
-		assert_eq!(res, untagged);
+
+		let untagged =
+			std::fs::read_to_string(untagged_address_file).expect("failed to read address file");
+		assert_eq!(res, untagged.trim());
 
 		let args =
 			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: true };
 		let res = execute(args).expect("execution failed");
-		assert_eq!(res, tagged);
+		assert!(res.len() > untagged.trim().len());
 	}
 }

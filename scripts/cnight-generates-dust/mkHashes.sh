@@ -25,10 +25,10 @@ echo "CNight Policy ID              : `cat cnight_policy.hash`"
 # A single token must be attached to a valid registration.  Assume empty asset
 # name
 cardano-cli hash script \
-  --script-file auth_token_policy.plutus > auth_token.hash
-echo "Authentication token Policy ID: `cat auth_token.hash`"
+  --script-file mapping_validator.plutus > mapping_validator.hash
+echo "Mapping Validator Policy ID: `cat mapping_validator.hash`"
 
 # Address to observe for registrations
 cardano-cli address build \
-   --payment-script-file auth_token_policy.plutus > mapping_validator.addr
-echo "Mapping validator address     : `cat mapping_validator.addr`"
+   --payment-script-file mapping_validator.plutus > mapping_validator.addr
+echo "Mapping Validator address     : `cat mapping_validator.addr`"

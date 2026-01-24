@@ -1,13 +1,13 @@
+use crate::cli_parsers::{self as cli};
 use clap::Args;
-use midnight_node_toolkit::cli_parsers::{self as cli};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
+use crate::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
 use midnight_node_ledger_helpers::{
 	Serializable, SystemTransaction, Tagged, WalletSeed, midnight_serialize::tagged_deserialize,
 	serialize,
 };
-use midnight_node_toolkit::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
 
 #[derive(Deserialize)]
 pub struct CNightGeneratesDustConfig {
@@ -63,8 +63,8 @@ pub async fn execute(
 		.iter()
 		.map(|(_k, v)| {
 			let wallet_seed_str = v.as_str().ok_or("seeds file object value was not a string")?;
-			let wallet_seed_bytes: [u8; 32] = cli::hex_str_decode(wallet_seed_str)?;
-			Ok(WalletSeed::from(wallet_seed_bytes))
+			let wallet_seed = WalletSeed::try_from_hex_str(wallet_seed_str)?;
+			Ok(wallet_seed)
 		})
 		.collect();
 
@@ -114,7 +114,8 @@ fn serialize_and_write<T: Serializable + Tagged>(
 #[cfg(test)]
 mod test {
 	use super::serialize_and_write;
-	use crate::{Cli, DefaultDB, LedgerState, run_command};
+	use crate::cli::{Cli, run_command};
+	use crate::{DefaultDB, LedgerState};
 	use clap::Parser;
 	use std::{
 		env::temp_dir,
