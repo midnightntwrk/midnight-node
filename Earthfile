@@ -112,7 +112,16 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.92-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install curl for rust installation
+    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install rust
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93
+    ENV PATH="/root/.cargo/bin:${PATH}"
+
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -120,7 +129,7 @@ subxt:
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
     RUN cargo binstall -y subxt-cli@${SUBXT_VERSION}
-    RUN cp /usr/local/cargo/bin/subxt /usr/local/bin/subxt
+    RUN cp /root/.cargo/bin/subxt /usr/local/bin/subxt
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
@@ -191,7 +200,22 @@ rebuild-sqlx:
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
     # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 node:22-trixie
+    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install Node.js repository and dependencies
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
+    # Install Node.js
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
     # renovate: datasource=npm packageName=aiken-lang/aiken
     ENV aiken_version=1.1.19
     RUN npm install -g @aiken-lang/aiken@${aiken_version}
@@ -489,19 +513,15 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
-    # Install unzip
-    RUN apt update && apt install unzip
-    # Install gh
-    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
-        && mkdir -p -m 755 /etc/apt/keyrings \
-        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-        && mkdir -p -m 755 /etc/apt/sources.list.d \
-        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-        && apt update \
-        && apt install gh -y
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    # Install unzip and wget
+    RUN microdnf -y install unzip wget tar gzip && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    # Install gh CLI
+    RUN wget -q https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz && \
+        tar -xzf gh_2.62.0_linux_amd64.tar.gz && \
+        mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ && \
+        rm -rf gh_2.62.0_linux_amd64*
 
     # Fetch CompactC x86_64
     COPY COMPACTC_VERSION .
@@ -544,7 +564,7 @@ contract-precompile-image-single-platform:
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 #    FROM +contract-precompile-image
     COPY COMPACTC_VERSION .
     ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
@@ -558,22 +578,34 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.92-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install curl for rust installation
+    RUN microdnf -y install curl-minimal ca-certificates && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install rust
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93
+    ENV PATH="/root/.cargo/bin:${PATH}"
 
     # Install build dependencies
-    RUN apt-get update -qq && \
-        apt-get upgrade -y -qq && \
-        apt-get install -y --no-install-recommends -qq \
-        build-essential \
+    RUN microdnf -y update && \
+        microdnf -y install \
+        gcc \
+        gcc-c++ \
+        make \
         clang \
-        libssl-dev \
-        libpq-dev \
-        libsqlite3-dev \
+        openssl-devel \
+        libpq-devel \
+        sqlite-devel \
         openssl \
         protobuf-compiler \
-        pkg-config \
-        grcov \
-        openssh-client
+        pkgconfig \
+        openssh-clients \
+        git \
+        tar \
+        gzip && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
         # gcc-x86-64-linux-gnu \
@@ -606,7 +638,7 @@ node-ci-image-single-platform:
 
     # SAVE IMAGE under the rust version used.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.92"
+    ENV IMAGE_TAG="1.93"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -616,14 +648,13 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:$RUST_VERSION-$NATIVEARCH
 
     # Used to add repository for nodejs
-    RUN apt-get update -qq \
-        && apt-get upgrade -y -qq \
-        && apt-get install -y -qq ca-certificates gnupg \
-        && rm -rf /var/lib/apt/lists/*
+    RUN microdnf -y update && \
+        microdnf -y install ca-certificates && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     RUN cargo --version
 
@@ -646,7 +677,21 @@ prep:
 # Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
     ARG NATIVEARCH
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install Node.js repository and dependencies
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
+    # Install Node.js
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -697,7 +742,8 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
-    RUN apt-get update && apt-get install -y jq
+    RUN microdnf -y install jq && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -810,15 +856,19 @@ test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
-    # Add NodeSource repository with GPG verification
-    RUN mkdir -p /usr/share/keyrings && \
-        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg && \
-        echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    # Install Node.js repository and dependencies
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
 
     # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Test
     RUN mkdir /test-artifacts-toolkit
@@ -1124,7 +1174,22 @@ audit-rust:
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install Node.js repository and dependencies
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
+    # Install Node.js
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
@@ -1136,7 +1201,22 @@ audit-npm:
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install Node.js repository and dependencies
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
+    # Install Node.js
+    RUN microdnf -y install nodejs && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
@@ -1178,22 +1258,33 @@ partnerchains-dev:
 
     ARG EARTHLY_GIT_SHORT_HASH
 
-    FROM ubuntu:24.04
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
     # Get node version for the image tag
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     RUN rm -rf /node
     LET NODE_VERSION = "$(cat node_version)"
     LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
+
+    # Install Node.js repository
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
     # Install necessary packages
-    RUN apt-get update -qq && apt-get install -y \
+    RUN microdnf -y install \
         curl \
         unzip \
         nodejs \
         bash \
         jq \
         socat \
-        && rm -rf /var/lib/apt/lists/*
+        && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Download cardano node (for cardano-cli)
     RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
