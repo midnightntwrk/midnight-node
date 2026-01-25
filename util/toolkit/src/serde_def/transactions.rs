@@ -33,6 +33,31 @@ impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>> SourceTransa
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
+	/// If the transactions are loaded from an off-chain source, i.e. they were never part of any
+	/// block, assume they are all in the same block
+	pub fn from_txs_with_context_ignored(
+		txs_with_context: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
+	) -> Self {
+		let now = Timestamp::from_secs(
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs(),
+		);
+		let context =
+			BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+		let blocks = vec![BlockData {
+			hash: H256::zero(),
+			parent_hash: H256::zero(),
+			number: 0,
+			transactions: txs_with_context.into_iter().map(|t| t.tx).collect(),
+			context,
+			state_root: None,
+		}];
+
+		Self { blocks }
+	}
+
 	pub fn from_txs_with_context(
 		txs: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
 		dust_warp: bool,

@@ -128,18 +128,24 @@ where
 	Ok(res)
 }
 
-pub fn hex_str_decode<T>(input: &str) -> Result<T, clap::error::Error>
-where
-	T: TryFrom<Vec<u8>, Error = Vec<u8>>,
-{
-	let bytes = hex::decode(input).map_err(|e| {
+pub fn hex_bytes(input: &str) -> Result<Vec<u8>, clap::error::Error> {
+	// Remove 0x prefix if present
+	let hex_str = input.strip_prefix("0x").unwrap_or(input);
+	hex::decode(hex_str).map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
 		);
 		err
-	})?;
+	})
+}
+
+pub fn hex_str_decode<T>(input: &str) -> Result<T, clap::error::Error>
+where
+	T: TryFrom<Vec<u8>, Error = Vec<u8>>,
+{
+	let bytes = hex_bytes(input)?;
 
 	let res: T = bytes.try_into().map_err(|e: Vec<u8>| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
