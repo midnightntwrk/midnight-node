@@ -1193,7 +1193,6 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN corepack enable
     RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
       && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
@@ -1217,10 +1216,12 @@ audit-yarn:
     RUN microdnf -y install nodejs && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
+    # Install and enable corepack for yarn support
+    RUN npm install -g corepack && corepack enable
+
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
-    RUN corepack enable
     RUN yarn install --immutable
     RUN mkdir -p /scan_reports
     RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
