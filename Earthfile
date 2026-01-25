@@ -118,8 +118,8 @@ subxt:
     RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install rust
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93
+    # Install rust with default profile
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile default
     ENV PATH="/root/.cargo/bin:${PATH}"
 
     RUN rustup component add rustfmt
@@ -584,8 +584,8 @@ node-ci-image-single-platform:
     RUN microdnf -y install curl-minimal ca-certificates && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install rust
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93
+    # Install rust with default profile for profiler runtime support (needed for cargo llvm-cov)
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile default
     ENV PATH="/root/.cargo/bin:${PATH}"
 
     # Install build dependencies
