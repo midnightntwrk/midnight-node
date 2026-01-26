@@ -35,7 +35,6 @@ use self::{
 
 type CfgSourcesMap = BTreeMap<&'static str, config::Config>;
 
-pub mod addresses;
 pub mod chain_spec_cfg;
 pub mod meta_cfg;
 pub mod midnight_cfg;
@@ -83,7 +82,7 @@ impl SubstrateCli for Cfg {
 	}
 
 	fn support_url() -> String {
-		"support.anonymous.an".into()
+		"https://github.com/midnightntwrk/midnight-node/issues".into()
 	}
 
 	fn copyright_start_year() -> i32 {

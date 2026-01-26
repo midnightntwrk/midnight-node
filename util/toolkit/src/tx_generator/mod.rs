@@ -91,6 +91,7 @@ where
 				src_files.clone(),
 				extension.to_string(),
 				src.dust_warp,
+				src.ignore_block_context,
 			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
@@ -132,17 +133,18 @@ where
 
 		// ------ accept multiple urls ------
 		let mut dests = vec![];
-		for url in dest.dest_urls {
-			if dry_run {
-				println!("Dry-run: Destination RPC: {:?}", &url);
-				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
-				continue;
-			}
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::<S, P>::new(url.clone(), dest.rate));
-
-			dests.push(destination);
+		if dry_run {
+			println!("Dry-run: Destination RPC(s): {:?}", &dest.dest_urls);
+			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
+
+		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+		));
+
+		dests.push(destination);
 
 		Ok(dests)
 	}

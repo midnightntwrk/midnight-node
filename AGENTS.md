@@ -135,7 +135,7 @@ Networks other than `dev`/`node-dev-01` require AWS access for genesis rebuilds.
 
 ## Change Files
 
-PRs that affect the node or toolkit images should include a change file. Create a new file in the `changes/` directory with the format:
+PRs that affect the node or toolkit images should include a change file. Create a new file in the `changes/added` or `changes/changed` directory with the format:
 
 ```
 #tag1 #tag2

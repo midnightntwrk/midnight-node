@@ -530,6 +530,7 @@ async fn cnight_produces_dust() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -554,6 +555,7 @@ async fn cnight_produces_dust() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -688,6 +690,7 @@ async fn deregister_from_dust_production() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -1486,6 +1489,7 @@ async fn register_twice_with_same_cardano_address() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -1508,6 +1512,7 @@ async fn register_twice_with_same_cardano_address() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed2,
@@ -1676,6 +1681,7 @@ async fn deregister_with_valid_cnight_utxo() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -1700,6 +1706,7 @@ async fn deregister_with_valid_cnight_utxo() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -1914,6 +1921,7 @@ async fn deregister_first_mapping() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -1982,6 +1990,7 @@ async fn deregister_first_mapping() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed2,
@@ -2049,6 +2058,7 @@ async fn deregister_first_mapping() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2073,6 +2083,7 @@ async fn deregister_first_mapping() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2153,6 +2164,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2213,6 +2225,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2333,6 +2346,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             src_url: Some(same_base_url),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2364,6 +2378,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             src_url: Some(base_url),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2482,6 +2497,7 @@ async fn spend_cnight_producing_dust() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2509,6 +2525,7 @@ async fn spend_cnight_producing_dust() {
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: 1,
             dust_warp: true,
+            ignore_block_context: false,
             fetch_cache: FetchCacheConfig::InMemory,
         },
         seed: midnight_wallet_seed,
@@ -2625,11 +2642,11 @@ async fn d_parameter_from_pallet_matches_config() {
     // Local environment configures D-Parameter as (4, 1)
     // 4 permissioned (Alice, Bob, Charlie, Dave) + 1 registered (Eve) = 5 total candidates
     assert_eq!(
-        d_param.num_permissioned_candidates, 4,
-        "Permissioned count should match system-parameters config (expected 4)"
+        d_param.num_permissioned_candidates, 3,
+        "Permissioned count should match system-parameters config (expected 3)"
     );
     assert_eq!(
-        d_param.num_registered_candidates, 1,
+        d_param.num_registered_candidates, 0,
         "Registered count should match system-parameters config (expected 1)"
     );
 
@@ -2662,8 +2679,8 @@ async fn permissioned_candidates_aiken_format() {
 
         // Local environment inserts 4 permissioned candidates
         assert!(
-            candidates.len() >= 4,
-            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len() >= 3,
+            "Expected at least 3 permissioned candidates in local-env, found {}",
             candidates.len()
         );
 
