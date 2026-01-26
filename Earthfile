@@ -210,6 +210,14 @@ rebuild-genesis-state:
     # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
+    # Copy ledger parameters config (undeployed uses res/dev/)
+    RUN mkdir -p /genesis-config
+    IF [ "${NETWORK}" = "undeployed" ]
+        COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+    ELSE
+        COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+    END
+
     # wallet-seed-3 is the wallet Lace uses for testing.
     # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
@@ -226,7 +234,8 @@ rebuild-genesis-state:
     IF [ -f /secrets/genesis-seeds.json ]
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
-            --seeds-file /secrets/genesis-seeds.json
+            --seeds-file /secrets/genesis-seeds.json \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
