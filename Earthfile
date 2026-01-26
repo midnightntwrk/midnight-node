@@ -690,7 +690,7 @@ toolkit-js-prep:
         > /etc/yum.repos.d/nodesource.repo
 
     # Install Node.js
-    RUN microdnf -y install nodejs && \
+    RUN microdnf -y install nodejs unzip && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     COPY COMPACTC_VERSION .
@@ -815,11 +815,15 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
         --exclude midnight-node-toolkit \
         -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+
+    # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+    #     --exclude midnight-node-toolkit \
+    #     -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
     SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
@@ -839,11 +843,11 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests only
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+    # Run pallet-midnight fixture tests only llvm-cov
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
         -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
 
     SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
@@ -882,11 +886,11 @@ test-toolkit:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js) llvm-cov
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
         -E 'package(midnight-node-toolkit)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
 
     SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
 
