@@ -1,0 +1,73 @@
+name: Toolkit PostgreSQL Tests
+
+on:
+  merge_group:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "util/toolkit/**"
+      - ".github/workflows/toolkit-postgres-tests.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "util/toolkit/**"
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-tests:
+    name: Run PostgreSQL integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: toolkit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4.0.0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90"
+
+      - name: Configure git for private repos
+        run: |
+          git config --global url."https://${GH_PAT}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+          mkdir -p $HOME/.cargo
+          echo "[net]" >> $HOME/.cargo/config
+          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+        env:
+          GH_PAT: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run PostgreSQL integration tests
+        env:
+          TOOLKIT_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/toolkit_test
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+        run: |
+          cargo test --package midnight-node-toolkit --release -- --ignored --test-threads=1
