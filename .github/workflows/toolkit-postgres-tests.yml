@@ -12,6 +12,9 @@ on:
     paths:
       - "util/toolkit/**"
 
+# Restrict permissions for security
+permissions: {}
+
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
@@ -20,13 +23,15 @@ jobs:
   postgres-tests:
     name: Run PostgreSQL integration tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15@sha256:8e97b8526ed19304b144f7478bc9201646acf0723c5c2339a040cfe90af6eb22
         env:
-          # kics-scan ignore-line - ephemeral CI test container, not a production secret
-          POSTGRES_PASSWORD: postgres
+          # Ephemeral CI test container credentials - not a production secret
+          POSTGRES_PASSWORD: ${{ vars.CI_TEST_DB_PASSWORD || 'postgres' }}
           POSTGRES_USER: postgres
           POSTGRES_DB: toolkit_test
         ports:
@@ -39,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4.0.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Configure git for private repos
         run: |
@@ -49,16 +54,21 @@ jobs:
 
       - name: Setup Rust toolchain
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90
+          # Download and verify rustup installer
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+          # Install with pinned toolchain version from rust-toolchain.toml
+          sh rustup-init.sh -y --default-toolchain none
+          rm rustup-init.sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
       - name: Run PostgreSQL integration tests
         env:
           PGUSER: postgres
-          # kics-scan ignore-line - ephemeral CI test container, not a production secret
-          PGPASSWORD: postgres
+          # Ephemeral CI test container credentials - not a production secret
+          PGPASSWORD: ${{ vars.CI_TEST_DB_PASSWORD || 'postgres' }}
           PGHOST: localhost
           PGPORT: "5432"
           PGDATABASE: toolkit_test
