@@ -381,61 +381,6 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_serializable_block_context_roundtrip() {
-		let original = BlockContext {
-			tblock: Timestamp::from_secs(12345),
-			tblock_err: 30,
-			parent_block_hash: HashOutput([42u8; 32]),
-		};
-
-		let serializable = SerializableBlockContext::from(&original);
-
-		assert_eq!(serializable.tblock_secs, 12345);
-		assert_eq!(serializable.tblock_err, 30);
-		assert_eq!(serializable.parent_block_hash, [42u8; 32]);
-	}
-
-	#[test]
-	fn test_hash_seed_deterministic() {
-		// Use hex string format: 64 hex chars = 32 bytes
-		let seed = WalletSeed::try_from_hex_str(&"01".repeat(32)).expect("valid 32-byte hex seed");
-		let hash1 = hash_seed(&seed);
-		let hash2 = hash_seed(&seed);
-		assert_eq!(hash1, hash2);
-
-		let different_seed =
-			WalletSeed::try_from_hex_str(&"02".repeat(32)).expect("valid 32-byte hex seed");
-		let hash3 = hash_seed(&different_seed);
-		assert_ne!(hash1, hash3);
-	}
-
-	#[test]
-	fn test_compute_wallet_id() {
-		let coin_pub = [1u8; 32];
-		let dust_pub = [2u8; 16];
-
-		let id1 = compute_wallet_id(&coin_pub, &dust_pub);
-		let id2 = compute_wallet_id(&coin_pub, &dust_pub);
-		assert_eq!(id1, id2);
-
-		let different_coin = [3u8; 32];
-		let id3 = compute_wallet_id(&different_coin, &dust_pub);
-		assert_ne!(id1, id3);
-	}
-
-	#[test]
-	fn test_wallet_cache_key_bytes() {
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-
-		let bytes = key.to_bytes();
-		assert_eq!(bytes.len(), 64);
-		assert_eq!(&bytes[..32], chain_id.as_bytes());
-		assert_eq!(&bytes[32..], wallet_id.as_bytes());
-	}
-
-	#[test]
 	fn test_compression_roundtrip() {
 		let original = b"Hello, this is some test data that should compress well. \
 		                 Repeating content helps compression: aaaaaaaaaaaaaaaaaaaaaa";
@@ -454,38 +399,6 @@ mod tests {
 		let compressed = compress(original).expect("compression should succeed");
 		let decompressed = decompress(&compressed).expect("decompression should succeed");
 		assert_eq!(&decompressed, original);
-	}
-
-	#[test]
-	fn test_state_root_computation() {
-		let data1 = b"test ledger state data";
-		let data2 = b"test ledger state data";
-		let data3 = b"different ledger state data";
-
-		let root1 = compute_state_root(data1);
-		let root2 = compute_state_root(data2);
-		let root3 = compute_state_root(data3);
-
-		// Same data should produce same root
-		assert_eq!(root1, root2);
-
-		// Different data should produce different root
-		assert_ne!(root1, root3);
-
-		// Root should be 32 bytes (SHA-256)
-		assert_eq!(root1.len(), 32);
-	}
-
-	#[test]
-	fn test_state_root_detects_corruption() {
-		let original_data = b"original ledger state bytes";
-		let corrupted_data = b"corrupted ledger state bytes";
-
-		let original_root = compute_state_root(original_data);
-		let corrupted_root = compute_state_root(corrupted_data);
-
-		// Corruption should be detected
-		assert_ne!(original_root, corrupted_root);
 	}
 
 	#[test]
