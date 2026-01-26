@@ -173,7 +173,7 @@
     "blockUsageFactor": 18446744073709551616,
     "writeFactor": 18446744073709551616
   },
-  "global_ttl": 604800,
+  "global_ttl": 1209600,
   "cost_dimension_min_ratio": 4611686018427387904,
   "price_adjustment_a_parameter": 1844674407370955161600,
   "cardano_to_midnight_bridge_fee_basis_points": 500,
