@@ -2,7 +2,7 @@ name: Main - Toolkit and Node build/publish
 
 on:
   push:
-    branches: ["main", "release/*", "SRE-1739/phase1-docker-image-signing"]  # TODO: remove test branch before merge
+    branches: ["main", "release/*"]
   workflow_dispatch:
     inputs:
       branch:
