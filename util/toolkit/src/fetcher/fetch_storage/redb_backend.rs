@@ -340,3 +340,190 @@ where
 		Self::from_bytes(data1).cmp(&Self::from_bytes(data2))
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::fetcher::wallet_state_cache::{SerializableBlockContext, WalletSnapshot};
+	use crate::{ProofType, SignatureType};
+	use midnight_node_ledger_helpers::DefaultDB;
+	use tempfile::tempdir;
+
+	type TestRedbBackend = RedbBackend<SignatureType, ProofType, DefaultDB>;
+
+	fn create_test_cache(block_height: u64) -> WalletStateCache {
+		WalletStateCache {
+			chain_id: H256::from([1u8; 32]),
+			wallet_id: H256::from([2u8; 32]),
+			block_height,
+			ledger_state_bytes: vec![0u8; 1000], // 1KB of test data
+			wallet_snapshots: vec![WalletSnapshot {
+				seed_hash: H256::from([3u8; 32]),
+				shielded_state_bytes: vec![],
+				dust_local_state_bytes: None,
+			}],
+			latest_block_context: SerializableBlockContext {
+				tblock_secs: 1234567890,
+				tblock_err: 0,
+				parent_block_hash: [4u8; 32],
+			},
+			state_root: Some(vec![5u8; 32]),
+			version: "wallet-state-cache-v1".to_string(),
+		}
+	}
+
+	#[tokio::test]
+	async fn test_redb_wallet_state_roundtrip() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let wallet_id = H256::from([2u8; 32]);
+		let cache = create_test_cache(100);
+
+		// Initially no cache
+		let result = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
+		assert!(result.is_none());
+
+		// Save cache
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache.clone()).await;
+
+		// Retrieve cache
+		let retrieved = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
+		assert!(retrieved.is_some());
+		let retrieved = retrieved.unwrap();
+
+		assert_eq!(retrieved.chain_id, cache.chain_id);
+		assert_eq!(retrieved.wallet_id, cache.wallet_id);
+		assert_eq!(retrieved.block_height, cache.block_height);
+		assert_eq!(retrieved.ledger_state_bytes, cache.ledger_state_bytes);
+		assert_eq!(retrieved.version, cache.version);
+		assert_eq!(retrieved.state_root, cache.state_root);
+	}
+
+	#[tokio::test]
+	async fn test_redb_wallet_state_get_cached_height() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let wallet_id = H256::from([2u8; 32]);
+
+		// No cache initially
+		assert!(
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id)
+				.await
+				.is_none()
+		);
+
+		// Save cache at height 500
+		let cache = create_test_cache(500);
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
+
+		// Check height
+		let height =
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await;
+		assert_eq!(height, Some(500));
+	}
+
+	#[tokio::test]
+	async fn test_redb_wallet_state_delete() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let wallet_id = H256::from([2u8; 32]);
+		let cache = create_test_cache(100);
+
+		// Save and verify exists
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
+				.await
+				.is_some()
+		);
+
+		// Delete
+		WalletStateCaching::delete_wallet_state(&backend, chain_id, wallet_id).await;
+
+		// Verify deleted
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
+				.await
+				.is_none()
+		);
+	}
+
+	#[tokio::test]
+	async fn test_redb_wallet_state_update() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let wallet_id = H256::from([2u8; 32]);
+
+		// Save at height 100
+		let cache1 = create_test_cache(100);
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache1).await;
+		assert_eq!(
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await,
+			Some(100)
+		);
+
+		// Update to height 200
+		let cache2 = create_test_cache(200);
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache2).await;
+		assert_eq!(
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await,
+			Some(200)
+		);
+	}
+
+	#[tokio::test]
+	async fn test_redb_wallet_state_multiple_wallets() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let wallet_id_1 = H256::from([2u8; 32]);
+		let wallet_id_2 = H256::from([3u8; 32]);
+
+		let mut cache1 = create_test_cache(100);
+		cache1.wallet_id = wallet_id_1;
+
+		let mut cache2 = create_test_cache(200);
+		cache2.wallet_id = wallet_id_2;
+
+		// Save both
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id_1, cache1).await;
+		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id_2, cache2).await;
+
+		// Verify independent
+		assert_eq!(
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id_1).await,
+			Some(100)
+		);
+		assert_eq!(
+			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id_2).await,
+			Some(200)
+		);
+
+		// Delete one doesn't affect other
+		WalletStateCaching::delete_wallet_state(&backend, chain_id, wallet_id_1).await;
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id_1)
+				.await
+				.is_none()
+		);
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id_2)
+				.await
+				.is_some()
+		);
+	}
+}

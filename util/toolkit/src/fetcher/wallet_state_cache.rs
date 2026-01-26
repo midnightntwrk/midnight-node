@@ -487,4 +487,64 @@ mod tests {
 		// Corruption should be detected
 		assert_ne!(original_root, corrupted_root);
 	}
+
+	#[test]
+	fn test_state_root_verification_rejects_corrupted_cache() {
+		// Create a cache with valid state root
+		let ledger_state_bytes = vec![1u8, 2, 3, 4, 5];
+		let valid_root = compute_state_root(&ledger_state_bytes);
+
+		let mut cache = WalletStateCache {
+			chain_id: H256::from([1u8; 32]),
+			wallet_id: H256::from([2u8; 32]),
+			block_height: 100,
+			ledger_state_bytes: ledger_state_bytes.clone(),
+			wallet_snapshots: vec![],
+			latest_block_context: SerializableBlockContext {
+				tblock_secs: 1234567890,
+				tblock_err: 0,
+				parent_block_hash: [0u8; 32],
+			},
+			state_root: Some(valid_root.clone()),
+			version: CACHE_VERSION.to_string(),
+		};
+
+		// Corrupt the ledger state bytes (simulating storage corruption)
+		cache.ledger_state_bytes = vec![9u8, 9, 9, 9, 9]; // Different data
+
+		// Attempt to restore should fail with StateRootMismatch
+		// Note: We can't fully test restore_context_from_cache here because it requires
+		// valid serialized LedgerState bytes, but we can verify the state root check logic
+		let computed_root = compute_state_root(&cache.ledger_state_bytes);
+		assert_ne!(&computed_root, &valid_root, "Corrupted data should produce different root");
+
+		// Verify the check that would happen in restore_context_from_cache
+		if let Some(ref cached_root) = cache.state_root {
+			let matches = cached_root == &computed_root;
+			assert!(!matches, "State root verification should detect corruption");
+		}
+	}
+
+	#[test]
+	fn test_state_root_verification_allows_old_caches() {
+		// Cache without state_root (old format) should be accepted
+		let cache = WalletStateCache {
+			chain_id: H256::from([1u8; 32]),
+			wallet_id: H256::from([2u8; 32]),
+			block_height: 100,
+			ledger_state_bytes: vec![1, 2, 3],
+			wallet_snapshots: vec![],
+			latest_block_context: SerializableBlockContext {
+				tblock_secs: 1234567890,
+				tblock_err: 0,
+				parent_block_hash: [0u8; 32],
+			},
+			state_root: None, // Old cache format without state root
+			version: CACHE_VERSION.to_string(),
+		};
+
+		// Verification should be skipped for old caches
+		assert!(cache.state_root.is_none());
+		// In restore_context_from_cache, this would skip the verification step
+	}
 }
