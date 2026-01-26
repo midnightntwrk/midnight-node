@@ -115,7 +115,7 @@ subxt:
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
     # Install curl for rust installation
-    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make && \
+    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install rust with complete profile for profiler runtime support
