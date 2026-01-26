@@ -28,7 +28,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15@sha256:8e97b8526ed19304b144f7478bc9201646acf0723c5c2339a040cfe90af6eb22
+        image: postgres:15@sha256:5f07e69ced9ee30ec814cd12c555694276bb1d520e971205f39a833362748a3c
         env:
           # Ephemeral CI test container credentials - not a production secret
           POSTGRES_PASSWORD: ${{ vars.CI_TEST_DB_PASSWORD || 'postgres' }}
