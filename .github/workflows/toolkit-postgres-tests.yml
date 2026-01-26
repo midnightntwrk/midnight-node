@@ -25,6 +25,7 @@ jobs:
       postgres:
         image: postgres:15
         env:
+          # kics-scan ignore-line - ephemeral CI test container, not a production secret
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
           POSTGRES_DB: toolkit_test
@@ -55,6 +56,12 @@ jobs:
 
       - name: Run PostgreSQL integration tests
         env:
-          TOOLKIT_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/toolkit_test
+          PGUSER: postgres
+          # kics-scan ignore-line - ephemeral CI test container, not a production secret
+          PGPASSWORD: postgres
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGDATABASE: toolkit_test
         run: |
+          export TOOLKIT_TEST_POSTGRES_URL="postgres://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}"
           cargo test --package midnight-node-toolkit --release postgres_backend::tests -- --ignored --test-threads=1
