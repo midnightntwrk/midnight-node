@@ -826,7 +826,7 @@ test:
     # RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
 
 # Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
 # These tests do NOT require toolkit-js
@@ -849,7 +849,7 @@ test-pallet-fixtures:
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
 
-    SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
+    # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 test-toolkit:
@@ -892,7 +892,7 @@ test-toolkit:
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
 
-    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
+    # SAVE ARTIFACT --if-exists ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
