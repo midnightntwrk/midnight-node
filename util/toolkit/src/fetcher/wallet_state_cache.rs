@@ -402,6 +402,14 @@ mod tests {
 	}
 
 	#[test]
+	fn test_decompress_invalid_data_returns_error() {
+		// Invalid/corrupted data should return an error, not panic
+		let garbage = b"this is not valid zstd compressed data";
+		let result = decompress(garbage);
+		assert!(result.is_err(), "decompress should return error for invalid data");
+	}
+
+	#[test]
 	fn test_state_root_verification_rejects_corrupted_cache() {
 		// Create a cache with valid state root
 		let ledger_state_bytes = vec![1u8, 2, 3, 4, 5];
