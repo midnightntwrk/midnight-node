@@ -13,9 +13,7 @@
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::*;
-use std::{fs::File, io::Write, marker::PhantomData, sync::Arc, time::Duration};
-use subxt::{OnlineClient, PolkadotConfig};
-use tokio::sync::Semaphore;
+use std::{fs::File, io::Write, marker::PhantomData, sync::Arc};
 
 use crate::{
 	sender::Sender,
@@ -38,6 +36,9 @@ pub struct Destination {
 	/// Save generated tx file as bytes rather than JSON.
 	#[arg(long, default_value = "false", conflicts_with = "dest_urls", global = true)]
 	pub to_bytes: bool,
+	/// Do not wait for finalization when sending transactions. May cause errors when sending batches.
+	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
+	pub no_watch_progress: bool,
 }
 
 pub struct SendTxsToFile<S, P> {
@@ -75,8 +76,9 @@ pub struct SendTxsToUrl<
 	S: SignatureKind<DefaultDB>,
 	P: ProofKind<DefaultDB> + Send + Sync + 'static,
 > {
-	url: String,
+	urls: Vec<String>,
 	rate: f32,
+	no_watch_progress: bool,
 	_marker: PhantomData<(S, P)>,
 }
 
@@ -85,8 +87,8 @@ impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'stati
 where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 {
-	pub fn new(url: String, rate: f32) -> Self {
-		Self { url, rate, _marker: Default::default() }
+	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
+		Self { urls, rate, no_watch_progress, _marker: Default::default() }
 	}
 }
 
@@ -158,29 +160,19 @@ where
 		&self,
 		txs: &DeserializedTransactionsWithContext<S, P>,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		let num_batches = txs.batches.len();
-		let num_per_batch = txs.batches.first().map(|batch| batch.txs.len()).unwrap_or(0);
-		let total_txs = num_per_batch * num_batches;
+		if self.rate <= 0.0 {
+			return Err("rate must be greater than 0".into());
+		}
 
-		let api = OnlineClient::<PolkadotConfig>::from_insecure_url(self.url.clone()).await?;
-		let sender = Arc::new(Sender::<S, P>::new(api, self.url.clone()));
+		let sender = Arc::new(Sender::<S, P>::new(&self.urls, self.no_watch_progress).await?);
 
-		println!("Sending initial tx...");
+		log::info!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;
 
 		for (i, batch) in txs.batches.iter().enumerate() {
-			println!("Sending batch {}...", i);
-			let semaphore = Arc::new(Semaphore::new(0));
+			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
-			let worker = tokio::spawn(sender.send_worker(semaphore.clone(), batch.txs.clone()));
-
-			// Trigger sending
-			for _i in 0..total_txs {
-				semaphore.add_permits(1);
-				tokio::time::sleep(Duration::from_secs_f32(1f32 / self.rate)).await;
-			}
-
-			worker.await?;
+			sender.send_worker(self.rate, batch.txs.clone()).await;
 		}
 		Ok(())
 	}

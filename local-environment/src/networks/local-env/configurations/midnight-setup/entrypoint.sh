@@ -50,7 +50,7 @@ chmod 644 /shared/shelley/genesis-utxo.skey
 
 echo "Initializing governance authority ..."
 
-export GENESIS_UTXO=$(cat /shared/genesis.utxo)
+export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 cat /shared/genesis.utxo
 echo "Genesis UTXO: $GENESIS_UTXO"
 
@@ -67,63 +67,15 @@ export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
 
-./midnight-node smart-contracts governance init \
-    --genesis-utxo $GENESIS_UTXO \
-    --payment-key-file /keys/funded_address.skey \
-    --governance-authority $GOVERNANCE_AUTHORITY \
-    --threshold 1
-
-if [ $? -eq 0 ]; then
-   echo "Successfully initialized governance authority!"
-else
-    echo "Failed to initialize governance authority!"
-    exit 1
-fi
-
-echo "Generating addresses.json file..."
-
-./midnight-node smart-contracts get-scripts \
-    --genesis-utxo $GENESIS_UTXO \
-> addresses.json
-cat addresses.json
-
-export ADDRESSES_JSON="/addresses.json"
-echo "Addresses JSON: $ADDRESSES_JSON"
-
-export COMMITTEE_CANDIDATE_ADDRESS=$(jq -r '.addresses.CommitteeCandidateValidator' addresses.json)
-echo "Committee candidate address: $COMMITTEE_CANDIDATE_ADDRESS"
-
-export D_PARAMETER_POLICY_ID=$(jq -r '.policyIds.DParameter' addresses.json)
-echo "D parameter policy ID: $D_PARAMETER_POLICY_ID"
-
-export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.policyIds.PermissionedCandidates' addresses.json)
-echo "Permissioned candidates policy ID: $PERMISSIONED_CANDIDATES_POLICY_ID"
-
-echo "Setting values for NATIVE_TOKEN_POLICY_ID, NATIVE_TOKEN_ASSET_NAME, and ILLIQUID_SUPPLY_VALIDATOR_ADDRESS for chain-spec creation"
-export NATIVE_TOKEN_POLICY_ID="1fab25f376bc49a181d03a869ee8eaa3157a3a3d242a619ca7995b2b"
-export NATIVE_TOKEN_ASSET_NAME="52657761726420746f6b656e"
-export ILLIQUID_SUPPLY_VALIDATOR_ADDRESS="addr_test1wpy8ewg646rg4ce78nl3aassmkquf4wlxcaugqlxwzcylkca0q8v3"
 
 echo "Inserting D parameter..."
 
 # D_PERMISSIONED + D_REGISTERED must be >= 5 for a functioning partner chains network.
-# Using 4 permissioned (Alice, Bob, Charlie, Dave from qanet config) + 1 registered (Eve using actual keystore).
-# This ensures GRANDPA finality works since nodes 1-4 use well-known keys matching qanet config.
-D_PERMISSIONED=4
-D_REGISTERED=1
+# Using 3 permissioned (Alice, Bob, Charlie from qanet config).
+# This ensures GRANDPA finality works since nodes 1-3 use well-known keys matching qanet config.
+D_PERMISSIONED=3
+D_REGISTERED=0
 
-./midnight-node smart-contracts upsert-d-parameter \
-    --genesis-utxo $GENESIS_UTXO \
-    --permissioned-candidates-count $D_PERMISSIONED \
-    --registered-candidates-count $D_REGISTERED \
-    --payment-key-file /keys/funded_address.skey
-
-if [ $? -eq 0 ]; then
-    echo "Successfully inserted D-parameter (P = $D_PERMISSIONED, R = $D_REGISTERED)!"
-else
-    echo "Couldn't insert D-parameter..."
-    exit 1
-fi
 
 # ============================================================================
 # DEPLOY AIKEN GOVERNANCE CONTRACTS
@@ -158,9 +110,6 @@ done
 # Override PERMISSIONED_CANDIDATES_POLICY_ID with the Aiken federated_ops_forever policy ID
 # This ensures the chain-spec uses the Aiken contract policy ID for permissioned candidates
 AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID=$(cat "${RUNTIME_VALUES}/federated_ops_forever_policy_id.txt")
-echo "Overriding permissioned candidates policy ID with Aiken federated_ops_forever:"
-echo "  Old (partner-chains): $PERMISSIONED_CANDIDATES_POLICY_ID"
-echo "  New (Aiken):          $AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
 export PERMISSIONED_CANDIDATES_POLICY_ID="$AIKEN_PERMISSIONED_CANDIDATES_POLICY_ID"
 
 # Get the funded address from the shared volume
@@ -272,7 +221,7 @@ sleep 10
 # Extract the first 4 candidates from the chain config (matching the chain-spec generation)
 echo ""
 echo "=== Generating Permissioned Candidates File ==="
-jq '[.initial_permissioned_candidates[:4] | .[] | {
+jq '[.initial_permissioned_candidates[:3] | .[] | {
     ecdsa_key: .sidechain_pub_key[2:],
     aura_key: .aura_pub_key[2:],
     grandpa_key: .grandpa_pub_key[2:]
@@ -307,47 +256,6 @@ fi
 echo ""
 echo "=== All Governance Contracts Deployed Successfully ==="
 
-echo "Inserting registered candidate Eve..."
-
-# Prepare Eve registration values
-eve_utxo=$(cat /shared/eve.utxo)
-eve_mainchain_signing_key=$(jq -r '.cborHex | .[4:]' /midnight-nodes/midnight-node-5/keys/cold.skey)
-eve_sidechain_signing_key=$(cat /midnight-nodes/midnight-node-5/keys/sidechain.skey)
-
-# Process registration signatures for Eve
-eve_output=$(./midnight-node registration-signatures \
-    --genesis-utxo $GENESIS_UTXO \
-    --mainchain-signing-key $eve_mainchain_signing_key \
-    --sidechain-signing-key $eve_sidechain_signing_key \
-    --registration-utxo $eve_utxo)
-
-echo "Eve registration signatures output:"
-echo "$eve_output"
-# Extract signatures and keys from Eve output
-eve_spo_public_key=$(echo "$eve_output" | jq -r ".spo_public_key")
-eve_spo_signature=$(echo "$eve_output" | jq -r ".spo_signature")
-eve_sidechain_public_key=$(echo "$eve_output" | jq -r ".sidechain_public_key")
-eve_sidechain_signature=$(echo "$eve_output" | jq -r ".sidechain_signature")
-eve_aura_vkey=$(cat /midnight-nodes/midnight-node-5/keys/aura.vkey)
-eve_grandpa_vkey=$(cat /midnight-nodes/midnight-node-5/keys/grandpa.vkey)
-
-# Register Eve
-./midnight-node smart-contracts register \
-    --genesis-utxo $GENESIS_UTXO \
-    --spo-public-key $eve_spo_public_key \
-    --spo-signature $eve_spo_signature \
-    --sidechain-public-keys $eve_sidechain_public_key:$eve_aura_vkey:$eve_grandpa_vkey \
-    --sidechain-signature $eve_sidechain_signature \
-    --registration-utxo $eve_utxo \
-    --payment-key-file /midnight-nodes/midnight-node-5/keys/payment.skey
-
-if [ $? -eq 0 ]; then
-    echo "Registered candidate Eve inserted successfully!"
-else
-    echo "Registration for Eve failed."
-    exit 1
-fi
-
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
 cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
@@ -357,8 +265,7 @@ jq 'env as $env | . + {
     "genesis_utxo": $env.GENESIS_UTXO
   },
   "cardano_addresses": {
-    "committee_candidates_address": $env.COMMITTEE_CANDIDATE_ADDRESS,
-    "d_parameter_policy_id": $env.D_PARAMETER_POLICY_ID,
+    "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
     "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID,
   }
 }' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
@@ -420,8 +327,6 @@ echo "chain-spec.json generation complete."
 echo "Partnerchain configuration is complete, and will be able to start after two mainchain epochs."
 
 echo -e "\n===== Partnerchain Configuration Complete =====\n"
-echo -e "Container will now idle, but will remain available for accessing the midnight-node commands as follows:\n"
-echo "docker exec midnight-setup midnight-node smart-contracts --help"
 
 echo "Waiting 3 epochs for DParam to become active and contracts to be queryable..."
 echo "(SDK applies 2-epoch offset, so epoch 4 is needed to query data from epoch 2)"
@@ -429,9 +334,9 @@ epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
-n_3_epoch=$((epoch + 3))
+n_2_epoch=$((epoch + 2))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_3_epoch ]; do
+while [ $epoch -lt $n_2_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
