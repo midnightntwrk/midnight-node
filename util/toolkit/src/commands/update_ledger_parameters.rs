@@ -1,16 +1,14 @@
 use clap::Args;
-use subxt::{
-	OnlineClient, SubstrateConfig,
-	dynamic::{self, Value},
-	tx::Payload,
-	utils::H256,
-};
+use subxt::{OnlineClient, SubstrateConfig, dynamic, tx::Payload};
 use thiserror::Error;
 
-use crate::cli_parsers::{self as cli};
+use crate::{
+	cli_parsers::{self as cli},
+	commands::root_call::{self, RootCallArgs},
+};
 use midnight_node_ledger_helpers::{
-	Duration, DustParameters, FeePrices, FixedPoint, Keypair, deserialize,
-	mn_ledger::structure::{LedgerParameters, SystemTransaction},
+	CostDuration, Duration, DustParameters, FeePrices, FixedPoint, SyntheticCost, deserialize,
+	mn_ledger::structure::{LedgerParameters, SystemTransaction, TransactionLimits},
 	serialize,
 };
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
@@ -19,6 +17,8 @@ use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 pub enum LedgerParametersError {
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("Subxt core error: {0}")]
+	SubxtCoreError(#[from] subxt::ext::subxt_core::Error),
 	#[error("serialization error: {0}")]
 	SerializationError(std::io::Error),
 	#[error("Parameters update failed: Missing code updated event")]
@@ -31,29 +31,33 @@ pub enum LedgerParametersError {
 	DecodeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 	#[error("Failed to deserialize ledger parameters: {0}")]
 	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("error executing root call: {0}")]
+	RootCallError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Args, Clone)]
-pub struct UpdateLedgerParametersArgs {
-	/// The new serialized ledger parameters. If not provided, the default parameters will be fetched from the server.
-	#[arg(long, env)]
-	parameters: Option<String>,
+pub struct UpdateableParams {
+	/// Block limit: The time spent in IO reads (picoseconds)
+	#[arg(long)]
+	block_limit_read_time: Option<u64>,
 
-	/// Seed for applying the authorized update (can be any authority member).
-	#[arg(short, long, env, default_value = "//Alice", value_parser = cli::keypair_from_str)]
-	signer_key: Keypair,
+	/// Block limit: The time spent in single-threaded compute (picoseconds)
+	#[arg(long)]
+	block_limit_compute_time: Option<u64>,
 
-	/// RPC URL for sending the update.
-	#[arg(short, long, default_value = "ws://localhost:9944", env)]
-	rpc_url: String,
+	/// Block limit: The bytes used of block size capacity
+	#[arg(long)]
+	block_limit_block_usage: Option<u64>,
 
-	/// Technical committee members.
-	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
-	technical_committee_members: Vec<Keypair>,
+	/// Block limit: The bytes written persistently to disk.
+	/// Unlike in [`RunningCost`], this represents net bytes written, defined for `r: RunningCost`
+	/// as `max(0, r.bytes_written - r.bytes_deleted)`
+	#[arg(long)]
+	block_limit_bytes_written: Option<u64>,
 
-	/// Council members.
-	#[arg(short, long, env, required = true, value_parser = cli::keypair_from_str)]
-	council_members: Vec<Keypair>,
+	/// Block limit: The bytes written temporarily or overwritten
+	#[arg(long)]
+	block_limit_bytes_churned: Option<u64>,
 
 	/// Ledger's `read_price_a` parameter, used in FixedPoint::from_u64_div(read_price_a, read_price_b).
 	#[arg(long)]
@@ -120,14 +124,34 @@ pub struct UpdateLedgerParametersArgs {
 	dust_grace_period: Option<u64>,
 }
 
+#[derive(Args, Clone)]
+pub struct UpdateLedgerParametersArgs {
+	/// The new serialized ledger parameters. If not provided, the default parameters will be fetched from the server.
+	#[arg(long, env, value_parser = cli::hex_bytes)]
+	parameters: Option<Vec<u8>>,
+
+	/// Council member private keys as hex strings (32-byte sr25519 seeds)
+	#[arg(short, required = true)]
+	council_members: Vec<String>,
+
+	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
+	#[arg(short, required = true)]
+	technical_committee_members: Vec<String>,
+
+	/// RPC URL for sending the update.
+	#[arg(short, long, default_value = "ws://localhost:9944", env)]
+	rpc_url: String,
+
+	#[command(flatten)]
+	params: UpdateableParams,
+}
+
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
 	// Create a new API client
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(args.rpc_url).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 
-	let signer = args.signer_key;
 	let bytes = match args.parameters {
-		Some(parameters) => hex::decode(&parameters.replace("0x", ""))
-			.map_err(|e| LedgerParametersError::DecodeLedgerParameters(e.into()))?,
+		Some(parameters) => parameters,
 		None => {
 			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
 			api.runtime_api()
@@ -142,44 +166,68 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	let base: LedgerParameters = deserialize(&mut &bytes[..])
 		.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
 
+	let params = &args.params;
+
 	let parameters = LedgerParameters {
+		limits: TransactionLimits {
+			block_limits: SyntheticCost {
+				read_time: params
+					.block_limit_read_time
+					.map(|t| CostDuration::from_picoseconds(t))
+					.unwrap_or(base.limits.block_limits.read_time),
+				compute_time: params
+					.block_limit_read_time
+					.map(|t| CostDuration::from_picoseconds(t))
+					.unwrap_or(base.limits.block_limits.compute_time),
+				block_usage: params
+					.block_limit_read_time
+					.unwrap_or(base.limits.block_limits.block_usage),
+				bytes_written: params
+					.block_limit_read_time
+					.unwrap_or(base.limits.block_limits.bytes_written),
+				bytes_churned: params
+					.block_limit_read_time
+					.unwrap_or(base.limits.block_limits.bytes_churned),
+			},
+			..base.limits
+		},
 		fee_prices: FeePrices {
 			overall_price: base.fee_prices.overall_price,
-			read_factor: match (args.read_price_a, args.read_price_b) {
+			read_factor: match (params.read_price_a, params.read_price_b) {
 				(Some(read_price_a), Some(read_price_b)) => {
 					FixedPoint::from_u64_div(read_price_a, read_price_b)
 				},
 				_ => base.fee_prices.read_factor,
 			},
-			compute_factor: match (args.compute_price_a, args.compute_price_b) {
+			compute_factor: match (params.compute_price_a, params.compute_price_b) {
 				(Some(compute_price_a), Some(compute_price_b)) => {
 					FixedPoint::from_u64_div(compute_price_a, compute_price_b)
 				},
 				_ => base.fee_prices.compute_factor,
 			},
-			block_usage_factor: match (args.block_usage_price_a, args.block_usage_price_b) {
+			block_usage_factor: match (params.block_usage_price_a, params.block_usage_price_b) {
 				(Some(block_usage_price_a), Some(block_usage_price_b)) => {
 					FixedPoint::from_u64_div(block_usage_price_a, block_usage_price_b)
 				},
 				_ => base.fee_prices.block_usage_factor,
 			},
-			write_factor: match (args.write_price_a, args.write_price_b) {
+			write_factor: match (params.write_price_a, params.write_price_b) {
 				(Some(write_price_a), Some(write_price_b)) => {
 					FixedPoint::from_u64_div(write_price_a, write_price_b)
 				},
 				_ => base.fee_prices.write_factor,
 			},
 		},
-		global_ttl: args
+		global_ttl: params
 			.global_ttl
 			.map(|global_ttl| Duration::from_secs(global_ttl))
 			.unwrap_or(base.global_ttl),
-		cardano_to_midnight_bridge_fee_basis_points: args
+		cardano_to_midnight_bridge_fee_basis_points: params
 			.cardano_to_midnight_bridge_fee_basis_points
 			.unwrap_or(base.cardano_to_midnight_bridge_fee_basis_points),
 		cost_dimension_min_ratio: match (
-			args.cost_dimension_min_ratio_a,
-			args.cost_dimension_min_ratio_b,
+			params.cost_dimension_min_ratio_a,
+			params.cost_dimension_min_ratio_b,
 		) {
 			(Some(cost_dimension_min_ratio_a), Some(cost_dimension_min_ratio_b)) => {
 				FixedPoint::from_u64_div(cost_dimension_min_ratio_a, cost_dimension_min_ratio_b)
@@ -187,8 +235,8 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 			_ => base.cost_dimension_min_ratio,
 		},
 		price_adjustment_a_parameter: match (
-			args.price_adjustment_a_parameter_a,
-			args.price_adjustment_a_parameter_b,
+			params.price_adjustment_a_parameter_a,
+			params.price_adjustment_a_parameter_b,
 		) {
 			(Some(price_adjustment_a_parameter_a), Some(price_adjustment_a_parameter_b)) => {
 				FixedPoint::from_u64_div(
@@ -198,11 +246,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 			},
 			_ => base.price_adjustment_a_parameter,
 		},
-		c_to_m_bridge_min_amount: args
+		c_to_m_bridge_min_amount: params
 			.c_to_m_bridge_min_amount
 			.unwrap_or(base.c_to_m_bridge_min_amount),
 		dust: DustParameters {
-			dust_grace_period: args
+			dust_grace_period: params
 				.dust_grace_period
 				.map(|d| Duration::from_secs(d as i128))
 				.unwrap_or(base.dust.dust_grace_period),
@@ -215,13 +263,6 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	println!("Executing ledger parameters update via federated authority.");
 
-	// Authority member keypairs
-	let tc_member_1 = args.technical_committee_members[0].clone();
-	let tc_other_members = args.technical_committee_members[1..].to_vec();
-	// Council members
-	let council_member_1 = args.council_members[0].clone();
-	let council_other_members = args.council_members[1..].to_vec();
-
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
 	let send_system_tx_call = dynamic::tx(
@@ -229,280 +270,16 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		"send_mn_system_transaction",
 		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
 	);
-	let send_system_tx_call_value = send_system_tx_call.clone().into_value();
+	let send_system_tx_call_value =
+		send_system_tx_call.clone().encode_call_data(&api.metadata())?;
 
-	// Step 2: Wrap it in FederatedAuthority::motion_approve
-	let fed_auth_call = dynamic::tx(
-		"FederatedAuthority",
-		"motion_approve",
-		vec![send_system_tx_call_value.clone()],
-	)
-	.into_value();
-
-	// Step 3: Council proposes to approve the federated motion
-	println!("Council proposing federated motion approval...");
-
-	// Compute the proposal hash ourselves (same way the collective pallet does)
-	// We need to encode the full call data including pallet and call indices
-	let fed_auth_tx = dynamic::tx(
-		"FederatedAuthority",
-		"motion_approve",
-		vec![send_system_tx_call_value.clone()],
-	);
-	let fed_auth_call_data = fed_auth_tx.encode_call_data(&api.metadata()).map_err(|e| {
-		LedgerParametersError::EncodingError(format!("Failed to encode call: {:?}", e))
-	})?;
-	let council_proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
-	let council_proposal_hash = H256(council_proposal_hash);
-
-	let council_proposal = dynamic::tx(
-		"Council",
-		"propose",
-		vec![Value::u128(2), fed_auth_call.clone(), Value::u128(10000)],
-	);
-
-	let council_propose_events = api
-		.tx()
-		.sign_and_submit_then_watch_default(&council_proposal, &council_member_1.0)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	// Extract proposal index from the Proposed event
-	let council_proposal_index = extract_proposal_index(&council_propose_events, "Council")?;
-	println!(
-		"Council proposal created with hash: 0x{} and index: {}",
-		hex::encode(council_proposal_hash.0),
-		council_proposal_index
-	);
-
-	// Step 4: Council members vote
-	println!("Council members voting...");
-	vote_on_proposal(
-		&api,
-		&council_member_1,
-		"Council",
-		council_proposal_hash,
-		council_proposal_index,
-		true,
-	)
-	.await?;
-	for council_member in council_other_members {
-		vote_on_proposal(
-			&api,
-			&council_member,
-			"Council",
-			council_proposal_hash,
-			council_proposal_index,
-			true,
-		)
-		.await?;
-	}
-
-	// Step 5: Close Council proposal
-	println!("Closing Council proposal...");
-	close_proposal(
-		&api,
-		&council_member_1,
-		"Council",
-		council_proposal_hash,
-		council_proposal_index,
-	)
-	.await?;
-
-	// Step 6: Technical Committee proposes to approve the federated motion
-	println!("Technical Committee proposing federated motion approval...");
-
-	let tech_proposal_hash = council_proposal_hash;
-
-	let tech_proposal = dynamic::tx(
-		"TechnicalCommittee",
-		"propose",
-		vec![Value::u128(2), fed_auth_call, Value::u128(10000)],
-	);
-
-	let tech_propose_events = api
-		.tx()
-		.sign_and_submit_then_watch_default(&tech_proposal, &tc_member_1.0)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	let tech_proposal_index = extract_proposal_index(&tech_propose_events, "TechnicalCommittee")?;
-	println!(
-		"Technical Committee proposal created with hash: 0x{} and index: {}",
-		hex::encode(tech_proposal_hash.0),
-		tech_proposal_index
-	);
-
-	// Step 7: Technical Committee members vote
-	println!("Technical Committee members voting...");
-	vote_on_proposal(
-		&api,
-		&tc_member_1,
-		"TechnicalCommittee",
-		tech_proposal_hash,
-		tech_proposal_index,
-		true,
-	)
-	.await?;
-	for tc_member in tc_other_members {
-		vote_on_proposal(
-			&api,
-			&tc_member,
-			"TechnicalCommittee",
-			tech_proposal_hash,
-			tech_proposal_index,
-			true,
-		)
-		.await?;
-	}
-
-	// Step 8: Close Technical Committee proposal
-	println!("Closing Technical Committee proposal...");
-	close_proposal(
-		&api,
-		&tc_member_1,
-		"TechnicalCommittee",
-		tech_proposal_hash,
-		tech_proposal_index,
-	)
-	.await?;
-
-	println!("Federated authority motion approved by both councils!");
-
-	// Step 9: Compute the motion hash for the send_system_tx call
-	// The motion hash is computed by hashing the call data
-	let call_data = send_system_tx_call
-		.encode_call_data(&api.metadata())
-		.map_err(|e| LedgerParametersError::EncodingError(format!("{:?}", e)))?;
-
-	let motion_hash = sp_crypto_hashing::blake2_256(&call_data);
-	let motion_hash = H256(motion_hash);
-	println!("Motion hash: 0x{}", hex::encode(motion_hash.0));
-
-	// Step 10: Close the federated motion to execute send_system_tx with Root origin
-	println!("Closing federated motion to execute send_system_tx...");
-	let close_motion_call =
-		dynamic::tx("FederatedAuthority", "motion_close", vec![Value::from_bytes(&motion_hash.0)]);
-
-	let events = api
-		.tx()
-		.sign_and_submit_then_watch_default(&close_motion_call, &signer.0)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	println!("Federated motion closed, send_system_tx executed with Root origin!");
-
-	// Verify the parameres update was successful
-	let mut success = false;
-	for event in events.iter() {
-		let event = event?;
-		if event.pallet_name() == "MidnightSystem"
-			&& event.variant_name() == "SystemTransactionApplied"
-		{
-			println!("MidnightSystem::SystemTransactionApplied");
-			success = true;
-			break;
-		}
-	}
-	if !success {
-		return Err(LedgerParametersError::ParametersUpdateFailed);
-	}
-
-	println!("Parameters got successfully updated!");
-	Ok(())
-}
-
-async fn vote_on_proposal(
-	api: &OnlineClient<SubstrateConfig>,
-	signer: &Keypair,
-	pallet: &str,
-	proposal_hash: H256,
-	proposal_index: u32,
-	approve: bool,
-) -> Result<(), LedgerParametersError> {
-	let vote_call = dynamic::tx(
-		pallet,
-		"vote",
-		vec![
-			Value::from_bytes(&proposal_hash.0),
-			Value::u128(proposal_index as u128),
-			Value::bool(approve),
-		],
-	);
-
-	api.tx()
-		.sign_and_submit_then_watch_default(&vote_call, &signer.0)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	Ok(())
-}
-
-async fn close_proposal(
-	api: &OnlineClient<SubstrateConfig>,
-	signer: &Keypair,
-	pallet: &str,
-	proposal_hash: H256,
-	proposal_index: u32,
-) -> Result<(), LedgerParametersError> {
-	let weight_value = Value::named_composite(vec![
-		("ref_time", Value::u128(10_000_000_000)),
-		("proof_size", Value::u128(65536)),
-	]);
-
-	let close_call = dynamic::tx(
-		pallet,
-		"close",
-		vec![
-			Value::from_bytes(&proposal_hash.0),
-			Value::u128(proposal_index as u128),
-			weight_value,
-			Value::u128(10000),
-		],
-	);
-
-	api.tx()
-		.sign_and_submit_then_watch_default(&close_call, &signer.0)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	Ok(())
-}
-
-fn extract_proposal_index(
-	events: &subxt::blocks::ExtrinsicEvents<SubstrateConfig>,
-	pallet: &str,
-) -> Result<u32, LedgerParametersError> {
-	use parity_scale_codec::Decode;
-
-	for event in events.iter() {
-		let event = event?;
-		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
-			// Get the raw field bytes
-			let field_bytes = event.field_bytes();
-
-			// Parse the raw bytes manually
-			// The Proposed event has: (account_id: 32 bytes, proposal_index: compact u32, ...)
-			let mut cursor = field_bytes;
-
-			// Skip account_id (32 bytes)
-			if cursor.len() < 32 {
-				continue;
-			}
-			cursor = &cursor[32..];
-
-			// Read proposal_index (compact encoded u32)
-			if let Ok(parity_scale_codec::Compact(index)) =
-				parity_scale_codec::Compact::<u32>::decode(&mut cursor)
-			{
-				return Ok(index);
-			}
-		}
-	}
-	Err(LedgerParametersError::ProposalIndexNotFound)
+	root_call::execute(RootCallArgs {
+		rpc_url: args.rpc_url,
+		council_keys: args.council_members,
+		tc_keys: args.technical_committee_members,
+		encoded_call: Some(send_system_tx_call_value),
+		encoded_call_file: None,
+	})
+	.await
+	.map_err(|e| LedgerParametersError::RootCallError(e))
 }
