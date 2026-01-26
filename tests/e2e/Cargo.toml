@@ -29,6 +29,7 @@ blake2 = "0.10.6"
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }
 midnight-node-toolkit = { path = "../../util/toolkit" }
+tempfile = "3"
 
 [[test]]
 name = "e2e_tests"
