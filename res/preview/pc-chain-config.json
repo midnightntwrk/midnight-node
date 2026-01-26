@@ -15,7 +15,7 @@
     "slot_duration_millis": 1000
   },
   "cardano_addresses": {
-    "committee_candidates_address": "addr_test1wpjk64an8tdr07jzt0pu8nc3prh9fu4gwkgl05cs9xgeqtgclvru6",
+    "committee_candidates_address": "addr_test1wz5ax0hjvhx2uqef8sqrxnmfywd37hea4truhqxu4yxp9hsvggkfm",
     "permissioned_candidates_policy_id": "0x24dccfce2576ae6fa7149bc485850656ae6faf9f4158891316773a78"
   },
   "initial_permissioned_candidates": [
