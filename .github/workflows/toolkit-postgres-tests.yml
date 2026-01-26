@@ -57,4 +57,4 @@ jobs:
         env:
           TOOLKIT_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/toolkit_test
         run: |
-          cargo test --package midnight-node-toolkit --release -- --ignored --test-threads=1
+          cargo test --package midnight-node-toolkit --release postgres_backend::tests -- --ignored --test-threads=1
