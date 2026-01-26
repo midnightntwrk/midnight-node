@@ -526,4 +526,78 @@ mod tests {
 				.is_some()
 		);
 	}
+
+	#[tokio::test]
+	async fn test_redb_concurrent_access() {
+		let dir = tempdir().unwrap();
+		let db_path = dir.path().join("test.db");
+		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+
+		let chain_id = H256::from([1u8; 32]);
+		let num_wallets = 10;
+		let num_operations = 5;
+
+		// Spawn concurrent tasks that each operate on their own wallet
+		let mut handles = vec![];
+		for wallet_idx in 0..num_wallets {
+			let backend_clone = backend.clone();
+			let wallet_id = H256::from([wallet_idx as u8; 32]);
+
+			let handle = tokio::spawn(async move {
+				for op in 0..num_operations {
+					let cache = WalletStateCache {
+						chain_id,
+						wallet_id,
+						block_height: (wallet_idx * 100 + op) as u64,
+						ledger_state_bytes: vec![wallet_idx as u8; 100],
+						wallet_snapshots: vec![],
+						latest_block_context: SerializableBlockContext {
+							tblock_secs: 1234567890,
+							tblock_err: 0,
+							parent_block_hash: [wallet_idx as u8; 32],
+						},
+						state_root: Some(vec![op as u8; 32]),
+						version: "wallet-state-cache-v1".to_string(),
+					};
+
+					// Write
+					WalletStateCaching::set_wallet_state(
+						&backend_clone,
+						chain_id,
+						wallet_id,
+						cache,
+					)
+					.await;
+
+					// Read back
+					let retrieved =
+						WalletStateCaching::get_wallet_state(&backend_clone, chain_id, wallet_id)
+							.await;
+					assert!(retrieved.is_some(), "Wallet {} should have cache", wallet_idx);
+
+					// Height check
+					let height = WalletStateCaching::get_cached_block_height(
+						&backend_clone,
+						chain_id,
+						wallet_id,
+					)
+					.await;
+					assert!(height.is_some(), "Wallet {} should have height", wallet_idx);
+				}
+			});
+			handles.push(handle);
+		}
+
+		// Wait for all tasks to complete
+		for handle in handles {
+			handle.await.expect("Task should complete successfully");
+		}
+
+		// Verify all wallets have their final state
+		for wallet_idx in 0..num_wallets {
+			let wallet_id = H256::from([wallet_idx as u8; 32]);
+			let cache = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
+			assert!(cache.is_some(), "Wallet {} should have final state", wallet_idx);
+		}
+	}
 }

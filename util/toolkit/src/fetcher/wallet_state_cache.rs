@@ -444,4 +444,66 @@ mod tests {
 		assert!(cache.state_root.is_none());
 		// In restore_context_from_cache, this would skip the verification step
 	}
+
+	#[test]
+	fn test_version_mismatch_rejected() {
+		// Cache with outdated version should be rejected
+		let cache = WalletStateCache {
+			chain_id: H256::from([1u8; 32]),
+			wallet_id: H256::from([2u8; 32]),
+			block_height: 100,
+			ledger_state_bytes: vec![1, 2, 3],
+			wallet_snapshots: vec![],
+			latest_block_context: SerializableBlockContext {
+				tblock_secs: 1234567890,
+				tblock_err: 0,
+				parent_block_hash: [0u8; 32],
+			},
+			state_root: None,
+			version: "wallet-state-cache-v0".to_string(), // Old version
+		};
+
+		let expected_chain_id = H256::from([1u8; 32]);
+		let result = restore_context_from_cache(&cache, &[], expected_chain_id);
+
+		match result {
+			Err(CacheError::VersionMismatch { expected, actual }) => {
+				assert_eq!(expected, CACHE_VERSION);
+				assert_eq!(actual, "wallet-state-cache-v0");
+			},
+			Err(other) => panic!("Expected VersionMismatch error, got: {}", other),
+			Ok(_) => panic!("Expected VersionMismatch error, got Ok"),
+		}
+	}
+
+	#[test]
+	fn test_chain_id_mismatch_rejected() {
+		// Cache created for different chain should be rejected
+		let cache = WalletStateCache {
+			chain_id: H256::from([1u8; 32]), // Cache was created for chain 1
+			wallet_id: H256::from([2u8; 32]),
+			block_height: 100,
+			ledger_state_bytes: vec![1, 2, 3],
+			wallet_snapshots: vec![],
+			latest_block_context: SerializableBlockContext {
+				tblock_secs: 1234567890,
+				tblock_err: 0,
+				parent_block_hash: [0u8; 32],
+			},
+			state_root: None,
+			version: CACHE_VERSION.to_string(),
+		};
+
+		let expected_chain_id = H256::from([99u8; 32]); // But we're on chain 99
+		let result = restore_context_from_cache(&cache, &[], expected_chain_id);
+
+		match result {
+			Err(CacheError::ChainIdMismatch { expected, actual }) => {
+				assert_eq!(expected, H256::from([99u8; 32]));
+				assert_eq!(actual, H256::from([1u8; 32]));
+			},
+			Err(other) => panic!("Expected ChainIdMismatch error, got: {}", other),
+			Ok(_) => panic!("Expected ChainIdMismatch error, got Ok"),
+		}
+	}
 }
