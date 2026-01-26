@@ -2,4 +2,4 @@
 
 Fixes a blocking non-determinism bug: https://shielded.atlassian.net/browse/PM-21558
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/540
