@@ -158,6 +158,8 @@ pub enum CacheError {
 	VersionMismatch { expected: String, actual: String },
 	#[error("Chain ID mismatch: expected {expected:?}, got {actual:?}")]
 	ChainIdMismatch { expected: H256, actual: H256 },
+	#[error("State root mismatch: cached data may be corrupted")]
+	StateRootMismatch,
 	#[error("Compression error: {0}")]
 	Compression(String),
 	#[error("Decompression error: {0}")]
@@ -203,16 +205,29 @@ fn hash_seed(seed: &WalletSeed) -> H256 {
 	H256::from_slice(&hasher.finalize())
 }
 
+/// Compute a state root hash from serialized ledger state bytes.
+///
+/// This provides integrity verification for cached state without depending
+/// on ledger internals.
+fn compute_state_root(ledger_state_bytes: &[u8]) -> Vec<u8> {
+	let mut hasher = Sha256::new();
+	hasher.update(ledger_state_bytes);
+	hasher.finalize().to_vec()
+}
+
 /// Create a WalletStateCache from a LedgerContext.
 ///
 /// This captures the current state of the ledger. Wallet-specific state is stored
 /// as seed hashes only - the actual wallet state will be rebuilt during replay
 /// of blocks since the checkpoint.
+///
+/// The state_root is automatically computed from the serialized ledger state
+/// to enable integrity verification on restore.
 pub fn create_cache_from_context(
 	context: &LedgerContext<DefaultDB>,
 	chain_id: H256,
 	block_height: u64,
-	state_root: Option<Vec<u8>>,
+	_state_root: Option<Vec<u8>>, // Ignored - computed automatically
 ) -> Result<WalletStateCache, CacheError> {
 	let wallet_id = compute_wallet_id_from_context(context);
 
@@ -223,6 +238,9 @@ pub fn create_cache_from_context(
 		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
 	let ledger_state_bytes = serialize_ledger_state(&ledger_state)?;
 	drop(ledger_state);
+
+	// Compute state root for integrity verification
+	let state_root = Some(compute_state_root(&ledger_state_bytes));
 
 	// Store wallet seed hashes (actual wallet state will be rebuilt during replay)
 	let wallets = context
@@ -291,6 +309,24 @@ pub fn restore_context_from_cache(
 			expected: expected_chain_id,
 			actual: cache.chain_id,
 		});
+	}
+
+	// Verify state root integrity (if present in cache)
+	if let Some(ref cached_root) = cache.state_root {
+		let computed_root = compute_state_root(&cache.ledger_state_bytes);
+		if cached_root != &computed_root {
+			log::warn!(
+				"State root mismatch: cached data may be corrupted (height {})",
+				cache.block_height
+			);
+			return Err(CacheError::StateRootMismatch);
+		}
+		log::debug!("State root verification passed for cache at height {}", cache.block_height);
+	} else {
+		log::debug!(
+			"Skipping state root verification (old cache format) at height {}",
+			cache.block_height
+		);
 	}
 
 	// Deserialize ledger state
@@ -418,5 +454,37 @@ mod tests {
 		let compressed = compress(original).expect("compression should succeed");
 		let decompressed = decompress(&compressed).expect("decompression should succeed");
 		assert_eq!(&decompressed, original);
+	}
+
+	#[test]
+	fn test_state_root_computation() {
+		let data1 = b"test ledger state data";
+		let data2 = b"test ledger state data";
+		let data3 = b"different ledger state data";
+
+		let root1 = compute_state_root(data1);
+		let root2 = compute_state_root(data2);
+		let root3 = compute_state_root(data3);
+
+		// Same data should produce same root
+		assert_eq!(root1, root2);
+
+		// Different data should produce different root
+		assert_ne!(root1, root3);
+
+		// Root should be 32 bytes (SHA-256)
+		assert_eq!(root1.len(), 32);
+	}
+
+	#[test]
+	fn test_state_root_detects_corruption() {
+		let original_data = b"original ledger state bytes";
+		let corrupted_data = b"corrupted ledger state bytes";
+
+		let original_root = compute_state_root(original_data);
+		let corrupted_root = compute_state_root(corrupted_data);
+
+		// Corruption should be detected
+		assert_ne!(original_root, corrupted_root);
 	}
 }

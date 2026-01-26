@@ -430,6 +430,99 @@ where
 	}
 }
 
+// =============================================================================
+// Cache eviction methods
+// =============================================================================
+
+impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
+	PostgresBackend<S, P, D>
+{
+	/// Evict wallet state cache entries older than the specified number of days.
+	///
+	/// This helps prevent unbounded storage growth in long-running deployments.
+	/// Returns the number of entries evicted.
+	pub async fn evict_stale_wallet_cache(&self, max_age_days: u32) -> u64 {
+		let result = sqlx::query(
+			r#"
+            DELETE FROM wallet_state_cache 
+            WHERE updated_at < NOW() - INTERVAL '1 day' * $1
+            "#,
+		)
+		.bind(max_age_days as i32)
+		.execute(&self.pool)
+		.await;
+
+		match result {
+			Ok(r) => {
+				let count = r.rows_affected();
+				if count > 0 {
+					log::info!(
+						"Evicted {} stale wallet cache entries (older than {} days)",
+						count,
+						max_age_days
+					);
+				}
+				count
+			},
+			Err(e) => {
+				log::warn!("Failed to evict stale wallet cache entries: {e}");
+				0
+			},
+		}
+	}
+
+	/// Evict oldest wallet state cache entries, keeping only the specified number.
+	///
+	/// Useful for limiting total cache size regardless of age.
+	/// Returns the number of entries evicted.
+	pub async fn evict_oldest_wallet_cache(&self, keep_count: u32) -> u64 {
+		// Use a subquery to find entries to delete
+		let result = sqlx::query(
+			r#"
+            DELETE FROM wallet_state_cache 
+            WHERE (chain_id, wallet_id) IN (
+                SELECT chain_id, wallet_id 
+                FROM wallet_state_cache 
+                ORDER BY updated_at DESC 
+                OFFSET $1
+            )
+            "#,
+		)
+		.bind(keep_count as i64)
+		.execute(&self.pool)
+		.await;
+
+		match result {
+			Ok(r) => {
+				let count = r.rows_affected();
+				if count > 0 {
+					log::info!(
+						"Evicted {} oldest wallet cache entries (keeping {})",
+						count,
+						keep_count
+					);
+				}
+				count
+			},
+			Err(e) => {
+				log::warn!("Failed to evict oldest wallet cache entries: {e}");
+				0
+			},
+		}
+	}
+
+	/// Get the count of wallet state cache entries.
+	pub async fn wallet_cache_count(&self) -> u64 {
+		let result: Option<(i64,)> = sqlx::query_as(r#"SELECT COUNT(*) FROM wallet_state_cache"#)
+			.fetch_optional(&self.pool)
+			.await
+			.ok()
+			.flatten();
+
+		result.map(|(count,)| count as u64).unwrap_or(0)
+	}
+}
+
 // Implement WalletStateCaching for PostgresBackend (delegates to FetchStorage impl)
 #[async_trait]
 impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> WalletStateCaching
