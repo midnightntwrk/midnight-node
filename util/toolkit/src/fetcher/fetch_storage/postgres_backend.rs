@@ -456,7 +456,11 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 			Ok(r) => {
 				let count = r.rows_affected();
 				if count > 0 {
-					log::info!("Evicted {} stale wallet cache entries (older than {} days)", count, max_age_days);
+					log::info!(
+						"Evicted {} stale wallet cache entries (older than {} days)",
+						count,
+						max_age_days
+					);
 				}
 				count
 			},
@@ -492,7 +496,11 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 			Ok(r) => {
 				let count = r.rows_affected();
 				if count > 0 {
-					log::info!("Evicted {} oldest wallet cache entries (keeping {})", count, keep_count);
+					log::info!(
+						"Evicted {} oldest wallet cache entries (keeping {})",
+						count,
+						keep_count
+					);
 				}
 				count
 			},
@@ -505,13 +513,11 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 
 	/// Get the count of wallet state cache entries.
 	pub async fn wallet_cache_count(&self) -> u64 {
-		let result: Option<(i64,)> = sqlx::query_as(
-			r#"SELECT COUNT(*) FROM wallet_state_cache"#,
-		)
-		.fetch_optional(&self.pool)
-		.await
-		.ok()
-		.flatten();
+		let result: Option<(i64,)> = sqlx::query_as(r#"SELECT COUNT(*) FROM wallet_state_cache"#)
+			.fetch_optional(&self.pool)
+			.await
+			.ok()
+			.flatten();
 
 		result.map(|(count,)| count as u64).unwrap_or(0)
 	}
@@ -601,7 +607,11 @@ mod tests {
 		let cache = create_test_cache(100, wallet_id);
 
 		// Initially no cache
-		assert!(WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await.is_none());
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
+				.await
+				.is_none()
+		);
 
 		// Save cache
 		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache.clone()).await;
@@ -640,14 +650,22 @@ mod tests {
 		assert_eq!(evicted, 0);
 
 		// Entry should still exist
-		assert!(WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await.is_some());
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
+				.await
+				.is_some()
+		);
 
 		// Evict entries older than 0 days (should evict everything)
 		let evicted = backend.evict_stale_wallet_cache(0).await;
 		assert!(evicted >= 1);
 
 		// Entry should be gone
-		assert!(WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await.is_none());
+		assert!(
+			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
+				.await
+				.is_none()
+		);
 
 		cleanup_test_data(&backend, chain_id).await;
 	}

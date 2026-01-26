@@ -2850,7 +2850,8 @@ async fn authority_selection_uses_aiken_candidates() {
 #[tokio::test]
 async fn wallet_state_cache_redb_roundtrip() {
     let settings = Settings::default();
-    let cardano_client = CardanoClient::new(settings.ogmios_client.clone(), settings.constants).await;
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
 
     let address_bech32 = cardano_client.address_as_bech32();
@@ -2988,8 +2989,11 @@ async fn wallet_state_cache_redb_roundtrip() {
 
     // Balances should be consistent (may differ slightly if new blocks arrived)
     // For this test, we just verify both runs succeeded and produced valid results
-    assert!(balance1 > 0 || balance2 > 0, "At least one run should show DUST balance");
-    
+    assert!(
+        balance1 > 0 || balance2 > 0,
+        "At least one run should show DUST balance"
+    );
+
     // The second run should generally be faster due to cache
     // (not a hard requirement, just informational)
     if elapsed2 < elapsed1 {
