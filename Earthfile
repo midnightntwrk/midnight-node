@@ -202,19 +202,16 @@ rebuild-redemption-skeleton:
     # aiken doesn't support arm yet.
     FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
-    # Install Node.js repository and dependencies
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # renovate: datasource=npm packageName=aiken-lang/aiken
     ENV aiken_version=1.1.19
@@ -604,7 +601,8 @@ node-ci-image-single-platform:
         openssh-clients \
         git \
         tar \
-        gzip && \
+        gzip \
+        jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
@@ -675,23 +673,21 @@ prep:
     SAVE IMAGE --cache-hint
 
 # Prepares Node Toolkit (JS) in time for testing
+# Always uses linux/amd64 platform because compactc doesn't release for arm64
 toolkit-js-prep:
-    ARG NATIVEARCH
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
-    # Install Node.js repository and dependencies
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs unzip && \
+    # Install dependencies for Node.js and toolkit-js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz unzip && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 x64 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Always use x64 since this target is always built for linux/amd64 platform
+    ARG NODE_VERSION=22.13.1
+    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -741,9 +737,6 @@ check-rust-prepare:
     # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-
-    RUN microdnf -y install jq && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -852,6 +845,7 @@ test-pallet-fixtures:
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+# NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
 test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
@@ -860,19 +854,23 @@ test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
-    # Install Node.js repository and dependencies
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Test
     RUN mkdir /test-artifacts-toolkit
@@ -1109,18 +1107,21 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    ARG NODE_VERSION=22.13.1
+    RUN if [ "$NATIVEARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Add toolkit-js
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
@@ -1180,19 +1181,22 @@ audit-npm:
     ARG REPORT_NAME
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
-    # Install Node.js repository and dependencies
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
@@ -1206,19 +1210,22 @@ audit-yarn:
     ARG REPORT_NAME
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
-    # Install Node.js repository and dependencies
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install Node.js
-    RUN microdnf -y install nodejs && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Install and enable corepack for yarn support
     RUN npm install -g corepack && corepack enable
