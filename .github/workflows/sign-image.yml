@@ -30,9 +30,11 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Sign image
+        env:
+          IMAGE: ${{ inputs.image }}
         run: |
           # Get the image digest from registry
-          DIGEST=$(docker manifest inspect ${{ inputs.image }} --verbose | jq -r '.Descriptor.digest')
+          DIGEST=$(docker manifest inspect "${IMAGE}" --verbose | jq -r '.Descriptor.digest')
 
-          echo "Signing ${{ inputs.image }} (${DIGEST})"
-          cosign sign --yes ${{ inputs.image }}@${DIGEST}
+          echo "Signing ${IMAGE} (${DIGEST})"
+          cosign sign --yes "${IMAGE}@${DIGEST}"
