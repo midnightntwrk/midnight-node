@@ -539,8 +539,8 @@ async fn save_context_to_cache<C: WalletStateCaching>(
 	let cache = match wallet_state_cache::create_cache_from_context(
 		context,
 		chain_id,
+		wallet_id,
 		block_height,
-		None,
 	) {
 		Ok(c) => c,
 		Err(e) => {

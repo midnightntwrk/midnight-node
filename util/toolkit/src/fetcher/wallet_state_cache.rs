@@ -110,17 +110,6 @@ impl WalletCacheKey {
 	}
 }
 
-/// Compute a wallet identity hash from public key material.
-///
-/// The wallet identity is derived from the shielded coin public key and dust public key,
-/// ensuring the cache is only restored for the correct wallet.
-pub fn compute_wallet_id(shielded_coin_pub_key: &[u8; 32], dust_pub_key: &[u8]) -> H256 {
-	let mut hasher = Sha256::new();
-	hasher.update(shielded_coin_pub_key);
-	hasher.update(dust_pub_key);
-	H256::from_slice(&hasher.finalize())
-}
-
 // =============================================================================
 // Compression utilities
 // =============================================================================
@@ -180,24 +169,6 @@ pub fn deserialize_ledger_state(bytes: &[u8]) -> Result<LedgerState<DefaultDB>, 
 		.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))
 }
 
-/// Compute a wallet identity from a LedgerContext's wallets.
-///
-/// Uses the public key material from the first wallet to generate a stable identity.
-/// Returns `H256::zero()` if no wallets exist or if the lock cannot be acquired.
-pub fn compute_wallet_id_from_context(context: &LedgerContext<DefaultDB>) -> H256 {
-	let Ok(wallets) = context.wallets.lock() else {
-		log::warn!("Failed to acquire wallets lock for wallet ID computation");
-		return H256::zero();
-	};
-	if let Some(wallet) = wallets.values().next() {
-		let coin_pub = wallet.shielded.coin_public_key.0.0;
-		let dust_pub = &[];
-		compute_wallet_id(&coin_pub, dust_pub)
-	} else {
-		H256::zero()
-	}
-}
-
 /// Hash a wallet seed for use as snapshot key.
 fn hash_seed(seed: &WalletSeed) -> H256 {
 	let mut hasher = Sha256::new();
@@ -223,14 +194,19 @@ fn compute_state_root(ledger_state_bytes: &[u8]) -> Vec<u8> {
 ///
 /// The state_root is automatically computed from the serialized ledger state
 /// to enable integrity verification on restore.
+///
+/// # Arguments
+///
+/// * `context` - The LedgerContext to cache
+/// * `chain_id` - Chain identity (block 1 hash)
+/// * `wallet_id` - Wallet identity (caller-provided, typically from seed hash)
+/// * `block_height` - Block height at which this cache is created
 pub fn create_cache_from_context(
 	context: &LedgerContext<DefaultDB>,
 	chain_id: H256,
+	wallet_id: H256,
 	block_height: u64,
-	_state_root: Option<Vec<u8>>, // Ignored - computed automatically
 ) -> Result<WalletStateCache, CacheError> {
-	let wallet_id = compute_wallet_id_from_context(context);
-
 	// Serialize ledger state
 	let ledger_state = context
 		.ledger_state
