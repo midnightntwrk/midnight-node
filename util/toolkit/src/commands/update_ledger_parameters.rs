@@ -2,10 +2,7 @@ use clap::Args;
 use subxt::{OnlineClient, SubstrateConfig, dynamic, tx::Payload};
 use thiserror::Error;
 
-use crate::{
-	cli_parsers::{self as cli},
-	commands::root_call::{self, RootCallArgs},
-};
+use crate::commands::root_call::{self, RootCallArgs};
 use midnight_node_ledger_helpers::{
 	CostDuration, Duration, DustParameters, FeePrices, FixedPoint, SyntheticCost, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction, TransactionLimits},
@@ -127,8 +124,8 @@ pub struct UpdateableParams {
 #[derive(Args, Clone)]
 pub struct UpdateLedgerParametersArgs {
 	/// The new serialized ledger parameters. If not provided, the default parameters will be fetched from the server.
-	#[arg(long, env, value_parser = cli::hex_bytes)]
-	parameters: Option<Vec<u8>>,
+	#[arg(long, env)]
+	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
 	#[arg(short, required = true)]
@@ -151,7 +148,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 
 	let bytes = match args.parameters {
-		Some(parameters) => parameters,
+		Some(parameters) => {
+			let hex_str = parameters.strip_prefix("0x").unwrap_or(&parameters);
+			hex::decode(hex_str)
+				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(Box::new(e)))?
+		},
 		None => {
 			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
 			api.runtime_api()
