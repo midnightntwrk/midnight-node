@@ -8,14 +8,16 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write  # Required for keyless signing
+# no top level default permissions for security reasons
+permissions: {}
 
 jobs:
   sign:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # Required for keyless signing
     steps:
       - name: Install Cosign
         uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
