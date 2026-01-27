@@ -559,7 +559,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e #v2.67.4
+        uses: taiki-e/install-action@710817a1645ef40daad5bcde7431ceccf6cc3528 #v2.67.13
         with:
           tool: just
 
