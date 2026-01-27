@@ -24,6 +24,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write  # Required for keyless signing with Cosign
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -48,6 +49,9 @@ jobs:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
 
       - name: Checkout Season action repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
@@ -93,6 +97,20 @@ jobs:
           # Pass IMAGE_TAG to next step (must match definition in Earthfile):
           export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Sign container images
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
+        run: |
+          # Query registry for image digests (images pushed by Earthly)
+          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
+          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
+
+          echo "Signing midnight-node:${IMAGE_TAG}-amd64 (${NODE_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
+
+          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-amd64 (${TOOLKIT_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -162,6 +180,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write  # Required for keyless signing with Cosign
     steps:
       # QEMU is currently required as compactc doesn't have a linux arm64 build of compactc.
       - name: Set up QEMU
@@ -188,6 +207,9 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
       - name: Run Node and toolkit builds
         run: |
           mkdir -p $HOME/.cargo
@@ -197,6 +219,21 @@ jobs:
           # We don't pass --ci to earthly here as we want the artifacts saved
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +toolkit-image
+
+      - name: Sign container images
+        run: |
+          # Calculate IMAGE_TAG (must match definition in Earthfile)
+          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+
+          # Query registry for image digests (images pushed by Earthly)
+          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
+          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
+
+          echo "Signing midnight-node:${IMAGE_TAG}-arm64 (${NODE_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
+
+          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-arm64 (${TOOLKIT_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -327,7 +364,11 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write  # Required for keyless signing with Cosign
     steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
       - name: Login to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
         with:
@@ -367,6 +408,19 @@ jobs:
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
 
+      - name: Sign multi-arch manifests (GHCR)
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          # Get multi-arch manifest digests
+          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
+          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
+
+          echo "Signing multi-arch midnight-node:${IMAGE_TAG} (${NODE_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
+
+          echo "Signing multi-arch midnight-node-toolkit:${IMAGE_TAG} (${TOOLKIT_DIGEST})"
+          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
 
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
