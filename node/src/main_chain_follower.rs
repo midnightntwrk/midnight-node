@@ -276,7 +276,8 @@ async fn get_connection(
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
 	let connect_options =
 		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
-			sqlx::postgres::PgSslMode::Prefer
+			//Note: PgSslMode::Prefer has issues with some environments.
+			sqlx::postgres::PgSslMode::Disable
 		} else {
 			sqlx::postgres::PgSslMode::Require
 		});
