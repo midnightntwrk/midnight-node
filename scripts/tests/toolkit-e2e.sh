@@ -143,6 +143,14 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
+echo "Deregister dust address..."
+docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+    generate-txs deregister-dust-address \
+    --wallet-seed "0000000000000000000000000000000000000000000000000000000000000002" \
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000002" \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
+
 echo "Sending just shielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
