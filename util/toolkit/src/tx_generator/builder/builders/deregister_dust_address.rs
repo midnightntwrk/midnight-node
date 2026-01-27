@@ -27,6 +27,16 @@ use crate::{
 	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs},
 };
 
+/// Builder for generating DUST address deregistration transactions.
+///
+/// This builder creates a transaction that removes the DUST address mapping
+/// for a wallet from the Midnight network. The wallet's unshielded UTXOs are
+/// spent back to self while the deregistration is processed.
+///
+/// Deregistration is useful for:
+/// - Migrating to a new DUST address
+/// - Cleaning up test registrations
+/// - Revoking access before rotating wallet keys
 pub struct DeregisterDustAddressBuilder {
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
@@ -34,6 +44,7 @@ pub struct DeregisterDustAddressBuilder {
 }
 
 impl DeregisterDustAddressBuilder {
+	/// Creates a new builder from CLI arguments.
 	pub fn new(args: DeregisterDustAddressArgs) -> Self {
 		Self { seed: args.wallet_seed, rng_seed: args.rng_seed, funding_seed: args.funding_seed }
 	}

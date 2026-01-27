@@ -284,6 +284,7 @@ pub struct DeregisterDustAddressArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
+	/// RNG seed for deterministic transaction generation (32 bytes hex)
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
