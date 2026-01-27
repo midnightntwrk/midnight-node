@@ -102,15 +102,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          # Query registry for image digests (images pushed by Earthly)
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
-
-          echo "Signing midnight-node:${IMAGE_TAG}-amd64 (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-amd64 (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -222,18 +216,13 @@ jobs:
 
       - name: Sign container images
         run: |
+          source .github/scripts/sign-image.sh
+
           # Calculate IMAGE_TAG (must match definition in Earthfile)
           IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
 
-          # Query registry for image digests (images pushed by Earthly)
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
-
-          echo "Signing midnight-node:${IMAGE_TAG}-arm64 (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-arm64 (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -412,15 +401,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          # Get multi-arch manifest digests
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
-
-          echo "Signing multi-arch midnight-node:${IMAGE_TAG} (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing multi-arch midnight-node-toolkit:${IMAGE_TAG} (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
 
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
@@ -473,6 +456,21 @@ jobs:
           echo "Push manifests to Docker Hub"
           docker manifest push midnightntwrk/midnight-node:latest-main
           docker manifest push midnightntwrk/midnight-node-toolkit:latest-main
+
+      - name: Sign Docker Hub images (latest-main)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          source .github/scripts/sign-image.sh
+
+          # Sign arch-specific images
+          sign_with_retry "midnightntwrk/midnight-node:latest-main-amd64"
+          sign_with_retry "midnightntwrk/midnight-node:latest-main-arm64"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main-amd64"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main-arm64"
+
+          # Sign multi-arch manifests
+          sign_with_retry "midnightntwrk/midnight-node:latest-main"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main"
 
       - name: Check if indexer is on main
         id: indexer-check
