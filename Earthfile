@@ -115,7 +115,7 @@ subxt:
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
     # Install curl for rust installation
-    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq && \
+    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install rust with complete profile for profiler runtime support
@@ -125,10 +125,10 @@ subxt:
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
+    # RUN cargo install cargo-binstall --version 1.6.9
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
-    RUN cargo binstall -y subxt-cli@${SUBXT_VERSION}
+    RUN cargo install subxt-cli@${SUBXT_VERSION}
     RUN cp /root/.cargo/bin/subxt /usr/local/bin/subxt
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
@@ -771,11 +771,11 @@ check-rust:
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
+    #=ghcr.io/midnight-ntwrk/midnight-node:latest
     FROM +subxt
-    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
-    WITH DOCKER --pull $NODE_IMAGE
+    WITH DOCKER --pull ${NODE_IMAGE}
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /image_metadata.scale && \
