@@ -736,7 +736,7 @@ jobs:
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version="$(grep -m 1 '^version =' node/Cargo.toml | cut -d '\"' -f2)"
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "Get Version and git commit"
           echo "version=$version" >> $GITHUB_OUTPUT
 
