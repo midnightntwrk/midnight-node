@@ -168,7 +168,7 @@ jobs:
       - name: Run build
         run: |
           # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
 
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -199,7 +199,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run, test-pallet-fixtures]
+    needs: [run]
     permissions:
       id-token: write
       contents: read
@@ -334,7 +334,7 @@ jobs:
       - name: Run pallet fixture tests
         run: |
           # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
           . ./.envrc && earthly --strict +test-pallet-fixtures
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
@@ -356,7 +356,7 @@ jobs:
       - name: Run toolkit tests
         run: |
           # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:

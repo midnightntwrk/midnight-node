@@ -84,7 +84,7 @@ jobs:
         id: export
         run: |
           # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
 
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
