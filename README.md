@@ -8,24 +8,24 @@ Implementation of the Midnight blockchain node, providing consensus, transaction
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                        Cardano Partner Chain Stack                         │
+│                        Midnight Node Wizard                                │
 └────────────────────────────────────────────────────────────────────────────┘
          │
-         │ Observes mainchain state
+         │ Register Partner Chain
          ▼
-┌─────────────┐      ┌─────────────┐      ┌──────────────┐
-│   Cardano   │ ───▶ │   db-sync   │ ───▶ │  PostgreSQL  │
-│  Mainchain  │      │             │      │  (cexplorer) │
-└─────────────┘      └─────────────┘      └──────────────┘
-                                                   │
-                                                   │ Queries Cardano data
-                                                   │ (cNIGHT, governance)
-                                                   ▼
+┌─────────────┐      ┌─────────────────┐      ┌──────────────┐
+│   Cardano   │ ───▶ │ Cardano Indexer │ ───▶ │  PostgreSQL  │
+│  Mainchain  │      │ (db-sync)       │      │  (cexplorer) │
+└─────────────┘      └─────────────────┘      └──────────────┘
+                                                      │ Observes mainchain state
+                                                      │ Queries Cardano data
+                                                      │ (cNIGHT, governance)
+                                                      ▼
      ┌────────────────────────────────────────────────────────────────────┐
-◀──▶ │                         Midnight Node                              │ ◀──▶
-P2P  ├────────────────────────────────────────────────────────────────────┤  P2P
-Port │                                                                    │  Port
-30333│  ┌──────────────────────────────────────────────────────────────┐  │  30333
+     │                         Midnight Node                              │
+     ├────────────────────────────────────────────────────────────────────┤
+     │                                                                    │
+     │  ┌──────────────────────────────────────────────────────────────┐  │
      │  │                          Runtime                             │  │
      │  │                                                              │  │
      │  │  ┌────────────────────────────────────────────────────────┐  │  │
@@ -49,9 +49,9 @@ Port │                                                                    │ 
      │  │                      Node Services                           │  │
      │  │                                                              │  │
      │  │    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │  │
-     │  │    │   RPC    │  │Consensus │  │ Network  │  │ Keystore │    │  │
-     │  │    │  Server  │  │   AURA   │  │   P2P    │  │          │    │  │
-     │  │    │          │  │ GRANDPA  │  │          │  │          │    │  │
+     │  │    │   RPC    │  │Consensus │  │ Keystore │  │ Network  │    │  │
+     │  │    │  Server  │  │   AURA   │  │          │  │   P2P    │◀───│──│────▶ Other Midnight Nodes
+     │  │    │          │  │ GRANDPA  │  │          │  │Port 30333│    │  │
      │  │    └──────────┘  └──────────┘  └──────────┘  └──────────┘    │  │
      │  └──────────────────────────────────────────────────────────────┘  │
      └────────────────────────────────────────────────────────────────────┘
@@ -59,16 +59,15 @@ Port │                                                                    │ 
                                     │ WebSocket RPC
                                     │ Port: 9944
                                     ▼
-                         ┌──────────────────────┐
-                         │   External Clients   │
-                         │  (Wallets, Indexers, │
-                         │     Applications)    │
-                         └──────────────────────┘
-
-     Other Midnight Nodes ◀────P2P Network (Port 30333)────▶ Other Midnight Nodes
+            ┌─────────────────────────────────────────────────────────┐
+            │   External Clients: Apps, Indexers [1]                  │
+            └─────────────────────────────────────────────────────────┘
 ```
+[1] [Midnight Indexer](https://github.com/midnightntwrk/midnight-indexer)
 
 > **Security Note:** Database connections to PostgreSQL require SSL/TLS by default. Set `ALLOW_NON_SSL=true` only for local development environments without SSL certificates.
+> 
+> Please also see https://docs.polkadot.com/infrastructure/running-a-validator/onboarding-and-offboarding/set-up-validator/ for further security recommendations on running validators.
 
 ## Components
 
@@ -166,6 +165,8 @@ that we are still in the process of being release. As such:
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
+- [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
+  - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance
 
 ## Prerequisites
 

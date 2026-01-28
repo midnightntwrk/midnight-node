@@ -641,6 +641,22 @@ impl CardanoClient {
         None
     }
 
+    /// Query all UTxOs at a given address
+    pub async fn query_utxos(&self, address: &str) -> Vec<OgmiosUtxo> {
+        let request = OgmiosRequest::QueryUtxo {
+            address: address.to_string(),
+        };
+
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+
+        match response {
+            OgmiosResponse::QueryUtxo(utxos) => utxos,
+            _ => vec![],
+        }
+    }
+
     pub fn build_asset_vector(utxo: &OgmiosUtxo) -> Vec<Asset> {
         let mut assets: Vec<Asset> = utxo
             .value
@@ -941,9 +957,10 @@ impl CardanoClient {
     /// and CandidateKey = [id: ByteArray, bytes: ByteArray]
     ///
     /// # Arguments
-    /// * `candidates` - List of (ecdsa_key, aura_key) tuples where:
+    /// * `candidates` - List of (ecdsa_key, aura_key, grandpa_key) tuples where:
     ///   - ecdsa_key: The cross-chain (crch) ECDSA public key (33 bytes, hex string)
     ///   - aura_key: The SR25519 public key for AURA consensus (32 bytes, hex string)
+    ///   - grandpa_key: The ED25519 public key for GRANDPA finality (32 bytes, hex string)
     #[allow(clippy::too_many_arguments)]
     pub async fn deploy_federated_ops_contract(
         &self,
@@ -953,7 +970,7 @@ impl CardanoClient {
         script_cbor: &str,
         script_address: &str,
         policy_id: &str,
-        candidates: Vec<(String, String)>, // (ecdsa_key, aura_key) tuples
+        candidates: Vec<(String, String, String)>, // (ecdsa_key, aura_key, grandpa_key) tuples
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let payments = self.constants.payments.clone();
         let funded_addr = payments.funded_address;
@@ -971,9 +988,10 @@ impl CardanoClient {
         // Build the FederatedOps datum and redeemer using shared library
         let fedops_candidates: Vec<FederatedOpsCandidate> = candidates
             .iter()
-            .map(|(ecdsa_key, aura_key)| FederatedOpsCandidate {
+            .map(|(ecdsa_key, aura_key, grandpa_key)| FederatedOpsCandidate {
                 ecdsa_key: ecdsa_key.clone(),
                 aura_key: aura_key.clone(),
+                grandpa_key: grandpa_key.clone(),
             })
             .collect();
 
