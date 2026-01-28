@@ -346,10 +346,61 @@ jobs:
 
           echo "✅ Images retagged and pushed successfully!"
 
+  sbom-scan-node-amd64:
+    name: SBOM/Scan Node (amd64)
+    needs: [publish-amd64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
+      sbom-artifact-name: sbom-midnight-node-amd64
+    secrets: inherit
+
+  sbom-scan-node-arm64:
+    name: SBOM/Scan Node (arm64)
+    needs: [publish-amd64, publish-arm64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
+      sbom-artifact-name: sbom-midnight-node-arm64
+    secrets: inherit
+
+  sbom-scan-toolkit-amd64:
+    name: SBOM/Scan Toolkit (amd64)
+    needs: [publish-amd64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
+      sbom-artifact-name: sbom-midnight-node-toolkit-amd64
+    secrets: inherit
+
+  sbom-scan-toolkit-arm64:
+    name: SBOM/Scan Toolkit (arm64)
+    needs: [publish-amd64, publish-arm64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
+      sbom-artifact-name: sbom-midnight-node-toolkit-arm64
+    secrets: inherit
+
+  sbom-scan-indexer-images:
+    name: SBOM/Scan Indexer (${{ matrix.image }})
+    needs: [build-indexer-images]
+    strategy:
+      matrix:
+        image:
+          - indexer-api
+          - chain-indexer
+          - wallet-indexer
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/${{ matrix.image }}:${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}
+      sbom-artifact-name: sbom-${{ matrix.image }}
+    secrets: inherit
+
   publish-multi-arch:
     name: Publish multi-arch image
     runs-on: ubuntu-latest
-    needs: [publish-amd64, publish-arm64, build-indexer-images]
+    needs: [publish-amd64, publish-arm64, build-indexer-images, sbom-scan-node-amd64, sbom-scan-node-arm64, sbom-scan-toolkit-amd64, sbom-scan-toolkit-arm64, sbom-scan-indexer-images]
     permissions:
       contents: write
       packages: write
