@@ -330,6 +330,8 @@ jobs:
 
       - name: Run pallet fixture tests
         run: |
+          # Free disk space
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
           . ./.envrc && earthly --strict +test-pallet-fixtures
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
