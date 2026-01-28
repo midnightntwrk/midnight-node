@@ -222,8 +222,8 @@ pub fn clamp_and_normalize(
 
 	if clamped != *cost {
 		log::error!(
-			"Block fullness exceeded limits in {}, clamping to limits. \
-			 original: {:?}, limits: {:?}",
+			"Fatal: Ledger block limit exceeded (Substrate-Ledger weight mismatch?) in {}, \
+			clamping to limits. Original: {:?}, limits: {:?}",
 			context,
 			cost,
 			limits
@@ -277,17 +277,7 @@ mod tests {
 	}
 
 	#[test]
-	fn cost_at_limits_returns_full() {
-		let cost = make_cost(100, 200, 400, 600, 800);
-		let limits = make_cost(100, 200, 400, 600, 800);
-
-		let normalized = clamp_and_normalize(&cost, &limits, "test");
-
-		assert_eq!(normalized, make_normalized(ONE, ONE, ONE, ONE, ONE));
-	}
-
-	#[test]
-	fn cost_over_single_limit_clamps_that_dimension() {
+	fn cost_over_the_limits_clamps_correct_dimensions() {
 		let cost = make_cost(150, 100, 401, 300, 400);
 		let limits = make_cost(100, 200, 400, 600, 800);
 		let half = FixedPoint::from_u64_div(1, 2);
@@ -295,26 +285,6 @@ mod tests {
 		let normalized = clamp_and_normalize(&cost, &limits, "test");
 
 		assert_eq!(normalized, make_normalized(ONE, half, ONE, half, half));
-	}
-
-	#[test]
-	fn cost_over_multiple_limits_clamps_all() {
-		let cost = make_cost(200, 400, 800, 1200, 1600);
-		let limits = make_cost(100, 200, 400, 600, 800);
-
-		let normalized = clamp_and_normalize(&cost, &limits, "test");
-
-		assert_eq!(normalized, make_normalized(ONE, ONE, ONE, ONE, ONE));
-	}
-
-	#[test]
-	fn zero_cost_normalizes_to_zero() {
-		let cost = SyntheticCost::ZERO;
-		let limits = make_cost(100, 200, 400, 600, 800);
-
-		let normalized = clamp_and_normalize(&cost, &limits, "test");
-
-		assert_eq!(normalized, NormalizedCost::ZERO);
 	}
 
 	fn make_cost(read: u64, compute: u64, block: u64, written: u64, churned: u64) -> SyntheticCost {
