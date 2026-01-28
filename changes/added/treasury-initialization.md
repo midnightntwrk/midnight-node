@@ -3,5 +3,5 @@
 
 Adds treasury initialization support for the Midnight mainnet genesis block. Treasury is initialized via a one-off transfer of Night tokens to the ICS contract, configured through a new `treasury.json` configuration file.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/563
 JIRA: https://shielded.atlassian.net/browse/PM-20981
