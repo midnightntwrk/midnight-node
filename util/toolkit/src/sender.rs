@@ -42,6 +42,22 @@ pub struct SendToUrlError {
 	source: subxt::Error,
 }
 
+#[derive(Debug, Error)]
+#[error("{failed_count} transaction(s) failed during send")]
+pub struct SendBatchError {
+	pub failed_count: usize,
+}
+
+#[derive(Debug, Error)]
+pub enum SendAndLogError {
+	#[error("failed to reach best block")]
+	FailedToReachBestBlock,
+	#[error("extrinsic failed")]
+	ExtrinsicFailed,
+	#[error("failed to finalize")]
+	FailedToFinalize,
+}
+
 #[derive(Debug, Clone)]
 pub struct TxHashes {
 	midnight_tx_hash: String,
@@ -123,10 +139,10 @@ where
 	pub async fn send_tx(
 		&self,
 		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(), SendToUrlError> {
+	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
 		if self.watch_progress {
-			self.send_and_log(&tx_hash_string, tx_progress).await;
+			self.send_and_log(&tx_hash_string, tx_progress).await?;
 		}
 		Ok(())
 	}
@@ -135,17 +151,31 @@ where
 		self: Arc<Self>,
 		rate: f32,
 		txs: Vec<TransactionWithContext<S, P, DefaultDB>>,
-	) {
+	) -> usize {
 		log::debug!("send_worker: starting with {} txs", txs.len());
+		let failed_count = Arc::new(AtomicUsize::new(0));
 		let mut pending_finalized = vec![];
 		for (i, tx) in txs.into_iter().enumerate() {
 			let arc_self = self.clone();
+			let failed_count = failed_count.clone();
 			let task = tokio::spawn(async move {
 				log::debug!("send_worker: spawned task for tx {} starting", i);
-				let (tx_hashes, tx_progress) =
-					arc_self.send_tx_no_wait(&tx.tx).await.expect("Failed to send tx");
-				if arc_self.watch_progress {
-					arc_self.send_and_log(&tx_hashes, tx_progress).await;
+				let result = arc_self.send_tx_no_wait(&tx.tx).await;
+				let failed = match result {
+					Ok((tx_hashes, tx_progress)) => {
+						if arc_self.watch_progress {
+							arc_self.send_and_log(&tx_hashes, tx_progress).await.is_err()
+						} else {
+							false
+						}
+					},
+					Err(e) => {
+						log::error!("Failed to send tx {}: {}", i, e);
+						true
+					},
+				};
+				if failed {
+					failed_count.fetch_add(1, atomic::Ordering::SeqCst);
 				}
 				log::debug!("send_worker: spawned task for tx {} done", i);
 			});
@@ -156,10 +186,14 @@ where
 		log::debug!("send_worker: waiting for {} tasks to complete", pending_finalized.len());
 		for (i, task) in pending_finalized.into_iter().enumerate() {
 			log::debug!("send_worker: waiting for task {}", i);
-			task.await.expect("Transaction task failed");
+			if let Err(e) = task.await {
+				log::error!("Transaction task {} failed: {}", i, e);
+				failed_count.fetch_add(1, atomic::Ordering::SeqCst);
+			}
 			log::debug!("send_worker: task {} completed", i);
 		}
 		log::debug!("send_worker: all tasks completed");
+		failed_count.load(atomic::Ordering::SeqCst)
 	}
 
 	async fn send_tx_no_wait(
@@ -266,7 +300,11 @@ where
 		}
 	}
 
-	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) {
+	async fn send_and_log(
+		&self,
+		tx_hashes: &TxHashes,
+		tx: Progress,
+	) -> Result<(), SendAndLogError> {
 		let url = tx.url.clone();
 		let (progress, best_block) = Self::wait_for_best_block(tx).await;
 		if best_block.is_none() {
@@ -276,7 +314,7 @@ where
 				midnight_tx_hash = &tx_hashes.midnight_tx_hash;
 				"FAILED_TO_REACH_BEST_BLOCK"
 			);
-			return;
+			return Err(SendAndLogError::FailedToReachBestBlock);
 		}
 		let best_block = best_block.unwrap();
 		log::info!(
@@ -287,6 +325,43 @@ where
 			"BEST_BLOCK"
 		);
 
+		// Check for extrinsic execution failures
+		let mut extrinsic_failed = false;
+		match best_block.fetch_events().await {
+			Ok(events) => {
+				for event in events.iter().flatten() {
+					if event.pallet_name() == "System" && event.variant_name() == "ExtrinsicFailed"
+					{
+						extrinsic_failed = true;
+						match event.field_values() {
+							Ok(fields) => {
+								log::error!(
+									url = &url,
+									extrinsic_hash = &tx_hashes.extrinsic_hash,
+									midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+									dispatch_error = format!("{:?}", fields);
+									"EXTRINSIC_FAILED"
+								);
+							},
+							Err(e) => {
+								log::error!(
+									url = &url,
+									extrinsic_hash = &tx_hashes.extrinsic_hash,
+									midnight_tx_hash = &tx_hashes.midnight_tx_hash;
+									"EXTRINSIC_FAILED (failed to decode fields: {})", e
+								);
+							},
+						}
+					}
+				}
+			},
+			Err(e) => log::warn!(url = &url; "Failed to fetch events: {}", e),
+		}
+
+		if extrinsic_failed {
+			return Err(SendAndLogError::ExtrinsicFailed);
+		}
+
 		let finalized = Self::wait_for_finalized(progress).await;
 		let message = if finalized.is_some() { "FINALIZED" } else { "FAILED_TO_FINALIZE" };
 		log::info!(
@@ -296,6 +371,7 @@ where
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
 			"{message}"
 		);
+		if finalized.is_some() { Ok(()) } else { Err(SendAndLogError::FailedToFinalize) }
 	}
 
 	fn error(url: &str, e: subxt::Error) -> SendToUrlError {
