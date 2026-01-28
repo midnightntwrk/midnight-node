@@ -139,7 +139,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -167,11 +167,11 @@ jobs:
 
       - name: Run build
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-test-upgrader-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +hardfork-test-upgrader-image
 
   check-unused-deps:
     name: Check Unused Dependencies
@@ -201,7 +201,7 @@ jobs:
       id-token: write
       contents: read
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -315,7 +315,7 @@ jobs:
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
@@ -335,7 +335,7 @@ jobs:
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     name: Test Toolkit
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
@@ -736,7 +736,7 @@ jobs:
         id: meta
         run: |
           echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          version="$(grep -m 1 '^version =' node/Cargo.toml | cut -d '\"' -f2)"
           echo "Get Version and git commit"
           echo "version=$version" >> $GITHUB_OUTPUT
 
