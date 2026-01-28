@@ -352,6 +352,8 @@ jobs:
 
       - name: Run toolkit tests
         run: |
+          # Free disk space
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:
