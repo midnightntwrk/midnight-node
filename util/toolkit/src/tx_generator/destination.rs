@@ -169,7 +169,7 @@ where
 		log::info!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;
 
-		let mut total_failed = 0usize;
+		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {
 			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
