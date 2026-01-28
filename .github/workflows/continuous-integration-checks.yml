@@ -14,7 +14,7 @@ concurrency:
 jobs:
   run:
     name: Fomatting and Linting
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:

@@ -362,7 +362,7 @@ jobs:
   toolkit-e2e:
     name: Toolkit E2E
     needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -402,7 +402,7 @@ jobs:
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
     needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -550,7 +550,7 @@ jobs:
 
   build-indexer-images:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       packages: read
@@ -667,7 +667,7 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [ run, build-indexer-images ]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       packages: read
@@ -731,7 +731,7 @@ jobs:
     #   - startup-dev-e2e
     #   - genesis-undeployed-e2e
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
