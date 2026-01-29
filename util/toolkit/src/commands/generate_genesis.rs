@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
 use midnight_node_ledger_helpers::{
-	Serializable, SystemTransaction, Tagged, WalletSeed, midnight_serialize::tagged_deserialize,
-	serialize,
+	LedgerParameters, Serializable, SystemTransaction, Tagged, WalletSeed,
+	midnight_serialize::tagged_deserialize, serialize,
 };
 
 #[derive(Deserialize)]
@@ -43,6 +43,10 @@ pub struct GenerateGenesisArgs {
 	/// contract observations
 	#[arg(long)]
 	cnight_treasury_config: Option<PathBuf>,
+	/// File containing ledger parameters config (JSON). If provided, these parameters will be used
+	/// instead of the default INITIAL_PARAMETERS.
+	#[arg(long)]
+	ledger_parameters_config: Option<PathBuf>,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -73,7 +77,7 @@ pub async fn execute(
 		})
 		.collect();
 
-	// Parse the cNight generates dust config
+	// Parse the cNight generates dust config file
 	let cnight_system_tx: Option<SystemTransaction> =
 		if let Some(filepath) = args.cnight_generates_dust_config {
 			let json_str = std::fs::read_to_string(filepath)?;
@@ -103,6 +107,17 @@ pub async fn execute(
 			None
 		};
 
+	// Parse the ledger parameters config file
+	let ledger_parameters: Option<LedgerParameters> =
+		if let Some(filepath) = args.ledger_parameters_config {
+			let json_str = std::fs::read_to_string(&filepath)?;
+			let params: LedgerParameters = serde_json::from_str(&json_str)?;
+			println!("Using ledger parameters from {}", filepath.display());
+			Some(params)
+		} else {
+			None
+		};
+
 	let genesis = GenesisGenerator::new(
 		args.nonce_seed,
 		&args.network,
@@ -111,6 +126,7 @@ pub async fn execute(
 		&seeds?,
 		cnight_system_tx,
 		treasury_config,
+		ledger_parameters,
 	)
 	.await?;
 
@@ -143,6 +159,7 @@ mod test {
 	use crate::cli::{Cli, run_command};
 	use crate::{DefaultDB, LedgerState};
 	use clap::Parser;
+	use midnight_node_ledger_helpers::INITIAL_PARAMETERS;
 	use std::{
 		env::temp_dir,
 		fs::{self, remove_file},
@@ -198,5 +215,20 @@ mod test {
 
 		let path = "out/genesis_block_undeployed.mn";
 		check_file(path);
+	}
+
+	#[test]
+	fn print_default_ledger_parameters_json() {
+		let json = serde_json::to_string_pretty(&INITIAL_PARAMETERS)
+			.expect("failed to serialize INITIAL_PARAMETERS");
+		println!("{}", json);
+	}
+
+	#[test]
+	fn test_deserialize_ledger_parameters_config() {
+		let json_str =
+			std::fs::read_to_string("../../res/dev/ledger-parameters-config.json").unwrap();
+		let _params: super::LedgerParameters = serde_json::from_str(&json_str)
+			.expect("failed to deserialize ledger parameters config");
 	}
 }

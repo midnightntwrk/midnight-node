@@ -110,11 +110,21 @@ impl GenesisGenerator {
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
 		treasury_config: Option<CnightTreasuryConfig>,
+		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
-		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx, treasury_config)
-			.await?;
+		me.init(
+			seed,
+			network_id,
+			proof_server,
+			&funding,
+			seeds,
+			cnight_system_tx,
+			treasury_config,
+			ledger_parameters,
+		)
+		.await?;
 		Ok(me)
 	}
 
@@ -128,6 +138,7 @@ impl GenesisGenerator {
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
 		treasury_config: Option<CnightTreasuryConfig>,
+		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
 			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
@@ -141,7 +152,15 @@ impl GenesisGenerator {
 			parent_block_hash: HashOutput::default(),
 		};
 
-		// Fund treasury first (if configured)
+		// If custom ledger parameters are provided, apply them first
+		let original_parameters = if let Some(params) = ledger_parameters {
+			self.set_parameters(params.clone(), &genesis_block_context)?;
+			params
+		} else {
+			(*self.state.parameters).clone()
+		};
+
+		// Fund treasury (if configured)
 		// This must happen before wallet distribution per Decision 2:
 		// Treasury initialization should be early, right after ledger parameters.
 		if let Some(ref config) = treasury_config {
@@ -154,7 +173,6 @@ impl GenesisGenerator {
 		// Set fees to zero to simplify setup logic.
 		// This lets us claim the full requested amount of NIGHT,
 		// and register DUST addresses without waiting for DUST to accumulate.
-		let original_parameters = (*self.state.parameters).clone();
 		let no_fee_parameters = without_fees(&original_parameters);
 		self.set_parameters(no_fee_parameters, &genesis_block_context)?;
 
@@ -673,6 +691,7 @@ mod test {
 			&seeds,
 			None,
 			Some(treasury_config),
+			None, // no custom ledger parameters
 		)
 		.await
 		.unwrap();
@@ -711,7 +730,7 @@ mod test {
 		.to_vec();
 
 		let genesis =
-			GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None, None)
+			GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None, None, None)
 				.await
 				.unwrap();
 
