@@ -126,7 +126,7 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
 Dry-run: local prover (no proof server)
@@ -171,7 +171,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
@@ -476,6 +476,18 @@ $ midnight-node-toolkit get-tx-from-context
 ```shell
 midnight-node-toolkit generate-genesis --network <network_name>
 ```
+
+#### Custom Ledger Parameters
+You can optionally provide a JSON file with custom ledger parameters to use instead of the default `INITIAL_PARAMETERS`:
+
+```shell
+midnight-node-toolkit generate-genesis \
+    --network <network_name> \
+    --seeds-file /path/to/seeds.json \
+    --ledger-parameters-config /path/to/ledger-parameters-config.json
+```
+
+The `ledger-parameters-config.json` file should contain a JSON representation of the `LedgerParameters` struct. Default config files with the initial parameters are available in `res/<network>/ledger-parameters-config.json`.
 
 ---
 
