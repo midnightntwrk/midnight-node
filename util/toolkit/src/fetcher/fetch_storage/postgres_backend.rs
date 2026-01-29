@@ -560,4 +560,3 @@ where
 		<Self as FetchStorage<S, P, D>>::delete_wallet_state(self, chain_id, wallet_id).await
 	}
 }
-

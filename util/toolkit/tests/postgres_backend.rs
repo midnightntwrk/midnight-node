@@ -19,7 +19,7 @@ use midnight_node_toolkit::{
 	ProofType, SignatureType,
 	fetcher::{
 		fetch_storage::{WalletStateCaching, postgres_backend::PostgresBackend},
-		wallet_state_cache::{SerializableBlockContext, WalletStateCache, WalletSnapshot},
+		wallet_state_cache::{SerializableBlockContext, WalletSnapshot, WalletStateCache},
 	},
 };
 use subxt::utils::H256;
@@ -39,9 +39,8 @@ async fn postgres_url() -> &'static str {
 	&POSTGRES
 		.get_or_init(|| async {
 			let (name, tag) = test_image("postgres");
-			let password: String = (0..32)
-				.map(|_| format!("{:02x}", rand::random::<u8>()))
-				.collect();
+			let password: String =
+				(0..32).map(|_| format!("{:02x}", rand::random::<u8>())).collect();
 			let container = GenericImage::new(name, tag)
 				.with_wait_for(WaitFor::message_on_stderr(
 					"database system is ready to accept connections",
@@ -53,12 +52,9 @@ async fn postgres_url() -> &'static str {
 				.await
 				.expect("failed to start postgres container");
 
-			let port = container
-				.get_host_port_ipv4(5432)
-				.await
-				.expect("failed to get postgres port");
-			let url =
-				format!("postgres://postgres:{password}@localhost:{port}/toolkit_test");
+			let port =
+				container.get_host_port_ipv4(5432).await.expect("failed to get postgres port");
+			let url = format!("postgres://postgres:{password}@localhost:{port}/toolkit_test");
 			SharedPostgres { _container: container, url }
 		})
 		.await
