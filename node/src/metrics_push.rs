@@ -34,6 +34,10 @@ pub struct MetricsPushConfig {
 	pub interval: Duration,
 	/// Job name to identify this node's metrics
 	pub job_name: String,
+	/// Peer ID derived from node_key (unique, stable identifier)
+	pub peer_id: String,
+	/// Node name (from --name CLI argument or auto-generated)
+	pub node_name: String,
 }
 
 // Prometheus Remote Write protobuf types
@@ -74,11 +78,25 @@ pub struct Sample {
 /// This task will run indefinitely, pushing metrics at the configured interval.
 /// Errors during push are logged but do not stop the task.
 pub async fn run_metrics_push_task(registry: Registry, config: MetricsPushConfig) {
+	// Get hostname
+	let hostname = hostname::get()
+		.map(|h| h.to_string_lossy().into_owned())
+		.unwrap_or_else(|_| "unknown".to_string());
+
+	// Get local IP address
+	let ip = local_ip_address::local_ip()
+		.map(|ip| ip.to_string())
+		.unwrap_or_else(|_| "unknown".to_string());
+
 	log::info!(
-		"Starting Prometheus remote write to {} every {:?} as job '{}'",
+		"Starting Prometheus remote write to {} every {:?} (job='{}', peer_id='{}', node_name='{}', hostname='{}', ip='{}')",
 		config.endpoint,
 		config.interval,
-		config.job_name
+		config.job_name,
+		config.peer_id,
+		config.node_name,
+		hostname,
+		ip
 	);
 
 	let client = match reqwest::Client::builder().timeout(Duration::from_secs(30)).build() {
@@ -94,7 +112,7 @@ pub async fn run_metrics_push_task(registry: Registry, config: MetricsPushConfig
 	loop {
 		interval.tick().await;
 
-		match push_metrics(&registry, &client, &config.endpoint, &config.job_name).await {
+		match push_metrics(&registry, &client, &config, &hostname, &ip).await {
 			Ok(()) => {
 				log::debug!("Successfully pushed metrics to {}", config.endpoint);
 			},
@@ -109,8 +127,9 @@ pub async fn run_metrics_push_task(registry: Registry, config: MetricsPushConfig
 async fn push_metrics(
 	registry: &Registry,
 	client: &reqwest::Client,
-	url: &str,
-	job_name: &str,
+	config: &MetricsPushConfig,
+	hostname: &str,
+	ip: &str,
 ) -> Result<(), MetricsPushError> {
 	// Get current timestamp in milliseconds
 	let timestamp = std::time::SystemTime::now()
@@ -131,10 +150,14 @@ async fn push_metrics(
 		for metric in family.get_metric() {
 			let mut labels = vec![
 				Label { name: "__name__".to_string(), value: metric_name.to_string() },
-				Label { name: "job".to_string(), value: job_name.to_string() },
+				Label { name: "hostname".to_string(), value: hostname.to_string() },
+				Label { name: "ip".to_string(), value: ip.to_string() },
+				Label { name: "job".to_string(), value: config.job_name.clone() },
+				Label { name: "node_name".to_string(), value: config.node_name.clone() },
+				Label { name: "peer_id".to_string(), value: config.peer_id.clone() },
 			];
 
-			// Add metric labels
+			// Add metric-specific labels
 			for label in metric.get_label() {
 				labels.push(Label {
 					name: label.get_name().to_string(),
@@ -246,7 +269,7 @@ async fn push_metrics(
 
 	// POST to the remote write endpoint
 	let response = client
-		.post(url)
+		.post(&config.endpoint)
 		.header("Content-Type", "application/x-protobuf")
 		.header("Content-Encoding", "snappy")
 		.header("X-Prometheus-Remote-Write-Version", "0.1.0")
