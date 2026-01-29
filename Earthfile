@@ -116,7 +116,8 @@ subxt:
 
     # Install curl for rust installation
     # Note: docker is pre-installed for INSTALL_DIND compatibility (AL2023 uses dnf, not yum)
-    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq docker && \
+    # Note: libxcrypt-compat provides libcrypt.so.1 needed by INSTALL_DIND's PyInstaller tools
+    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq docker libxcrypt-compat && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install rust with complete profile for profiler runtime support

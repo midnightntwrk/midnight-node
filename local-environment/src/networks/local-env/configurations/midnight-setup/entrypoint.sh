@@ -16,8 +16,8 @@
 # Fail if a command fails
 set -euxo pipefail
 
-apt -qq update
-apt -qq -y install curl jq ncat uuid-runtime
+# Install required packages (AL2023 uses microdnf)
+microdnf -y install nmap-ncat util-linux
 
 check_json_validity() {
   local file="$1"
