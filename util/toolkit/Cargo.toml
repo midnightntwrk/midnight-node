@@ -52,6 +52,9 @@ zstd = "0.13"
 test-case = "3.3.1"
 hex-literal.workspace = true
 trycmd = "0.15.10"
+testcontainers = "0.25"
+serde_yaml = "0.9"
+shellexpand = "3"
 
 [lints]
 workspace = true

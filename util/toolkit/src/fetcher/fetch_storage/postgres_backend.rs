@@ -59,7 +59,18 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 	}
 
 	/// Creates required tables if they don't exist.
+	///
+	/// Uses a PostgreSQL advisory lock to prevent concurrent `CREATE TABLE IF NOT EXISTS`
+	/// from racing on the implicit composite type creation.
 	async fn init_tables(&self) {
+		let mut tx = self.pool.begin().await.expect("failed to begin transaction");
+
+		// Acquire a session-level advisory lock (released at end of transaction)
+		sqlx::query("SELECT pg_advisory_xact_lock(8675309)")
+			.execute(&mut *tx)
+			.await
+			.expect("failed to acquire advisory lock");
+
 		sqlx::query(
 			r#"
             CREATE TABLE IF NOT EXISTS block_data (
@@ -70,7 +81,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
             )
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create block_data table");
 
@@ -82,18 +93,18 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
             )
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create highest_verified table");
 
 		// Create index for efficient range queries
 		sqlx::query(
 			r#"
-            CREATE INDEX IF NOT EXISTS idx_block_data_chain_number 
+            CREATE INDEX IF NOT EXISTS idx_block_data_chain_number
             ON block_data (chain_id, block_number)
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create index");
 
@@ -110,19 +121,21 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
             )
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create wallet_state_cache table");
 
 		sqlx::query(
 			r#"
-            CREATE INDEX IF NOT EXISTS idx_wallet_state_chain 
+            CREATE INDEX IF NOT EXISTS idx_wallet_state_chain
             ON wallet_state_cache (chain_id)
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create wallet state index");
+
+		tx.commit().await.expect("failed to commit init_tables transaction");
 	}
 
 	fn serialize_block_data(block: &BlockData<S, P, D>) -> Vec<u8>
@@ -548,155 +561,3 @@ where
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::fetcher::wallet_state_cache::{SerializableBlockContext, WalletSnapshot};
-	use crate::{ProofType, SignatureType};
-	use midnight_node_ledger_helpers::DefaultDB;
-
-	type TestPostgresBackend = PostgresBackend<SignatureType, ProofType, DefaultDB>;
-
-	fn create_test_cache(block_height: u64, wallet_id: H256) -> WalletStateCache {
-		WalletStateCache {
-			chain_id: H256::from([1u8; 32]),
-			wallet_id,
-			block_height,
-			ledger_state_bytes: vec![0u8; 1000],
-			wallet_snapshots: vec![WalletSnapshot {
-				seed_hash: H256::from([3u8; 32]),
-				shielded_state_bytes: vec![],
-				dust_local_state_bytes: None,
-			}],
-			latest_block_context: SerializableBlockContext {
-				tblock_secs: 1234567890,
-				tblock_err: 0,
-				parent_block_hash: [4u8; 32],
-			},
-			state_root: Some(vec![5u8; 32]),
-			version: "wallet-state-cache-v1".to_string(),
-		}
-	}
-
-	/// Get test database URL from environment or use default.
-	/// Set TOOLKIT_TEST_POSTGRES_URL to run these tests.
-	fn get_test_db_url() -> Option<String> {
-		std::env::var("TOOLKIT_TEST_POSTGRES_URL").ok()
-	}
-
-	/// Clean up test data before/after tests
-	async fn cleanup_test_data(backend: &TestPostgresBackend, chain_id: H256) {
-		// Delete all test wallet entries for this chain
-		let _ = sqlx::query("DELETE FROM wallet_state_cache WHERE chain_id = $1")
-			.bind(chain_id.0.as_slice())
-			.execute(&backend.pool)
-			.await;
-	}
-
-	#[tokio::test]
-	#[ignore = "Requires PostgreSQL. Set TOOLKIT_TEST_POSTGRES_URL to run."]
-	async fn test_postgres_wallet_state_roundtrip() {
-		let db_url = get_test_db_url().expect("TOOLKIT_TEST_POSTGRES_URL not set");
-		let backend: TestPostgresBackend = PostgresBackend::new(&db_url).await;
-
-		let chain_id = H256::from([100u8; 32]); // Use unique chain_id for test isolation
-		let wallet_id = H256::from([2u8; 32]);
-
-		cleanup_test_data(&backend, chain_id).await;
-
-		let cache = create_test_cache(100, wallet_id);
-
-		// Initially no cache
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
-				.await
-				.is_none()
-		);
-
-		// Save cache
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache.clone()).await;
-
-		// Retrieve cache
-		let retrieved = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
-		assert!(retrieved.is_some());
-		let retrieved = retrieved.unwrap();
-
-		assert_eq!(retrieved.chain_id, cache.chain_id);
-		assert_eq!(retrieved.wallet_id, cache.wallet_id);
-		assert_eq!(retrieved.block_height, cache.block_height);
-		assert_eq!(retrieved.ledger_state_bytes, cache.ledger_state_bytes);
-		assert_eq!(retrieved.version, cache.version);
-
-		cleanup_test_data(&backend, chain_id).await;
-	}
-
-	#[tokio::test]
-	#[ignore = "Requires PostgreSQL. Set TOOLKIT_TEST_POSTGRES_URL to run."]
-	async fn test_postgres_evict_stale_entries() {
-		let db_url = get_test_db_url().expect("TOOLKIT_TEST_POSTGRES_URL not set");
-		let backend: TestPostgresBackend = PostgresBackend::new(&db_url).await;
-
-		let chain_id = H256::from([101u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-
-		cleanup_test_data(&backend, chain_id).await;
-
-		// Save a cache entry
-		let cache = create_test_cache(100, wallet_id);
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
-
-		// Evict entries older than 30 days (should not evict our fresh entry)
-		let evicted = backend.evict_stale_wallet_cache(30).await;
-		assert_eq!(evicted, 0);
-
-		// Entry should still exist
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
-				.await
-				.is_some()
-		);
-
-		// Evict entries older than 0 days (should evict everything)
-		let evicted = backend.evict_stale_wallet_cache(0).await;
-		assert!(evicted >= 1);
-
-		// Entry should be gone
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
-				.await
-				.is_none()
-		);
-
-		cleanup_test_data(&backend, chain_id).await;
-	}
-
-	#[tokio::test]
-	#[ignore = "Requires PostgreSQL. Set TOOLKIT_TEST_POSTGRES_URL to run."]
-	async fn test_postgres_evict_oldest_entries() {
-		let db_url = get_test_db_url().expect("TOOLKIT_TEST_POSTGRES_URL not set");
-		let backend: TestPostgresBackend = PostgresBackend::new(&db_url).await;
-
-		let chain_id = H256::from([102u8; 32]);
-
-		cleanup_test_data(&backend, chain_id).await;
-
-		// Create 5 cache entries with different wallet IDs
-		for i in 0..5u8 {
-			let wallet_id = H256::from([i + 10; 32]);
-			let cache = create_test_cache(i as u64 * 100, wallet_id);
-			WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
-			// Small delay to ensure different timestamps
-			tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-		}
-
-		// Count should be at least 5
-		let count = backend.wallet_cache_count().await;
-		assert!(count >= 5, "Expected at least 5 entries, got {}", count);
-
-		// Keep only 2 entries (evict at least 3)
-		let evicted = backend.evict_oldest_wallet_cache(2).await;
-		assert!(evicted >= 3, "Expected to evict at least 3, evicted {}", evicted);
-
-		cleanup_test_data(&backend, chain_id).await;
-	}
-}
