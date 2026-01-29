@@ -173,7 +173,7 @@ cleanSwap() {
 echo "Initial disk space:"
 df -h /
 cleanPackages
-# cleanDocker
+cleanDocker
 cleanSwap
 removeUnusedFilesAndDirs
 echo "Final disk space:"
