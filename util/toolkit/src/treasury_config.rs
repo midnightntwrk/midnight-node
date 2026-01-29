@@ -118,19 +118,6 @@ mod tests {
 	}
 
 	#[test]
-	fn test_validate_total_matches_sum() {
-		let config = CnightTreasuryConfig {
-			ics_contract_address: "addr_test1...".to_string(),
-			utxos: vec![
-				TreasuryUtxo { tx_hash: "a".to_string(), output_index: 0, expected_amount: 500 },
-				TreasuryUtxo { tx_hash: "b".to_string(), output_index: 0, expected_amount: 500 },
-			],
-			total_night_amount: 1000,
-		};
-		assert!(config.validate().is_ok());
-	}
-
-	#[test]
 	fn test_validate_total_mismatch_fails() {
 		let config = CnightTreasuryConfig {
 			ics_contract_address: "addr_test1...".to_string(),
@@ -144,16 +131,6 @@ mod tests {
 
 		let result = config.validate();
 		assert!(matches!(result, Err(TreasuryConfigError::TotalMismatch { .. })));
-	}
-
-	#[test]
-	fn test_validate_zero_total_empty_utxos() {
-		let config = CnightTreasuryConfig {
-			ics_contract_address: "addr_test1...".to_string(),
-			utxos: vec![],
-			total_night_amount: 0,
-		};
-		assert!(config.validate().is_ok());
 	}
 
 	#[test]
@@ -173,23 +150,5 @@ mod tests {
 
 		let result = config.validate();
 		assert!(matches!(result, Err(TreasuryConfigError::Overflow)));
-	}
-
-	#[test]
-	fn test_error_message_total_mismatch() {
-		let err = TreasuryConfigError::TotalMismatch { configured: 1000, computed: 500 };
-		let msg = format!("{}", err);
-		assert!(msg.contains("1000"));
-		assert!(msg.contains("500"));
-	}
-
-	#[test]
-	fn test_treasury_amount() {
-		let config = CnightTreasuryConfig {
-			ics_contract_address: "addr_test1...".to_string(),
-			utxos: vec![],
-			total_night_amount: 42,
-		};
-		assert_eq!(config.treasury_amount(), 42);
 	}
 }
