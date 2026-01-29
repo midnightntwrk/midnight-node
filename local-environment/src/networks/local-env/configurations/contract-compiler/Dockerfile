@@ -39,12 +39,49 @@ RUN curl -fsSL "https://registry.npmjs.org/@aiken-lang/aiken/-/aiken-${AIKEN_VER
     npm install -g /tmp/aiken.tgz && \
     rm /tmp/aiken.tgz
 
+# Install just command runner from GitHub releases
+# renovate: datasource=github-releases depName=casey/just
+ENV JUST_VERSION=1.46.0
+# To update hash: curl -sL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" | sha256sum
+ENV JUST_SHA256=79966e6e353f535ee7d1c6221641bcc8e3381c55b0d0a6dc6e54b34f9db36eaa
+RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz" -o /tmp/just.tar.gz && \
+    tar -xzf /tmp/just.tar.gz -C /usr/local/bin just && \
+    chmod +x /usr/local/bin/just && \
+    rm /tmp/just.tar.gz
+
+# Install toml-cli from GitHub releases
+# renovate: datasource=github-releases depName=gnprice/toml-cli
+ENV TOML_CLI_VERSION=0.2.3
+# To update hash: curl -sL "https://github.com/gnprice/toml-cli/releases/download/v${TOML_CLI_VERSION}/toml-${TOML_CLI_VERSION}-x86_64-linux.tar.gz" | sha256sum
+ENV TOML_CLI_SHA256=ba12ae6b53fc593a9dcae3d6ef5d50f0382b3f77708603dc237e9145ba7988fc
+RUN curl -fsSL "https://github.com/gnprice/toml-cli/releases/download/v${TOML_CLI_VERSION}/toml-${TOML_CLI_VERSION}-x86_64-linux.tar.gz" -o /tmp/toml.tar.gz && \
+    tar -xzf /tmp/toml.tar.gz -C /tmp && \
+    mv /tmp/toml-${TOML_CLI_VERSION}-x86_64-linux/toml /usr/local/bin/toml && \
+    chmod +x /usr/local/bin/toml && \
+    rm -rf /tmp/toml.tar.gz /tmp/toml-${TOML_CLI_VERSION}-x86_64-linux
+
+# Install bun JavaScript runtime from GitHub releases
+# renovate: datasource=github-releases depName=oven-sh/bun
+ENV BUN_VERSION=1.3.6
+# To update hash: curl -sL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" | sha256sum
+ENV BUN_SHA256=9ba98d2134550d6690875b23a4f5c48e74b7cb267e8cc1b8f52605921c6c11ef
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends unzip=6.0-28 && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip && \
+    unzip -q /tmp/bun.zip -d /tmp && \
+    mv /tmp/bun-linux-x64/bun /usr/local/bin/bun && \
+    chmod +x /usr/local/bin/bun && \
+    ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
+    rm -rf /tmp/bun.zip /tmp/bun-linux-x64
+
 # Create non-root user for security
 RUN useradd -u 10001 -m -s /bin/bash appuser
 
 WORKDIR /contracts
 
 COPY compile-contracts.sh /compile-contracts.sh
+COPY .env /.env
 RUN chmod +x /compile-contracts.sh && \
     chown -R appuser:appuser /contracts
 

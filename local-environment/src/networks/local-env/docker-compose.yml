@@ -59,7 +59,9 @@ services:
       context: ./configurations/contract-compiler
       dockerfile: Dockerfile
     depends_on:
-      cardano-node-1:
+      kupo:
+        condition: service_healthy
+      ogmios:
         condition: service_healthy
     volumes:
       - ./runtime-values:/runtime-values
