@@ -108,14 +108,24 @@ impl GenesisGenerator {
 		funding: FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
+		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
-		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx)
-			.await?;
+		me.init(
+			seed,
+			network_id,
+			proof_server,
+			&funding,
+			seeds,
+			cnight_system_tx,
+			ledger_parameters,
+		)
+		.await?;
 		Ok(me)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn init(
 		&mut self,
 		seed: [u8; 32],
@@ -124,6 +134,7 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
+		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
 			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
@@ -137,13 +148,20 @@ impl GenesisGenerator {
 			parent_block_hash: HashOutput::default(),
 		};
 
+		// If custom ledger parameters are provided, apply them first
+		let original_parameters = if let Some(params) = ledger_parameters {
+			self.set_parameters(params.clone(), &genesis_block_context)?;
+			params
+		} else {
+			(*self.state.parameters).clone()
+		};
+
 		// Distribute NIGHT as rewards to all wallets
 		self.distribute_night(&genesis_block_context, funding, &wallets, &mut rng)?;
 
 		// Set fees to zero to simplify setup logic.
 		// This lets us claim the full requested amount of NIGHT,
 		// and register DUST addresses without waiting for DUST to accumulate.
-		let original_parameters = (*self.state.parameters).clone();
 		let no_fee_parameters = without_fees(&original_parameters);
 		self.set_parameters(no_fee_parameters, &genesis_block_context)?;
 
@@ -596,9 +614,10 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None)
-			.await
-			.unwrap();
+		let genesis =
+			GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None, None)
+				.await
+				.unwrap();
 
 		let wallets = seeds
 			.iter()
