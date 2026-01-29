@@ -180,11 +180,11 @@ program
   .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
   .requiredOption(
     "--council-uris <uri...>",
-    "Space-separated sr25519 URIs for council proposers and voters (min 2)",
+    "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
   )
   .requiredOption(
     "--technical-uris <uri...>",
-    "Space-separated sr25519 URIs for technical committee proposers and voters (min 2)",
+    "Space-separated sr25519 URIs for technical committee proposers and voters (must meet the 2/3 threshold)",
   )
   .requiredOption(
     "--executor-uri <uri>",
@@ -219,15 +219,11 @@ program
       .filter(Boolean);
     const executorUri = cliOpts.executorUri?.trim();
 
-    if (councilUris.length < 2) {
-      throw new Error(
-        "At least two council URIs are required to satisfy the approval threshold.",
-      );
+    if (!councilUris.length) {
+      throw new Error("At least one council URI is required.");
     }
-    if (techUris.length < 2) {
-      throw new Error(
-        "At least two technical committee URIs are required to satisfy the approval threshold.",
-      );
+    if (!techUris.length) {
+      throw new Error("At least one technical committee URI is required.");
     }
     if (!executorUri) {
       throw new Error("executor-uri is required and cannot be empty");
