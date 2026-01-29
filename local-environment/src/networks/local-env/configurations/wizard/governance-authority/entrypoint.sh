@@ -15,7 +15,8 @@
 
 start_node() {
     echo "Starting the node..."
-    export MC__FIRST_EPOCH_TIMESTAMP_MILLIS=$(cat /shared/MC__FIRST_EPOCH_TIMESTAMP_MILLIS)
+    MC__FIRST_EPOCH_TIMESTAMP_MILLIS=$(cat /shared/MC__FIRST_EPOCH_TIMESTAMP_MILLIS)
+    export MC__FIRST_EPOCH_TIMESTAMP_MILLIS
 
     /usr/local/bin/midnight-node \
         --validator \
@@ -41,8 +42,8 @@ fi
 
 
 echo "Installing dependencies..."
-apt -qq update &> /dev/null
-apt -qq -y install expect curl jq ncat &> /dev/null
+microdnf -y update &> /dev/null
+microdnf -y install expect curl-minimal jq nmap-ncat &> /dev/null
 cp /usr/local/bin/midnight-node /midnight-node
 
 
@@ -59,7 +60,7 @@ EOF
 
 echo "Waiting for the Cardano network to sync and for Ogmios to start..."
 while true; do
-    if nc -z ogmios $OGMIOS_PORT; then
+    if nc -z ogmios "$OGMIOS_PORT"; then
         break
     else
         sleep 1
