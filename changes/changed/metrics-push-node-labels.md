@@ -5,5 +5,5 @@ Add labels to pushed metrics that uniquely identify each node: peer_id, node_nam
 hostname, and ip. These labels are auto-discovered from the node's configuration
 and network identity, requiring no additional setup.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/554
+PR: https://github.com/midnightntwrk/midnight-node/pull/566
 JIRA: https://shielded.atlassian.net/browse/PM-21604
