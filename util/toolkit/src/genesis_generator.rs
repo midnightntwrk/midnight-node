@@ -118,6 +118,7 @@ impl GenesisGenerator {
 		Ok(me)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	async fn init(
 		&mut self,
 		seed: [u8; 32],
