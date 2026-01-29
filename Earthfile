@@ -811,7 +811,7 @@ test-pallet-fixtures:
     SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-test-toolkit:
+build-test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
     FROM +prep
@@ -842,12 +842,22 @@ test-toolkit:
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
     # Run Midnight Node Toolkit package tests only (requires toolkit-js)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
-        -E 'package(midnight-node-toolkit)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
+    COPY scripts/test-toolkit.sh /test-toolkit.sh
+    ENTRYPOINT ["/test-toolkit.sh"]
+    SAVE IMAGE
 
-    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
+test-toolkit:
+    ARG NATIVEARCH
+    FROM +prep
+    DO github.com/EarthBuild/lib+INSTALL_DIND
+    RUN mkdir -p /artifacts
+    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        RUN docker run \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+            test-toolkit:latest
+    END
+    SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
