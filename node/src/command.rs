@@ -211,6 +211,9 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 						.prometheus_push_job_name
 						.clone()
 						.unwrap_or_else(|| "midnight-node".to_string()),
+					// Filled in by service::new_full from the Configuration
+					peer_id: String::new(),
+					node_name: String::new(),
 				}
 			});
 
