@@ -1,4 +1,5 @@
 use crate::cli_parsers::{self as cli};
+use crate::treasury_config::CnightTreasuryConfig;
 use clap::Args;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -38,6 +39,10 @@ pub struct GenerateGenesisArgs {
 	/// applied to the LedgerState
 	#[arg(long)]
 	cnight_generates_dust_config: Option<PathBuf>,
+	/// File containing cNight treasury configuration for initializing the treasury from ICS
+	/// contract observations
+	#[arg(long)]
+	cnight_treasury_config: Option<PathBuf>,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -68,12 +73,32 @@ pub async fn execute(
 		})
 		.collect();
 
-	// Parse the seeds file
+	// Parse the cNight generates dust config
 	let cnight_system_tx: Option<SystemTransaction> =
 		if let Some(filepath) = args.cnight_generates_dust_config {
 			let json_str = std::fs::read_to_string(filepath)?;
 			let config: CNightGeneratesDustConfig = serde_json::from_str(&json_str)?;
 			Some(tagged_deserialize(&mut &config.system_tx[..])?)
+		} else {
+			None
+		};
+
+	// Parse and validate the treasury config
+	let treasury_config: Option<CnightTreasuryConfig> =
+		if let Some(filepath) = args.cnight_treasury_config {
+			let json_str = std::fs::read_to_string(&filepath)
+				.map_err(|e| format!("Failed to read treasury config {:?}: {}", filepath, e))?;
+			let config: CnightTreasuryConfig = serde_json::from_str(&json_str)
+				.map_err(|e| format!("Failed to parse treasury config: {}", e))?;
+			config
+				.validate()
+				.map_err(|e| format!("Treasury config validation failed: {}", e))?;
+			println!(
+				"Treasury config loaded: {} Night from {} UTxOs",
+				config.total_night_amount,
+				config.utxos.len()
+			);
+			Some(config)
 		} else {
 			None
 		};
@@ -85,6 +110,7 @@ pub async fn execute(
 		args.funding,
 		&seeds?,
 		cnight_system_tx,
+		treasury_config,
 	)
 	.await?;
 

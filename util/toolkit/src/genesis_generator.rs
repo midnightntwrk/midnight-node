@@ -16,6 +16,7 @@ use crate::{
 	cli_parsers::{self as cli},
 	remote_prover::RemoteProofServer,
 	t_token,
+	treasury_config::CnightTreasuryConfig,
 };
 use midnight_node_ledger_helpers::{Transaction as MNLedgerTransaction, *};
 use std::collections::HashMap;
@@ -108,10 +109,11 @@ impl GenesisGenerator {
 		funding: FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
+		treasury_config: Option<CnightTreasuryConfig>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
-		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx)
+		me.init(seed, network_id, proof_server, &funding, seeds, cnight_system_tx, treasury_config)
 			.await?;
 		Ok(me)
 	}
@@ -124,6 +126,7 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
+		treasury_config: Option<CnightTreasuryConfig>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
 			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
@@ -136,6 +139,13 @@ impl GenesisGenerator {
 			tblock_err: 30,
 			parent_block_hash: HashOutput::default(),
 		};
+
+		// Fund treasury first (if configured)
+		// This must happen before wallet distribution per Decision 2:
+		// Treasury initialization should be early, right after ledger parameters.
+		if let Some(ref config) = treasury_config {
+			self.fund_treasury(config, &genesis_block_context)?;
+		}
 
 		// Distribute NIGHT as rewards to all wallets
 		self.distribute_night(&genesis_block_context, funding, &wallets, &mut rng)?;
@@ -221,6 +231,41 @@ impl GenesisGenerator {
 	) -> Result<()> {
 		let sys_tx_params = SystemTransaction::OverwriteParameters(parameters);
 		self.apply_system_tx(sys_tx_params, block_context)
+	}
+
+	/// Fund the treasury from observed ICS contract deposits.
+	///
+	/// This uses a two-step process:
+	/// 1. DistributeReserve: Move tokens from reserve_pool to block_reward_pool
+	/// 2. PayBlockRewardsToTreasury: Move tokens from block_reward_pool to treasury
+	///
+	/// This sequence is required because the ledger doesn't support direct
+	/// reserve -> treasury transfers.
+	fn fund_treasury(
+		&mut self,
+		config: &CnightTreasuryConfig,
+		block_context: &BlockContext,
+	) -> Result<()> {
+		let amount = config.treasury_amount();
+
+		if amount == 0 {
+			// Nothing to fund
+			return Ok(());
+		}
+
+		println!("Funding treasury with {} Night from ICS observations", amount);
+
+		// Step 1: Move from reserve_pool to block_reward_pool
+		let distribute_tx = SystemTransaction::DistributeReserve(amount);
+		self.apply_system_tx(distribute_tx, block_context)?;
+
+		// Step 2: Move from block_reward_pool to treasury
+		let treasury_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
+		self.apply_system_tx(treasury_tx, block_context)?;
+
+		println!("Treasury funded successfully.");
+
+		Ok(())
 	}
 
 	fn claim_rewards(
@@ -596,9 +641,10 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		let genesis = GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None)
-			.await
-			.unwrap();
+		let genesis =
+			GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None, None)
+				.await
+				.unwrap();
 
 		let wallets = seeds
 			.iter()
