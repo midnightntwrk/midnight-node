@@ -161,8 +161,6 @@ impl GenesisGenerator {
 		};
 
 		// Fund treasury (if configured)
-		// This must happen before wallet distribution per Decision 2:
-		// Treasury initialization should be early, right after ledger parameters.
 		if let Some(ref config) = treasury_config {
 			self.fund_treasury(config, &genesis_block_context)?;
 		}
@@ -729,10 +727,18 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		let genesis =
-			GenesisGenerator::new(seed, network_id, proof_server, funding, &seeds, None, None, None)
-				.await
-				.unwrap();
+		let genesis = GenesisGenerator::new(
+			seed,
+			network_id,
+			proof_server,
+			funding,
+			&seeds,
+			None,
+			None,
+			None,
+		)
+		.await
+		.unwrap();
 
 		let wallets = seeds
 			.iter()
