@@ -165,11 +165,11 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run build
         run: |
-          # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
-
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
           echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
@@ -331,10 +331,11 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run pallet fixture tests
         run: |
-          # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
           . ./.envrc && earthly --strict +test-pallet-fixtures
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
@@ -353,10 +354,11 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run toolkit tests
         run: |
-          # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:
