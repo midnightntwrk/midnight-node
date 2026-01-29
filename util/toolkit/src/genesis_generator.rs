@@ -619,6 +619,74 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 mod test {
 	use super::*;
 
+	use crate::treasury_config::{CnightTreasuryConfig, TreasuryUtxo};
+
+	#[tokio::test]
+	async fn test_genesis_with_treasury_config() {
+		const TREASURY_AMOUNT: u128 = 1_000_000_000_000; // 1 trillion
+
+		let funding = FundingArgs {
+			shielded_mint_amount: 0,
+			shielded_num_funding_outputs: 0,
+			shielded_alt_token_types: vec![],
+			unshielded_mint_amount: MINT_AMOUNT,
+			unshielded_num_funding_outputs: 5,
+			unshielded_alt_token_types: vec![],
+		};
+
+		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
+		let network_id = "undeployed";
+		let proof_server = None;
+		let seeds = [
+			"0000000000000000000000000000000000000000000000000000000000000001",
+			"0000000000000000000000000000000000000000000000000000000000000002",
+		]
+		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
+		.to_vec();
+
+		// Create treasury config with UTxOs that sum to TREASURY_AMOUNT
+		let treasury_config = CnightTreasuryConfig {
+			ics_contract_address: "addr_test1_ics_contract".to_string(),
+			utxos: vec![
+				TreasuryUtxo {
+					tx_hash: "abc123".to_string(),
+					output_index: 0,
+					expected_amount: 600_000_000_000,
+				},
+				TreasuryUtxo {
+					tx_hash: "def456".to_string(),
+					output_index: 1,
+					expected_amount: 400_000_000_000,
+				},
+			],
+			total_night_amount: TREASURY_AMOUNT,
+		};
+
+		// Validate config before using
+		treasury_config.validate().expect("Treasury config should be valid");
+
+		let genesis = GenesisGenerator::new(
+			seed,
+			network_id,
+			proof_server,
+			funding,
+			&seeds,
+			None,
+			Some(treasury_config),
+		)
+		.await
+		.unwrap();
+
+		// Verify treasury was funded with the expected amount
+		let night_token_type = TokenType::Unshielded(NIGHT);
+		let treasury_balance = genesis.state.treasury.get(&night_token_type).copied().unwrap_or(0);
+		assert_eq!(
+			treasury_balance, TREASURY_AMOUNT,
+			"Treasury should contain {} NIGHT, but has {}",
+			TREASURY_AMOUNT, treasury_balance
+		);
+	}
+
 	#[tokio::test]
 	async fn test_genesis_state() {
 		let funding = FundingArgs {
