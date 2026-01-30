@@ -200,6 +200,42 @@ pub fn compute_overall_fullness(normalized: &NormalizedCost) -> FixedPoint {
 	)
 }
 
+/// Clamps cost to limits and normalizes, logging an error if clamping was needed.
+///
+/// `SyntheticCost::normalize()` returns `None` when any dimension exceeds its limit.
+/// This function clamps to limits first, ensuring normalization always succeeds and
+/// overfull blocks are reported as full (100%) rather than failing.
+///
+/// Blocks should never exceed limits (validation should prevent this), but if they somehow do,
+/// it seems more pragmatic to clamp costs, log error, but not fail.
+pub fn clamp_and_normalize(
+	cost: &SyntheticCost,
+	limits: &SyntheticCost,
+	context: &str,
+) -> NormalizedCost {
+	let clamped = SyntheticCost {
+		read_time: cost.read_time.min(limits.read_time),
+		compute_time: cost.compute_time.min(limits.compute_time),
+		block_usage: cost.block_usage.min(limits.block_usage),
+		bytes_written: cost.bytes_written.min(limits.bytes_written),
+		bytes_churned: cost.bytes_churned.min(limits.bytes_churned),
+	};
+
+	if clamped != *cost {
+		log::error!(
+			"Fatal: Ledger block limit exceeded (Substrate-Ledger weight mismatch?) in {}, \
+			clamping to limits. Original: {:?}, limits: {:?}",
+			context,
+			cost,
+			limits
+		);
+	}
+
+	clamped
+		.normalize(*limits)
+		.expect("clamped cost should always normalize successfully")
+}
+
 #[cfg(feature = "can-panic")]
 pub fn token_type_decode(input: &str) -> TokenType {
 	let bytes = hex::decode(input).expect("Token value should be an hex");
@@ -222,4 +258,59 @@ pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext
 		serialize(&tx).unwrap_or_else(|err| panic!("Can't serialize `Transaction`: {err}"));
 
 	(serialized_tx, block_context)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	const ONE: FixedPoint = FixedPoint::ONE;
+
+	#[test]
+	fn cost_under_limits_normalizes_correctly() {
+		let cost = make_cost(50, 100, 200, 300, 400);
+		let limits = make_cost(100, 200, 400, 600, 800);
+		let half = FixedPoint::from_u64_div(1, 2);
+
+		let normalized = clamp_and_normalize(&cost, &limits, "test");
+
+		assert_eq!(normalized, make_normalized(half, half, half, half, half));
+	}
+
+	#[test]
+	fn cost_over_the_limits_clamps_correct_dimensions() {
+		let cost = make_cost(150, 100, 401, 300, 400);
+		let limits = make_cost(100, 200, 400, 600, 800);
+		let half = FixedPoint::from_u64_div(1, 2);
+
+		let normalized = clamp_and_normalize(&cost, &limits, "test");
+
+		assert_eq!(normalized, make_normalized(ONE, half, ONE, half, half));
+	}
+
+	fn make_cost(read: u64, compute: u64, block: u64, written: u64, churned: u64) -> SyntheticCost {
+		SyntheticCost {
+			read_time: CostDuration::from_picoseconds(read),
+			compute_time: CostDuration::from_picoseconds(compute),
+			block_usage: block,
+			bytes_written: written,
+			bytes_churned: churned,
+		}
+	}
+
+	fn make_normalized(
+		read: FixedPoint,
+		compute: FixedPoint,
+		block: FixedPoint,
+		written: FixedPoint,
+		churned: FixedPoint,
+	) -> NormalizedCost {
+		NormalizedCost {
+			read_time: read,
+			compute_time: compute,
+			block_usage: block,
+			bytes_written: written,
+			bytes_churned: churned,
+		}
+	}
 }
