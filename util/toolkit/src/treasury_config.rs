@@ -20,16 +20,28 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// The cNight asset name on Cardano (empty string for native asset without name).
+pub const CNIGHT_ASSET_NAME: &str = "";
+
 /// Configuration for treasury initialization from ICS contract observations.
 ///
 /// The treasury is funded by observing cNight deposits locked in the ICS contract
 /// on Cardano. Each UTxO in the list represents a deposit that contributes to the
 /// total treasury amount.
+///
+/// Per ADR-0023, this configuration should be verifiable against Cardano state
+/// at the reference block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CnightTreasuryConfig {
 	/// The ICS (Illiquid Circulation Supply) contract address on Cardano where cNight is locked.
 	/// This is the bech32-encoded address of the `ics_forever` validator from midnight-reserve-contracts.
 	pub illiquid_circulation_supply_validator_address: String,
+
+	/// Reference Cardano block hash at which UTxOs should be verified.
+	pub reference_block_hash: String,
+
+	/// The cNight policy ID on Cardano (hex-encoded, 28 bytes / 56 hex chars).
+	pub cnight_policy_id: String,
 
 	/// List of UTxOs at the ICS contract containing cNight.
 	/// Each UTxO contributes to the total treasury amount.
@@ -106,6 +118,8 @@ mod tests {
 	fn test_parse_valid_config() {
 		let json = r#"{
             "illiquid_circulation_supply_validator_address": "addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz",
+            "reference_block_hash": "abc123def456789012345678901234567890123456789012345678901234",
+            "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
             "utxos": [
                 {"tx_hash": "abc123", "output_index": 0, "expected_amount": 1000}
             ],
@@ -119,33 +133,52 @@ mod tests {
 		);
 		assert_eq!(config.total_night_amount, 1000);
 		assert_eq!(config.utxos.len(), 1);
+		assert_eq!(
+			config.reference_block_hash,
+			"abc123def456789012345678901234567890123456789012345678901234"
+		);
+		assert_eq!(
+			config.cnight_policy_id,
+			"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+		);
 		assert!(config.validate().is_ok());
 	}
 
 	#[test]
-	fn test_validate_total_matches_sum() {
-		let config = CnightTreasuryConfig {
+	fn test_cnight_asset_name_constant() {
+		// Verify the asset name constant is empty string (standard for cNight on Cardano)
+		assert_eq!(CNIGHT_ASSET_NAME, "");
+	}
+
+	fn test_config(utxos: Vec<TreasuryUtxo>, total: u128) -> CnightTreasuryConfig {
+		CnightTreasuryConfig {
 			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			utxos: vec![
+			reference_block_hash: "0".repeat(64),
+			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+				.to_string(),
+			utxos,
+			total_night_amount: total,
+		}
+	}
+
+	#[test]
+	fn test_validate_total_matches_sum() {
+		let config = test_config(
+			vec![
 				TreasuryUtxo { tx_hash: "a".to_string(), output_index: 0, expected_amount: 500 },
 				TreasuryUtxo { tx_hash: "b".to_string(), output_index: 0, expected_amount: 500 },
 			],
-			total_night_amount: 1000,
-		};
+			1000,
+		);
 		assert!(config.validate().is_ok());
 	}
 
 	#[test]
 	fn test_validate_total_mismatch_fails() {
-		let config = CnightTreasuryConfig {
-			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			utxos: vec![TreasuryUtxo {
-				tx_hash: "a".to_string(),
-				output_index: 0,
-				expected_amount: 500,
-			}],
-			total_night_amount: 1000, // Mismatch!
-		};
+		let config = test_config(
+			vec![TreasuryUtxo { tx_hash: "a".to_string(), output_index: 0, expected_amount: 500 }],
+			1000, // Mismatch!
+		);
 
 		let result = config.validate();
 		assert!(matches!(result, Err(TreasuryConfigError::TotalMismatch { .. })));
@@ -153,19 +186,14 @@ mod tests {
 
 	#[test]
 	fn test_validate_zero_total_empty_utxos() {
-		let config = CnightTreasuryConfig {
-			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			utxos: vec![],
-			total_night_amount: 0,
-		};
+		let config = test_config(vec![], 0);
 		assert!(config.validate().is_ok());
 	}
 
 	#[test]
 	fn test_validate_overflow_handling() {
-		let config = CnightTreasuryConfig {
-			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			utxos: vec![
+		let config = test_config(
+			vec![
 				TreasuryUtxo {
 					tx_hash: "a".to_string(),
 					output_index: 0,
@@ -173,8 +201,8 @@ mod tests {
 				},
 				TreasuryUtxo { tx_hash: "b".to_string(), output_index: 0, expected_amount: 1 },
 			],
-			total_night_amount: u128::MAX,
-		};
+			u128::MAX,
+		);
 
 		let result = config.validate();
 		assert!(matches!(result, Err(TreasuryConfigError::Overflow)));
@@ -190,11 +218,7 @@ mod tests {
 
 	#[test]
 	fn test_treasury_amount() {
-		let config = CnightTreasuryConfig {
-			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			utxos: vec![],
-			total_night_amount: 42,
-		};
+		let config = test_config(vec![], 42);
 		assert_eq!(config.treasury_amount(), 42);
 	}
 }
