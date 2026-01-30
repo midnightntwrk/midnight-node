@@ -7487,6 +7487,7 @@ dependencies = [
  "hex",
  "itertools 0.14.0",
  "lazy_static",
+ "log",
  "midnight-base-crypto 1.0.0-rc.4",
  "midnight-base-crypto 1.0.0-rc.4-hard-fork-test",
  "midnight-coin-structure 2.0.0-rc.1",

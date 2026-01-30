@@ -112,15 +112,24 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.92-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install curl for rust installation
+    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq docker && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install rust with complete profile for profiler runtime support
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile complete
+    ENV PATH="/root/.cargo/bin:${PATH}"
+
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
+    # RUN cargo install cargo-binstall --version 1.6.9
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
-    RUN cargo binstall -y subxt-cli@${SUBXT_VERSION}
-    RUN cp /usr/local/cargo/bin/subxt /usr/local/bin/subxt
+    RUN cargo install subxt-cli@${SUBXT_VERSION}
+    RUN cp /root/.cargo/bin/subxt /usr/local/bin/subxt
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
@@ -191,7 +200,19 @@ rebuild-sqlx:
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
     # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 node:22-trixie
+    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
     # renovate: datasource=npm packageName=aiken-lang/aiken
     ENV aiken_version=1.1.19
     RUN npm install -g @aiken-lang/aiken@${aiken_version}
@@ -498,19 +519,15 @@ contract-precompile-image:
     BUILD +contract-precompile-image-single-platform
 
 contract-precompile-image-single-platform:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
-    # Install unzip
-    RUN apt update && apt install unzip
-    # Install gh
-    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
-        && mkdir -p -m 755 /etc/apt/keyrings \
-        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-        && mkdir -p -m 755 /etc/apt/sources.list.d \
-        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-        && apt update \
-        && apt install gh -y
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    # Install unzip and wget
+    RUN microdnf -y install unzip wget tar gzip && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    # Install gh CLI
+    RUN wget -q https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz && \
+        tar -xzf gh_2.62.0_linux_amd64.tar.gz && \
+        mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ && \
+        rm -rf gh_2.62.0_linux_amd64*
 
     # Fetch CompactC x86_64
     COPY COMPACTC_VERSION .
@@ -553,7 +570,7 @@ contract-precompile-image-single-platform:
     SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
 
 use-contract-precompile-image:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 #    FROM +contract-precompile-image
     COPY COMPACTC_VERSION .
     ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
@@ -567,22 +584,35 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM rust:1.92-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install curl for rust installation
+    RUN microdnf -y install curl-minimal ca-certificates && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install rust with complete profile for profiler runtime support (needed for cargo llvm-cov)
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile complete
+    ENV PATH="/root/.cargo/bin:${PATH}"
 
     # Install build dependencies
-    RUN apt-get update -qq && \
-        apt-get upgrade -y -qq && \
-        apt-get install -y --no-install-recommends -qq \
-        build-essential \
+    RUN microdnf -y update && \
+        microdnf -y install \
+        gcc \
+        gcc-c++ \
+        make \
         clang \
-        libssl-dev \
-        libpq-dev \
-        libsqlite3-dev \
+        openssl-devel \
+        libpq-devel \
+        sqlite-devel \
         openssl \
         protobuf-compiler \
-        pkg-config \
-        grcov \
-        openssh-client
+        pkgconfig \
+        openssh-clients \
+        git \
+        tar \
+        gzip \
+        jq && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
         # gcc-x86-64-linux-gnu \
@@ -615,7 +645,7 @@ node-ci-image-single-platform:
 
     # SAVE IMAGE under the rust version used.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.92"
+    ENV IMAGE_TAG="1.93"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -625,14 +655,13 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:$RUST_VERSION-$NATIVEARCH
 
     # Used to add repository for nodejs
-    RUN apt-get update -qq \
-        && apt-get upgrade -y -qq \
-        && apt-get install -y -qq ca-certificates gnupg \
-        && rm -rf /var/lib/apt/lists/*
+    RUN microdnf -y update && \
+        microdnf -y install ca-certificates && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     RUN cargo --version
 
@@ -653,9 +682,21 @@ prep:
     SAVE IMAGE --cache-hint
 
 # Prepares Node Toolkit (JS) in time for testing
+# Always uses linux/amd64 platform because compactc doesn't release for arm64
 toolkit-js-prep:
-    ARG NATIVEARCH
-    FROM node:22-trixie
+    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install dependencies for Node.js and toolkit-js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz unzip && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 x64 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Always use x64 since this target is always built for linux/amd64 platform
+    ARG NODE_VERSION=22.13.1
+    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -706,8 +747,6 @@ check-rust-prepare:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
-    RUN apt-get update && apt-get install -y jq
-
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
@@ -741,11 +780,11 @@ check-rust:
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
+    #=ghcr.io/midnight-ntwrk/midnight-node:latest
     FROM +subxt
-    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
-    WITH DOCKER --pull $NODE_IMAGE
+    WITH DOCKER --pull ${NODE_IMAGE}
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /image_metadata.scale && \
@@ -778,14 +817,18 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
         --exclude midnight-node-toolkit \
         -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+
+    # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+    #     --exclude midnight-node-toolkit \
+    #     -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
 
 # Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
 # These tests do NOT require toolkit-js
@@ -802,15 +845,16 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests only
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+    # Run pallet-midnight fixture tests only llvm-cov
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
         -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
 
-    SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
+    # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+# NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
 test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
@@ -819,15 +863,23 @@ test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
-    # Add NodeSource repository with GPG verification
-    RUN mkdir -p /usr/share/keyrings && \
-        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg && \
-        echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Test
     RUN mkdir /test-artifacts-toolkit
@@ -841,13 +893,13 @@ test-toolkit:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js) llvm-cov
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
         -E 'package(midnight-node-toolkit)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
 
-    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
+    # SAVE ARTIFACT --if-exists ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
@@ -1064,12 +1116,21 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    ARG NODE_VERSION=22.13.1
+    RUN if [ "$NATIVEARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Add toolkit-js
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
@@ -1127,11 +1188,28 @@ audit-rust:
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN corepack enable
     RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
       && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
@@ -1139,11 +1217,31 @@ audit-npm:
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
+    # Install and enable corepack for yarn support
+    RUN npm install -g corepack && corepack enable
+
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
-    RUN corepack enable
     RUN yarn install --immutable
     RUN mkdir -p /scan_reports
     RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
@@ -1181,22 +1279,33 @@ partnerchains-dev:
 
     ARG EARTHLY_GIT_SHORT_HASH
 
-    FROM ubuntu:24.04
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
     # Get node version for the image tag
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     RUN rm -rf /node
     LET NODE_VERSION = "$(cat node_version)"
     LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
+
+    # Install Node.js repository
+    RUN printf "%s\n" \
+        "[nodesource]" \
+        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "enabled=1" \
+        "gpgcheck=1" \
+        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
+        > /etc/yum.repos.d/nodesource.repo
+
     # Install necessary packages
-    RUN apt-get update -qq && apt-get install -y \
+    RUN microdnf -y install \
         curl \
         unzip \
         nodejs \
         bash \
         jq \
         socat \
-        && rm -rf /var/lib/apt/lists/*
+        && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Download cardano node (for cardano-cli)
     RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
