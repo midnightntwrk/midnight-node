@@ -196,7 +196,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run, test-pallet-fixtures]
+    needs: [run]
     permissions:
       id-token: write
       contents: read
