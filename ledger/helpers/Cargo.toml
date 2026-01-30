@@ -27,6 +27,7 @@ zswap-hf = { workspace = true }
 zkir-hf = { workspace = true }
 
 rand = { workspace = true, features = ["small_rng"] }
+log.workspace = true
 lazy_static.workspace = true
 itertools = { workspace = true, features = ["use_alloc"] }
 thiserror.workspace = true
@@ -47,3 +48,4 @@ default = []
 can-panic = []
 erase-proof = []
 test-utils = []
+fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde"]
