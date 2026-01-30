@@ -903,9 +903,12 @@ test-toolkit:
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
     WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        # Use --network=host so testcontainers postgres is accessible via localhost
         RUN docker run \
+            --network=host \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
             test-toolkit:latest
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
