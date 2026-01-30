@@ -49,6 +49,7 @@ removeUnusedFilesAndDirs() {
         "/opt/hostedtoolcache"
 
         # Java
+        "/usr/lib/jvm"
         "/usr/share/java"
 
         # AWS tools
@@ -75,6 +76,15 @@ removeUnusedFilesAndDirs() {
         "/usr/local/share/powershell"
         "/usr/local/share/vcpkg"
         "/usr/local/share/icons"
+
+        # Additional libraries
+        "/usr/local/lib/node_modules"
+        "/usr/local/lib/heroku"
+
+        # Azure CLI
+        "/opt/az"
+        "/opt/microsoft"
+        "/opt/google"
 
         # Maven, Gradle, Kotlin
         "/usr/share/apache-maven-"*
@@ -130,6 +140,7 @@ cleanPackages() {
         'azure-cli'
         'firefox'
         'libgl1-mesa-dri'
+        'microsoft-edge-stable'
         'mono-devel'
         'php.*'
     )
@@ -153,13 +164,14 @@ cleanPackages() {
         || echo "::warning::The command [sudo apt-get clean] failed"
 }
 
-# Remove Docker images.
+# Remove Docker images, containers, volumes, and build cache.
 # Ubuntu 22 runners have docker images already installed.
 cleanDocker() {
     echo "=> Removing the following docker images:"
     sudo docker image ls
-    echo "=> Removing docker images..."
-    sudo docker image prune --all --force || true
+    echo "=> Removing docker images, containers, volumes, and build cache..."
+    sudo docker system prune -af || true
+    sudo docker builder prune -af || true
 }
 
 # Remove Swap storage
