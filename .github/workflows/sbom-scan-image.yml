@@ -34,7 +34,7 @@ on:
         type: string
       severity-cutoff:
         description: 'Minimum severity to fail on (negligible, low, medium, high, critical)'
-        default: 'high'
+        default: 'critical'
         type: string
       skip-attestation:
         description: 'Skip SBOM attestation (e.g., for fork PRs)'
