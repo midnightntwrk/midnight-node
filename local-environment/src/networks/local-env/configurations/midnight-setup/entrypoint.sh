@@ -16,8 +16,8 @@
 # Fail if a command fails
 set -euxo pipefail
 
-apt -qq update
-apt -qq -y install curl jq ncat uuid-runtime
+microdnf -y update
+microdnf -y install curl-minimal jq nmap-ncat util-linux
 
 check_json_validity() {
   local file="$1"
@@ -62,7 +62,8 @@ export POSTGRES_USER="postgres"
 if [ ! -f postgres.password ]; then
     uuidgen | tr -d '-' | head -c 16 > postgres.password
 fi
-export POSTGRES_PASSWORD="$(cat ./postgres.password)"
+POSTGRES_PASSWORD="$(cat ./postgres.password)"
+export POSTGRES_PASSWORD
 export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
@@ -95,14 +96,14 @@ while true; do
         echo "✓ All contract CBOR files and policy IDs found"
         break
     fi
-    
+
     elapsed=$(($(date +%s) - start_time))
     if [[ $elapsed -ge $MAX_WAIT ]]; then
         echo "ERROR: Timeout waiting for contract CBOR files after ${MAX_WAIT}s"
         ls -la "${RUNTIME_VALUES}/" || true
         exit 1
     fi
-    
+
     echo "Waiting for contract CBOR files (${elapsed}s elapsed)..."
     sleep 5
 done
@@ -171,7 +172,7 @@ COUNCIL_OUTPUT_FILE=/tmp/council_deploy_output.txt
     --ogmios-url "$OGMIOS_URL" 2>&1 | tee "$COUNCIL_OUTPUT_FILE"
 COUNCIL_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $COUNCIL_EXIT_CODE -eq 0 ]; then
+if [ "$COUNCIL_EXIT_CODE" -eq 0 ]; then
     echo "✓ Council Forever contract deployed successfully!"
     # Parse policy ID and script address from output
     COUNCIL_POLICY_ID=$(grep "Policy ID:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
@@ -201,7 +202,7 @@ TECHAUTH_OUTPUT_FILE=/tmp/techauth_deploy_output.txt
     --contract-type tech-auth 2>&1 | tee "$TECHAUTH_OUTPUT_FILE"
 TECHAUTH_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $TECHAUTH_EXIT_CODE -eq 0 ]; then
+if [ "$TECHAUTH_EXIT_CODE" -eq 0 ]; then
     echo "✓ Tech Auth Forever contract deployed successfully!"
     # Parse policy ID and script address from output
     TECHAUTH_POLICY_ID=$(grep "Policy ID:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
@@ -243,7 +244,7 @@ echo "=== Deploying Federated Ops Forever Contract ==="
     --contract-type federated-ops \
     --candidates-file permissioned_candidates.json
 
-if [ $? -eq 0 ]; then
+if [ "$?" -eq 0 ]; then
     echo "✓ Federated Ops Forever contract deployed successfully!"
 else
     echo "✗ Federated Ops Forever contract deployment failed"
@@ -336,7 +337,7 @@ epoch=$(curl -s --request POST \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
 n_2_epoch=$((epoch + 2))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_2_epoch ]; do
+while [ "$epoch" -lt $n_2_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
