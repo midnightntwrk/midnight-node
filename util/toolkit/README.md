@@ -333,7 +333,7 @@ $ midnight-node-toolkit send-intent --dry-run
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "out/mint_intent.bin"
 >   --intent-file "out/recieveAndSend_intent.bin"
->   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --compiled-contract-dir ../toolkit-js/test/minter_contract/out
 >   --to-bytes
 >   --dest-file "/out/mint_tx.mn"
 ...
