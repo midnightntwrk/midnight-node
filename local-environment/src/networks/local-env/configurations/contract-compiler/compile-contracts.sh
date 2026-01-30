@@ -28,7 +28,7 @@ PLUTUS_JSON="${CONTRACTS_DIR}/plutus-default.json"
 
 # Copy contracts to writable location
 echo "Copying contracts to writable location..."
-cp -r "${CONTRACTS_SRC}" "${CONTRACTS_DIR}"
+cp -r $CONTRACTS_SRC /tmp
 cp /.env $CONTRACTS_DIR
 echo "✓ Contracts copied to ${CONTRACTS_DIR}"
 
@@ -37,6 +37,13 @@ if [[ -d "${CONTRACTS_DIR}/build" ]]; then
     echo "Removing existing build directory..."
     rm -rf "${CONTRACTS_DIR}/build"
     echo "✓ Build directory cleaned"
+fi
+
+# Remove any pre-built plutus.json from source repo to ensure fresh compilation
+if [[ -f "${CONTRACTS_DIR}/plutus.json" ]]; then
+    echo "Removing existing plutus.json..."
+    rm -f "${CONTRACTS_DIR}/plutus.json"
+    echo "✓ Existing plutus.json removed"
 fi
 
 # Navigate to contracts directory
@@ -131,6 +138,9 @@ echo "=== Contracts Deployment ==="
 bun cli deploy -p kupmios
 bun cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
 
+bun cli register-gov-auth -p kupmios
+bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
+
 echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
 echo ""
@@ -147,3 +157,14 @@ echo ""
 echo "✓ Contracts data exported successfully"
 echo "=== Contracts Data Export Complete ==="
 echo ""
+
+# Signal completion for dependent services (healthcheck)
+touch /tmp/ready
+
+# Keep container alive for debugging
+echo "=== Container Ready ==="
+echo "Container will stay alive for debugging."
+echo "To exec into this container, run:"
+echo "  docker exec -it contract-compiler bash"
+echo ""
+sleep infinity

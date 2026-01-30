@@ -26,7 +26,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         jq=1.6-2.1+deb12u1 \
         curl=7.88.1-10+deb12u14 \
-        ca-certificates=20230311+deb12u1 && \
+        ca-certificates=20230311+deb12u1 \
+        vim && \
     rm -rf /var/lib/apt/lists/*
 
 # Declare TARGETARCH for multi-platform builds (auto-provided by BuildKit)
@@ -123,6 +124,8 @@ WORKDIR /contracts
 RUN chown -R appuser:appuser /contracts
 
 USER appuser
+WORKDIR /tmp/contracts
+RUN echo 'alias ll="ls -lha"' >> ~/.bashrc
 
 # One-shot container: compilation completes and exits, healthcheck is a no-op
 HEALTHCHECK --interval=60s --timeout=5s --retries=1 --start-period=5s CMD exit 0
