@@ -900,7 +900,7 @@ build-test-toolkit:
 
 test-toolkit:
     ARG NATIVEARCH
-    FROM earthly/dind:alpine-3.21-docker-27.5.1-r0
+    FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
     WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
         RUN docker run \
