@@ -18,15 +18,16 @@
 //! fully verifiable against on-chain state.
 
 use crate::treasury_config::{CNIGHT_ASSET_NAME, CnightTreasuryConfig, TreasuryUtxo};
+use async_trait::async_trait;
 use sidechain_domain::McBlockHash;
 use sqlx::{FromRow, Pool, Postgres, error::Error as SqlxError};
 use thiserror::Error;
 
 /// Length of a Cardano policy ID in bytes.
-const POLICY_ID_LEN: usize = 28;
+pub const POLICY_ID_LEN: usize = 28;
 
 /// Length of a Cardano block hash in bytes.
-const BLOCK_HASH_LEN: usize = 32;
+pub const BLOCK_HASH_LEN: usize = 32;
 
 /// Errors that can occur during treasury verification.
 #[derive(Debug, Error)]
@@ -80,14 +81,21 @@ pub struct UtxoVerificationResult {
 }
 
 /// Verifies treasury configuration against Cardano db-sync.
-pub struct TreasuryVerifier {
-	pool: Pool<Postgres>,
+pub struct TreasuryVerifier<D: TreasuryDataSource> {
+	data_source: D,
 }
 
-impl TreasuryVerifier {
+impl TreasuryVerifier<DbSyncDataSource> {
 	/// Create a new treasury verifier with the given database connection pool.
 	pub fn new(pool: Pool<Postgres>) -> Self {
-		Self { pool }
+		Self { data_source: DbSyncDataSource::new(pool) }
+	}
+}
+
+impl<D: TreasuryDataSource> TreasuryVerifier<D> {
+	/// Create a new treasury verifier with a custom data source.
+	pub fn with_data_source(data_source: D) -> Self {
+		Self { data_source }
 	}
 
 	/// Verify all UTxOs in the treasury configuration against db-sync.
@@ -111,7 +119,7 @@ impl TreasuryVerifier {
 		let policy_id = parse_policy_id(&config.cnight_policy_id)?;
 
 		// Verify the reference block exists
-		let block = self.get_block_by_hash(&block_hash).await?;
+		let block = self.data_source.get_block_by_hash(&block_hash).await?;
 		if block.is_none() {
 			return Err(TreasuryVerificationError::BlockNotFound(
 				config.reference_block_hash.clone(),
@@ -148,6 +156,7 @@ impl TreasuryVerifier {
 
 		// Query the UTxO from db-sync
 		let row = self
+			.data_source
 			.get_utxo_with_asset(
 				&tx_hash,
 				utxo.output_index,
@@ -189,8 +198,57 @@ impl TreasuryVerifier {
 			amount: actual_amount,
 		})
 	}
+}
 
-	/// Query db-sync for a block by its hash.
+/// Row type for block queries.
+#[derive(Debug, Clone, FromRow)]
+pub struct BlockRow {
+	pub block_number: i32,
+}
+
+/// Row type for UTxO queries.
+#[derive(Debug, Clone, FromRow)]
+pub struct UtxoRow {
+	pub address: String,
+	pub quantity: i64,
+}
+
+/// Trait for treasury database operations.
+///
+/// This abstraction allows for mock implementations in tests.
+#[async_trait]
+pub trait TreasuryDataSource: Send + Sync {
+	/// Query for a block by its hash.
+	async fn get_block_by_hash(
+		&self,
+		hash: &McBlockHash,
+	) -> Result<Option<BlockRow>, TreasuryVerificationError>;
+
+	/// Query for a UTxO with a specific asset at a given block.
+	async fn get_utxo_with_asset(
+		&self,
+		tx_hash: &[u8; 32],
+		output_index: u32,
+		policy_id: &[u8; POLICY_ID_LEN],
+		asset_name: &[u8],
+		at_block: i32,
+	) -> Result<Option<UtxoRow>, TreasuryVerificationError>;
+}
+
+/// PostgreSQL db-sync implementation of TreasuryDataSource.
+pub struct DbSyncDataSource {
+	pool: Pool<Postgres>,
+}
+
+impl DbSyncDataSource {
+	/// Create a new db-sync data source with the given connection pool.
+	pub fn new(pool: Pool<Postgres>) -> Self {
+		Self { pool }
+	}
+}
+
+#[async_trait]
+impl TreasuryDataSource for DbSyncDataSource {
 	async fn get_block_by_hash(
 		&self,
 		hash: &McBlockHash,
@@ -210,7 +268,6 @@ WHERE hash = $1
 		Ok(row)
 	}
 
-	/// Query db-sync for a UTxO with a specific asset at a given block.
 	async fn get_utxo_with_asset(
 		&self,
 		tx_hash: &[u8; 32],
@@ -219,12 +276,6 @@ WHERE hash = $1
 		asset_name: &[u8],
 		at_block: i32,
 	) -> Result<Option<UtxoRow>, TreasuryVerificationError> {
-		// Query UTxO that:
-		// 1. Was created in a transaction with the given hash
-		// 2. Has the given output index
-		// 3. Contains the specified asset (policy_id + asset_name)
-		// 4. Was created at or before the reference block
-		// 5. Was not spent before the reference block
 		let row: Option<UtxoRow> = sqlx::query_as(
 			r#"
 SELECT
@@ -260,19 +311,6 @@ WHERE tx.hash = $1
 
 		Ok(row)
 	}
-}
-
-/// Row type for block queries.
-#[derive(Debug, FromRow)]
-struct BlockRow {
-	block_number: i32,
-}
-
-/// Row type for UTxO queries.
-#[derive(Debug, FromRow)]
-struct UtxoRow {
-	address: String,
-	quantity: i64,
 }
 
 /// Parse a hex-encoded block hash string into McBlockHash.
@@ -335,6 +373,13 @@ fn parse_tx_hash(hex_str: &str) -> Result<[u8; 32], TreasuryVerificationError> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::treasury_config::TreasuryUtxo;
+	use std::collections::HashMap;
+	use std::sync::Mutex;
+
+	// ========================================================================
+	// Parsing tests
+	// ========================================================================
 
 	#[test]
 	fn test_parse_block_hash_valid() {
@@ -384,5 +429,220 @@ mod tests {
 		let hash = "abc"; // Too short
 		let result = parse_tx_hash(&hash);
 		assert!(matches!(result, Err(TreasuryVerificationError::InvalidTxHash { .. })));
+	}
+
+	// ========================================================================
+	// Mock data source for testing
+	// ========================================================================
+
+	/// Mock implementation of TreasuryDataSource for testing.
+	pub struct MockTreasuryDataSource {
+		/// Blocks indexed by hash (hex string).
+		blocks: HashMap<String, BlockRow>,
+		/// UTxOs indexed by (tx_hash hex, output_index).
+		utxos: Mutex<HashMap<(String, u32), UtxoRow>>,
+	}
+
+	impl MockTreasuryDataSource {
+		pub fn new() -> Self {
+			Self { blocks: HashMap::new(), utxos: Mutex::new(HashMap::new()) }
+		}
+
+		pub fn with_block(mut self, hash_hex: &str, block_number: i32) -> Self {
+			self.blocks.insert(hash_hex.to_string(), BlockRow { block_number });
+			self
+		}
+
+		pub fn with_utxo(
+			self,
+			tx_hash_hex: &str,
+			output_index: u32,
+			address: &str,
+			quantity: i64,
+		) -> Self {
+			self.utxos.lock().unwrap().insert(
+				(tx_hash_hex.to_string(), output_index),
+				UtxoRow { address: address.to_string(), quantity },
+			);
+			self
+		}
+	}
+
+	#[async_trait]
+	impl TreasuryDataSource for MockTreasuryDataSource {
+		async fn get_block_by_hash(
+			&self,
+			hash: &McBlockHash,
+		) -> Result<Option<BlockRow>, TreasuryVerificationError> {
+			let hash_hex = hex::encode(hash.0);
+			Ok(self.blocks.get(&hash_hex).cloned())
+		}
+
+		async fn get_utxo_with_asset(
+			&self,
+			tx_hash: &[u8; 32],
+			output_index: u32,
+			_policy_id: &[u8; POLICY_ID_LEN],
+			_asset_name: &[u8],
+			_at_block: i32,
+		) -> Result<Option<UtxoRow>, TreasuryVerificationError> {
+			let tx_hash_hex = hex::encode(tx_hash);
+			Ok(self.utxos.lock().unwrap().get(&(tx_hash_hex, output_index)).cloned())
+		}
+	}
+
+	// ========================================================================
+	// Mock verification tests
+	// ========================================================================
+
+	fn test_config(utxos: Vec<TreasuryUtxo>) -> CnightTreasuryConfig {
+		CnightTreasuryConfig {
+			illiquid_circulation_supply_validator_address: "addr_test1_ics".to_string(),
+			reference_block_hash: "a".repeat(64),
+			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+				.to_string(),
+			utxos,
+			total_night_amount: 1000,
+		}
+	}
+
+	#[tokio::test]
+	async fn test_verify_block_not_found() {
+		let mock = MockTreasuryDataSource::new();
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![]);
+		let result = verifier.verify(&config).await;
+
+		assert!(matches!(result, Err(TreasuryVerificationError::BlockNotFound(_))));
+	}
+
+	#[tokio::test]
+	async fn test_verify_utxo_not_found() {
+		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100);
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![TreasuryUtxo {
+			tx_hash: "b".repeat(64),
+			output_index: 0,
+			expected_amount: 1000,
+		}]);
+		let result = verifier.verify(&config).await;
+
+		assert!(matches!(result, Err(TreasuryVerificationError::UtxoNotFound { .. })));
+	}
+
+	#[tokio::test]
+	async fn test_verify_wrong_address() {
+		let tx_hash = "b".repeat(64);
+		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+			&tx_hash,
+			0,
+			"wrong_address",
+			1000,
+		);
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![TreasuryUtxo {
+			tx_hash: tx_hash.clone(),
+			output_index: 0,
+			expected_amount: 1000,
+		}]);
+		let result = verifier.verify(&config).await;
+
+		assert!(matches!(result, Err(TreasuryVerificationError::WrongAddress { .. })));
+	}
+
+	#[tokio::test]
+	async fn test_verify_amount_mismatch() {
+		let tx_hash = "b".repeat(64);
+		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+			&tx_hash,
+			0,
+			"addr_test1_ics",
+			500,
+		); // Wrong amount
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![TreasuryUtxo {
+			tx_hash: tx_hash.clone(),
+			output_index: 0,
+			expected_amount: 1000,
+		}]);
+		let result = verifier.verify(&config).await;
+
+		assert!(matches!(result, Err(TreasuryVerificationError::AmountMismatch { .. })));
+	}
+
+	#[tokio::test]
+	async fn test_verify_success() {
+		let tx_hash = "b".repeat(64);
+		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+			&tx_hash,
+			0,
+			"addr_test1_ics",
+			1000,
+		);
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![TreasuryUtxo {
+			tx_hash: tx_hash.clone(),
+			output_index: 0,
+			expected_amount: 1000,
+		}]);
+		let result = verifier.verify(&config).await;
+
+		assert!(result.is_ok());
+		let results = result.unwrap();
+		assert_eq!(results.len(), 1);
+		assert_eq!(results[0].tx_hash, tx_hash);
+		assert_eq!(results[0].output_index, 0);
+		assert_eq!(results[0].amount, 1000);
+	}
+
+	#[tokio::test]
+	async fn test_verify_multiple_utxos() {
+		let tx_hash1 = "b".repeat(64);
+		let tx_hash2 = "c".repeat(64);
+		let mock = MockTreasuryDataSource::new()
+			.with_block(&"a".repeat(64), 100)
+			.with_utxo(&tx_hash1, 0, "addr_test1_ics", 500)
+			.with_utxo(&tx_hash2, 1, "addr_test1_ics", 500);
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = CnightTreasuryConfig {
+			illiquid_circulation_supply_validator_address: "addr_test1_ics".to_string(),
+			reference_block_hash: "a".repeat(64),
+			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+				.to_string(),
+			utxos: vec![
+				TreasuryUtxo { tx_hash: tx_hash1.clone(), output_index: 0, expected_amount: 500 },
+				TreasuryUtxo { tx_hash: tx_hash2.clone(), output_index: 1, expected_amount: 500 },
+			],
+			total_night_amount: 1000,
+		};
+		let result = verifier.verify(&config).await;
+
+		assert!(result.is_ok());
+		let results = result.unwrap();
+		assert_eq!(results.len(), 2);
+	}
+
+	#[tokio::test]
+	async fn test_verify_empty_utxos() {
+		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100);
+
+		let verifier = TreasuryVerifier::with_data_source(mock);
+
+		let config = test_config(vec![]);
+		let result = verifier.verify(&config).await;
+
+		assert!(result.is_ok());
+		assert!(result.unwrap().is_empty());
 	}
 }
