@@ -663,6 +663,8 @@ mod test {
 
 		// Create treasury config with UTxOs that sum to TREASURY_AMOUNT
 		let treasury_config = CnightTreasuryConfig {
+			illiquid_circulation_supply_validator_address:
+				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
 			utxos: vec![
 				TreasuryUtxo {
 					tx_hash: "abc123".to_string(),
