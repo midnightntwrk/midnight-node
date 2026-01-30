@@ -63,10 +63,11 @@ scan_image_with_retry() {
 
   echo "Scanning ${IMAGE} for vulnerabilities (fail on ${SEVERITY_CUTOFF}+)"
 
-  # Build grype command with optional output file
+  # Build grype command - always show table output, optionally save JSON
   local grype_cmd="grype ${IMAGE} --fail-on ${SEVERITY_CUTOFF}"
   if [ -n "$OUTPUT_FILE" ]; then
-    grype_cmd="${grype_cmd} --output json --file ${OUTPUT_FILE}"
+    # Show table on stdout AND write JSON to file
+    grype_cmd="${grype_cmd} --output table --output json=${OUTPUT_FILE}"
   fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
@@ -76,8 +77,8 @@ scan_image_with_retry() {
     if [ $exit_code -eq 0 ]; then
       echo "No vulnerabilities at or above ${SEVERITY_CUTOFF} severity found in ${IMAGE}"
       return 0
-    elif [ $exit_code -eq 1 ]; then
-      # Exit code 1 means vulnerabilities were found - display summary before failing
+    elif [ $exit_code -eq 2 ]; then
+      # Exit code 2 means vulnerabilities were found above threshold - display summary before failing
       if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
         echo "::group::Vulnerability Summary"
         jq -r '.matches[] | "\(.vulnerability.severity): \(.vulnerability.id) in \(.artifact.name)@\(.artifact.version)"' "$OUTPUT_FILE" 2>/dev/null | sort | uniq -c | sort -rn || true
@@ -86,7 +87,7 @@ scan_image_with_retry() {
       echo "::error::Vulnerabilities at or above ${SEVERITY_CUTOFF} severity found in ${IMAGE}"
       return 1
     else
-      # Other exit codes indicate transient failures - retry
+      # Exit code 1 = general error, other codes = transient failures - retry
       if [ $attempt -lt $MAX_ATTEMPTS ]; then
         echo "Scan failed with exit code ${exit_code}, retrying in ${DELAY}s..."
         sleep $DELAY
