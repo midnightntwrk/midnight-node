@@ -766,6 +766,7 @@ check-rust:
     # ensure runtime benchmark feature enable to check they compile.
     RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
+    # unfortunately we need to do cargo clean here to run within disk space limits
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[].name'); do \
@@ -774,6 +775,7 @@ check-rust:
             echo "Failed: $pkg"; \
             status=1; \
             fi; \
+            cargo clean; \
         done; \
         exit $status
 

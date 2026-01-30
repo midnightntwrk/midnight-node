@@ -139,7 +139,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -165,13 +165,16 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run build
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-test-upgrader-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +hardfork-test-upgrader-image
 
   check-unused-deps:
     name: Check Unused Dependencies
@@ -201,7 +204,7 @@ jobs:
       id-token: write
       contents: read
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -315,7 +318,7 @@ jobs:
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
@@ -327,6 +330,9 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run pallet fixture tests
         run: |
@@ -348,6 +354,9 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run toolkit tests
         run: |
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
@@ -355,7 +364,7 @@ jobs:
   toolkit-e2e:
     name: Toolkit E2E
     needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -395,7 +404,7 @@ jobs:
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
     needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -543,7 +552,7 @@ jobs:
 
   build-indexer-images:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       packages: read
@@ -557,6 +566,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Install just
         uses: taiki-e/install-action@710817a1645ef40daad5bcde7431ceccf6cc3528 #v2.67.13
@@ -660,7 +672,7 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [ run, build-indexer-images ]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest-8-core-x64
     permissions:
       pull-requests: write
       packages: read
@@ -724,7 +736,7 @@ jobs:
     #   - startup-dev-e2e
     #   - genesis-undeployed-e2e
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
