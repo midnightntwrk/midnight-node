@@ -736,7 +736,7 @@ check-rust:
             echo "Failed: $pkg"; \
             status=1; \
             fi; \
-            cargo clean \
+            cargo clean; \
         done; \
         exit $status
 
