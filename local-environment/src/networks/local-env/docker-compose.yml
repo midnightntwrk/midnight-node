@@ -9,8 +9,6 @@ services:
       retries: 15
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
     volumes:
       - cardano-node-1-data:/data
       - shared-volume:/shared
