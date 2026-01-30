@@ -158,22 +158,25 @@ impl BuildTxs for CustomContractBuilder {
 		// - Intents
 		let contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
-
 		let (guaranteed_effects, _fallible_effects) = contract_intent.find_effects();
 
 		let mut unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
-		if let Some(effects) = guaranteed_effects {
+		if !guaranteed_effects.is_empty() {
 			let mut outputs = Vec::<Box<dyn BuildUtxoOutput<DefaultDB>>>::new();
-			for (ClaimedUnshieldedSpendsKey(tt, dest), value) in effects.claimed_unshielded_spends {
-				let TokenType::Unshielded(tt) = tt else {
-					return Err(CustomContractBuilderError::ClaimedUnshieldedSpendTokenTypeError(
-						tt,
-					));
-				};
+			for effects in guaranteed_effects {
+				for (ClaimedUnshieldedSpendsKey(tt, dest), value) in
+					effects.claimed_unshielded_spends
+				{
+					let TokenType::Unshielded(tt) = tt else {
+						return Err(
+							CustomContractBuilderError::ClaimedUnshieldedSpendTokenTypeError(tt),
+						);
+					};
 
-				if let PublicAddress::User(addr) = dest {
-					let owner: UnshieldedWallet = addr.into();
-					outputs.push(Box::new(UtxoOutputInfo { value, owner, token_type: tt }));
+					if let PublicAddress::User(addr) = dest {
+						let owner: UnshieldedWallet = addr.into();
+						outputs.push(Box::new(UtxoOutputInfo { value, owner, token_type: tt }));
+					}
 				}
 			}
 
