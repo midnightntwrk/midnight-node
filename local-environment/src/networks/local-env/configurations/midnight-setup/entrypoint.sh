@@ -84,9 +84,6 @@ TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .script
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
 
-# The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
-# which was overridden earlier and will be included in permissioned-candidates-config.json
-
 echo ""
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
