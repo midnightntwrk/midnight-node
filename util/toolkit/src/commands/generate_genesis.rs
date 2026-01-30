@@ -1,7 +1,9 @@
 use crate::cli_parsers::{self as cli};
 use crate::treasury_config::CnightTreasuryConfig;
+use crate::treasury_verifier::TreasuryVerifier;
 use clap::Args;
 use serde::Deserialize;
+use sqlx::postgres::PgPoolOptions;
 use std::path::{Path, PathBuf};
 
 use crate::genesis_generator::{FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator};
@@ -47,6 +49,15 @@ pub struct GenerateGenesisArgs {
 	/// instead of the default INITIAL_PARAMETERS.
 	#[arg(long)]
 	ledger_parameters_config: Option<PathBuf>,
+	/// PostgreSQL connection URL for Cardano db-sync database.
+	/// Required for treasury verification unless --skip-cardano-verification is set.
+	/// Example: postgres://user:pass@localhost:5432/cexplorer
+	#[arg(long, env = "DB_SYNC_URL")]
+	db_sync_url: Option<String>,
+	/// Skip verification of treasury UTxOs against Cardano db-sync.
+	/// Use for testing or when db-sync is not available.
+	#[arg(long, default_value = "false")]
+	skip_cardano_verification: bool,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -102,6 +113,35 @@ pub async fn execute(
 				config.total_night_amount,
 				config.utxos.len()
 			);
+
+			// Verify treasury config against Cardano db-sync if UTxOs are configured
+			if !config.utxos.is_empty() && !args.skip_cardano_verification {
+				let db_sync_url = args.db_sync_url.as_ref().ok_or(
+					"Treasury config contains UTxOs but --db-sync-url is not set. \
+					 Use --skip-cardano-verification to skip verification.",
+				)?;
+
+				println!("Verifying treasury UTxOs against Cardano db-sync...");
+				let pool = PgPoolOptions::new()
+					.max_connections(1)
+					.connect(db_sync_url)
+					.await
+					.map_err(|e| format!("Failed to connect to db-sync: {}", e))?;
+
+				let verifier = TreasuryVerifier::new(pool);
+				let results = verifier
+					.verify(&config)
+					.await
+					.map_err(|e| format!("Treasury verification failed: {}", e))?;
+
+				println!("Treasury verification passed: {} UTxOs verified", results.len());
+			} else if !config.utxos.is_empty() && args.skip_cardano_verification {
+				println!(
+					"WARNING: Skipping Cardano verification for {} treasury UTxOs",
+					config.utxos.len()
+				);
+			}
+
 			Some(config)
 		} else {
 			None
