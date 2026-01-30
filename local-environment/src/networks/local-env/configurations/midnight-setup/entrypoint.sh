@@ -27,15 +27,14 @@ check_json_validity() {
   fi
 }
 
+# Contracts deployed, get current epoch to know when it will be active
+epoch=$(curl -s --request POST \
+    --url "http://ogmios:1337" \
+    --header 'Content-Type: application/json' \
+    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
+
 echo "Using Partner Chains node version:"
 ./midnight-node --version
-
-echo "Beginning configuration..."
-
-chmod 644 /shared/shelley/genesis-utxo.skey
-
-echo "Initializing governance authority ..."
-
 
 export POSTGRES_HOST="postgres"
 export POSTGRES_PORT="5432"
@@ -49,14 +48,8 @@ export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
 
-
-echo "Inserting D parameter..."
-
-# Using 3 permissioned (Alice, Bob, Charlie from qanet config).
-# This ensures GRANDPA finality works since nodes 1-3 use well-known keys matching qanet config.
 D_PERMISSIONED=3
 D_REGISTERED=0
-
 CONTRACT_INFO="/runtime-values/contracts-info.json"
 COUNCIL_POLICY_ID=$(jq -r '.[] | select(.name == "Council Forever") | .scriptHash' $CONTRACT_INFO)
 COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .address' $CONTRACT_INFO)
@@ -162,10 +155,6 @@ echo "Partnerchain configuration is complete, and will be able to start after tw
 echo -e "\n===== Partnerchain Configuration Complete =====\n"
 
 echo "Waiting 2 epochs for DParam to become active and contracts to be queryable..."
-epoch=$(curl -s --request POST \
-    --url "http://ogmios:1337" \
-    --header 'Content-Type: application/json' \
-    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
 n_2_epoch=$((epoch + 2))
 echo "Current epoch: $epoch"
 while [ "$epoch" -lt $n_2_epoch ]; do

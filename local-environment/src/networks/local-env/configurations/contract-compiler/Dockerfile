@@ -120,10 +120,7 @@ RUN useradd -u 10001 -m -s /bin/bash appuser
 
 WORKDIR /contracts
 
-COPY compile-contracts.sh /compile-contracts.sh
-COPY .env /.env
-RUN chmod +x /compile-contracts.sh && \
-    chown -R appuser:appuser /contracts
+RUN chown -R appuser:appuser /contracts
 
 USER appuser
 

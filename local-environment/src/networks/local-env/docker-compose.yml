@@ -66,6 +66,8 @@ services:
     volumes:
       - ./runtime-values:/runtime-values
       - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
+      - ./configurations/contract-compiler/.env:/.env
+      - ./configurations/contract-compiler/compile-contracts.sh:/compile-contracts.sh
     security_opt:
       - no-new-privileges:true
     cap_drop:
