@@ -1,28 +1,9 @@
 name: nightly runs
 
 on:
-  push:
-    branches:
-      - e2e-cnight-nightly-run
-
   schedule:
-    - cron: "11 * * * *"
-
-  workflow_dispatch:
-    inputs:
-      env:
-        description: "Target environment (maps to Rust feature flag)"
-        required: true
-        default: "qanet"
-        type: choice
-        options:
-          - qanet
-          - staging
-          - prod
-      e2e_ref:
-        description: "Git ref to checkout for e2e tests (branch / tag / SHA)"
-        required: true
-        default: "e2e-cngd-for-cardano-preview"
+    # Runs every night at 00:00 UTC
+    - cron: "0 0 * * *"
 
 permissions:
   contents: read
@@ -41,23 +22,8 @@ jobs:
         id: vars
         shell: bash
         run: |
-          # schedule does not support inputs, so set defaults for cron runs
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "env=qanet" >> "$GITHUB_OUTPUT"
-            echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # push does not support inputs either, so set defaults for push-based debug runs
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "env=qanet" >> "$GITHUB_OUTPUT"
-            echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # workflow_dispatch uses user-provided inputs
-          echo "env=${{ inputs.env }}" >> "$GITHUB_OUTPUT"
-          echo "e2e_ref=${{ inputs.e2e_ref }}" >> "$GITHUB_OUTPUT"
+          echo "env=qanet" >> "$GITHUB_OUTPUT"
+          echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
 
       - name: Checkout e2e branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
