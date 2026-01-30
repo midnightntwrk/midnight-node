@@ -302,29 +302,12 @@ cardano-cli latest query utxo --testnet-magic 42 --address "${eve_address}" | /b
 echo "UTXO details for Eve saved in /shared/eve.utxo."
 cat /shared/eve.utxo
 
-echo "Querying and saving the first UTXO details for new address to /shared/genesis.utxo:"
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/genesis.utxo
-cat /shared/genesis.utxo > /runtime-values/genesis.utxo
-
-cat /shared/genesis.utxo
 
 echo "Fixing permissions for generated files..."
-chown $(id -u):$(id -g) \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo
+chown $(id -u):$(id -g) /runtime-values/mc.env
+chmod u+rw /runtime-values/mc.env
 
-chmod u+rw \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo
-
-if [ -f "/shared/genesis.utxo" ]; then
 touch /shared/cardano.ready
-else
-echo "Genesis UTXO file not found. Exiting..."
-exit 1
-fi
 echo "Cardano chain is ready. Starting DB-Sync..."
 
 wait

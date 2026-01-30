@@ -30,32 +30,13 @@ check_json_validity() {
 echo "Using Partner Chains node version:"
 ./midnight-node --version
 
-set +x # Disable echoing commands
-
-echo "Waiting for Cardano pod to setup genesis..."
-
-while true; do
-    if [ -e /shared/genesis.utxo ]; then
-        break
-    else
-        sleep 1
-    fi
-done
-
-set -x # Re-enable echoing commands
-
 echo "Beginning configuration..."
 
 chmod 644 /shared/shelley/genesis-utxo.skey
 
 echo "Initializing governance authority ..."
 
-export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
-cat /shared/genesis.utxo
-echo "Genesis UTXO: $GENESIS_UTXO"
 
-
-# export MOCK_REGISTRATIONS_FILE="/node-dev/default-registrations.json"
 export POSTGRES_HOST="postgres"
 export POSTGRES_PORT="5432"
 export POSTGRES_USER="postgres"
@@ -71,7 +52,6 @@ export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
 
 echo "Inserting D parameter..."
 
-# D_PERMISSIONED + D_REGISTERED must be >= 5 for a functioning partner chains network.
 # Using 3 permissioned (Alice, Bob, Charlie from qanet config).
 # This ensures GRANDPA finality works since nodes 1-3 use well-known keys matching qanet config.
 D_PERMISSIONED=3
@@ -83,6 +63,7 @@ COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .addr
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
+export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 
 echo ""
 echo "Generating chain-spec.json file for Midnight Nodes..."
@@ -180,8 +161,7 @@ echo "Partnerchain configuration is complete, and will be able to start after tw
 
 echo -e "\n===== Partnerchain Configuration Complete =====\n"
 
-echo "Waiting 3 epochs for DParam to become active and contracts to be queryable..."
-echo "(SDK applies 2-epoch offset, so epoch 4 is needed to query data from epoch 2)"
+echo "Waiting 2 epochs for DParam to become active and contracts to be queryable..."
 epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \
