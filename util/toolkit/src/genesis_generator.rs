@@ -102,6 +102,7 @@ const BEGINNING: Timestamp = Timestamp::from_secs(GLACIER_DROP_START_UNIX_EPOC);
 type Result<T, E = GenesisGeneratorError<DefaultDB>> = std::result::Result<T, E>;
 
 impl GenesisGenerator {
+	#[allow(clippy::too_many_arguments)]
 	pub async fn new(
 		seed: [u8; 32],
 		network_id: &str,
