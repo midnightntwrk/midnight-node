@@ -9,6 +9,8 @@ services:
       retries: 15
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - cardano-node-1-data:/data
       - shared-volume:/shared
@@ -47,6 +49,15 @@ services:
     command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
     depends_on:
       - cardano-node-1
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 30000 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - cardano-node-1-data:/data
     ports:
@@ -90,6 +101,15 @@ services:
       - "--workdir=/data"
       - "--match=*"
       - "--since=origin"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "busybox wget -q -O /dev/null http://localhost:${KUPO_PORT}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - shared-volume:/shared
       - kupo-data:/data
@@ -114,6 +134,8 @@ services:
       - OGMIOS_PORT=${OGMIOS_PORT}
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     volumes:
       - shared-volume:/shared
       - ogmios-data:/data
@@ -140,6 +162,13 @@ services:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "test -e /node-ipc/node.socket"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - shared-volume:/shared
       - db-sync-state-dir:/var/lib
@@ -175,6 +204,8 @@ services:
       retries: 5
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${LOCALENV_POSTGRES_PASSWORD}
@@ -202,6 +233,10 @@ services:
         condition: "service_started"
     image: ${INDEXER_CHAIN_IMAGE}
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       RUST_LOG: "chain_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
       APP__INFRA__NODE__URL: "ws://midnight-node-1:9933"
@@ -231,6 +266,10 @@ services:
         condition: "service_started"
     image: ${INDEXER_WALLET_IMAGE}
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       RUST_LOG: "wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
       APP__INFRA__SECRET: "${APP__INFRA__SECRET}"
@@ -257,6 +296,10 @@ services:
         condition: "service_started"
     image: ${INDEXER_API_IMAGE}
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "8088:8088"
     environment:
@@ -296,6 +339,8 @@ services:
       retries: 2
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   nats:
     profiles: ["withindexer"]
@@ -310,6 +355,13 @@ services:
       - nats-data:/tmp/nats
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "nats-server --help > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   midnight-node-1:
     container_name: midnight-node-1
@@ -320,6 +372,13 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9933/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - shared-volume:/shared
       - midnight-node-1-data:/data
@@ -356,6 +415,13 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9934/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - midnight-node-2-data:/data
       - shared-volume:/shared
@@ -391,6 +457,13 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9935/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - midnight-node-3-data:/data
       - shared-volume:/shared
@@ -426,6 +499,13 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9936/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - midnight-node-4-data:/data
       - shared-volume:/shared
@@ -463,6 +543,13 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9937/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - midnight-node-5-data:/data
       - shared-volume:/shared
@@ -502,6 +589,15 @@ services:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # One-shot container: setup completes and exits, healthcheck is a no-op
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 60s
+      timeout: 5s
+      retries: 1
+      start_period: 5s
     user: "0:0"
     volumes:
       - shared-volume:/shared
