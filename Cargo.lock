@@ -45,7 +45,7 @@ dependencies = [
  "bytestring",
  "derive_more 2.0.1",
  "encoding_rs",
- "foldhash",
+ "foldhash 0.1.5",
  "futures-core",
  "http 0.2.12",
  "httparse",
@@ -155,7 +155,7 @@ dependencies = [
  "cfg-if",
  "derive_more 2.0.1",
  "encoding_rs",
- "foldhash",
+ "foldhash 0.1.5",
  "futures-core",
  "futures-util",
  "impl-more",
@@ -2793,7 +2793,7 @@ dependencies = [
  "cxxbridge-cmd",
  "cxxbridge-flags",
  "cxxbridge-macro",
- "foldhash",
+ "foldhash 0.1.5",
  "link-cplusplus",
 ]
 
@@ -3854,6 +3854,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4804,8 +4810,19 @@ checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
+ "foldhash 0.1.5",
  "serde",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
 ]
 
 [[package]]
@@ -6832,11 +6849,11 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.16.1"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe949189f46fabb938b3a9a0be30fdd93fd8a09260da863399a8cf3db756ec8"
+checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
 dependencies = [
- "hashbrown 0.15.4",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -7012,7 +7029,7 @@ version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e300c54e3239a86f9c61cc63ab0f03862eb40b1c6e065dc6fd6ceaeff6da93d"
 dependencies = [
- "foldhash",
+ "foldhash 0.1.5",
  "hash-db",
  "hashbrown 0.15.4",
 ]
@@ -7858,7 +7875,7 @@ dependencies = [
  "figment",
  "itertools 0.14.0",
  "log",
- "lru 0.16.1",
+ "lru 0.16.3",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -7966,7 +7983,7 @@ dependencies = [
  "hex",
  "itertools 0.14.0",
  "konst",
- "lru 0.16.1",
+ "lru 0.16.3",
  "midnight-base-crypto 1.0.0-rc.4",
  "midnight-serialize 1.0.0-rc.4",
  "midnight-storage-macros 1.0.0-rc.4",
@@ -7991,7 +8008,7 @@ dependencies = [
  "hex",
  "itertools 0.14.0",
  "konst",
- "lru 0.16.1",
+ "lru 0.16.3",
  "midnight-base-crypto 1.0.0-rc.4-hard-fork-test",
  "midnight-serialize 1.0.0-rc.4-hard-fork-test",
  "midnight-storage-macros 1.0.0-rc.4-hard-fork-test",
@@ -8042,7 +8059,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.16.1",
+ "lru 0.16.3",
  "midnight-base-crypto 1.0.0-rc.4",
  "midnight-base-crypto-derive 1.0.0-rc.4",
  "midnight-circuits",
@@ -8078,7 +8095,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.16.1",
+ "lru 0.16.3",
  "midnight-base-crypto 1.0.0-rc.4-hard-fork-test",
  "midnight-base-crypto-derive 1.0.0-rc.4-hard-fork-test",
  "midnight-circuits",
@@ -9112,7 +9129,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10399,7 +10416,7 @@ dependencies = [
  "hex-literal 1.0.0",
  "itertools 0.14.0",
  "log",
- "lru 0.16.1",
+ "lru 0.16.3",
  "num-bigint",
  "pallet-sidechain-rpc",
  "partner-chains-plutus-data",
@@ -15865,7 +15882,7 @@ version = "41.1.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509#5ab401310d2fbd808b3ffbcfc8735ad8f1c8fe10"
 dependencies = [
  "ahash 0.8.12",
- "foldhash",
+ "foldhash 0.1.5",
  "hash-db",
  "hashbrown 0.15.4",
  "memory-db",
@@ -17102,7 +17119,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
