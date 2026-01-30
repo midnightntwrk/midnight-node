@@ -1138,16 +1138,16 @@ fn duplicate_inherent_protection_works() {
 		// First call succeeds
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			with_mainchain_members_council(&vec![1, 2, 3]),
-			with_mainchain_members_tc(&vec![4, 5, 6]),
+			with_mainchain_members_council(&[1, 2, 3]),
+			with_mainchain_members_tc(&[4, 5, 6]),
 		));
 
 		// Second call in same block fails
 		assert_noop!(
 			FederatedAuthorityObservation::reset_members(
 				frame_system::RawOrigin::None.into(),
-				with_mainchain_members_council(&vec![7, 8, 9]),
-				with_mainchain_members_tc(&vec![10, 11, 12]),
+				with_mainchain_members_council(&[7, 8, 9]),
+				with_mainchain_members_tc(&[10, 11, 12]),
 			),
 			crate::Error::<Test>::InherentAlreadyExecuted
 		);
@@ -1157,8 +1157,8 @@ fn duplicate_inherent_protection_works() {
 		// Third call in new block succeeds
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
-			with_mainchain_members_council(&vec![7, 8, 9]),
-			with_mainchain_members_tc(&vec![10, 11, 12]),
+			with_mainchain_members_council(&[7, 8, 9]),
+			with_mainchain_members_tc(&[10, 11, 12]),
 		));
 	});
 }
