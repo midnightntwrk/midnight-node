@@ -166,7 +166,7 @@ pub mod pallet {
 		EmptyMembers,
 		/// Duplicate Members
 		DuplicatedMembers,
-		/// Only one inherent is allowed per block 
+		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 	}
 
