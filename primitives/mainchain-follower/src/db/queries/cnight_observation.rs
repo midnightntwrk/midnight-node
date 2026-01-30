@@ -50,17 +50,18 @@ SELECT
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _",
     ma_tx_out.quantity::BIGINT AS "quantity!: _"
-FROM tx_out
+FROM block
+    JOIN tx ON tx.block_id = block.id
+    JOIN tx_out ON tx_out.tx_id = tx.id
     JOIN datum ON tx_out.data_hash = datum.hash
-    JOIN tx ON tx.id = tx_out.tx_id
-    JOIN block ON block.id = tx.block_id
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-WHERE tx_out.address = $1
+WHERE block.block_no >= $4 AND block.block_no <= $6
+    AND tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
@@ -98,7 +99,7 @@ pub async fn get_redemption_spends(
 	sqlx::query_as!(
 		RedemptionSpendRow,
 		r#"
-SELECT 
+SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
@@ -108,20 +109,21 @@ SELECT
     tx_tx_out.hash as "utxo_tx_hash: _",
     tx_out.index as "utxo_index: _",
     ma_tx_out.quantity::BIGINT AS "quantity!: _"
-FROM tx_out
-    JOIN tx_in ON tx_in.tx_out_id = tx_out.tx_id
-                AND tx_in.tx_out_index = tx_out.index
-    JOIN tx ON tx.id = tx_in.tx_in_id
+FROM block
+    JOIN tx ON tx.block_id = block.id
+    JOIN tx_in ON tx_in.tx_in_id = tx.id
+    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id
+                AND tx_out.index = tx_in.tx_out_index
     JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id
     JOIN datum ON datum.hash = tx_out.data_hash
-    JOIN block ON block.id = tx.block_id
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-WHERE tx_out.address = $1
+WHERE block.block_no >= $4 AND block.block_no <= $6
+    AND tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index, tx_tx_out.hash, tx_out.index
 LIMIT $8 OFFSET $9;
         "#,
@@ -163,18 +165,19 @@ SELECT
     tx.block_index as "tx_index_in_block: _",
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _"
-FROM tx_out
+FROM block
+    JOIN tx ON tx.block_id = block.id
+    JOIN tx_out ON tx_out.tx_id = tx.id
+    JOIN datum ON tx_out.data_hash = datum.hash
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-    JOIN datum ON tx_out.data_hash = datum.hash
-    JOIN tx ON tx.id = tx_out.tx_id
-    JOIN block ON block.id = tx.block_id
-WHERE tx_out.address = $1
+WHERE block.block_no >= $4 AND block.block_no <= $6
+    AND tx_out.address = $1
     AND ma.policy = $2
     AND ma.name = $3
     AND ma_tx_out.quantity = 1
-    AND (block.block_no, tx.block_index) >= ($4, $5)
-    AND (block.block_no, tx.block_index) < ($6, $7)
+    AND (block.block_no > $4 OR (block.block_no = $4 AND tx.block_index >= $5))
+    AND (block.block_no < $6 OR (block.block_no = $6 AND tx.block_index < $7))
 ORDER BY block.block_no, tx.block_index
 LIMIT $8 OFFSET $9;
         "#,
@@ -209,7 +212,7 @@ pub async fn get_deregistrations(
 	sqlx::query_as!(
 		DeregistrationRow,
 		r#"
-SELECT 
+SELECT
     datum.value::jsonb AS "full_datum!: _",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
@@ -218,16 +221,17 @@ SELECT
     tx.hash AS "tx_hash: _",
     tx_tx_out.hash as "utxo_tx_hash: _",
     tx_out.index as "utxo_index: _"
-FROM tx_out
-    JOIN tx_in ON tx_in.tx_out_id = tx_out.tx_id
-                AND tx_in.tx_out_index = tx_out.index
-    JOIN tx ON tx.id = tx_in.tx_in_id
+FROM block
+    JOIN tx ON tx.block_id = block.id
+    JOIN tx_in ON tx_in.tx_in_id = tx.id
+    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id
+                AND tx_out.index = tx_in.tx_out_index
     JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id
     JOIN datum ON datum.hash = tx_out.data_hash
-    JOIN block ON block.id = tx.block_id
-WHERE tx_out.address = $1
-    AND (block.block_no, tx.block_index) >= ($2, $3)
-    AND (block.block_no, tx.block_index) < ($4, $5)
+WHERE block.block_no >= $2 AND block.block_no <= $4
+    AND tx_out.address = $1
+    AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))
+    AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
 ORDER BY block.block_no, tx.block_index
 LIMIT $6 OFFSET $7;
         "#,
@@ -266,15 +270,16 @@ SELECT
     tx_out.address AS "holder_address: _",
     tx.hash AS "tx_hash: _",
     tx_out.index AS "utxo_index: _"
-FROM ma_tx_out
+FROM block
+    JOIN tx ON tx.block_id = block.id
+    JOIN tx_out ON tx_out.tx_id = tx.id
+    JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-    JOIN tx_out ON tx_out.id = ma_tx_out.tx_out_id
-    JOIN tx ON tx_out.tx_id = tx.id
-    JOIN block ON tx.block_id = block.id
-WHERE ma.policy = $1
+WHERE block.block_no >= $3 AND block.block_no <= $5
+    AND ma.policy = $1
     AND ma.name = $2
-    AND (block.block_no, tx.block_index) >= ($3, $4)
-    AND (block.block_no, tx.block_index) < ($5, $6)
+    AND (block.block_no > $3 OR (block.block_no = $3 AND tx.block_index >= $4))
+    AND (block.block_no < $5 OR (block.block_no = $5 AND tx.block_index < $6))
 ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,
@@ -315,18 +320,19 @@ SELECT
     tx.hash AS "utxo_tx_hash: _",
     tx_out.index AS "utxo_index: _",
     spending_tx.hash AS "spending_tx_hash: _"
-FROM ma_tx_out
-    JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-    JOIN tx_out ON tx_out.id = ma_tx_out.tx_out_id
-    JOIN tx_in ON tx_out.tx_id = tx_in.tx_out_id 
+FROM block AS spending_block
+    JOIN tx AS spending_tx ON spending_tx.block_id = spending_block.id
+    JOIN tx_in ON tx_in.tx_in_id = spending_tx.id
+    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id
                 AND tx_out.index = tx_in.tx_out_index
     JOIN tx ON tx_out.tx_id = tx.id
-    JOIN tx AS spending_tx ON tx_in.tx_in_id = spending_tx.id
-    JOIN block AS spending_block ON spending_tx.block_id = spending_block.id
-WHERE ma.policy = $1
+    JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
+    JOIN multi_asset ma ON ma.id = ma_tx_out.ident
+WHERE spending_block.block_no >= $3 AND spending_block.block_no <= $5
+    AND ma.policy = $1
     AND ma.name = $2
-    AND (spending_block.block_no, spending_tx.block_index) >= ($3, $4)
-    AND (spending_block.block_no, spending_tx.block_index) < ($5, $6)
+    AND (spending_block.block_no > $3 OR (spending_block.block_no = $3 AND spending_tx.block_index >= $4))
+    AND (spending_block.block_no < $5 OR (spending_block.block_no = $5 AND spending_tx.block_index < $6))
 ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
     "#,

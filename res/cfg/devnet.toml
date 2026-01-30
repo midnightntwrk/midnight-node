@@ -1,4 +1,4 @@
-chain = "res/devnet/chain-spec-raw.json"
+chain = "res/devnet/chain-spec.json"
 base_path = "node/chain"
 
 chainspec_name = "Midnight devnet"

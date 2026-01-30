@@ -13,7 +13,7 @@
 
 import path from "path";
 import { globSync } from "glob";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
 
 import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
@@ -120,6 +120,16 @@ function stopLocalEnvironment(runOptions: RunOptions) {
     env: finalEnv,
     profiles: runOptions.profiles,
   });
+
+  // Clean up runtime-values folder (bind mount not removed by docker compose down --volumes)
+  const runtimeValuesPath = path.resolve(
+    __dirname,
+    "../networks/local-env/runtime-values",
+  );
+  if (existsSync(runtimeValuesPath)) {
+    rmSync(runtimeValuesPath, { recursive: true, force: true });
+    console.log("🧹 Cleaned up runtime-values");
+  }
 
   return;
 }

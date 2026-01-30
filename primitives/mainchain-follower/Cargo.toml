@@ -26,6 +26,13 @@ partner-chains-db-sync-data-sources = { default-features = false, workspace = tr
 scale-info.workspace = true
 log.workspace = true
 rand = { version = "0.9.1", default-features = false }
+itertools = { workspace = true, optional = true }
+authority-selection-inherents = { workspace = true, features = ["std"], optional = true }
+partner-chains-plutus-data = { workspace = true, optional = true }
+figment = { workspace = true, optional = true }
+lru = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"]}
@@ -53,4 +60,11 @@ std = [
     "partner-chains-db-sync-data-sources",
     "rand/std",
     "rand/thread_rng",
+    "itertools",
+    "authority-selection-inherents",
+    "partner-chains-plutus-data",
+    "figment",
+    "lru",
+    "serde",
+    "tokio",
 ]

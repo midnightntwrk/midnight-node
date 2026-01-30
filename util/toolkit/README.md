@@ -126,7 +126,7 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
 Dry-run: local prover (no proof server)
@@ -171,7 +171,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
@@ -477,6 +477,18 @@ $ midnight-node-toolkit get-tx-from-context
 midnight-node-toolkit generate-genesis --network <network_name>
 ```
 
+#### Custom Ledger Parameters
+You can optionally provide a JSON file with custom ledger parameters to use instead of the default `INITIAL_PARAMETERS`:
+
+```shell
+midnight-node-toolkit generate-genesis \
+    --network <network_name> \
+    --seeds-file /path/to/seeds.json \
+    --ledger-parameters-config /path/to/ledger-parameters-config.json
+```
+
+The `ledger-parameters-config.json` file should contain a JSON representation of the `LedgerParameters` struct. Default config files with the initial parameters are available in `res/<network>/ledger-parameters-config.json`.
+
 ---
 
 ### Show Transaction
@@ -584,12 +596,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "8e3345d0caee58c05089867103bb00e65ee700a450a07fea1bd5d8dea663f18b#0",
-      "initial_nonce": "be30b169172619661009a4512c548f1c91553bd26b4e74521f9c41035f98e84e",
+      "id": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a#0",
+      "initial_nonce": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
       "value": 500000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "8e3345d0caee58c05089867103bb00e65ee700a450a07fea1bd5d8dea663f18b",
+      "intent_hash": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a",
       "output_number": 0
     },
 ...
