@@ -15,7 +15,7 @@ jobs:
   run:
     name: Run tests
     # 16 core machines seem to have gone walkabout.
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
@@ -27,6 +27,9 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run build
         run: |
