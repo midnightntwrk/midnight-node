@@ -18,7 +18,7 @@ pub struct CNightGeneratesDustConfig {
 	system_tx: Vec<u8>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Clone, Args)]
 pub struct GenerateGenesisArgs {
 	/// Seed for genesis block generation
 	#[arg(
@@ -54,6 +54,10 @@ pub struct GenerateGenesisArgs {
 	/// Example: postgres://user:pass@localhost:5432/cexplorer
 	#[arg(long, env = "DB_SYNC_URL")]
 	db_sync_url: Option<String>,
+	/// Reference Cardano block hash at which to verify treasury UTxOs (hex-encoded, 64 chars).
+	/// Required for treasury verification unless --skip-cardano-verification is set.
+	#[arg(long)]
+	reference_block_hash: Option<String>,
 	/// Skip verification of treasury UTxOs against Cardano db-sync.
 	/// Use for testing or when db-sync is not available.
 	#[arg(long, default_value = "false")]
@@ -121,7 +125,13 @@ pub async fn execute(
 					 Use --skip-cardano-verification to skip verification.",
 				)?;
 
+				let reference_block_hash = args.reference_block_hash.as_ref().ok_or(
+					"Treasury config contains UTxOs but --reference-block-hash is not set. \
+					 Use --skip-cardano-verification to skip verification.",
+				)?;
+
 				println!("Verifying treasury UTxOs against Cardano db-sync...");
+				println!("Reference block: {}", reference_block_hash);
 				let pool = PgPoolOptions::new()
 					.max_connections(1)
 					.connect(db_sync_url)
@@ -130,7 +140,7 @@ pub async fn execute(
 
 				let verifier = TreasuryVerifier::new(pool);
 				let results = verifier
-					.verify(&config)
+					.verify(&config, reference_block_hash)
 					.await
 					.map_err(|e| format!("Treasury verification failed: {}", e))?;
 

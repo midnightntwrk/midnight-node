@@ -37,9 +37,6 @@ pub struct CnightTreasuryConfig {
 	/// This is the bech32-encoded address of the `ics_forever` validator from midnight-reserve-contracts.
 	pub illiquid_circulation_supply_validator_address: String,
 
-	/// Reference Cardano block hash at which UTxOs should be verified.
-	pub reference_block_hash: String,
-
 	/// The cNight policy ID on Cardano (hex-encoded, 28 bytes / 56 hex chars).
 	pub cnight_policy_id: String,
 
@@ -118,7 +115,6 @@ mod tests {
 	fn test_parse_valid_config() {
 		let json = r#"{
             "illiquid_circulation_supply_validator_address": "addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz",
-            "reference_block_hash": "abc123def456789012345678901234567890123456789012345678901234",
             "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
             "utxos": [
                 {"tx_hash": "abc123", "output_index": 0, "expected_amount": 1000}
@@ -133,10 +129,6 @@ mod tests {
 		);
 		assert_eq!(config.total_night_amount, 1000);
 		assert_eq!(config.utxos.len(), 1);
-		assert_eq!(
-			config.reference_block_hash,
-			"abc123def456789012345678901234567890123456789012345678901234"
-		);
 		assert_eq!(
 			config.cnight_policy_id,
 			"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
@@ -153,7 +145,6 @@ mod tests {
 	fn test_config(utxos: Vec<TreasuryUtxo>, total: u128) -> CnightTreasuryConfig {
 		CnightTreasuryConfig {
 			illiquid_circulation_supply_validator_address: "addr_test1placeholderaddr".to_string(),
-			reference_block_hash: "0".repeat(64),
 			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
 				.to_string(),
 			utxos,

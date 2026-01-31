@@ -102,6 +102,11 @@ impl<D: TreasuryDataSource> TreasuryVerifier<D> {
 	///
 	/// Returns the list of verified UTxOs with their amounts if all verifications pass.
 	///
+	/// # Arguments
+	///
+	/// * `config` - The treasury configuration to verify
+	/// * `reference_block_hash` - The Cardano block hash at which to verify UTxOs (hex-encoded)
+	///
 	/// # Errors
 	///
 	/// Returns an error if:
@@ -113,17 +118,16 @@ impl<D: TreasuryDataSource> TreasuryVerifier<D> {
 	pub async fn verify(
 		&self,
 		config: &CnightTreasuryConfig,
+		reference_block_hash: &str,
 	) -> Result<Vec<UtxoVerificationResult>, TreasuryVerificationError> {
 		// Parse and validate configuration values
-		let block_hash = parse_block_hash(&config.reference_block_hash)?;
+		let block_hash = parse_block_hash(reference_block_hash)?;
 		let policy_id = parse_policy_id(&config.cnight_policy_id)?;
 
 		// Verify the reference block exists
 		let block = self.data_source.get_block_by_hash(&block_hash).await?;
 		if block.is_none() {
-			return Err(TreasuryVerificationError::BlockNotFound(
-				config.reference_block_hash.clone(),
-			));
+			return Err(TreasuryVerificationError::BlockNotFound(reference_block_hash.to_string()));
 		}
 		let block = block.unwrap();
 
@@ -498,7 +502,6 @@ mod tests {
 	fn test_config(utxos: Vec<TreasuryUtxo>) -> CnightTreasuryConfig {
 		CnightTreasuryConfig {
 			illiquid_circulation_supply_validator_address: "addr_test1_ics".to_string(),
-			reference_block_hash: "a".repeat(64),
 			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
 				.to_string(),
 			utxos,
@@ -506,20 +509,24 @@ mod tests {
 		}
 	}
 
+	// Test reference block hash (shared across tests)
+	const TEST_BLOCK_HASH: &str =
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 	#[tokio::test]
 	async fn test_verify_block_not_found() {
 		let mock = MockTreasuryDataSource::new();
 		let verifier = TreasuryVerifier::with_data_source(mock);
 
 		let config = test_config(vec![]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(matches!(result, Err(TreasuryVerificationError::BlockNotFound(_))));
 	}
 
 	#[tokio::test]
 	async fn test_verify_utxo_not_found() {
-		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100);
+		let mock = MockTreasuryDataSource::new().with_block(TEST_BLOCK_HASH, 100);
 
 		let verifier = TreasuryVerifier::with_data_source(mock);
 
@@ -528,7 +535,7 @@ mod tests {
 			output_index: 0,
 			expected_amount: 1000,
 		}]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(matches!(result, Err(TreasuryVerificationError::UtxoNotFound { .. })));
 	}
@@ -536,7 +543,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_verify_wrong_address() {
 		let tx_hash = "b".repeat(64);
-		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+		let mock = MockTreasuryDataSource::new().with_block(TEST_BLOCK_HASH, 100).with_utxo(
 			&tx_hash,
 			0,
 			"wrong_address",
@@ -550,7 +557,7 @@ mod tests {
 			output_index: 0,
 			expected_amount: 1000,
 		}]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(matches!(result, Err(TreasuryVerificationError::WrongAddress { .. })));
 	}
@@ -558,7 +565,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_verify_amount_mismatch() {
 		let tx_hash = "b".repeat(64);
-		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+		let mock = MockTreasuryDataSource::new().with_block(TEST_BLOCK_HASH, 100).with_utxo(
 			&tx_hash,
 			0,
 			"addr_test1_ics",
@@ -572,7 +579,7 @@ mod tests {
 			output_index: 0,
 			expected_amount: 1000,
 		}]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(matches!(result, Err(TreasuryVerificationError::AmountMismatch { .. })));
 	}
@@ -580,7 +587,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_verify_success() {
 		let tx_hash = "b".repeat(64);
-		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100).with_utxo(
+		let mock = MockTreasuryDataSource::new().with_block(TEST_BLOCK_HASH, 100).with_utxo(
 			&tx_hash,
 			0,
 			"addr_test1_ics",
@@ -594,7 +601,7 @@ mod tests {
 			output_index: 0,
 			expected_amount: 1000,
 		}]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(result.is_ok());
 		let results = result.unwrap();
@@ -609,7 +616,7 @@ mod tests {
 		let tx_hash1 = "b".repeat(64);
 		let tx_hash2 = "c".repeat(64);
 		let mock = MockTreasuryDataSource::new()
-			.with_block(&"a".repeat(64), 100)
+			.with_block(TEST_BLOCK_HASH, 100)
 			.with_utxo(&tx_hash1, 0, "addr_test1_ics", 500)
 			.with_utxo(&tx_hash2, 1, "addr_test1_ics", 500);
 
@@ -617,7 +624,6 @@ mod tests {
 
 		let config = CnightTreasuryConfig {
 			illiquid_circulation_supply_validator_address: "addr_test1_ics".to_string(),
-			reference_block_hash: "a".repeat(64),
 			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
 				.to_string(),
 			utxos: vec![
@@ -626,7 +632,7 @@ mod tests {
 			],
 			total_night_amount: 1000,
 		};
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(result.is_ok());
 		let results = result.unwrap();
@@ -635,12 +641,12 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_verify_empty_utxos() {
-		let mock = MockTreasuryDataSource::new().with_block(&"a".repeat(64), 100);
+		let mock = MockTreasuryDataSource::new().with_block(TEST_BLOCK_HASH, 100);
 
 		let verifier = TreasuryVerifier::with_data_source(mock);
 
 		let config = test_config(vec![]);
-		let result = verifier.verify(&config).await;
+		let result = verifier.verify(&config, TEST_BLOCK_HASH).await;
 
 		assert!(result.is_ok());
 		assert!(result.unwrap().is_empty());

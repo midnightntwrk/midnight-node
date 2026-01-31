@@ -7327,6 +7327,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
+ "midnight-node-toolkit",
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",

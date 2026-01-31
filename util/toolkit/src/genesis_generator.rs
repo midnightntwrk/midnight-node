@@ -52,7 +52,7 @@ pub enum GenesisGeneratorError<D: DB> {
 }
 
 /// Common arguments for funding wallets (shielded, unshielded, dust)
-#[derive(clap::Args)]
+#[derive(Debug, Clone, clap::Args)]
 pub struct FundingArgs {
 	/// Mint amount per output
 	#[arg(long, default_value_t = MINT_AMOUNT)]
@@ -665,7 +665,6 @@ mod test {
 		let treasury_config = CnightTreasuryConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
-			reference_block_hash: "0".repeat(64),
 			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
 				.to_string(),
 			utxos: vec![

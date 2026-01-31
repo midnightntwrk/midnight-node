@@ -22,6 +22,9 @@ use crate::{
 use clap::Parser;
 use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
+use midnight_node_toolkit::commands::generate_genesis as toolkit_generate_genesis;
+use midnight_node_toolkit::treasury_config::CnightTreasuryConfig;
+use midnight_node_toolkit::treasury_verifier::TreasuryVerifier;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
@@ -29,6 +32,7 @@ use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
 use sp_keystore::KeystorePtr;
+use sqlx::postgres::PgPoolOptions;
 
 #[cfg(feature = "runtime-benchmarks")]
 use {
@@ -497,6 +501,81 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					sc_cli::Error::Input(format!("cNGD genesis generation failed: {e}"))
 				})?;
 
+				Ok(())
+			})
+		},
+		Subcommand::VerifyTreasuryConfig(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string())).init()?;
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				// Load and validate treasury config
+				let config_str = std::fs::read_to_string(&cmd.config).map_err(|e| {
+					sc_cli::Error::Input(format!(
+						"Failed to read treasury config {:?}: {}",
+						cmd.config, e
+					))
+				})?;
+				let config: CnightTreasuryConfig =
+					serde_json::from_str(&config_str).map_err(|e| {
+						sc_cli::Error::Input(format!("Failed to parse treasury config: {}", e))
+					})?;
+				config.validate().map_err(|e| {
+					sc_cli::Error::Input(format!("Treasury config validation failed: {}", e))
+				})?;
+
+				println!(
+					"Treasury config loaded: {} Night from {} UTxOs",
+					config.total_night_amount,
+					config.utxos.len()
+				);
+
+				if config.utxos.is_empty() {
+					println!("No UTxOs to verify.");
+					return Ok(());
+				}
+
+				// Connect to db-sync
+				println!("Connecting to db-sync...");
+				let pool = PgPoolOptions::new()
+					.max_connections(1)
+					.connect(&cmd.db_sync_url)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("Failed to connect to db-sync: {}", e))
+					})?;
+
+				// Verify
+				println!("Verifying treasury UTxOs at block {}...", &cmd.reference_block_hash);
+				let verifier = TreasuryVerifier::new(pool);
+				let results =
+					verifier.verify(&config, &cmd.reference_block_hash).await.map_err(|e| {
+						sc_cli::Error::Input(format!("Treasury verification failed: {}", e))
+					})?;
+
+				println!("Verification PASSED: {} UTxOs verified", results.len());
+				for result in &results {
+					println!(
+						"  - {}#{}: {} cNight",
+						result.tx_hash, result.output_index, result.amount
+					);
+				}
+
+				Ok(())
+			})
+		},
+		Subcommand::GenerateVerifiedGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string())).init()?;
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				println!("Running genesis generation with verification...");
+				toolkit_generate_genesis::execute(cmd.args.clone()).await.map_err(|e| {
+					sc_cli::Error::Input(format!("Genesis generation failed: {}", e))
+				})?;
+				println!("Genesis generation complete.");
 				Ok(())
 			})
 		},

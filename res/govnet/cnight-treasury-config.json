@@ -1,6 +1,5 @@
 {
   "illiquid_circulation_supply_validator_address": "addr_test1wzds0wlu5fzt9shwq0zd698je4lmdjqv885k8x0hy9k27mgny4qlq",
-  "reference_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
   "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
   "utxos": [],
   "total_night_amount": 0

@@ -49,6 +49,30 @@ pub struct CNightGenesisCmd {
 	pub output: std::path::PathBuf,
 }
 
+#[derive(Debug, Parser)]
+pub struct VerifyTreasuryConfigCmd {
+	/// Path to the cNight treasury configuration file (JSON).
+	#[arg(long)]
+	pub config: std::path::PathBuf,
+
+	/// Reference Cardano block hash at which to verify UTxOs (hex-encoded, 64 chars).
+	#[arg(long)]
+	pub reference_block_hash: String,
+
+	/// PostgreSQL connection URL for Cardano db-sync database.
+	/// Example: postgres://user:pass@localhost:5432/cexplorer
+	#[arg(long, env = "DB_SYNC_URL")]
+	pub db_sync_url: String,
+}
+
+/// Arguments for the generate-verified-genesis command.
+/// This is the umbrella command that runs verification and then generates genesis.
+#[derive(Debug, clap::Args)]
+pub struct GenerateVerifiedGenesisCmd {
+	#[clap(flatten)]
+	pub args: midnight_node_toolkit::commands::generate_genesis::GenerateGenesisArgs,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -68,6 +92,16 @@ pub enum Subcommand {
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
+
+	/// Verify treasury configuration against Cardano db-sync.
+	/// Validates that all UTxOs in the treasury config exist at the reference block
+	/// with the expected amounts at the ICS contract address.
+	VerifyTreasuryConfig(VerifyTreasuryConfigCmd),
+
+	/// Generate genesis with verified treasury configuration.
+	/// This is the umbrella command that verifies treasury UTxOs against db-sync
+	/// and then generates the genesis state.
+	GenerateVerifiedGenesis(GenerateVerifiedGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
