@@ -17,7 +17,6 @@ import { existsSync, rmSync } from "fs";
 
 import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
-import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
 import { stopPortForwardWatchdogs } from "../lib/portForwardWatchdog";
 import {
@@ -26,7 +25,6 @@ import {
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
-import { loadNetworkConfig } from "../lib/networkConfig";
 
 export async function stop(network: string, runOptions: RunOptions) {
   // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
@@ -43,21 +41,15 @@ async function stopEphemeralEnvironment(
   namespace: string,
   runOptions: RunOptions,
 ) {
-  const networkConfig = loadNetworkConfig(namespace);
-  const dbsyncMode = networkConfig.dbsync.mode;
-
-  console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  switch(dbsyncMode) {
-  case "public":
-    console.log("Skipping port-forward: DB marked as publicly reachable");
-  case "rds-proxy":
-    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
-  default:
-    await connectToPostgres(namespace);
+  let envObject: Record<string, string> = {};
+  try {
+    console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
+    envObject = getSecrets(namespace);
+  } catch (error) {
+    console.warn(
+      `⚠️  Failed to read Kubernetes secrets for '${namespace}', continuing with local env only: ${(error as Error).message}`,
+    );
   }
-
-  console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
-  const envObject = getSecrets(namespace);
 
   const searchPath = path.resolve(
     __dirname,
