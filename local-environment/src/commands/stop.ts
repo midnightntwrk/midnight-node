@@ -19,6 +19,7 @@ import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
 import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
+import { stopPortForwardWatchdogs } from "../lib/portForwardWatchdog";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -90,6 +91,8 @@ async function stopEphemeralEnvironment(
     env: { ...cleanEnv(process.env), ...envObject },
     profiles: runOptions.profiles,
   });
+
+  stopPortForwardWatchdogs(namespace);
 }
 
 function stopLocalEnvironment(runOptions: RunOptions) {

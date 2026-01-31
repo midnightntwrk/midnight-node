@@ -2639,15 +2639,15 @@ async fn d_parameter_from_pallet_matches_config() {
         "D-Parameter registered count should match between endpoints"
     );
 
-    // Local environment configures D-Parameter as (4, 1)
-    // 4 permissioned (Alice, Bob, Charlie, Dave) + 1 registered (Eve) = 5 total candidates
+    // Local environment configures D-Parameter as (3, 0)
+    // 3 permissioned (Alice, Bob, Charlie) from qanet config
     assert_eq!(
         d_param.num_permissioned_candidates, 3,
         "Permissioned count should match system-parameters config (expected 3)"
     );
     assert_eq!(
         d_param.num_registered_candidates, 0,
-        "Registered count should match system-parameters config (expected 1)"
+        "Registered count should match system-parameters config (expected 0)"
     );
 
     println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
@@ -2655,7 +2655,7 @@ async fn d_parameter_from_pallet_matches_config() {
 
 /// TC-PC-002: Verify permissioned candidates match Aiken format.
 ///
-/// In local environment, 4 permissioned candidates (Alice, Bob, Charlie, Dave)
+/// In local environment, 3 permissioned candidates (Alice, Bob, Charlie)
 /// are inserted during setup. This test verifies they are returned in the
 /// Aiken contract format with the correct structure.
 #[tokio::test]
@@ -2677,7 +2677,7 @@ async fn permissioned_candidates_aiken_format() {
     if let Some(candidates) = &ariadne_params.permissioned_candidates {
         println!("Found {} permissioned candidates", candidates.len());
 
-        // Local environment inserts 4 permissioned candidates
+        // Local environment inserts 3 permissioned candidates
         assert!(
             candidates.len() >= 3,
             "Expected at least 3 permissioned candidates in local-env, found {}",

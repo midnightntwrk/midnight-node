@@ -359,7 +359,7 @@ jobs:
 
       - name: Run toolkit tests
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
+          . ./.envrc && earthly -P --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:
     name: Toolkit E2E
