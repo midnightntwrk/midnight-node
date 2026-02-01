@@ -22,6 +22,7 @@ use crate::{
 use clap::Parser;
 use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
+use midnight_node_toolkit::genesis_manifest::{GenesisManifest, hash_file};
 use midnight_node_toolkit::treasury_config::CnightTreasuryConfig;
 use midnight_node_toolkit::treasury_verifier::TreasuryVerifier;
 use midnight_primitives_cnight_observation::CNightAddresses;
@@ -503,17 +504,45 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok(())
 			})
 		},
-		Subcommand::VerifyTreasuryConfig(ref cmd) => {
+		Subcommand::VerifyGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string())).init()?;
 			// Init tokio runtime
 			let tokio_handle = sc_cli::build_runtime()?;
 			tokio_handle.block_on(async {
+				// If manifest provided, verify config hash first
+				if let Some(ref manifest_path) = cmd.manifest {
+					println!("Loading manifest from {:?}...", manifest_path);
+					let manifest = GenesisManifest::read_from_file(manifest_path).map_err(|e| {
+						sc_cli::Error::Input(format!("Failed to read manifest: {}", e))
+					})?;
+
+					// Hash the provided treasury config
+					let config_hash = hash_file(&cmd.treasury_config).map_err(|e| {
+						sc_cli::Error::Input(format!("Failed to hash treasury config: {}", e))
+					})?;
+
+					// Compare with manifest
+					if let Some(ref expected_hash) = manifest.treasury_config_hash {
+						if &config_hash != expected_hash {
+							return Err(sc_cli::Error::Input(format!(
+								"Treasury config hash mismatch!\n  Expected (from manifest): {}\n  Actual (provided file):   {}\n\nThe provided treasury config does not match what was used during genesis generation.",
+								expected_hash, config_hash
+							)));
+						}
+						println!("Config hash verified: matches manifest");
+					} else {
+						println!(
+							"WARNING: Manifest does not contain treasury_config_hash, skipping hash verification"
+						);
+					}
+				}
+
 				// Load and validate treasury config
-				let config_str = std::fs::read_to_string(&cmd.config).map_err(|e| {
+				let config_str = std::fs::read_to_string(&cmd.treasury_config).map_err(|e| {
 					sc_cli::Error::Input(format!(
 						"Failed to read treasury config {:?}: {}",
-						cmd.config, e
+						cmd.treasury_config, e
 					))
 				})?;
 				let config: CnightTreasuryConfig =
@@ -531,7 +560,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				);
 
 				if config.utxos.is_empty() {
-					println!("No UTxOs to verify.");
+					println!("No UTxOs to verify against Cardano.");
 					return Ok(());
 				}
 
@@ -545,7 +574,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						sc_cli::Error::Input(format!("Failed to connect to db-sync: {}", e))
 					})?;
 
-				// Verify
+				// Verify against Cardano
 				println!("Verifying treasury UTxOs at block {}...", &cmd.reference_block_hash);
 				let verifier = TreasuryVerifier::new(pool);
 				let results =

@@ -50,10 +50,16 @@ pub struct CNightGenesisCmd {
 }
 
 #[derive(Debug, Parser)]
-pub struct VerifyTreasuryConfigCmd {
+pub struct VerifyGenesisCmd {
+	/// Path to the genesis manifest file (JSON).
+	/// If provided, the treasury config hash will be verified against the manifest
+	/// to ensure the same config was used during generation.
+	#[arg(long)]
+	pub manifest: Option<std::path::PathBuf>,
+
 	/// Path to the cNight treasury configuration file (JSON).
 	#[arg(long)]
-	pub config: std::path::PathBuf,
+	pub treasury_config: std::path::PathBuf,
 
 	/// Reference Cardano block hash at which to verify UTxOs (hex-encoded, 64 chars).
 	#[arg(long)]
@@ -85,10 +91,12 @@ pub enum Subcommand {
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
 
-	/// Verify treasury configuration against Cardano db-sync.
+	/// Verify genesis treasury configuration against Cardano db-sync.
 	/// Validates that all UTxOs in the treasury config exist at the reference block
 	/// with the expected amounts at the ICS contract address.
-	VerifyTreasuryConfig(VerifyTreasuryConfigCmd),
+	/// If a manifest is provided, also verifies config hash matches what was used
+	/// during generation.
+	VerifyGenesis(VerifyGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
