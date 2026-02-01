@@ -21,9 +21,9 @@ use midnight_node_ledger_helpers::{
 };
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
-	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
-	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
+	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
+	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
+	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature,
 	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
@@ -31,10 +31,11 @@ use midnight_node_runtime::{
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::MainchainAddress;
+use sidechain_domain::{AssetName, MainchainAddress, PolicyId};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
+use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
 
@@ -312,7 +313,30 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.clone(),
 			..Default::default()
 		},
-		bridge: Default::default(),
+		bridge: {
+			let ics_config = genesis.ics_config();
+			BridgeConfig {
+				main_chain_scripts: if ics_config
+					.illiquid_circulation_supply_validator_address
+					.is_empty()
+				{
+					None
+				} else {
+					Some(BridgeMainChainScripts {
+						token_policy_id: PolicyId::decode_hex(&ics_config.asset.policy_id)
+							.expect("Failed to decode ICS policy_id as hex"),
+						token_asset_name: AssetName::decode_hex(&ics_config.asset.asset_name)
+							.expect("Failed to decode ICS asset_name as hex"),
+						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
+							&ics_config.illiquid_circulation_supply_validator_address,
+						)
+						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+					})
+				},
+				initial_checkpoint: None,
+				_marker: Default::default(),
+			}
+		},
 		system_parameters: {
 			let system_params = genesis.system_parameters_config();
 			let hash_bytes = system_params

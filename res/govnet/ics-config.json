@@ -1,0 +1,9 @@
+{
+  "illiquid_circulation_supply_validator_address": "",
+  "asset": {
+    "policy_id": "",
+    "asset_name": ""
+  },
+  "utxos": [],
+  "total_amount": 0
+}

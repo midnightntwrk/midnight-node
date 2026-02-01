@@ -7777,6 +7777,7 @@ dependencies = [
  "hex",
  "hex-literal 0.4.1",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-ics-observation",
  "midnight-primitives-system-parameters",
  "midnight-serialize 1.0.0-rc.4",
  "pallet-cnight-observation",
