@@ -471,41 +471,57 @@ rebuild-genesis-state:
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true \
         --USE_CNIGHT_GENESIS=true \
-        --USE_ICS_CONFIG=true
+        --USE_ICS_CONFIG=true \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet
+        --NETWORK=devnet \
+        --RNG_SEED=${RNG_SEED}
 
-# rebuild-genesis-state-govnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-govnet rebuilds the genesis ledger state for govnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-govnet:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet
+        --NETWORK=govnet \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-node-dev-01 rebuilds the genesis ledger state for node-dev-01 network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=node-dev-01
+        --NETWORK=node-dev-01 \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for qanet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=qanet
+        --NETWORK=qanet \
+        --USE_CNIGHT_GENESIS=true \
+        --USE_ICS_CONFIG=true \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=preview
+        --NETWORK=preview \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preprod:
+    ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
-        --NETWORK=preprod
+        --NETWORK=preprod \
+        --RNG_SEED=${RNG_SEED}
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:

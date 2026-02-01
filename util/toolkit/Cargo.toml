@@ -47,9 +47,6 @@ num_cpus = "1.17.0"
 redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
-# Cardano/db-sync integration for treasury verification
-partner-chains-db-sync-data-sources.workspace = true
-sidechain-domain.workspace = true
 zstd = "0.13"
 
 [dev-dependencies]
