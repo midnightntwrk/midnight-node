@@ -22,7 +22,6 @@ use crate::{
 use clap::Parser;
 use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
-use midnight_node_toolkit::commands::generate_genesis as toolkit_generate_genesis;
 use midnight_node_toolkit::treasury_config::CnightTreasuryConfig;
 use midnight_node_toolkit::treasury_verifier::TreasuryVerifier;
 use midnight_primitives_cnight_observation::CNightAddresses;
@@ -562,20 +561,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					);
 				}
 
-				Ok(())
-			})
-		},
-		Subcommand::GenerateVerifiedGenesis(ref cmd) => {
-			// Init logging
-			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string())).init()?;
-			// Init tokio runtime
-			let tokio_handle = sc_cli::build_runtime()?;
-			tokio_handle.block_on(async {
-				println!("Running genesis generation with verification...");
-				toolkit_generate_genesis::execute(cmd.args.clone()).await.map_err(|e| {
-					sc_cli::Error::Input(format!("Genesis generation failed: {}", e))
-				})?;
-				println!("Genesis generation complete.");
 				Ok(())
 			})
 		},

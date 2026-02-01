@@ -65,14 +65,6 @@ pub struct VerifyTreasuryConfigCmd {
 	pub db_sync_url: String,
 }
 
-/// Arguments for the generate-verified-genesis command.
-/// This is the umbrella command that runs verification and then generates genesis.
-#[derive(Debug, clap::Args)]
-pub struct GenerateVerifiedGenesisCmd {
-	#[clap(flatten)]
-	pub args: midnight_node_toolkit::commands::generate_genesis::GenerateGenesisArgs,
-}
-
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -97,11 +89,6 @@ pub enum Subcommand {
 	/// Validates that all UTxOs in the treasury config exist at the reference block
 	/// with the expected amounts at the ICS contract address.
 	VerifyTreasuryConfig(VerifyTreasuryConfigCmd),
-
-	/// Generate genesis with verified treasury configuration.
-	/// This is the umbrella command that verifies treasury UTxOs against db-sync
-	/// and then generates the genesis state.
-	GenerateVerifiedGenesis(GenerateVerifiedGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
