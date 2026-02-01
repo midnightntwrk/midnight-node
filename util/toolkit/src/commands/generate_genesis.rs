@@ -1,4 +1,5 @@
 use crate::cli_parsers::{self as cli};
+use crate::genesis_manifest::GenesisManifest;
 use crate::treasury_config::CnightTreasuryConfig;
 use clap::Args;
 use serde::Deserialize;
@@ -77,9 +78,10 @@ pub async fn execute(
 		})
 		.collect();
 
-	// Parse the cNight generates dust config file
+	// Parse the cNight generates dust config file (keep path for manifest)
+	let cnight_dust_config_path = args.cnight_generates_dust_config.clone();
 	let cnight_system_tx: Option<SystemTransaction> =
-		if let Some(filepath) = args.cnight_generates_dust_config {
+		if let Some(ref filepath) = cnight_dust_config_path {
 			let json_str = std::fs::read_to_string(filepath)?;
 			let config: CNightGeneratesDustConfig = serde_json::from_str(&json_str)?;
 			Some(tagged_deserialize(&mut &config.system_tx[..])?)
@@ -87,10 +89,11 @@ pub async fn execute(
 			None
 		};
 
-	// Parse and validate the treasury config
+	// Parse and validate the treasury config (keep path for manifest)
+	let treasury_config_path = args.cnight_treasury_config.clone();
 	let treasury_config: Option<CnightTreasuryConfig> =
-		if let Some(filepath) = args.cnight_treasury_config {
-			let json_str = std::fs::read_to_string(&filepath)
+		if let Some(ref filepath) = treasury_config_path {
+			let json_str = std::fs::read_to_string(filepath)
 				.map_err(|e| format!("Failed to read treasury config {:?}: {}", filepath, e))?;
 			let config: CnightTreasuryConfig = serde_json::from_str(&json_str)
 				.map_err(|e| format!("Failed to parse treasury config: {}", e))?;
@@ -130,13 +133,54 @@ pub async fn execute(
 	)
 	.await?;
 
-	let genesis_state_path = dir.join(format!("genesis_state_{}.mn", &args.network));
-	serialize_and_write(&genesis.state, &genesis_state_path)?;
+	let state_filename = format!("genesis_state_{}.mn", &args.network);
+	let block_filename = format!("genesis_block_{}.mn", &args.network);
+	let genesis_state_path = dir.join(&state_filename);
+	let genesis_tx_path = dir.join(&block_filename);
 
-	let genesis_tx_path = dir.join(format!("genesis_block_{}.mn", &args.network));
+	serialize_and_write(&genesis.state, &genesis_state_path)?;
 	serialize_and_write(&genesis.txs, &genesis_tx_path)?;
 
 	println!("Number of genesis txs: {}", genesis.txs.len());
+
+	// Create and write the genesis manifest
+	let mut manifest_builder = GenesisManifest::builder(&args.network)
+		.with_chain_spec_state(&state_filename, &genesis_state_path)
+		.map_err(|e| format!("Failed to hash genesis state: {}", e))?
+		.with_chain_spec_block(&block_filename, &genesis_tx_path)
+		.map_err(|e| format!("Failed to hash genesis block: {}", e))?;
+
+	// Add treasury config to manifest if used
+	if let Some(ref path) = treasury_config_path {
+		let filename = path
+			.file_name()
+			.map(|s| s.to_string_lossy().to_string())
+			.unwrap_or_else(|| "treasury-config.json".to_string());
+		manifest_builder = manifest_builder
+			.with_treasury_config(&filename, path)
+			.map_err(|e| format!("Failed to hash treasury config: {}", e))?;
+	}
+
+	// Add cNight generates dust config to manifest if used
+	if let Some(ref path) = cnight_dust_config_path {
+		let filename = path
+			.file_name()
+			.map(|s| s.to_string_lossy().to_string())
+			.unwrap_or_else(|| "cnight-generates-dust-config.json".to_string());
+		manifest_builder = manifest_builder
+			.with_cnight_generates_dust_config(&filename, path)
+			.map_err(|e| format!("Failed to hash cNight dust config: {}", e))?;
+	}
+
+	let manifest = manifest_builder
+		.build()
+		.map_err(|e| format!("Failed to build manifest: {}", e))?;
+
+	let manifest_path = dir.join("genesis-manifest.json");
+	manifest
+		.write_to_file(&manifest_path)
+		.map_err(|e| format!("Failed to write manifest: {}", e))?;
+	println!("Written manifest to {}", manifest_path.display());
 
 	Ok(genesis)
 }

@@ -21,6 +21,7 @@ midnight-node-metadata.workspace = true
 subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
+sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand.workspace = true

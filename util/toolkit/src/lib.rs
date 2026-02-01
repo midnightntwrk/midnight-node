@@ -17,6 +17,7 @@ pub mod client;
 pub mod commands;
 pub mod fetcher;
 pub mod genesis_generator;
+pub mod genesis_manifest;
 pub mod progress;
 pub mod remote_prover;
 pub mod sender;
