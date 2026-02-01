@@ -13,6 +13,7 @@ members = [
     "pallets/system-parameters/rpc",
     "pallets/version",
     "primitives/beefy",
+    "primitives/ics-observation",
     "primitives/midnight",
     "primitives/ledger",
     "primitives/system-parameters",
@@ -107,6 +108,7 @@ midnight-primitives-beefy = { path = "primitives/beefy", default-features = fals
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
+midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 

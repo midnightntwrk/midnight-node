@@ -17,14 +17,11 @@ pub mod client;
 pub mod commands;
 pub mod fetcher;
 pub mod genesis_generator;
-pub mod genesis_manifest;
 pub mod progress;
 pub mod remote_prover;
 pub mod sender;
 pub mod serde_def;
 pub mod toolkit_js;
-pub mod treasury_config;
-pub mod treasury_verifier;
 pub mod tx_generator;
 pub mod utils;
 

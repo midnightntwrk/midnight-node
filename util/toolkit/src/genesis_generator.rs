@@ -16,11 +16,13 @@ use crate::{
 	cli_parsers::{self as cli},
 	remote_prover::RemoteProofServer,
 	t_token,
-	treasury_config::CnightTreasuryConfig,
 };
 use midnight_node_ledger_helpers::{Transaction as MNLedgerTransaction, *};
 use std::collections::HashMap;
 use thiserror::Error;
+
+// Re-export ICS types from the primitives crate
+pub use midnight_primitives_ics_observation::{IcsAsset, IcsConfig, IcsUtxo};
 
 pub const MINT_AMOUNT: u128 = 500_000_000_000_000;
 pub const GENESIS_NONCE_SEED: &str =
@@ -110,7 +112,7 @@ impl GenesisGenerator {
 		funding: FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
-		treasury_config: Option<CnightTreasuryConfig>,
+		ics_config: Option<IcsConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
@@ -122,7 +124,7 @@ impl GenesisGenerator {
 			&funding,
 			seeds,
 			cnight_system_tx,
-			treasury_config,
+			ics_config,
 			ledger_parameters,
 		)
 		.await?;
@@ -138,7 +140,7 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		seeds: &[WalletSeed],
 		cnight_system_tx: Option<SystemTransaction>,
-		treasury_config: Option<CnightTreasuryConfig>,
+		ics_config: Option<IcsConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> =
@@ -162,7 +164,7 @@ impl GenesisGenerator {
 		};
 
 		// Fund treasury (if configured)
-		if let Some(ref config) = treasury_config {
+		if let Some(ref config) = ics_config {
 			self.fund_treasury(config, &genesis_block_context)?;
 		}
 
@@ -260,11 +262,7 @@ impl GenesisGenerator {
 	///
 	/// This sequence is required because the ledger doesn't support direct
 	/// reserve -> treasury transfers.
-	fn fund_treasury(
-		&mut self,
-		config: &CnightTreasuryConfig,
-		block_context: &BlockContext,
-	) -> Result<()> {
+	fn fund_treasury(&mut self, config: &IcsConfig, block_context: &BlockContext) -> Result<()> {
 		let amount = config.treasury_amount();
 
 		if amount == 0 {
@@ -637,10 +635,8 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 mod test {
 	use super::*;
 
-	use crate::treasury_config::{CnightTreasuryConfig, TreasuryUtxo};
-
 	#[tokio::test]
-	async fn test_genesis_with_treasury_config() {
+	async fn test_genesis_with_ics_config() {
 		const TREASURY_AMOUNT: u128 = 1_000_000_000_000; // 1 trillion
 
 		let funding = FundingArgs {
@@ -662,29 +658,23 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		// Create treasury config with UTxOs that sum to TREASURY_AMOUNT
-		let treasury_config = CnightTreasuryConfig {
+		// Create ICS config with UTxOs that sum to TREASURY_AMOUNT
+		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
-			cnight_policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
-				.to_string(),
+			asset: IcsAsset {
+				policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1".to_string(),
+				asset_name: "".to_string(),
+			},
 			utxos: vec![
-				TreasuryUtxo {
-					tx_hash: "abc123".to_string(),
-					output_index: 0,
-					expected_amount: 600_000_000_000,
-				},
-				TreasuryUtxo {
-					tx_hash: "def456".to_string(),
-					output_index: 1,
-					expected_amount: 400_000_000_000,
-				},
+				IcsUtxo { tx_hash: "abc123".to_string(), output_index: 0, amount: 600_000_000_000 },
+				IcsUtxo { tx_hash: "def456".to_string(), output_index: 1, amount: 400_000_000_000 },
 			],
-			total_night_amount: TREASURY_AMOUNT,
+			total_amount: TREASURY_AMOUNT,
 		};
 
 		// Validate config before using
-		treasury_config.validate().expect("Treasury config should be valid");
+		ics_config.validate().expect("ICS config should be valid");
 
 		let genesis = GenesisGenerator::new(
 			seed,
@@ -693,7 +683,7 @@ mod test {
 			funding,
 			&seeds,
 			None,
-			Some(treasury_config),
+			Some(ics_config),
 			None, // no custom ledger parameters
 		)
 		.await

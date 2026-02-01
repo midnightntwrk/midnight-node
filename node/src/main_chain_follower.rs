@@ -155,6 +155,8 @@ const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const BRIDGE_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const ICS_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
@@ -317,6 +319,20 @@ pub async fn create_authority_selection_data_source_with_pool(
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
 	Ok((Arc::new(candidates_data_source_cached), pool))
+}
+
+/// Create a database pool for ICS genesis queries
+pub async fn create_ics_genesis_pool(
+	cfg: MidnightCfg,
+) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		ICS_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+	Ok(pool)
 }
 
 // Copied from internal utility in partner-chains-db-sync-data-sources

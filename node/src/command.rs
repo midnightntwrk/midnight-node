@@ -18,6 +18,7 @@ use crate::{
 	cli::{self, Cli, Subcommand},
 	cnight_genesis::generate_cnight_genesis,
 	federated_authority_genesis::generate_federated_authority_genesis,
+	ics_genesis::{IcsAddresses, generate_ics_genesis},
 	permissioned_candidates_genesis::{
 		PcChainConfig, PermissionedCandidatesAddresses, generate_permissioned_candidates_genesis,
 	},
@@ -26,9 +27,6 @@ use crate::{
 use clap::Parser;
 use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
-use midnight_node_toolkit::genesis_manifest::{GenesisManifest, hash_file};
-use midnight_node_toolkit::treasury_config::CnightTreasuryConfig;
-use midnight_node_toolkit::treasury_verifier::TreasuryVerifier;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
 use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
@@ -37,7 +35,6 @@ use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
 use sp_keystore::KeystorePtr;
-use sqlx::postgres::PgPoolOptions;
 
 #[cfg(feature = "runtime-benchmarks")]
 use {
@@ -523,6 +520,39 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok(())
 			})
 		},
+		Subcommand::GenerateIcsGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("ics-config.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let ics_addresses_str = std::fs::read_to_string(&ics_addresses)?;
+				let addresses: IcsAddresses =
+					serde_json::from_str(&ics_addresses_str).map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read ICS addresses file as json: {e:?}"
+						))
+					})?;
+				generate_ics_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
+					})?;
+
+				Ok(())
+			})
+		},
 		Subcommand::GenerateFederatedAuthorityGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
@@ -569,95 +599,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						"federated authority genesis generation failed: {e}"
 					))
 				})?;
-
-				Ok(())
-			})
-		},
-		Subcommand::VerifyGenesis(ref cmd) => {
-			// Init logging
-			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string())).init()?;
-			// Init tokio runtime
-			let tokio_handle = sc_cli::build_runtime()?;
-			tokio_handle.block_on(async {
-				// If manifest provided, verify config hash first
-				if let Some(ref manifest_path) = cmd.manifest {
-					println!("Loading manifest from {:?}...", manifest_path);
-					let manifest = GenesisManifest::read_from_file(manifest_path).map_err(|e| {
-						sc_cli::Error::Input(format!("Failed to read manifest: {}", e))
-					})?;
-
-					// Hash the provided treasury config
-					let config_hash = hash_file(&cmd.treasury_config).map_err(|e| {
-						sc_cli::Error::Input(format!("Failed to hash treasury config: {}", e))
-					})?;
-
-					// Compare with manifest
-					if let Some(ref expected_hash) = manifest.treasury_config_hash {
-						if &config_hash != expected_hash {
-							return Err(sc_cli::Error::Input(format!(
-								"Treasury config hash mismatch!\n  Expected (from manifest): {}\n  Actual (provided file):   {}\n\nThe provided treasury config does not match what was used during genesis generation.",
-								expected_hash, config_hash
-							)));
-						}
-						println!("Config hash verified: matches manifest");
-					} else {
-						println!(
-							"WARNING: Manifest does not contain treasury_config_hash, skipping hash verification"
-						);
-					}
-				}
-
-				// Load and validate treasury config
-				let config_str = std::fs::read_to_string(&cmd.treasury_config).map_err(|e| {
-					sc_cli::Error::Input(format!(
-						"Failed to read treasury config {:?}: {}",
-						cmd.treasury_config, e
-					))
-				})?;
-				let config: CnightTreasuryConfig =
-					serde_json::from_str(&config_str).map_err(|e| {
-						sc_cli::Error::Input(format!("Failed to parse treasury config: {}", e))
-					})?;
-				config.validate().map_err(|e| {
-					sc_cli::Error::Input(format!("Treasury config validation failed: {}", e))
-				})?;
-
-				println!(
-					"Treasury config loaded: {} Night from {} UTxOs",
-					config.total_night_amount,
-					config.utxos.len()
-				);
-
-				if config.utxos.is_empty() {
-					println!("No UTxOs to verify against Cardano.");
-					return Ok(());
-				}
-
-				// Connect to db-sync
-				println!("Connecting to db-sync...");
-				let pool = PgPoolOptions::new()
-					.max_connections(1)
-					.connect(&cmd.db_sync_url)
-					.await
-					.map_err(|e| {
-						sc_cli::Error::Input(format!("Failed to connect to db-sync: {}", e))
-					})?;
-
-				// Verify against Cardano
-				println!("Verifying treasury UTxOs at block {}...", &cmd.reference_block_hash);
-				let verifier = TreasuryVerifier::new(pool);
-				let results =
-					verifier.verify(&config, &cmd.reference_block_hash).await.map_err(|e| {
-						sc_cli::Error::Input(format!("Treasury verification failed: {}", e))
-					})?;
-
-				println!("Verification PASSED: {} UTxOs verified", results.len());
-				for result in &results {
-					println!(
-						"  - {}#{}: {} cNight",
-						result.tx_hash, result.output_index, result.amount
-					);
-				}
 
 				Ok(())
 			})

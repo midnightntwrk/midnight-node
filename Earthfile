@@ -222,8 +222,9 @@ rebuild-redemption-skeleton:
 
 rebuild-genesis-state:
     ARG NETWORK
-    ARG GENERATE_TEST_TXS=true
+    ARG GENERATE_TEST_TXS=false
     ARG USE_CNIGHT_GENESIS=false
+    ARG USE_ICS_CONFIG=false
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
@@ -232,17 +233,23 @@ rebuild-genesis-state:
     # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy ledger parameters config and optionally cnight-config config (undeployed uses res/dev/)
+    # Copy ledger parameters config and optionally cnight-config and ics-config (undeployed uses res/dev/)
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
             COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         END
+        IF [ "${USE_ICS_CONFIG}" = "true" ]
+            COPY res/dev/ics-config.json /genesis-config/ics-config.json
+        END
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
             COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
+        END
+        IF [ "${USE_ICS_CONFIG}" = "true" ]
+            COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         END
     END
 
@@ -260,17 +267,34 @@ rebuild-genesis-state:
 
     RUN mkdir -p /res/genesis
     IF [ -f /secrets/genesis-seeds.json ]
-        IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
+        IF [ "${USE_CNIGHT_GENESIS}" = "true" ] && [ "${USE_ICS_CONFIG}" = "true" ]
             RUN /midnight-node-toolkit generate-genesis \
                 --network ${NETWORK} \
                 --seeds-file /secrets/genesis-seeds.json \
                 --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                --cnight-generates-dust-config /genesis-config/cnight-config.json
+                --cnight-generates-dust-config /genesis-config/cnight-config.json \
+                --ics-config /genesis-config/ics-config.json
         ELSE
-            RUN /midnight-node-toolkit generate-genesis \
-                --network ${NETWORK} \
-                --seeds-file /secrets/genesis-seeds.json \
-                --ledger-parameters-config /genesis-config/ledger-parameters-config.json
+            IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
+                RUN /midnight-node-toolkit generate-genesis \
+                    --network ${NETWORK} \
+                    --seeds-file /secrets/genesis-seeds.json \
+                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+                    --cnight-generates-dust-config /genesis-config/cnight-config.json
+            ELSE
+                IF [ "${USE_ICS_CONFIG}" = "true" ]
+                    RUN /midnight-node-toolkit generate-genesis \
+                        --network ${NETWORK} \
+                        --seeds-file /secrets/genesis-seeds.json \
+                        --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+                        --ics-config /genesis-config/ics-config.json
+                ELSE
+                    RUN /midnight-node-toolkit generate-genesis \
+                        --network ${NETWORK} \
+                        --seeds-file /secrets/genesis-seeds.json \
+                        --ledger-parameters-config /genesis-config/ledger-parameters-config.json
+                END
+            END
         END
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
@@ -449,49 +473,39 @@ rebuild-genesis-state:
 rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
-        --USE_CNIGHT_GENESIS=true
+        --GENERATE_TEST_TXS=true \
+        --USE_CNIGHT_GENESIS=true \
+        --USE_ICS_CONFIG=true
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=false
+        --NETWORK=devnet
 
 # rebuild-genesis-state-govnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-govnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=false
+        --NETWORK=devnet
 
 # rebuild-genesis-state-node-dev-01 rebuilds the genesis ledger state for node-dev-01 network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
-        --NETWORK=node-dev-01 \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=false
+        --NETWORK=node-dev-01
 
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for qanet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=qanet \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=true
+        --NETWORK=qanet
 
 # rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preview \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=false
+        --NETWORK=preview
 
 # rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preprod:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preprod \
-        --GENERATE_TEST_TXS=false \
-        --USE_CNIGHT_GENESIS=false
+        --NETWORK=preprod
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:

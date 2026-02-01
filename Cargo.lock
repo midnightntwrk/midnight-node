@@ -7573,11 +7573,11 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-node-runtime",
- "midnight-node-toolkit",
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-ics-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-system-parameters",
@@ -7881,6 +7881,7 @@ dependencies = [
  "log",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
+ "midnight-primitives-ics-observation",
  "num_cpus",
  "parity-scale-codec",
  "partner-chains-db-sync-data-sources",
@@ -8090,6 +8091,14 @@ dependencies = [
  "sp-core",
  "sp-inherents",
  "sp-runtime",
+]
+
+[[package]]
+name = "midnight-primitives-ics-observation"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

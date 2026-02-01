@@ -123,25 +123,18 @@ pub struct GenesisConfigCmd {
 }
 
 #[derive(Debug, Parser)]
-pub struct VerifyGenesisCmd {
-	/// Path to the genesis manifest file (JSON).
-	/// If provided, the treasury config hash will be verified against the manifest
-	/// to ensure the same config was used during generation.
-	#[arg(long)]
-	pub manifest: Option<std::path::PathBuf>,
+pub struct IcsGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
 
-	/// Path to the cNight treasury configuration file (JSON).
+	/// Path to JSON file containing ICS addresses. Defaults to res/<CFG_PRESET>/ics-addresses.json
 	#[arg(long)]
-	pub treasury_config: std::path::PathBuf,
+	pub ics_addresses: Option<std::path::PathBuf>,
 
-	/// Reference Cardano block hash at which to verify UTxOs (hex-encoded, 64 chars).
-	#[arg(long)]
-	pub reference_block_hash: String,
-
-	/// PostgreSQL connection URL for Cardano db-sync database.
-	/// Example: postgres://user:pass@localhost:5432/cexplorer
-	#[arg(long, env = "DB_SYNC_URL")]
-	pub db_sync_url: String,
+	/// Output path for the ICS genesis config. Defaults to res/<CFG_PRESET>/ics-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -164,12 +157,11 @@ pub enum Subcommand {
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
 
-	/// Verify genesis treasury configuration against Cardano db-sync.
-	/// Validates that all UTxOs in the treasury config exist at the reference block
-	/// with the expected amounts at the ICS contract address.
-	/// If a manifest is provided, also verifies config hash matches what was used
-	/// during generation.
-	VerifyGenesis(VerifyGenesisCmd),
+	/// Generate ICS (Illiquid Circulation Supply) genesis file. This queries the ICS forever
+	/// contract on Cardano to determine the total cNIGHT locked, which will be allocated to
+	/// the Midnight treasury at genesis.
+	GenerateIcsGenesis(IcsGenesisCmd),
+
 	/// Generate Federed Authority Genesis file.
 	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),
 
