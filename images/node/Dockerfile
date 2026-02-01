@@ -1,21 +1,16 @@
-FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1
 
 # ntp to keep correct time
 # curl to enable compose healthchecks
-RUN apt-get update -qq && \
-    apt-get upgrade -y -qq && \
-    apt-get install -y -qq --no-install-recommends ca-certificates curl procps strace \
-    gdb vim jq tree build-essential git cmake wget libtool autoconf automake && \
+RUN microdnf -y update && \
+    microdnf -y install ca-certificates curl-minimal procps-ng strace gdb vim jq tree gcc gcc-c++ make git cmake wget libtool autoconf automake && \
     # Build libfaketime with FORCE_MONOTONIC_FIX and FORCE_PTHREAD_NONVER
-    git clone https://github.com/wolfcw/libfaketime.git && \
-    cd /libfaketime/src && \
-    make clean && \
-    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make && \
-    make install && \
-    cd / && rm -rf /libfaketime && \
+    git clone --depth 1 https://github.com/wolfcw/libfaketime.git && \
+    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make -C /libfaketime/src install && \
+    rm -rf /libfaketime && \
     # Download bytehound
     wget -q https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
     [ -f bytehound-x86_64-unknown-linux-gnu.tgz ] && \
@@ -23,13 +18,13 @@ RUN apt-get update -qq && \
     mv libbytehound.so /usr/lib/libbytehound.so && \
     rm -rf bytehound* && \
     # Cleanup
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
 COPY .envrc ./bin/.envrc
 COPY res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
-RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 USER appuser
 
 EXPOSE 30333 9933 9944 9615

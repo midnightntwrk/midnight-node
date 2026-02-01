@@ -16,7 +16,7 @@ use midnight_node_ledger_helpers::*;
 use std::{fs::File, io::Write, marker::PhantomData, sync::Arc};
 
 use crate::{
-	sender::Sender,
+	sender::{SendBatchError, Sender},
 	serde_def::{DeserializedTransactionsWithContext, SerializedTransactionsWithContext},
 };
 
@@ -169,10 +169,16 @@ where
 		log::info!("Sending initial tx...");
 		sender.send_tx(&txs.initial_tx.tx).await?;
 
+		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {
 			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
-			sender.send_worker(self.rate, batch.txs.clone()).await;
+			let failed = sender.send_worker(self.rate, batch.txs.clone()).await;
+			total_failed += failed;
+		}
+
+		if total_failed > 0 {
+			return Err(Box::new(SendBatchError { failed_count: total_failed }));
 		}
 		Ok(())
 	}

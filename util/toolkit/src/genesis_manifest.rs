@@ -135,18 +135,14 @@ impl GenesisManifestBuilder {
 	pub fn build(self) -> Result<GenesisManifest, &'static str> {
 		let chain_spec_state = self.chain_spec_state.ok_or("chain_spec_state is required")?;
 		let chain_spec_block = self.chain_spec_block.ok_or("chain_spec_block is required")?;
-		let chain_spec_state_hash = self
-			.chain_spec_state_hash
-			.ok_or("chain_spec_state_hash is required")?;
-		let chain_spec_block_hash = self
-			.chain_spec_block_hash
-			.ok_or("chain_spec_block_hash is required")?;
+		let chain_spec_state_hash =
+			self.chain_spec_state_hash.ok_or("chain_spec_state_hash is required")?;
+		let chain_spec_block_hash =
+			self.chain_spec_block_hash.ok_or("chain_spec_block_hash is required")?;
 
 		// Generate ISO 8601 timestamp
 		let now = std::time::SystemTime::now();
-		let duration = now
-			.duration_since(std::time::UNIX_EPOCH)
-			.unwrap_or_default();
+		let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
 		let secs = duration.as_secs();
 		// Simple ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ
 		// We'll use a simple calculation for UTC time
@@ -304,10 +300,7 @@ mod tests {
 
 		assert!(manifest.treasury_config.is_some());
 		assert!(manifest.treasury_config_hash.is_some());
-		assert!(manifest
-			.treasury_config_hash
-			.unwrap()
-			.starts_with("sha256:"));
+		assert!(manifest.treasury_config_hash.unwrap().starts_with("sha256:"));
 	}
 
 	#[test]

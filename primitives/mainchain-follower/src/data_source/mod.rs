@@ -23,6 +23,7 @@ pub mod federated_authority_observation_mock;
 
 pub use candidates_data_source::CandidatesDataSourceImpl;
 pub use candidates_data_source::cached::CandidateDataSourceCached;
+pub use candidates_data_source::get_epoch_for_block_hash;
 pub use cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
 	TxPosition,

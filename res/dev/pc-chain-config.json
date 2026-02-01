@@ -9,19 +9,5 @@
     "first_slot_number": 0,
     "epoch_duration_millis": 86400000,
     "first_epoch_timestamp_millis": 1666656000000
-  },
-  "cardano_addresses": {
-    "committee_candidates_address": "addr_test1wqgdltkw2egyzv7q65j285dmvqcs3223qw9fp4q3y79jnvsefxzwg",
-    "permissioned_candidates_policy_id": "e78beca2dc84128a0b91b55b48bf1672a7affa5df25feb625ee398c5"
-  },
-  "initial_permissioned_candidates": [
-    {
-      "name": "Alice",
-      "ss58": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-      "aura_pub_key": "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-      "grandpa_pub_key": "0x88dc3417d5058ec4b4503e0c12ea1a0a89be200fe98922423d4334014fa6b0ee",
-      "sidechain_pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1",
-      "beefy_pub_key": "0x020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"
-    }
-  ]
+  }
 }

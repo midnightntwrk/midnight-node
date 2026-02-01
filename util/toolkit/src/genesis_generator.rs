@@ -193,12 +193,13 @@ impl GenesisGenerator {
 		self.set_parameters(original_parameters, &genesis_block_context)?;
 
 		if let Some(system_tx) = cnight_system_tx {
-			self.apply_system_tx(system_tx, &genesis_block_context)?;
+			self.apply_system_tx(system_tx.clone(), &genesis_block_context)?;
+			println!("cNight System Tx applied: {:?}", system_tx);
 		}
 
 		let block_limits = self.state.parameters.limits.block_limits;
 		let normalized_fullness =
-			self.fullness.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+			clamp_and_normalize(&self.fullness, &block_limits, "genesis_generator");
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		self.state = self.state.post_block_update(
 			genesis_block_context.tblock,

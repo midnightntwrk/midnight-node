@@ -104,7 +104,7 @@ chainspec_genesis_state = "res/genesis/genesis_state_qanet.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_qanet.mn"
 chainspec_chain_type = "live"
 chainspec_pc_chain_config = "res/qanet/pc-chain-config.json"
-chainspec_cnight_genesis = "res/qanet/cnight-genesis.json"
+chainspec_cnight_genesis = "res/qanet/cnight-config.json"
 chainspec_federated_authority_config = "res/qanet/federated-authority-config.json"
 chainspec_system_parameters_config = "res/qanet/system-parameters-config.json"
 ```
@@ -156,13 +156,13 @@ The `pc-chain-config.json` is an output of the PartnerChains chain initialisatio
 
 We use the `initial_authorities` field as the initial committee for the node. After the first epoch, the committee is loaded via the Ariadne selection algorithm from the list of registered and permissioned nodes indexed from the connected Cardano chain.
 
-## `cnight-genesis.json`
+## `cnight-config.json`
 
 Contains mappings between Cardano and Dust addresses, and which addresses the cnight main-chain-follower should track.
 
-The addresses in this file are stateless - all networks connected to Cardano preview should use the same `cnight-genesis.json` file, unless the network needs a different set of cNight mappings (advanced usage).
+The addresses in this file are stateless - all networks connected to Cardano preview should use the same `cnight-config.json` file, unless the network needs a different set of cNight mappings (advanced usage).
 
-The `cnight-genesis.json` file is generated using the `generate-c-night-genesis` command on the node:
+The `cnight-config.json` file is generated using the `generate-c-night-genesis` command on the node:
 
 ```sh
 $ docker run --rm midnightntwrk/midnight-node:latest-main generate-c-night-genesis -h

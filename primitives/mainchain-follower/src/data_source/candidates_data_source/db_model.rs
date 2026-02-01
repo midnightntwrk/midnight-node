@@ -325,6 +325,20 @@ pub(crate) async fn get_epoch_nonce(
 		.await?)
 }
 
+/// Returns the epoch number for a given block hash
+pub async fn get_epoch_for_block_hash(
+	pool: &Pool<Postgres>,
+	block_hash: &[u8; 32],
+) -> Result<Option<EpochNumber>, SqlxError> {
+	let sql = "SELECT epoch_no FROM block WHERE hash = $1";
+	#[allow(deprecated)]
+	Ok(sqlx::query_as::<_, db_sync_sqlx::EpochNumberRow>(sql)
+		.bind(block_hash.as_slice())
+		.fetch_optional(pool)
+		.await?
+		.map(EpochNumber::from))
+}
+
 pub(crate) async fn get_utxos_for_address(
 	pool: &Pool<Postgres>,
 	address: &Address,

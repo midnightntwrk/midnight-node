@@ -15,7 +15,10 @@ use midnight_primitives_federated_authority_observation::FederatedAuthorityObser
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
-use super::{InitialAuthorityData, MainChainScripts, MidnightNetwork};
+use super::{
+	InitialAuthorityData, MainChainScripts, MidnightNetwork, PermissionedCandidatesConfig,
+	RegisteredCandidatesAddresses,
+};
 
 pub struct UndeployedNetwork;
 impl MidnightNetwork for UndeployedNetwork {
@@ -44,7 +47,7 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 
 	fn cnight_genesis(&self) -> CNightGenesis {
-		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cnight-genesis.json"));
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cnight-config.json"));
 		serde_json::from_str(&config_str).unwrap()
 	}
 
@@ -65,12 +68,19 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 
 	fn main_chain_scripts(&self) -> super::MainChainScripts {
-		let pc_chain_config_str =
-			String::from_utf8_lossy(include_bytes!("../../dev/pc-chain-config.json"));
+		let registered_candidates_str = String::from_utf8_lossy(include_bytes!(
+			"../../dev/registered-candidates-addresses.json"
+		));
+		let registered_candidates: RegisteredCandidatesAddresses =
+			serde_json::from_str(&registered_candidates_str).unwrap();
 
-		let pc_chain_config: serde_json::Value =
-			serde_json::from_str(&pc_chain_config_str).unwrap();
-		super::MainChainScripts::load_from_pc_chain_config(&pc_chain_config)
+		let permissioned_candidates_str = String::from_utf8_lossy(include_bytes!(
+			"../../dev/permissioned-candidates-config.json"
+		));
+		let permissioned_candidates: PermissionedCandidatesConfig =
+			serde_json::from_str(&permissioned_candidates_str).unwrap();
+
+		super::MainChainScripts::load_from_configs(&registered_candidates, &permissioned_candidates)
 	}
 }
 /// Used when `--chain` is not specified when running `build-spec` - it will source chain values from

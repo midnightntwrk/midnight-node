@@ -14,10 +14,10 @@
 # limitations under the License.
 
 echo "Installing dependencies..."
-apt -qq update &> /dev/null
-apt -qq -y install expect jq &> /dev/null
+microdnf -y update &> /dev/null
+microdnf -y install expect jq &> /dev/null
 cp /usr/local/bin/midnight-node /data/midnight-node
-cd /data
+cd /data || exit
 
 
 if [ -f "/shared/midnight-wizard-2.ready" ]; then

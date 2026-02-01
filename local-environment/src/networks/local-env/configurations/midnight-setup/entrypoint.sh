@@ -16,8 +16,8 @@
 # Fail if a command fails
 set -euxo pipefail
 
-apt -qq update
-apt -qq -y install curl jq ncat uuid-runtime
+microdnf -y update
+microdnf -y install curl-minimal jq nmap-ncat util-linux
 
 check_json_validity() {
   local file="$1"
@@ -62,7 +62,8 @@ export POSTGRES_USER="postgres"
 if [ ! -f postgres.password ]; then
     uuidgen | tr -d '-' | head -c 16 > postgres.password
 fi
-export POSTGRES_PASSWORD="$(cat ./postgres.password)"
+POSTGRES_PASSWORD="$(cat ./postgres.password)"
+export POSTGRES_PASSWORD
 export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
@@ -95,14 +96,14 @@ while true; do
         echo "✓ All contract CBOR files and policy IDs found"
         break
     fi
-    
+
     elapsed=$(($(date +%s) - start_time))
     if [[ $elapsed -ge $MAX_WAIT ]]; then
         echo "ERROR: Timeout waiting for contract CBOR files after ${MAX_WAIT}s"
         ls -la "${RUNTIME_VALUES}/" || true
         exit 1
     fi
-    
+
     echo "Waiting for contract CBOR files (${elapsed}s elapsed)..."
     sleep 5
 done
@@ -171,7 +172,7 @@ COUNCIL_OUTPUT_FILE=/tmp/council_deploy_output.txt
     --ogmios-url "$OGMIOS_URL" 2>&1 | tee "$COUNCIL_OUTPUT_FILE"
 COUNCIL_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $COUNCIL_EXIT_CODE -eq 0 ]; then
+if [ "$COUNCIL_EXIT_CODE" -eq 0 ]; then
     echo "✓ Council Forever contract deployed successfully!"
     # Parse policy ID and script address from output
     COUNCIL_POLICY_ID=$(grep "Policy ID:" "$COUNCIL_OUTPUT_FILE" | head -1 | awk '{print $3}')
@@ -201,7 +202,7 @@ TECHAUTH_OUTPUT_FILE=/tmp/techauth_deploy_output.txt
     --contract-type tech-auth 2>&1 | tee "$TECHAUTH_OUTPUT_FILE"
 TECHAUTH_EXIT_CODE=${PIPESTATUS[0]}
 
-if [ $TECHAUTH_EXIT_CODE -eq 0 ]; then
+if [ "$TECHAUTH_EXIT_CODE" -eq 0 ]; then
     echo "✓ Tech Auth Forever contract deployed successfully!"
     # Parse policy ID and script address from output
     TECHAUTH_POLICY_ID=$(grep "Policy ID:" "$TECHAUTH_OUTPUT_FILE" | head -1 | awk '{print $3}')
@@ -218,14 +219,14 @@ fi
 sleep 10
 
 # Generate permissioned candidates file for federated_ops_forever
-# Extract the first 4 candidates from the chain config (matching the chain-spec generation)
+# Extract the first 3 candidates from the permissioned-candidates-config (matching D_PERMISSIONED)
 echo ""
 echo "=== Generating Permissioned Candidates File ==="
 jq '[.initial_permissioned_candidates[:3] | .[] | {
     ecdsa_key: .sidechain_pub_key[2:],
     aura_key: .aura_pub_key[2:],
     grandpa_key: .grandpa_pub_key[2:]
-}]' res/qanet/pc-chain-config.json > permissioned_candidates.json
+}]' res/qanet/permissioned-candidates-config.json > permissioned_candidates.json
 echo "Created permissioned_candidates.json:"
 cat permissioned_candidates.json
 
@@ -243,7 +244,7 @@ echo "=== Deploying Federated Ops Forever Contract ==="
     --contract-type federated-ops \
     --candidates-file permissioned_candidates.json
 
-if [ $? -eq 0 ]; then
+if [ "$?" -eq 0 ]; then
     echo "✓ Federated Ops Forever contract deployed successfully!"
 else
     echo "✗ Federated Ops Forever contract deployment failed"
@@ -251,24 +252,23 @@ else
 fi
 
 # The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
-# which was overridden earlier and will be included in pc-chain-config.json
+# which was overridden earlier and will be included in permissioned-candidates-config.json
 
 echo ""
 echo "=== All Governance Contracts Deployed Successfully ==="
 
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
-
+# Create pc-chain-config.json with genesis_utxo and cardano_addresses
 jq 'env as $env | . + {
   "chain_parameters": {
     "genesis_utxo": $env.GENESIS_UTXO
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
-    "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID,
+    "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID
   }
-}' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
+}' res/qanet/pc-chain-config.json > /tmp/pc-chain-config.json
 
 # Create patched federated-authority-config.json with Aiken policy IDs and addresses
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
@@ -298,6 +298,26 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
+# Create permissioned-candidates-config.json with deployed Aiken policy ID and first D_PERMISSIONED candidates
+echo "Creating permissioned-candidates-config.json with deployed Aiken policy ID..."
+jq --arg policy_id "$PERMISSIONED_CANDIDATES_POLICY_ID" --argjson d_perm "$D_PERMISSIONED" \
+   '.permissioned_candidates_policy_id = ("0x" + $policy_id) | .initial_permissioned_candidates = .initial_permissioned_candidates[:$d_perm]' \
+   res/qanet/permissioned-candidates-config.json > /tmp/permissioned-candidates-config.json
+
+echo "Created permissioned-candidates-config.json:"
+cat /tmp/permissioned-candidates-config.json
+
+# Create registered-candidates-addresses.json
+echo "Creating registered-candidates-addresses.json..."
+cat <<EOF > /tmp/registered-candidates-addresses.json
+{
+    "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk"
+}
+EOF
+
+echo "Created registered-candidates-addresses.json:"
+cat /tmp/registered-candidates-addresses.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -306,9 +326,11 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
+export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
+export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
+export CHAINSPEC_REGISTERED_CANDIDATES_ADDRESSES=/tmp/registered-candidates-addresses.json
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 
@@ -336,7 +358,7 @@ epoch=$(curl -s --request POST \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
 n_2_epoch=$((epoch + 2))
 echo "Current epoch: $epoch"
-while [ $epoch -lt $n_2_epoch ]; do
+while [ "$epoch" -lt $n_2_epoch ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \

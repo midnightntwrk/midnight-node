@@ -268,6 +268,57 @@ pub async fn create_cnight_observation_data_source(
 	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
 }
 
+pub async fn create_federated_authority_observation_data_source(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<Arc<dyn FederatedAuthorityObservationDataSource>, Box<dyn Error + Send + Sync + 'static>>
+{
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+
+	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
+}
+
+pub async fn create_authority_selection_data_source(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<
+	Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	let (data_source, _pool) =
+		create_authority_selection_data_source_with_pool(cfg, metrics_opt).await?;
+	Ok(data_source)
+}
+
+pub async fn create_authority_selection_data_source_with_pool(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<
+	(Arc<dyn AuthoritySelectionDataSource + Send + Sync>, sqlx::PgPool),
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		CANDIDATES_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+
+	let candidates_data_source =
+		CandidatesDataSourceImpl::new(pool.clone(), metrics_opt.clone()).await?;
+	let candidates_data_source_cached =
+		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
+
+	Ok((Arc::new(candidates_data_source_cached), pool))
+}
+
 // Copied from internal utility in partner-chains-db-sync-data-sources
 async fn get_connection(
 	connection_string: &str,

@@ -67,6 +67,18 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_system_parameters_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// Permissioned candidates config file e.g. devnet/permissioned-candidates-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_permissioned_candidates_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// Registered candidates addresses file e.g. devnet/registered-candidates-addresses.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_registered_candidates_addresses: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
@@ -79,6 +91,8 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		|| cfg.chainspec_cnight_genesis.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
 		|| cfg.chainspec_system_parameters_config.is_some()
+		|| cfg.chainspec_permissioned_candidates_config.is_some()
+		|| cfg.chainspec_registered_candidates_addresses.is_some()
 	{
 		if cfg.chainspec_name.is_none() {
 			missing.push("chainspec_name".to_string());
@@ -106,6 +120,12 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		}
 		if cfg.chainspec_system_parameters_config.is_none() {
 			missing.push("chainspec_system_parameters_config".to_string());
+		}
+		if cfg.chainspec_permissioned_candidates_config.is_none() {
+			missing.push("chainspec_permissioned_candidates_config".to_string());
+		}
+		if cfg.chainspec_registered_candidates_addresses.is_none() {
+			missing.push("chainspec_registered_candidates_addresses".to_string());
 		}
 	}
 
