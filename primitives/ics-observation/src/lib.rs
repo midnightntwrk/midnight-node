@@ -23,12 +23,13 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
+use sidechain_domain::PolicyId;
 
 /// Asset identifier for cNIGHT tokens.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IcsAsset {
-	/// The policy ID of the cNIGHT token (hex string without 0x prefix)
-	pub policy_id: String,
+	/// The policy ID of the cNIGHT token
+	pub policy_id: PolicyId,
 	/// The asset name of the cNIGHT token (hex string without 0x prefix, usually empty)
 	pub asset_name: String,
 }
@@ -39,7 +40,7 @@ pub struct IcsUtxo {
 	/// Transaction hash (hex encoded)
 	pub tx_hash: String,
 	/// Output index within the transaction
-	pub output_index: i16,
+	pub output_index: u16,
 	/// Amount of cNIGHT tokens in this UTxO
 	pub amount: u64,
 }

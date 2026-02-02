@@ -7,11 +7,13 @@ license-file.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
+sidechain-domain = { workspace = true }
 thiserror = { workspace = true, optional = true }
 
 [features]
 default = ["std"]
 std = [
     "serde/std",
+    "sidechain-domain/std",
     "thiserror",
 ]

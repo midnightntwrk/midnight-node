@@ -72,8 +72,24 @@ async fn query_ics_utxos(
 	}
 
 	// Query all unspent UTxOs at the ICS address containing the cNIGHT asset
-	// that were created at or before the reference block
-	let utxos: Vec<(String, i16, i64)> = sqlx::query_as(
+	// that were created at or before the reference block.
+	//
+	// This query finds UTxOs locked at the ICS forever contract by:
+	// 1. Starting from tx_out (transaction outputs) at the ICS validator address
+	// 2. Joining with ma_tx_out/multi_asset to filter only outputs containing
+	//    the specific cNIGHT token (identified by policy_id and asset_name)
+	// 3. Filtering to outputs created at or before the reference block
+	// 4. Excluding spent outputs using NOT EXISTS - a UTxO is spent if there's
+	//    a tx_in referencing it (by tx_id and output index) in a block at or
+	//    before the reference block
+	// 5. Ordering deterministically by block number, tx index, and output index
+	//
+	// Parameters:
+	//   $1 - Reference block hash (hex) - defines the point-in-time snapshot
+	//   $2 - ICS validator address (bech32)
+	//   $3 - cNIGHT policy ID (hex)
+	//   $4 - cNIGHT asset name (hex, usually empty string)
+	let utxos: Vec<(String, i16, i64)> = sqlx::query_as::<_, (String, i16, i64)>(
 		r#"
 		SELECT
 			encode(tx.hash, 'hex') as tx_hash,
@@ -111,7 +127,7 @@ async fn query_ics_utxos(
 		.into_iter()
 		.map(|(tx_hash, output_index, amount)| IcsUtxo {
 			tx_hash,
-			output_index,
+			output_index: output_index as u16,
 			amount: amount as u64,
 		})
 		.collect())
@@ -124,6 +140,8 @@ pub async fn generate_ics_genesis(
 	cardano_tip: McBlockHash,
 	output_path: impl AsRef<Path>,
 ) -> Result<(), IcsGenesisError> {
+	let output_path = output_path.as_ref();
+
 	// Check if address is empty - this is valid for networks without ICS deployment
 	if addresses.illiquid_circulation_supply_validator_address.is_empty() {
 		log::warn!(
@@ -140,9 +158,9 @@ pub async fn generate_ics_genesis(
 		};
 
 		let json = serde_json::to_string_pretty(&config)?;
-		let mut file = File::create(output_path.as_ref()).await?;
+		let mut file = File::create(output_path).await?;
 		file.write_all(json.as_bytes()).await?;
-		log::info!("Wrote ICS genesis config (empty) to {}", output_path.as_ref().display());
+		log::info!("Wrote ICS genesis config (empty) to {}", output_path.display());
 		return Ok(());
 	}
 
@@ -155,7 +173,7 @@ pub async fn generate_ics_genesis(
 	let utxos = query_ics_utxos(
 		pool,
 		&addresses.illiquid_circulation_supply_validator_address,
-		&addresses.asset.policy_id,
+		&addresses.asset.policy_id.to_hex_string(),
 		&addresses.asset.asset_name,
 		&cardano_tip,
 	)
@@ -174,8 +192,8 @@ pub async fn generate_ics_genesis(
 	};
 
 	let json = serde_json::to_string_pretty(&config)?;
-	let mut file = File::create(output_path.as_ref()).await?;
+	let mut file = File::create(output_path).await?;
 	file.write_all(json.as_bytes()).await?;
-	log::info!("Wrote ICS genesis config to {}", output_path.as_ref().display());
+	log::info!("Wrote ICS genesis config to {}", output_path.display());
 	Ok(())
 }

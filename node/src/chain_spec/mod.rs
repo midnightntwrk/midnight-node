@@ -31,7 +31,7 @@ use midnight_node_runtime::{
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{AssetName, MainchainAddress, PolicyId};
+use sidechain_domain::{AssetName, MainchainAddress};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
@@ -323,8 +323,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 					None
 				} else {
 					Some(BridgeMainChainScripts {
-						token_policy_id: PolicyId::decode_hex(&ics_config.asset.policy_id)
-							.expect("Failed to decode ICS policy_id as hex"),
+						token_policy_id: ics_config.asset.policy_id,
 						token_asset_name: AssetName::decode_hex(&ics_config.asset.asset_name)
 							.expect("Failed to decode ICS asset_name as hex"),
 						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
