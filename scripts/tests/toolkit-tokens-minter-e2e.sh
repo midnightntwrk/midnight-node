@@ -31,7 +31,7 @@ docker run -d --rm \
   "$NODE_IMAGE"
 
 echo "⏳ Waiting for node to boot..."
-sleep 5
+sleep 15
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."
@@ -89,8 +89,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --output-private-state "$outdir/$initial_private_state_filename" \
     --output-zswap-state "$outdir/$deploy_zswap_filename"
 
-test -f "$outdir/$deploy_intent_filename"
-test -f "$outdir/$initial_private_state_filename"
+test -f "$tempdir/$deploy_intent_filename"
+test -f "$tempdir/$initial_private_state_filename"
 
 echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
@@ -127,7 +127,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --contract-address $contract_address \
     --dest-file $outdir/$state_filename
 
-test -f "$outdir/$state_filename"
+test -f "$tempdir/$state_filename"
 
 domain_sep=$(echo "feeb000000000000000000000000000000000000000000000000000000000000")
 
