@@ -194,7 +194,7 @@ function buildPostgresSecret(
 
   const mappedPort = host ? getPortFromMapping(host, portMapping) : undefined;
   if (mappedPort) {
-    secret.connectionString = `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?ssl-mode=disable`;
+    secret.connectionString = `psql://${user}:${password}@host.docker.internal:${mappedPort}/${db}?sslmode=disable`;
   }
   return secret;
 }

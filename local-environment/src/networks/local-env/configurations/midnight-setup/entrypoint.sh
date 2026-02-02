@@ -219,7 +219,7 @@ fi
 sleep 10
 
 # Generate permissioned candidates file for federated_ops_forever
-# Extract the first 4 candidates from the chain config (matching the chain-spec generation)
+# Extract the first 3 candidates from the chain config (matching D_PERMISSIONED)
 echo ""
 echo "=== Generating Permissioned Candidates File ==="
 jq '[.initial_permissioned_candidates[:3] | .[] | {
