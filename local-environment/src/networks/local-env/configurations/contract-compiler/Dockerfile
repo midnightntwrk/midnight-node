@@ -111,8 +111,15 @@ RUN apt-get update && \
         libssl-dev=3.0.18-1~deb12u2 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+# Install Rust toolchain via pinned rustup-init binary with hash verification
+# renovate: datasource=github-releases depName=rust-lang/rustup
+ENV RUSTUP_VERSION=1.28.1
+ENV RUSTUP_SHA256=c64b33db2c6b9385817ec0e49a84bcfe018ed6e328fe755c3c809580cc70ce7a
+RUN curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/aarch64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init && \
+    echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c - && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init -y --profile minimal && \
+    rm /tmp/rustup-init
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Build aiken from source
