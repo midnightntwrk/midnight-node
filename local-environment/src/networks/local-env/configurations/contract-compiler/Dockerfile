@@ -160,7 +160,6 @@ RUN rustup self uninstall -y && \
 # The following FROM uses a variable to select between tools-amd64 and tools-arm64
 # stages defined above. This is valid BuildKit syntax for multi-arch builds.
 ARG TARGETARCH
-# trivy:ignore:AVD-DS-0001
 # kics-scan ignore-line
 FROM tools-${TARGETARCH} AS final
 
