@@ -83,6 +83,9 @@ NAME:          chainspec_chain_type
 NAME:          chainspec_pc_chain_config
 NAME:          chainspec_cnight_genesis
 NAME:          chainspec_federated_authority_config
+NAME:          chainspec_system_parameters_config
+NAME:          chainspec_permissioned_candidates_config
+NAME:          chainspec_registered_candidates_addresses
 ```
 
 Once all those config values are defined, running the node with `build-spec` will export the chainspec:
@@ -107,6 +110,8 @@ chainspec_pc_chain_config = "res/qanet/pc-chain-config.json"
 chainspec_cnight_genesis = "res/qanet/cnight-config.json"
 chainspec_federated_authority_config = "res/qanet/federated-authority-config.json"
 chainspec_system_parameters_config = "res/qanet/system-parameters-config.json"
+chainspec_permissioned_candidates_config = "res/qanet/permissioned-candidates-config.json"
+chainspec_registered_candidates_addresses = "res/qanet/registered-candidates-addresses.json"
 ```
 
 The process for building chainspecs is automated via Earthly build commands:
@@ -168,24 +173,110 @@ The `cnight-config.json` file is generated using the `generate-c-night-genesis` 
 $ docker run --rm midnightntwrk/midnight-node:latest-main generate-c-night-genesis -h
 ```
 
+When `CFG_PRESET` is set, the command uses default paths:
+- `--cnight-addresses` defaults to `res/<CFG_PRESET>/cnight-addresses.json`
+- `--output` defaults to `res/<CFG_PRESET>/cnight-config.json`
+
 ## `federated-authority-config.json`
 
 This file contains the set of governance authorities for both the technical committee and the council. These values will vary across different chains if the governance authorities should differ.
 
-This file is manually created when setting up a new chain. Each collective (`council` and `technical_committee`) requires:
+Each collective (`council` and `technical_committee`) requires:
 
 - `members`: Array of Substrate SS58 account IDs (hex-encoded)
 - `members_mainchain`: Corresponding Cardano payment key hashes
 - `address`: Cardano address for governance transactions
 - `policy_id`: Minting policy ID for governance NFTs
 
-For test networks, you can copy from an existing network (e.g., `res/qanet/federated-authority-config.json`) and update the member keys.
+Generate this file using the `generate-federated-authority-genesis` command:
+
+```sh
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main generate-federated-authority-genesis --cardano-tip <block_hash>
+```
+
+When `CFG_PRESET` is set, the command uses default paths:
+- `--federated-auth-addresses` defaults to `res/<CFG_PRESET>/federated-authority-addresses.json`
+- `--output` defaults to `res/<CFG_PRESET>/federated-authority-config.json`
+
+For test networks, you can also copy from an existing network (e.g., `res/qanet/federated-authority-config.json`) and update the member keys.
+
+## `federated-authority-addresses.json`
+
+Input file for `generate-federated-authority-genesis`. Contains the Cardano addresses and policy IDs for governance collectives:
+
+```json
+{
+    "council_address": "<cardano_address>",
+    "council_policy_id": "<policy_id_hex>",
+    "technical_committee_address": "<cardano_address>",
+    "technical_committee_policy_id": "<policy_id_hex>"
+}
+```
 
 ## `system-parameters-config.json`: Midnight Governance Parameters
 
 Stores the terms and conditions for using the network, and the D parameter using in the Partner-chains Ariadne Selection Algorithm.
 
 The D parameter should match the intended mix of permissioned and registered validators for the network. For example, a federated-only network should have `num_permissioned_candidates` >= the initial authorities (in `pc-chain-config.json`) and <= the epoch length (hard-coded to 300), and `num_registered_candidates` set to `0`. If registered nodes are expected, set `num_registered_candidates` higher to allow SPOs to occupy slots in the committee.
+
+## `permissioned-candidates-config.json`
+
+Contains the permissioned candidates policy ID and the list of initial permissioned candidates for the network. This file is used during chainspec generation to configure which permissioned validators can participate in consensus.
+
+The file includes:
+- `permissioned_candidates_policy_id`: The Cardano minting policy ID for permissioned candidate NFTs (hex with 0x prefix)
+- `initial_permissioned_candidates`: Array of candidate entries, each with:
+  - `sidechain_pub_key`: ECDSA public key for cross-chain signing
+  - `aura_pub_key`: Sr25519 public key for block production
+  - `grandpa_pub_key`: Ed25519 public key for block finalization
+  - `beefy_pub_key`: ECDSA public key for BEEFY consensus
+
+Generate this file using the `generate-permissioned-candidates-genesis` command:
+
+```sh
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main generate-permissioned-candidates-genesis --cardano-tip <block_hash>
+```
+
+When `CFG_PRESET` is set, the command uses default paths:
+- `--permissioned-candidates-addresses` defaults to `res/<CFG_PRESET>/permissioned-candidates-addresses.json`
+- `--output` defaults to `res/<CFG_PRESET>/permissioned-candidates-config.json`
+
+## `permissioned-candidates-addresses.json`
+
+Input file for `generate-permissioned-candidates-genesis`. Contains the Cardano policy ID to query for permissioned candidate registrations:
+
+```json
+{
+    "permissioned_candidates_policy_id": "<policy_id_hex>"
+}
+```
+
+## `registered-candidates-addresses.json`
+
+Contains the Cardano address used to track registered candidate (SPO) registrations:
+
+```json
+{
+    "committee_candidates_address": "<cardano_address>"
+}
+```
+
+This address is monitored by the main-chain-follower to detect when SPOs register as validators.
+
+## Generating All Genesis Configs
+
+To generate all genesis configuration files at once, use the `generate-genesis-config` command:
+
+```sh
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main generate-genesis-config --cardano-tip <block_hash>
+```
+
+This command generates:
+- `cnight-config.json`
+- `federated-authority-config.json`
+- `permissioned-candidates-config.json`
+
+All output paths default to `res/<CFG_PRESET>/` when `CFG_PRESET` is set.
 
 ## Validator keys
 
