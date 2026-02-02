@@ -101,20 +101,20 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
 # renovate: datasource=github-releases depName=oven-sh/bun
 ENV BUN_VERSION=1.3.6
 # To update hash: curl -sL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-<arch>.zip" | sha256sum
-ENV BUN_SHA256_AMD64=9ba98d2134550d6690875b23a4f5c48e74b7cb267e8cc1b8f52605921c6c11ef
+ENV BUN_SHA256_AMD64=1954abee08900de610a8b4692f5fffa6c6b15d8afde7d1de4d3f88cfc60e7d5f
 ENV BUN_SHA256_ARM64=5afd12b366ba2d8297245cc29c039416334dd872152c1db02e5c8aa8c66e96b1
 RUN apt-get update && \
     apt-get install -y --no-install-recommends unzip=6.0-28 && \
     rm -rf /var/lib/apt/lists/* && \
     ARCH=$(case ${TARGETARCH} in amd64) echo "x64";; arm64) echo "aarch64";; *) echo "x64";; esac) && \
     BUN_SHA256=$(case ${TARGETARCH} in amd64) echo "${BUN_SHA256_AMD64}";; arm64) echo "${BUN_SHA256_ARM64}";; *) echo "${BUN_SHA256_AMD64}";; esac) && \
-    curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${ARCH}.zip" -o /tmp/bun.zip && \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${ARCH}-baseline.zip" -o /tmp/bun.zip && \
     echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - && \
     unzip -q /tmp/bun.zip -d /tmp && \
-    mv /tmp/bun-linux-${ARCH}/bun /usr/local/bin/bun && \
+    mv /tmp/bun-linux-${ARCH}-baseline/bun /usr/local/bin/bun && \
     chmod +x /usr/local/bin/bun && \
     ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
-    rm -rf /tmp/bun.zip /tmp/bun-linux-${ARCH}
+    rm -rf /tmp/bun.zip /tmp/bun-linux-${ARCH}-baseline
 
 # Create non-root user for security
 RUN useradd -u 10001 -m -s /bin/bash appuser

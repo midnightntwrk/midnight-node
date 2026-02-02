@@ -49,6 +49,9 @@ fi
 # Navigate to contracts directory
 cd "${CONTRACTS_DIR}"
 
+echo "Installing node dependencies"
+bun install
+
 
 # Prepare one shot hash
 echo "=== One Shot Hash Preparation ==="
@@ -116,9 +119,6 @@ echo ""
 echo "=== Aiken Contracts Compilation ==="
 echo "Aiken version:"
 aiken --version
-
-echo "Installing node dependencies"
-bun install
 
 echo "Compiling Aiken contracts with modified default config..."
 just build
