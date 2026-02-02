@@ -39,6 +39,19 @@ use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
 
+/// Parse asset name from config - accepts either hex-encoded string or plain UTF-8 string.
+/// If the string is valid hex, it decodes it as hex bytes.
+/// Otherwise, it treats the string as UTF-8 and uses its bytes directly.
+fn parse_asset_name(s: &str) -> AssetName {
+	// Try to decode as hex first
+	if let Ok(asset_name) = AssetName::decode_hex(s) {
+		return asset_name;
+	}
+	// Fall back to treating as UTF-8 string - convert to hex and decode
+	let hex_string = hex::encode(s.as_bytes());
+	AssetName::decode_hex(&hex_string).expect("UTF-8 to hex conversion should always succeed")
+}
+
 pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
@@ -324,8 +337,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				} else {
 					Some(BridgeMainChainScripts {
 						token_policy_id: ics_config.asset.policy_id,
-						token_asset_name: AssetName::decode_hex(&ics_config.asset.asset_name)
-							.expect("Failed to decode ICS asset_name as hex"),
+						token_asset_name: parse_asset_name(&ics_config.asset.asset_name),
 						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
