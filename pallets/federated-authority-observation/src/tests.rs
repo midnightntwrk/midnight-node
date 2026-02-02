@@ -70,9 +70,9 @@ fn with_different_mainchain_members(account_ids: &[u64]) -> Vec<(u64, MainchainM
 }
 
 fn advance_block_and_reset_events() {
-	FederatedAuthorityObservation::on_finalize(System::block_number());
 	System::set_block_number(System::block_number() + 1);
 	System::reset_events();
+	FederatedAuthorityObservation::on_initialize(System::block_number());
 }
 
 // Helper function to create inherent data

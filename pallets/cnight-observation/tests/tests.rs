@@ -150,9 +150,9 @@ fn any_event<F: Fn(&RuntimeEvent) -> bool>(f: F) -> bool {
 }
 
 fn advance_block_and_reset_events() {
-	CNightObservation::on_finalize(System::block_number());
 	System::set_block_number(System::block_number() + 1);
 	frame_system::Pallet::<Test>::reset_events();
+	CNightObservation::on_initialize(System::block_number());
 }
 
 #[test]

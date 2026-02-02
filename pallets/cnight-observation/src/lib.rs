@@ -589,8 +589,9 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		fn on_finalize(_n: BlockNumberFor<T>) {
+		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
 			InherentExecutedThisBlock::<T>::kill();
+			T::DbWeight::get().writes(1)
 		}
 	}
 
