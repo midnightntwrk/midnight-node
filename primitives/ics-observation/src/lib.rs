@@ -23,7 +23,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::PolicyId;
+// Re-export PolicyId so consumers don't need to depend on sidechain-domain directly
+pub use sidechain_domain::PolicyId;
 
 /// Asset identifier for cNIGHT tokens.
 #[derive(Debug, Clone, Serialize, Deserialize)]

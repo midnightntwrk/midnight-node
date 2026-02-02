@@ -638,7 +638,7 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use sidechain_domain::PolicyId;
+	use midnight_primitives_ics_observation::PolicyId;
 	use std::str::FromStr;
 
 	#[tokio::test]
