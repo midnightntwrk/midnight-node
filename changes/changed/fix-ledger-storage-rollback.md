@@ -7,5 +7,5 @@ This works as long as the block does not rollback - in the case of a rollback, s
 
 This change move the ledger storage (re)initialization to the beginning of each block - and runs it only if the initialized ledger storage version != the requested one.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/586
 Ticket: https://shielded.atlassian.net/browse/PM-21682
