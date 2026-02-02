@@ -295,10 +295,6 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_block: BlockNumberFor<T>) -> Weight {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
-
-			LedgerApi::pre_fetch_storage(&state_key).expect("Failed to pre-fetch storage");
-
 			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
