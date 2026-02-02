@@ -223,8 +223,6 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
-    ARG USE_CNIGHT_GENESIS=false
-    ARG USE_ICS_CONFIG=false
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
@@ -233,24 +231,16 @@ rebuild-genesis-state:
     # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy ledger parameters config and optionally cnight-config and ics-config (undeployed uses res/dev/)
+    # Copy genesis config files (undeployed uses res/dev/)
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
-        IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
-            COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
-        END
-        IF [ "${USE_ICS_CONFIG}" = "true" ]
-            COPY res/dev/ics-config.json /genesis-config/ics-config.json
-        END
+        COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/dev/ics-config.json /genesis-config/ics-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
-        IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
-            COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
-        END
-        IF [ "${USE_ICS_CONFIG}" = "true" ]
-            COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
-        END
+        COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -267,35 +257,12 @@ rebuild-genesis-state:
 
     RUN mkdir -p /res/genesis
     IF [ -f /secrets/genesis-seeds.json ]
-        IF [ "${USE_CNIGHT_GENESIS}" = "true" ] && [ "${USE_ICS_CONFIG}" = "true" ]
-            RUN /midnight-node-toolkit generate-genesis \
-                --network ${NETWORK} \
-                --seeds-file /secrets/genesis-seeds.json \
-                --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                --cnight-generates-dust-config /genesis-config/cnight-config.json \
-                --ics-config /genesis-config/ics-config.json
-        ELSE
-            IF [ "${USE_CNIGHT_GENESIS}" = "true" ]
-                RUN /midnight-node-toolkit generate-genesis \
-                    --network ${NETWORK} \
-                    --seeds-file /secrets/genesis-seeds.json \
-                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                    --cnight-generates-dust-config /genesis-config/cnight-config.json
-            ELSE
-                IF [ "${USE_ICS_CONFIG}" = "true" ]
-                    RUN /midnight-node-toolkit generate-genesis \
-                        --network ${NETWORK} \
-                        --seeds-file /secrets/genesis-seeds.json \
-                        --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                        --ics-config /genesis-config/ics-config.json
-                ELSE
-                    RUN /midnight-node-toolkit generate-genesis \
-                        --network ${NETWORK} \
-                        --seeds-file /secrets/genesis-seeds.json \
-                        --ledger-parameters-config /genesis-config/ledger-parameters-config.json
-                END
-            END
-        END
+        RUN /midnight-node-toolkit generate-genesis \
+            --network ${NETWORK} \
+            --seeds-file /secrets/genesis-seeds.json \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -475,8 +442,6 @@ rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true \
-        --USE_CNIGHT_GENESIS=true \
-        --USE_ICS_CONFIG=true \
         --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
@@ -505,8 +470,6 @@ rebuild-genesis-state-qanet:
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     BUILD +rebuild-genesis-state \
         --NETWORK=qanet \
-        --USE_CNIGHT_GENESIS=true \
-        --USE_ICS_CONFIG=true \
         --RNG_SEED=${RNG_SEED}
 
 # rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!

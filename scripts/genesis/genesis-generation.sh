@@ -327,8 +327,6 @@ run_ledger_state_generation() {
     fi
 
     # Use the network-specific Earthly target (e.g., +rebuild-genesis-state-qanet)
-    # These targets define the correct USE_CNIGHT_GENESIS and USE_ICS_CONFIG values
-    # and accept RNG_SEED as an argument
     local earthly_target
     earthly_target=$(get_genesis_state_target "$network")
 
