@@ -857,7 +857,7 @@ test-pallet-fixtures:
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 # NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
-test-toolkit:
+build-test-toolkit:
     ARG NATIVEARCH
     ARG GITHUB_TOKEN
     FROM +prep
@@ -895,13 +895,25 @@ test-toolkit:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js) llvm-cov
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
-        -E 'package(midnight-node-toolkit)'
-    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
-    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
+    COPY scripts/test-toolkit.sh /test-toolkit.sh
+    ENTRYPOINT ["/test-toolkit.sh"]
+    SAVE IMAGE
 
-    # SAVE ARTIFACT --if-exists ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
+test-toolkit:
+    ARG NATIVEARCH
+    FROM earthly/dind:alpine
+    RUN mkdir -p /artifacts
+    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        # Use --network=host so testcontainers postgres is accessible via localhost
+        RUN docker run \
+            --network=host \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+            test-toolkit:latest
+    END
+    SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!

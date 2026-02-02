@@ -45,11 +45,16 @@ num_cpus = "1.17.0"
 redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+sha2.workspace = true
+zstd = "0.13"
 
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
 trycmd = "0.15.10"
+testcontainers = "0.25"
+serde_yaml = "0.9"
+shellexpand = "3"
 
 [lints]
 workspace = true
