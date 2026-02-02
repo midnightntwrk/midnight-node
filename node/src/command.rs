@@ -18,6 +18,7 @@ use crate::{
 	cli::{self, Cli, Subcommand},
 	cnight_genesis::generate_cnight_genesis,
 	federated_authority_genesis::generate_federated_authority_genesis,
+	ics_genesis::{IcsAddresses, generate_ics_genesis},
 	permissioned_candidates_genesis::{
 		PcChainConfig, PermissionedCandidatesAddresses, generate_permissioned_candidates_genesis,
 	},
@@ -514,6 +515,39 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					.await
 					.map_err(|e| {
 						sc_cli::Error::Input(format!("cNGD genesis generation failed: {e}"))
+					})?;
+
+				Ok(())
+			})
+		},
+		Subcommand::GenerateIcsGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("ics-config.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let ics_addresses_str = std::fs::read_to_string(&ics_addresses)?;
+				let addresses: IcsAddresses =
+					serde_json::from_str(&ics_addresses_str).map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read ICS addresses file as json: {e:?}"
+						))
+					})?;
+				generate_ics_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
 					})?;
 
 				Ok(())

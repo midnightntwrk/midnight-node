@@ -57,6 +57,12 @@ pub struct ChainSpecCfg {
 	pub chainspec_cnight_genesis: Option<String>,
 
 	/// Required for generic Live network chain spec
+	/// ICS (Illiquid Circulation Supply) config file e.g. devnet/ics-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_ics_config: Option<String>,
+
+	/// Required for generic Live network chain spec
 	/// Members of the Council Governance Authority
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
@@ -89,6 +95,7 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		|| cfg.chainspec_chain_type.is_some()
 		|| cfg.chainspec_pc_chain_config.is_some()
 		|| cfg.chainspec_cnight_genesis.is_some()
+		|| cfg.chainspec_ics_config.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
 		|| cfg.chainspec_system_parameters_config.is_some()
 		|| cfg.chainspec_permissioned_candidates_config.is_some()
@@ -114,6 +121,9 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		}
 		if cfg.chainspec_cnight_genesis.is_none() {
 			missing.push("chainspec_cnight_genesis".to_string());
+		}
+		if cfg.chainspec_ics_config.is_none() {
+			missing.push("chainspec_ics_config".to_string());
 		}
 		if cfg.chainspec_federated_authority_config.is_none() {
 			missing.push("chainspec_federated_authority_config".to_string());

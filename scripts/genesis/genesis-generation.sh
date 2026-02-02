@@ -118,11 +118,24 @@ get_security_parameter() {
     fi
 }
 
-# Function to check if network uses cnight genesis
-uses_cnight_genesis() {
+# Function to check if network uses cNIGHT config for DUST address registration
+uses_cnight_config() {
     local network="$1"
     case "$network" in
-        qanet)
+        qanet|undeployed)
+            return 0  # true
+            ;;
+        *)
+            return 1  # false
+            ;;
+    esac
+}
+
+# Function to check if network uses ICS config for treasury funding
+uses_ics_config() {
+    local network="$1"
+    case "$network" in
+        qanet|undeployed)
             return 0  # true
             ;;
         *)
@@ -141,6 +154,7 @@ show_input_files() {
 
     local files=(
         "cnight-addresses.json"
+        "ics-addresses.json"
         "ledger-parameters-config.json"
         "federated-authority-addresses.json"
         "permissioned-candidates-addresses.json"
@@ -184,23 +198,10 @@ show_genesis_files() {
     echo ""
 }
 
-# Function to get network-specific Earthly args for rebuild-genesis-state
-get_genesis_state_args() {
+# Function to get the Earthly target name for a network
+get_genesis_state_target() {
     local network="$1"
-
-    # These match the network-specific targets in Earthfile
-    case "$network" in
-        qanet)
-            echo "--GENERATE_TEST_TXS=false --USE_CNIGHT_GENESIS=true"
-            ;;
-        devnet|govnet|node-dev-01|preview|preprod)
-            echo "--GENERATE_TEST_TXS=false --USE_CNIGHT_GENESIS=false"
-            ;;
-        *)
-            # Default: generate test txs, no cnight genesis
-            echo "--GENERATE_TEST_TXS=true --USE_CNIGHT_GENESIS=false"
-            ;;
-    esac
+    echo "rebuild-genesis-state-$network"
 }
 
 # Function to print step summary
@@ -239,7 +240,7 @@ ensure_node_binary() {
     echo "$node_binary"
 }
 
-# Function to run cnight genesis generation
+# Function to run cNIGHT genesis generation (for DUST address registration)
 run_cnight_genesis_generation() {
     local network="$1"
     local db_connection="$2"
@@ -254,7 +255,7 @@ run_cnight_genesis_generation() {
     echo -e "  ${CYAN}--cardano-tip $cardano_tip${NC}"
     echo ""
 
-    print_info "Running cnight genesis generation..."
+    print_info "Running cNIGHT genesis generation..."
     echo ""
 
     cd "$REPO_ROOT"
@@ -264,18 +265,51 @@ run_cnight_genesis_generation() {
 
     if "$node_binary" generate-c-night-genesis --cardano-tip "$cardano_tip"; then
         echo ""
-        print_success "cnight genesis generation completed!"
+        print_success "cNIGHT genesis generation completed!"
         echo ""
         echo "File created/updated:"
         print_file "$REPO_ROOT/res/$network/cnight-config.json"
 
-        print_step_summary "Step 1a: cNight Genesis Generation" \
-            "Network: $network" \
-            "Cardano Tip: $cardano_tip"
+        return 0
+    else
+        print_error "cNIGHT genesis generation failed!"
+        return 1
+    fi
+}
+
+# Function to run ICS genesis generation (for treasury funding)
+run_ics_genesis_generation() {
+    local network="$1"
+    local db_connection="$2"
+    local cardano_tip="$3"
+    local node_binary="$4"
+
+    echo -e "${BOLD}Command to execute:${NC}"
+    echo -e "  ${CYAN}CFG_PRESET=$network \\\\${NC}"
+    echo -e "  ${CYAN}ALLOW_NON_SSL=true \\\\${NC}"
+    echo -e "  ${CYAN}DB_SYNC_POSTGRES_CONNECTION_STRING=\"...\" \\\\${NC}"
+    echo -e "  ${CYAN}$node_binary generate-ics-genesis \\\\${NC}"
+    echo -e "  ${CYAN}--cardano-tip $cardano_tip${NC}"
+    echo ""
+
+    print_info "Running ICS genesis generation..."
+    echo ""
+
+    cd "$REPO_ROOT"
+    export CFG_PRESET="$network"
+    export ALLOW_NON_SSL=true
+    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
+
+    if "$node_binary" generate-ics-genesis --cardano-tip "$cardano_tip"; then
+        echo ""
+        print_success "ICS genesis generation completed!"
+        echo ""
+        echo "File created/updated:"
+        print_file "$REPO_ROOT/res/$network/ics-config.json"
 
         return 0
     else
-        print_error "cnight genesis generation failed!"
+        print_error "ICS genesis generation failed!"
         return 1
     fi
 }
@@ -292,21 +326,18 @@ run_ledger_state_generation() {
         echo ""
     fi
 
-    # Use the generic +rebuild-genesis-state target with all args to allow RNG_SEED override
-    local network_args
-    network_args=$(get_genesis_state_args "$network")
+    # Use the network-specific Earthly target (e.g., +rebuild-genesis-state-qanet)
+    local earthly_target
+    earthly_target=$(get_genesis_state_target "$network")
 
     echo -e "${BOLD}Command to execute:${NC}"
-    echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +rebuild-genesis-state \\\\${NC}"
-    echo -e "  ${CYAN}  --NETWORK=$network \\\\${NC}"
-    echo -e "  ${CYAN}  $network_args \\\\${NC}"
-    echo -e "  ${CYAN}  --RNG_SEED=$rng_seed${NC}"
+    echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
     echo ""
 
     print_info "Running Earthly target..."
     echo ""
 
-    local earthly_cmd="earthly --secret GITHUB_TOKEN -P +rebuild-genesis-state --NETWORK=$network $network_args --RNG_SEED=$rng_seed"
+    local earthly_cmd="earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed"
 
     cd "$REPO_ROOT"
     if eval "$earthly_cmd"; then
@@ -424,7 +455,7 @@ run_partial_genesis_config_generation() {
         "Network: $network" \
         "Security Parameter: $security_param" \
         "Cardano Tip: $cardano_tip" \
-        "Note: cnight-config.json was preserved from Step 1a"
+        "Note: ics-config.json was preserved from Step 1a"
 
     return 0
 }
@@ -440,6 +471,7 @@ run_chainspec_generation() {
     print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
     print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
     print_file "$REPO_ROOT/res/$network/cnight-config.json"
+    print_file "$REPO_ROOT/res/$network/ics-config.json"
     print_file "$REPO_ROOT/res/genesis/genesis_block_$network.mn"
     print_file "$REPO_ROOT/res/genesis/genesis_state_$network.mn"
     echo ""
@@ -541,11 +573,12 @@ main() {
     echo -e "  RNG Seed:             ${CYAN}$rng_seed${NC}"
     echo ""
 
-    # Track completed steps
-    local step1a_completed=false
+    # Track completed steps and config generation
     local step1_completed=false
     local step2_completed=false
     local step3_completed=false
+    local cnight_config_generated=false
+    local ics_config_generated=false
 
     # Ensure node binary exists (needed for genesis config generation)
     local node_binary
@@ -561,8 +594,11 @@ main() {
 
     echo "Input files used for ledger state generation:"
     print_file "$REPO_ROOT/res/$network/ledger-parameters-config.json"
-    if uses_cnight_genesis "$network"; then
+    if uses_cnight_config "$network"; then
         print_file "$REPO_ROOT/res/$network/cnight-config.json"
+    fi
+    if uses_ics_config "$network"; then
+        print_file "$REPO_ROOT/res/$network/ics-config.json"
     fi
     echo ""
 
@@ -579,9 +615,11 @@ main() {
     if confirm "Run Step 1 (Ledger State Generation)?" "n"; then
         echo ""
 
-        # Check if this network uses cnight genesis
-        if uses_cnight_genesis "$network"; then
-            echo -e "${YELLOW}Note:${NC} Network ${CYAN}$network${NC} uses cNight genesis."
+        local can_proceed=true
+
+        # Check if this network uses cNIGHT config (for DUST address registration)
+        if uses_cnight_config "$network"; then
+            echo -e "${YELLOW}Note:${NC} Network ${CYAN}$network${NC} uses cNIGHT config for DUST address registration."
             echo "This requires cnight-config.json to be generated from smart contract data."
             echo ""
 
@@ -591,42 +629,87 @@ main() {
                 if confirm "Regenerate cnight-config.json?" "n"; then
                     run_cnight_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
                     local result=$?
-                    if [[ $result -eq 0 ]]; then
-                        step1a_completed=true
-                    elif [[ $result -eq 1 ]]; then
-                        print_error "cnight genesis generation failed. Exiting."
+                    if [[ $result -ne 0 ]]; then
+                        print_error "cNIGHT genesis generation failed. Exiting."
                         exit 1
                     fi
+                    cnight_config_generated=true
                 fi
             else
                 print_warning "cnight-config.json not found. It must be generated first."
                 echo ""
                 run_cnight_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
                 local result=$?
-                if [[ $result -eq 0 ]]; then
-                    step1a_completed=true
-                elif [[ $result -eq 1 ]]; then
-                    print_error "cnight genesis generation failed. Exiting."
-                    exit 1
-                elif [[ $result -eq 2 ]]; then
-                    print_error "cnight-config.json is required for $network. Cannot continue with Step 1."
-                    print_info "Skipping Step 1."
-                    # Don't exit, just skip Step 1
+                if [[ $result -ne 0 ]]; then
+                    print_error "cNIGHT genesis generation failed."
+                    can_proceed=false
+                else
+                    cnight_config_generated=true
+                fi
+            fi
+            echo ""
+        fi
+
+        # Check if this network uses ICS config (for treasury funding)
+        if uses_ics_config "$network"; then
+            echo -e "${YELLOW}Note:${NC} Network ${CYAN}$network${NC} uses ICS config for treasury funding."
+            echo "This requires ics-config.json to be generated from smart contract data."
+            echo ""
+
+            # Check if ics-config.json exists
+            if [[ -f "$REPO_ROOT/res/$network/ics-config.json" ]]; then
+                print_info "Existing ics-config.json found."
+                if confirm "Regenerate ics-config.json?" "n"; then
+                    run_ics_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+                    local result=$?
+                    if [[ $result -ne 0 ]]; then
+                        print_error "ICS genesis generation failed. Exiting."
+                        exit 1
+                    fi
+                    ics_config_generated=true
+                fi
+            else
+                print_warning "ics-config.json not found. It must be generated first."
+                echo ""
+                run_ics_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+                local result=$?
+                if [[ $result -ne 0 ]]; then
+                    print_error "ICS genesis generation failed."
+                    can_proceed=false
+                else
+                    ics_config_generated=true
                 fi
             fi
             echo ""
         fi
 
         # Only run ledger state generation if we have all required files
-        if ! uses_cnight_genesis "$network" || [[ -f "$REPO_ROOT/res/$network/cnight-config.json" ]]; then
-            run_ledger_state_generation "$network" "$rng_seed"
-            local result=$?
-            if [[ $result -eq 0 ]]; then
-                step1_completed=true
-            elif [[ $result -eq 1 ]]; then
-                print_error "Step 1 failed. Exiting."
-                exit 1
+        if [[ "$can_proceed" == "true" ]]; then
+            # Check that required config files exist
+            local missing_files=false
+            if uses_cnight_config "$network" && [[ ! -f "$REPO_ROOT/res/$network/cnight-config.json" ]]; then
+                print_error "cnight-config.json is required but missing."
+                missing_files=true
             fi
+            if uses_ics_config "$network" && [[ ! -f "$REPO_ROOT/res/$network/ics-config.json" ]]; then
+                print_error "ics-config.json is required but missing."
+                missing_files=true
+            fi
+
+            if [[ "$missing_files" == "true" ]]; then
+                print_error "Cannot proceed with ledger state generation due to missing config files."
+            else
+                run_ledger_state_generation "$network" "$rng_seed"
+                local result=$?
+                if [[ $result -eq 0 ]]; then
+                    step1_completed=true
+                elif [[ $result -eq 1 ]]; then
+                    print_error "Step 1 failed. Exiting."
+                    exit 1
+                fi
+            fi
+        else
+            print_error "Cannot proceed with ledger state generation due to config generation failures."
         fi
     else
         print_info "Skipping Step 1."
@@ -643,23 +726,35 @@ main() {
     print_file "$REPO_ROOT/res/$network/federated-authority-addresses.json -> federated-authority-config.json"
     print_file "$REPO_ROOT/res/$network/permissioned-candidates-addresses.json -> permissioned-candidates-config.json"
     print_file "$REPO_ROOT/res/$network/cnight-addresses.json -> cnight-config.json"
+    print_file "$REPO_ROOT/res/$network/ics-addresses.json -> ics-config.json (for treasury funding)"
     echo ""
 
     if confirm "Run Step 2 (Genesis Config Generation)?" "y"; then
         echo ""
 
-        # If cnight-config.json was generated in Step 1a, ask if user wants to keep it or regenerate
-        local skip_cnight_in_step2=false
-        if [[ "$step1a_completed" == "true" ]]; then
-            print_info "cnight-config.json was already generated in Step 1a."
-            if confirm "Keep the existing cnight-config.json? (No will regenerate it)" "y"; then
-                skip_cnight_in_step2=true
-                print_info "Will keep existing cnight-config.json and only generate federated-authority-config.json and permissioned-candidates-config.json"
+        # Check if configs were already generated in Step 1
+        local skip_configs_in_step2=false
+        if [[ "$cnight_config_generated" == "true" ]] || [[ "$ics_config_generated" == "true" ]]; then
+            local generated_files=""
+            if [[ "$cnight_config_generated" == "true" ]]; then
+                generated_files="cnight-config.json"
+            fi
+            if [[ "$ics_config_generated" == "true" ]]; then
+                if [[ -n "$generated_files" ]]; then
+                    generated_files="$generated_files and ics-config.json"
+                else
+                    generated_files="ics-config.json"
+                fi
+            fi
+            print_info "$generated_files was already generated in Step 1."
+            if confirm "Keep the existing config files? (No will regenerate all)" "y"; then
+                skip_configs_in_step2=true
+                print_info "Will keep existing config files and only generate federated-authority-config.json and permissioned-candidates-config.json"
             fi
             echo ""
         fi
 
-        if [[ "$skip_cnight_in_step2" == "true" ]]; then
+        if [[ "$skip_configs_in_step2" == "true" ]]; then
             # Run only federated-authority and permissioned-candidates generation
             run_partial_genesis_config_generation "$network" "$db_connection" "$cardano_tip" "$security_param" "$node_binary"
         else
@@ -706,9 +801,15 @@ main() {
     echo -e "Summary for ${BOLD}$network${NC}:"
     echo ""
 
-    if [[ "$step1a_completed" == "true" ]]; then
-        echo -e "  ${GREEN}✓${NC} Step 1a: cNight Genesis Generation"
-        print_file "$REPO_ROOT/res/$network/cnight-config.json"
+    # Show config files generated in Step 1
+    if [[ "$cnight_config_generated" == "true" ]] || [[ "$ics_config_generated" == "true" ]]; then
+        echo -e "  ${GREEN}✓${NC} Config files generated for ledger state:"
+        if [[ "$cnight_config_generated" == "true" ]]; then
+            print_file "$REPO_ROOT/res/$network/cnight-config.json"
+        fi
+        if [[ "$ics_config_generated" == "true" ]]; then
+            print_file "$REPO_ROOT/res/$network/ics-config.json"
+        fi
         echo ""
     fi
 
@@ -724,6 +825,7 @@ main() {
     if [[ "$step2_completed" == "true" ]]; then
         echo -e "  ${GREEN}✓${NC} Step 2: Genesis Config Generation"
         print_file "$REPO_ROOT/res/$network/cnight-config.json"
+        print_file "$REPO_ROOT/res/$network/ics-config.json"
         print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
         print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
     else
@@ -741,7 +843,7 @@ main() {
     fi
     echo ""
 
-    if [[ "$step1a_completed" == "true" ]] || [[ "$step1_completed" == "true" ]] || [[ "$step2_completed" == "true" ]] || [[ "$step3_completed" == "true" ]]; then
+    if [[ "$cnight_config_generated" == "true" ]] || [[ "$ics_config_generated" == "true" ]] || [[ "$step1_completed" == "true" ]] || [[ "$step2_completed" == "true" ]] || [[ "$step3_completed" == "true" ]]; then
         print_success "All selected steps completed successfully!"
     else
         print_warning "No steps were executed."

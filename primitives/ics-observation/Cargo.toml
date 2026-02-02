@@ -1,0 +1,19 @@
+[package]
+name = "midnight-primitives-ics-observation"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight ICS (Illiquid Circulation Supply) observation primitives"
+license-file.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+sidechain-domain = { workspace = true }
+thiserror = { workspace = true, optional = true }
+
+[features]
+default = ["std"]
+std = [
+    "serde/std",
+    "sidechain-domain/std",
+    "thiserror",
+]

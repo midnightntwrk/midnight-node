@@ -122,6 +122,21 @@ pub struct GenesisConfigCmd {
 	pub permissioned_candidates_output: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+pub struct IcsGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses. Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long)]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the ICS genesis config. Defaults to res/<CFG_PRESET>/ics-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -141,6 +156,11 @@ pub enum Subcommand {
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
+
+	/// Generate ICS (Illiquid Circulation Supply) genesis file. This queries the ICS forever
+	/// contract on Cardano to determine the total cNIGHT locked, which will be allocated to
+	/// the Midnight treasury at genesis.
+	GenerateIcsGenesis(IcsGenesisCmd),
 
 	/// Generate Federed Authority Genesis file.
 	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),

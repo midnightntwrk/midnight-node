@@ -327,10 +327,12 @@ export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 comp
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-config.json
+export CHAINSPEC_ICS_CONFIG=res/qanet/ics-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
 export CHAINSPEC_REGISTERED_CANDIDATES_ADDRESSES=/tmp/registered-candidates-addresses.json
+
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 
