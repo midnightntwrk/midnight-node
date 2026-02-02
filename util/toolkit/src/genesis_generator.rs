@@ -110,7 +110,7 @@ impl GenesisGenerator {
 		network_id: &str,
 		proof_server: Option<String>,
 		funding: FundingArgs,
-		seeds: &[WalletSeed],
+		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
 		ics_config: Option<IcsConfig>,
 		ledger_parameters: Option<LedgerParameters>,
@@ -138,13 +138,14 @@ impl GenesisGenerator {
 		network_id: &str,
 		proof_server: Option<String>,
 		funding: &FundingArgs,
-		seeds: &[WalletSeed],
+		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
 		ics_config: Option<IcsConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
-		let wallets: Vec<Wallet<DefaultDB>> =
-			seeds.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect();
+		let wallets: Vec<Wallet<DefaultDB>> = seeds
+			.map(|s| s.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect())
+			.unwrap_or_default();
 
 		// Source of randomness
 		let mut rng = StdRng::from_seed(seed);
@@ -168,31 +169,34 @@ impl GenesisGenerator {
 			self.fund_treasury(config, &genesis_block_context)?;
 		}
 
-		// Distribute NIGHT as rewards to all wallets
-		self.distribute_night(&genesis_block_context, funding, &wallets, &mut rng)?;
+		// Only fund faucet wallets if seeds were provided
+		if !wallets.is_empty() {
+			// Distribute NIGHT as rewards to all wallets
+			self.distribute_night(&genesis_block_context, funding, &wallets, &mut rng)?;
 
-		// Set fees to zero to simplify setup logic.
-		// This lets us claim the full requested amount of NIGHT,
-		// and register DUST addresses without waiting for DUST to accumulate.
-		let no_fee_parameters = without_fees(&original_parameters);
-		self.set_parameters(no_fee_parameters, &genesis_block_context)?;
+			// Set fees to zero to simplify setup logic.
+			// This lets us claim the full requested amount of NIGHT,
+			// and register DUST addresses without waiting for DUST to accumulate.
+			let no_fee_parameters = without_fees(&original_parameters);
+			self.set_parameters(no_fee_parameters, &genesis_block_context)?;
 
-		// Register DUST addresses for our wallets
-		self.register_dust_addresses(
-			&genesis_block_context,
-			funding,
-			wallets.clone(),
-			&mut rng,
-			network_id,
-			proof_server,
-		)
-		.await?;
+			// Register DUST addresses for our wallets
+			self.register_dust_addresses(
+				&genesis_block_context,
+				funding,
+				wallets.clone(),
+				&mut rng,
+				network_id,
+				proof_server,
+			)
+			.await?;
 
-		// Make our wallets claim their rewards; now they have NIGHT
-		self.claim_rewards(&genesis_block_context, funding, &wallets, &mut rng)?;
+			// Make our wallets claim their rewards; now they have NIGHT
+			self.claim_rewards(&genesis_block_context, funding, &wallets, &mut rng)?;
 
-		// Restore fees now that we've finished.
-		self.set_parameters(original_parameters, &genesis_block_context)?;
+			// Restore fees now that we've finished.
+			self.set_parameters(original_parameters, &genesis_block_context)?;
+		}
 
 		if let Some(system_tx) = cnight_system_tx {
 			self.apply_system_tx(system_tx.clone(), &genesis_block_context)?;
@@ -634,6 +638,8 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use sidechain_domain::PolicyId;
+	use std::str::FromStr;
 
 	#[tokio::test]
 	async fn test_genesis_with_ics_config() {
@@ -663,7 +669,10 @@ mod test {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
 			asset: IcsAsset {
-				policy_id: "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1".to_string(),
+				policy_id: PolicyId::from_str(
+					"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+				)
+				.expect("valid policy ID"),
 				asset_name: "".to_string(),
 			},
 			utxos: vec![
@@ -681,7 +690,7 @@ mod test {
 			network_id,
 			proof_server,
 			funding,
-			&seeds,
+			Some(&seeds),
 			None,
 			Some(ics_config),
 			None, // no custom ledger parameters
@@ -727,7 +736,7 @@ mod test {
 			network_id,
 			proof_server,
 			funding,
-			&seeds,
+			Some(&seeds),
 			None,
 			None,
 			None,

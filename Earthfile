@@ -223,12 +223,14 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
+    ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
+    # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
+    # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # Copy genesis config files (undeployed uses res/dev/)
@@ -256,10 +258,22 @@ rebuild-genesis-state:
         fi
 
     RUN mkdir -p /res/genesis
-    IF [ -f /secrets/genesis-seeds.json ]
+    # Generate genesis with or without faucet wallet funding
+    # - If FUND_FAUCET_WALLETS=true and seeds file exists: fund faucet wallets
+    # - If FUND_FAUCET_WALLETS=false: generate genesis without faucet wallet funding (e.g., mainnet)
+    # - If no seeds file and FUND_FAUCET_WALLETS=true: use existing genesis state
+    IF [ "${FUND_FAUCET_WALLETS}" = "true" ] && [ -f /secrets/genesis-seeds.json ]
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
             --seeds-file /secrets/genesis-seeds.json \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json
+        RUN cp out/genesis_*.mn /res/genesis/
+    ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
+        RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
+        RUN /midnight-node-toolkit generate-genesis \
+            --network ${NETWORK} \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json

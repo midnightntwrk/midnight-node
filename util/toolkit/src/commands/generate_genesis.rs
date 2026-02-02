@@ -31,9 +31,10 @@ pub struct GenerateGenesisArgs {
 	// Proof Server Host
 	#[arg(long, short)]
 	proof_server: Option<String>,
-	/// File containing the wallet seeds to fund
+	/// File containing the wallet seeds to fund. Optional - if not provided, no faucet wallets
+	/// will be funded (appropriate for mainnet).
 	#[arg(long)]
-	seeds_file: PathBuf,
+	seeds_file: Option<PathBuf>,
 	/// File containing cNight generates Dust config. The system_tx in this file is
 	/// applied to the LedgerState.
 	#[arg(long)]
@@ -61,19 +62,28 @@ pub async fn execute(
 
 	println!("generating genesis for network {}...", &args.network);
 
-	// Parse the seeds file
-	let seeds_str = std::fs::read_to_string(args.seeds_file)?;
-	let seeds_json: serde_json::Value = serde_json::from_str(&seeds_str)?;
-	let seeds: Result<Vec<WalletSeed>, Box<dyn std::error::Error + Send + Sync>> = seeds_json
-		.as_object()
-		.unwrap()
-		.iter()
-		.map(|(_k, v)| {
-			let wallet_seed_str = v.as_str().ok_or("seeds file object value was not a string")?;
-			let wallet_seed = WalletSeed::try_from_hex_str(wallet_seed_str)?;
-			Ok(wallet_seed)
-		})
-		.collect();
+	// Parse the seeds file (if provided)
+	let seeds: Option<Vec<WalletSeed>> = if let Some(seeds_file) = args.seeds_file {
+		let seeds_str = std::fs::read_to_string(&seeds_file)?;
+		let seeds_json: serde_json::Value = serde_json::from_str(&seeds_str)?;
+		let parsed_seeds: Result<Vec<WalletSeed>, Box<dyn std::error::Error + Send + Sync>> =
+			seeds_json
+				.as_object()
+				.unwrap()
+				.iter()
+				.map(|(_k, v)| {
+					let wallet_seed_str =
+						v.as_str().ok_or("seeds file object value was not a string")?;
+					let wallet_seed = WalletSeed::try_from_hex_str(wallet_seed_str)?;
+					Ok(wallet_seed)
+				})
+				.collect();
+		println!("Funding {} faucet wallets", parsed_seeds.as_ref().map(|s| s.len()).unwrap_or(0));
+		Some(parsed_seeds?)
+	} else {
+		println!("No seeds file provided - skipping faucet wallet funding");
+		None
+	};
 
 	// Parse the cNight generates dust config file
 	let cnight_system_tx: Option<SystemTransaction> = {
@@ -110,7 +120,7 @@ pub async fn execute(
 		&args.network,
 		args.proof_server,
 		args.funding,
-		&seeds?,
+		seeds.as_deref(),
 		cnight_system_tx,
 		ics_config,
 		ledger_parameters,
