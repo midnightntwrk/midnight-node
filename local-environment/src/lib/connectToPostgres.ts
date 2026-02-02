@@ -12,8 +12,9 @@
 // limitations under the License.
 
 import net from "net";
-import { execSync, spawn } from "child_process";
+import { execSync } from "child_process";
 import { writeFileSync } from "fs";
+import { startPortForwardWatchdog } from "./portForwardWatchdog";
 
 const START_PORT = 5432;
 const LABEL_SELECTORS = [
@@ -70,16 +71,13 @@ function getPostgresPods(ns: string): string[] {
 }
 
 function portForwardPod(ns: string, pod: string, localPort: number) {
-  const kubectl = spawn(
-    "kubectl",
-    ["port-forward", `-n`, ns, `pod/${pod}`, `${localPort}:5432`],
-    {
-      stdio: "inherit",
-      detached: true,
-    },
-  );
-
-  kubectl.unref();
+  startPortForwardWatchdog({
+    namespace: ns,
+    podName: pod,
+    localPort,
+    remotePort: 5432,
+    label: pod,
+  });
 }
 
 function isPortInUse(port: number): Promise<boolean> {
