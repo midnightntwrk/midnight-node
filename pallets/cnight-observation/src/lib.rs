@@ -590,8 +590,12 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
-			InherentExecutedThisBlock::<T>::kill();
+			// Pre-account for on_finalize weight (storage write to reset inherent flag)
 			T::DbWeight::get().writes(1)
+		}
+
+		fn on_finalize(_n: BlockNumberFor<T>) {
+			InherentExecutedThisBlock::<T>::kill();
 		}
 	}
 
