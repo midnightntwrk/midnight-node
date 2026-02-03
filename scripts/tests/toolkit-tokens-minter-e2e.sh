@@ -219,7 +219,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --zswap-state-file "$outdir/$mint_shielded_zswap_filename" \
 
 show_wallet_output=$(
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    docker run --rm -e RUST_BACKTRACE=1  --network container:midnight-node-contracts \
+     "$TOOLKIT_IMAGE" \
       show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001"
 )
 
