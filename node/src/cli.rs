@@ -40,7 +40,9 @@ pub struct Cli {
 
 #[derive(Debug, Parser)]
 pub struct CNightGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
 
@@ -55,7 +57,9 @@ pub struct CNightGenesisCmd {
 
 #[derive(Debug, Parser)]
 pub struct FederatedAuthorityGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
 
@@ -70,7 +74,9 @@ pub struct FederatedAuthorityGenesisCmd {
 
 #[derive(Debug, Parser)]
 pub struct PermissionedCandidatesGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
 
@@ -89,7 +95,9 @@ pub struct PermissionedCandidatesGenesisCmd {
 
 #[derive(Debug, Parser)]
 pub struct GenesisConfigCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
 
@@ -124,7 +132,9 @@ pub struct GenesisConfigCmd {
 
 #[derive(Debug, Parser)]
 pub struct IcsGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
 

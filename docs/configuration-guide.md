@@ -86,6 +86,7 @@ NAME:          chainspec_federated_authority_config
 NAME:          chainspec_system_parameters_config
 NAME:          chainspec_permissioned_candidates_config
 NAME:          chainspec_registered_candidates_addresses
+NAME:          chainspec_ics_config
 ```
 
 Once all those config values are defined, running the node with `build-spec` will export the chainspec:
@@ -112,6 +113,7 @@ chainspec_federated_authority_config = "res/qanet/federated-authority-config.jso
 chainspec_system_parameters_config = "res/qanet/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/qanet/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/qanet/registered-candidates-addresses.json"
+chainspec_ics_config = "res/qanet/ics-config.json"
 ```
 
 The process for building chainspecs is automated via Earthly build commands:
@@ -121,9 +123,13 @@ $ earthly +rebuild-chainspec --NETWORK=<network>
 $ earthly +rebuild-all-chainspecs
 ```
 
-## `genesis_state_<network>mn` and `genesis_block_<network>.mn`: Building Ledger state
+For a complete guide on genesis generation workflow, including the dependency sequence between config files, ledger state, and chainspec generation, see the [Genesis Generation Guide](genesis/README.md).
+
+## `genesis_state_<network>.mn` and `genesis_block_<network>.mn`: Building Ledger state
 
 Each chain requires a genesis ledger state. All test networks contain a set of seeds pre-funded with NIGHT, Shielded tokens, and DUST. To generate genesis for these test networks, we must have the genesis seeds for the networks on the filesystem.
+
+**Important:** Before generating ledger state, you must first generate the config files (`cnight-config.json`, `ics-config.json`) from their corresponding address files. See [Genesis Generation Guide](genesis/README.md) for the complete dependency sequence.
 
 The exception to this is the `undeployed` network, which uses the following well-known seeds:
 
@@ -176,6 +182,40 @@ $ docker run --rm midnightntwrk/midnight-node:latest-main generate-c-night-genes
 When `CFG_PRESET` is set, the command uses default paths:
 - `--cnight-addresses` defaults to `res/<CFG_PRESET>/cnight-addresses.json`
 - `--output` defaults to `res/<CFG_PRESET>/cnight-config.json`
+
+## `ics-config.json`
+
+Contains the Illiquid Circulation Supply (ICS) configuration for treasury funding. This file tracks cNIGHT tokens locked in the ICS validator contract on Cardano, which determines the initial treasury allocation at genesis.
+
+The file includes:
+- `illiquid_circulation_supply_validator_address`: The Cardano address of the ICS validator contract
+- `asset`: The cNIGHT token identifier (policy_id and asset_name)
+- `utxos`: List of observed UTXOs at the validator address
+- `total_amount`: Total cNIGHT locked in the validator
+
+Generate this file using the `generate-ics-genesis` command:
+
+```sh
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main generate-ics-genesis --cardano-tip <block_hash>
+```
+
+When `CFG_PRESET` is set, the command uses default paths:
+- `--ics-addresses` defaults to `res/<CFG_PRESET>/ics-addresses.json`
+- `--output` defaults to `res/<CFG_PRESET>/ics-config.json`
+
+## `ics-addresses.json`
+
+Input file for `generate-ics-genesis`. Contains the ICS validator address and token identifier:
+
+```json
+{
+    "illiquid_circulation_supply_validator_address": "<cardano_address>",
+    "asset": {
+        "policy_id": "<policy_id_hex>",
+        "asset_name": "NIGHT"
+    }
+}
+```
 
 ## `federated-authority-config.json`
 
@@ -273,10 +313,19 @@ $ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main ge
 
 This command generates:
 - `cnight-config.json`
+- `ics-config.json`
 - `federated-authority-config.json`
 - `permissioned-candidates-config.json`
 
 All output paths default to `res/<CFG_PRESET>/` when `CFG_PRESET` is set.
+
+For an interactive guided experience, use the genesis generation script:
+
+```sh
+$ ./scripts/genesis/genesis-generation.sh
+```
+
+See the [Genesis Generation Guide](genesis/README.md) for complete documentation.
 
 ## Validator keys
 

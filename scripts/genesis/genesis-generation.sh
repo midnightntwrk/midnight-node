@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("qanet" "devnet" "govnet" "node-dev-01" "preview" "preprod")
+AVAILABLE_NETWORKS=("qanet" "devnet" "govnet" "node-dev-01" "preview")
 
 # Default RNG seed (same as in Earthfile)
 DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
@@ -337,10 +337,10 @@ run_ledger_state_generation() {
     print_info "Running Earthly target..."
     echo ""
 
-    local earthly_cmd="earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed"
+    local earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target" "--RNG_SEED=$rng_seed")
 
     cd "$REPO_ROOT"
-    if eval "$earthly_cmd"; then
+    if "${earthly_cmd[@]}"; then
         echo ""
         print_success "Ledger state generation completed!"
         echo ""
@@ -476,17 +476,17 @@ run_chainspec_generation() {
     print_file "$REPO_ROOT/res/genesis/genesis_state_$network.mn"
     echo ""
 
-    local earthly_cmd="earthly -P +rebuild-chainspec --NETWORK=$network"
+    local earthly_cmd=(earthly -P +rebuild-chainspec "--NETWORK=$network")
 
     echo -e "${BOLD}Command to execute:${NC}"
-    echo -e "  ${CYAN}$earthly_cmd${NC}"
+    echo -e "  ${CYAN}${earthly_cmd[*]}${NC}"
     echo ""
 
     print_info "Running Earthly target..."
     echo ""
 
     cd "$REPO_ROOT"
-    if eval "$earthly_cmd"; then
+    if "${earthly_cmd[@]}"; then
         echo ""
         print_success "Chain specification generation completed!"
         echo ""
