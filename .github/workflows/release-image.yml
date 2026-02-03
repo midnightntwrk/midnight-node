@@ -110,12 +110,6 @@ jobs:
 
           source ./.tmp-node-scripts/.github/scripts/sign-image.sh
 
-          # Sign arch-specific images
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-
           # Sign multi-arch manifests
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
@@ -164,12 +158,6 @@ jobs:
           fi
 
           source ./.tmp-node-scripts/.github/scripts/sign-image.sh
-
-          # Sign arch-specific images
-          sign_with_retry "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          sign_with_retry "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-          sign_with_retry "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          sign_with_retry "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           # Sign multi-arch manifests
           sign_with_retry "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
