@@ -142,26 +142,9 @@ pub async fn generate_ics_genesis(
 ) -> Result<(), IcsGenesisError> {
 	let output_path = output_path.as_ref();
 
-	// Check if address is empty - this is valid for networks without ICS deployment
+	// Reject empty addresses - all networks must have a valid ICS address configured
 	if addresses.illiquid_circulation_supply_validator_address.is_empty() {
-		log::warn!(
-			"ICS validator address is empty - generating config with zero balance. \
-			This is expected for networks without ICS deployment."
-		);
-
-		let config = IcsConfig {
-			illiquid_circulation_supply_validator_address: addresses
-				.illiquid_circulation_supply_validator_address,
-			asset: addresses.asset,
-			utxos: vec![],
-			total_amount: 0,
-		};
-
-		let json = serde_json::to_string_pretty(&config)?;
-		let mut file = File::create(output_path).await?;
-		file.write_all(json.as_bytes()).await?;
-		log::info!("Wrote ICS genesis config (empty) to {}", output_path.display());
-		return Ok(());
+		return Err(IcsGenesisError::EmptyAddress);
 	}
 
 	log::info!(

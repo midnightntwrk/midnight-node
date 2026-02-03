@@ -111,3 +111,66 @@ pub struct IcsAddresses {
 	/// The cNIGHT asset identifier
 	pub asset: IcsAsset,
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn make_config(utxos: Vec<IcsUtxo>, total_amount: u128) -> IcsConfig {
+		IcsConfig {
+			illiquid_circulation_supply_validator_address: "addr_test1qz...".into(),
+			asset: IcsAsset { policy_id: PolicyId([0u8; 28]), asset_name: "NIGHT".into() },
+			utxos,
+			total_amount,
+		}
+	}
+
+	fn make_utxo(amount: u64) -> IcsUtxo {
+		IcsUtxo { tx_hash: "abc123".into(), output_index: 0, amount }
+	}
+
+	#[test]
+	fn validate_succeeds_with_matching_total() {
+		let config = make_config(vec![make_utxo(100), make_utxo(200), make_utxo(300)], 600);
+		assert!(config.validate().is_ok());
+	}
+
+	#[test]
+	fn validate_succeeds_with_empty_utxos_and_zero_total() {
+		let config = make_config(vec![], 0);
+		assert!(config.validate().is_ok());
+	}
+
+	#[test]
+	fn validate_fails_when_total_is_greater_than_utxo_sum() {
+		let config = make_config(vec![make_utxo(100), make_utxo(200)], 500);
+		let err = config.validate().unwrap_err();
+		assert!(matches!(err, IcsConfigError::TotalMismatch { configured: 500, computed: 300 }));
+	}
+
+	#[test]
+	fn validate_fails_when_total_is_less_than_utxo_sum() {
+		let config = make_config(vec![make_utxo(100), make_utxo(200)], 100);
+		let err = config.validate().unwrap_err();
+		assert!(matches!(err, IcsConfigError::TotalMismatch { configured: 100, computed: 300 }));
+	}
+
+	#[test]
+	fn validate_overflow_error_exists() {
+		// Note: Actually triggering u128 overflow from u64 UTxO amounts is impractical.
+		// u128::MAX / u64::MAX ≈ 1.8e19, so you'd need quintillions of max-value UTxOs.
+		// This test verifies the Overflow error variant exists and can be constructed,
+		// ensuring the error handling code path is exercised at the type level.
+		let err = IcsConfigError::Overflow;
+		assert!(matches!(err, IcsConfigError::Overflow));
+
+		// Verify the error message is sensible
+		assert_eq!(err.to_string(), "Overflow computing total from UTxO amounts");
+	}
+
+	#[test]
+	fn validate_total_mismatch_error_message() {
+		let err = IcsConfigError::TotalMismatch { configured: 500, computed: 300 };
+		assert_eq!(err.to_string(), "Total mismatch: configured 500, computed 300");
+	}
+}

@@ -36,6 +36,12 @@ just hardfork-e2e <NODE_IMAGE> <UPGRADER_IMAGE>
 just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 ```
 
+**Genesis generation:**
+```bash
+./scripts/genesis/genesis-generation.sh  # Interactive genesis generation wizard
+```
+See [Genesis Generation Guide](docs/genesis/README.md) for complete documentation.
+
 ## Architecture
 
 ```
