@@ -17,8 +17,7 @@ pub mod idp;
 
 pub use midnight_primitives_cnight_observation::{
 	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
-	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
-	RegistrationData, SpendData, UtxoIndexInTx,
+	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 
 #[cfg(feature = "std")]

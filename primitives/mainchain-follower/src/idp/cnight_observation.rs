@@ -95,8 +95,6 @@ impl MidnightCNightObservationInherentDataProvider {
 		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
-		let redemption_validator_address =
-			String::from_utf8(api.get_redemption_validator_address(parent_hash)?)?;
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
@@ -110,7 +108,6 @@ impl MidnightCNightObservationInherentDataProvider {
 
 		let config = CNightAddresses {
 			mapping_validator_address,
-			redemption_validator_address,
 			auth_token_asset_name,
 			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
 				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
