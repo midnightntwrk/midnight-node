@@ -792,22 +792,27 @@ check-rust:
     RUN cargo fmt --all -- --check
 
     ENV SKIP_WASM_BUILD=1
+    ENV CARGO_INCREMENTAL=0
 
     # ensure runtime benchmark feature enable to check they compile.
     RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
     # unfortunately we need to do cargo clean here to run within disk space limits
-    RUN status=0; \
-        for pkg in $(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[].name'); do \
-            echo "===> Checking $pkg"; \
-            if ! cargo check -p "$pkg"; then \
-            echo "Failed: $pkg"; \
-            status=1; \
-            fi; \
-            cargo clean; \
-        done; \
-        exit $status
+      RUN status=0; count=0; \
+          for pkg in $(cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[].name'); do \
+              echo "===> Checking $pkg"; \
+              if ! cargo check -p "$pkg"; then \
+                  echo "Failed: $pkg"; \
+                  status=1; \
+              fi; \
+              count=$((count + 1)); \
+              if [ $((count % 16)) -eq 0 ]; then \
+                  echo "===> Cleaning (batch $((count / 16)))"; \
+                  cargo clean; \
+              fi; \
+          done; \
+          exit $status
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
