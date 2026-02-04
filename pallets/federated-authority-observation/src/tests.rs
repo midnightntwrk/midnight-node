@@ -174,7 +174,7 @@ fn reset_members_requires_none_origin() {
 }
 
 #[test]
-fn reset_members_shortcircuits_with_duplicated_council_members() {
+fn reset_members_accepts_duplicated_council_members() {
 	new_test_ext().execute_with(|| {
 		let initial_council = vec![10, 11, 12];
 		let initial_tc = vec![13, 14, 15];
@@ -190,21 +190,21 @@ fn reset_members_shortcircuits_with_duplicated_council_members() {
 		let duplicated_members = vec![1, 2, 2, 3];
 		let tc_members = vec![4, 5, 6];
 
-		// Should succeed but not change state (shortcircuit)
+		// Should succeed and update members (duplicates are now accepted, kept as-is)
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
 			with_mainchain_members_council(&duplicated_members),
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Verify members were not changed
-		assert_eq!(CouncilMembership::members().to_vec(), initial_council);
-		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), initial_tc);
+		// Verify members were updated (duplicates are kept as provided)
+		assert_eq!(CouncilMembership::members().to_vec(), duplicated_members);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
 	});
 }
 
 #[test]
-fn reset_members_shortcircuits_with_duplicated_technical_committee_members() {
+fn reset_members_accepts_duplicated_technical_committee_members() {
 	new_test_ext().execute_with(|| {
 		let initial_council = vec![10, 11, 12];
 		let initial_tc = vec![13, 14, 15];
@@ -220,16 +220,16 @@ fn reset_members_shortcircuits_with_duplicated_technical_committee_members() {
 		let council_members = vec![1, 2, 3];
 		let duplicated_members = vec![4, 5, 5, 6];
 
-		// Should succeed but not change state (shortcircuit)
+		// Should succeed and update members (duplicates are now accepted, kept as-is)
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
 			with_mainchain_members_council(&council_members),
 			with_mainchain_members_tc(&duplicated_members),
 		));
 
-		// Verify members were not changed
-		assert_eq!(CouncilMembership::members().to_vec(), initial_council);
-		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), initial_tc);
+		// Verify members were updated (duplicates are kept as provided)
+		assert_eq!(CouncilMembership::members().to_vec(), council_members);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), duplicated_members);
 	});
 }
 
@@ -726,7 +726,7 @@ fn empty_tc_members_list_shortcircuits() {
 }
 
 #[test]
-fn duplicate_members_shortcircuit() {
+fn duplicate_members_are_accepted() {
 	new_test_ext().execute_with(|| {
 		let initial_council = vec![10, 11, 12];
 		let initial_tc = vec![13, 14, 15];
@@ -738,7 +738,7 @@ fn duplicate_members_shortcircuit() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
-		// Duplicates should cause shortcircuit by the pallet
+		// Duplicates are now accepted by the pallet
 		let members_with_duplicates = vec![1, 2, 2, 3];
 		let tc_members = vec![4, 5, 6];
 
@@ -748,9 +748,9 @@ fn duplicate_members_shortcircuit() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Verify members were not changed
-		assert_eq!(CouncilMembership::members().to_vec(), initial_council);
-		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), initial_tc);
+		// Verify members were updated (duplicates are kept as provided)
+		assert_eq!(CouncilMembership::members().to_vec(), members_with_duplicates);
+		assert_eq!(TechnicalCommitteeMembership::members().to_vec(), tc_members);
 	});
 }
 
