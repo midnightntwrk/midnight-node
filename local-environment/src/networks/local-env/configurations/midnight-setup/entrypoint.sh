@@ -219,14 +219,14 @@ fi
 sleep 10
 
 # Generate permissioned candidates file for federated_ops_forever
-# Extract the first 3 candidates from the chain config (matching D_PERMISSIONED)
+# Extract the first 3 candidates from the permissioned-candidates-config (matching D_PERMISSIONED)
 echo ""
 echo "=== Generating Permissioned Candidates File ==="
 jq '[.initial_permissioned_candidates[:3] | .[] | {
     ecdsa_key: .sidechain_pub_key[2:],
     aura_key: .aura_pub_key[2:],
     grandpa_key: .grandpa_pub_key[2:]
-}]' res/qanet/pc-chain-config.json > permissioned_candidates.json
+}]' res/qanet/permissioned-candidates-config.json > permissioned_candidates.json
 echo "Created permissioned_candidates.json:"
 cat permissioned_candidates.json
 
@@ -252,24 +252,23 @@ else
 fi
 
 # The FederatedOps policy ID is automatically used via PERMISSIONED_CANDIDATES_POLICY_ID
-# which was overridden earlier and will be included in pc-chain-config.json
+# which was overridden earlier and will be included in permissioned-candidates-config.json
 
 echo ""
 echo "=== All Governance Contracts Deployed Successfully ==="
 
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-cat res/qanet/pc-chain-config.json | jq '.initial_permissioned_candidates |= .[:4]' > /tmp/pc-chain-config-qanet.json
-
+# Create pc-chain-config.json with genesis_utxo and cardano_addresses
 jq 'env as $env | . + {
   "chain_parameters": {
     "genesis_utxo": $env.GENESIS_UTXO
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
-    "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID,
+    "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID
   }
-}' /tmp/pc-chain-config-qanet.json > /tmp/pc-chain-config.json
+}' res/qanet/pc-chain-config.json > /tmp/pc-chain-config.json
 
 # Create patched federated-authority-config.json with Aiken policy IDs and addresses
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
@@ -299,6 +298,26 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
+# Create permissioned-candidates-config.json with deployed Aiken policy ID and first D_PERMISSIONED candidates
+echo "Creating permissioned-candidates-config.json with deployed Aiken policy ID..."
+jq --arg policy_id "$PERMISSIONED_CANDIDATES_POLICY_ID" --argjson d_perm "$D_PERMISSIONED" \
+   '.permissioned_candidates_policy_id = ("0x" + $policy_id) | .initial_permissioned_candidates = .initial_permissioned_candidates[:$d_perm]' \
+   res/qanet/permissioned-candidates-config.json > /tmp/permissioned-candidates-config.json
+
+echo "Created permissioned-candidates-config.json:"
+cat /tmp/permissioned-candidates-config.json
+
+# Create registered-candidates-addresses.json
+echo "Creating registered-candidates-addresses.json..."
+cat <<EOF > /tmp/registered-candidates-addresses.json
+{
+    "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk"
+}
+EOF
+
+echo "Created registered-candidates-addresses.json:"
+cat /tmp/registered-candidates-addresses.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -307,9 +326,13 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-genesis.json
+export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-config.json
+export CHAINSPEC_ICS_CONFIG=res/qanet/ics-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
+export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
+export CHAINSPEC_REGISTERED_CANDIDATES_ADDRESSES=/tmp/registered-candidates-addresses.json
+
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
 
