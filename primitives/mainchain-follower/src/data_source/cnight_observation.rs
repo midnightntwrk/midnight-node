@@ -11,13 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::db::{
-	get_deregistrations, get_redemption_creates, get_redemption_spends, get_registrations,
-};
+use crate::db::{get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
-	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
-	RegistrationData, SpendData, UtxoIndexInTx,
+	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 use cardano_serialization_lib::{
 	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
@@ -153,8 +150,6 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			deregistration_utxos,
 			asset_create_utxos,
 			asset_spend_utxos,
-			redemption_create_utxos,
-			redemption_spend_utxos,
 		) = tokio::try_join!(
 			async {
 				self.get_registration_utxos(
@@ -207,27 +202,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				)
 				.await
 				.map_err(Into::into)
-			},
-			self.get_redemption_create_utxos(
-				cardano_network,
-				&config.redemption_validator_address,
-				config.cnight_policy_id,
-				cnight_asset_name,
-				start_position,
-				&end,
-				utxo_capacity,
-				0,
-			),
-			self.get_redemption_spend_utxos(
-				cardano_network,
-				&config.redemption_validator_address,
-				config.cnight_policy_id,
-				cnight_asset_name,
-				start_position,
-				&end,
-				utxo_capacity,
-				0,
-			),
+			}
 		)?;
 
 		let mut utxos = Vec::with_capacity(
@@ -235,15 +210,11 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				+ deregistration_utxos.len()
 				+ asset_create_utxos.len()
 				+ asset_spend_utxos.len()
-				+ redemption_create_utxos.len()
-				+ redemption_spend_utxos.len(),
 		);
 		utxos.extend(registration_utxos);
 		utxos.extend(deregistration_utxos);
 		utxos.extend(asset_create_utxos);
 		utxos.extend(asset_spend_utxos);
-		utxos.extend(redemption_create_utxos);
-		utxos.extend(redemption_spend_utxos);
 
 		utxos.sort();
 
@@ -322,167 +293,6 @@ impl MidnightCNightObservationDataSourceImpl {
 		};
 
 		Ok((credential, dust_address))
-	}
-
-	#[allow(clippy::too_many_arguments)]
-	async fn get_redemption_create_utxos(
-		&self,
-		cardano_network: u8,
-		address: &str,
-		policy_id: [u8; 28],
-		asset_name: &[u8],
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
-		let rows = get_redemption_creates(
-			&self.pool, address, policy_id, asset_name, start, end, limit, offset,
-		)
-		.await
-		.map_err(|e| format!("Failed to fetch data: {e}"))?;
-
-		let mut utxos = Vec::new();
-
-		for row in rows {
-			let header = ObservedUtxoHeader {
-				tx_position: CardanoPosition {
-					block_hash: McBlockHash(row.block_hash.0),
-					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().into(),
-					tx_index_in_block: row.tx_index_in_block.0,
-				},
-				tx_hash: McTxHash(row.tx_hash.0),
-				utxo_tx_hash: McTxHash(row.tx_hash.0),
-				utxo_index: UtxoIndexInTx(row.utxo_index.0),
-			};
-
-			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
-				log::error!("Plutus data for mapping validator not Constr ({header:?})");
-				continue;
-			};
-			let list = constr.data();
-
-			let Some(owner_bytes) = list.get(0).as_bytes() else {
-				log::error!("Owner Cardano address not bytes ({header:?})");
-				continue;
-			};
-
-			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bytes(owner_bytes.clone()).ok()
-			else {
-				log::error!(
-					"Cardano address {owner_bytes:?} not valid cardano address ({header:?})"
-				);
-				continue;
-			};
-
-			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::error!(
-					"Cardano Address {:?} has no delegation part",
-					cardano_address.to_hex()
-				);
-				continue;
-			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
-
-			let utxo = ObservedUtxo {
-				header,
-				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
-					owner,
-					value: row.quantity as u128,
-					utxo_tx_hash: McTxHash(row.tx_hash.0),
-					utxo_tx_index: row.utxo_index.0,
-				}),
-			};
-
-			utxos.push(utxo);
-		}
-
-		Ok(utxos)
-	}
-
-	#[allow(clippy::too_many_arguments)]
-	async fn get_redemption_spend_utxos(
-		&self,
-		cardano_network: u8,
-		address: &str,
-		policy_id: [u8; 28],
-		asset_name: &[u8],
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
-	) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
-		let rows = get_redemption_spends(
-			&self.pool, address, policy_id, asset_name, start, end, limit, offset,
-		)
-		.await
-		.map_err(|e| format!("Failed to fetch data: {e}"))?;
-
-		let mut utxos = Vec::new();
-
-		for row in rows {
-			let header = ObservedUtxoHeader {
-				tx_position: CardanoPosition {
-					block_hash: McBlockHash(row.block_hash.0),
-					block_number: row.block_number.0,
-					block_timestamp: row.block_timestamp.and_utc().into(),
-					tx_index_in_block: row.tx_index_in_block.0,
-				},
-				tx_hash: McTxHash(row.tx_hash.0),
-				utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
-				utxo_index: UtxoIndexInTx(row.utxo_index.0),
-			};
-
-			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
-				log::error!(
-					"INTERNAL ERROR: Plutus data for mapping validator not Constr ({header:?})"
-				);
-				continue;
-			};
-			let list = constr.data();
-
-			let Some(owner_bytes) = list.get(0).as_bytes() else {
-				log::error!("Owner Cardano address not bytes ({header:?})");
-				continue;
-			};
-
-			let Some(cardano_address) =
-				cardano_serialization_lib::Address::from_bytes(owner_bytes.clone()).ok()
-			else {
-				log::error!(
-					"Cardano address {owner_bytes:?} not valid cardano address ({header:?})"
-				);
-				continue;
-			};
-
-			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::error!(
-					"Cardano Address {:?} has no delegation part",
-					cardano_address.to_hex()
-				);
-				continue;
-			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
-
-			let utxo = ObservedUtxo {
-				header,
-				data: ObservedUtxoData::RedemptionSpend(RedemptionSpendData {
-					value: row.quantity as u128,
-					owner,
-					utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
-					utxo_tx_index: row.utxo_index.0,
-					spending_tx_hash: McTxHash(row.tx_hash.0),
-				}),
-			};
-
-			utxos.push(utxo);
-		}
-
-		Ok(utxos)
 	}
 
 	#[allow(clippy::too_many_arguments)]

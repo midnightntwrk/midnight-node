@@ -82,31 +82,6 @@ impl From<Block> for CardanoPosition {
 pub struct DbBlockHash(pub [u8; 32]);
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-pub struct RedemptionCreateRow {
-	pub full_datum: DbDatum,
-	pub block_number: DbBlockNumber,
-	pub block_hash: DbBlockHash,
-	pub block_timestamp: NaiveDateTime,
-	pub tx_index_in_block: DbTxIndexInBlock,
-	pub tx_hash: DbTxHash,
-	pub utxo_index: DbUtxoIndexInTx,
-	pub quantity: i64,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct RedemptionSpendRow {
-	pub full_datum: DbDatum,
-	pub block_number: DbBlockNumber,
-	pub block_hash: DbBlockHash,
-	pub block_timestamp: NaiveDateTime,
-	pub tx_index_in_block: DbTxIndexInBlock,
-	pub tx_hash: DbTxHash,
-	pub utxo_tx_hash: DbTxHash,
-	pub utxo_index: DbUtxoIndexInTx,
-	pub quantity: i64,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RegistrationRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
