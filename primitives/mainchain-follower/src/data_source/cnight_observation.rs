@@ -145,12 +145,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
 		// ^ We may not have to do the above if the queries are fast enough
 
-		let (
-			registration_utxos,
-			deregistration_utxos,
-			asset_create_utxos,
-			asset_spend_utxos,
-		) = tokio::try_join!(
+		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
 			async {
 				self.get_registration_utxos(
 					cardano_network,
@@ -209,7 +204,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			registration_utxos.len()
 				+ deregistration_utxos.len()
 				+ asset_create_utxos.len()
-				+ asset_spend_utxos.len()
+				+ asset_spend_utxos.len(),
 		);
 		utxos.extend(registration_utxos);
 		utxos.extend(deregistration_utxos);
