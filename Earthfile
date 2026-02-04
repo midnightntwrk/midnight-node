@@ -141,7 +141,7 @@ build-node-only:
 
     ARG NATIVEARCH
 
-    RUN cargo build -p midnight-node --locked --release
+    RUN cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH
@@ -672,7 +672,7 @@ node-ci-image-single-platform:
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
+    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
 
     # subwasm can be used to diff between runtimes
     # renovate: datasource=github-releases packageName=chevdor/subwasm
@@ -980,7 +980,7 @@ build-upgrader:
     ARG NATIVEARCH
 
     RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+    RUN SKIP_WASM_BUILD=1 cargo auditable build -p upgrader --locked --release \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
@@ -1031,7 +1031,7 @@ build-normal:
 
     # Default build (no hardfork)
     RUN \
-        cargo build --workspace --locked --release
+        cargo auditable build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -1083,7 +1083,7 @@ build-benchmarks:
 
     # Build with runtime-benchmarks feature
     RUN \
-        cargo build --workspace --locked --release --features runtime-benchmarks
+        cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
