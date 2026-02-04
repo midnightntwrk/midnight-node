@@ -366,3 +366,14 @@ macro_rules! observed_async_trait {
 }
 
 pub(crate) use observed_async_trait;
+
+/// Returns the epoch number for a given block hash from the database.
+/// This is useful for converting a Cardano block hash to an epoch number.
+pub async fn get_epoch_for_block_hash(
+	pool: &sqlx::PgPool,
+	block_hash: &McBlockHash,
+) -> Result<Option<McEpochNumber>, Box<dyn Error + Send + Sync>> {
+	Ok(db_model::get_epoch_for_block_hash(pool, &block_hash.0)
+		.await?
+		.map(|e| McEpochNumber(e.0)))
+}

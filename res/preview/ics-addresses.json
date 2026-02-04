@@ -1,0 +1,7 @@
+{
+    "illiquid_circulation_supply_validator_address": "addr_test1wzga9g4tw69twfvpjynyvdyzvpf5f0e88v6hnu9eh9qgdnqaw66xk",
+    "asset": {
+        "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+        "asset_name": "NIGHT"
+    }
+}
