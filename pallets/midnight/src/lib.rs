@@ -508,7 +508,7 @@ pub mod pallet {
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
-				let (tx_hash, _) = LedgerApi::validate_transaction(
+				let tx_hash = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
 					block_context,
