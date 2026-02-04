@@ -10,6 +10,8 @@ use midnight_node_toolkit::commands::dust_balance::{
     self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
@@ -285,6 +287,7 @@ async fn verify_federated_ops_contract_deployment() {
 #[tokio::test]
 async fn register_2_cardano_same_dust_address_production() {
     let settings = Settings::default();
+    let base_url = settings.node_client.base_url.clone();
     let cardano_client_1 =
         CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
     let cardano_client_2 = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -441,6 +444,122 @@ async fn register_2_cardano_same_dust_address_production() {
         "Matching second MappingAdded event found: {:?}",
         mapping_added_2.unwrap()
     );
+
+    let amount = 100;
+    let tx_id = cardano_client_1
+        .mint_tokens(amount, &collateral_utxo_1)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo = match cardano_client_1
+        .find_utxo_by_tx_id(&cardano_client_1.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let nonce_for_check = nonce.clone();
+
+    let amount2 = 100;
+    let tx_id2 = cardano_client_2
+        .mint_tokens(amount, &collateral_utxo_2)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    println!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id2));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo2 = match cardano_client_2
+        .find_utxo_by_tx_id(&cardano_client_2.address_as_bech32(), hex::encode(tx_id2))
+        .await
+    {
+        Some(cnight_utxo2) => cnight_utxo2,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix2 = b"asset_create";
+    let nonce2 =
+        MidnightClient::calculate_nonce(prefix2, cnight_utxo2.transaction.id, cnight_utxo2.index);
+    println!("Calculated nonce for cNIGHT UTXO: {}", nonce2);
+
+    let nonce2_for_check = nonce2.clone();
+
+    let utxo_owner = midnight_client
+        .poll_utxo_owners_until_change(nonce, None, 60, 1000)
+        .await
+        .expect("Failed to poll UTXO owners");
+    println!("Queried UTXO owners from Midnight node: {:?}", utxo_owner);
+
+    let utxo_owner_hex = hex::encode(utxo_owner.unwrap().0.0);
+    println!("UTXO owner in hex: {:?}", utxo_owner_hex);
+    assert_eq!(
+        utxo_owner_hex, dust_hex,
+        "UTXO owner does not match DUST address"
+    );
+
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(base_url),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            ignore_block_context: false,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    let mut balance: &u128 = &0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance: {}", total);
+        balance = total;
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+
+    let mut sources: HashMap<String, u128> = HashMap::new();
+
+    if let DustBalanceResult::Json(DustBalanceJson { source, .. }) = &result {
+        println!("Sources ({}):", source.len());
+        for (k, v) in source.iter() {
+            println!("  {} => {}", k, v);
+        }
+        sources = source.clone();
+    }
+
+    assert_eq!(sources.len(), 2);
+
+    if let DustBalanceResult::Json(DustBalanceJson {
+        generation_infos, ..
+    }) = &result
+    {
+        let actual: HashSet<String> = generation_infos
+            .iter()
+            .map(|p| p.dust_output.backing_night.clone())
+            .collect();
+
+        let expected: HashSet<String> = [nonce_for_check, nonce2_for_check].into_iter().collect();
+
+        assert_eq!(actual, expected);
+    } else {
+        panic!("Waiting DustBalanceResult::Json(..)");
+    }
 }
 
 #[tokio::test]
@@ -2639,15 +2758,15 @@ async fn d_parameter_from_pallet_matches_config() {
         "D-Parameter registered count should match between endpoints"
     );
 
-    // Local environment configures D-Parameter as (4, 1)
-    // 4 permissioned (Alice, Bob, Charlie, Dave) + 1 registered (Eve) = 5 total candidates
+    // Local environment configures D-Parameter as (3, 0)
+    // 3 permissioned (Alice, Bob, Charlie) from qanet config
     assert_eq!(
-        d_param.num_permissioned_candidates, 4,
-        "Permissioned count should match system-parameters config (expected 4)"
+        d_param.num_permissioned_candidates, 3,
+        "Permissioned count should match system-parameters config (expected 3)"
     );
     assert_eq!(
-        d_param.num_registered_candidates, 1,
-        "Registered count should match system-parameters config (expected 1)"
+        d_param.num_registered_candidates, 0,
+        "Registered count should match system-parameters config (expected 0)"
     );
 
     println!("✓ D-Parameter correctly sourced from pallet-system-parameters");
@@ -2655,7 +2774,7 @@ async fn d_parameter_from_pallet_matches_config() {
 
 /// TC-PC-002: Verify permissioned candidates match Aiken format.
 ///
-/// In local environment, 4 permissioned candidates (Alice, Bob, Charlie, Dave)
+/// In local environment, 3 permissioned candidates (Alice, Bob, Charlie)
 /// are inserted during setup. This test verifies they are returned in the
 /// Aiken contract format with the correct structure.
 #[tokio::test]
@@ -2677,10 +2796,10 @@ async fn permissioned_candidates_aiken_format() {
     if let Some(candidates) = &ariadne_params.permissioned_candidates {
         println!("Found {} permissioned candidates", candidates.len());
 
-        // Local environment inserts 4 permissioned candidates
+        // Local environment inserts 3 permissioned candidates
         assert!(
-            candidates.len() >= 4,
-            "Expected at least 4 permissioned candidates in local-env, found {}",
+            candidates.len() >= 3,
+            "Expected at least 3 permissioned candidates in local-env, found {}",
             candidates.len()
         );
 

@@ -16,6 +16,9 @@
 //! This command allows executing arbitrary runtime calls through the federated authority
 //! governance mechanism using proper governance.
 
+use std::str::FromStr;
+
+use crate::cli_parsers as cli;
 use clap::Args;
 use subxt::{
 	Metadata, OnlineClient, SubstrateConfig,
@@ -31,23 +34,23 @@ use thiserror::Error;
 pub struct RootCallArgs {
 	/// RPC URL of the node
 	#[arg(long, env = "RPC_URL", default_value = "ws://127.0.0.1:9944")]
-	rpc_url: String,
+	pub rpc_url: String,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
 	#[arg(long = "council-keys", required = true, num_args = 1..)]
-	council_keys: Vec<String>,
+	pub council_keys: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
 	#[arg(long = "tc-keys", required = true, num_args = 1..)]
-	tc_keys: Vec<String>,
+	pub tc_keys: Vec<String>,
 
 	/// Encoded call as hex string (e.g., 0x...)
-	#[arg(long, conflicts_with = "encoded_call_file")]
-	encoded_call: Option<String>,
+	#[arg(long, conflicts_with = "encoded_call_file", value_parser = cli::hex_bytes)]
+	pub encoded_call: Option<Vec<u8>>,
 
 	/// Path to file containing the encoded call hex string
 	#[arg(long, conflicts_with = "encoded_call")]
-	encoded_call_file: Option<String>,
+	pub encoded_call_file: Option<String>,
 }
 
 #[derive(Error, Debug)]
@@ -70,8 +73,8 @@ pub enum RootCallError {
 	NotEnoughCouncilKeys,
 	#[error("Need at least 2 technical committee keys for 2/3 threshold voting")]
 	NotEnoughTcKeys,
-	#[error("Invalid private key length: expected 32 bytes, got {0}")]
-	InvalidPrivateKeyLength(usize),
+	#[error("Kepair parse error")]
+	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
 	#[error("Failed to decode call: {0}")]
 	CallDecodeError(String),
 }
@@ -119,30 +122,20 @@ pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error
 }
 
 fn get_encoded_call(args: &RootCallArgs) -> Result<Vec<u8>, RootCallError> {
-	let hex_str = if let Some(ref call) = args.encoded_call {
-		call.clone()
+	if let Some(ref call) = args.encoded_call {
+		Ok(call.clone())
 	} else if let Some(ref path) = args.encoded_call_file {
-		std::fs::read_to_string(path)?.trim().to_string()
+		let hex_str = std::fs::read_to_string(path)?.trim().to_string();
+		// Remove 0x prefix if present
+		let hex_str = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
+		Ok(hex::decode(hex_str)?)
 	} else {
 		return Err(RootCallError::NoEncodedCall);
-	};
-
-	// Remove 0x prefix if present
-	let hex_str = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
-	Ok(hex::decode(hex_str)?)
+	}
 }
 
 fn get_signer(key_str: &str) -> Result<Keypair, RootCallError> {
-	// Parse hex-encoded private key (32-byte sr25519 mini secret key)
-	let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
-	let seed_bytes = hex::decode(hex_str)?;
-
-	if seed_bytes.len() != 32 {
-		return Err(RootCallError::InvalidPrivateKeyLength(seed_bytes.len()));
-	}
-
-	let secret_key: [u8; 32] = seed_bytes.try_into().expect("length already checked");
-	Ok(Keypair::from_secret_key(secret_key)?)
+	Ok(midnight_node_ledger_helpers::Keypair::from_str(key_str)?.0)
 }
 
 /// Decode SCALE-encoded call bytes into a Value using runtime metadata

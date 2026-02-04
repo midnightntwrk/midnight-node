@@ -150,6 +150,10 @@ pub struct Keypair(pub sr25519::Keypair);
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeypairParseError {
+	#[error("Falied to decode secret as hex")]
+	HexParseFailed(#[from] hex::FromHexError),
+	#[error("Secret key bytes length != 32")]
+	LengthCheckFailed,
 	#[error("Secret URI parse error: {0}")]
 	UriParseFailed(#[from] SecretUriError),
 	#[error("Subxt signer error: {0}")]
@@ -174,9 +178,16 @@ impl FromStr for Keypair {
 		if key_str.contains('/') {
 			let uri = SecretUri::from_str(key_str)?;
 			Ok(sr25519::Keypair::from_uri(&uri)?.into())
-		} else {
+		} else if key_str.contains(' ') {
 			let phrase = Mnemonic::parse(key_str)?;
 			Ok(sr25519::Keypair::from_phrase(&phrase, None)?.into())
+		} else {
+			// Parse hex-encoded private key (32-byte sr25519 mini secret key)
+			let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
+			let seed_bytes = hex::decode(hex_str)?;
+			let secret_key: [u8; 32] =
+				seed_bytes.try_into().map_err(|_| KeypairParseError::LengthCheckFailed)?;
+			Ok(Keypair(sr25519::Keypair::from_secret_key(secret_key)?))
 		}
 	}
 }

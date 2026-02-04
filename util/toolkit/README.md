@@ -477,6 +477,18 @@ $ midnight-node-toolkit get-tx-from-context
 midnight-node-toolkit generate-genesis --network <network_name>
 ```
 
+#### Custom Ledger Parameters
+You can optionally provide a JSON file with custom ledger parameters to use instead of the default `INITIAL_PARAMETERS`:
+
+```shell
+midnight-node-toolkit generate-genesis \
+    --network <network_name> \
+    --seeds-file /path/to/seeds.json \
+    --ledger-parameters-config /path/to/ledger-parameters-config.json
+```
+
+The `ledger-parameters-config.json` file should contain a JSON representation of the `LedgerParameters` struct. Default config files with the initial parameters are available in `res/<network>/ledger-parameters-config.json`.
+
 ---
 
 ### Show Transaction

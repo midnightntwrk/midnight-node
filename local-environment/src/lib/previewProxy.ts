@@ -12,7 +12,8 @@
 // limitations under the License.
 
 import net from "net";
-import { execSync, spawn } from "child_process";
+import { execSync } from "child_process";
+import { startPortForwardWatchdog } from "./portForwardWatchdog";
 
 const BASE_LOCAL_PORT = parseInt(
   process.env.PREVIEW_PROXY_BASE_PORT ?? "15432",
@@ -184,15 +185,13 @@ function portForwardProxy(
     return;
   }
 
-  const kubectl = spawn(
-    "kubectl",
-    ["-n", namespace, "port-forward", `pod/${podName}`, `${localPort}:5432`],
-    {
-      stdio: "inherit",
-      detached: true,
-    },
-  );
-  kubectl.unref();
+  startPortForwardWatchdog({
+    namespace,
+    podName,
+    localPort,
+    remotePort: 5432,
+    label: podName,
+  });
 }
 
 function rewriteConnectionString(connString: string, localPort: number): string {
@@ -242,6 +241,7 @@ function findAvailablePort(start: number): Promise<number> {
 function waitForPodReady(namespace: string, podName: string): boolean {
   try {
     const cmd = `kubectl -n ${namespace} wait --for=condition=Ready pod/${podName} --timeout=30s`;
+
     execSync(cmd, { stdio: "inherit" });
     return true;
   } catch (error) {

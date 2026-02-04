@@ -25,8 +25,8 @@ pub struct DustBalanceArgs {
 
 #[derive(Debug, serde::Serialize)]
 pub struct GenerationInfoPair {
-	dust_output: QualifiedDustOutputSer,
-	generation_info: Option<DustGenerationInfoSer>,
+	pub dust_output: QualifiedDustOutputSer,
+	pub generation_info: Option<DustGenerationInfoSer>,
 }
 
 #[derive(Debug, serde::Serialize)]
