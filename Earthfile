@@ -973,42 +973,9 @@ build-prepare:
     # TODO: re-enable when chef is improved.
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-build-upgrader:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
-        && mv /target/release/upgrader /artifacts-$NATIVEARCH
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 # build creates production ready binaries
 build:
-    ARG NATIVEARCH
-
-    FROM +prep
-
-    ARG EARTHLY_GIT_SHORT_HASH
-    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
-    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
-    ENV CC=clang
-    ENV CXX=clang++
-
-    WAIT
-        BUILD +build-upgrader
-        BUILD +build-fork
-        BUILD +build-undo
-    END
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-
-    # Already saved as local
-    SAVE ARTIFACT /artifacts-$NATIVEARCH
-
-build-normal:
     FROM +build-prepare
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
@@ -1042,28 +1009,22 @@ build-normal:
 
 build-fork:
     FROM +prep
+    ARG NATIVEARCH
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives res metadata runtime util tests relay .
 
-    ARG NATIVEARCH
-
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
+    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+        && mv /target/release/upgrader /artifacts-$NATIVEARCH
 
     # Hardfork build
     RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
-build-undo:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
     RUN rm -Rf /target/release/build/midnight-node-runtime-*
     # Rollback build
     RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
@@ -1090,7 +1051,7 @@ build-benchmarks:
 
 subwasm:
     ARG NATIVEARCH
-    FROM +build-normal
+    FROM +build
     # Saves testnet runtime as runtime_000.wasm
     RUN subwasm get wss://rpc.testnet.midnight.network/ \
         && subwasm diff ./runtime_000.wasm /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
@@ -1105,9 +1066,9 @@ node-image:
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build-normal/artifacts-$NATIVEARCH/aiken-deployer /
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
+    COPY +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
     COPY node/Cargo.toml /node/
@@ -1129,7 +1090,7 @@ node-image:
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
     COPY res/ /artifacts-$NATIVEARCH/res/
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
@@ -1190,7 +1151,7 @@ toolkit-image:
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
@@ -1211,9 +1172,9 @@ hardfork-test-upgrader-image:
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
     USER root
 
-    COPY +build/artifacts-$NATIVEARCH/upgrader /
-    COPY +build/artifacts-$NATIVEARCH/test/* /
-    COPY +build/artifacts-$NATIVEARCH/rollback/* /
+    COPY +build-fork/artifacts-$NATIVEARCH/upgrader /
+    COPY +build-fork/artifacts-$NATIVEARCH/test/* /
+    COPY +build-fork/artifacts-$NATIVEARCH/rollback/* /
 
     COPY node/Cargo.toml /node/
     LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
