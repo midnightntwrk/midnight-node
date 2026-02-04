@@ -163,7 +163,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					0,
 				)
 				.await
-				.map_err(Into::into)
+				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
 				self.get_deregistration_utxos(
@@ -175,7 +175,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					0,
 				)
 				.await
-				.map_err(Into::into)
+				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
 				self.get_asset_create_utxos(
@@ -188,7 +188,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					0,
 				)
 				.await
-				.map_err(Into::into)
+				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
 				self.get_asset_spend_utxos(
@@ -201,7 +201,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					0,
 				)
 				.await
-				.map_err(Into::into)
+				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			}
 		)?;
 
