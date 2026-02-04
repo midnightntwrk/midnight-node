@@ -307,7 +307,8 @@ where
 		runtime_version: u32,
 		// The runtime's max weight as of now
 		max_weight: u64,
-	) -> Result<(Hash, TransactionDetails), LedgerApiError> {
+		get_tx_details: bool,
+	) -> Result<(Hash, Option<TransactionDetails>), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
 
@@ -320,10 +321,14 @@ where
 		let was_cached =
 			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
 
-		let tx_gas_cost =
-			Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
+		let tx_details = if get_tx_details {
+			let tx_gas_cost =
+				Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
 
-		let tx_details = Self::get_transaction_details(&tx, &ledger, tx_gas_cost)?;
+			Some(Self::get_transaction_details(&tx, &ledger, tx_gas_cost)?)
+		} else {
+			None
+		};
 
 		// We only want to record the metric once
 		if let TransactionValidationWasCached::No = was_cached {
