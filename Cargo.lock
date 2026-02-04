@@ -7577,6 +7577,7 @@ dependencies = [
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-ics-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-system-parameters",
@@ -7776,6 +7777,7 @@ dependencies = [
  "hex",
  "hex-literal 0.4.1",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-ics-observation",
  "midnight-primitives-system-parameters",
  "midnight-serialize 1.0.0-rc.4",
  "pallet-cnight-observation",
@@ -7880,6 +7882,7 @@ dependencies = [
  "log",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
+ "midnight-primitives-ics-observation",
  "num_cpus",
  "parity-scale-codec",
  "rand 0.8.5",
@@ -8081,11 +8084,21 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
+ "serde_valid",
  "sidechain-domain",
  "sp-api",
  "sp-core",
  "sp-inherents",
  "sp-runtime",
+]
+
+[[package]]
+name = "midnight-primitives-ics-observation"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sidechain-domain",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
