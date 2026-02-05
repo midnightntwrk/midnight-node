@@ -1,40 +1,57 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
-	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
+	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
-	WalletAddress,
 };
 
 use crate::{
 	ProofType, SignatureType,
 	progress::Spin,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
-	tx_generator::builder::{BuildTxs, RegisterDustAddressArgs},
+	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs},
 };
 
-pub struct RegisterDustAddressBuilder {
+/// Builder for generating DUST address deregistration transactions.
+///
+/// This builder creates a transaction that removes the DUST address mapping
+/// for a wallet from the Midnight network. The wallet's unshielded UTXOs are
+/// spent back to self while the deregistration is processed.
+///
+/// Deregistration is useful for:
+/// - Migrating to a new DUST address
+/// - Cleaning up test registrations
+/// - Revoking access before rotating wallet keys
+pub struct DeregisterDustAddressBuilder {
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
 	funding_seed: String,
-	destination_dust: Option<WalletAddress>,
 }
 
-impl RegisterDustAddressBuilder {
-	pub fn new(args: RegisterDustAddressArgs) -> Self {
-		Self {
-			seed: args.wallet_seed,
-			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
-			destination_dust: args.destination_dust,
-		}
+impl DeregisterDustAddressBuilder {
+	/// Creates a new builder from CLI arguments.
+	pub fn new(args: DeregisterDustAddressArgs) -> Self {
+		Self { seed: args.wallet_seed, rng_seed: args.rng_seed, funding_seed: args.funding_seed }
 	}
 }
 
 #[async_trait]
-impl BuildTxs for RegisterDustAddressBuilder {
+impl BuildTxs for DeregisterDustAddressBuilder {
 	type Error = Infallible;
 
 	async fn build_txs_from(
@@ -42,7 +59,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		received_tx: SourceTransactions<SignatureType, ProofType>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let spin = Spin::new("building register dust address transaction...");
+		let spin = Spin::new("building deregister dust address transaction...");
 
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
@@ -119,18 +136,11 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
+		// Deregistration: pass dust_address: None instead of Some(dust_address)
 		context.with_wallet_from_seed(seed, |wallet| {
-			let destination_dust = self.destination_dust.clone().map_or(
-				wallet.dust.public_key,
-				|destination_dust_arg| {
-					DustWallet::<DefaultDB>::try_from(&destination_dust_arg)
-						.expect("failed to decode dust address")
-						.public_key
-				},
-			);
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
-				dust_address: Some(destination_dust),
+				dust_address: None,
 			});
 		});
 

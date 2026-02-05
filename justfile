@@ -33,9 +33,9 @@ toolkit-mint-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-mint-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Mint E2E test completed successfully."
 
-toolkit-ut-e2e NODE_IMAGE TOOLKIT_IMAGE:
-  @scripts/tests/toolkit-ut-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
-  @echo "✅ Toolkit UnshieldedToken E2E test completed successfully."
+toolkit-tokens-minter-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-tokens-minter-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Tokens Minter E2E test completed successfully."
 
 toolkit-multi-dest-e2e TOOLKIT_IMAGE:
   @scripts/tests/toolkit-multi-dest-e2e.sh {{TOOLKIT_IMAGE}}

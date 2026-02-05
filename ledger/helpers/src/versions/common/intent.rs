@@ -143,16 +143,16 @@ impl<D: DB + Clone> IntentCustom<D> {
 		Self { intent, resolver }
 	}
 
-	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
-		let mut guaranteed_effects: Option<ContractEffects<D>> = None;
-		let mut fallible_effects: Option<ContractEffects<D>> = None;
+	pub fn find_effects(&self) -> (Vec<ContractEffects<D>>, Vec<ContractEffects<D>>) {
+		let mut guaranteed_effects = vec![];
+		let mut fallible_effects = vec![];
 		for action in self.intent.actions.iter() {
 			if let ContractAction::Call(ref c) = *action.clone() {
 				if let Some(ref t) = c.guaranteed_transcript {
-					guaranteed_effects = Some(t.effects.clone());
+					guaranteed_effects.push(t.effects.clone());
 				}
 				if let Some(ref t) = c.fallible_transcript {
-					fallible_effects = Some(t.effects.clone());
+					fallible_effects.push(t.effects.clone());
 				}
 			}
 		}

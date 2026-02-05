@@ -229,7 +229,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run]
+    needs: [ run ]
     permissions:
       id-token: write
       contents: read
@@ -471,9 +471,9 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  toolkit-ut-e2e:
+  toolkit-tokens-minter-e2e:
     name: Toolkit Unshielded Token E2E
-    needs: [run]
+    needs: [ run ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -486,7 +486,7 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
       - uses: ./.github/actions/reusable-e2e-tests
         with:
-          just-command: toolkit-ut-e2e
+          just-command: toolkit-tokens-minter-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}

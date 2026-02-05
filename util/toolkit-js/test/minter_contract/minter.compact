@@ -16,7 +16,9 @@
 import CompactStandardLibrary;
 
 export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): Bytes<32> {
-  return mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
+  const color = mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
+  receiveUnshielded(color, disclose(amount));
+  return color;
 }
 
 export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<64>): Bytes<32> {
@@ -24,12 +26,31 @@ export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Byt
   return mintUnshieldedToken(disclose(domainSep), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
 }
 
-export circuit receiveUnshieldedTest(color: Bytes<32>, amount: Uint<128>): [] {
-  receiveUnshielded(disclose(color), disclose(amount));
-}
-
-export circuit recieveAndSendUnshieldedToUser(color: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<128>): [] {
-  receiveUnshielded(disclose(color), disclose(amount));
+export circuit sendUnshieldedToUser(color: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<128>): [] {
   const address = UserAddress { bytes: address_bytes };
   sendUnshielded(disclose(color), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
+}
+
+export circuit mintShieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): ShieldedCoinInfo {
+    const recipient = ownPublicKey();
+    return mintShieldedToken(
+        disclose(domainSep),
+        disclose(amount),
+        evolveNonce(0 as Uint<128>, disclose(domainSep)),
+        left<ZswapCoinPublicKey, ContractAddress>(recipient)
+    );
+}
+
+export circuit mintShieldedToUserTest(domainSep: Bytes<32>, amount: Uint<64>, user_key: ZswapCoinPublicKey): ShieldedCoinInfo {
+    return mintShieldedToken(
+        disclose(domainSep),
+        disclose(amount),
+        evolveNonce(0 as Uint<128>, disclose(domainSep)),
+        left<ZswapCoinPublicKey, ContractAddress>(disclose(user_key))
+    );
+}
+
+export circuit receiveShieldedTest(coin: ShieldedCoinInfo): [] {
+  assert(coin.value > 0, "Deposit amount must be positive");
+  receiveShielded(disclose(coin));
 }
