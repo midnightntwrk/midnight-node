@@ -6,7 +6,7 @@ description = "Primitives for federated authority observation"
 license-file.workspace = true
 
 [dependencies]
-hex.workspace = true
+hex = { workspace = true, features = ["serde"] }
 parity-scale-codec.workspace = true
 scale-info.workspace = true
 sp-inherents.workspace = true
@@ -15,6 +15,7 @@ sp-api.workspace = true
 sp-core.workspace = true
 sidechain-domain.workspace = true
 serde = { workspace = true, optional = true }
+serde_valid = { workspace = true, optional = true }
 
 [features]
 default = ["std"]
@@ -27,4 +28,6 @@ std = [
     "sp-core/std",
     "sp-api/std",
     "serde",
+    "serde/std",
+    "serde_valid",
 ]

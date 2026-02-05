@@ -13,12 +13,12 @@
 
 use super::{
 	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
-	Loader, MidnightDataProvider, NormalizedCost, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
+	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
 	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	compute_overall_fullness, default_storage, mn_ledger_serialize as serialize,
-	mn_ledger_storage as storage, types::StorableSyntheticCost,
+	clamp_and_normalize, compute_overall_fullness, default_storage,
+	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::{ToHex, encode as hex_encode};
@@ -141,7 +141,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
-			total_cost.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		*latest_ledger_state = latest_ledger_state
 			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)

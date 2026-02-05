@@ -38,20 +38,20 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Checkout Season action repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -76,16 +76,16 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@710817a1645ef40daad5bcde7431ceccf6cc3528 #v2.67.13
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 #v2.67.18
         with:
           tool: just
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run build
         id: export
         run: |
-          # Free disk space
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
-
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
@@ -102,15 +102,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          # Query registry for image digests (images pushed by Earthly)
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 --verbose | jq -r '.Descriptor.digest')
-
-          echo "Signing midnight-node:${IMAGE_TAG}-amd64 (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-amd64 (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -201,14 +195,14 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Run Node and toolkit builds
         run: |
@@ -222,18 +216,13 @@ jobs:
 
       - name: Sign container images
         run: |
+          source .github/scripts/sign-image.sh
+
           # Calculate IMAGE_TAG (must match definition in Earthfile)
           IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
 
-          # Query registry for image digests (images pushed by Earthly)
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 --verbose | jq -r '.Descriptor.digest')
-
-          echo "Signing midnight-node:${IMAGE_TAG}-arm64 (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing midnight-node-toolkit:${IMAGE_TAG}-arm64 (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
@@ -286,7 +275,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@710817a1645ef40daad5bcde7431ceccf6cc3528 #v2.67.13
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 #v2.67.18
         with:
           tool: just
 
@@ -367,17 +356,17 @@ jobs:
       id-token: write  # Required for keyless signing with Cosign
     steps:
       - name: Install Cosign
-        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -412,15 +401,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          # Get multi-arch manifest digests
-          NODE_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
-          TOOLKIT_DIGEST=$(docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} --verbose | jq -r '.[0].Descriptor.digest')
-
-          echo "Signing multi-arch midnight-node:${IMAGE_TAG} (${NODE_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node@${NODE_DIGEST}
-
-          echo "Signing multi-arch midnight-node-toolkit:${IMAGE_TAG} (${TOOLKIT_DIGEST})"
-          cosign sign --yes ghcr.io/midnight-ntwrk/midnight-node-toolkit@${TOOLKIT_DIGEST}
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
+          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
 
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
@@ -473,6 +456,21 @@ jobs:
           echo "Push manifests to Docker Hub"
           docker manifest push midnightntwrk/midnight-node:latest-main
           docker manifest push midnightntwrk/midnight-node-toolkit:latest-main
+
+      - name: Sign Docker Hub images (latest-main)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          source .github/scripts/sign-image.sh
+
+          # Sign arch-specific images
+          sign_with_retry "midnightntwrk/midnight-node:latest-main-amd64"
+          sign_with_retry "midnightntwrk/midnight-node:latest-main-arm64"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main-amd64"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main-arm64"
+
+          # Sign multi-arch manifests
+          sign_with_retry "midnightntwrk/midnight-node:latest-main"
+          sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main"
 
       - name: Check if indexer is on main
         id: indexer-check

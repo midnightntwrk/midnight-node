@@ -16,9 +16,7 @@ use super::{
 	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{
-	cost_model::{NormalizedCost, SyntheticCost},
-	hash::HashOutput as HashOutputLedger,
-	time::Timestamp,
+	cost_model::SyntheticCost, hash::HashOutput as HashOutputLedger, time::Timestamp,
 };
 use derive_where::derive_where;
 use ledger_storage_local::{
@@ -178,7 +176,7 @@ impl<D: DB> Ledger<D> {
 		let block_fullness: SyntheticCost = sp.block_fullness.clone().into();
 		let block_limits = sp.state.parameters.limits.block_limits;
 		let normalized_fullness =
-			block_fullness.normalize(block_limits).unwrap_or(NormalizedCost::ZERO);
+			helpers_local::clamp_and_normalize(&block_fullness, &block_limits, "post_block_update");
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
 		let next_state = sp
 			.state

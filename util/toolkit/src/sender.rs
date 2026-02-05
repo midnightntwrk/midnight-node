@@ -33,13 +33,24 @@ use crate::{
 	hash_to_str,
 };
 
-// Display from what url the sending error occurred
 #[derive(Debug, Error)]
-#[error("failed sending to {url}: {source}")]
-pub struct SendToUrlError {
-	url: String,
-	#[source]
-	source: subxt::Error,
+#[error("{failed_count} transaction(s) failed during send")]
+pub struct SendBatchError {
+	pub failed_count: usize,
+}
+
+#[derive(Debug, Error)]
+pub enum SenderError {
+	#[error("failed to reach best block")]
+	FailedToReachBestBlock,
+	#[error("failed to finalize")]
+	FailedToFinalize,
+	#[error("failed sending to {url}: {source}")]
+	SendToUrlError {
+		url: String,
+		#[source]
+		source: subxt::Error,
+	},
 }
 
 #[derive(Debug, Clone)]
@@ -120,13 +131,10 @@ where
 		self.clients[i % self.clients.len()].clone()
 	}
 
-	pub async fn send_tx(
-		&self,
-		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(), SendToUrlError> {
+	pub async fn send_tx(&self, tx: &SerdeTransaction<S, P, DefaultDB>) -> Result<(), SenderError> {
 		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
 		if self.watch_progress {
-			self.send_and_log(&tx_hash_string, tx_progress).await;
+			self.send_and_log(&tx_hash_string, tx_progress).await?;
 		}
 		Ok(())
 	}
@@ -135,17 +143,19 @@ where
 		self: Arc<Self>,
 		rate: f32,
 		txs: Vec<TransactionWithContext<S, P, DefaultDB>>,
-	) {
+	) -> usize {
 		log::debug!("send_worker: starting with {} txs", txs.len());
+		let failed_count = Arc::new(AtomicUsize::new(0));
 		let mut pending_finalized = vec![];
 		for (i, tx) in txs.into_iter().enumerate() {
 			let arc_self = self.clone();
+			let failed_count = failed_count.clone();
 			let task = tokio::spawn(async move {
 				log::debug!("send_worker: spawned task for tx {} starting", i);
-				let (tx_hashes, tx_progress) =
-					arc_self.send_tx_no_wait(&tx.tx).await.expect("Failed to send tx");
-				if arc_self.watch_progress {
-					arc_self.send_and_log(&tx_hashes, tx_progress).await;
+				let result = arc_self.send_tx(&tx.tx).await;
+				if let Err(e) = result {
+					log::error!("Failed to send tx {}: {}", i, e);
+					failed_count.fetch_add(1, atomic::Ordering::SeqCst);
 				}
 				log::debug!("send_worker: spawned task for tx {} done", i);
 			});
@@ -156,23 +166,27 @@ where
 		log::debug!("send_worker: waiting for {} tasks to complete", pending_finalized.len());
 		for (i, task) in pending_finalized.into_iter().enumerate() {
 			log::debug!("send_worker: waiting for task {}", i);
-			task.await.expect("Transaction task failed");
+			if let Err(e) = task.await {
+				log::error!("Transaction task {} failed: {}", i, e);
+				failed_count.fetch_add(1, atomic::Ordering::SeqCst);
+			}
 			log::debug!("send_worker: task {} completed", i);
 		}
 		log::debug!("send_worker: all tasks completed");
+		failed_count.load(atomic::Ordering::SeqCst)
 	}
 
 	async fn send_tx_no_wait(
 		&self,
 		tx: &SerdeTransaction<S, P, DefaultDB>,
-	) -> Result<(TxHashes, Progress), SendToUrlError> {
+	) -> Result<(TxHashes, Progress), SenderError> {
 		let client = self.get_client();
 		log::debug!(url = client.url; "send_tx_no_wait: got client");
 
 		let midnight_tx_hash = tx.transaction_hash();
 		log::debug!(url = client.url; "send_tx_no_wait: computed hash");
 
-		let tx_serialize = tx.serialize_inner().map_err(|e| Self::error(&client.url, e.into()))?;
+		let tx_serialize = tx.serialize_inner().expect("failed to serialize transaction");
 		log::debug!(url = client.url; "send_tx_no_wait: serialized tx");
 
 		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_serialize.clone());
@@ -183,7 +197,7 @@ where
 			.api
 			.tx()
 			.create_unsigned(&mn_tx)
-			.map_err(|e| Self::error(&client.url, e.into()))?;
+			.expect("failed to create unsigned extrinsic");
 		log::debug!(url = client.url; "send_tx_no_wait: created unsigned extrinsic");
 
 		log::info!(
@@ -191,10 +205,9 @@ where
 			midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash);
 			"SENDING"
 		);
-		let tx_progress = unsigned_extrinsic
-			.submit_and_watch()
-			.await
-			.map_err(|e| Self::error(&client.url, e.into()))?;
+		let tx_progress = unsigned_extrinsic.submit_and_watch().await.map_err(|e| {
+			SenderError::SendToUrlError { url: client.url.clone(), source: e.into() }
+		})?;
 
 		let extrinsic_hash = tx_progress.extrinsic_hash();
 		let tx_hashes = TxHashes::new(&midnight_tx_hash, &extrinsic_hash);
@@ -266,7 +279,7 @@ where
 		}
 	}
 
-	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) {
+	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
 		let url = tx.url.clone();
 		let (progress, best_block) = Self::wait_for_best_block(tx).await;
 		if best_block.is_none() {
@@ -276,7 +289,7 @@ where
 				midnight_tx_hash = &tx_hashes.midnight_tx_hash;
 				"FAILED_TO_REACH_BEST_BLOCK"
 			);
-			return;
+			return Err(SenderError::FailedToReachBestBlock);
 		}
 		let best_block = best_block.unwrap();
 		log::info!(
@@ -296,9 +309,6 @@ where
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
 			"{message}"
 		);
-	}
-
-	fn error(url: &str, e: subxt::Error) -> SendToUrlError {
-		SendToUrlError { url: url.to_string(), source: e }
+		if finalized.is_some() { Ok(()) } else { Err(SenderError::FailedToFinalize) }
 	}
 }

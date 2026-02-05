@@ -42,6 +42,13 @@ if [[ -d "${CONTRACTS_DIR}/build" ]]; then
     echo "✓ Build directory cleaned"
 fi
 
+# Remove any pre-built plutus.json from source repo to ensure fresh compilation
+if [[ -f "${CONTRACTS_DIR}/plutus.json" ]]; then
+    echo "Removing existing plutus.json..."
+    rm -f "${CONTRACTS_DIR}/plutus.json"
+    echo "✓ Existing plutus.json removed"
+fi
+
 # Wait for one-shot hash files to be available
 echo "Waiting for one-shot UTxO hashes..."
 start_time=$(date +%s)

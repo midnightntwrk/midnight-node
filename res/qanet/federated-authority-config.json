@@ -1,30 +1,30 @@
 {
-    "council": {
-        "address": "addr_test1wpsyqmlhdvepckw4d659nw0gwqjm9dqpmgvly0m8wy759fq9ktez7",
-        "policy_id": "60406ff76b321c59d56ea859b9e87025b2b401da19f23f67713d42a4",
-        "members": [
-            "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-            "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
-            "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"
-        ],
-        "members_mainchain": [
-            "e3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
-            "a5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
-            "1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
-        ]
-    },
-    "technical_committee": {
-        "address": "addr_test1wzy6xm8ue9fa8cm99gaqx3mv9plze3cfqkgav3zsqk06w0gakkpkt",
-        "policy_id": "89a36cfcc953d3e3652a3a03476c287e2cc7090591d64450059fa73d",
-        "members": [
-            "0x306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20",
-            "0xe659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e",
-            "0x1cbd2d43530a44705ad088af313e18f80b53ef16b36177cd4b77b846f2a5f07c"
-        ],
-        "members_mainchain": [
-            "b94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
-            "de14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
-            "1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
-        ]
-    }
+  "council": {
+    "address": "addr_test1wpsyqmlhdvepckw4d659nw0gwqjm9dqpmgvly0m8wy759fq9ktez7",
+    "policy_id": "60406ff76b321c59d56ea859b9e87025b2b401da19f23f67713d42a4",
+    "members": [
+      "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+      "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
+      "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"
+    ],
+    "members_mainchain": [
+      "f932cb4c0de84606b3da87214324887270f5fb0e04a6870dc7df5f23",
+      "1ef4e15cba8217811b9a9b2a7ec4a24a110418a38c2a9f0ae7127e04",
+      "8585125fa41171f55c23cdadc3d0ad3692be927c6ed1b92d1f048335"
+    ]
+  },
+  "technical_committee": {
+    "address": "addr_test1wzy6xm8ue9fa8cm99gaqx3mv9plze3cfqkgav3zsqk06w0gakkpkt",
+    "policy_id": "89a36cfcc953d3e3652a3a03476c287e2cc7090591d64450059fa73d",
+    "members": [
+      "0x306721211d5404bd9da88e0204360a1a9ab8b87c66c1bc2fcdd37f3c2222cc20",
+      "0xe659a7a1628cdd93febc04a4e0646ea20e9f5f0ce097d9a05290d4a9e054df4e",
+      "0x1cbd2d43530a44705ad088af313e18f80b53ef16b36177cd4b77b846f2a5f07c"
+    ],
+    "members_mainchain": [
+      "3958ae4a79fa36f52c9e0f5fab7aac2d4c4446a290b44e2d2f53d387",
+      "c6f2de5adbbf0b77adcc6883d562a4f5a535017eaedc6804c5e55b33",
+      "a7b42151bbc97e9ecd40f454d6dd0a24cf3e579c675f6552bd059c82"
+    ]
+  }
 }

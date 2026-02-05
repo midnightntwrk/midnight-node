@@ -40,13 +40,111 @@ pub struct Cli {
 
 #[derive(Debug, Parser)]
 pub struct CNightGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing cNight addresses. Defaults to res/<CFG_PRESET>/cnight-addresses.json
 	#[arg(long)]
-	pub cnight_addresses: std::path::PathBuf,
-	#[arg(short, long, default_value = "cnight-genesis.json")]
-	pub output: std::path::PathBuf,
+	pub cnight_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/cnight-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct FederatedAuthorityGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses. Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/federated-authority-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct PermissionedCandidatesGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing the permissioned candidates policy ID. Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter if CARDANO_SECURITY_PARAMETER env var is not set. Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct GenesisConfigCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing cNight addresses. Defaults to res/<CFG_PRESET>/cnight-addresses.json
+	#[arg(long)]
+	pub cnight_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the cNight genesis config. Defaults to res/<CFG_PRESET>/cnight-config.json
+	#[arg(long)]
+	pub cnight_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing federated authority addresses. Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the federated authority genesis config. Defaults to res/<CFG_PRESET>/federated-authority-config.json
+	#[arg(long)]
+	pub federated_authority_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the permissioned candidates policy ID. Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter if CARDANO_SECURITY_PARAMETER env var is not set. Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+
+	/// Output path for the permissioned candidates genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
+	#[arg(long)]
+	pub permissioned_candidates_output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct IcsGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses. Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long)]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the ICS genesis config. Defaults to res/<CFG_PRESET>/ics-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -68,6 +166,20 @@ pub enum Subcommand {
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
+
+	/// Generate ICS (Illiquid Circulation Supply) genesis file. This queries the ICS forever
+	/// contract on Cardano to determine the total cNIGHT locked, which will be allocated to
+	/// the Midnight treasury at genesis.
+	GenerateIcsGenesis(IcsGenesisCmd),
+
+	/// Generate Federed Authority Genesis file.
+	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),
+
+	/// Generate Permissioned Candidates Genesis file. This file contains the initial permissioned candidates observed from the mainchain.
+	GeneratePermissionedCandidatesGenesis(PermissionedCandidatesGenesisCmd),
+
+	/// Generate all genesis config files (cNight, federated authority, and permissioned candidates) in a single command.
+	GenerateGenesisConfig(GenesisConfigCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),

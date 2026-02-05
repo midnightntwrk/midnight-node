@@ -111,10 +111,13 @@ pub struct Source {
 		default_value = "redb:toolkit.db",
 		env = "MN_FETCH_CACHE"
 	)]
-	/// Fetch cache config. Available options:
-	/// - "inmemory" (i.e. no cache),
+	/// Fetch cache config. Caches both block data and wallet state.
+	/// Available options:
+	/// - "inmemory" (RAM-only, no persistence),
 	/// - "redb:<filename>" (file-cache, single-writer)
 	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
+	///
+	/// When using redb or postgres backends, wallet state is also cached to speed up subsequent runs.
 	pub fetch_cache: FetchCacheConfig,
 }
 
