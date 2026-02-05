@@ -127,7 +127,7 @@ jq '.observed_utxos.end = .observed_utxos.start
   | .mappings = {}
   | .utxo_owners = {}
   | .next_cardano_position = .observed_utxos.start
-  | .system_tx = null' cnight-config.json > /tmp/cnight-config.json
+  | .system_tx = null' res/qanet/cnight-config.json > /tmp/cnight-config.json
 
 echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
