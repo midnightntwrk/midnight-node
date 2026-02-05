@@ -496,7 +496,6 @@ rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
     BUILD +rebuild-genesis-state-govnet
-    BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
     #BUILD +rebuild-genesis-state-preview
