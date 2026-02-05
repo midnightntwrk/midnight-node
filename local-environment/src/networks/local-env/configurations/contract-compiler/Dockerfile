@@ -140,13 +140,13 @@ RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/
     rm /tmp/just.tar.gz
 
 # Install bun (pre-built ARM64 binary available)
-RUN curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64-baseline.zip" -o /tmp/bun.zip && \
+RUN curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64.zip" -o /tmp/bun.zip && \
     echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - && \
     unzip -q /tmp/bun.zip -d /tmp && \
-    mv /tmp/bun-linux-aarch64-baseline/bun /usr/local/bin/bun && \
+    mv /tmp/bun-linux-aarch64/bun /usr/local/bin/bun && \
     chmod +x /usr/local/bin/bun && \
     ln -s /usr/local/bin/bun /usr/local/bin/bunx && \
-    rm -rf /tmp/bun.zip /tmp/bun-linux-aarch64-baseline
+    rm -rf /tmp/bun.zip /tmp/bun-linux-aarch64
 
 # Clean up Rust toolchain and build dependencies to reduce image size
 RUN rustup self uninstall -y && \
