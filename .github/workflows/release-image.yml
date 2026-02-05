@@ -259,6 +259,15 @@ jobs:
       matrix:
         platform: [amd64, arm64]
     steps:
+      - name: Checkout (for signing script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: .github/scripts
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  #v3.7.0
 
@@ -267,37 +276,125 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Extract files from Docker image
+      - name: Extract files from Docker images
+        id: extract
         run: |
           IMAGE_TAG="${{ needs.prepare-release.outputs.release_tag }}"
           RELEASE_TAG="node-${IMAGE_TAG}"
-          IMAGE_NAME="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
-          RELEASE_NAME="${RELEASE_TAG}-linux-${{ matrix.platform }}.tar.gz"
+          PLATFORM="${{ matrix.platform }}"
 
           echo "Release tag: $RELEASE_TAG"
           echo "Image tag: $IMAGE_TAG"
-          echo "Extracting from: $IMAGE_NAME"
-          echo "Creating: $RELEASE_NAME"
+          echo "Platform: $PLATFORM"
 
-          docker pull --platform linux/${{ matrix.platform }} "$IMAGE_NAME"
+          # Extract midnight-node
+          NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
+          NODE_RELEASE="midnight-node-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
 
-          # Create container and extract files
-          CONTAINER_ID=$(docker create "$IMAGE_NAME")
+          echo "Extracting from: $NODE_IMAGE"
+          docker pull --platform "linux/${PLATFORM}" "$NODE_IMAGE"
+          CONTAINER_ID=$(docker create --platform "linux/${PLATFORM}" "$NODE_IMAGE")
           docker cp "$CONTAINER_ID:/midnight-node" ./
           docker cp "$CONTAINER_ID:/res" ./
           docker rm "$CONTAINER_ID"
+          tar -czf "$NODE_RELEASE" midnight-node res
+          rm -rf midnight-node res
+          echo "Created: $NODE_RELEASE"
 
-          # Create tar.gz
-          tar -czf "$RELEASE_NAME" midnight-node res
+          # Extract midnight-node-toolkit
+          TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
+          TOOLKIT_RELEASE="midnight-node-toolkit-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
 
-          echo "RELEASE_FILE=$RELEASE_NAME" >> "$GITHUB_ENV"
+          echo "Extracting from: $TOOLKIT_IMAGE"
+          docker pull --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE"
+          CONTAINER_ID=$(docker create --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE")
+          docker cp "$CONTAINER_ID:/midnight-node-toolkit" ./
+          docker rm "$CONTAINER_ID"
+          tar -czf "$TOOLKIT_RELEASE" midnight-node-toolkit
+          rm -rf midnight-node-toolkit
+          echo "Created: $TOOLKIT_RELEASE"
 
-      - name: Upload release asset
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "node_release=$NODE_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "toolkit_release=$TOOLKIT_RELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate checksums
+        run: |
+          sha256sum ${{ steps.extract.outputs.node_release }} >> SHA256SUMS-${{ matrix.platform }}
+          sha256sum ${{ steps.extract.outputs.toolkit_release }} >> SHA256SUMS-${{ matrix.platform }}
+          echo "Generated checksums:"
+          cat SHA256SUMS-${{ matrix.platform }}
+
+      - name: Sign binary archives
+        run: |
+          source .github/scripts/sign-binary.sh
+
+          sign_blob_with_retry "${{ steps.extract.outputs.node_release }}"
+          sign_blob_with_retry "${{ steps.extract.outputs.toolkit_release }}"
+
+      - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_TAG="node-${{ needs.prepare-release.outputs.release_tag }}"
-          gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" "${{ env.RELEASE_FILE }}"
+          RELEASE_TAG="${{ steps.extract.outputs.release_tag }}"
+          NODE_FILE="${{ steps.extract.outputs.node_release }}"
+          TOOLKIT_FILE="${{ steps.extract.outputs.toolkit_release }}"
+
+          echo "Uploading assets to release: $RELEASE_TAG"
+          gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
+            "$NODE_FILE" "${NODE_FILE}.sig" "${NODE_FILE}.pem" \
+            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.sig" "${TOOLKIT_FILE}.pem" \
+            "SHA256SUMS-${{ matrix.platform }}"
+
+  finalize-checksums:
+    needs: [prepare-release, create-release-assets]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.release-type != 'Don''t create a release.'
+    steps:
+      - name: Checkout (for signing script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: .github/scripts
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Download and combine checksums
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: node-${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          echo "Downloading checksum files from release: $RELEASE_TAG"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "SHA256SUMS-*"
+
+          # Combine into single file
+          echo "Combining checksums:"
+          cat SHA256SUMS-* | sort > SHA256SUMS
+          cat SHA256SUMS
+
+          # Remove individual platform files from release
+          echo "Removing per-platform checksum files from release..."
+          for f in SHA256SUMS-*; do
+            gh release delete-asset "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "$f" --yes
+          done
+
+      - name: Sign checksums file
+        run: |
+          source .github/scripts/sign-binary.sh
+          sign_blob_with_retry SHA256SUMS
+
+      - name: Upload final checksums
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: node-${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          echo "Uploading signed checksums to release: $RELEASE_TAG"
+          gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
+            SHA256SUMS \
+            SHA256SUMS.sig \
+            SHA256SUMS.pem
 
   sbom-scan-ghcr-node:
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})
