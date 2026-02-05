@@ -35,7 +35,6 @@ use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
-	resolve_state_version_from_wasm,
 };
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
@@ -63,6 +62,33 @@ use time_source::SystemTimeSource;
 pub struct StorageInit {
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
+}
+
+/// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
+/// `RuntimeVersion` so we can read `spec_version` from the chainspec WASM blob rather
+/// than from the compiled-in native runtime constant.
+fn resolve_runtime_version_from_wasm<E, H>(
+	storage: &Storage,
+	executor: &E,
+) -> sp_blockchain::Result<sp_version::RuntimeVersion>
+where
+	E: RuntimeVersionOf,
+	H: HashT,
+{
+	let wasm = storage.top.get(sp_core::storage::well_known_keys::CODE).ok_or_else(|| {
+		sp_blockchain::Error::VersionInvalid(
+			"Runtime missing from initial storage, could not read runtime version.".into(),
+		)
+	})?;
+	let mut ext = sp_state_machine::BasicExternalities::new_empty();
+	let code_fetcher = sp_core::traits::WrappedRuntimeCode(wasm.as_slice().into());
+	let runtime_code = sp_core::traits::RuntimeCode {
+		code_fetcher: &code_fetcher,
+		heap_pages: None,
+		hash: <H as HashT>::hash(wasm).encode(),
+	};
+	RuntimeVersionOf::runtime_version(executor, &mut ext, &runtime_code)
+		.map_err(|e| sp_blockchain::Error::VersionInvalid(e.to_string()))
 }
 
 pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
@@ -118,13 +144,18 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Bl
 			extrinsics.push(extrinsic);
 		}
 
-		let genesis_state_version =
-			resolve_state_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let runtime_version =
+			resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let genesis_state_version = runtime_version.state_version();
 		let mut op = backend.begin_operation()?;
 		let state_root =
 			op.set_genesis_state(genesis_storage, commit_genesis_state, genesis_state_version)?;
-		let genesis_block =
-			construct_genesis_block::<Block>(state_root, genesis_state_version, extrinsics);
+		let genesis_block = construct_genesis_block::<Block>(
+			state_root,
+			genesis_state_version,
+			extrinsics,
+			runtime_version.spec_version,
+		);
 
 		Ok((genesis_block, op))
 	}
@@ -135,6 +166,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 	state_root: Block::Hash,
 	state_version: StateVersion,
 	extrinsics: Vec<<Block as BlockT>::Extrinsic>,
+	spec_version: u32,
 ) -> Block {
 	let extrinsics_root =
 		<<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::ordered_trie_root(
@@ -143,10 +175,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 		);
 
 	let block_digest = Digest {
-		logs: vec![DigestItem::Consensus(
-			midnight_node_runtime::VERSION_ID,
-			midnight_node_runtime::VERSION.spec_version.encode(),
-		)],
+		logs: vec![DigestItem::Consensus(midnight_node_runtime::VERSION_ID, spec_version.encode())],
 	};
 
 	Block::new(
