@@ -442,7 +442,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-tokens-minter-e2e:
-    name: Toolkit Tokens Minter E2E
+    name: Toolkit Unshielded Token E2E
     needs: [ run ]
     runs-on: ubuntu-latest
     steps:
