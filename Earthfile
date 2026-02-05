@@ -521,7 +521,6 @@ rebuild-chainspec:
 
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 rebuild-all-chainspecs:
-    BUILD +rebuild-chainspec --NETWORK=node-dev-01
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
