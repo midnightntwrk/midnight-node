@@ -104,7 +104,7 @@ cat /tmp/system-parameters-config.json
 echo "Creating permissioned-candidates-config.json with deployed Aiken policy ID..."
 jq --arg policy_id "$PERMISSIONED_CANDIDATES_POLICY_ID" --argjson d_perm "$D_PERMISSIONED" \
    '.permissioned_candidates_policy_id = ("0x" + $policy_id) | .initial_permissioned_candidates = .initial_permissioned_candidates[:$d_perm]' \
-   res/qanet/permissioned-candidates-config.json > /tmp/permissioned-candidates-config.json
+   /midnight-setup/permissioned-candidates-config.json > /tmp/permissioned-candidates-config.json
 
 echo "Created permissioned-candidates-config.json:"
 cat /tmp/permissioned-candidates-config.json
