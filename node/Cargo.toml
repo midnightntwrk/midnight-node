@@ -51,7 +51,9 @@ sc-network.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
+sp-state-machine.workspace = true
 sp-timestamp.workspace = true
+sp-version.workspace = true
 
 mmr-rpc.workspace = true
 mmr-gadget.workspace = true
