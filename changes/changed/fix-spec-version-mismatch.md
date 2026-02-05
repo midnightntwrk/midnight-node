@@ -8,4 +8,4 @@ resolve_runtime_version_from_wasm that returns the full RuntimeVersion, so both
 state_version and spec_version come from the chainspec WASM blob.
 
 Ticket: https://shielded.atlassian.net/browse/PM-21720
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/615
