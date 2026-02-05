@@ -150,7 +150,7 @@ const SIDECHAIN_POOL_CFG: DbPoolCfg =
 const MC_HASH_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 10 };
 const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const BRIDGE_POOL_CFG: DbPoolCfg =
