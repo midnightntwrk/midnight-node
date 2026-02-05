@@ -702,9 +702,8 @@ where
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
 			})?;
 
-		// Cache in both caches
+		// Cache in strict cache (soft cache is managed by do_validate_transaction)
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
-		SOFT_TX_VALIDATION_CACHE.insert(SoftTxValidationKey { tx_hash: tx_hash.0 }, Ok(()));
 
 		Ok(verified_tx)
 	}
@@ -733,22 +732,44 @@ where
 
 		// Cache miss: transaction is entering the mempool or being re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
-		match Self::get_verified_transaction(ledger, tx, block_context, tx_hash) {
-			Ok(_) => {
-				log::info!(
-					target: LOG_TARGET,
-					"📋 Validated transaction {} for mempool",
-					tx_hash_hex
-				);
-				Ok(false)
-			},
+		let verified_tx = match Self::get_verified_transaction(ledger, tx, block_context, tx_hash) {
+			Ok(vt) => vt,
 			Err(e) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"🚫 Rejected transaction {} from mempool: {e}",
 					tx_hash_hex
 				);
-				Err(e)
+				return Err(e);
+			},
+		};
+
+		// Dry-run apply to validate guaranteed execution against current state
+		let ctx = ledger.get_transaction_context(block_context.clone());
+		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
+
+		match result {
+			mn_ledger_local::semantics::TransactionResult::Success(_)
+			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => {
+				log::info!(
+					target: LOG_TARGET,
+					"📋 Validated transaction {} for mempool",
+					tx_hash_hex
+				);
+				// Cache the success (only successes are cached)
+				SOFT_TX_VALIDATION_CACHE.insert(soft_key, Ok(()));
+				Ok(false)
+			},
+			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
+					tx_hash_hex
+				);
+				// Do NOT cache failures — tx will be fully re-checked on next revalidation
+				Err(LedgerApiError::Transaction(
+					types::TransactionError::Invalid(reason.into()),
+				))
 			},
 		}
 	}
@@ -769,6 +790,9 @@ where
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
+		// Invalidate soft cache — tx must re-validate after a block authoring attempt
+		SOFT_TX_VALIDATION_CACHE.invalidate(&SoftTxValidationKey { tx_hash: tx_hash.0 });
+
 		// Check strict cache to determine if this is a cache hit
 		let state_hash = ledger.state.state_hash();
 		let strict_key =
