@@ -120,6 +120,18 @@ EOF
 echo "Created registered-candidates-addresses.json:"
 cat /tmp/registered-candidates-addresses.json
 
+
+echo "Creating cnight-config.json..."
+jq '.observed_utxos.end = .observed_utxos.start
+  | .observed_utxos.utxos = []
+  | .mappings = {}
+  | .utxo_owners = {}
+  | .next_cardano_position = .observed_utxos.start
+  | .system_tx = null' cnight-config.json > /tmp/cnight-config.json
+
+echo "Created cnight-config.json:"
+cat /tmp/cnight-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
 export CHAINSPEC_NETWORK_ID=devnet
@@ -128,7 +140,7 @@ export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=res/qanet/cnight-config.json
+export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-config.json
 export CHAINSPEC_ICS_CONFIG=res/qanet/ics-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
