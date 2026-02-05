@@ -695,6 +695,7 @@ prep-no-copy:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
