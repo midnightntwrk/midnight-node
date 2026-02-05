@@ -43,19 +43,19 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@eslint/js": "^9.29.0",
     "@polkadot/api": "^16.2.2",
     "@polkadot/keyring": "^13.5.2",
     "@polkadot/types": "^16.3.1",
     "@polkadot/util": "^13.5.2",
     "@polkadot/util-crypto": "^13.5.2",
-    "@eslint/js": "^9.29.0",
-    "eslint": "^9.29.0",
-    "prettier": "3.5.3",
     "@types/wait-on": "^5.3.4",
-    "typescript-eslint": "^8.34.1",
     "commander": "^14.0.0",
     "dotenv": "^16.5.0",
+    "eslint": "^9.29.0",
     "glob": "^11.1.0",
+    "prettier": "3.5.3",
+    "typescript-eslint": "^8.34.1",
     "wait-on": "^8.0.3",
     "yaml": "^2.8.0"
   },
@@ -64,5 +64,8 @@
     "ts-node": "10.9.2",
     "typescript": "5.9.3"
   },
-  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748",
+  "overrides": {
+    "minimatch": "10.1.2"
+  }
 }
