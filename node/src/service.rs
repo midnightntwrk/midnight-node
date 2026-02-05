@@ -75,14 +75,11 @@ where
 	E: RuntimeVersionOf,
 	H: HashT,
 {
-	let wasm = storage
-		.top
-		.get(sp_core::storage::well_known_keys::CODE)
-		.ok_or_else(|| {
-			sp_blockchain::Error::VersionInvalid(
-				"Runtime missing from initial storage, could not read runtime version.".into(),
-			)
-		})?;
+	let wasm = storage.top.get(sp_core::storage::well_known_keys::CODE).ok_or_else(|| {
+		sp_blockchain::Error::VersionInvalid(
+			"Runtime missing from initial storage, could not read runtime version.".into(),
+		)
+	})?;
 	let mut ext = sp_state_machine::BasicExternalities::new_empty();
 	let code_fetcher = sp_core::traits::WrappedRuntimeCode(wasm.as_slice().into());
 	let runtime_code = sp_core::traits::RuntimeCode {
@@ -178,10 +175,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 		);
 
 	let block_digest = Digest {
-		logs: vec![DigestItem::Consensus(
-			midnight_node_runtime::VERSION_ID,
-			spec_version.encode(),
-		)],
+		logs: vec![DigestItem::Consensus(midnight_node_runtime::VERSION_ID, spec_version.encode())],
 	};
 
 	Block::new(
