@@ -767,9 +767,7 @@ where
 					tx_hash_hex
 				);
 				// Do NOT cache failures — tx will be fully re-checked on next revalidation
-				Err(LedgerApiError::Transaction(
-					types::TransactionError::Invalid(reason.into()),
-				))
+				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
 			},
 		}
 	}
