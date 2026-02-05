@@ -21,9 +21,9 @@ use midnight_node_ledger_helpers::{
 };
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
-	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
-	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
+	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
+	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
+	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature,
 	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
@@ -31,12 +31,26 @@ use midnight_node_runtime::{
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::MainchainAddress;
+use sidechain_domain::{AssetName, MainchainAddress};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
+use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
+
+/// Parse asset name from config - accepts either hex-encoded string or plain UTF-8 string.
+/// If the string is valid hex, it decodes it as hex bytes.
+/// Otherwise, it treats the string as UTF-8 and uses its bytes directly.
+fn parse_asset_name(s: &str) -> AssetName {
+	// Try to decode as hex first
+	if let Ok(asset_name) = AssetName::decode_hex(s) {
+		return asset_name;
+	}
+	// Fall back to treating as UTF-8 string - convert to hex and decode
+	let hex_string = hex::encode(s.as_bytes());
+	AssetName::decode_hex(&hex_string).expect("UTF-8 to hex conversion should always succeed")
+}
 
 pub enum ChainSpecInitError {
 	Missing(String),
@@ -312,7 +326,28 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.clone(),
 			..Default::default()
 		},
-		bridge: Default::default(),
+		bridge: {
+			let ics_config = genesis.ics_config();
+			BridgeConfig {
+				main_chain_scripts: if ics_config
+					.illiquid_circulation_supply_validator_address
+					.is_empty()
+				{
+					None
+				} else {
+					Some(BridgeMainChainScripts {
+						token_policy_id: ics_config.asset.policy_id,
+						token_asset_name: parse_asset_name(&ics_config.asset.asset_name),
+						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
+							&ics_config.illiquid_circulation_supply_validator_address,
+						)
+						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+					})
+				},
+				initial_checkpoint: None,
+				_marker: Default::default(),
+			}
+		},
 		system_parameters: {
 			let system_params = genesis.system_parameters_config();
 			let hash_bytes = system_params

@@ -18,7 +18,7 @@ use sp_runtime::Vec;
 use std::borrow::Cow;
 
 #[cfg(feature = "std")]
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "std")]
 use sp_core::{ByteArray, sr25519};
@@ -29,6 +29,22 @@ pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"faobsrve";
 /// Alias for mainchain member identifier (28 bytes PolicyId)
 pub type MainchainMember = PolicyId;
 
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, serde_valid::Validate)]
+pub struct FederatedAuthorityAddresses {
+	#[validate(pattern = r"^(addr|addr_test)1[0-9a-z]{1,108}$")]
+	pub council_address: String,
+
+	#[serde(with = "hex")]
+	pub council_policy_id: [u8; 28],
+
+	#[validate(pattern = r"^(addr|addr_test)1[0-9a-z]{1,108}$")]
+	pub technical_committee_address: String,
+
+	#[serde(with = "hex")]
+	pub technical_committee_policy_id: [u8; 28],
+}
+
 /// Convert Ed25519 public key to MainchainMember by taking first 28 bytes
 #[cfg(feature = "std")]
 pub fn ed25519_to_mainchain_member(public: sp_core::ed25519::Public) -> MainchainMember {
@@ -36,6 +52,24 @@ pub fn ed25519_to_mainchain_member(public: sp_core::ed25519::Public) -> Mainchai
 	let mut mainchain_bytes = [0u8; 28];
 	mainchain_bytes.copy_from_slice(&bytes[..28]);
 	PolicyId(mainchain_bytes)
+}
+
+/// Custom serializer for vector of sr25519 public keys to hex-encoded strings with 0x prefix
+#[cfg(feature = "std")]
+fn vec_sr25519_to_vec_hex<S>(
+	keys: &alloc::vec::Vec<sp_core::sr25519::Public>,
+	serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+	S: Serializer,
+{
+	use serde::ser::SerializeSeq;
+	let mut seq = serializer.serialize_seq(Some(keys.len()))?;
+	for key in keys {
+		let hex_str = alloc::format!("0x{}", hex::encode(key.0));
+		seq.serialize_element(&hex_str)?;
+	}
+	seq.end()
 }
 
 /// Custom deserializer for vector of hex-encoded sr25519 public keys
@@ -136,6 +170,24 @@ impl sp_inherents::IsFatalError for InherentError {
 	}
 }
 
+/// Custom serializer for vector of mainchain member hashes to hex-encoded strings without 0x prefix
+#[cfg(feature = "std")]
+fn vec_mainchain_member_to_vec_hex<S>(
+	members: &alloc::vec::Vec<MainchainMember>,
+	serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+	S: Serializer,
+{
+	use serde::ser::SerializeSeq;
+	let mut seq = serializer.serialize_seq(Some(members.len()))?;
+	for member in members {
+		let hex_str = hex::encode(member.0);
+		seq.serialize_element(&hex_str)?;
+	}
+	seq.end()
+}
+
 /// Custom deserializer for vector of hex-encoded mainchain member hashes (MainchainMember)
 #[cfg(feature = "std")]
 fn vec_hex_to_vec_mainchain_member<'de, D>(
@@ -152,6 +204,26 @@ where
 		.collect()
 }
 
+/// Custom serializer for PolicyId to hex-encoded string without 0x prefix
+#[cfg(feature = "std")]
+fn policy_id_to_hex<S>(policy_id: &PolicyId, serializer: S) -> Result<S::Ok, S::Error>
+where
+	S: Serializer,
+{
+	let hex_str = hex::encode(policy_id.0);
+	serializer.serialize_str(&hex_str)
+}
+
+/// Custom deserializer for PolicyId from hex-encoded string (with or without 0x prefix)
+#[cfg(feature = "std")]
+fn hex_to_policy_id<'de, D>(deserializer: D) -> Result<PolicyId, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let s: alloc::string::String = alloc::string::String::deserialize(deserializer)?;
+	PolicyId::decode_hex(&s).map_err(serde::de::Error::custom)
+}
+
 /// Configuration for observing a governance body
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,12 +231,19 @@ pub struct AuthBodyConfig {
 	/// The Cardano script address for this governance body
 	pub address: String,
 	/// The policy ID for the native asset associated with this governance body
+	#[serde(serialize_with = "policy_id_to_hex", deserialize_with = "hex_to_policy_id")]
 	pub policy_id: PolicyId,
 	/// Initial members of this governance body (for genesis)
-	#[serde(deserialize_with = "vec_hex_to_vec_sr25519")]
+	#[serde(
+		serialize_with = "vec_sr25519_to_vec_hex",
+		deserialize_with = "vec_hex_to_vec_sr25519"
+	)]
 	pub members: Vec<sp_core::sr25519::Public>,
 	/// Initial mainchain member hashes (for genesis)
-	#[serde(deserialize_with = "vec_hex_to_vec_mainchain_member")]
+	#[serde(
+		serialize_with = "vec_mainchain_member_to_vec_hex",
+		deserialize_with = "vec_hex_to_vec_mainchain_member"
+	)]
 	pub members_mainchain: Vec<MainchainMember>,
 }
 

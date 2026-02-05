@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
@@ -70,13 +71,19 @@ impl InitialAuthorityData {
 		serde_json::from_str(data).expect("failed to parse initial authorities")
 	}
 
-	pub fn load_from_pc_chain_config(config: &serde_json::Value) -> Vec<Self> {
+	/// Load initial authorities from permissioned-candidates-config.json
+	pub fn load_from_permissioned_candidates_config(config: &serde_json::Value) -> Vec<Self> {
 		let authorities_value = config
 			.get("initial_permissioned_candidates")
 			.expect("no \"initial_permissioned_candidates\" exists")
 			.clone();
 		serde_json::value::from_value(authorities_value)
 			.expect("failed to parse \"initial_permissioned_candidates\"")
+	}
+
+	#[deprecated(note = "Use load_from_permissioned_candidates_config instead")]
+	pub fn load_from_pc_chain_config(config: &serde_json::Value) -> Vec<Self> {
+		Self::load_from_permissioned_candidates_config(config)
 	}
 }
 
@@ -85,10 +92,28 @@ pub struct EndowedAccount {
 	pub balance: u128,
 }
 
+/// Configuration for mainchain scripts used in chain spec generation.
+/// This struct is constructed from two separate config files:
+/// - `registered-candidates-addresses.json` for `committee_candidates_address`
+/// - `permissioned-candidates-config.json` for `permissioned_candidates_policy_id`
 #[derive(Clone, Debug, Deserialize)]
 pub struct MainChainScripts {
-	committee_candidates_address: String,
-	permissioned_candidates_policy_id: String,
+	pub committee_candidates_address: String,
+	pub permissioned_candidates_policy_id: String,
+}
+
+/// Config loaded from `registered-candidates-addresses.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct RegisteredCandidatesAddresses {
+	pub committee_candidates_address: String,
+}
+
+/// Config loaded from `permissioned-candidates-config.json` (or `permissioned-candidates-addresses.json`)
+#[derive(Clone, Debug, Deserialize)]
+pub struct PermissionedCandidatesConfig {
+	pub permissioned_candidates_policy_id: String,
+	#[serde(default)]
+	pub initial_permissioned_candidates: Vec<InitialAuthorityData>,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -114,6 +139,22 @@ impl From<MainChainScripts> for sp_session_validator_management::MainChainScript
 }
 
 impl MainChainScripts {
+	/// Load MainChainScripts from separate config files
+	pub fn load_from_configs(
+		registered_candidates: &RegisteredCandidatesAddresses,
+		permissioned_candidates: &PermissionedCandidatesConfig,
+	) -> Self {
+		Self {
+			committee_candidates_address: registered_candidates
+				.committee_candidates_address
+				.clone(),
+			permissioned_candidates_policy_id: permissioned_candidates
+				.permissioned_candidates_policy_id
+				.clone(),
+		}
+	}
+
+	#[deprecated(note = "Use load_from_configs instead")]
 	pub fn load_from_pc_chain_config(config: &serde_json::Value) -> Self {
 		let value = config
 			.get("cardano_addresses")
@@ -134,6 +175,7 @@ pub trait MidnightNetwork {
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
 	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
+	fn ics_config(&self) -> IcsConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

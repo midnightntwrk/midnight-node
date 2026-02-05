@@ -18,9 +18,11 @@ erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
 midnight-node-metadata.workspace = true
+midnight-primitives-ics-observation = { workspace = true, default-features = true }
 subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
+sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand.workspace = true
@@ -45,7 +47,6 @@ num_cpus = "1.17.0"
 redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
-sha2.workspace = true
 zstd = "0.13"
 
 [dev-dependencies]

@@ -131,7 +131,6 @@ pub trait LedgerBridge {
 	/*
 	 * validate_transaction()
 	 */
-	// Current Enabled Version
 	fn validate_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -142,14 +141,45 @@ pub trait LedgerBridge {
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), latest::types::LedgerApiError>>
 	{
-		latest::Bridge::<Signature, Database>::validate_transaction(
+		let (hash, Some(tx_details)) = latest::Bridge::<Signature, Database>::validate_transaction(
 			*self,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			max_weight,
-		)
+			true,
+		)?
+		else {
+			// This should never happen
+			log::error!("error: transaction_details is None");
+			return Err(latest::types::LedgerApiError::HostApiError);
+		};
+		Ok((hash, tx_details))
+	}
+
+	// Current Enabled Version
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, latest::types::LedgerApiError>> {
+		let (hash, _) = latest::Bridge::<Signature, Database>::validate_transaction(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			false,
+		)?;
+
+		Ok(hash)
 	}
 
 	/*
@@ -372,25 +402,56 @@ pub trait LedgerBridgeHf {
 		)
 	}
 
-	// Hard-fork Version
 	fn validate_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<
 		Result<(Hash, TransactionDetails), hard_fork_test::types::LedgerApiError>,
 	> {
-		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
+		let (hash, Some(tx_details)) =
+			hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				runtime_version,
+				max_weight,
+				true,
+			)?
+		else {
+			// This should never happen
+			log::error!("error: transaction_details is None");
+			return Err(hard_fork_test::types::LedgerApiError::HostApiError);
+		};
+		Ok((hash, tx_details))
+	}
+
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, hard_fork_test::types::LedgerApiError>> {
+		let (hash, _) = hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
 			*self,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			max_weight,
-		)
+			false,
+		)?;
+
+		Ok(hash)
 	}
 
 	// Hard-fork Version
