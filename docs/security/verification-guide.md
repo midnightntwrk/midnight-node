@@ -2,6 +2,14 @@
 
 This guide explains how to verify container image signatures and SBOMs for Midnight images.
 
+**Quick Start:** Use the included verification script for simple verification:
+```bash
+./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:TAG
+./scripts/verify-image.sh --sbom ghcr.io/midnight-ntwrk/midnight-node:TAG  # Also verify SBOM
+```
+
+For manual verification or advanced use cases, continue reading.
+
 ## Prerequisites
 
 Install [Cosign](https://github.com/sigstore/cosign):
@@ -35,7 +43,7 @@ Verify that an image was signed by Midnight's CI/CD pipeline:
 
 ```bash
 # GHCR
-cosign verify ghcr.io/midnightntwrk/midnight-node:TAG \
+cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer-regexp '.*'
 
@@ -52,7 +60,7 @@ Replace `TAG` with the specific version (e.g., `v1.0.0`, `latest`).
 For production deployments, verify the exact OIDC issuer and identity:
 
 ```bash
-cosign verify ghcr.io/midnightntwrk/midnight-node:TAG \
+cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
   --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
@@ -64,13 +72,13 @@ This ensures the image was signed by a GitHub Actions workflow in the `midnightn
 Successful verification:
 
 ```
-Verification for ghcr.io/midnightntwrk/midnight-node:v1.0.0 --
+Verification for ghcr.io/midnight-ntwrk/midnight-node:v1.0.0 --
 The following checks were performed on each of these signatures:
   - The cosign claims were validated
   - Existence of the claims in the transparency log was verified offline
   - The code-signing certificate was verified using trusted certificate authority certificates
 
-[{"critical":{"identity":{"docker-reference":"ghcr.io/midnightntwrk/midnight-node"},...}]
+[{"critical":{"identity":{"docker-reference":"ghcr.io/midnight-ntwrk/midnight-node"},...}]
 ```
 
 Failed verification (unsigned image):
@@ -88,7 +96,7 @@ Verify that an SBOM attestation exists and is properly signed:
 
 ```bash
 cosign verify-attestation --type spdxjson \
-  ghcr.io/midnightntwrk/midnight-node:TAG \
+  ghcr.io/midnight-ntwrk/midnight-node:TAG \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer-regexp '.*'
 ```
@@ -99,7 +107,7 @@ Extract and view the SBOM content:
 
 ```bash
 # Download and decode the SBOM
-cosign download attestation ghcr.io/midnightntwrk/midnight-node:TAG | \
+cosign download attestation ghcr.io/midnight-ntwrk/midnight-node:TAG | \
   jq -r '.payload' | base64 -d | jq '.predicate' > sbom.spdx.json
 
 # View the SBOM
@@ -124,10 +132,10 @@ For multi-architecture images, you can verify specific platform variants:
 
 ```bash
 # Get the manifest list
-docker manifest inspect ghcr.io/midnightntwrk/midnight-node:TAG
+docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:TAG
 
 # Verify a specific architecture digest
-cosign verify ghcr.io/midnightntwrk/midnight-node@sha256:DIGEST \
+cosign verify ghcr.io/midnight-ntwrk/midnight-node@sha256:DIGEST \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer-regexp '.*'
 ```
@@ -156,7 +164,7 @@ spec:
                 - Pod
       verifyImages:
         - imageReferences:
-            - "ghcr.io/midnightntwrk/*"
+            - "ghcr.io/midnight-ntwrk/*"
             - "midnightntwrk/*"
           attestors:
             - entries:
@@ -171,8 +179,8 @@ Verify any of these images using the commands above:
 
 | Image | GHCR | Docker Hub |
 |-------|------|------------|
-| Midnight Node | `ghcr.io/midnightntwrk/midnight-node` | `midnightntwrk/midnight-node` |
-| Midnight Toolkit | `ghcr.io/midnightntwrk/midnight-toolkit` | `midnightntwrk/midnight-toolkit` |
+| Midnight Node | `ghcr.io/midnight-ntwrk/midnight-node` | `midnightntwrk/midnight-node` |
+| Midnight Toolkit | `ghcr.io/midnight-ntwrk/midnight-node-toolkit` | `midnightntwrk/midnight-node-toolkit` |
 
 ## Troubleshooting
 
@@ -204,10 +212,10 @@ For air-gapped environments, you can download the Rekor bundle for offline verif
 
 ```bash
 # Download signature with bundle
-cosign download signature ghcr.io/midnightntwrk/midnight-node:TAG > sig.json
+cosign download signature ghcr.io/midnight-ntwrk/midnight-node:TAG > sig.json
 
 # Verify offline
-cosign verify --offline --bundle sig.json ghcr.io/midnightntwrk/midnight-node:TAG
+cosign verify --offline --bundle sig.json ghcr.io/midnight-ntwrk/midnight-node:TAG
 ```
 
 ## Related Documentation

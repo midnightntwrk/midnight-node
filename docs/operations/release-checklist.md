@@ -16,8 +16,8 @@ This checklist covers the release process for Midnight Node, including security 
 - [ ] Review `.grype.yaml` for any temporary CVE ignores
   - Are ignores still necessary?
   - Have upstream fixes been released?
-- [ ] Check for new high/critical CVEs in dependencies
-  - Run local scan: `grype ghcr.io/midnightntwrk/midnight-node:TAG`
+- [ ] Check for new critical CVEs in dependencies
+  - Run local scan: `grype ghcr.io/midnight-ntwrk/midnight-node:TAG`
 - [ ] Verify no secrets in code or configuration
 
 ### Documentation
@@ -31,8 +31,8 @@ This checklist covers the release process for Midnight Node, including security 
 ### Build Verification
 
 - [ ] Images build successfully for all architectures (amd64, arm64)
-- [ ] Node image: `ghcr.io/midnightntwrk/midnight-node:TAG`
-- [ ] Toolkit image: `ghcr.io/midnightntwrk/midnight-toolkit:TAG`
+- [ ] Node image: `ghcr.io/midnight-ntwrk/midnight-node:TAG`
+- [ ] Toolkit image: `ghcr.io/midnight-ntwrk/midnight-node-toolkit:TAG`
 
 ### Security Pipeline
 
@@ -42,7 +42,7 @@ The following are automated in CI but should be verified:
   - Check `sign-node-image` and `sign-toolkit-image` jobs
 - [ ] **SBOM Generation**: SBOMs generated for both images
   - Check `sbom-scan-node` and `sbom-scan-toolkit` jobs
-- [ ] **Vulnerability Scan**: No high/critical vulnerabilities
+- [ ] **Vulnerability Scan**: No critical vulnerabilities
   - Review scan results in job output
   - Download `*-scan-results` artifacts if needed
 - [ ] **SBOM Attestation**: SBOMs attested to images
@@ -56,7 +56,7 @@ Verify signatures are accessible for all published images:
 
 ```bash
 # Node - GHCR
-cosign verify ghcr.io/midnightntwrk/midnight-node:TAG \
+cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
   --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
@@ -66,12 +66,12 @@ cosign verify midnightntwrk/midnight-node:TAG \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
 # Toolkit - GHCR
-cosign verify ghcr.io/midnightntwrk/midnight-toolkit:TAG \
+cosign verify ghcr.io/midnight-ntwrk/midnight-node-toolkit:TAG \
   --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
 # Toolkit - Docker Hub
-cosign verify midnightntwrk/midnight-toolkit:TAG \
+cosign verify midnightntwrk/midnight-node-toolkit:TAG \
   --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
@@ -83,13 +83,13 @@ Verify SBOM attestations are accessible:
 ```bash
 # Node
 cosign verify-attestation --type spdxjson \
-  ghcr.io/midnightntwrk/midnight-node:TAG \
+  ghcr.io/midnight-ntwrk/midnight-node:TAG \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer-regexp '.*'
 
 # Toolkit
 cosign verify-attestation --type spdxjson \
-  ghcr.io/midnightntwrk/midnight-toolkit:TAG \
+  ghcr.io/midnight-ntwrk/midnight-node-toolkit:TAG \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer-regexp '.*'
 ```

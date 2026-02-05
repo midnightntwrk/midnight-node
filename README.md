@@ -167,6 +167,10 @@ that we are still in the process of being release. As such:
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
   - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance
+- [Security](docs/security/image-signing.md) - Container image signing and verification
+  - [Verification Guide](docs/security/verification-guide.md) - How to verify image signatures and SBOMs
+  - [Signing Runbook](docs/security/signing-runbook.md) - Operational procedures for signing
+- [Operations](docs/operations/release-checklist.md) - Release checklist with security verification steps
 
 ## Prerequisites
 

@@ -10,7 +10,7 @@ During a normal release, the following occurs automatically:
 2. **Push**: Images are pushed to GHCR and Docker Hub
 3. **Sign**: Each image digest is signed with Cosign keyless signing
 4. **SBOM**: Syft generates an SPDX-JSON SBOM
-5. **Scan**: Grype scans for vulnerabilities (fails on high/critical)
+5. **Scan**: Grype scans for vulnerabilities (fails on critical)
 6. **Attest**: The SBOM is attached as a signed attestation
 
 All steps must succeed for the release to complete.
@@ -22,7 +22,7 @@ All steps must succeed for the release to complete.
 Monitor the CI/CD pipeline for signing and scanning jobs:
 
 - [Main workflow](https://github.com/midnightntwrk/midnight-node/actions/workflows/main.yml)
-- [Release workflow](https://github.com/midnightntwrk/midnight-node/actions/workflows/release.yml)
+- [Release workflow](https://github.com/midnightntwrk/midnight-node/actions/workflows/release-image.yml)
 
 Look for these job names:
 
@@ -57,7 +57,7 @@ Check Sigstore service health for signing issues:
 
 **Transient failure (Sigstore outage):**
 
-Re-run the failed job. The signing script has built-in retry logic with exponential backoff (3 attempts, 10s/20s/40s delays).
+Re-run the failed job. The signing script has built-in retry logic with exponential backoff (3 attempts, 10s/20s delays).
 
 **OIDC token failure:**
 
@@ -111,7 +111,7 @@ Syft supports OCI and Docker image formats. Verify the image is in a supported f
 #### Symptoms
 
 - `sbom-scan` job fails during "Scan for vulnerabilities" step
-- Output shows vulnerabilities with high/critical severity
+- Output shows vulnerabilities with critical severity
 
 #### Investigation
 
@@ -183,92 +183,27 @@ Attestation is automatically skipped for fork PRs (they don't have OIDC tokens).
 
 ### Adding an Ignore
 
-1. **Assess the vulnerability:**
-
-   ```bash
-   # Get details from Grype
-   grype ghcr.io/midnightntwrk/midnight-node:TAG --output json | \
-     jq '.matches[] | select(.vulnerability.id == "CVE-YYYY-XXXXX")'
-   ```
-
-2. **Create tracking issue** in the repository documenting:
-   - CVE ID and severity
-   - Affected component
-   - Impact assessment
-   - Upstream fix status
-
-3. **Add to `.grype.yaml`:**
-
-   ```yaml
-   ignore:
-     # CVE-YYYY-XXXXX: Package vulnerable to XYZ
-     # Severity: High
-     # Impact: Limited exposure because [reason]
-     # Tracking: https://github.com/midnightntwrk/midnight-node/issues/XXX
-     # Upstream: https://github.com/upstream/repo/issues/YYY
-     # TODO: Remove when upstream releases version >= X.Y.Z
-     - vulnerability: CVE-YYYY-XXXXX
-   ```
-
-4. **Create PR** with the change and reference the tracking issue
-
-### Reviewing Ignores
-
-Periodically review `.grype.yaml` for stale ignores:
-
-```bash
-# List current ignores
-cat .grype.yaml
-
-# Check if fixes are available
-for cve in $(grep "vulnerability:" .grype.yaml | awk '{print $2}'); do
-  echo "=== $cve ==="
-  # Check NVD for fix status
-done
-```
+1. Assess the vulnerability: `grype ghcr.io/midnight-ntwrk/midnight-node:TAG --output json | jq '.matches[] | select(.vulnerability.id == "CVE-YYYY-XXXXX")'`
+2. Create tracking issue documenting CVE ID, severity, affected component, impact assessment, and upstream fix status
+3. Add to `.grype.yaml` with required comments (see "Option 2" above for format)
+4. Create PR referencing the tracking issue
 
 ### Removing an Ignore
 
-When a fix becomes available:
-
-1. Update the affected package to the fixed version
-2. Remove the ignore entry from `.grype.yaml`
-3. Close the tracking issue
-4. Create PR with both changes
+When a fix becomes available: update the package, remove the ignore entry, close the tracking issue, and create a PR with all changes.
 
 ## Emergency Procedures
 
 ### Critical Vulnerability in Production
 
-If a critical vulnerability is discovered in a released image:
-
-1. **Assess impact:** Determine which versions and deployments are affected
-2. **Communicate:** Alert operators via appropriate channels
-3. **Fix or mitigate:**
-   - If fix available: Create hotfix release
-   - If no fix: Document mitigation steps for operators
-4. **Release:** Push fixed images through normal pipeline
-
-### Signing Key Compromise
-
-Keyless signing means there are no long-lived keys to compromise. However, if the GitHub Actions environment is compromised:
-
-1. **Revoke:** Disable affected GitHub Actions workflows
-2. **Investigate:** Review Actions logs and audit trail
-3. **Rotate:** Rotate all repository secrets
-4. **Communicate:** Alert users that recent images may be compromised
-5. **Re-sign:** Re-build and re-sign affected images after remediation
+1. Assess which versions/deployments are affected
+2. Alert operators via appropriate channels
+3. Create hotfix release or document mitigation steps
+4. Push fixed images through normal pipeline
 
 ### Sigstore Outage
 
-If Sigstore services are unavailable:
-
-1. **Check status:** https://status.sigstore.dev/
-2. **Wait:** Most outages are brief; the signing script has retry logic
-3. **If extended:**
-   - Images can still be built and pushed without signatures
-   - Document which releases are unsigned
-   - Re-sign later when services recover
+Check status at https://status.sigstore.dev/. The signing script has retry logic. If extended, images can be built without signatures and re-signed later.
 
 ## Related Documentation
 
