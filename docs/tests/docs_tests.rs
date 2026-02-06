@@ -13,11 +13,13 @@
 
 use serde::Deserialize;
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Manifest {
 	package: Package,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Package {
 	version: String,
