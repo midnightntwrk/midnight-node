@@ -325,14 +325,14 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
+		// Intentionally panic on codec error — corrupted inherent data is an unrecoverable
+		// programming error; silently returning None would drop token movements for this block.
+		#[allow(clippy::unwrap_in_result)]
 		fn get_data_from_inherent_data(
 			data: &InherentData,
 		) -> Option<MidnightObservationTokenMovement> {
 			data.get_data::<MidnightObservationTokenMovement>(&INHERENT_IDENTIFIER)
-				.unwrap_or_else(|e| {
-					log::error!("Token transfer data not encoded correctly: {e:?}");
-					None
-				})
+				.expect("Token transfer data not encoded correctly")
 		}
 
 		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
