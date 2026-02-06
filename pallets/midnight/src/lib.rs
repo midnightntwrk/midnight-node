@@ -354,8 +354,11 @@ pub mod pallet {
 			)
 			.map_err(Error::<T>::from)?;
 
-			let state_key: BoundedVec<_, _> =
-				result.state_root.to_vec().try_into().map_err(|_| Error::<T>::NewStateOutOfBounds)?;
+			let state_key: BoundedVec<_, _> = result
+				.state_root
+				.to_vec()
+				.try_into()
+				.map_err(|_| Error::<T>::NewStateOutOfBounds)?;
 			StateKey::<T>::put(state_key);
 
 			let tx_hash = result.tx_hash;
