@@ -70,7 +70,7 @@ jq 'env as $env | . + {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
     "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID
   }
-}' res/qanet/pc-chain-config.json > /tmp/pc-chain-config.json
+}' res/local-environment/pc-chain-config.json > /tmp/pc-chain-config.json
 
 # Create patched federated-authority-config.json with Aiken policy IDs and addresses
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
@@ -127,7 +127,7 @@ jq '.observed_utxos.end = .observed_utxos.start
   | .mappings = {}
   | .utxo_owners = {}
   | .next_cardano_position = .observed_utxos.start
-  | .system_tx = null' res/qanet/cnight-config.json > /tmp/cnight-config.json
+  | .system_tx = null' res/local-environment/cnight-config.json > /tmp/cnight-config.json
 
 echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
@@ -141,7 +141,7 @@ export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 comp
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-config.json
-export CHAINSPEC_ICS_CONFIG=res/qanet/ics-config.json
+export CHAINSPEC_ICS_CONFIG=res/local-environment/ics-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
