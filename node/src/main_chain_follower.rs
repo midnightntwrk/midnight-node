@@ -150,10 +150,12 @@ const SIDECHAIN_POOL_CFG: DbPoolCfg =
 const MC_HASH_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 10 };
 const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 const BRIDGE_POOL_CFG: DbPoolCfg =
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
 pub async fn create_cached_data_sources(
@@ -268,6 +270,71 @@ pub async fn create_cnight_observation_data_source(
 	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
 }
 
+pub async fn create_federated_authority_observation_data_source(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<Arc<dyn FederatedAuthorityObservationDataSource>, Box<dyn Error + Send + Sync + 'static>>
+{
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+
+	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
+}
+
+pub async fn create_authority_selection_data_source(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<
+	Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	let (data_source, _pool) =
+		create_authority_selection_data_source_with_pool(cfg, metrics_opt).await?;
+	Ok(data_source)
+}
+
+pub async fn create_authority_selection_data_source_with_pool(
+	cfg: MidnightCfg,
+	metrics_opt: Option<McFollowerMetrics>,
+) -> Result<
+	(Arc<dyn AuthoritySelectionDataSource + Send + Sync>, sqlx::PgPool),
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		CANDIDATES_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+
+	let candidates_data_source =
+		CandidatesDataSourceImpl::new(pool.clone(), metrics_opt.clone()).await?;
+	let candidates_data_source_cached =
+		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
+
+	Ok((Arc::new(candidates_data_source_cached), pool))
+}
+
+/// Create a database pool for ICS genesis queries
+pub async fn create_ics_genesis_pool(
+	cfg: MidnightCfg,
+) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
+	let pool = get_connection(
+		&cfg.db_sync_postgres_connection_string
+			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		ICS_POOL_CFG,
+		cfg.allow_non_ssl,
+	)
+	.await?;
+	Ok(pool)
+}
+
 // Copied from internal utility in partner-chains-db-sync-data-sources
 async fn get_connection(
 	connection_string: &str,
@@ -276,10 +343,12 @@ async fn get_connection(
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
 	let connect_options =
 		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
-			sqlx::postgres::PgSslMode::Prefer
+			//Note: PgSslMode::Prefer has issues with some environments.
+			sqlx::postgres::PgSslMode::Disable
 		} else {
 			sqlx::postgres::PgSslMode::Require
 		});
+
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(pool_cfg.max_connections)
 		.acquire_timeout(pool_cfg.acquire_timeout)

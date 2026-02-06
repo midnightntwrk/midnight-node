@@ -81,7 +81,7 @@ pub trait LedgerBridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
-		_runtime_version: u32,
+		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, latest::types::LedgerApiError>>
 	{
 		latest::Bridge::<Signature, Database>::apply_transaction(
@@ -90,6 +90,7 @@ pub trait LedgerBridge {
 			tx,
 			block_context,
 			false,
+			runtime_version,
 		)
 	}
 
@@ -99,7 +100,7 @@ pub trait LedgerBridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
-		_runtime_version: u32,
+		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, latest::types::LedgerApiError>>
 	{
 		latest::Bridge::<Signature, Database>::apply_transaction(
@@ -108,6 +109,7 @@ pub trait LedgerBridge {
 			tx,
 			block_context,
 			true,
+			runtime_version,
 		)
 	}
 
@@ -131,7 +133,6 @@ pub trait LedgerBridge {
 	/*
 	 * validate_transaction()
 	 */
-	// Current Enabled Version
 	fn validate_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -142,14 +143,45 @@ pub trait LedgerBridge {
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), latest::types::LedgerApiError>>
 	{
-		latest::Bridge::<Signature, Database>::validate_transaction(
+		let (hash, Some(tx_details)) = latest::Bridge::<Signature, Database>::validate_transaction(
 			*self,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			max_weight,
-		)
+			true,
+		)?
+		else {
+			// This should never happen
+			log::error!("error: transaction_details is None");
+			return Err(latest::types::LedgerApiError::HostApiError);
+		};
+		Ok((hash, tx_details))
+	}
+
+	// Current Enabled Version
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, latest::types::LedgerApiError>> {
+		let (hash, _) = latest::Bridge::<Signature, Database>::validate_transaction(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			false,
+		)?;
+
+		Ok(hash)
 	}
 
 	/*
@@ -277,6 +309,41 @@ pub trait LedgerBridge {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
 		latest::Bridge::<Signature, Database>::construct_cnight_generates_dust_system_tx(events)
 	}
+
+	/// Ensures the correct ledger storage is initialized for this runtime version.
+	/// Handles rollback from HF: if HF storage is initialized but we need normal storage,
+	/// drops HF storage and initializes normal storage.
+	/// Returns true if storage was (re)initialized, false if already correct.
+	fn ensure_storage_initialized(&mut self) -> bool {
+		use ledger_storage::{db::ParityDb, storage::try_get_default_storage};
+
+		// If normal storage already exists, we're good
+		if try_get_default_storage::<ParityDb>().is_some() {
+			return false;
+		}
+
+		// Drop HF storage if it exists (rollback scenario: HF → normal)
+		{
+			use ledger_storage_hf::{
+				db::ParityDb as ParityDbHf,
+				storage::{
+					try_get_default_storage as try_get_hf,
+					unsafe_drop_default_storage as unsafe_drop_hf,
+				},
+			};
+			if try_get_hf::<ParityDbHf>().is_some() {
+				unsafe_drop_hf::<ParityDbHf>();
+				log::info!(
+					target: latest::LOG_TARGET,
+					"Dropped HF storage after rollback"
+				);
+			}
+		}
+
+		// Initialize normal storage
+		latest::Bridge::<Signature, Database>::set_default_storage(*self);
+		true
+	}
 }
 
 #[runtime_interface]
@@ -342,7 +409,7 @@ pub trait LedgerBridgeHf {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
-		_runtime_version: u32,
+		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<
 		Result<TransactionAppliedStateRoot, hard_fork_test::types::LedgerApiError>,
 	> {
@@ -352,6 +419,7 @@ pub trait LedgerBridgeHf {
 			tx,
 			block_context,
 			true,
+			runtime_version,
 		)
 	}
 
@@ -372,25 +440,56 @@ pub trait LedgerBridgeHf {
 		)
 	}
 
-	// Hard-fork Version
 	fn validate_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<
 		Result<(Hash, TransactionDetails), hard_fork_test::types::LedgerApiError>,
 	> {
-		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
+		let (hash, Some(tx_details)) =
+			hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				runtime_version,
+				max_weight,
+				true,
+			)?
+		else {
+			// This should never happen
+			log::error!("error: transaction_details is None");
+			return Err(hard_fork_test::types::LedgerApiError::HostApiError);
+		};
+		Ok((hash, tx_details))
+	}
+
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, hard_fork_test::types::LedgerApiError>> {
+		let (hash, _) = hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::validate_transaction(
 			*self,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			max_weight,
-		)
+			false,
+		)?;
+
+		Ok(hash)
 	}
 
 	// Hard-fork Version
@@ -461,6 +560,40 @@ pub trait LedgerBridgeHf {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::construct_cnight_generates_dust_system_tx(
 			events,
 		)
+	}
+
+	/// Ensures the correct ledger storage is initialized for this runtime version.
+	/// Handles upgrade from normal: if normal storage is initialized but we need HF storage,
+	/// drops normal storage and initializes HF storage.
+	/// Returns true if storage was (re)initialized, false if already correct.
+	fn ensure_storage_initialized(&mut self) -> bool {
+		use ledger_storage_hf::{
+			db::ParityDb as ParityDbHf, storage::try_get_default_storage as try_get_hf,
+		};
+
+		// If HF storage already exists, we're good
+		if try_get_hf::<ParityDbHf>().is_some() {
+			return false;
+		}
+
+		// Drop normal storage if it exists (upgrade scenario: normal → HF)
+		{
+			use ledger_storage::{
+				db::ParityDb,
+				storage::{try_get_default_storage, unsafe_drop_default_storage},
+			};
+			if try_get_default_storage::<ParityDb>().is_some() {
+				unsafe_drop_default_storage::<ParityDb>();
+				log::info!(
+					target: hard_fork_test::LOG_TARGET,
+					"Dropped normal storage for HF upgrade"
+				);
+			}
+		}
+
+		// Initialize HF storage
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::set_default_storage(*self);
+		true
 	}
 
 	// Hard-fork Version

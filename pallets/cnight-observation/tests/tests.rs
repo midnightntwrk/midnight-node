@@ -26,7 +26,7 @@ use midnight_primitives_cnight_observation::{
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
+	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use pallet_cnight_observation::*;
 use pallet_cnight_observation_mock::mock::{
@@ -231,132 +231,6 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 			ObservedUtxo {
 				header: test_header(2, 1, 0, None),
 				data: ObservedUtxoData::AssetSpend(SpendData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(2, 0),
-					utxo_tx_index: 0,
-					spending_tx_hash: tx_hash(2, 1),
-				}),
-			},
-		];
-
-		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = CNightObservation::create_inherent(&inherent_data)
-			.expect("Expected to create inherent call");
-		let call = RuntimeCall::CNightObservation(call);
-		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
-
-		// Confirm the expected SystemTxCreateUtxo event was emitted
-		let found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			println!("found event: {record:?}");
-			if let mock::RuntimeEvent::MidnightSystem(
-				pallet_midnight_system::Event::SystemTransactionApplied(e),
-			) = &record.event
-			{
-				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
-				let dust_public_key_deser: DustPublicKey =
-					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
-				let events = extract_events(&e.serialized_system_transaction);
-				for event in events.iter() {
-					if event.action == CNightGeneratesDustActionType::Destroy
-						&& event.owner == dust_public_key_deser
-					{
-						return true;
-					}
-				}
-			}
-			false
-		});
-
-		assert!(found, "Could not find SystemTx event with correct owner");
-	});
-}
-
-#[test]
-fn redemption_create_should_emit_valid_event_if_registered() {
-	new_test_ext().execute_with(|| {
-		init_ledger_state();
-		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
-
-		let utxos = vec![
-			ObservedUtxo {
-				header: test_header(1, 2, 0, None),
-				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address,
-					dust_public_key: dust_public_key.clone(),
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 0, 0, None),
-				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(1, 3),
-					utxo_tx_index: 0,
-				}),
-			},
-		];
-
-		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = CNightObservation::create_inherent(&inherent_data)
-			.expect("Expected to create inherent call");
-		let call = RuntimeCall::CNightObservation(call);
-		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
-
-		// Confirm the expected SystemTxCreateUtxo event was emitted
-		let found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			println!("found event: {record:?}");
-			if let mock::RuntimeEvent::MidnightSystem(
-				pallet_midnight_system::Event::SystemTransactionApplied(e),
-			) = &record.event
-			{
-				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
-				let dust_public_key_deser: DustPublicKey =
-					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
-				let events = extract_events(&e.serialized_system_transaction);
-				for event in events.iter() {
-					if event.action == CNightGeneratesDustActionType::Create
-						&& event.owner == dust_public_key_deser
-					{
-						return true;
-					}
-				}
-			}
-			false
-		});
-
-		assert!(found, "Could not find SystemTx event with correct owner");
-	});
-}
-
-#[test]
-fn redemption_destroy_should_emit_valid_event_if_registered() {
-	new_test_ext().execute_with(|| {
-		init_ledger_state();
-		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
-
-		let utxos = vec![
-			ObservedUtxo {
-				header: test_header(1, 2, 0, None),
-				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address,
-					dust_public_key: dust_public_key.clone(),
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 0, 0, None),
-				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(2, 0),
-					utxo_tx_index: 0,
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 1, 0, None),
-				data: ObservedUtxoData::RedemptionSpend(RedemptionSpendData {
 					value: 100,
 					owner: cardano_reward_address,
 					utxo_tx_hash: tx_hash(2, 0),

@@ -17,9 +17,13 @@ use config::{Config, ConfigError, Environment, File, FileFormat};
 use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
-	networks::{CustomNetwork, InitialAuthorityData, MainChainScripts, UndeployedNetwork},
+	networks::{
+		CustomNetwork, MainChainScripts, PermissionedCandidatesConfig,
+		RegisteredCandidatesAddresses, UndeployedNetwork,
+	},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
@@ -82,7 +86,7 @@ impl SubstrateCli for Cfg {
 	}
 
 	fn support_url() -> String {
-		"support.anonymous.an".into()
+		"https://github.com/midnightntwrk/midnight-node/issues".into()
 	}
 
 	fn copyright_start_year() -> i32 {
@@ -122,8 +126,30 @@ impl SubstrateCli for Cfg {
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
+				// Load permissioned candidates config
+				let permissioned_candidates_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_permissioned_candidates_config.as_ref().unwrap(),
+				)
+				.map_err(|e| format!("failed to read permissioned candidates config: {e}"))?;
+
+				let permissioned_candidates_config: PermissionedCandidatesConfig =
+					serde_json::from_str(&permissioned_candidates_config_str).map_err(|e| {
+						format!("failed to parse permissioned candidates config: {e}")
+					})?;
+
+				// Load registered candidates addresses
+				let registered_candidates_addresses_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_registered_candidates_addresses.as_ref().unwrap(),
+				)
+				.map_err(|e| format!("failed to read registered candidates addresses: {e}"))?;
+
+				let registered_candidates_addresses: RegisteredCandidatesAddresses =
+					serde_json::from_str(&registered_candidates_addresses_str).map_err(|e| {
+						format!("failed to parse registered candidates addresses: {e}")
+					})?;
+
 				let initial_authorities =
-					InitialAuthorityData::load_from_pc_chain_config(&pc_chain_config);
+					permissioned_candidates_config.initial_permissioned_candidates.clone();
 
 				let cnight_genesis_str = std::fs::read_to_string(
 					self.chain_spec_cfg
@@ -136,8 +162,10 @@ impl SubstrateCli for Cfg {
 				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
 					.map_err(|e| format!("failed to read cnight-genesis as json: {e}"))?;
 
-				let main_chain_scripts =
-					MainChainScripts::load_from_pc_chain_config(&pc_chain_config);
+				let main_chain_scripts = MainChainScripts::load_from_configs(
+					&registered_candidates_addresses,
+					&permissioned_candidates_config,
+				);
 
 				let genesis_utxo = pc_chain_config
 					.get("chain_parameters")
@@ -169,6 +197,14 @@ impl SubstrateCli for Cfg {
 					serde_json::from_str(&system_parameters_config_str)
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
+				let ics_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg.chainspec_ics_config.as_ref().unwrap(),
+				)
+				.map_err(|e| format!("failed to read ics_config: {e}"))?;
+
+				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
+					.map_err(|e| format!("failed to parse IcsConfig: {e}"))?;
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self
 						.chain_spec_cfg
@@ -196,6 +232,7 @@ impl SubstrateCli for Cfg {
 					genesis_utxo: genesis_utxo.to_string(),
 					federated_authority_config,
 					system_parameters_config,
+					ics_config,
 				};
 				chain_config(network)
 			},

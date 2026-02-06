@@ -223,7 +223,6 @@ pub mod pallet {
 					target: "federated-authority-observation",
 					"Council has duplicated members"
 				);
-				return early_return();
 			}
 
 			if council_mainchain_members.is_empty() {
@@ -248,7 +247,6 @@ pub mod pallet {
 					target: "federated-authority-observation",
 					"Technical Committee has duplicated members"
 				);
-				return early_return();
 			}
 
 			if technical_committee_mainchain_members.is_empty() {

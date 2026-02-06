@@ -32,6 +32,8 @@ jobs:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
+      node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -40,14 +42,14 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Get current commit SHA
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -60,6 +62,14 @@ jobs:
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
           . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
+
+      - name: Export image tags
+        id: image_tags
+        run: |
+          short_hash=$(git rev-parse --short=8 HEAD)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> $GITHUB_OUTPUT
+          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -74,6 +84,26 @@ jobs:
         with:
           name: Test artifacts (amd64)
           path: test-artifacts-amd64/
+
+  sbom-scan-node:
+    name: SBOM/Scan Node
+    needs: [run]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      sbom-artifact-name: sbom-midnight-node-ci
+      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+    secrets: inherit
+
+  sbom-scan-toolkit:
+    name: SBOM/Scan Toolkit
+    needs: [run]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      sbom-artifact-name: sbom-midnight-node-toolkit-ci
+      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+    secrets: inherit
 
   run-arm64:
     name: Build node and images (arm64)
@@ -103,10 +133,10 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -139,7 +169,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -152,26 +182,29 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Get current commit SHA
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run build
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +hardfork-test-upgrader-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +hardfork-test-upgrader-image
 
   check-unused-deps:
     name: Check Unused Dependencies
@@ -184,7 +217,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Check Deps
         run: |
@@ -196,12 +229,12 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run, test-pallet-fixtures]
+    needs: [ run ]
     permissions:
       id-token: write
       contents: read
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     outputs:
@@ -214,7 +247,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Get Version and git commit
         id: meta
@@ -228,7 +261,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -252,7 +285,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -272,7 +305,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -295,7 +328,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       # - name: Get Version and git commit
       #   id: meta
       #   run: |
@@ -315,7 +348,7 @@ jobs:
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
@@ -326,7 +359,10 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run pallet fixture tests
         run: |
@@ -346,19 +382,22 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run toolkit tests
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
+          . ./.envrc && earthly -P --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --strict +test-toolkit
 
   toolkit-e2e:
     name: Toolkit E2E
-    needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    needs: [run]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -374,11 +413,11 @@ jobs:
 
   toolkit-update-ledger-parameters-e2e:
     name: Toolkit Update Ledger Parameters E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -394,11 +433,11 @@ jobs:
 
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
-    needs: [run, test-toolkit]
-    runs-on: ubuntu-latest-16-core-x64
+    needs: [run]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -414,11 +453,11 @@ jobs:
 
   toolkit-mint-e2e:
     name: Toolkit Mint E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -432,13 +471,13 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  toolkit-ut-e2e:
+  toolkit-tokens-minter-e2e:
     name: Toolkit Unshielded Token E2E
-    needs: [run, test-toolkit]
+    needs: [ run ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -447,7 +486,7 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
       - uses: ./.github/actions/reusable-e2e-tests
         with:
-          just-command: toolkit-ut-e2e
+          just-command: toolkit-tokens-minter-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
@@ -463,13 +502,13 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Get Version and git commit
         id: meta
@@ -484,11 +523,11 @@ jobs:
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # 6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -508,7 +547,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -527,7 +566,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       - name: Get Version and git commit
         id: meta
         run: |
@@ -543,7 +582,7 @@ jobs:
 
   build-indexer-images:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       packages: read
@@ -554,20 +593,23 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Install just
-        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e #v2.67.4
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 #v2.67.18
         with:
           tool: just
 
       - name: Build indexer images
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
@@ -576,7 +618,7 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls
@@ -660,14 +702,14 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [ run, build-indexer-images ]
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest-8-core-x64
     permissions:
       pull-requests: write
       packages: read
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
 
@@ -724,21 +766,21 @@ jobs:
     #   - startup-dev-e2e
     #   - genesis-undeployed-e2e
 
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "Get Version and git commit"
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         id: aws-credentials
