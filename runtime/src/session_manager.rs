@@ -52,12 +52,17 @@ impl<T: pallet_session_validator_management::Config + pallet_sidechain::Config>
 		)
 	}
 
+	// Intentionally panic if rotate fails — a missing committee is an unrecoverable programming
+	// error that must not be silently swallowed by returning None.
+	#[allow(clippy::unwrap_in_result)]
 	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, T::AuthorityKeys)>> {
 		info!("New session {new_index}");
-		let committee =
-			pallet_session_validator_management::Pallet::<T>::rotate_committee_to_next_epoch()?;
 		Some(
-			committee
+			pallet_session_validator_management::Pallet::<T>::rotate_committee_to_next_epoch()
+				.expect(
+					"Session should never end without current epoch validators defined. \
+				Check ShouldEndSession implementation or if it is used before starting new session",
+				)
 				.into_iter()
 				.map(|member| (member.authority_id().into(), member.authority_keys()))
 				.collect(),
