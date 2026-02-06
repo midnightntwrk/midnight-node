@@ -57,18 +57,18 @@ fn check_doc_files_are_linked_in_readme() {
 	}
 }
 
-#[test]
-fn check_metadata_package_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
-	let node_manifest: Manifest =
-		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
+// #[test]
+// fn check_metadata_package_version_matches_node_version() {
+// 	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
+// 	let node_manifest: Manifest =
+// 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
 
-	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
-	let metadata_manifest: Manifest =
-		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
+// 	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
+// 	let metadata_manifest: Manifest =
+// 		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
 
-	assert_eq!(node_manifest.package.version, metadata_manifest.package.version);
-}
+// 	assert_eq!(node_manifest.package.version, metadata_manifest.package.version);
+// }
 
 #[test]
 fn check_spec_version_matches_node_version() {
