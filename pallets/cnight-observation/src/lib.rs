@@ -329,7 +329,10 @@ pub mod pallet {
 			data: &InherentData,
 		) -> Option<MidnightObservationTokenMovement> {
 			data.get_data::<MidnightObservationTokenMovement>(&INHERENT_IDENTIFIER)
-				.expect("Token transfer data not encoded correctly")
+				.unwrap_or_else(|e| {
+					log::error!("Token transfer data not encoded correctly: {e:?}");
+					None
+				})
 		}
 
 		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
@@ -683,7 +686,7 @@ pub mod pallet {
 				address
 					.clone()
 					.try_into()
-					.expect("Mainchain contract address longer than expected"),
+					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
 			);
 
 			Ok(())

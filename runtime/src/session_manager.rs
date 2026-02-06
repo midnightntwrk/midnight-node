@@ -52,16 +52,12 @@ impl<T: pallet_session_validator_management::Config + pallet_sidechain::Config>
 		)
 	}
 
-	// Instead of Some((*).expect) we could just use (*). However, we rather panic in presence of
-	// important programming errors.
 	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, T::AuthorityKeys)>> {
 		info!("New session {new_index}");
+		let committee =
+			pallet_session_validator_management::Pallet::<T>::rotate_committee_to_next_epoch()?;
 		Some(
-			pallet_session_validator_management::Pallet::<T>::rotate_committee_to_next_epoch()
-				.expect(
-					"Session should never end without current epoch validators defined. \
-				Check ShouldEndSession implementation or if it is used before starting new session",
-				)
+			committee
 				.into_iter()
 				.map(|member| (member.authority_id().into(), member.authority_keys()))
 				.collect(),

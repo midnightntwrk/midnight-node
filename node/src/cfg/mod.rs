@@ -96,15 +96,26 @@ impl SubstrateCli for Cfg {
 		let maybe_chain_spec = match id {
 			"" => {
 				// Midnight-specific pre-generated genesis values
-				let genesis_block =
-					std::fs::read(self.chain_spec_cfg.chainspec_genesis_block.as_ref().unwrap())
-						.map_err(|e| format!("failed to read genesis_block: {e}"))?;
-				let genesis_state =
-					std::fs::read(self.chain_spec_cfg.chainspec_genesis_state.as_ref().unwrap())
-						.map_err(|e| format!("failed to read genesis_state: {e}"))?;
+				let genesis_block = std::fs::read(
+					self.chain_spec_cfg
+						.chainspec_genesis_block
+						.as_ref()
+						.ok_or("chainspec_genesis_block not configured")?,
+				)
+				.map_err(|e| format!("failed to read genesis_block: {e}"))?;
+				let genesis_state = std::fs::read(
+					self.chain_spec_cfg
+						.chainspec_genesis_state
+						.as_ref()
+						.ok_or("chainspec_genesis_state not configured")?,
+				)
+				.map_err(|e| format!("failed to read genesis_state: {e}"))?;
 
 				let pc_chain_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_pc_chain_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_pc_chain_config
+						.as_ref()
+						.ok_or("chainspec_pc_chain_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read pc chain config: {e}"))?;
 
@@ -115,7 +126,10 @@ impl SubstrateCli for Cfg {
 					InitialAuthorityData::load_from_pc_chain_config(&pc_chain_config);
 
 				let cnight_genesis_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_cnight_genesis.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_cnight_genesis
+						.as_ref()
+						.ok_or("chainspec_cnight_genesis not configured")?,
 				)
 				.map_err(|e| format!("failed to read cnight-genesis: {e}"))?;
 
@@ -131,7 +145,10 @@ impl SubstrateCli for Cfg {
 					.ok_or("failed to find genesis_utxo in pc_chain_config".to_string())?;
 
 				let federated_authority_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_federated_authority_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_federated_authority_config
+						.as_ref()
+						.ok_or("chainspec_federated_authority_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
 
@@ -141,7 +158,10 @@ impl SubstrateCli for Cfg {
 					})?;
 
 				let system_parameters_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_system_parameters_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_system_parameters_config
+						.as_ref()
+						.ok_or("chainspec_system_parameters_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read system_parameters_config: {e}"))?;
 
@@ -150,13 +170,28 @@ impl SubstrateCli for Cfg {
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
 				let network: CustomNetwork = CustomNetwork {
-					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
-					id: self.chain_spec_cfg.chainspec_id.as_ref().unwrap().clone(),
+					name: self
+						.chain_spec_cfg
+						.chainspec_name
+						.as_ref()
+						.ok_or("chainspec_name not configured")?
+						.clone(),
+					id: self
+						.chain_spec_cfg
+						.chainspec_id
+						.as_ref()
+						.ok_or("chainspec_id not configured")?
+						.clone(),
 					genesis_block,
 					genesis_state,
 					initial_authorities,
 					cnight_genesis,
-					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
+					chain_type: self
+						.chain_spec_cfg
+						.chainspec_chain_type
+						.as_ref()
+						.ok_or("chainspec_chain_type not configured")?
+						.clone(),
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
 					federated_authority_config,
@@ -321,7 +356,7 @@ impl Cfg {
 
 	pub fn render_help<T: std::io::Write>(mut buf: T) -> Result<(), CfgError> {
 		let all_config = Self::get_all_config()?;
-		let meta_cfg: MetaCfg = all_config.clone().try_deserialize().unwrap();
+		let meta_cfg: MetaCfg = all_config.clone().try_deserialize()?;
 		let show_secrets = meta_cfg.show_secrets;
 
 		Self::render_header(&mut buf, "ChainSpecCfg")?;

@@ -30,7 +30,7 @@ impl core::fmt::Display for UtxoId {
 		write!(
 			f,
 			"{}#{}",
-			hex::encode(serialize_untagged(&self.intent_hash).unwrap()),
+			hex::encode(serialize_untagged(&self.intent_hash).map_err(|_| std::fmt::Error)?),
 			self.output_number
 		)
 	}

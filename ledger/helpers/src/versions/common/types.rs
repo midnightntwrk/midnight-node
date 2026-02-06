@@ -19,7 +19,7 @@ use super::super::{
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
-use itertools::Itertools;
+
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::str::FromStr;
 use std::{
@@ -60,9 +60,15 @@ impl WalletSeed {
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
 		match bytes.len() {
-			16 => Ok(Self::Short(bytes.try_into().unwrap())),
-			32 => Ok(Self::Medium(bytes.try_into().unwrap())),
-			64 => Ok(Self::Long(bytes.try_into().unwrap())),
+			16 => Ok(Self::Short(
+				bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))?,
+			)),
+			32 => Ok(Self::Medium(
+				bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))?,
+			)),
+			64 => Ok(Self::Long(
+				bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))?,
+			)),
 			len => Err(WalletSeedError::InvalidLength(len)),
 		}
 	}
@@ -87,8 +93,16 @@ impl WalletSeed {
 		};
 
 		match total_len {
-			l if l <= 32 => Ok(Self::Medium(extend_to(32).try_into().unwrap())),
-			l if l <= 64 => Ok(Self::Long(extend_to(64).try_into().unwrap())),
+			l if l <= 32 => Ok(Self::Medium(
+				extend_to(32)
+					.try_into()
+					.map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))?,
+			)),
+			l if l <= 64 => Ok(Self::Long(
+				extend_to(64)
+					.try_into()
+					.map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))?,
+			)),
 			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
 		}
 	}
@@ -125,23 +139,20 @@ impl FromStr for WalletSeed {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let s = s.trim();
 
-		let mut errs = vec![];
+		let hex_err = match Self::try_from_hex_str(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let lazy_err = match Self::try_from_lazy_hex(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let mnemonic_err = match Self::try_from_mnemonic(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
 
-		match Self::try_from_hex_str(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_lazy_hex(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_mnemonic(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-
-		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
-		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
+		Err(WalletSeedParseError::FailedToParseAny(hex_err, lazy_err, mnemonic_err))
 	}
 }
 
