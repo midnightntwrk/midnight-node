@@ -59,7 +59,8 @@ impl CfgHelp for StorageMonitorParamsCfg {
 			let doc = arg.get_help().map_or("<help missing>".to_string(), |h| h.to_string());
 			let field_type = type_map
 				.get(&name)
-				.map_or("<unknown>".to_string(), |t| t.to_string());
+				.ok_or_else(|| CfgError::MissingFieldType(name.clone()))?
+				.to_string();
 			let current_value = cur_cfg.map(|c| c.get_string(&name).ok());
 			let info = FieldInfo { name, doc, field_type, tags: vec![] };
 			let field = HelpField { current_value, info };
