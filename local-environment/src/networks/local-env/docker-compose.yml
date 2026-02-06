@@ -54,27 +54,30 @@ services:
 
   contract-compiler:
     container_name: contract-compiler
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     build:
       context: ./configurations/contract-compiler
       dockerfile: Dockerfile
     depends_on:
-      cardano-node-1:
+      kupo:
+        condition: service_healthy
+      ogmios:
         condition: service_healthy
     volumes:
       - ./runtime-values:/runtime-values
       - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
+      - ./configurations/contract-compiler/.env:/.env
+      - ./configurations/contract-compiler/compile-contracts.sh:/compile-contracts.sh
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # One-shot container: compilation completes and exits, healthcheck is a no-op
     healthcheck:
-      test: ["CMD-SHELL", "exit 0"]
-      interval: 60s
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 5s
       timeout: 5s
-      retries: 1
-      start_period: 5s
+      retries: 120
+      start_period: 10s
 
   kupo:
     container_name: kupo
@@ -499,7 +502,7 @@ services:
       ogmios:
         condition: service_healthy
       contract-compiler:
-        condition: service_completed_successfully
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     user: "0:0"

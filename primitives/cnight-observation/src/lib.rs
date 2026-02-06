@@ -176,10 +176,6 @@ pub struct CNightAddresses {
 	#[cfg_attr(feature = "std", validate(pattern = r"^[\x00-\x7F]*$"))] // Ascii only
 	pub auth_token_asset_name: String,
 
-	/// Address of the glacier drop redemption validator. Shelley address, Bech32
-	#[cfg_attr(feature = "std", validate(pattern = r"^(addr|addr_test)1[0-9a-z]{1,108}$"))]
-	pub redemption_validator_address: String,
-
 	/// Policy ID of the currency token (i.e. cNIGHT)
 	#[serde(with = "hex")]
 	pub cnight_policy_id: [u8; 28],
@@ -271,33 +267,14 @@ pub struct ObservedUtxos {
 	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
 )]
 pub enum ObservedUtxoData {
-	RedemptionCreate(RedemptionCreateData),
-	RedemptionSpend(RedemptionSpendData),
+	#[codec(index = 2)]
 	Registration(RegistrationData),
+	#[codec(index = 3)]
 	Deregistration(DeregistrationData),
+	#[codec(index = 4)]
 	AssetCreate(CreateData),
+	#[codec(index = 5)]
 	AssetSpend(SpendData),
-}
-
-#[derive(
-	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
-)]
-pub struct RedemptionCreateData {
-	pub owner: CardanoRewardAddressBytes,
-	pub value: u128,
-	pub utxo_tx_hash: McTxHash,
-	pub utxo_tx_index: u16,
-}
-
-#[derive(
-	Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, Serialize, Deserialize,
-)]
-pub struct RedemptionSpendData {
-	pub owner: CardanoRewardAddressBytes,
-	pub value: u128,
-	pub utxo_tx_hash: McTxHash,
-	pub utxo_tx_index: u16,
-	pub spending_tx_hash: McTxHash,
 }
 
 #[derive(
@@ -412,8 +389,6 @@ impl PartialOrd for ObservedUtxoHeader {
 
 decl_runtime_apis! {
 	pub trait CNightObservationApi {
-		/// Get the contract address on Cardano which executes Glacier Drop redemptions
-		fn get_redemption_validator_address() -> Vec<u8>;
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
 		/// Get the Cardano Auth token asset name

@@ -32,6 +32,8 @@ jobs:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
+      node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -47,7 +49,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -60,6 +62,14 @@ jobs:
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
           . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
+
+      - name: Export image tags
+        id: image_tags
+        run: |
+          short_hash=$(git rev-parse --short=8 HEAD)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> $GITHUB_OUTPUT
+          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -74,6 +84,26 @@ jobs:
         with:
           name: Test artifacts (amd64)
           path: test-artifacts-amd64/
+
+  sbom-scan-node:
+    name: SBOM/Scan Node
+    needs: [run]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      sbom-artifact-name: sbom-midnight-node-ci
+      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+    secrets: inherit
+
+  sbom-scan-toolkit:
+    name: SBOM/Scan Toolkit
+    needs: [run]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      sbom-artifact-name: sbom-midnight-node-toolkit-ci
+      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+    secrets: inherit
 
   run-arm64:
     name: Build node and images (arm64)
@@ -106,7 +136,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -159,7 +189,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -199,7 +229,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run]
+    needs: [ run ]
     permissions:
       id-token: write
       contents: read
@@ -231,7 +261,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -363,7 +393,7 @@ jobs:
 
   toolkit-e2e:
     name: Toolkit E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -383,7 +413,7 @@ jobs:
 
   toolkit-update-ledger-parameters-e2e:
     name: Toolkit Update Ledger Parameters E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -403,7 +433,7 @@ jobs:
 
   toolkit-maintenance-e2e:
     name: Toolkit Maintenance E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -423,7 +453,7 @@ jobs:
 
   toolkit-mint-e2e:
     name: Toolkit Mint E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -441,9 +471,9 @@ jobs:
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  toolkit-ut-e2e:
+  toolkit-tokens-minter-e2e:
     name: Toolkit Unshielded Token E2E
-    needs: [run, test-toolkit]
+    needs: [ run ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -456,7 +486,7 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
       - uses: ./.github/actions/reusable-e2e-tests
         with:
-          just-command: toolkit-ut-e2e
+          just-command: toolkit-tokens-minter-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
@@ -472,7 +502,7 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef #v3.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -493,7 +523,7 @@ jobs:
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
-    needs: [run, test-toolkit]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -571,15 +601,15 @@ jobs:
         run: scripts/free-disk-space.sh
 
       - name: Install just
-        uses: taiki-e/install-action@710817a1645ef40daad5bcde7431ceccf6cc3528 #v2.67.13
+        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 #v2.67.18
         with:
           tool: just
 
       - name: Build indexer images
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
@@ -588,7 +618,7 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls
@@ -747,10 +777,10 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "Get Version and git commit"
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials
         id: aws-credentials

@@ -17,8 +17,7 @@ pub mod idp;
 
 pub use midnight_primitives_cnight_observation::{
 	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
-	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
-	RegistrationData, SpendData, UtxoIndexInTx,
+	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 
 #[cfg(feature = "std")]
@@ -32,7 +31,7 @@ pub use {
 	data_source::{
 		CNightObservationDataSourceMock, CandidateDataSourceCached, CandidatesDataSourceImpl,
 		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
-		MidnightCNightObservationDataSourceImpl,
+		MidnightCNightObservationDataSourceImpl, get_epoch_for_block_hash,
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,

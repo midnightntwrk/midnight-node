@@ -60,6 +60,8 @@ See [fork-testing.md](../docs/fork-testing.md)
 In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.
 
 ### Local env – step by step
+> **Warning:** Public use of Local env is currently disabled, until we publish Governance Smart Contracts. For anyone who already has acccess,
+you need to clone [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts) to the same location where midnight-node repo sits.
 
 > **Note:** Local development environments set `ALLOW_NON_SSL=true` to allow connections to PostgreSQL without SSL certificates. Production deployments require SSL.
 

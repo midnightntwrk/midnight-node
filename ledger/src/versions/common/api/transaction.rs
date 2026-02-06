@@ -18,7 +18,7 @@ use super::{
 	mn_ledger_local, transient_crypto_local,
 };
 
-use base_crypto_local::{hash::HashOutput, time::Timestamp};
+use base_crypto_local::hash::HashOutput;
 use ledger_storage_local::db::DB;
 use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
@@ -28,8 +28,8 @@ use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimRewardsTransaction, ContractAction, IntentHash, LedgerState, ProofKind, ProofMarker,
-		SignatureKind, StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
+		ClaimRewardsTransaction, ContractAction, IntentHash, ProofKind, ProofMarker, SignatureKind,
+		StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
 };
 use std::borrow::Borrow;
@@ -40,7 +40,7 @@ use super::{
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
 use crate::{
-	common::types::{BlockContext, Hash, SegmentId, UtxoInfo},
+	common::types::{Hash, SegmentId, UtxoInfo},
 	types::PERSISTENT_HASH_BYTES,
 };
 
@@ -218,32 +218,6 @@ impl UnshieldedUtxos {
 }
 
 impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
-	// #[cfg(not(feature = "runtime-benchmarks"))]
-	pub(crate) fn validate(
-		&self,
-		ledger: &Ledger<D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		self.0
-			.well_formed(
-				<Ledger<D> as Borrow<LedgerState<D>>>::borrow(ledger),
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				Timestamp::from_secs(block_context.tblock),
-			)
-			.map_err(|e| {
-				log::error!(target: LOG_TARGET, "Error validating Transaction: {e:?}");
-				LedgerApiError::Transaction(TransactionError::Malformed(e.into()))
-			})?;
-
-		log::info!(
-			target: LOG_TARGET,
-			"✅ Validated Midnight transaction {:?}",
-			hex::encode(self.hash())
-		);
-
-		Ok(())
-	}
-
 	pub(crate) fn hash(&self) -> Hash {
 		self.0.transaction_hash().0.0
 	}
@@ -421,10 +395,12 @@ mod tests {
 		api,
 	};
 	use super::*;
+	use crate::common::types::BlockContext;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
+	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../../test-data/malformed_tx.json");
@@ -452,6 +428,9 @@ mod tests {
 
 	#[test]
 	fn should_validate_transaction() {
+		use base_crypto_local::time::Timestamp;
+		use std::borrow::Borrow;
+
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
 			return;
@@ -459,8 +438,12 @@ mod tests {
 		let api = api::new();
 		let (tx, block_context) = prepare_transaction(&api, DEPLOY);
 		let ledger = prepare_ledger();
-		let result = tx.validate(&ledger, &block_context);
-		assert!(result.is_ok(), "Transaction is invalid: {}", result.unwrap_err());
+		let result = tx.0.well_formed(
+			<Ledger<DefaultDB> as Borrow<LedgerState<DefaultDB>>>::borrow(&ledger),
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			Timestamp::from_secs(block_context.tblock),
+		);
+		assert!(result.is_ok(), "Transaction is invalid: {result:?}");
 	}
 
 	#[test]

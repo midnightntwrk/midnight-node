@@ -1,36 +1,30 @@
 {
   "council": {
-    "address": "addr_test1wz28tz6e9zdpvr6f7qsxmyyw5zq0520h334087984ttskpcnczun7",
-    "policy_id": "94758b59289a160f49f0206d908ea080fa29f78c6af3f8a7aad70b07",
+    "address": "addr_test1wqp7vatksvxepx74yvm2lefyj26pqnvmvef6vqljjxvcqscsutq74",
+    "policy_id": "03e67576830d909bd52336afe52492b4104d9b6653a603f291998043",
     "members": [
       "0xd42795f06758018aed73f8423b0fe1ae09d0987b5c08cc50602ec3c4a2ddd26d",
       "0xc469887a89122d12dc24f42b0cd0de7841dbd7344ffb3a7ff6ec62367e897d13",
-      "0x4ce3d7e53ca1d0ad21c7cf2d5201ece5dd1891963073f9c900d1629633aff165",
-      "0x4e872153c4701e112f594ed264f3903a739382d40985cb8d3b9ae89cea4f401c",
-      "0xccfc1fa1807fcc2128266723dccc8999a1ead7e03f98ce9717c12ea04a47c17b",
-      "0xdc2044229e3c9c70ae0a4155ba3db47bed5ab272fd2e31d20e5122397e2c5d6e"
+      "0x4ce3d7e53ca1d0ad21c7cf2d5201ece5dd1891963073f9c900d1629633aff165"
     ],
     "members_mainchain": [
-      "e3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
-      "a5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
-      "1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+      "6110c12a620e3e5ced5a48fe7596cba9bb7e63697161b3c793657e56",
+      "92899d92c2691defdaa0cd9634134442cca33dc7fe44faf4d69d8b75",
+      "ae4f6990a7f0a576ec828310a13308ab375683b903cb36eae228f11d"
     ]
   },
   "technical_committee": {
-    "address": "addr_test1wpj3t7yvs489kjgzlayd37ft6wg9eu6vguem8jgdgu2kengayhe62",
-    "policy_id": "6515f88c854e5b4902ff48d8f92bd3905cf34c4733b3c90d47156ccd",
+    "address": "addr_test1wrrymrdyepqfrkh8wnw820yhkg0aamw5rpzmwfe06r46yeg258wng",
+    "policy_id": "c64d8da4c84091dae774dc753c97b21fdeedd41845b7272fd0eba265",
     "members": [
-      "0xd42795f06758018aed73f8423b0fe1ae09d0987b5c08cc50602ec3c4a2ddd26d",
-      "0xc469887a89122d12dc24f42b0cd0de7841dbd7344ffb3a7ff6ec62367e897d13",
-      "0x4ce3d7e53ca1d0ad21c7cf2d5201ece5dd1891963073f9c900d1629633aff165",
       "0x4e872153c4701e112f594ed264f3903a739382d40985cb8d3b9ae89cea4f401c",
       "0xccfc1fa1807fcc2128266723dccc8999a1ead7e03f98ce9717c12ea04a47c17b",
       "0xdc2044229e3c9c70ae0a4155ba3db47bed5ab272fd2e31d20e5122397e2c5d6e"
     ],
     "members_mainchain": [
-      "b94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
-      "de14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
-      "1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+      "1b3030f978991dde92b481559b9c4b4d1cff309d3125311eca56ddd8",
+      "d0a38c678972a535df847e1456723ee1610d997aab1d8d06dd155b3f",
+      "81aa78f8184a0ec13e5b81945c2402b34119bd3a81698b2c1b2cd85b"
     ]
   }
 }
