@@ -128,7 +128,8 @@ impl SubstrateCli for Cfg {
 
 				// Load permissioned candidates config
 				let permissioned_candidates_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_permissioned_candidates_config.as_ref().unwrap(),
+					self.chain_spec_cfg.chainspec_permissioned_candidates_config.as_ref()
+						.ok_or("chainspec_permissioned_candidates_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read permissioned candidates config: {e}"))?;
 
@@ -139,7 +140,8 @@ impl SubstrateCli for Cfg {
 
 				// Load registered candidates addresses
 				let registered_candidates_addresses_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_registered_candidates_addresses.as_ref().unwrap(),
+					self.chain_spec_cfg.chainspec_registered_candidates_addresses.as_ref()
+						.ok_or("chainspec_registered_candidates_addresses not configured")?,
 				)
 				.map_err(|e| format!("failed to read registered candidates addresses: {e}"))?;
 
@@ -198,7 +200,8 @@ impl SubstrateCli for Cfg {
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
 				let ics_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_ics_config.as_ref().unwrap(),
+					self.chain_spec_cfg.chainspec_ics_config.as_ref()
+						.ok_or("chainspec_ics_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read ics_config: {e}"))?;
 

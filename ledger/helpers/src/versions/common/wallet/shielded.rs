@@ -145,7 +145,7 @@ impl<D: DB + Clone> TryFrom<&WalletAddress> for ShieldedWallet<D> {
 		let coin_public_key = CoinPublicKey(HashOutput(
 			coin_bytes
 				.try_into()
-				.map_err(|v: &[u8]| ShieldedAddressParseError::InvalidCoinKeyLen(v.len()))?,
+				.map_err(|_| ShieldedAddressParseError::InvalidCoinKeyLen(coin_bytes.len()))?,
 		));
 		let enc_public_key: EncryptionPublicKey = Deserializable::deserialize(&mut enc_bytes, 0)
 			.map_err(|_| ShieldedAddressParseError::EncryptionKeyDeserialize)?;
