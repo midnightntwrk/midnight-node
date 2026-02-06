@@ -295,6 +295,11 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_block: BlockNumberFor<T>) -> Weight {
+			// Ensure ledger storage is initialized for current runtime version.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
+			}
 			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
@@ -316,11 +321,13 @@ pub mod pallet {
 
 		#[cfg(hardfork_test)]
 		fn on_runtime_upgrade() -> Weight {
-			if Self::in_code_storage_version() != Self::on_chain_storage_version() {
-				LedgerApi::drop_default_storage();
-				LedgerApi::set_default_storage();
+			// Ensure ledger storage is initialized for current runtime version.
+			// Storage initialization is also handled in on_initialize for rollback-safety.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
 			}
-			// TODO: Benchmark Weight in case of a real hard-fork
+
 			ConfigurableOnRuntimeUpgradeWeight::<T>::get()
 		}
 	}

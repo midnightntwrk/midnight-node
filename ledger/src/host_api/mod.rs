@@ -309,6 +309,41 @@ pub trait LedgerBridge {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, latest::types::LedgerApiError>> {
 		latest::Bridge::<Signature, Database>::construct_cnight_generates_dust_system_tx(events)
 	}
+
+	/// Ensures the correct ledger storage is initialized for this runtime version.
+	/// Handles rollback from HF: if HF storage is initialized but we need normal storage,
+	/// drops HF storage and initializes normal storage.
+	/// Returns true if storage was (re)initialized, false if already correct.
+	fn ensure_storage_initialized(&mut self) -> bool {
+		use ledger_storage::{db::ParityDb, storage::try_get_default_storage};
+
+		// If normal storage already exists, we're good
+		if try_get_default_storage::<ParityDb>().is_some() {
+			return false;
+		}
+
+		// Drop HF storage if it exists (rollback scenario: HF → normal)
+		{
+			use ledger_storage_hf::{
+				db::ParityDb as ParityDbHf,
+				storage::{
+					try_get_default_storage as try_get_hf,
+					unsafe_drop_default_storage as unsafe_drop_hf,
+				},
+			};
+			if try_get_hf::<ParityDbHf>().is_some() {
+				unsafe_drop_hf::<ParityDbHf>();
+				log::info!(
+					target: latest::LOG_TARGET,
+					"Dropped HF storage after rollback"
+				);
+			}
+		}
+
+		// Initialize normal storage
+		latest::Bridge::<Signature, Database>::set_default_storage(*self);
+		true
+	}
 }
 
 #[runtime_interface]
@@ -525,6 +560,40 @@ pub trait LedgerBridgeHf {
 		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::construct_cnight_generates_dust_system_tx(
 			events,
 		)
+	}
+
+	/// Ensures the correct ledger storage is initialized for this runtime version.
+	/// Handles upgrade from normal: if normal storage is initialized but we need HF storage,
+	/// drops normal storage and initializes HF storage.
+	/// Returns true if storage was (re)initialized, false if already correct.
+	fn ensure_storage_initialized(&mut self) -> bool {
+		use ledger_storage_hf::{
+			db::ParityDb as ParityDbHf, storage::try_get_default_storage as try_get_hf,
+		};
+
+		// If HF storage already exists, we're good
+		if try_get_hf::<ParityDbHf>().is_some() {
+			return false;
+		}
+
+		// Drop normal storage if it exists (upgrade scenario: normal → HF)
+		{
+			use ledger_storage::{
+				db::ParityDb,
+				storage::{try_get_default_storage, unsafe_drop_default_storage},
+			};
+			if try_get_default_storage::<ParityDb>().is_some() {
+				unsafe_drop_default_storage::<ParityDb>();
+				log::info!(
+					target: hard_fork_test::LOG_TARGET,
+					"Dropped normal storage for HF upgrade"
+				);
+			}
+		}
+
+		// Initialize HF storage
+		hard_fork_test::Bridge::<SignatureHF, DatabaseHF>::set_default_storage(*self);
+		true
 	}
 
 	// Hard-fork Version
