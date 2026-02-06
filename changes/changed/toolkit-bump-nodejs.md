@@ -3,4 +3,4 @@
 
 Updates nodejs
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/628
+PR: https://github.com/midnightntwrk/midnight-node/pull/629
