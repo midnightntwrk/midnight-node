@@ -1,4 +1,5 @@
-chain = "res/mainnet/chain-spec-raw.json"
+# Commented out to skip `check_all_chainspec_integrity()` until the chain-spec-raw.json exists
+#chain = "res/mainnet/chain-spec-raw.json"
 base_path = "node/chain"
 
 chainspec_name = "Midnight Mainnet"
