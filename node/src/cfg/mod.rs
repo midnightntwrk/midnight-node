@@ -233,6 +233,7 @@ impl Cfg {
 		let chain_spec_cfg: ChainSpecCfg = config.clone().try_deserialize()?;
 		let meta_cfg: MetaCfg = config.clone().try_deserialize()?;
 		let midnight_cfg: MidnightCfg = config.clone().try_deserialize()?;
+		// log::info!("MIDNIGHT cfg {:?}", midnight_cfg);
 		let storage_monitor_params_cfg: StorageMonitorParamsCfg =
 			config.clone().try_deserialize()?;
 		let substrate_cfg: SubstrateCfg = config.clone().try_deserialize()?;
