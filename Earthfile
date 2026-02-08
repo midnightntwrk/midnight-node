@@ -445,12 +445,12 @@ rebuild-genesis-state:
 rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
-        --GENERATE_TEST_TXS=true \
+        --GENERATE_TEST_TXS=true
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
+        --NETWORK=devnet
 
 # rebuild-genesis-state-govnet rebuilds the genesis ledger state for govnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-govnet:
