@@ -3,7 +3,7 @@
     "/dns/devnet/tcp/30333/p2p/12D3KooWFPYL9JXmBJUafWq8vJSi3JL8qZmXFXBvowVnaAZjKtgF"
   ],
   "chain_parameters": {
-    "genesis_utxo": "586f8f479825c0a0fed3af3af417151f86f193f0df993c518cfebc79c23991d0#1"
+    "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
   },
   "cardano": {
     "security_parameter": 432,

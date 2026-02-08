@@ -20,6 +20,13 @@ chmod +x /busybox
 chmod 777 /shared
 chmod 777 /runtime-values
 
+# Clean any existing runtime values to ensure fresh start
+if [[ -d "/runtime-values" ]]; then
+    echo "Removing existing runtime-values directory..."
+    rm -rf /runtime-values/*
+    echo "✓ runtime-values directory cleaned"
+fi
+
 # Removed: this caused permissions errors on host when running tests locally
 # chown -R $(id -u):$(id -g) /shared /runtime-values /keys /data
 
@@ -295,253 +302,12 @@ cardano-cli latest query utxo --testnet-magic 42 --address "${eve_address}" | /b
 echo "UTXO details for Eve saved in /shared/eve.utxo."
 cat /shared/eve.utxo
 
-echo "Querying and saving the first UTXO details for new address to /shared/genesis.utxo:"
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/genesis.utxo
-cat /shared/genesis.utxo > /runtime-values/genesis.utxo
-
-cat /shared/genesis.utxo
-
-# ============================================================================
-# CREATE ONE-SHOT UTXOs FOR GOVERNANCE CONTRACTS
-# ============================================================================
-echo ""
-echo "========================================="
-echo "Creating One-Shot UTxOs for Governance"
-echo "========================================="
-
-# These UTxOs will be used as one-shot inputs for governance contract minting
-# to ensure each governance NFT can only be minted once
-
-# Get available UTxOs for new_address (we'll use different ones for each one-shot)
-echo "Querying available UTxOs at $new_address..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" > /tmp/available_utxos.txt
-cat /tmp/available_utxos.txt
-
-# Extract third UTXO for council one-shot (skip first line header, skip second line dashes, get fifth line)
-council_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==5 { print $1 "#" $2 }')
-council_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==5 { print $3 }')
-
-# Extract fourth UTXO for techauth one-shot (skip first line header, skip second line dashes, get sixth line)
-techauth_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==6 { print $1 "#" $2 }')
-techauth_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==6 { print $3 }')
-
-# Extract fifth UTXO for federated-ops one-shot (skip first line header, skip second line dashes, get seventh line)
-federatedops_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==7 { print $1 "#" $2 }')
-federatedops_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==7 { print $3 }')
-
-echo ""
-echo "Creating Council One-Shot UTxO..."
-echo "  Input: $council_input"
-echo "  Input Amount: $council_input_amount lovelace"
-
-# Council one-shot transaction
-# We create a single output with 10 ADA (enough for later use as one-shot)
-council_oneshot_amount=10000000
-council_fee=200000
-council_change=$((council_input_amount - council_oneshot_amount - council_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $council_input \
-  --tx-out "$new_address+$council_oneshot_amount" \
-  --tx-out "$new_address+$council_change" \
-  --fee $council_fee \
-  --out-file /data/council-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/council-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/council-oneshot.signed
-
-echo "Submitting council one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/council-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for council one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the council one-shot UTxO reference
-echo "Querying council one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$council_oneshot_amount" '$3 == amount { print $1 "#" $2; exit }' > /shared/council.oneshot.utxo
-
-council_oneshot_ref=$(cat /shared/council.oneshot.utxo)
-council_oneshot_hash=$(echo $council_oneshot_ref | cut -d'#' -f1)
-council_oneshot_index=$(echo $council_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Council One-Shot UTxO Created:"
-echo "  Reference: $council_oneshot_ref"
-echo "  TX Hash:   $council_oneshot_hash"
-echo "  TX Index:  $council_oneshot_index"
-
-# Save to files for contract compilation
-echo "$council_oneshot_hash" > /shared/council_oneshot_hash.txt
-echo "$council_oneshot_index" > /shared/council_oneshot_index.txt
-cp /shared/council.oneshot.utxo /runtime-values/council.oneshot.utxo
-cp /shared/council_oneshot_hash.txt /runtime-values/council_oneshot_hash.txt
-cp /shared/council_oneshot_index.txt /runtime-values/council_oneshot_index.txt
-
-# Extract fourth UTXO for tech auth one-shot
-echo ""
-echo "Creating Technical Authority One-Shot UTxO..."
-echo "  Input: $techauth_input"
-echo "  Input Amount: $techauth_input_amount lovelace"
-
-# Tech auth one-shot transaction
-techauth_oneshot_amount=15000000
-techauth_fee=200000
-techauth_change=$((techauth_input_amount - techauth_oneshot_amount - techauth_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $techauth_input \
-  --tx-out "$new_address+$techauth_oneshot_amount" \
-  --tx-out "$new_address+$techauth_change" \
-  --fee $techauth_fee \
-  --out-file /data/techauth-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/techauth-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/techauth-oneshot.signed
-
-echo "Submitting tech auth one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/techauth-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for tech auth one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the tech auth one-shot UTxO reference
-echo "Querying tech auth one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$techauth_oneshot_amount" '$3 == amount && !seen[$1"#"$2]++ { print $1 "#" $2; exit }' > /shared/techauth.oneshot.utxo
-
-techauth_oneshot_ref=$(cat /shared/techauth.oneshot.utxo)
-techauth_oneshot_hash=$(echo $techauth_oneshot_ref | cut -d'#' -f1)
-techauth_oneshot_index=$(echo $techauth_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Technical Authority One-Shot UTxO Created:"
-echo "  Reference: $techauth_oneshot_ref"
-echo "  TX Hash:   $techauth_oneshot_hash"
-echo "  TX Index:  $techauth_oneshot_index"
-
-# Save to files for contract compilation
-echo "$techauth_oneshot_hash" > /shared/techauth_oneshot_hash.txt
-echo "$techauth_oneshot_index" > /shared/techauth_oneshot_index.txt
-cp /shared/techauth.oneshot.utxo /runtime-values/techauth.oneshot.utxo
-cp /shared/techauth_oneshot_hash.txt /runtime-values/techauth_oneshot_hash.txt
-cp /shared/techauth_oneshot_index.txt /runtime-values/techauth_oneshot_index.txt
-
-#
-# Create Federated Operators One-Shot UTxO
-#
-echo ""
-echo "Creating Federated Operators One-Shot UTxO..."
-echo "  Input: $federatedops_input"
-echo "  Input Amount: $federatedops_input_amount lovelace"
-
-# Federated Ops one-shot transaction
-# Note: Using 12 ADA (different from council's 10 ADA and techauth's 15 ADA)
-# to ensure unique amount matching when querying one-shot UTxOs
-federatedops_oneshot_amount=12000000
-federatedops_fee=200000
-federatedops_change=$((federatedops_input_amount - federatedops_oneshot_amount - federatedops_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $federatedops_input \
-  --tx-out "$new_address+$federatedops_oneshot_amount" \
-  --tx-out "$new_address+$federatedops_change" \
-  --fee $federatedops_fee \
-  --out-file /data/federatedops-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/federatedops-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/federatedops-oneshot.signed
-
-echo "Submitting federated ops one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/federatedops-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for federated ops one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the federated ops one-shot UTxO reference
-echo "Querying federated ops one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$federatedops_oneshot_amount" '$3 == amount && !seen[$1"#"$2]++ { print $1 "#" $2; exit }' > /shared/federatedops.oneshot.utxo
-
-federatedops_oneshot_ref=$(cat /shared/federatedops.oneshot.utxo)
-federatedops_oneshot_hash=$(echo $federatedops_oneshot_ref | cut -d'#' -f1)
-federatedops_oneshot_index=$(echo $federatedops_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Federated Operators One-Shot UTxO Created:"
-echo "  Reference: $federatedops_oneshot_ref"
-echo "  TX Hash:   $federatedops_oneshot_hash"
-echo "  TX Index:  $federatedops_oneshot_index"
-
-# Save to files for contract compilation
-echo "$federatedops_oneshot_hash" > /shared/federatedops_oneshot_hash.txt
-echo "$federatedops_oneshot_index" > /shared/federatedops_oneshot_index.txt
-cp /shared/federatedops.oneshot.utxo /runtime-values/federatedops.oneshot.utxo
-cp /shared/federatedops_oneshot_hash.txt /runtime-values/federatedops_oneshot_hash.txt
-cp /shared/federatedops_oneshot_index.txt /runtime-values/federatedops_oneshot_index.txt
 
 echo "Fixing permissions for generated files..."
-chown $(id -u):$(id -g) \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo \
-  /shared/council.oneshot.utxo \
-  /shared/council_oneshot_hash.txt \
-  /shared/council_oneshot_index.txt \
-  /shared/techauth.oneshot.utxo \
-  /shared/techauth_oneshot_hash.txt \
-  /shared/techauth_oneshot_index.txt \
-  /shared/federatedops.oneshot.utxo \
-  /shared/federatedops_oneshot_hash.txt \
-  /shared/federatedops_oneshot_index.txt \
-  /runtime-values/council.oneshot.utxo \
-  /runtime-values/council_oneshot_hash.txt \
-  /runtime-values/council_oneshot_index.txt \
-  /runtime-values/techauth.oneshot.utxo \
-  /runtime-values/techauth_oneshot_hash.txt \
-  /runtime-values/techauth_oneshot_index.txt \
-  /runtime-values/federatedops.oneshot.utxo \
-  /runtime-values/federatedops_oneshot_hash.txt \
-  /runtime-values/federatedops_oneshot_index.txt
+chown $(id -u):$(id -g) /runtime-values/mc.env
+chmod u+rw /runtime-values/mc.env
 
-chmod u+rw \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo \
-  /shared/council.oneshot.utxo \
-  /shared/council_oneshot_hash.txt \
-  /shared/council_oneshot_index.txt \
-  /shared/techauth.oneshot.utxo \
-  /shared/techauth_oneshot_hash.txt \
-  /shared/techauth_oneshot_index.txt \
-  /shared/federatedops.oneshot.utxo \
-  /shared/federatedops_oneshot_hash.txt \
-  /shared/federatedops_oneshot_index.txt \
-  /runtime-values/council.oneshot.utxo \
-  /runtime-values/council_oneshot_hash.txt \
-  /runtime-values/council_oneshot_index.txt \
-  /runtime-values/techauth.oneshot.utxo \
-  /runtime-values/techauth_oneshot_hash.txt \
-  /runtime-values/techauth_oneshot_index.txt \
-  /runtime-values/federatedops.oneshot.utxo \
-  /runtime-values/federatedops_oneshot_hash.txt \
-  /runtime-values/federatedops_oneshot_index.txt
-
-if [ -f "/shared/genesis.utxo" ]; then
 touch /shared/cardano.ready
-else
-echo "Genesis UTXO file not found. Exiting..."
-exit 1
-fi
 echo "Cardano chain is ready. Starting DB-Sync..."
 
 wait

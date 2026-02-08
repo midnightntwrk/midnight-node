@@ -22,6 +22,8 @@ The runtime upgrade process follows these steps:
 
 ---
 
+> **Note**: The order of Council and Technical Committee proposals (Steps 2 and 3) is not relevant. They can be done in parallel.
+
 ## Step 1: Get the Code Hash
 
 Before starting the governance process, you need the code hash of the new runtime WASM.

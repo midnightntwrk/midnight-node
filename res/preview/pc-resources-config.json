@@ -1,0 +1,10 @@
+{
+  "substrate_node_base_path": "./data",
+  "ogmios": {
+    "protocol": "https",
+    "hostname": "ogmios.devnet.midnight.network",
+    "port": 443,
+    "request_timeout": 180
+  },
+  "cardano_payment_signing_key_file": "payment.skey"
+}

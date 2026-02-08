@@ -1,0 +1,70 @@
+name: nightly runs
+
+on:
+  schedule:
+    # Runs every night at 00:00 UTC
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  rust_e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Resolve runtime settings
+        id: vars
+        shell: bash
+        run: |
+          echo "env=qanet" >> "$GITHUB_OUTPUT"
+          echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout e2e branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          ref: ${{ steps.vars.outputs.e2e_ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: stable
+
+      - name: Install system dependencies (protoc)
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
+      - name: Run e2e tests (all)
+        working-directory: tests/e2e/tests
+        env:
+          RUST_BACKTRACE: "1"
+        run: |
+          cargo test --test e2e_tests cnight --no-default-features --features ${{ steps.vars.outputs.env }} -- --no-capture
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_E2E_NODE: ${{ secrets.SLACK_WEBHOOK_E2E_NODE }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ENV_NAME: ${{ steps.vars.outputs.env }}
+          E2E_REF: ${{ steps.vars.outputs.e2e_ref }}
+        shell: bash
+        run: |
+          if [ "$STATUS" = "success" ]; then
+            MESSAGE="✅ ${ENV_NAME} env nightly e2e cNgD passed successfully\n${RUN_URL}"
+          else
+            MESSAGE="❌ ${ENV_NAME} env nightly e2e cNgD failed\n${RUN_URL}"
+          fi
+
+          curl -X POST -H "Content-type: application/json" \
+            --data "{\"text\":\"$MESSAGE\"}" \
+            "$SLACK_WEBHOOK_E2E_NODE"

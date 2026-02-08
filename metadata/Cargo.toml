@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-metadata"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 build = "build.rs"
 license-file.workspace = true
