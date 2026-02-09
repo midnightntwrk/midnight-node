@@ -1,5 +1,5 @@
 #[cfg(feature = "std")]
-use crate::ledger_7::{Bridge, LOG_TARGET};
+use crate::ledger_7::Bridge;
 use crate::{
 	common::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
@@ -296,24 +296,7 @@ pub trait LedgerBridge {
 			return false;
 		}
 
-		// Drop HF storage if it exists (rollback scenario: HF → normal)
-		{
-			use ledger_storage_hf::{
-				db::ParityDb as ParityDbHf,
-				storage::{
-					try_get_default_storage as try_get_hf,
-					unsafe_drop_default_storage as unsafe_drop_hf,
-				},
-			};
-			if try_get_hf::<ParityDbHf>().is_some() {
-				unsafe_drop_hf::<ParityDbHf>();
-				log::info!(
-					target: LOG_TARGET,
-					"Dropped HF storage after rollback"
-				);
-			}
-		}
-
+		crate::drop_all_default_storage();
 		// Initialize normal storage
 		Bridge::<Signature, Database>::set_default_storage(*self);
 		true

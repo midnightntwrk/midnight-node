@@ -216,31 +216,15 @@ pub trait LedgerBridgeHf {
 	/// drops normal storage and initializes HF storage.
 	/// Returns true if storage was (re)initialized, false if already correct.
 	fn ensure_storage_initialized(&mut self) -> bool {
-		use ledger_storage_hf::{
-			db::ParityDb as ParityDbHf, storage::try_get_default_storage as try_get_hf,
-		};
+		use ledger_storage_hf::{db::ParityDb, storage::try_get_default_storage};
 
-		// If HF storage already exists, we're good
-		if try_get_hf::<ParityDbHf>().is_some() {
+		// If normal storage already exists, we're good
+		if try_get_default_storage::<ParityDb>().is_some() {
 			return false;
 		}
 
-		// Drop normal storage if it exists (upgrade scenario: normal → HF)
-		{
-			use ledger_storage::{
-				db::ParityDb,
-				storage::{try_get_default_storage, unsafe_drop_default_storage},
-			};
-			if try_get_default_storage::<ParityDb>().is_some() {
-				unsafe_drop_default_storage::<ParityDb>();
-				log::info!(
-					target: LOG_TARGET,
-					"Dropped normal storage for HF upgrade"
-				);
-			}
-		}
-
-		// Initialize HF storage
+		crate::drop_all_default_storage();
+		// Initialize normal storage
 		Bridge::<Signature, Database>::set_default_storage(*self);
 		true
 	}

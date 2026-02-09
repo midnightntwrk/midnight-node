@@ -104,6 +104,13 @@ pub mod ledger_8 {
 
 pub use ledger_7 as latest;
 
+#[cfg(feature = "std")]
+fn drop_all_default_storage() {
+	ledger_7::storage::drop_default_storage_if_exists();
+	hard_fork_test::storage::drop_default_storage_if_exists();
+	ledger_8::storage::drop_default_storage_if_exists();
+}
+
 mod common;
 
 pub mod types {

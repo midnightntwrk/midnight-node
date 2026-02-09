@@ -1,9 +1,10 @@
+#[cfg(feature = "std")]
+use crate::ledger_8::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-		TransactionDetails, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
 	},
-	ledger_8::{BlockContext, Bridge, LOG_TARGET, types::LedgerApiError},
+	ledger_8::{BlockContext, types::LedgerApiError},
 };
 use alloc::vec::Vec;
 use sp_runtime_interface::pass_by::{
@@ -13,32 +14,19 @@ use sp_runtime_interface::pass_by::{
 use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
-type Signature = base_crypto::signatures::Signature;
+type Signature = base_crypto_ledger_8::signatures::Signature;
 
 #[cfg(feature = "std")]
-type Database = ledger_storage::db::ParityDb;
+type Database = ledger_storage_ledger_8::db::ParityDb;
 
 #[runtime_interface]
-pub trait LedgerBridge {
+pub trait Ledger8Bridge {
 	fn set_default_storage(&mut self) {
 		Bridge::<Signature, Database>::set_default_storage(*self)
 	}
 
-	fn drop_default_storage(&mut self) {
-		// Do nothing. No DB exists prior this version.
-		// Method should exist though to easiy reuse runtimes between
-		// hard-fork and no hard-fork versions.
-	}
-
 	fn flush_storage(&mut self) {
 		Bridge::<Signature, Database>::flush_storage(*self)
-	}
-
-	fn pre_fetch_storage(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
-		Bridge::<Signature, Database>::pre_fetch_storage(*self, state_key)
 	}
 
 	fn post_block_update(
@@ -69,24 +57,6 @@ pub trait LedgerBridge {
 			state_key,
 			tx,
 			block_context,
-			false,
-			runtime_version,
-		)
-	}
-
-	#[version(2)]
-	fn apply_transaction(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		tx: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-		runtime_version: u32,
-	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
-		Bridge::<Signature, Database>::apply_transaction(
-			*self,
-			state_key,
-			tx,
-			block_context,
 			true,
 			runtime_version,
 		)
@@ -105,34 +75,6 @@ pub trait LedgerBridge {
 	/*
 	 * validate_transaction()
 	 */
-	fn validate_transaction(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		tx: PassFatPointerAndRead<&[u8]>,
-		block_context: PassFatPointerAndDecode<BlockContext>,
-		runtime_version: u32,
-		// The Runtime's max weight as of now
-		max_weight: u64,
-	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), LedgerApiError>> {
-		let (hash, Some(tx_details)) = Bridge::<Signature, Database>::validate_transaction(
-			*self,
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			max_weight,
-			true,
-		)?
-		else {
-			// This should never happen
-			log::error!("error: transaction_details is None");
-			return Err(LedgerApiError::HostApiError);
-		};
-		Ok((hash, tx_details))
-	}
-
-	// Current Enabled Version
-	#[version(2)]
 	fn validate_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -282,35 +224,18 @@ pub trait LedgerBridge {
 	}
 
 	/// Ensures the correct ledger storage is initialized for this runtime version.
-	/// Handles rollback from HF: if HF storage is initialized but we need normal storage,
-	/// drops HF storage and initializes normal storage.
+	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
+	/// drops new version's storage and initializes normal storage.
 	/// Returns true if storage was (re)initialized, false if already correct.
 	fn ensure_storage_initialized(&mut self) -> bool {
-		use ledger_storage::{db::ParityDb, storage::try_get_default_storage};
+		use ledger_storage_ledger_8::{db::ParityDb, storage::try_get_default_storage};
 
 		// If normal storage already exists, we're good
 		if try_get_default_storage::<ParityDb>().is_some() {
 			return false;
 		}
 
-		// Drop HF storage if it exists (rollback scenario: HF → normal)
-		{
-			use ledger_storage_hf::{
-				db::ParityDb as ParityDbHf,
-				storage::{
-					try_get_default_storage as try_get_hf,
-					unsafe_drop_default_storage as unsafe_drop_hf,
-				},
-			};
-			if try_get_hf::<ParityDbHf>().is_some() {
-				unsafe_drop_hf::<ParityDbHf>();
-				log::info!(
-					target: LOG_TARGET,
-					"Dropped HF storage after rollback"
-				);
-			}
-		}
-
+		crate::drop_all_default_storage();
 		// Initialize normal storage
 		Bridge::<Signature, Database>::set_default_storage(*self);
 		true

@@ -33,6 +33,9 @@ pub mod types;
 use types::LedgerApiError;
 
 #[cfg(feature = "std")]
+pub mod storage;
+
+#[cfg(feature = "std")]
 pub mod api;
 
 #[cfg(feature = "std")]
