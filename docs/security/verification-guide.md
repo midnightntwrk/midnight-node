@@ -149,6 +149,8 @@ Verify any of these images using the commands above:
 | Midnight Node | `ghcr.io/midnight-ntwrk/midnight-node` | `midnightntwrk/midnight-node` |
 | Midnight Toolkit | `ghcr.io/midnight-ntwrk/midnight-node-toolkit` | `midnightntwrk/midnight-node-toolkit` |
 
+> **Note:** The GitHub org is `midnightntwrk` (no hyphen), while GHCR uses `midnight-ntwrk` (with hyphen). Keep this in mind when constructing image references or certificate identity patterns.
+
 ## Troubleshooting
 
 ### "no signatures found"
