@@ -26,6 +26,9 @@ jobs:
           docker push ghcr.io/midnightntwrk/midnight-node:test-delete-me
           echo "Push succeeded!"
 
+      - name: Wait 1 minute before cleanup
+        run: sleep 60
+
       - name: Delete test tag
         if: always()
         env:
