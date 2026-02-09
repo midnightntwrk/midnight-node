@@ -184,7 +184,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						.expect("time has run backwards")
 						.as_secs(),
 				);
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() }
+				super::make_block_context(now, Default::default(), Default::default())
 			})
 	}
 

@@ -202,8 +202,8 @@ pub type HostFunctions = (
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the

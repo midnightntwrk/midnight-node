@@ -46,6 +46,11 @@ pub mod hard_fork_test {
 		zswap_hf as zswap_local,
 	};
 
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/pre_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
 	pub const CRATE_NAME: &str = "mn-ledger-hf";
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -53,22 +58,51 @@ pub mod hard_fork_test {
 }
 
 #[path = "versions"]
-pub mod latest {
+pub mod ledger_7 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
 		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
 		ledger_storage as ledger_storage_local,
-		midnight_node_ledger_helpers::latest as helpers_local,
+		midnight_node_ledger_helpers::ledger_7 as helpers_local,
 		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
 		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
 		zswap as zswap_local,
 	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/pre_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
 
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
 }
+
+#[path = "versions"]
+pub mod ledger_8 {
+	#[cfg(feature = "std")]
+	pub(crate) use {
+		base_crypto_ledger_8 as base_crypto_local, coin_structure_ledger_8 as coin_structure_local,
+		ledger_storage_ledger_8 as ledger_storage_local,
+		midnight_node_ledger_helpers::ledger_8 as helpers_local,
+		midnight_serialize_ledger_8 as midnight_serialize_local, mn_ledger_8 as mn_ledger_local,
+		onchain_runtime_ledger_8 as onchain_runtime_local,
+		transient_crypto_ledger_8 as transient_crypto_local, zswap_ledger_8 as zswap_local,
+	};
+
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	pub const CRATE_NAME: &str = "mn-ledger-8";
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+}
+
+pub use ledger_7 as latest;
 
 mod common;
 
@@ -78,10 +112,10 @@ pub mod types {
 	#[cfg(hardfork_test)]
 	pub use super::hard_fork_test::types as active_version;
 	#[cfg(hardfork_test)]
-	pub use super::host_api::ledger_bridge_hf as active_ledger_bridge;
+	pub use super::host_api::ledger_hf::ledger_bridge_hf as active_ledger_bridge;
 
 	#[cfg(not(hardfork_test))]
-	pub use super::host_api::ledger_bridge as active_ledger_bridge;
+	pub use super::host_api::ledger_7::ledger_bridge as active_ledger_bridge;
 	#[cfg(not(hardfork_test))]
 	pub use super::latest::types as active_version;
 }

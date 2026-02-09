@@ -19,7 +19,8 @@ use super::{
 	OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker,
 	ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment,
 	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
-	Storable, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
+	Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness,
+	serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -420,7 +421,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	fn validate<
 		S: SignatureKind<D>,
 		P: ProofKind<D> + Storable<D>,
-		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D>,
+		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
 	>(
 		context: Arc<LedgerContext<D>>,
 		now: Timestamp,

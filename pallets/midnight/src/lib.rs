@@ -49,7 +49,8 @@ pub mod pallet {
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
 		active_version::{
-			DeserializationError, LedgerApiError, SerializationError, TransactionError,
+			BlockContext, DeserializationError, LedgerApiError, SerializationError,
+			TransactionError,
 		},
 	};
 	use sp_runtime::Weight;
@@ -77,13 +78,13 @@ pub mod pallet {
 	}
 
 	impl<T: Config> LedgerBlockContextProvider for Pallet<T> {
-		fn get_block_context() -> LedgerTypes::BlockContext {
+		fn get_block_context() -> BlockContext {
 			let parent_hash = <frame_system::Pallet<T>>::parent_hash();
 			let now_ms = <pallet_timestamp::Pallet<T>>::get();
 			let now_s = now_ms / <T as pallet_timestamp::Config>::Moment::from(1_000u32);
 			let drift_s = 30; // (from private const MAX_TIMESTAMP_DRIFT_MILLIS in substrate/frame/timestamp/src/lib.rs)
 
-			LedgerTypes::BlockContext {
+			BlockContext {
 				tblock: now_s.unique_saturated_into(),
 				tblock_err: drift_s as u32,
 				parent_block_hash: parent_hash.as_ref().to_vec(),
@@ -270,6 +271,8 @@ pub mod pallet {
 		HostApiError,
 		#[codec(index = 11)]
 		NetworkIdNotString,
+		#[codec(index = 12)]
+		GetTransactionContextError,
 	}
 	// grcov-excl-stop
 
@@ -288,6 +291,9 @@ pub mod pallet {
 				LedgerApiError::BlockLimitExceededError => Error::<T>::BlockLimitExceededError,
 				LedgerApiError::FeeCalculationError => Error::<T>::FeeCalculationError,
 				LedgerApiError::HostApiError => Error::<T>::HostApiError,
+				LedgerApiError::GetTransactionContextError => {
+					Error::<T>::GetTransactionContextError
+				},
 			}
 		}
 	}
@@ -502,10 +508,7 @@ pub mod pallet {
 			TransactionValidityError::Invalid(InvalidTransaction::Custom(error_code))
 		}
 
-		fn validate_unsigned(
-			call: &Call<T>,
-			block_context: LedgerTypes::BlockContext,
-		) -> TransactionValidity {
+		fn validate_unsigned(call: &Call<T>, block_context: BlockContext) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
 				let state_key = StateKey::<T>::get().expect("Failed to get state key");
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
