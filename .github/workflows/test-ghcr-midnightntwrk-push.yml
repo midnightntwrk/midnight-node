@@ -1,0 +1,48 @@
+name: Test GHCR push to midnightntwrk
+
+on:
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  test-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR (midnightntwrk)
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Pull from midnight-ntwrk, retag, and push to midnightntwrk
+        run: |
+          docker pull ghcr.io/midnight-ntwrk/midnight-node:latest-main
+          docker tag ghcr.io/midnight-ntwrk/midnight-node:latest-main ghcr.io/midnightntwrk/midnight-node:test-delete-me
+          docker push ghcr.io/midnightntwrk/midnight-node:test-delete-me
+          echo "Push succeeded!"
+
+      - name: Delete test tag
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+        run: |
+          # Get the version ID of the tag we just pushed
+          VERSION_ID=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/midnightntwrk/packages/container/midnight-node/versions" \
+            | jq '.[] | select(.metadata.container.tags[] == "test-delete-me") | .id')
+
+          if [ -n "$VERSION_ID" ]; then
+            curl -s -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/midnightntwrk/packages/container/midnight-node/versions/$VERSION_ID" \
+              && echo "Test tag deleted successfully" \
+              || echo "Could not delete test tag (may need manual cleanup)"
+          else
+            echo "Could not find version ID for test tag"
+          fi
