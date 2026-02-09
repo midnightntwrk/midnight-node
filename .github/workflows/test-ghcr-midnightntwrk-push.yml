@@ -1,7 +1,9 @@
 name: Test GHCR push to midnightntwrk
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - SRE-1769/publish-to-midnightntwrk
 
 permissions:
   packages: write
