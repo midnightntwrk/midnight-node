@@ -76,7 +76,7 @@ frame-benchmarking-cli = {workspace = true, optional = true, default-features = 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
-midnight-node-ledger-helpers = {workspace = true, default-features = true }
+midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }

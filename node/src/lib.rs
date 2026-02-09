@@ -33,3 +33,4 @@ pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
 mod util;
+pub mod verify_ledger_state_genesis;

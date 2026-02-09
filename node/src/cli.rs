@@ -147,6 +147,25 @@ pub struct IcsGenesisCmd {
 	pub output: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+pub struct VerifyLedgerStateGenesisCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to cnight-config.json for DustState verification
+	#[arg(long)]
+	pub cnight_config: Option<std::path::PathBuf>,
+
+	/// Path to ledger-parameters-config.json for parameter verification
+	#[arg(long)]
+	pub ledger_parameters_config: Option<std::path::PathBuf>,
+
+	/// Network name (e.g., "mainnet", "qanet"). Used for network-specific checks like empty state
+	#[arg(long)]
+	pub network: Option<String>,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -180,6 +199,10 @@ pub enum Subcommand {
 
 	/// Generate all genesis config files (cNight, federated authority, and permissioned candidates) in a single command.
 	GenerateGenesisConfig(GenesisConfigCmd),
+
+	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
+	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
+	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),

@@ -863,5 +863,25 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok(())
 			})
 		},
+		Subcommand::VerifyLedgerStateGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			let result = crate::verify_ledger_state_genesis::verify_ledger_state_genesis(
+				&cmd.chain_spec,
+				cmd.cnight_config.as_deref(),
+				cmd.ledger_parameters_config.as_deref(),
+				cmd.network.as_deref(),
+			)
+			.map_err(|e| sc_cli::Error::Input(format!("Genesis verification failed: {e}")))?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+			}
+		},
 	}
 }
