@@ -1,6 +1,6 @@
 # Container Image Signing and SBOM Generation
 
-All container images published by Midnight are:
+Node images published by Midnight are:
 
 1. **Signed** using [Cosign](https://github.com/sigstore/cosign) keyless signing
 2. **Accompanied by an SBOM** (Software Bill of Materials) in SPDX-JSON format
@@ -15,8 +15,6 @@ Cosign's keyless signing eliminates long-lived signing keys. Instead, signing us
 1. Request OIDC token from GitHub
 2. Exchange token with Sigstore Fulcio CA for short-lived certificate
 3. Sign image digest and upload signature to Rekor transparency log
-
-This means no private keys to manage, signing identity tied to the GitHub Actions workflow, and all signatures recorded in a public transparency log.
 
 ### SBOM Generation
 

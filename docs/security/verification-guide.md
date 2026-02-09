@@ -140,39 +140,6 @@ cosign verify ghcr.io/midnight-ntwrk/midnight-node@sha256:DIGEST \
   --certificate-oidc-issuer-regexp '.*'
 ```
 
-## Verification in Kubernetes
-
-### Admission Controller Integration
-
-You can enforce signature verification using admission controllers like [Kyverno](https://kyverno.io/) or [Sigstore Policy Controller](https://docs.sigstore.dev/policy-controller/overview/).
-
-Example Kyverno policy:
-
-```yaml
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: verify-midnight-images
-spec:
-  validationFailureAction: Enforce
-  rules:
-    - name: verify-signature
-      match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-      verifyImages:
-        - imageReferences:
-            - "ghcr.io/midnight-ntwrk/*"
-            - "midnightntwrk/*"
-          attestors:
-            - entries:
-                - keyless:
-                    subject: "https://github.com/midnightntwrk/midnight-node/*"
-                    issuer: "https://token.actions.githubusercontent.com"
-```
-
 ## All Published Images
 
 Verify any of these images using the commands above:
