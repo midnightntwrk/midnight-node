@@ -295,6 +295,11 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_block: BlockNumberFor<T>) -> Weight {
+			// Ensure ledger storage is initialized for current runtime version.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
+			}
 			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
@@ -316,11 +321,13 @@ pub mod pallet {
 
 		#[cfg(hardfork_test)]
 		fn on_runtime_upgrade() -> Weight {
-			if Self::in_code_storage_version() != Self::on_chain_storage_version() {
-				LedgerApi::drop_default_storage();
-				LedgerApi::set_default_storage();
+			// Ensure ledger storage is initialized for current runtime version.
+			// Storage initialization is also handled in on_initialize for rollback-safety.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
 			}
-			// TODO: Benchmark Weight in case of a real hard-fork
+
 			ConfigurableOnRuntimeUpgradeWeight::<T>::get()
 		}
 	}
@@ -426,25 +433,21 @@ pub mod pallet {
 		}
 
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
+			let Call::send_mn_transaction { midnight_tx } = call else {
+				return Err(Self::invalid_transaction(Default::default()));
+			};
+
 			let block_context = Self::get_block_context();
+			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
-			// First, perform existing structural validation
-			Self::validate_unsigned(call, block_context.clone())?;
-
-			// Then, validate that the guaranteed part will succeed.
-			if let Call::send_mn_transaction { midnight_tx } = call {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
-				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-
-				LedgerApi::validate_guaranteed_execution(
-					&state_key,
-					midnight_tx,
-					block_context,
-					runtime_version,
-				)
-				.map_err(|e| Self::invalid_transaction(e.into()))?;
-			}
-
+			LedgerApi::validate_guaranteed_execution(
+				&state_key,
+				midnight_tx,
+				block_context,
+				runtime_version,
+			)
+			.map_err(|e| Self::invalid_transaction(e.into()))?;
 			Ok(())
 		}
 	}

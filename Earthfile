@@ -131,7 +131,7 @@ build-node-only:
 
     ARG NATIVEARCH
 
-    RUN cargo build -p midnight-node --locked --release
+    RUN cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH
@@ -197,7 +197,8 @@ rebuild-redemption-skeleton:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -495,9 +496,9 @@ rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
     BUILD +rebuild-genesis-state-govnet
-    BUILD +rebuild-genesis-state-node-dev-01
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-preview
+    # Preview is not meant to be reset
+    #BUILD +rebuild-genesis-state-preview
     # Preprod is not meant to be reset
     #BUILD +rebuild-genesis-state-preprod
 
@@ -520,11 +521,11 @@ rebuild-chainspec:
 
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 rebuild-all-chainspecs:
-    BUILD +rebuild-chainspec --NETWORK=node-dev-01
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=preview
+    # Preview is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preprod
 
@@ -661,7 +662,7 @@ node-ci-image-single-platform:
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
+    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
 
     # subwasm can be used to diff between runtimes
     # renovate: datasource=github-releases packageName=chevdor/subwasm
@@ -694,6 +695,7 @@ prep-no-copy:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
@@ -726,7 +728,8 @@ toolkit-js-prep:
     RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && \
+        npm install -g npm@11.8.0 && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -963,7 +966,6 @@ build-prepare:
     # TODO: re-enable when chef is improved.
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-
 # build creates production ready binaries
 build:
     FROM +build-prepare
@@ -986,7 +988,7 @@ build:
 
     # Default build (no hardfork)
     RUN \
-        cargo build --workspace --locked --release
+        cargo auditable build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -1032,7 +1034,7 @@ build-benchmarks:
 
     # Build with runtime-benchmarks feature
     RUN \
-        cargo build --workspace --locked --release --features runtime-benchmarks
+        cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
@@ -1121,12 +1123,14 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    # Install dependencies for Node.js (curl-minimal already in base image)
+    # Install dependencies for Node.js and update vulnerable system packages
     RUN microdnf -y install tar gzip xz && \
+        microdnf -y update libxml2 python3-pip python3-pip-wheel python3-setuptools && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1135,7 +1139,8 @@ toolkit-image:
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && \
+        npm install -g npm@11.8.0 && npm --version
 
     # Add toolkit-js
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
@@ -1200,7 +1205,8 @@ audit-npm:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1229,7 +1235,8 @@ audit-yarn:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \

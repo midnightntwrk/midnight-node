@@ -9,8 +9,6 @@ use ogmios_client::jsonrpsee::client_for_url;
 use ogmios_client::query_ledger_state::{OgmiosTip, QueryLedgerState};
 use ogmios_client::transactions::{SubmitTransactionResponse, Transactions};
 use ogmios_client::types::OgmiosUtxo;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::time::sleep;
 use whisky::csl::{
@@ -740,57 +738,6 @@ impl CardanoClient {
             println!("UTXO {} was spent within 3 slots.", tx_id);
         }
         still_unspent
-    }
-
-    /// Retrieve the pre-created one-shot UTxO from the local environment
-    ///
-    /// The local-environment creates these UTxOs during Cardano setup in entrypoint.sh
-    /// The UTxO references are saved to files that we read here
-    ///
-    /// # Arguments
-    /// * `governance_type` - Either "council" or "techauth"
-    pub async fn one_shot_utxo(&self, governance_type: &str) -> Result<OgmiosUtxo, GetUtxoError> {
-        let current_dir = std::env::current_dir().map_err(GetUtxoError::Io)?;
-
-        let file_path = self
-            .find_runtime_values_file(&current_dir, governance_type)
-            .ok_or(GetUtxoError::MissingFile)?;
-
-        let utxo_ref = fs::read_to_string(&file_path)?.trim().to_string();
-
-        let (tx_hash, _index) = utxo_ref
-            .split_once('#')
-            .ok_or(GetUtxoError::InvalidFormat)?;
-
-        let request = OgmiosRequest::QueryUtxo {
-            address: self.constants.payments.funded_address.to_string(),
-        };
-        let response = Self::ogmios_request(&self.ogmios_settings, request)
-            .await
-            .unwrap();
-        let utxos = match response {
-            OgmiosResponse::QueryUtxo(utxos) => utxos,
-            _ => vec![],
-        };
-
-        utxos
-            .into_iter()
-            .find(|u| hex::encode(u.transaction.id) == tx_hash)
-            .ok_or(GetUtxoError::NotFoundOnChain)
-    }
-
-    fn find_runtime_values_file(&self, start: &Path, governance_type: &str) -> Option<PathBuf> {
-        let filename = format!("{governance_type}.oneshot.utxo");
-        let rel_dir = Path::new(&self.constants.runtime_values_location);
-
-        for dir in start.ancestors() {
-            let candidate = dir.join(rel_dir).join(&filename);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-
-        None
     }
 
     /// Deploy a governance contract and mint the NFT with multisig datum

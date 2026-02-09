@@ -122,7 +122,7 @@ get_security_parameter() {
 uses_cnight_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed)
+        qanet|undeployed|devnet|govnet|node-dev-01)
             return 0  # true
             ;;
         *)
@@ -135,7 +135,7 @@ uses_cnight_config() {
 uses_ics_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed)
+        qanet|undeployed|devnet|govnet|node-dev-01)
             return 0  # true
             ;;
         *)

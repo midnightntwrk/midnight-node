@@ -129,23 +129,21 @@ impl<D: DB> Ledger<D> {
 		self.state.index(contract_address)
 	}
 
-	pub(crate) fn apply_transaction<S: SignatureKind<D>>(
+	/// Applies a pre-verified transaction to the ledger.
+	///
+	/// This is used when a `VerifiedTransaction` has been cached from a prior
+	/// validation step, avoiding redundant ZK proof verification.
+	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
 		tx: &Transaction<S, D>,
+		verified_tx: &mn_ledger_local::structure::VerifiedTransaction<D>,
 		ctx: &TransactionContext<D>,
 	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
-		let valid_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				ctx.block_context.tblock,
-			)
-			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
-		let (next_state, result) = sp.state.apply(&valid_tx, ctx);
+		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
 		let new_sp = default_storage::<D>()
 			.arena
@@ -190,68 +188,6 @@ impl<D: DB> Ledger<D> {
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() });
 		Ok(new_sp)
-	}
-
-	pub(crate) fn validate_transaction<S: SignatureKind<D>>(
-		&self,
-		tx: &Transaction<S, D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		tx.validate(self, block_context)
-	}
-
-	/// Validates that the guaranteed part of a transaction will succeed.
-	///
-	/// This performs a dry-run of the transaction application to detect failures
-	/// that would occur during the guaranteed phase. Unlike `apply_transaction`,
-	/// this function does NOT persist any state changes - the result is discarded.
-	///
-	/// This is used by `pre_dispatch` to reject transactions whose guaranteed part
-	/// would fail, preventing attackers from filling blocks with transactions that
-	/// consume blockspace without paying fees.
-	///
-	/// # Returns
-	/// - `Ok(())` if the guaranteed part would succeed (fees would be paid)
-	/// - `Err(LedgerApiError)` if the guaranteed part would fail
-	pub(crate) fn validate_guaranteed_execution<S: SignatureKind<D>>(
-		sp: Sp<Self, D>,
-		tx: &Transaction<S, D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		// Convert Transaction to VerifiedTransaction via well_formed().
-		// NOTE: This validation is also performed by validate_unsigned() before pre_dispatch
-		// calls this function. However, we must call it again here because apply() requires
-		// a VerifiedTransaction type, and the earlier validation discards that result.
-		// This is a type-system constraint, not redundant logic.
-		let ctx = sp.get_transaction_context(block_context.clone());
-		let valid_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				ctx.block_context.tblock,
-			)
-			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
-
-		// Perform a dry-run of the transaction application.
-		// We call apply() but do NOT persist the resulting state.
-		// This allows us to detect TransactionResult::Failure without
-		// modifying the ledger state.
-		let (_next_state, result) = sp.state.apply(&valid_tx, &ctx);
-
-		match result {
-			TransactionResult::Success(_) | TransactionResult::PartialSuccess(_, _) => {
-				// Success or PartialSuccess means guaranteed part succeeded.
-				// PartialSuccess indicates fallible part failed, but fees were still paid.
-				Ok(())
-			},
-			TransactionResult::Failure(reason) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"Pre-dispatch validation failed: guaranteed part would fail: {reason:?}"
-				);
-				Err(LedgerApiError::Transaction(TransactionError::Invalid(reason.into())))
-			},
-		}
 	}
 
 	pub(crate) fn apply_system_tx(
@@ -340,12 +276,26 @@ mod tests {
 		bytes: &[u8],
 		block_context: &BlockContext,
 	) {
-		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes);
-		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
+		let tx = api
+			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
+			.expect("failed to deserialize tx");
 		let tx_ctx = ledger.get_transaction_context(block_context.clone());
+		let verified_tx =
+			tx.0.well_formed(
+				&tx_ctx.ref_state,
+				mn_ledger_local::verify::WellFormedStrictness::default(),
+				tx_ctx.block_context.tblock,
+			)
+			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
 		let (mut new_ledger_state, _applied_stage) =
-			Ledger::<DefaultDB>::apply_transaction(ledger.clone(), api, &tx.unwrap(), &tx_ctx)
-				.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
+			Ledger::<DefaultDB>::apply_verified_transaction(
+				ledger.clone(),
+				api,
+				&tx,
+				&verified_tx,
+				&tx_ctx,
+			)
+			.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		new_ledger_state =
 			Ledger::<DefaultDB>::post_block_update(new_ledger_state, block_context.clone())

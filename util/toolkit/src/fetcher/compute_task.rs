@@ -25,8 +25,8 @@ use crate::fetcher::{
 	fetch_storage::{BlockData, FetchStorage, FetchedBlock, FetchedTransaction},
 	runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
-		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0, RuntimeVersion,
-		RuntimeVersionError,
+		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0,
+		MidnightMetadata0_21_0, RuntimeVersion, RuntimeVersionError,
 	},
 };
 
@@ -169,6 +169,9 @@ impl ComputeTask {
 			},
 			RuntimeVersion::V0_20_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_20_0, S, P, D>(block).await
+			},
+			RuntimeVersion::V0_21_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_21_0, S, P, D>(block).await
 			},
 		}
 	}

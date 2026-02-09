@@ -277,11 +277,6 @@ pub struct BenchmarkClaimMintTxBuilder {
 	pub token: Vec<u8>,
 }
 
-pub enum TransactionValidationWasCached {
-	Yes,
-	No,
-}
-
 pub type SegmentId = u16;
 
 #[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq, TypeInfo)]
