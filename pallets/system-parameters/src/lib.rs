@@ -119,21 +119,28 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			// Initialize Terms and Conditions if both hash and url are provided
-			if let (Some(hash), Some(url)) =
-				(&self.terms_and_conditions.hash, &self.terms_and_conditions.url)
-			{
-				let url_bounded: BoundedVec<u8, ConstU32<MAX_URL_SIZE>> = url
-					.as_bytes()
-					.to_vec()
-					.try_into()
-					.expect("Terms and conditions URL exceeds maximum length");
+			// Initialize Terms and Conditions; both hash and url must be present.
+			let hash = self
+				.terms_and_conditions
+				.hash
+				.as_ref()
+				.expect("Genesis terms and conditions hash must be set");
+			let url = self
+				.terms_and_conditions
+				.url
+				.as_ref()
+				.expect("Genesis terms and conditions URL must be set");
 
-				TermsAndConditionsStorage::<T>::put(TermsAndConditions {
-					hash: *hash,
-					url: url_bounded,
-				});
-			}
+			let url_bounded: BoundedVec<u8, ConstU32<MAX_URL_SIZE>> = url
+				.as_bytes()
+				.to_vec()
+				.try_into()
+				.expect("Terms and conditions URL exceeds maximum length");
+
+			TermsAndConditionsStorage::<T>::put(TermsAndConditions {
+				hash: *hash,
+				url: url_bounded,
+			});
 
 			// Initialize D-Parameter if provided
 			if let (Some(num_permissioned), Some(num_registered)) = (
