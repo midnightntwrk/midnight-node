@@ -385,6 +385,7 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit:
@@ -398,4 +399,5 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
     secrets: inherit

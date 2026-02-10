@@ -665,6 +665,7 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-amd64
       platform: linux/amd64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
     secrets: inherit
 
   sbom-scan-midnightntwrk-node-arm64:
@@ -679,6 +680,7 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-arm64
       platform: linux/arm64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-amd64:
@@ -693,6 +695,7 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-amd64
       platform: linux/amd64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-arm64:
@@ -707,4 +710,5 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-arm64
       platform: linux/arm64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
     secrets: inherit
