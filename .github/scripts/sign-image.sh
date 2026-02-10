@@ -62,8 +62,11 @@ sign_with_retry() {
 
   # For multi-arch manifests, also sign the manifest list index itself.
   # This allows `cosign verify IMAGE:TAG` to work directly with the tag.
+  # Use digest reference instead of tag (cosign v3 deprecates tag-based signing).
   if [ "$IS_MULTIARCH" = true ]; then
-    _cosign_sign_with_retry "${IMAGE}" "manifest list ${IMAGE}" || return 1
+    local MANIFEST_LIST_DIGEST
+    MANIFEST_LIST_DIGEST="sha256:$(docker buildx imagetools inspect --raw "${IMAGE}" | sha256sum | awk '{print $1}')"
+    _cosign_sign_with_retry "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}" "manifest list ${IMAGE} (${MANIFEST_LIST_DIGEST})" || return 1
   fi
 
   echo "Successfully signed all digests for ${IMAGE}"

@@ -59,19 +59,23 @@ jobs:
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node:latest-main"
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main"
 
+      - name: Wait for signature propagation
+        run: |
+          echo "Waiting 10s for signatures to propagate in registry..."
+          sleep 10
+
       - name: Verify signatures
         run: |
           CERT_IDENTITY="https://github.com/midnightntwrk/midnight-node/.github/workflows/.*"
           OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
-          cosign verify \
-            --certificate-identity-regexp "$CERT_IDENTITY" \
-            --certificate-oidc-issuer "$OIDC_ISSUER" \
-            ghcr.io/midnightntwrk/midnight-node:latest-main
-
-          cosign verify \
-            --certificate-identity-regexp "$CERT_IDENTITY" \
-            --certificate-oidc-issuer "$OIDC_ISSUER" \
-            ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            echo "=== Verifying ghcr.io/midnightntwrk/${IMAGE}:latest-main ==="
+            cosign verify \
+              --certificate-identity-regexp "$CERT_IDENTITY" \
+              --certificate-oidc-issuer "$OIDC_ISSUER" \
+              "ghcr.io/midnightntwrk/${IMAGE}:latest-main"
+            echo "OK"
+          done
 
           echo "All signatures verified!"
