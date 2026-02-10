@@ -68,9 +68,9 @@ fn init_ledger_storage<P: AsRef<Path>>(
 	storage_config: &StorageInit,
 	runtime_version: sp_version::RuntimeVersion,
 ) {
-	if runtime_version.spec_version < 000_021_000 {
+	if runtime_version.spec_version < 000_022_000 {
 		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
-			&parity_db_path.as_ref(),
+			parity_db_path.as_ref(),
 			&storage_config.genesis_state,
 			storage_config.cache_size,
 		);
