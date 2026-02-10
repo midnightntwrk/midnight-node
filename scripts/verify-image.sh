@@ -34,6 +34,8 @@ OIDC_ISSUER="https://token.actions.githubusercontent.com"
 SIGNED_IMAGE_PREFIXES=(
     "ghcr.io/midnight-ntwrk/midnight-node"
     "ghcr.io/midnight-ntwrk/midnight-node-toolkit"
+    "ghcr.io/midnightntwrk/midnight-node"
+    "ghcr.io/midnightntwrk/midnight-node-toolkit"
     "midnightntwrk/midnight-node"
     "midnightntwrk/midnight-node-toolkit"
 )
