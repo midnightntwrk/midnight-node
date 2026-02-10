@@ -162,7 +162,7 @@ jobs:
             cosign verify-attestation --type spdxjson \
               --certificate-identity-regexp "$CERT_IDENTITY" \
               --certificate-oidc-issuer "$OIDC_ISSUER" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${{ needs.test-publish.outputs.IMAGE_TAG }}"
+              "ghcr.io/midnightntwrk/${IMAGE}:${{ needs.test-publish.outputs.IMAGE_TAG }}" > /dev/null
             echo "OK"
           done
 
