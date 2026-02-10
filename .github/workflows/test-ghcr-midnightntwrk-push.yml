@@ -1,4 +1,4 @@
-name: Test GHCR push to midnightntwrk
+name: Test publish to GHCR midnightntwrk
 
 on:
   push:
@@ -7,47 +7,71 @@ on:
 
 permissions:
   packages: write
+  id-token: write  # Required for keyless signing with Cosign
 
 jobs:
-  test-push:
+  test-publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to GHCR (midnightntwrk)
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Pull from midnight-ntwrk, retag, and push to midnightntwrk
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Create multi-arch images in midnightntwrk from arch-specific sources
         run: |
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:latest-main
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:latest-main ghcr.io/midnightntwrk/midnight-node:test-delete-me
-          docker push ghcr.io/midnightntwrk/midnight-node:test-delete-me
-          echo "Push succeeded!"
+          # This mirrors the production approach in main.yml: create multi-arch
+          # manifests from arch-specific images, not by copying an existing manifest.
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            SRC="ghcr.io/midnight-ntwrk/${IMAGE}:latest-main"
+            DST="ghcr.io/midnightntwrk/${IMAGE}:latest-main"
 
-      - name: Wait 1 minute before cleanup
-        run: sleep 60
+            # Extract per-architecture digests from the source manifest
+            AMD64_DIGEST=$(docker buildx imagetools inspect "$SRC" --format '{{range .Manifest.Manifests}}{{if eq .Platform.Architecture "amd64"}}{{.Digest}}{{end}}{{end}}')
+            ARM64_DIGEST=$(docker buildx imagetools inspect "$SRC" --format '{{range .Manifest.Manifests}}{{if eq .Platform.Architecture "arm64"}}{{.Digest}}{{end}}{{end}}')
 
-      - name: Delete test tag
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+            echo "Creating ${DST} from arch-specific digests:"
+            echo "  amd64: ${AMD64_DIGEST}"
+            echo "  arm64: ${ARM64_DIGEST}"
+
+            docker buildx imagetools create \
+              --tag "$DST" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}@${AMD64_DIGEST}" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}@${ARM64_DIGEST}"
+          done
+
+      - name: Verify images were created
         run: |
-          # Get the version ID of the tag we just pushed
-          VERSION_ID=$(curl -s \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/midnightntwrk/packages/container/midnight-node/versions" \
-            | jq '.[] | select(.metadata.container.tags[] == "test-delete-me") | .id')
+          docker buildx imagetools inspect ghcr.io/midnightntwrk/midnight-node:latest-main
+          docker buildx imagetools inspect ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main
 
-          if [ -n "$VERSION_ID" ]; then
-            curl -s -X DELETE \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/orgs/midnightntwrk/packages/container/midnight-node/versions/$VERSION_ID" \
-              && echo "Test tag deleted successfully" \
-              || echo "Could not delete test tag (may need manual cleanup)"
-          else
-            echo "Could not find version ID for test tag"
-          fi
+      - name: Sign images
+        run: |
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node:latest-main"
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main"
+
+      - name: Verify signatures
+        run: |
+          CERT_IDENTITY="https://github.com/midnightntwrk/midnight-node/.github/workflows/.*"
+          OIDC_ISSUER="https://token.actions.githubusercontent.com"
+
+          cosign verify \
+            --certificate-identity-regexp "$CERT_IDENTITY" \
+            --certificate-oidc-issuer "$OIDC_ISSUER" \
+            ghcr.io/midnightntwrk/midnight-node:latest-main
+
+          cosign verify \
+            --certificate-identity-regexp "$CERT_IDENTITY" \
+            --certificate-oidc-issuer "$OIDC_ISSUER" \
+            ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main
+
+          echo "All signatures verified!"
