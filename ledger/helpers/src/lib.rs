@@ -72,7 +72,7 @@ pub mod ledger_8 {
 pub use ledger_7 as latest;
 
 #[cfg(feature = "can-panic")]
-pub mod fork_context;
+pub mod fork;
 
 #[cfg(hardfork_test)]
 pub use hard_fork_test::*;
