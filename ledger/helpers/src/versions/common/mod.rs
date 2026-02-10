@@ -112,6 +112,8 @@ pub use rand::{
 
 // Module declarations with can-panic feature
 #[cfg(feature = "can-panic")]
+pub mod block_data;
+#[cfg(feature = "can-panic")]
 pub mod context;
 #[cfg(feature = "can-panic")]
 pub mod contract;
@@ -159,7 +161,7 @@ pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io
 }
 
 /// Deserializes a mn_ledger::serialize-able type from bytes
-pub fn deserialize_untagged<T: Deserializable + Tagged>(
+pub fn deserialize_untagged<T: Deserializable>(
 	mut bytes: impl std::io::Read,
 ) -> Result<T, std::io::Error> {
 	let val: T = T::deserialize(&mut bytes, 0)?;

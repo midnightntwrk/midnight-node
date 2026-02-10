@@ -20,7 +20,8 @@
 //! replay new blocks, dramatically reducing startup time on long-running networks.
 
 use midnight_node_ledger_helpers::{
-	BlockContext, DefaultDB, HashOutput, LedgerContext, LedgerState, Timestamp, Wallet, WalletSeed,
+	BlockContext, DefaultDB, HashOutput, LedgerContext, LedgerState, Sp, Timestamp, Wallet,
+	WalletSeed,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -315,7 +316,7 @@ pub fn restore_context_from_cache(
 			.ledger_state
 			.lock()
 			.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
-		*state = ledger_state.clone();
+		*state = Sp::new(ledger_state.clone());
 	}
 
 	// Restore block context

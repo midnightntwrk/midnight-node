@@ -12,8 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	DB, LedgerState, Utxo, WalletSeed,
-	ledger_storage::Storable,
+	DB, LedgerState, Storable, Utxo, WalletSeed,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
 	zswap::Offer,

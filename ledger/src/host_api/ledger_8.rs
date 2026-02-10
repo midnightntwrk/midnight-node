@@ -14,10 +14,10 @@ use sp_runtime_interface::pass_by::{
 use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
-type Signature = base_crypto_ledger_8::signatures::Signature;
+type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
 
 #[cfg(feature = "std")]
-type Database = ledger_storage_ledger_8::db::ParityDb;
+type Database = crate::ledger_8::ledger_storage_local::db::ParityDb;
 
 #[runtime_interface]
 pub trait Ledger8Bridge {

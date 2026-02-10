@@ -432,7 +432,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.lock()
 			.map_err(|_| "ledger state lock was poisoned".to_string())?
 			.clone();
-		tx.well_formed(&ref_state, WellFormedStrictness::default(), now)?;
+		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
 		Ok(tx)
 	}
 }

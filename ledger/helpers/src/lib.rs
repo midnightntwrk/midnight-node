@@ -54,9 +54,8 @@ pub mod ledger_7 {
 #[path = "versions"]
 pub mod ledger_8 {
 	pub use {
-		base_crypto_ledger_8 as base_crypto, coin_structure_ledger_8 as coin_structure,
-		ledger_storage_ledger_8 as ledger_storage,
-		midnight_serialize_ledger_8 as midnight_serialize, mn_ledger_8 as mn_ledger,
+		base_crypto, coin_structure_ledger_8 as coin_structure,
+		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_8 as mn_ledger,
 		onchain_runtime_ledger_8 as onchain_runtime, transient_crypto_ledger_8 as transient_crypto,
 		zkir_ledger_8 as zkir, zswap_ledger_8 as zswap,
 	};
@@ -71,6 +70,9 @@ pub mod ledger_8 {
 }
 
 pub use ledger_7 as latest;
+
+#[cfg(feature = "can-panic")]
+pub mod fork_context;
 
 #[cfg(hardfork_test)]
 pub use hard_fork_test::*;
