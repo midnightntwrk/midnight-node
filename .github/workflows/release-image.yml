@@ -183,7 +183,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout Season action repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           repository: midnightntwrk/season-action
           ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
@@ -191,7 +191,7 @@ jobs:
           token: ${{ secrets.MIDNIGHTCI_REPO }}
 
       - name: Checkout repo
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           ref: ${{ inputs.ref }}
           path: ./.tmp-package
