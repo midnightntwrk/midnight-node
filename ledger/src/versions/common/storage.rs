@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "std")]
+use std::path::Path;
+
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
 	db::ParityDb,
@@ -72,8 +75,8 @@ where
 }
 
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb(
-	dir: &std::path::Path,
+pub fn init_storage_paritydb<P: AsRef<Path>>(
+	dir: P,
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
@@ -81,10 +84,10 @@ pub fn init_storage_paritydb(
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
-		std::fs::create_dir_all(dir)
-			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.display()));
+		std::fs::create_dir_all(dir.as_ref())
+			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
 
-		let db = ParityDb::<sha2::Sha256>::open(dir);
+		let db = ParityDb::<sha2::Sha256>::open(dir.as_ref());
 		Storage::new(cache_size, db)
 	});
 	if res.is_err() {
