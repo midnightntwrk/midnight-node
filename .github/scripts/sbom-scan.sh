@@ -29,15 +29,22 @@
 generate_sbom_with_retry() {
   local IMAGE="$1"
   local OUTPUT_FILE="$2"
+  local PLATFORM="${3:-}"
   local MAX_ATTEMPTS=3
   local DELAY=10
 
   command -v syft >/dev/null 2>&1 || { echo "::error::syft not found"; return 1; }
 
-  echo "Generating SBOM for ${IMAGE}"
+  local platform_args=()
+  if [ -n "$PLATFORM" ]; then
+    platform_args=(--platform "$PLATFORM")
+    echo "Generating SBOM for ${IMAGE} (platform: ${PLATFORM})"
+  else
+    echo "Generating SBOM for ${IMAGE}"
+  fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if syft "${IMAGE}" -o spdx-json="${OUTPUT_FILE}"; then
+    if syft "${platform_args[@]}" "${IMAGE}" -o spdx-json="${OUTPUT_FILE}"; then
       echo "Successfully generated SBOM for ${IMAGE}"
       return 0
     fi
@@ -56,15 +63,23 @@ scan_image_with_retry() {
   local IMAGE="$1"
   local SEVERITY_CUTOFF="${2:-high}"
   local OUTPUT_FILE="${3:-}"
+  local PLATFORM="${4:-}"
   local MAX_ATTEMPTS=3
   local DELAY=10
 
   command -v grype >/dev/null 2>&1 || { echo "::error::grype not found"; return 1; }
 
-  echo "Scanning ${IMAGE} for vulnerabilities (fail on ${SEVERITY_CUTOFF}+)"
+  if [ -n "$PLATFORM" ]; then
+    echo "Scanning ${IMAGE} (platform: ${PLATFORM}) for vulnerabilities (fail on ${SEVERITY_CUTOFF}+)"
+  else
+    echo "Scanning ${IMAGE} for vulnerabilities (fail on ${SEVERITY_CUTOFF}+)"
+  fi
 
   # Build grype command - always show table output, optionally save JSON
   local grype_cmd="grype ${IMAGE} --fail-on ${SEVERITY_CUTOFF}"
+  if [ -n "$PLATFORM" ]; then
+    grype_cmd="${grype_cmd} --platform ${PLATFORM}"
+  fi
   if [ -n "$OUTPUT_FILE" ]; then
     # Show table on stdout AND write JSON to file
     grype_cmd="${grype_cmd} --output table --output json=${OUTPUT_FILE}"

@@ -32,6 +32,10 @@ on:
         description: 'Name for the SBOM artifact'
         required: true
         type: string
+      platform:
+        description: 'Platform to pull (e.g., linux/arm64). Required for manifest-list images on cross-platform runners.'
+        default: ''
+        type: string
       severity-cutoff:
         description: 'Minimum severity to fail on (negligible, low, medium, high, critical)'
         default: 'critical'
@@ -93,18 +97,20 @@ jobs:
       - name: Generate SBOM
         env:
           IMAGE: ${{ inputs.image }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           source .github/scripts/sbom-scan.sh
-          generate_sbom_with_retry "${IMAGE}" "sbom.spdx.json"
+          generate_sbom_with_retry "${IMAGE}" "sbom.spdx.json" "${PLATFORM}"
 
       - name: Scan for vulnerabilities
         id: scan
         env:
           IMAGE: ${{ inputs.image }}
           SEVERITY_CUTOFF: ${{ inputs.severity-cutoff }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           source .github/scripts/sbom-scan.sh
-          scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json"
+          scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json" "${PLATFORM}"
 
       - name: Attest SBOM
         if: ${{ !inputs.skip-attestation }}
