@@ -246,7 +246,7 @@ pub fn new_partial(
 
 	// Init Ledger DB
 	let parity_db_path = config.base_path.path().join("ledger_storage");
-	midnight_node_ledger::init_storage_paritydb(
+	midnight_node_ledger::ledger_8::storage::init_storage_paritydb(
 		&parity_db_path,
 		&storage_config.genesis_state,
 		storage_config.cache_size,
