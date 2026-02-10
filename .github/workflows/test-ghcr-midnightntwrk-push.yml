@@ -6,12 +6,15 @@ on:
       - SRE-1769/publish-to-midnightntwrk
 
 permissions:
+  contents: read
   packages: write
   id-token: write  # Required for keyless signing with Cosign
 
 jobs:
   test-publish:
     runs-on: ubuntu-latest
+    outputs:
+      IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -26,13 +29,17 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
-      - name: Create multi-arch images in midnightntwrk from arch-specific sources
+      - name: Create multi-arch and arch-specific images in midnightntwrk
+        id: tag
         run: |
           # This mirrors the production approach in main.yml: create multi-arch
           # manifests from arch-specific images, not by copying an existing manifest.
+          IMAGE_TAG="latest-main"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
           for IMAGE in midnight-node midnight-node-toolkit; do
             SRC="ghcr.io/midnight-ntwrk/${IMAGE}:latest-main"
-            DST="ghcr.io/midnightntwrk/${IMAGE}:latest-main"
+            DST="ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}"
 
             # Extract per-architecture digests from the source manifest
             AMD64_DIGEST=$(docker buildx imagetools inspect "$SRC" --format '{{range .Manifest.Manifests}}{{if eq .Platform.Architecture "amd64"}}{{.Digest}}{{end}}{{end}}')
@@ -42,9 +49,19 @@ jobs:
             echo "  amd64: ${AMD64_DIGEST}"
             echo "  arm64: ${ARM64_DIGEST}"
 
+            # Create multi-arch manifest
             docker buildx imagetools create \
               --tag "$DST" \
               "ghcr.io/midnight-ntwrk/${IMAGE}@${AMD64_DIGEST}" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}@${ARM64_DIGEST}"
+
+            # Create arch-specific tags (needed for SBOM attestation)
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}@${AMD64_DIGEST}"
+
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64" \
               "ghcr.io/midnight-ntwrk/${IMAGE}@${ARM64_DIGEST}"
           done
 
@@ -79,3 +96,35 @@ jobs:
           done
 
           echo "All signatures verified!"
+
+  sbom-scan-midnightntwrk-node:
+    name: SBOM/Scan Node midnightntwrk (${{ matrix.arch }})
+    needs: [test-publish]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.test-publish.outputs.IMAGE_TAG }}-${{ matrix.arch }}
+      sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-toolkit:
+    name: SBOM/Scan Toolkit midnightntwrk (${{ matrix.arch }})
+    needs: [test-publish]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.test-publish.outputs.IMAGE_TAG }}-${{ matrix.arch }}
+      sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}
+    secrets: inherit
