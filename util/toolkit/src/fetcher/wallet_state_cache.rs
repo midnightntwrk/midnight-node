@@ -68,6 +68,7 @@ pub struct SerializableBlockContext {
 	pub tblock_secs: u64,
 	pub tblock_err: u64,
 	pub parent_block_hash: [u8; 32],
+	pub last_block_time: u64,
 }
 
 impl From<&BlockContext> for SerializableBlockContext {
@@ -76,6 +77,7 @@ impl From<&BlockContext> for SerializableBlockContext {
 			tblock_secs: ctx.tblock.to_secs(),
 			tblock_err: ctx.tblock_err as u64,
 			parent_block_hash: ctx.parent_block_hash.0,
+			last_block_time: ctx.last_block_time.to_secs(),
 		}
 	}
 }
@@ -324,6 +326,7 @@ pub fn restore_context_from_cache(
 		tblock: Timestamp::from_secs(cache.latest_block_context.tblock_secs),
 		tblock_err: cache.latest_block_context.tblock_err as u32,
 		parent_block_hash: HashOutput(cache.latest_block_context.parent_block_hash),
+		last_block_time: Timestamp::from_secs(cache.latest_block_context.last_block_time),
 	};
 	{
 		let mut block_ctx = context
@@ -402,6 +405,7 @@ mod tests {
 				tblock_secs: 1234567890,
 				tblock_err: 0,
 				parent_block_hash: [0u8; 32],
+				last_block_time: 1234567890,
 			},
 			state_root: Some(valid_root.clone()),
 			version: CACHE_VERSION.to_string(),
@@ -436,6 +440,7 @@ mod tests {
 				tblock_secs: 1234567890,
 				tblock_err: 0,
 				parent_block_hash: [0u8; 32],
+				last_block_time: 1234567890,
 			},
 			state_root: None, // Old cache format without state root
 			version: CACHE_VERSION.to_string(),
@@ -459,6 +464,7 @@ mod tests {
 				tblock_secs: 1234567890,
 				tblock_err: 0,
 				parent_block_hash: [0u8; 32],
+				last_block_time: 1234567890,
 			},
 			state_root: None,
 			version: "wallet-state-cache-v0".to_string(), // Old version
@@ -490,6 +496,7 @@ mod tests {
 				tblock_secs: 1234567890,
 				tblock_err: 0,
 				parent_block_hash: [0u8; 32],
+				last_block_time: 1234567890,
 			},
 			state_root: None,
 			version: CACHE_VERSION.to_string(),

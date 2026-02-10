@@ -319,8 +319,12 @@ where
 					.expect("time has run backwards")
 					.as_secs(),
 			);
-			let context =
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			let context = BlockContext {
+				tblock: now,
+				tblock_err: 30,
+				parent_block_hash: Default::default(),
+				last_block_time: now,
+			};
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),

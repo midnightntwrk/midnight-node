@@ -247,10 +247,12 @@ impl ComputeTask {
 		}
 
 		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
+		let tblock = Timestamp::from_secs(timestamp_ms / 1000);
 		let context = BlockContext {
-			tblock: Timestamp::from_secs(timestamp_ms / 1000),
+			tblock,
 			tblock_err: 30,
 			parent_block_hash: HashOutput(parent_block_hash.0),
+			last_block_time: tblock, // We fix this later in fetcher.rs
 		};
 		let hash = block.block.hash();
 		let parent_hash = block.block.header().parent_hash;

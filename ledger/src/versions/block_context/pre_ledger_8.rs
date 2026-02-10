@@ -10,6 +10,7 @@ use scale_info::TypeInfo;
 /// A scale friendly version of mn_ledger::onchain_runtime::context::BlockContext
 /// that can be used to pass across the host interface.
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, Debug, TypeInfo, Eq, PartialEq)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockContext {
 	pub tblock: u64,
 	pub tblock_err: u32,

@@ -69,7 +69,7 @@ pub mod ledger_8 {
 	pub use common::*;
 }
 
-pub use ledger_7 as latest;
+pub use ledger_8 as latest;
 
 #[cfg(feature = "can-panic")]
 pub mod fork;
