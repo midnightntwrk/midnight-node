@@ -179,3 +179,37 @@ attest_sbom_with_retry() {
   echo "::error::Failed to attest SBOM for ${IMAGE} after $MAX_ATTEMPTS attempts"
   return 1
 }
+
+attest_sbom_to_multiarch() {
+  local MULTIARCH_IMAGE="$1"
+  local SBOM_FILE="$2"
+  local MAX_ATTEMPTS=3
+  local DELAY=10
+
+  command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
+
+  # Compute manifest list digest (same pattern as sign-image.sh)
+  local BASE_IMAGE="${MULTIARCH_IMAGE%%:*}"
+  local MANIFEST_LIST_DIGEST
+  MANIFEST_LIST_DIGEST="sha256:$(docker buildx imagetools inspect --raw "${MULTIARCH_IMAGE}" | sha256sum | awk '{print $1}')"
+
+  echo "Attesting SBOM to multi-arch manifest: ${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"
+
+  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+    if cosign attest --yes \
+      --predicate "${SBOM_FILE}" \
+      --type spdxjson \
+      "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"; then
+      echo "Successfully attested SBOM to multi-arch manifest"
+      return 0
+    fi
+    if [ $attempt -lt $MAX_ATTEMPTS ]; then
+      echo "Multi-arch SBOM attestation failed, retrying in ${DELAY}s..."
+      sleep $DELAY
+      DELAY=$((DELAY * 2))
+    fi
+  done
+
+  echo "::error::Failed to attest SBOM to multi-arch manifest after $MAX_ATTEMPTS attempts"
+  return 1
+}

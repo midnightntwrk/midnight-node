@@ -112,6 +112,7 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node:${{ needs.test-publish.outputs.IMAGE_TAG }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}
       platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.test-publish.outputs.IMAGE_TAG }}
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit:
@@ -129,4 +130,40 @@ jobs:
       image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.test-publish.outputs.IMAGE_TAG }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}
       platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.test-publish.outputs.IMAGE_TAG }}
     secrets: inherit
+
+  verify-multiarch-attestation:
+    name: Verify multi-arch SBOM attestation
+    needs: [test-publish, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Verify SBOM attestation on multi-arch tags
+        run: |
+          CERT_IDENTITY="https://github.com/midnightntwrk/midnight-node/.github/workflows/.*"
+          OIDC_ISSUER="https://token.actions.githubusercontent.com"
+
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            echo "=== Verifying SBOM attestation for ghcr.io/midnightntwrk/${IMAGE}:${{ needs.test-publish.outputs.IMAGE_TAG }} ==="
+            cosign verify-attestation --type spdxjson \
+              --certificate-identity-regexp "$CERT_IDENTITY" \
+              --certificate-oidc-issuer "$OIDC_ISSUER" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${{ needs.test-publish.outputs.IMAGE_TAG }}"
+            echo "OK"
+          done
+
+          echo "All multi-arch SBOM attestations verified!"

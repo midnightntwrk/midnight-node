@@ -44,6 +44,10 @@ on:
         description: 'Skip SBOM attestation (e.g., for fork PRs)'
         default: false
         type: boolean
+      multi-arch-image:
+        description: 'Multi-arch image to also attest SBOM against (e.g., registry/name:tag). Enables cosign verify-attestation on multi-arch tags.'
+        default: ''
+        type: string
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -119,6 +123,14 @@ jobs:
         run: |
           source .github/scripts/sbom-scan.sh
           attest_sbom_with_retry "${IMAGE}" "sbom.spdx.json"
+
+      - name: Attest SBOM to multi-arch manifest
+        if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
+        env:
+          MULTIARCH_IMAGE: ${{ inputs.multi-arch-image }}
+        run: |
+          source .github/scripts/sbom-scan.sh
+          attest_sbom_to_multiarch "${MULTIARCH_IMAGE}" "sbom.spdx.json"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
