@@ -52,8 +52,8 @@ use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
 use sc_network::service::traits::NetworkPeers;
-use sc_utils::mpsc::TracingUnboundedSender;
 pub use sc_rpc_api::DenyUnsafe;
+use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
 

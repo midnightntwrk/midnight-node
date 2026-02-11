@@ -56,10 +56,8 @@ pub trait PeerInfoApi<Hash, Number> {
 
 	/// Returns reputation info for a single peer by its base58-encoded peer ID.
 	#[method(name = "peerReputation")]
-	async fn peer_reputation(
-		&self,
-		peer_id: String,
-	) -> RpcResult<PeerReputationInfo<Hash, Number>>;
+	async fn peer_reputation(&self, peer_id: String)
+	-> RpcResult<PeerReputationInfo<Hash, Number>>;
 }
 
 pub struct PeerInfoRpc<Block: BlockT> {
@@ -77,8 +75,11 @@ impl<Block: BlockT> PeerInfoRpc<Block> {
 }
 
 #[async_trait]
-impl<Block> PeerInfoApiServer<Block::Hash, <<Block as BlockT>::Header as sp_runtime::traits::Header>::Number>
-	for PeerInfoRpc<Block>
+impl<Block>
+	PeerInfoApiServer<
+		Block::Hash,
+		<<Block as BlockT>::Header as sp_runtime::traits::Header>::Number,
+	> for PeerInfoRpc<Block>
 where
 	Block: BlockT,
 {
@@ -93,14 +94,20 @@ where
 		>,
 	> {
 		let (tx, rx) = oneshot::channel();
-		self.system_rpc_tx
-			.unbounded_send(Request::Peers(tx))
-			.map_err(|e| {
-				ErrorObject::owned(INTERNAL_ERROR_CODE, format!("Failed to send peers request: {e}"), None::<()>)
-			})?;
+		self.system_rpc_tx.unbounded_send(Request::Peers(tx)).map_err(|e| {
+			ErrorObject::owned(
+				INTERNAL_ERROR_CODE,
+				format!("Failed to send peers request: {e}"),
+				None::<()>,
+			)
+		})?;
 
 		let peers = rx.await.map_err(|e| {
-			ErrorObject::owned(INTERNAL_ERROR_CODE, format!("Failed to receive peers: {e}"), None::<()>)
+			ErrorObject::owned(
+				INTERNAL_ERROR_CODE,
+				format!("Failed to receive peers: {e}"),
+				None::<()>,
+			)
 		})?;
 
 		let results = peers
@@ -133,22 +140,36 @@ where
 		>,
 	> {
 		let pid: sc_network::service::traits::PeerId = peer_id.parse().map_err(|_| {
-			ErrorObject::owned(INVALID_PARAMS_CODE, format!("Invalid peer ID: {peer_id}"), None::<()>)
+			ErrorObject::owned(
+				INVALID_PARAMS_CODE,
+				format!("Invalid peer ID: {peer_id}"),
+				None::<()>,
+			)
 		})?;
 
 		let (tx, rx) = oneshot::channel();
-		self.system_rpc_tx
-			.unbounded_send(Request::Peers(tx))
-			.map_err(|e| {
-				ErrorObject::owned(INTERNAL_ERROR_CODE, format!("Failed to send peers request: {e}"), None::<()>)
-			})?;
+		self.system_rpc_tx.unbounded_send(Request::Peers(tx)).map_err(|e| {
+			ErrorObject::owned(
+				INTERNAL_ERROR_CODE,
+				format!("Failed to send peers request: {e}"),
+				None::<()>,
+			)
+		})?;
 
 		let peers = rx.await.map_err(|e| {
-			ErrorObject::owned(INTERNAL_ERROR_CODE, format!("Failed to receive peers: {e}"), None::<()>)
+			ErrorObject::owned(
+				INTERNAL_ERROR_CODE,
+				format!("Failed to receive peers: {e}"),
+				None::<()>,
+			)
 		})?;
 
 		let peer = peers.into_iter().find(|p| p.peer_id == peer_id).ok_or_else(|| {
-			ErrorObject::owned(INVALID_PARAMS_CODE, format!("Peer not found: {peer_id}"), None::<()>)
+			ErrorObject::owned(
+				INVALID_PARAMS_CODE,
+				format!("Peer not found: {peer_id}"),
+				None::<()>,
+			)
 		})?;
 
 		let reputation = self.network.peer_reputation(&pid);
