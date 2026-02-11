@@ -484,7 +484,6 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 		}
 	}
 
-
 	/// Get the count of wallet state cache entries.
 	pub async fn wallet_cache_count(&self) -> u64 {
 		let result: Option<(i64,)> = sqlx::query_as(r#"SELECT COUNT(*) FROM wallet_state_cache"#)

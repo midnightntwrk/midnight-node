@@ -147,4 +147,3 @@ async fn test_postgres_evict_stale_entries() {
 			.is_none()
 	);
 }
-
