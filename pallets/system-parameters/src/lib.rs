@@ -88,12 +88,35 @@ pub mod pallet {
 	// Genesis configuration
 
 	/// Genesis configuration for Terms and Conditions
-	#[derive(Debug, Clone, Default, frame_support::Serialize, frame_support::Deserialize)]
+	#[derive(Debug, Clone, frame_support::Serialize, frame_support::Deserialize)]
 	pub struct TermsAndConditionsGenesisConfig<Hash> {
 		/// SHA-256 hash of the terms and conditions document
 		pub hash: Option<Hash>,
 		/// URL where the terms and conditions can be found
 		pub url: Option<String>,
+	}
+
+	/// Default terms and conditions URL used across all networks
+	pub const DEFAULT_TERMS_AND_CONDITIONS_URL: &str = "https://www.midnight.gd/global-terms-txt";
+
+	/// Default terms and conditions hash bytes (SHA-256 of the terms document)
+	pub const DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES: [u8; 32] = [
+		0xca, 0x85, 0xed, 0x77, 0xbc, 0xe6, 0x82, 0x88, 0xe5, 0x53, 0x00, 0xf0, 0x06, 0xcc,
+		0xd5, 0xcc, 0xe5, 0xd4, 0x94, 0x0d, 0xc3, 0x9f, 0xc4, 0x11, 0x73, 0xa9, 0xc2, 0xec,
+		0xd1, 0xeb, 0x61, 0x6e,
+	];
+
+	impl<Hash: Default + AsMut<[u8]>> Default for TermsAndConditionsGenesisConfig<Hash> {
+		fn default() -> Self {
+			let mut hash = Hash::default();
+			let hash_bytes = hash.as_mut();
+			let len = hash_bytes.len().min(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES.len());
+			hash_bytes[..len].copy_from_slice(&DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES[..len]);
+			Self {
+				hash: Some(hash),
+				url: Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()),
+			}
+		}
 	}
 
 	/// Genesis configuration for D-Parameter
