@@ -503,6 +503,10 @@ rebuild-chainspec:
     FROM ${NODE_IMAGE}
     USER root
 
+    # Copy the `res` folder from local -
+    # We need to do this to use the correct config if running `FROM` a pre-built node image
+    COPY res res
+
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
 
     # create abridge chain-spec that is diff tools and github friendly:
