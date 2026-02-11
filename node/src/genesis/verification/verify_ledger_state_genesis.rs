@@ -380,7 +380,7 @@ fn verify_empty_state(state: &LedgerState<DefaultDB>, network: Option<&str>) -> 
 fn verify_supply_invariant(state: &LedgerState<DefaultDB>) -> (bool, String) {
 	// Get treasury balance for NIGHT token
 	let night_token = TokenType::Unshielded(NIGHT);
-	let treasury_balance = state.treasury.get(&night_token).map(|v| *v).unwrap_or(0);
+	let treasury_balance = state.treasury.get(&night_token).copied().unwrap_or(0);
 
 	// Get reserve pool balance
 	let reserve_pool = state.reserve_pool;
