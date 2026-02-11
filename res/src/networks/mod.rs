@@ -29,9 +29,11 @@ where
 	D: Deserializer<'de>,
 {
 	let s = <String as serde::Deserialize>::deserialize(deserializer)?;
-	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).expect("hex decode failed");
-	let bytes = CryptoBytes::from_raw(bytes.try_into().expect("slice to array failed"));
-	Ok(bytes)
+	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).map_err(serde::de::Error::custom)?;
+	let arr: [u8; N] = bytes.try_into().map_err(|v: Vec<u8>| {
+		serde::de::Error::custom(format!("expected {N} bytes, got {}", v.len()))
+	})?;
+	Ok(CryptoBytes::from_raw(arr))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -60,6 +60,7 @@ pub mod pallet {
 			state_key.into()
 		}
 
+		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
 		fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 		where
 			F: FnOnce(Vec<u8>) -> Result<(Vec<u8>, R), E>,
@@ -341,7 +342,7 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(Error::<T>::NoLedgerState)?;
 			let block_context = Self::get_block_context();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
@@ -353,8 +354,11 @@ pub mod pallet {
 			)
 			.map_err(Error::<T>::from)?;
 
-			let state_key: BoundedVec<_, _> =
-				result.state_root.to_vec().try_into().expect("State key size out of boundaries");
+			let state_key: BoundedVec<_, _> = result
+				.state_root
+				.to_vec()
+				.try_into()
+				.map_err(|_| Error::<T>::NewStateOutOfBounds)?;
 			StateKey::<T>::put(state_key);
 
 			let tx_hash = result.tx_hash;
@@ -438,7 +442,8 @@ pub mod pallet {
 			};
 
 			let block_context = Self::get_block_context();
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get()
+				.ok_or_else(|| Self::invalid_transaction(Default::default()))?;
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
 			LedgerApi::validate_guaranteed_execution(
@@ -469,7 +474,7 @@ pub mod pallet {
 		}
 
 		pub fn get_contract_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			LedgerApi::get_contract_state(&state_key, contract_address)
 		}
 
@@ -492,7 +497,7 @@ pub mod pallet {
 		}
 
 		pub fn get_zswap_chain_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			LedgerApi::get_zswap_chain_state(&state_key, contract_address)
 		}
 		// grcov-excl-stop
@@ -507,7 +512,8 @@ pub mod pallet {
 			block_context: LedgerTypes::BlockContext,
 		) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
+				let state_key = StateKey::<T>::get()
+					.ok_or_else(|| Self::invalid_transaction(Default::default()))?;
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
@@ -533,24 +539,24 @@ pub mod pallet {
 		}
 
 		pub fn get_unclaimed_amount(beneficiary: &[u8]) -> Result<u128, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			LedgerApi::get_unclaimed_amount(&state_key, beneficiary)
 		}
 
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
 			LedgerApi::get_zswap_state_root(&state_key)
 		}
 
