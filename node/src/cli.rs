@@ -185,6 +185,44 @@ pub struct VerifyFederatedAuthorityAuthScriptCmd {
 	pub authorization_addresses: Option<std::path::PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+pub struct VerifyIcsAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyPermissionedCandidatesAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -229,6 +267,20 @@ pub enum Subcommand {
 	/// 2. The two_stage_policy_id is embedded in the compiled_code
 	/// 3. The authorization script observed on Cardano matches the expected value
 	VerifyFederatedAuthorityAuthScript(VerifyFederatedAuthorityAuthScriptCmd),
+
+	/// Verify that the ICS (Illiquid Circulation Supply) validator contract uses the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyIcsAuthScript(VerifyIcsAuthScriptCmd),
+
+	/// Verify that the permissioned candidates contract uses the expected authorization script.
+	/// This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyPermissionedCandidatesAuthScript(VerifyPermissionedCandidatesAuthScriptCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
