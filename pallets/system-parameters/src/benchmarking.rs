@@ -13,6 +13,8 @@
 
 //! Benchmarking for system-parameters pallet
 
+#![allow(clippy::unwrap_in_result)]
+
 use super::*;
 use alloc::{vec, vec::Vec};
 use frame_benchmarking::v2::*;
