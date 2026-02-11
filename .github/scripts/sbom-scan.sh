@@ -76,18 +76,18 @@ scan_image_with_retry() {
   fi
 
   # Build grype command - always show table output, optionally save JSON
-  local grype_cmd="grype ${IMAGE} --fail-on ${SEVERITY_CUTOFF}"
+  local grype_cmd=(grype "${IMAGE}" --fail-on "${SEVERITY_CUTOFF}")
   if [ -n "$PLATFORM" ]; then
-    grype_cmd="${grype_cmd} --platform ${PLATFORM}"
+    grype_cmd+=(--platform "${PLATFORM}")
   fi
   if [ -n "$OUTPUT_FILE" ]; then
     # Show table on stdout AND write JSON to file
-    grype_cmd="${grype_cmd} --output table --output json=${OUTPUT_FILE}"
+    grype_cmd+=(--output table --output "json=${OUTPUT_FILE}")
   fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
     local exit_code=0
-    eval "${grype_cmd}" || exit_code=$?
+    "${grype_cmd[@]}" || exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
       echo "No vulnerabilities at or above ${SEVERITY_CUTOFF} severity found in ${IMAGE}"
@@ -201,6 +201,18 @@ attest_sbom_to_multiarch() {
       --type spdxjson \
       "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"; then
       echo "Successfully attested SBOM to multi-arch manifest"
+
+      # Verify the attestation was applied correctly
+      echo "Verifying multi-arch SBOM attestation..."
+      if cosign verify-attestation --type spdxjson \
+        --certificate-identity-regexp '.*' \
+        --certificate-oidc-issuer-regexp '.*' \
+        "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}" > /dev/null 2>&1; then
+        echo "Multi-arch SBOM attestation verified successfully"
+      else
+        echo "::warning::Multi-arch SBOM attestation verification failed - attestation may not be retrievable"
+      fi
+
       return 0
     fi
     if [ $attempt -lt $MAX_ATTEMPTS ]; then
