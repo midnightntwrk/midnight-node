@@ -13,6 +13,8 @@
 
 //! Benchmarking setup for pallet-federated-authority-observation
 
+#![allow(clippy::unwrap_in_result)]
+
 use super::*;
 
 use crate::Pallet as FederatedAuthorityObservation;
