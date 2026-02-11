@@ -24,6 +24,17 @@ impl Default for BlockContext {
 }
 
 #[cfg(feature = "std")]
+impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext {
+	fn from(value: super::onchain_runtime_local::context::BlockContext) -> Self {
+		Self {
+			tblock: value.tblock.to_secs(),
+			tblock_err: value.tblock_err,
+			parent_block_hash: value.parent_block_hash.0.to_vec(),
+		}
+	}
+}
+
+#[cfg(feature = "std")]
 impl TryFrom<BlockContext> for super::onchain_runtime_local::context::BlockContext {
 	type Error = Vec<u8>;
 

@@ -76,6 +76,7 @@ fn create_test_cache(block_height: u64, wallet_id: H256) -> WalletStateCache {
 			tblock_secs: 1234567890,
 			tblock_err: 0,
 			parent_block_hash: [4u8; 32],
+			last_block_time: 1234567890,
 		},
 		state_root: Some(vec![5u8; 32]),
 		version: "wallet-state-cache-v1".to_string(),

@@ -124,15 +124,15 @@ pub mod types {
 
 #[cfg(test)]
 mod tests {
-	use super::latest::mn_ledger_local::{
-		Storage,
-		db::ParityDb,
-		storage::{set_default_storage, try_get_default_storage, unsafe_drop_default_storage},
-	};
 	use frame_support::assert_ok;
 	use ledger_storage_hf::{
 		Storage as StorageHF, db::ParityDb as ParityDbHF,
 		storage::set_default_storage as set_default_storage_hf,
+	};
+	use ledger_storage_ledger_8::{
+		Storage,
+		db::ParityDb,
+		storage::{set_default_storage, try_get_default_storage, unsafe_drop_default_storage},
 	};
 	use std::path::PathBuf;
 
