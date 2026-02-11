@@ -883,5 +883,50 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
 			}
 		},
+		Subcommand::VerifyFederatedAuthorityAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let federated_authority_addresses = cmd
+				.federated_authority_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("federated-authority-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result =
+					crate::verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+						&federated_authority_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Federated authority auth script verification failed: {e}"
+						))
+					})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
 	}
 }

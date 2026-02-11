@@ -7555,6 +7555,8 @@ version = "0.21.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
+ "blake2b_simd",
+ "cardano-serialization-lib 14.1.2",
  "clap",
  "config",
  "derive-new",
@@ -7636,6 +7638,7 @@ dependencies = [
  "sp-consensus-beefy",
  "sp-consensus-grandpa",
  "sp-core",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
  "sp-externalities",
  "sp-inherents",
  "sp-io",

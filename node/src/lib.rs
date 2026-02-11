@@ -33,4 +33,5 @@ pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
 mod util;
+pub mod verify_federated_authority_auth_script;
 pub mod verify_ledger_state_genesis;

@@ -166,6 +166,25 @@ pub struct VerifyLedgerStateGenesisCmd {
 	pub network: Option<String>,
 }
 
+#[derive(Debug, Parser)]
+pub struct VerifyFederatedAuthorityAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
@@ -203,6 +222,13 @@ pub enum Subcommand {
 	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
 	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
 	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
+
+	/// Verify that the federated authority contracts (Council, Technical Committee) use the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyFederatedAuthorityAuthScript(VerifyFederatedAuthorityAuthScriptCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
