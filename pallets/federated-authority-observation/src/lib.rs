@@ -176,6 +176,7 @@ pub mod pallet {
 		DispatchClass::Mandatory
 		))]
 		#[allow(clippy::useless_conversion)]
+		#[allow(clippy::unwrap_in_result)] // bounded vec conversions are infallible; input already bounded
 		pub fn reset_members(
 			origin: OriginFor<T>,
 			council_authorities: BoundedVec<(T::AccountId, MainchainMember), T::CouncilMaxMembers>,
