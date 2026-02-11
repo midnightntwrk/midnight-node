@@ -481,20 +481,11 @@ jobs:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
           for IMAGE in midnight-node midnight-node-toolkit; do
-            # Create multi-arch manifest
+            # Arch-specific images already pushed by Earthly; create multi-arch manifest
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
-
-            # Create arch-specific tags (needed for SBOM attestation)
-            docker buildx imagetools create \
-              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
-
-            docker buildx imagetools create \
-              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
           done
 
       - name: Sign commit-tagged images (GHCR midnightntwrk)
@@ -527,20 +518,18 @@ jobs:
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
           for IMAGE in midnight-node midnight-node-toolkit; do
-            # Create multi-arch manifest
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
 
-            # Create arch-specific tags (needed for SBOM attestation)
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
 
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main-arm64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
           done
 
       - name: Create and push `latest-main` images (Docker Hub)
@@ -549,16 +538,16 @@ jobs:
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
           echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
           echo "Tagging each image with 'latest-main'"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
 
           echo "Push 'latest-main' images to Docker Hub"
           docker push midnightntwrk/midnight-node:latest-main-amd64

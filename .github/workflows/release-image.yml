@@ -120,20 +120,18 @@ jobs:
       - name: Create release images (GHCR midnightntwrk)
         run: |
           for IMAGE in midnight-node midnight-node-toolkit; do
-            # Create multi-arch manifest with release tag
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
 
-            # Create arch-specific tags (needed for SBOM attestation)
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64"
 
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-arm64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
           done
 
       - name: Sign release images (GHCR midnightntwrk)
@@ -148,16 +146,16 @@ jobs:
           export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
 
           echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
 
           echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
 
           echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
           docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
