@@ -19,7 +19,6 @@ use super::super::{
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
-use itertools::Itertools;
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
