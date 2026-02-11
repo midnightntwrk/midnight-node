@@ -167,6 +167,35 @@ pub struct VerifyLedgerStateGenesisCmd {
 }
 
 #[derive(Debug, Parser)]
+pub struct VerifyAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
 pub struct VerifyFederatedAuthorityAuthScriptCmd {
 	/// The Cardano block hash assumed to be the latest for this query.
 	///
@@ -260,6 +289,11 @@ pub enum Subcommand {
 	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
 	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
 	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
+
+	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates)
+	/// use the expected authorization script. This runs all three verification commands and
+	/// checks that they all share the same authorization script.
+	VerifyAuthScript(VerifyAuthScriptCmd),
 
 	/// Verify that the federated authority contracts (Council, Technical Committee) use the
 	/// expected authorization script. This checks:
