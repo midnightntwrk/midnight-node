@@ -100,6 +100,11 @@ pub struct MidnightCfg {
 	/// Job name label to include with pushed metrics.
 	/// Default: "midnight-node"
 	pub prometheus_push_job_name: Option<String>,
+
+	/// URL of the Datadog trace agent (or trace gateway) to send OpenTelemetry traces to.
+	/// Example: http://datadog-trace-gateway:8126
+	/// When set, the node will export traces to this endpoint. Can also be set via DD_TRACE_AGENT_URL.
+	pub datadog_trace_agent_url: Option<String>,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {

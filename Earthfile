@@ -772,12 +772,12 @@ planner:
 check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
-    # COPY +planner/recipe.json /recipe.json
+    COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     # Build dependencies - this is the caching Docker layer!
-    # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
+    RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
@@ -965,9 +965,9 @@ build-prepare:
 # build creates production ready binaries
 build:
     FROM +build-prepare
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # CACHE /target
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
 
@@ -984,14 +984,14 @@ build:
 
     # Default build (no hardfork)
     RUN \
-        cargo auditable build --workspace --locked --release
+        cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
-        && mv /target/release/upgrader /artifacts-$NATIVEARCH \
-        && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
-        && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
+        && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/ \
+        && if [ -f /target/release/midnight-node-toolkit ]; then mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH; fi \
+        && if [ -f /target/release/upgrader ]; then mv /target/release/upgrader /artifacts-$NATIVEARCH; fi \
+        && if [ -f /target/release/aiken-deployer ]; then mv /target/release/aiken-deployer /artifacts-$NATIVEARCH; fi
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
@@ -1055,7 +1055,7 @@ node-image:
     RUN mkdir -p node
 
     COPY +build/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY --if-exists +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -1068,7 +1068,8 @@ node-image:
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
+    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res && \
+        if [ -f /aiken-deployer ]; then chown -R appuser:appuser /aiken-deployer; fi
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \

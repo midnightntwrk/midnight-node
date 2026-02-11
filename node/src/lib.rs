@@ -32,4 +32,6 @@ pub mod permissioned_candidates_genesis;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
+#[cfg(feature = "datadog-tracing")]
+pub mod otel_trace_handler;
 mod util;

@@ -47,6 +47,8 @@ where
 		_block_hash: Block::Hash,
 		_block_number: NumberFor<Block>,
 	) -> Extensions {
+		// Block execution tracing is now handled by Substrate's native tracing system
+		// Enable via --tracing-targets=sp_state_machine=debug to capture block execution spans
 		let mut exts = Extensions::new();
 
 		exts.register(LedgerMetricsExt::new(self.ledger_metrics.clone()));

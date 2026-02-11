@@ -225,7 +225,12 @@ type MidnightService = sc_service::PartialComponents<
 	sc_consensus::DefaultImportQueue<Block>,
 	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
 	(
-		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+		sc_consensus_grandpa::GrandpaBlockImport<
+			FullBackend,
+			Block,
+			FullClient,
+			FullSelectChain,
+		>,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
 		sc_consensus_beefy::BeefyVoterLinks<Block, BeefyId>,
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
@@ -362,8 +367,10 @@ pub fn new_partial(
 		telemetry.as_ref().map(|x| x.handle()),
 	)?;
 
+	let block_import = grandpa_block_import;
+
 	let (_, beefy_voter_links, beefy_rpc_links) = sc_consensus_beefy::beefy_block_import_and_links(
-		grandpa_block_import.clone(),
+		block_import.clone(),
 		backend.clone(),
 		client.clone(),
 		config.prometheus_registry().cloned(),
@@ -386,8 +393,8 @@ pub fn new_partial(
 		_,
 		McHashInherentDigest,
 	>(ImportQueueParams {
-		block_import: grandpa_block_import.clone(),
-		justification_import: Some(Box::new(grandpa_block_import.clone())),
+		block_import: block_import.clone(),
+		justification_import: Some(Box::new(block_import.clone())),
 		client: client.clone(),
 		create_inherent_data_providers: VerifierCIDP::new(
 			inherent_config,
@@ -414,7 +421,7 @@ pub fn new_partial(
 		select_chain,
 		transaction_pool: Arc::new(transaction_pool),
 		other: (
-			grandpa_block_import,
+			block_import,
 			grandpa_link,
 			beefy_voter_links,
 			beefy_rpc_links,

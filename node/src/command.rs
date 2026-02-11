@@ -120,6 +120,67 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.map_err(|e| sc_cli::Error::Application(Box::new(e)))?;
 	}
 
+	// Initialize Datadog OpenTelemetry tracer BEFORE creating the runner
+	// This allows us to use the logger hook to add OpenTelemetry profiling
+	#[cfg(feature = "datadog-tracing")]
+	let datadog_url = cfg
+		.midnight_cfg
+		.datadog_trace_agent_url
+		.clone()
+		.or_else(|| std::env::var("DD_TRACE_AGENT_URL").ok());
+
+
+	#[cfg(feature = "datadog-tracing")]
+	let _otel_tracer_provider = if let Some(ref url) = datadog_url {
+		use datadog_opentelemetry::configuration::Config;
+		use opentelemetry::global;
+
+		let config = Config::builder()
+			.set_service("midnight-node".to_string())
+			.set_trace_agent_url(url.clone())
+			.build();
+		let tracer_provider = datadog_opentelemetry::tracing()
+			.with_config(config)
+			.init();
+
+		// Set the global tracer provider so otel_trace_handler can use global::tracer()
+		global::set_tracer_provider(tracer_provider.clone());
+
+		// Use eprintln since logger isn't initialized yet
+		eprintln!("[midnight-node] Datadog tracing initialized, will send to {}", url);
+		Some(tracer_provider)
+	} else {
+		None
+	};
+
+	// Create runner with logger hook to add OpenTelemetry profiling
+	// This bridges ALL Substrate native tracing to Datadog
+	#[cfg(feature = "datadog-tracing")]
+	let runner = if datadog_url.is_some() {
+		cfg.create_runner_with_logger_hook(&run_cmd, |logger_builder, config| {
+			use crate::otel_trace_handler::OpenTelemetryTraceHandler;
+			use sc_tracing::TracingReceiver;
+
+			eprintln!("[midnight-node] DEBUG: Logger hook called");
+			eprintln!("[midnight-node] DEBUG: config.tracing_targets = {:?}", config.tracing_targets);
+
+			// Register the OpenTelemetry handler to receive spans
+			let handler = Box::new(OpenTelemetryTraceHandler::new("midnight-node"));
+			logger_builder.with_custom_profiling(handler);
+			eprintln!("[midnight-node] DEBUG: Called with_custom_profiling");
+
+			// Use a very broad filter to capture everything
+			let filter = config.tracing_targets.as_deref().unwrap_or("");
+			logger_builder.with_profiling(TracingReceiver::Log, filter);
+			eprintln!("[midnight-node] DEBUG: Called with_profiling(Log, {:?})", filter);
+
+			eprintln!("[midnight-node] Substrate tracing bridge enabled (filter: {:?})", filter);
+		})?
+	} else {
+		cfg.create_runner(&run_cmd)?
+	};
+
+	#[cfg(not(feature = "datadog-tracing"))]
 	let runner = cfg.create_runner(&run_cmd)?;
 	let base_path = run_cmd
 		.shared_params()
@@ -192,13 +253,14 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 
-		// TODO: Add metrics
-		let data_sources =
+		// Data sources - tracing is now handled by Substrate's native tracing system
+		let data_sources = {
 			crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 				cfg.midnight_cfg.clone(),
 				None,
 			)
-			.await?;
+			.await?
+		};
 
 		// Build Prometheus push config if endpoint is configured
 		log::debug!(
@@ -224,6 +286,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
+		// Service startup tracing is now handled by Substrate's native tracing system
 		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
