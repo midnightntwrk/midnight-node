@@ -22,8 +22,7 @@ use frame_support::{assert_noop, assert_ok};
 use sidechain_domain::DParameter;
 use sp_core::H256;
 
-const DEFAULT_TERMS_AND_CONDITIONS_HASH: H256 =
-	H256(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES);
+const DEFAULT_TERMS_AND_CONDITIONS_HASH: H256 = H256(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES);
 
 #[test]
 fn update_terms_and_conditions_works_with_root() {
