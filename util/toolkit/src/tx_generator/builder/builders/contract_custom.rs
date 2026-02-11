@@ -81,8 +81,10 @@ impl CustomContractBuilder {
 		println!("Create intent info for contract custom");
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
-		let boxed_resolver =
-			Box::new(IntentCustom::<DefaultDB>::get_resolver(&self.artifact_dirs).unwrap());
+		let boxed_resolver = Box::new(
+			IntentCustom::<DefaultDB>::get_resolver(&self.artifact_dirs)
+				.map_err(CustomContractBuilderError::FailedReadingIntent)?,
+		);
 		let static_ref_resolver = Box::leak(boxed_resolver);
 
 		let mut actions: Vec<ContractAction<ProofPreimageMarker, DefaultDB>> = vec![];

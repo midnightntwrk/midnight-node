@@ -43,7 +43,7 @@ fn deserialize_from_bytes(
 	Box<dyn std::error::Error + Send + Sync>,
 > {
 	// Read single tx from file
-	let file_content = std::fs::read(src_file).expect("failed to read file");
+	let file_content = std::fs::read(src_file)?;
 	let tx_hex = String::from_utf8_lossy(&file_content);
 	// Some IDEs auto-add an extra empty line at the end of the file
 	let sanitized_hex_tx: String = tx_hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();

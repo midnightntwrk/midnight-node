@@ -117,7 +117,7 @@ impl<D: DB + Clone> IntentCustom<D> {
 		resolver: &'static Resolver,
 	) -> Result<Self, std::io::Error> {
 		let bytes = std::fs::read(path)?;
-		let intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		let intent: IntentOf<D> = deserialize(bytes.as_slice())?;
 		Ok(Self { intent, resolver })
 	}
 
