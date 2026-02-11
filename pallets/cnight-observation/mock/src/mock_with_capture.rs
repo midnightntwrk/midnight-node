@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_in_result)]
+
 use frame_support::sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},

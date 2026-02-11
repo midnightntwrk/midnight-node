@@ -310,6 +310,9 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
+		// Intentionally panic on codec error — corrupted inherent data is an unrecoverable
+		// programming error; silently returning None would drop token movements for this block.
+		#[allow(clippy::unwrap_in_result)]
 		fn get_data_from_inherent_data(
 			data: &InherentData,
 		) -> Option<MidnightObservationTokenMovement> {
@@ -580,7 +583,7 @@ pub mod pallet {
 				address
 					.clone()
 					.try_into()
-					.expect("Mainchain contract address longer than expected"),
+					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
 			);
 
 			Ok(())
