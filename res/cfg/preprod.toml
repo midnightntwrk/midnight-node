@@ -13,3 +13,13 @@ chainspec_federated_authority_config = "res/preprod/federated-authority-config.j
 chainspec_system_parameters_config = "res/preprod/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/preprod/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/preprod/registered-candidates-addresses.json"
+
+cardano_security_parameter = 2160
+cardano_active_slots_coeff = 0.05
+block_stability_margin = 10
+
+mc__first_epoch_timestamp_millis = 1655769600000
+mc__first_epoch_number = 4
+mc__epoch_duration_millis = 432000000
+mc__first_slot_number = 86400
+mc__slot_duration_millis = 1000

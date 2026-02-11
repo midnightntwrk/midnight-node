@@ -24,4 +24,6 @@ pub enum CfgError {
 	SerdeJsonError(#[from] serde_json::Error),
 	#[error("error getting keys from config struct: {0}")]
 	GetKeysError(serde_json::Error),
+	#[error("missing field type documentation for '{0}'")]
+	MissingFieldType(String),
 }
