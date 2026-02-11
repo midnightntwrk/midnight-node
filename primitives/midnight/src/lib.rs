@@ -17,9 +17,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use hex_literal::hex;
-use midnight_node_ledger::{
-	latest::BlockContext,
-	types::{Hash, Tx, active_version::LedgerApiError},
+use midnight_node_ledger::types::{
+	Hash, Tx,
+	active_version::{BlockContext, LedgerApiError},
 };
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;

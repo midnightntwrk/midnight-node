@@ -24,10 +24,10 @@ transient-crypto-ledger-8 = { workspace = true, optional = true }
 zswap-ledger-8 = { workspace = true, optional = true }
 
 mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
-base-crypto-hf = { workspace = true, optional = true }
+# base-crypto-hf = { workspace = true, optional = true }
 coin-structure-hf = { workspace = true, optional = true }
 onchain-runtime-hf = { workspace = true, optional = true }
-midnight-serialize-hf = { workspace = true, optional = true }
+# midnight-serialize-hf = { workspace = true, optional = true }
 ledger-storage-hf = { workspace = true, optional = true }
 transient-crypto-hf = { workspace = true, optional = true }
 zswap-hf = { workspace = true, optional = true }
@@ -84,10 +84,10 @@ std = [
     "transient-crypto",
     "zswap",
     "mn-ledger-hf",
-    "base-crypto-hf",
+    # "base-crypto-hf",
     "coin-structure-hf",
     "onchain-runtime-hf",
-    "midnight-serialize-hf",
+    # "midnight-serialize-hf",
     "ledger-storage-hf",
     "transient-crypto-hf",
     "zswap-hf",
