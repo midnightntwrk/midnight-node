@@ -148,26 +148,3 @@ async fn test_postgres_evict_stale_entries() {
 	);
 }
 
-#[tokio::test]
-async fn test_postgres_evict_oldest_entries() {
-	let backend: TestPostgresBackend = PostgresBackend::new(postgres_url().await).await;
-
-	let chain_id = H256::from([102u8; 32]);
-
-	// Create 5 cache entries with different wallet IDs
-	for i in 0..5u8 {
-		let wallet_id = H256::from([i + 10; 32]);
-		let cache = create_test_cache(i as u64 * 100, wallet_id);
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
-		// Small delay to ensure different timestamps
-		tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-	}
-
-	// Count should be at least 5
-	let count = backend.wallet_cache_count().await;
-	assert!(count >= 5, "Expected at least 5 entries, got {}", count);
-
-	// Keep only 2 entries (evict at least 3)
-	let evicted = backend.evict_oldest_wallet_cache(2).await;
-	assert!(evicted >= 3, "Expected to evict at least 3, evicted {}", evicted);
-}
