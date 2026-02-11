@@ -126,6 +126,19 @@ get_security_parameter() {
     fi
 }
 
+# Function to get cardano tip from cardano-tip.json
+get_cardano_tip() {
+    local network="$1"
+    local config_file="$REPO_ROOT/res/$network/cardano-tip.json"
+
+    if [[ -f "$config_file" ]]; then
+        # Extract cardano_tip value using grep and sed (portable)
+        grep -o '"cardano_tip"[[:space:]]*:[[:space:]]*"[^"]*"' "$config_file" | sed 's/.*"\(0x[^"]*\)".*/\1/'
+    else
+        echo ""
+    fi
+}
+
 # Function to check if network uses cNIGHT config for DUST address registration
 uses_cnight_config() {
     local network="$1"
@@ -246,6 +259,40 @@ compare_json_files() {
         echo ""
         echo "Differences found:"
         diff --color=always <(echo "$norm1") <(echo "$norm2") || true
+        return 1
+    fi
+}
+
+# ===========================================================================
+# VERIFICATION STEP 0: Verify Cardano Tip is Finalized
+# ===========================================================================
+run_cardano_tip_finalization_check() {
+    local network="$1"
+    local db_connection="$2"
+    local cardano_tip="$3"
+    local node_binary="$4"
+
+    print_step "Step 0: Verify Cardano Tip is Finalized"
+
+    echo -e "${BOLD}This step verifies that the provided Cardano block hash has enough${NC}"
+    echo -e "${BOLD}confirmations to be considered finalized (based on security_parameter).${NC}"
+    echo ""
+
+    cd "$REPO_ROOT"
+    export CFG_PRESET="$network"
+    export ALLOW_NON_SSL=true
+    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
+
+    local check_result
+    if check_result=$("$node_binary" verify-cardano-tip-finalized --cardano-tip "$cardano_tip" 2>&1); then
+        echo "$check_result"
+        echo ""
+        print_success "Step 0: Cardano tip is finalized!"
+        return 0
+    else
+        echo "$check_result"
+        echo ""
+        print_error "Step 0: Cardano tip is NOT finalized!"
         return 1
     fi
 }
@@ -493,6 +540,45 @@ run_dparameter_verification() {
     fi
 }
 
+# ===========================================================================
+# VERIFICATION STEP 4: Verify Authorization Scripts for Upgradable Contracts
+# ===========================================================================
+run_auth_script_verification() {
+    local network="$1"
+    local db_connection="$2"
+    local cardano_tip="$3"
+    local node_binary="$4"
+
+    print_step "Step 4: Verify Authorization Scripts for Upgradable Contracts"
+
+    echo -e "${BOLD}This step verifies that all upgradable contracts (Federated Authority,${NC}"
+    echo -e "${BOLD}ICS, Permissioned Candidates) use the expected authorization script.${NC}"
+    echo ""
+    echo -e "${BOLD}For each contract, it checks:${NC}"
+    echo -e "  1. The compiled_code hash matches the policy_id"
+    echo -e "  2. The two_stage_policy_id is embedded in the compiled_code"
+    echo -e "  3. The authorization script observed on Cardano matches the expected value"
+    echo ""
+
+    cd "$REPO_ROOT"
+    export CFG_PRESET="$network"
+    export ALLOW_NON_SSL=true
+    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
+
+    local check_result
+    if check_result=$("$node_binary" verify-auth-script --cardano-tip "$cardano_tip" 2>&1); then
+        echo "$check_result"
+        echo ""
+        print_success "Step 4: All authorization script checks passed!"
+        return 0
+    else
+        echo "$check_result"
+        echo ""
+        print_error "Step 4: Some authorization script checks failed!"
+        return 1
+    fi
+}
+
 # Main script
 main() {
     print_header "Midnight Genesis Verification Tool"
@@ -500,6 +586,7 @@ main() {
     echo "This tool verifies the chain specification for a network."
     echo "It performs the following checks:"
     echo ""
+    echo -e "  0. ${BOLD}Cardano Tip Finalization${NC} - Verifies the Cardano tip has enough confirmations"
     echo -e "  1. ${BOLD}Config File Regeneration${NC} - Regenerates config files and compares with existing"
     echo -e "  2. ${BOLD}LedgerState Verification${NC} - Verifies genesis_state contents from chain-spec-raw.json"
     echo -e "     a. DustState matches cnight-config.json system_tx"
@@ -507,6 +594,7 @@ main() {
     echo -e "     c. Total NIGHT supply invariance (24B)"
     echo -e "     d. LedgerParameters match config"
     echo -e "  3. ${BOLD}Dparameter Verification${NC} - Verifies system-parameters-config.json consistency"
+    echo -e "  4. ${BOLD}Auth Script Verification${NC} - Verifies upgradable contracts share the same auth script"
     echo ""
 
     # Select network
@@ -545,8 +633,15 @@ main() {
     db_connection=$(prompt_input "DB Sync PostgreSQL connection string" "postgres://cardano@localhost:54322/cexplorer")
     echo ""
 
+    # Get default cardano tip from cardano-tip.json if available
+    local default_cardano_tip
+    default_cardano_tip=$(get_cardano_tip "$network")
+    if [[ -n "$default_cardano_tip" ]]; then
+        print_info "Found cardano tip in res/$network/cardano-tip.json"
+    fi
+
     local cardano_tip
-    cardano_tip=$(prompt_input "Cardano block hash (tip)" "")
+    cardano_tip=$(prompt_input "Cardano block hash (tip)" "$default_cardano_tip")
     if [[ -z "$cardano_tip" ]]; then
         print_error "Cardano tip is required!"
         exit 1
@@ -571,10 +666,31 @@ main() {
     echo ""
 
     # Track verification results
+    local step0_passed=false
     local step1_passed=false
     local step2_passed=false
     local step3_passed=false
+    local step4_passed=false
     local overall_passed=true
+
+    # =========================================================================
+    # STEP 0: Cardano Tip Finalization Check (MANDATORY)
+    # =========================================================================
+    print_step "Cardano Tip Finalization Check"
+    echo -e "${BOLD}This check is mandatory before proceeding with other verifications.${NC}"
+    echo ""
+
+    if run_cardano_tip_finalization_check "$network" "$db_connection" "$cardano_tip" "$node_binary"; then
+        step0_passed=true
+    else
+        overall_passed=false
+        if ! confirm "Cardano tip is not finalized. Continue anyway?" "n"; then
+            print_error "Verification aborted. Please provide a finalized Cardano tip."
+            rm -rf "$tmp_dir"
+            exit 1
+        fi
+        print_warning "Continuing with unfinalized Cardano tip (results may be unreliable)."
+    fi
 
     # =========================================================================
     # STEP 1: Config File Regeneration and Comparison
@@ -626,12 +742,31 @@ main() {
     fi
 
     # =========================================================================
+    # STEP 4: Auth Script Verification
+    # =========================================================================
+    if confirm "Run Step 4 (Auth Script Verification)?" "y"; then
+        if run_auth_script_verification "$network" "$db_connection" "$cardano_tip" "$node_binary"; then
+            step4_passed=true
+        else
+            overall_passed=false
+        fi
+    else
+        print_info "Skipping Step 4."
+    fi
+
+    # =========================================================================
     # Final Summary
     # =========================================================================
     print_header "Verification Summary"
 
     echo -e "Results for ${BOLD}$network${NC}:"
     echo ""
+
+    if [[ "$step0_passed" == "true" ]]; then
+        echo -e "  ${GREEN}[PASS]${NC} Step 0: Cardano Tip Finalization"
+    else
+        echo -e "  ${RED}[FAIL]${NC} Step 0: Cardano Tip Finalization"
+    fi
 
     if [[ "$step1_passed" == "true" ]]; then
         echo -e "  ${GREEN}[PASS]${NC} Step 1: Config File Regeneration"
@@ -649,6 +784,12 @@ main() {
         echo -e "  ${GREEN}[PASS]${NC} Step 3: Dparameter Verification"
     else
         echo -e "  ${RED}[FAIL]${NC} Step 3: Dparameter Verification"
+    fi
+
+    if [[ "$step4_passed" == "true" ]]; then
+        echo -e "  ${GREEN}[PASS]${NC} Step 4: Auth Script Verification"
+    else
+        echo -e "  ${RED}[FAIL]${NC} Step 4: Auth Script Verification"
     fi
 
     echo ""

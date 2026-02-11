@@ -11,22 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate alloc;
+//! Genesis verification modules for validating genesis configuration and authorization scripts.
 
-#[cfg(feature = "runtime-benchmarks")]
-pub mod benchmarking;
-pub mod cfg;
-pub mod chain_spec;
-pub mod cli;
-pub mod command;
-pub mod extensions;
-pub mod genesis;
-pub mod inherent_data;
-pub mod main_chain_follower;
-pub mod metrics_push;
-pub mod partner_chains;
-pub mod payload;
-pub mod rpc;
-pub mod service;
-pub mod sidechain_params_cmd;
-mod util;
+pub mod verify_auth_script_common;
+pub mod verify_federated_authority_auth_script;
+pub mod verify_ics_auth_script;
+pub mod verify_ledger_state_genesis;
+pub mod verify_permissioned_candidates_auth_script;

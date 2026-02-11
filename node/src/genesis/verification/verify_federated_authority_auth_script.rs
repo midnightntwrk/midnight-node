@@ -20,7 +20,7 @@
 //! 2. The two_stage_policy_id is embedded in the compiled_code
 //! 3. The authorization script observed on Cardano matches the expected authorization_policy_id
 
-use crate::verify_auth_script_common::{
+use super::verify_auth_script_common::{
 	CheckResult, VerifyAuthScriptError, get_block_number, hex_to_policy_id,
 	load_authorization_addresses, print_check, verify_authorization_script, verify_policy_hash,
 	verify_two_stage_embedded,

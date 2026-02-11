@@ -16,11 +16,18 @@
 use crate::{
 	cfg::Cfg,
 	cli::{self, Cli, Subcommand},
-	cnight_genesis::generate_cnight_genesis,
-	federated_authority_genesis::generate_federated_authority_genesis,
-	ics_genesis::{IcsAddresses, generate_ics_genesis},
-	permissioned_candidates_genesis::{
-		PcChainConfig, PermissionedCandidatesAddresses, generate_permissioned_candidates_genesis,
+	genesis::creation::{
+		cnight_genesis::generate_cnight_genesis,
+		federated_authority_genesis::generate_federated_authority_genesis,
+		ics_genesis::{IcsAddresses, generate_ics_genesis},
+		permissioned_candidates_genesis::{
+			PcChainConfig, PermissionedCandidatesAddresses,
+			generate_permissioned_candidates_genesis,
+		},
+	},
+	genesis::verification::{
+		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
+		verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
 	},
 	service::{self, StorageInit},
 };
@@ -867,7 +874,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
 
-			let result = crate::verify_ledger_state_genesis::verify_ledger_state_genesis(
+			let result = verify_ledger_state_genesis::verify_ledger_state_genesis(
 				&cmd.chain_spec,
 				cmd.cnight_config.as_deref(),
 				cmd.ledger_parameters_config.as_deref(),
@@ -896,7 +903,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let pc_config_content = std::fs::read_to_string(&pc_config_path).map_err(|e| {
 				sc_cli::Error::Input(format!("Failed to read {}: {}", pc_config_path.display(), e))
 			})?;
-			let pc_config: crate::permissioned_candidates_genesis::PcChainConfig =
+			let pc_config: PcChainConfig =
 				serde_json::from_str(&pc_config_content).map_err(|e| {
 					sc_cli::Error::Input(format!(
 						"Failed to parse {}: {}",
@@ -920,7 +927,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 				// Get the block number for the provided tip
 				let tip_block_number =
-					crate::verify_auth_script_common::get_block_number(&pool, &cmd.cardano_tip)
+					verify_auth_script_common::get_block_number(&pool, &cmd.cardano_tip)
 						.await
 						.map_err(|e| {
 							sc_cli::Error::Input(format!(
@@ -1006,7 +1013,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 				// 1. Verify Federated Authority
 				let fa_result =
-					crate::verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
 						&federated_authority_addresses,
 						Some(&authorization_addresses),
 						&pool,
@@ -1024,7 +1031,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				}
 
 				// 2. Verify ICS
-				let ics_result = crate::verify_ics_auth_script::verify_ics_auth_script(
+				let ics_result = verify_ics_auth_script::verify_ics_auth_script(
 					&ics_addresses,
 					Some(&authorization_addresses),
 					&pool,
@@ -1041,7 +1048,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 				// 3. Verify Permissioned Candidates
 				let pc_result =
-					crate::verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
 						&permissioned_candidates_addresses,
 						Some(&authorization_addresses),
 						&pool,
@@ -1091,7 +1098,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						.await?;
 
 				let result =
-					crate::verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
 						&federated_authority_addresses,
 						Some(&authorization_addresses),
 						&pool,
@@ -1133,7 +1140,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
 						.await?;
 
-				let result = crate::verify_ics_auth_script::verify_ics_auth_script(
+				let result = verify_ics_auth_script::verify_ics_auth_script(
 					&ics_addresses,
 					Some(&authorization_addresses),
 					&pool,
@@ -1176,7 +1183,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						.await?;
 
 				let result =
-					crate::verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
 						&permissioned_candidates_addresses,
 						Some(&authorization_addresses),
 						&pool,
