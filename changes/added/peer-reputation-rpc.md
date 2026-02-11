@@ -7,4 +7,4 @@ Exposes peer reputation and ban status via JSON-RPC, enabling debugging of peer 
 - `network_peerReputation` returns the same info for a single peer by ID
 
 Can help in diagnosing issues related to peer-banning e.g: https://shielded.atlassian.net/browse/PM-21710
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/649
