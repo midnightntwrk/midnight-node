@@ -883,6 +883,97 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
 			}
 		},
+		Subcommand::VerifyCardanoTipFinalized(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let pc_config_path =
+				cmd.pc_config.clone().unwrap_or_else(|| res_dir.join("pc-chain-config.json"));
+
+			// Load security_parameter from pc-chain-config.json
+			let pc_config_content = std::fs::read_to_string(&pc_config_path).map_err(|e| {
+				sc_cli::Error::Input(format!("Failed to read {}: {}", pc_config_path.display(), e))
+			})?;
+			let pc_config: crate::permissioned_candidates_genesis::PcChainConfig =
+				serde_json::from_str(&pc_config_content).map_err(|e| {
+					sc_cli::Error::Input(format!(
+						"Failed to parse {}: {}",
+						pc_config_path.display(),
+						e
+					))
+				})?;
+			let security_parameter = pc_config.cardano.security_parameter;
+			log::info!(
+				"Using security_parameter={} from {}",
+				security_parameter,
+				pc_config_path.display()
+			);
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				// Get the block number for the provided tip
+				let tip_block_number =
+					crate::verify_auth_script_common::get_block_number(&pool, &cmd.cardano_tip)
+						.await
+						.map_err(|e| {
+							sc_cli::Error::Input(format!(
+								"Failed to get block number for tip {}: {}",
+								cmd.cardano_tip, e
+							))
+						})?;
+
+				// Get the latest block number from db-sync
+				let latest_block_number: (i32,) = sqlx::query_as(
+					r#"
+					SELECT block_no
+					FROM block
+					WHERE block_no IS NOT NULL
+					ORDER BY block_no DESC
+					LIMIT 1
+					"#,
+				)
+				.fetch_one(&pool)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Failed to get latest block number: {}", e))
+				})?;
+
+				let confirmations = latest_block_number.0 as u32 - tip_block_number;
+				let is_finalized = confirmations >= security_parameter;
+
+				println!("\n=== Cardano Tip Finalization Check ===\n");
+				println!("Cardano tip:          {}", cmd.cardano_tip);
+				println!("Tip block number:     {}", tip_block_number);
+				println!("Latest block number:  {}", latest_block_number.0);
+				println!("Confirmations:        {}", confirmations);
+				println!("Security parameter:   {}", security_parameter);
+				println!();
+
+				if is_finalized {
+					println!(
+						"RESULT: FINALIZED (confirmations {} >= security_parameter {})",
+						confirmations, security_parameter
+					);
+					Ok(())
+				} else {
+					println!(
+						"RESULT: NOT FINALIZED (confirmations {} < security_parameter {})",
+						confirmations, security_parameter
+					);
+					Err(sc_cli::Error::Input(format!(
+						"Block is not finalized: {} confirmations < {} security_parameter",
+						confirmations, security_parameter
+					)))
+				}
+			})
+		},
 		Subcommand::VerifyAuthScript(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;

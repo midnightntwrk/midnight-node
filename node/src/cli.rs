@@ -167,6 +167,20 @@ pub struct VerifyLedgerStateGenesisCmd {
 }
 
 #[derive(Debug, Parser)]
+pub struct VerifyCardanoTipFinalizedCmd {
+	/// The Cardano block hash to check for finalization.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter.
+	/// Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
 pub struct VerifyAuthScriptCmd {
 	/// The Cardano block hash assumed to be the latest for this query.
 	///
@@ -289,6 +303,10 @@ pub enum Subcommand {
 	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
 	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
 	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
+
+	/// Verify that a Cardano block hash is finalized (i.e., has enough confirmations based on
+	/// the security_parameter from pc-chain-config.json).
+	VerifyCardanoTipFinalized(VerifyCardanoTipFinalizedCmd),
 
 	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates)
 	/// use the expected authorization script. This runs all three verification commands and
