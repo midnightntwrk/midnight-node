@@ -749,8 +749,7 @@ mod test {
 		.unwrap();
 
 		// Pools use hardcoded values, not the reserve config
-		let expected_locked =
-			MAX_SUPPLY - EXPECTED_RESERVE_VALUE - EXPECTED_ICS_VALUE;
+		let expected_locked = MAX_SUPPLY - EXPECTED_RESERVE_VALUE - EXPECTED_ICS_VALUE;
 		assert_eq!(
 			genesis.state.locked_pool, expected_locked,
 			"locked_pool should be MAX_SUPPLY minus reserve and ICS expected values"
