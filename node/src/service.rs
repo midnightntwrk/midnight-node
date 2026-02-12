@@ -68,6 +68,7 @@ fn init_ledger_storage<P: AsRef<Path>>(
 	storage_config: &StorageInit,
 	runtime_version: sp_version::RuntimeVersion,
 ) {
+	#[allow(clippy::zero_prefixed_literal)]
 	if runtime_version.spec_version < 000_022_000 {
 		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
 			parity_db_path.as_ref(),
