@@ -25,7 +25,7 @@ use thiserror::Error;
 pub use midnight_primitives_ics_observation::{IcsAsset, IcsConfig, IcsUtxo};
 pub use midnight_primitives_reserve_observation::ReserveConfig;
 
-pub const MINT_AMOUNT: u128 = 500_000_000_000_000;
+pub const MINT_AMOUNT: u128 = 50_000_000_000_000;
 pub const GENESIS_NONCE_SEED: &str =
 	"0000000000000000000000000000000000000000000000000000000000000037";
 

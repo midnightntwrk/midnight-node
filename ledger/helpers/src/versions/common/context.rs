@@ -166,10 +166,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	) where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
+		self.update_ledger_state_from_txs(txs, block_context);
+
+		// This case is hit for the genesis block - in this case, we still need to process the txs
+		// to set dust info correctly for all the wallets, but we want the final ledger state for
+		// this block to == the final state in the genesis block
 		if let Some(state) = state {
 			self.update_ledger_state_from_bytes(state);
-		} else {
-			self.update_ledger_state_from_txs(txs, block_context);
 		}
 
 		// Only when done processing txs for the same block, it's time to call `post_block_update`
@@ -193,7 +196,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		for wallet in
 			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
-			wallet.update_dust_from_block(&block_context);
+			wallet.update_dust_from_block(block_context);
 		}
 		// Update latest block context
 		*self.latest_block_context.lock().expect("error locking latest_block_context") =
