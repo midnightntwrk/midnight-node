@@ -98,7 +98,7 @@ impl<D: DB> DustWallet<D> {
 		let mut remaining_amount = amount;
 		let mut state = original_state.clone();
 		for qdo in original_state.utxos() {
-			if self.spent_utxos.member(&qdo.nullifier(&sk)) {
+			if self.spent_utxos.member(&qdo.nullifier(sk)) {
 				continue;
 			}
 			let Some(gen_info) = state.generation_info(&qdo) else {
