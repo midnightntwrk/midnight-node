@@ -63,7 +63,7 @@ use {
 			Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
-	std::{any::Any, sync::Arc, time::Instant},
+	std::{any::Any, sync::Arc, time::{Duration, Instant}},
 };
 
 use crate::common::types::{
@@ -77,6 +77,20 @@ use {lazy_static::lazy_static, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
+
+/// Maximum number of entries in each transaction validation cache.
+/// Each VerifiedTransaction entry holds ZK proof data (50-200 KiB). Capped at 200 entries
+/// to keep worst-case memory under ~40 MiB — sufficient for low-traffic validator networks.
+#[cfg(feature = "std")]
+const TX_VALIDATION_CACHE_MAX_CAPACITY: u64 = 200;
+
+/// Time-to-idle for transaction validation cache entries.
+/// Entries not accessed within this duration are evicted, preventing stale VerifiedTransaction
+/// objects (which contain ZK proof data and can be 50-200 KiB each) from persisting indefinitely
+/// on low-traffic networks. Without this TTL, the cache only evicts by count — on quiet chains
+/// entries live forever and contribute to steady-state memory growth.
+#[cfg(feature = "std")]
+const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
 
 #[derive(PartialEq, Eq, Hash)]
 pub struct StrictTxValidationKey {
@@ -99,13 +113,23 @@ lazy_static! {
 	/// - A single static cache must store VerifiedTransaction for all type combinations
 	///
 	/// When retrieving, we downcast to the concrete VerifiedTransaction type.
+	///
+	/// Keyed by (state_hash, tx_hash): since state_hash changes every block, the same
+	/// transaction gets a new cache key each block. Without TTI eviction, old entries
+	/// for stale state hashes would accumulate until the 1000-entry cap forces LRU eviction.
 	static ref STRICT_TX_VALIDATION_CACHE: Cache<StrictTxValidationKey, Arc<dyn Any + Send + Sync>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(TX_VALIDATION_CACHE_MAX_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 
 	/// Soft cache: stores validation result for mempool revalidation.
 	/// No type erasure needed since Result<(), LedgerApiError> is not generic.
 	static ref SOFT_TX_VALIDATION_CACHE: Cache<SoftTxValidationKey, Result<(), LedgerApiError>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(TX_VALIDATION_CACHE_MAX_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 }
 
 #[cfg(feature = "std")]

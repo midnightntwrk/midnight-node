@@ -36,14 +36,29 @@ polling_period = 5
 # Setting of 0 means storage cache size is unlimited.
 # Will cause OOM errors if too much data is loaded.
 
-# Setting to a non-default value derived from the DEFAULT_CACHE_SIZE of the midnight-ledger crate:
-# https://github.com/midnightntwrk/midnight-ledger/blob/ledger-7.0.0-rc.2/storage/src/storage.rs#L54
-storage_cache_size = 1048576
+# Storage cache size measured in number of arena nodes (~80 bytes each).
+# Setting of 0 means unlimited — will cause OOM during sync.
+# 524288 nodes ≈ 40 MiB. Sufficient for synced validators; sync takes a minor
+# cache-miss penalty vs 1M but halves the arena's resident memory.
+# Ref: https://github.com/midnightntwrk/midnight-ledger/blob/ledger-7.0.0-rc.2/storage/src/storage.rs#L54
+storage_cache_size = 524288
 
-# Set to default: 1024 * 1024 * 1024
-trie_cache_size = 1073741824
+# Substrate trie cache size in bytes for in-memory state trie nodes.
+# Previously 1 GiB (1073741824), reduced to 128 MiB to lower steady-state memory footprint.
+# On fully synced validators the trie cache fills gradually and never shrinks — at 1 GiB this
+# consumed a fixed ~1 GiB on every node. 128 MiB is sufficient for validator workloads with
+# 6-second block times and keeps total memory well within an 8 GiB memory budget.
+trie_cache_size = 134217728
 
 argv = []
 args = []
-append_args = []
+
+# Substrate CLI args appended to all network presets.
+# --max-runtime-instances 2: Limits pooled WASM runtime instances from the default of 8 to 2.
+#   Each instance reserves 128 MiB of heap, so 8 instances = 1 GiB of WASM memory that is
+#   allocated on demand and never released. Validators only need 1 concurrent instance for
+#   block import and 1 for authoring — 2 is sufficient and saves ~768 MiB.
+# --pool-limit 1024: Caps transaction pool from default of 8192. Low-traffic validator
+#   networks don't need 8192 pooled transactions; 1024 saves ~30 MiB.
+append_args = ["--max-runtime-instances", "2", "--pool-limit", "1024"]
 bootnodes = []
