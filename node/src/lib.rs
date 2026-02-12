@@ -26,7 +26,6 @@ pub mod main_chain_follower;
 pub mod metrics_push;
 pub mod partner_chains;
 pub mod payload;
-pub mod permissioned_candidates_genesis;
 pub mod reserve_genesis;
 pub mod rpc;
 pub mod service;
