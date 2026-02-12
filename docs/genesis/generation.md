@@ -278,21 +278,7 @@ Enter the following when prompted:
    - Default: `0000000000000000000000000000000000000000000000000000000000000037`
    - Used for deterministic genesis generation
 
-### Step 3: Ledger State Generation
-
-Before generating the ledger state, config files must exist:
-
-1. The tool checks if `cnight-config.json` and `ics-config.json` exist
-2. If missing or if you choose to regenerate, it runs:
-   - `midnight-node generate-c-night-genesis`
-   - `midnight-node generate-ics-genesis`
-3. Then runs: `earthly +rebuild-genesis-state-<network>`
-
-**Output files:**
-- `res/genesis/genesis_block_<network>.mn`
-- `res/genesis/genesis_state_<network>.mn`
-
-### Step 4: Genesis Config Generation
+### Step 3: Genesis Config Generation
 
 Generates configuration files from Cardano smart contract state:
 
@@ -306,7 +292,17 @@ midnight-node generate-genesis-config --cardano-tip <block_hash>
 - `res/<network>/federated-authority-config.json`
 - `res/<network>/permissioned-candidates-config.json`
 
-If configs were already generated in Step 3, the tool offers to keep them and only generate the remaining files.
+### Step 4: Ledger State Generation
+
+Generates the initial ledger state. Config files (`cnight-config.json`, `ics-config.json`) must exist first (generated in Step 3):
+
+1. The tool checks if `cnight-config.json` and `ics-config.json` exist
+2. If missing, it runs the individual generation commands as a fallback
+3. Then runs: `earthly +rebuild-genesis-state-<network>`
+
+**Output files:**
+- `res/genesis/genesis_block_<network>.mn`
+- `res/genesis/genesis_state_<network>.mn`
 
 ### Step 5: Chain Spec Generation
 
@@ -331,8 +327,8 @@ earthly -P +rebuild-chainspec --NETWORK=<network>
 This tool will guide you through the chain specification generation process.
 It consists of three main steps:
 
-  1. Ledger State Generation - Creates initial ledger state (genesis_block, genesis_state)
-  2. Genesis Config Generation - Generates config files from smart contract addresses
+  1. Genesis Config Generation - Generates config files from smart contract addresses
+  2. Ledger State Generation - Creates initial ledger state (genesis_block, genesis_state)
   3. Chain Spec Generation - Creates the final chain specification files
 
 ▶ Select Network
@@ -361,7 +357,7 @@ Configuration Summary:
   Cardano Tip:          0x6b0eda47...
   RNG Seed:             0000000000000000000000000000000000000000000000000000000000000037
 
-▶ Step 1: Ledger State Generation
+▶ Step 1: Smart Contract Genesis Configuration Generation
 ...
 ```
 
