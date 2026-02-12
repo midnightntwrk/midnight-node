@@ -1090,6 +1090,9 @@ impl_runtime_apis! {
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
 		}
+		fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
+			Midnight::get_ledger_state_root()
+		}
 	}
 
 	impl sp_partner_chains_bridge::TokenBridgeIDPRuntimeApi<Block> for Runtime {

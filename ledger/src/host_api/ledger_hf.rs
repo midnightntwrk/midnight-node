@@ -269,4 +269,11 @@ pub trait LedgerBridgeHf {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		Bridge::<Signature, Database>::get_zswap_state_root(state_key)
 	}
+
+	fn get_ledger_state_root(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::get_ledger_state_root(state_key)
+	}
 }

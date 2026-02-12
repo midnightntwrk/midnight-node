@@ -551,6 +551,13 @@ where
 		api.serialize(&ledger.get_zswap_state_root())
 	}
 
+	pub fn get_ledger_state_root(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ledger_state = default_storage::<D>().arena.alloc(ledger.state.clone());
+		api.serialize(&ledger_state.as_typed_key())
+	}
+
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],
