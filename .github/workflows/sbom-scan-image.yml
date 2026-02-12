@@ -32,6 +32,10 @@ on:
         description: 'Name for the SBOM artifact'
         required: true
         type: string
+      platform:
+        description: 'Platform to pull (e.g., linux/arm64). Required for manifest-list images on cross-platform runners.'
+        default: ''
+        type: string
       severity-cutoff:
         description: 'Minimum severity to fail on (negligible, low, medium, high, critical)'
         default: 'critical'
@@ -40,6 +44,10 @@ on:
         description: 'Skip SBOM attestation (e.g., for fork PRs)'
         default: false
         type: boolean
+      multi-arch-image:
+        description: 'Multi-arch image to also attest SBOM against (e.g., registry/name:tag). Enables cosign verify-attestation on multi-arch tags.'
+        default: ''
+        type: string
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -93,18 +101,20 @@ jobs:
       - name: Generate SBOM
         env:
           IMAGE: ${{ inputs.image }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           source .github/scripts/sbom-scan.sh
-          generate_sbom_with_retry "${IMAGE}" "sbom.spdx.json"
+          generate_sbom_with_retry "${IMAGE}" "sbom.spdx.json" "${PLATFORM}"
 
       - name: Scan for vulnerabilities
         id: scan
         env:
           IMAGE: ${{ inputs.image }}
           SEVERITY_CUTOFF: ${{ inputs.severity-cutoff }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           source .github/scripts/sbom-scan.sh
-          scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json"
+          scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json" "${PLATFORM}"
 
       - name: Attest SBOM
         if: ${{ !inputs.skip-attestation }}
@@ -113,6 +123,14 @@ jobs:
         run: |
           source .github/scripts/sbom-scan.sh
           attest_sbom_with_retry "${IMAGE}" "sbom.spdx.json"
+
+      - name: Attest SBOM to multi-arch manifest
+        if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
+        env:
+          MULTIARCH_IMAGE: ${{ inputs.multi-arch-image }}
+        run: |
+          source .github/scripts/sbom-scan.sh
+          attest_sbom_to_multiarch "${MULTIARCH_IMAGE}" "sbom.spdx.json"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
