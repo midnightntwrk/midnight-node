@@ -1067,6 +1067,7 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
@@ -1077,7 +1078,8 @@ node-image:
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1151,6 +1153,7 @@ toolkit-image:
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1158,7 +1161,8 @@ toolkit-image:
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # hardfork-test-upgrader-image creates the hardfork test upgrader tool image
 hardfork-test-upgrader-image:

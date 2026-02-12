@@ -48,6 +48,7 @@ sc-consensus-slots.workspace = true
 sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
+sc-utils.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true

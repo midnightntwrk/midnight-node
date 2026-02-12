@@ -26,6 +26,7 @@ pub mod main_chain_follower;
 pub mod metrics_push;
 pub mod partner_chains;
 pub mod payload;
+pub mod peer_info_rpc;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;

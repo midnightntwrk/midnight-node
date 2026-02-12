@@ -52,8 +52,10 @@ The following images are signed:
 | Image | Registry |
 |-------|----------|
 | `midnight-node` | `ghcr.io/midnight-ntwrk/midnight-node` |
+| `midnight-node` | `ghcr.io/midnightntwrk/midnight-node` |
 | `midnight-node` | `midnightntwrk/midnight-node` (Docker Hub) |
 | `midnight-node-toolkit` | `ghcr.io/midnight-ntwrk/midnight-node-toolkit` |
+| `midnight-node-toolkit` | `ghcr.io/midnightntwrk/midnight-node-toolkit` |
 | `midnight-node-toolkit` | `midnightntwrk/midnight-node-toolkit` (Docker Hub) |
 
 **Note:** Indexer images are not currently signed.

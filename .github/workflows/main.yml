@@ -476,6 +476,26 @@ jobs:
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
 
+      - name: Create commit-tagged multi-arch images (GHCR midnightntwrk)
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            # Arch-specific images already pushed by Earthly; create multi-arch manifest
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+          done
+
+      - name: Sign commit-tagged images (GHCR midnightntwrk)
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}"
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}"
+
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
@@ -492,22 +512,42 @@ jobs:
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest-main
           docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main
 
+      - name: Create `latest-main` images (GHCR midnightntwrk)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
+
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:latest-main-arm64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+          done
+
       - name: Create and push `latest-main` images (Docker Hub)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
           echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
 
           echo "Tagging each image with 'latest-main'"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
 
           echo "Push 'latest-main' images to Docker Hub"
           docker push midnightntwrk/midnight-node:latest-main-amd64
@@ -542,6 +582,13 @@ jobs:
           # Sign multi-arch manifests
           sign_with_retry "midnightntwrk/midnight-node:latest-main"
           sign_with_retry "midnightntwrk/midnight-node-toolkit:latest-main"
+
+      - name: Sign `latest-main` images (GHCR midnightntwrk)
+        if: (github.event.inputs.branch || github.ref_name) == 'main'
+        run: |
+          source .github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node:latest-main"
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main"
 
       - name: Check if indexer is on main
         id: indexer-check
@@ -594,3 +641,63 @@ jobs:
           docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
           docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
           docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+
+  sbom-scan-midnightntwrk-node-amd64:
+    name: SBOM/Scan Node midnightntwrk (amd64)
+    needs: [publish-multi-arch, publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
+      sbom-artifact-name: sbom-midnight-node-midnightntwrk-amd64
+      platform: linux/amd64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-node-arm64:
+    name: SBOM/Scan Node midnightntwrk (arm64)
+    needs: [publish-multi-arch, publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
+      sbom-artifact-name: sbom-midnight-node-midnightntwrk-arm64
+      platform: linux/arm64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-toolkit-amd64:
+    name: SBOM/Scan Toolkit midnightntwrk (amd64)
+    needs: [publish-multi-arch, publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
+      sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-amd64
+      platform: linux/amd64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-toolkit-arm64:
+    name: SBOM/Scan Toolkit midnightntwrk (arm64)
+    needs: [publish-multi-arch, publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
+      sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-arm64
+      platform: linux/arm64
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+    secrets: inherit
