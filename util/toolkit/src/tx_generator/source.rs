@@ -332,6 +332,7 @@ where
 				transactions: Vec::new(),
 				context,
 				state_root: None,
+				state: None,
 			});
 		}
 

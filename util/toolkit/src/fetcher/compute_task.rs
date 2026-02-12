@@ -260,6 +260,14 @@ impl ComputeTask {
 		let hash = block.block.hash();
 		let parent_hash = block.block.header().parent_hash;
 		let number = block.block.number() as u64;
-		Ok(BlockData { hash, parent_hash, number, transactions, context, state_root })
+		Ok(BlockData {
+			hash,
+			parent_hash,
+			number,
+			transactions,
+			context,
+			state_root,
+			state: block.state.clone(),
+		})
 	}
 }

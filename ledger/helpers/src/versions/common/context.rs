@@ -17,7 +17,7 @@ use super::{
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Sp, Storable, SyntheticCost,
 	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	clamp_and_normalize, compute_overall_fullness, default_storage,
+	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
@@ -112,11 +112,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
-	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+	pub fn update_ledger_state_from_txs<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
-		txs: Vec<SerdeTransaction<S, P, D>>,
-		block_context: BlockContext,
-		state_root: Option<Vec<u8>>,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
 	) where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
@@ -148,12 +147,40 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 				.expect("Error applying block updates"),
 		);
+	}
+
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
+		let mut latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let new_state: LedgerState<D> =
+			deserialize(state).expect("failed to deserialize state bytes");
+		*latest_ledger_state = Sp::new(new_state);
+	}
+
+	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+		&self,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
+		state_root: Option<&Vec<u8>>,
+		state: Option<&Vec<u8>>,
+	) where
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		if let Some(state) = state {
+			self.update_ledger_state_from_bytes(state);
+		} else {
+			self.update_ledger_state_from_txs(txs, block_context);
+		}
+
+		// Only when done processing txs for the same block, it's time to call `post_block_update`
+		let latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
-				Some(actual_root) if actual_root != expected_root => {
+				Some(actual_root) if actual_root != *expected_root => {
 					panic!(
 						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(&expected_root),
+						hex_encode(expected_root),
 						hex_encode(&actual_root),
 						hex_encode(block_context.parent_block_hash.0),
 					);

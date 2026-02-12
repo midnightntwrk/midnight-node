@@ -58,7 +58,12 @@ pub async fn execute(
 	let context = LedgerContext::new_from_wallet_seeds(network_id, &[args.seed]);
 
 	for block in source_blocks.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
 	}
 
 	context.with_wallet_from_seed(args.seed, |wallet| {
