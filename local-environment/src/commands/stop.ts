@@ -13,12 +13,12 @@
 
 import path from "path";
 import { globSync } from "glob";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
 
 import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
-import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
+import { stopPortForwardWatchdogs } from "../lib/portForwardWatchdog";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -41,15 +41,15 @@ async function stopEphemeralEnvironment(
   namespace: string,
   runOptions: RunOptions,
 ) {
-  console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  if (namespace === "preview") {
-    console.log("Skipping port-forward for preview (DB is publicly reachable)");
-  } else {
-    await connectToPostgres(namespace);
+  let envObject: Record<string, string> = {};
+  try {
+    console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
+    envObject = getSecrets(namespace);
+  } catch (error) {
+    console.warn(
+      `⚠️  Failed to read Kubernetes secrets for '${namespace}', continuing with local env only: ${(error as Error).message}`,
+    );
   }
-
-  console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
-  const envObject = getSecrets(namespace);
 
   const searchPath = path.resolve(
     __dirname,
@@ -83,6 +83,8 @@ async function stopEphemeralEnvironment(
     env: { ...cleanEnv(process.env), ...envObject },
     profiles: runOptions.profiles,
   });
+
+  stopPortForwardWatchdogs(namespace);
 }
 
 function stopLocalEnvironment(runOptions: RunOptions) {
@@ -113,6 +115,16 @@ function stopLocalEnvironment(runOptions: RunOptions) {
     env: finalEnv,
     profiles: runOptions.profiles,
   });
+
+  // Clean up runtime-values folder (bind mount not removed by docker compose down --volumes)
+  const runtimeValuesPath = path.resolve(
+    __dirname,
+    "../networks/local-env/runtime-values",
+  );
+  if (existsSync(runtimeValuesPath)) {
+    rmSync(runtimeValuesPath, { recursive: true, force: true });
+    console.log("🧹 Cleaned up runtime-values");
+  }
 
   return;
 }

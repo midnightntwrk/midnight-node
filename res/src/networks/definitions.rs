@@ -12,10 +12,14 @@
 // limitations under the License.
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
-use super::{InitialAuthorityData, MainChainScripts, MidnightNetwork};
+use super::{
+	InitialAuthorityData, MainChainScripts, MidnightNetwork, PermissionedCandidatesConfig,
+	RegisteredCandidatesAddresses,
+};
 
 pub struct UndeployedNetwork;
 impl MidnightNetwork for UndeployedNetwork {
@@ -44,7 +48,7 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 
 	fn cnight_genesis(&self) -> CNightGenesis {
-		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cnight-genesis.json"));
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/cnight-config.json"));
 		serde_json::from_str(&config_str).unwrap()
 	}
 
@@ -60,17 +64,29 @@ impl MidnightNetwork for UndeployedNetwork {
 		serde_json::from_str(&config_str).unwrap()
 	}
 
+	fn ics_config(&self) -> IcsConfig {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/ics-config.json"));
+		serde_json::from_str(&config_str).unwrap()
+	}
+
 	fn genesis_utxo(&self) -> &str {
 		"c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
 	}
 
 	fn main_chain_scripts(&self) -> super::MainChainScripts {
-		let pc_chain_config_str =
-			String::from_utf8_lossy(include_bytes!("../../dev/pc-chain-config.json"));
+		let registered_candidates_str = String::from_utf8_lossy(include_bytes!(
+			"../../dev/registered-candidates-addresses.json"
+		));
+		let registered_candidates: RegisteredCandidatesAddresses =
+			serde_json::from_str(&registered_candidates_str).unwrap();
 
-		let pc_chain_config: serde_json::Value =
-			serde_json::from_str(&pc_chain_config_str).unwrap();
-		super::MainChainScripts::load_from_pc_chain_config(&pc_chain_config)
+		let permissioned_candidates_str = String::from_utf8_lossy(include_bytes!(
+			"../../dev/permissioned-candidates-config.json"
+		));
+		let permissioned_candidates: PermissionedCandidatesConfig =
+			serde_json::from_str(&permissioned_candidates_str).unwrap();
+
+		super::MainChainScripts::load_from_configs(&registered_candidates, &permissioned_candidates)
 	}
 }
 /// Used when `--chain` is not specified when running `build-spec` - it will source chain values from
@@ -87,6 +103,7 @@ pub struct CustomNetwork {
 	pub genesis_utxo: String,
 	pub federated_authority_config: FederatedAuthorityObservationConfig,
 	pub system_parameters_config: SystemParametersConfig,
+	pub ics_config: IcsConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -123,6 +140,10 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn system_parameters_config(&self) -> SystemParametersConfig {
 		self.system_parameters_config.clone()
+	}
+
+	fn ics_config(&self) -> IcsConfig {
+		self.ics_config.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {

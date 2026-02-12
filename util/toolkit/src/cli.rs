@@ -8,6 +8,7 @@ use crate::commands::{
 	generate_txs::{self, GenerateTxsArgs},
 	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
+	root_call::{self, RootCallArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::ShowAddress,
 	show_address::{self, ShowAddressArgs},
@@ -83,6 +84,12 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Execute a call through governance with Root origin
+	///
+	/// This command allows executing arbitrary runtime calls through the federated authority
+	/// governance mechanism. It requires private keys from both Council and Technical Committee
+	/// members to vote and approve the motion.
+	RootCall(RootCallArgs),
 	/// Get the version information
 	Version,
 	/// Fetch
@@ -225,6 +232,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::RootCall(args) => {
+			root_call::execute(args).await?;
 			Ok(())
 		},
 		Commands::Fetch(FetchArgs { src }) => {

@@ -179,7 +179,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --contract-address $contract_address \
     --output-intent "/out/$reset_intent_filename" \
     --output-private-state "/out/$reset_private_state_filename" \
-    --output-zswap-state "temp.json" \
+    --output-zswap-state "/out/temp.json" \
     reset
 
 # After "Generate circuit call intent reset" the private state must be {"count":0}

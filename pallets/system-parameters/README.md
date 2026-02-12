@@ -53,3 +53,22 @@ JSON-RPC endpoints are available for external queries:
 
 - `systemParameters_getTermsAndConditions`: Returns Terms and Conditions with hex-encoded hash
 - `systemParameters_getDParameter`: Returns the D-Parameter values
+- `systemParameters_getAriadneParameters(epoch_number, d_parameter_at?)`: Returns Ariadne parameters for a mainchain epoch, with D Parameter sourced from on-chain storage instead of Cardano
+
+### Ariadne Parameters Endpoint
+
+The `getAriadneParameters` endpoint returns the same response schema as `sidechain_getAriadneParameters` but sources the D Parameter from `pallet-system-parameters` on-chain storage. This endpoint should be used instead of the deprecated `sidechain_getAriadneParameters` which reads D Parameter from Cardano.
+
+**Parameters:**
+- `epoch_number` (required): The mainchain epoch number to query candidates for
+- `d_parameter_at` (optional): Block hash to query D Parameter from. If not provided, uses the best (latest) block. This is useful when querying historical epoch data and you want the D Parameter value that was in effect at a specific block.
+
+**Response includes:**
+- **d_parameter**: D Parameter from on-chain pallet storage
+- **permissioned_candidates**: Permissioned candidate data from Cardano
+- **candidate_registrations**: Registered candidate data from Cardano
+- **d_parameter_block_info**: Metadata about the block from which D Parameter was fetched
+  - `block_hash`: The block hash used to query D Parameter
+  - `block_number`: The block number used to query D Parameter
+
+The `d_parameter_block_info` field ensures transparency about data provenance, especially when mixing historical epoch data from Cardano with on-chain D Parameter values.

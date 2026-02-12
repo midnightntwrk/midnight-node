@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_in_result)]
+
 use frame_support::sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},
@@ -19,8 +21,10 @@ use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
 use midnight_primitives::MidnightSystemTransactionExecutor;
 use sidechain_domain::*;
+#[cfg(feature = "std")]
 use sp_io::TestExternalities;
 use sp_runtime::testing::H256;
+#[cfg(feature = "std")]
 use std::sync::{LazyLock, Mutex};
 
 type AccountId = u64;

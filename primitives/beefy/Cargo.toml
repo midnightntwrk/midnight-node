@@ -10,9 +10,8 @@ license-file.workspace = true
 parity-scale-codec.workspace = true
 
 sp-api.workspace = true
-sp-consensus-beefy.workspace = true 
+sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
-sp-std.workspace = true
 
 
 
@@ -23,5 +22,4 @@ std = [
     "sp-api/std",
     "sp-consensus-beefy/std",
     "sp-runtime/std",
-    "sp-std/std"
 ]

@@ -16,11 +16,13 @@ import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { runtimeUpgrade } from "./commands/runtimeUpgrade";
+import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { snapshot } from "./commands/snapshot";
 import {
   RunOptions,
   ImageUpgradeOptions,
   RuntimeUpgradeOptions,
+  FederatedRuntimeUpgradeOptions,
   SnapshotOptions,
 } from "./lib/types";
 
@@ -37,6 +39,7 @@ interface ImageUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   fromSnapshot?: string;
+  waitBefore?: number;
 }
 
 interface RuntimeUpgradeCliOpts {
@@ -44,6 +47,18 @@ interface RuntimeUpgradeCliOpts {
   rpcUrl?: string;
   sudoUri?: string;
   delayBlocks?: number;
+  profiles?: string[];
+  envFile?: string[];
+  skipRun?: boolean;
+  fromSnapshot?: string;
+}
+
+interface FederatedRuntimeUpgradeCliOpts {
+  wasm: string;
+  rpcUrl?: string;
+  councilUris: string[];
+  technicalUris: string[];
+  executorUri: string;
   profiles?: string[];
   envFile?: string[];
   skipRun?: boolean;
@@ -124,6 +139,11 @@ program
     parseInt,
   )
   .option(
+    "--wait-before <ms>",
+    "Wait time before starting any service upgrades in ms (default 30000)",
+    parseInt,
+  )
+  .option(
     "--health-timeout <sec>",
     "Max seconds to wait for health per service (default 180)",
     parseInt,
@@ -149,6 +169,7 @@ program
       excludePattern: cliOpts.exclude,
       profiles,
       envFile: cliOpts.envFile,
+      waitBeforeMs: cliOpts.waitBefore,
       waitBetweenMs: cliOpts.waitBetween ?? 5000,
       healthTimeoutSec: cliOpts.healthTimeout ?? 180,
       requireHealthy: cliOpts.requireHealthy !== false,
@@ -211,6 +232,79 @@ program
     };
 
     await runtimeUpgrade(network, opts);
+  });
+
+program
+  .command("governance-runtime-upgrade <network>")
+  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .requiredOption(
+    "--council-uris <uri...>",
+    "Space-separated sr25519 URIs for council proposers and voters (min 2)",
+  )
+  .requiredOption(
+    "--technical-uris <uri...>",
+    "Space-separated sr25519 URIs for technical committee proposers and voters (min 2)",
+  )
+  .requiredOption(
+    "--executor-uri <uri>",
+    "Key URI used to close the federated motion and apply the authorized upgrade",
+  )
+  .option(
+    "--rpc-url <url>",
+    "WebSocket RPC endpoint (default ws://localhost:9944)",
+  )
+  .option(
+    "--skip-run",
+    "Do not ensure docker-compose is running before upgrading",
+  )
+  .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
+  .option("--env-file <path...>", "specify one or more env files")
+  .option(
+    "--from-snapshot <id>",
+    "Restore a bootnode snapshot before launching services",
+  )
+  .description(
+    "Execute a governance-approved runtime upgrade using the federated-authority pallet",
+  )
+  .action(async (network: string, cliOpts: FederatedRuntimeUpgradeCliOpts) => {
+    const profiles = cliOpts.profiles
+      ?.map((s: string) => s.trim())
+      .filter(Boolean);
+    const councilUris = (cliOpts.councilUris || [])
+      .map((uri: string) => uri.trim())
+      .filter(Boolean);
+    const techUris = (cliOpts.technicalUris || [])
+      .map((uri: string) => uri.trim())
+      .filter(Boolean);
+    const executorUri = cliOpts.executorUri?.trim();
+
+    if (councilUris.length < 2) {
+      throw new Error(
+        "At least two council URIs are required to satisfy the approval threshold.",
+      );
+    }
+    if (techUris.length < 2) {
+      throw new Error(
+        "At least two technical committee URIs are required to satisfy the approval threshold.",
+      );
+    }
+    if (!executorUri) {
+      throw new Error("executor-uri is required and cannot be empty");
+    }
+
+    const opts: FederatedRuntimeUpgradeOptions = {
+      wasmPath: cliOpts.wasm,
+      rpcUrl: cliOpts.rpcUrl,
+      skipRun: cliOpts.skipRun,
+      profiles,
+      envFile: cliOpts.envFile,
+      fromSnapshot: cliOpts.fromSnapshot,
+      councilUris,
+      techCommitteeUris: techUris,
+      motionExecutorUri: executorUri,
+    };
+
+    await federatedRuntimeUpgrade(network, opts);
   });
 
 program.parse();

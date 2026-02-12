@@ -4,6 +4,8 @@ on:
   merge_group:
   pull_request:
     branches: ["**"]
+    paths-ignore:
+      - "changes/**"
   push:
     branches: ["main"]
 concurrency:
@@ -12,6 +14,7 @@ concurrency:
 jobs:
   run:
     name: cargo audit job
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
@@ -23,7 +26,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Run cargo deny and npm audit
         run: |
@@ -53,13 +56,13 @@ jobs:
           sarif_file: scan_reports/npm-audit-local-environment.sarif
           category: npm-audit-local-environment
 
-      - name: Upload npm-audit-toolkit-js SARIF
+      - name: Upload npm-audit-node-toolkit-js SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
         if: (success() || failure()) && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-toolkit-js.sarif
-          category: npm-audit-toolkit-js
+          category: npm-audit-node-toolkit-js
 
       - name: Upload npm-audit-ui-tests SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a

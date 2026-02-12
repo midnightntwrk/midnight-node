@@ -274,7 +274,7 @@ impl BuildTxs for BatchesBuilder {
 
 		tx_info.set_intents(initial_unshielded_offer_intents);
 
-		tx_info.set_wallet_seeds(inputs_wallet_seeds.clone());
+		tx_info.set_funding_seeds(inputs_wallet_seeds.clone());
 		tx_info.use_mock_proofs_for_fees(true);
 
 		let initial_tx = tx_info.prove().await.expect("Balancing TX failed");
@@ -414,7 +414,7 @@ impl BuildTxs for BatchesBuilder {
 					tx_info.add_intent(Segment::Fallible.into(), Box::new(intent_info));
 
 					// TODO: should the senders pay for this?
-					tx_info.set_wallet_seeds(inputs_wallet_seeds.clone());
+					tx_info.set_funding_seeds(inputs_wallet_seeds.clone());
 					tx_info.use_mock_proofs_for_fees(true);
 
 					tokio::task::spawn(async move {

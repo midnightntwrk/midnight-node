@@ -89,6 +89,7 @@ mod test {
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			ignore_block_context: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 		};
 

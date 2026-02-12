@@ -143,7 +143,7 @@ pub async fn execute(
 				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
 				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
-			let input_zswap_state = if args.source_wallet.wallet_seed.is_some() {
+			let input_zswap_state = if let Some(wallet_seed) = args.source_wallet.wallet_seed {
 				let Some(source) = args.source_wallet.source else {
 					println!("wallet_seed is present, but source is missing!");
 					return Err(GenerateIntentError::MissingSource.into());
@@ -151,7 +151,7 @@ pub async fn execute(
 				println!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
 					source,
-					args.source_wallet.wallet_seed.unwrap(),
+					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
 				)
@@ -219,7 +219,6 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_deploy() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -257,7 +256,6 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_circuit_call() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -316,7 +314,6 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "ignore-compact-0.27"]
 	async fn test_generate_maintain_contract() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
@@ -409,7 +406,7 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[ignore = "ignore-compact-0.27"]
+	#[ignore = "test failing intermittently - reason unknown"]
 	async fn test_generate_maintain_remove_circuit() {
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();

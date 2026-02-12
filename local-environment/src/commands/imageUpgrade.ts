@@ -73,6 +73,11 @@ export async function imageUpgrade(
 
   console.log(`Rollout order: ${services.join(", ")}`);
 
+  if (opts.waitBeforeMs) {
+    console.log("Waiting ", opts.waitBeforeMs, " ms before beginning upgrade")
+    await sleep(opts.waitBeforeMs)
+  }
+
   console.log(
     `Rolling services from tag ${fromTag} → ${toTag} via ${imageEnvVar}`,
   );
@@ -81,7 +86,7 @@ export async function imageUpgrade(
     env[imageEnvVar] = toTag;
 
     // Important: only re-create this one service, do not bounce dependencies
-    await dockerCompose(["-f", composeFile, "up", "-d", "--no-deps", svc], {
+    await dockerCompose(["-f", composeFile, "up", "-d", "--no-deps  --force-recreate", svc], {
       env,
       profiles: opts.profiles,
     });

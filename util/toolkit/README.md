@@ -40,6 +40,7 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Unit + integration tests                                             | ✅       |
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
+| Execute calls via governance (root-call)                             | ✅       |
 | DUST registration command                                            | 🚧       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
 | Support for Ledger forks                                             | ⏳       |
@@ -125,7 +126,7 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
 Dry-run: local prover (no proof server)
@@ -170,7 +171,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC: "ws://127.0.0.1:9944"
+Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
 Dry-run: Destination rate: 1.0 TPS
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
@@ -332,7 +333,7 @@ $ midnight-node-toolkit send-intent --dry-run
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "out/mint_intent.bin"
 >   --intent-file "out/recieveAndSend_intent.bin"
->   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
+>   --compiled-contract-dir ../toolkit-js/test/minter_contract/out
 >   --to-bytes
 >   --dest-file "/out/mint_tx.mn"
 ...
@@ -459,6 +460,20 @@ midnight-node-toolkit \
     --destination-dust "mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y"
 ```
 
+### Deregister DUST Address
+
+- Deregister (unlink) a wallet's DUST address mapping. This is useful when migrating to a new DUST address, cleaning up test registrations, or revoking access before rotating wallet keys.
+
+```bash
+midnight-node-toolkit \
+    generate-txs \
+    --src-url "wss://rpc.qanet.dev.midnight.network" \
+    --dest-url "wss://rpc.qanet.dev.midnight.network" \
+    deregister-dust-address \
+    --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
+```
+
 ---
 
 ### Get a serialized `Transaction` from a serialized `TransactionWithContext`
@@ -475,6 +490,18 @@ $ midnight-node-toolkit get-tx-from-context
 ```shell
 midnight-node-toolkit generate-genesis --network <network_name>
 ```
+
+#### Custom Ledger Parameters
+You can optionally provide a JSON file with custom ledger parameters to use instead of the default `INITIAL_PARAMETERS`:
+
+```shell
+midnight-node-toolkit generate-genesis \
+    --network <network_name> \
+    --seeds-file /path/to/seeds.json \
+    --ledger-parameters-config /path/to/ledger-parameters-config.json
+```
+
+The `ledger-parameters-config.json` file should contain a JSON representation of the `LedgerParameters` struct. Default config files with the initial parameters are available in `res/<network>/ledger-parameters-config.json`.
 
 ---
 
@@ -531,6 +558,45 @@ Update parameters based on a serialized value:
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
+### Root Call (Execute Call via Governance)
+Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
+
+The command requires private keys from both Council and Technical Committee members to vote and approve the motion.
+
+```bash
+midnight-node-toolkit root-call \
+    --council-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --tc-keys <HEX_PRIVATE_KEY_1> <HEX_PRIVATE_KEY_2> [...] \
+    --encoded-call <HEX_ENCODED_CALL>
+```
+
+Parameters:
+- `--council-keys`: Council member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--tc-keys`: Technical Committee member private keys as hex strings (32-byte sr25519 seeds). At least 2 required for 2/3 threshold voting.
+- `--encoded-call`: The SCALE-encoded runtime call as a hex string (e.g., `0x00000400`)
+- `--encoded-call-file`: Alternative to `--encoded-call`, path to a file containing the encoded call hex string
+- `--rpc-url`: RPC URL of the node (defaults to `ws://127.0.0.1:9944`, can also be set via `RPC_URL` env var)
+
+Example:
+```bash
+midnight-node-toolkit root-call \
+    --council-keys 0x42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842 \
+                   0x868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246 \
+    --tc-keys 0x398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89 \
+              0xbc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938 \
+    --encoded-call 0x00000400
+```
+
+The command will:
+1. Decode and validate the encoded call
+2. Create a Council proposal for `FederatedAuthority::motion_approve`
+3. Have Council members vote on the proposal
+4. Close the Council proposal
+5. Create a Technical Committee proposal for the same motion
+6. Have TC members vote on the proposal
+7. Close the TC proposal
+8. Close the federated motion to execute the call with Root origin
+
 ---
 
 ### Show Wallet (JSON output)
@@ -544,12 +610,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "8e3345d0caee58c05089867103bb00e65ee700a450a07fea1bd5d8dea663f18b#0",
-      "initial_nonce": "be30b169172619661009a4512c548f1c91553bd26b4e74521f9c41035f98e84e",
+      "id": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a#0",
+      "initial_nonce": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
       "value": 500000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "8e3345d0caee58c05089867103bb00e65ee700a450a07fea1bd5d8dea663f18b",
+      "intent_hash": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a",
       "output_number": 0
     },
 ...
@@ -587,7 +653,8 @@ $ midnight-node-toolkit dust-balance
   "source": {
 ...
   },
-  "total": 12500000000000000000000000
+  "total": 12500000000000000000000000,
+  "capacity": 12500000000000000000000000
 }
 
 ```

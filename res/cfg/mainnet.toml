@@ -1,0 +1,26 @@
+# Commented out to skip `check_all_chainspec_integrity()` until the chain-spec-raw.json exists
+#chain = "res/mainnet/chain-spec-raw.json"
+base_path = "node/chain"
+
+chainspec_name = "Midnight Mainnet"
+chainspec_id = "midnight"
+chainspec_genesis_state = "res/genesis/genesis_state_mainnet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_mainnet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/mainnet/pc-chain-config.json"
+chainspec_cnight_genesis = "res/mainnet/cnight-config.json"
+chainspec_ics_config = "res/mainnet/ics-config.json"
+chainspec_federated_authority_config = "res/mainnet/federated-authority-config.json"
+chainspec_system_parameters_config = "res/mainnet/system-parameters-config.json"
+chainspec_permissioned_candidates_config = "res/mainnet/permissioned-candidates-config.json"
+chainspec_registered_candidates_addresses = "res/mainnet/registered-candidates-addresses.json"
+
+cardano_security_parameter = 2160
+cardano_active_slots_coeff = 0.05
+block_stability_margin = 10
+
+mc__first_epoch_timestamp_millis = 1596059091000
+mc__first_epoch_number = 208
+mc__epoch_duration_millis = 432000000
+mc__first_slot_number = 4492800
+mc__slot_duration_millis = 1000

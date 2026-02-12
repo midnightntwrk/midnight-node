@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 
@@ -11,10 +13,10 @@ pub mod pallet {
 		LedgerBlockContextProvider, LedgerStateProviderMut, MidnightSystemTransactionExecutor,
 	};
 
+	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
 		Hash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use sp_std::vec::Vec;
 
 	use super::*;
 

@@ -41,12 +41,16 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 		let recipient: Recipient = self.encoded_output.recipient.clone().into();
 
 		match recipient {
-			Recipient::User(public_key) => {
-				Output::new(rng, &coin_info, self.segment, &public_key, self.encryption_public_key)
-					.expect("failed to construct output")
-			},
+			Recipient::User(public_key) => Output::new(
+				rng,
+				&coin_info,
+				Some(self.segment),
+				&public_key,
+				self.encryption_public_key,
+			)
+			.expect("failed to construct output"),
 			Recipient::Contract(contract_address) => {
-				Output::new_contract_owned(rng, &coin_info, self.segment, contract_address)
+				Output::new_contract_owned(rng, &coin_info, Some(self.segment), contract_address)
 					.expect("failed to construct output")
 			},
 		}

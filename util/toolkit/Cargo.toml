@@ -16,11 +16,13 @@ hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 
 [dependencies]
-midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils"] }
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
 midnight-node-metadata.workspace = true
+midnight-primitives-ics-observation = { workspace = true, default-features = true }
 subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
+sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand.workspace = true
@@ -33,23 +35,27 @@ backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv"] }
 structured-logger = "1.0.3"
 async-trait = "0.1.87"
-reqwest = "0.11.27"
 toml.workspace = true
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
 sp-crypto-hashing.workspace = true
+subxt-signer.workspace = true
 async-channel = "2.5.0"
 num_cpus = "1.17.0"
 redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+zstd = "0.13"
 
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
 trycmd = "0.15.10"
+testcontainers = "0.25"
+serde_yaml = "0.9"
+shellexpand = "3"
 
 [lints]
 workspace = true

@@ -91,6 +91,7 @@ where
 				src_files.clone(),
 				extension.to_string(),
 				src.dust_warp,
+				src.ignore_block_context,
 			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
@@ -132,17 +133,18 @@ where
 
 		// ------ accept multiple urls ------
 		let mut dests = vec![];
-		for url in dest.dest_urls {
-			if dry_run {
-				println!("Dry-run: Destination RPC: {:?}", &url);
-				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
-				continue;
-			}
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::<S, P>::new(url.clone(), dest.rate));
-
-			dests.push(destination);
+		if dry_run {
+			println!("Dry-run: Destination RPC(s): {:?}", &dest.dest_urls);
+			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
+
+		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+		));
+
+		dests.push(destination);
 
 		Ok(dests)
 	}
@@ -177,15 +179,19 @@ where
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
 
-		// send transactions concurrently; no waiting needed for prev async calls
 		let results = futures::future::join_all(sends_txs_futs).await;
 
-		for result in results.iter() {
+		let mut any_failed = false;
+		for result in results {
 			if let Err(e) = result {
 				println!("ERROR: {e}");
+				any_failed = true;
 			}
 		}
 
+		if any_failed {
+			return Err("one or more destination tasks failed".into());
+		}
 		Ok(())
 	}
 

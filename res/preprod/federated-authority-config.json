@@ -1,30 +1,30 @@
 {
     "council": {
-        "address": "addr_test1wpfywxjxl0wdynjnccut556vkncg0xw90xr2xgchx7qg45c6qg50c",
-        "policy_id": "52471a46fbdcd24e53c638ba534cb4f08799c57986a3231737808ad3",
+        "address": "addr_test1wz76eeh439esrzt00h4m7kecd45e0ez43sfrw7lrajeze6qamp2sp",
+        "policy_id": "bdace6f5897301896f7debbf5b386d6997e4558c12377be3ecb22ce8",
         "members": [
             "0xcccd6dbd01b95948f56bb84ad441f29608b12b3694a2a71ce4ba0fa8c07f7f4b",
             "0x12165fdd275029f4812daa0ba8bf416aea14c62db1e4223ff427b81f50ccac61",
             "0x0e2ef42425883ac46002962a5201ea7bbbe40dc8d8542ec148d3ff32d5bbd71b"
         ],
         "members_mainchain": [
-            "e3eacc2ba7a0ff8ae8d5287a8e275beb1b7d1e5f6f22394c4445b082",
-            "a5c6df408abdbc522a67cc976e17b44aa8e2ef9388c0e58846c0eea4",
-            "1cacdd48fb7e7284ca654465fa78a2c2b2c1c066285d515e3a80472d"
+            "f932cb4c0de84606b3da87214324887270f5fb0e04a6870dc7df5f23",
+            "1ef4e15cba8217811b9a9b2a7ec4a24a110418a38c2a9f0ae7127e04",
+            "8585125fa41171f55c23cdadc3d0ad3692be927c6ed1b92d1f048335"
         ]
     },
     "technical_committee": {
-        "address": "addr_test1wpn7h9gtlkszq6n9gaacak3tdlxjxncth86xnuaqmrg86ns359jgs",
-        "policy_id": "67eb950bfda0206a65477b8eda2b6fcd234f0bb9f469f3a0d8d07d4e",
+        "address": "addr_test1wp3fqhht7q4kqz5vtadn607p0kh0c7kask5javqyzk96uac8ua2lc",
+        "policy_id": "62905eebf02b600a8c5f5b3d3fc17daefc7add85a92eb004158bae77",
         "members": [
             "0xde2306334193be59122367e5a774769e59de84baacfd8e136fba8e18dbcd0833",
             "0x8c457a4b2383443ff5b30420aea92bfca65971fd0b76d21715529e4e8192be1d",
             "0xf6aa16d4c6892575af371fd14e1e40a7c4675876e8f331e2e2466a28e950765f"
         ],
         "members_mainchain": [
-            "b94a81871da164637b2130e06434c300ba2d3088268f8098a7ddf246",
-            "de14ef01854d8f2204e0af3c97bd1ace0792508d397c957b010b1b70",
-            "1191edfe590263a7761be92d7e3d3d8248f28a50d4103405fef01ae6"
+            "3958ae4a79fa36f52c9e0f5fab7aac2d4c4446a290b44e2d2f53d387",
+            "c6f2de5adbbf0b77adcc6883d562a4f5a535017eaedc6804c5e55b33",
+            "a7b42151bbc97e9ecd40f454d6dd0a24cf3e579c675f6552bd059c82"
         ]
     }
 }

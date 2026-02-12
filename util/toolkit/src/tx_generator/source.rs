@@ -95,6 +95,9 @@ pub struct Source {
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
+	/// Ignore block context. Useful when using `send` subcommand
+	#[arg(long, conflicts_with = "src_url", global = true)]
+	pub ignore_block_context: bool,
 	/// Spend DUST with timestamp as system time rather than the previous block timestamp. Useful
 	/// if loading from a genesis file, but may result in invalid proofs when connected to a live
 	/// chain
@@ -108,10 +111,13 @@ pub struct Source {
 		default_value = "redb:toolkit.db",
 		env = "MN_FETCH_CACHE"
 	)]
-	/// Fetch cache config. Available options:
-	/// - "inmemory" (i.e. no cache),
+	/// Fetch cache config. Caches both block data and wallet state.
+	/// Available options:
+	/// - "inmemory" (RAM-only, no persistence),
 	/// - "redb:<filename>" (file-cache, single-writer)
 	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
+	///
+	/// When using redb or postgres backends, wallet state is also cached to speed up subsequent runs.
 	pub fetch_cache: FetchCacheConfig,
 }
 
@@ -131,6 +137,10 @@ pub enum SourceError {
 	NetworkIdFetchError(#[from] subxt::Error),
 	#[error("invalid source args")]
 	InvalidSourceArgs(Source),
+	#[error(
+		"toolkit only supports a single .json transaction as input - use `--to-bytes` and `.mn` format for multiple txs"
+	)]
+	TooManyJsonInputs,
 }
 
 #[async_trait]
@@ -162,6 +172,7 @@ pub struct GetTxsFromFile<S, P> {
 	files: Vec<String>,
 	extension: String,
 	dust_warp: bool,
+	ignore_block_context: bool,
 	_marker_p: PhantomData<P>,
 	_marker_s: PhantomData<S>,
 }
@@ -174,8 +185,20 @@ where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub fn new(files: Vec<String>, extension: String, dust_warp: bool) -> Self {
-		Self { files, extension, dust_warp, _marker_p: PhantomData, _marker_s: PhantomData }
+	pub fn new(
+		files: Vec<String>,
+		extension: String,
+		dust_warp: bool,
+		ignore_block_context: bool,
+	) -> Self {
+		Self {
+			files,
+			extension,
+			dust_warp,
+			ignore_block_context,
+			_marker_p: PhantomData,
+			_marker_s: PhantomData,
+		}
 	}
 
 	fn txs_from_files(
@@ -183,6 +206,9 @@ where
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
 		if self.extension == "json" {
 			// For json extension, we only handle 1 file
+			if self.files.len() > 1 {
+				return Err(Box::new(SourceError::TooManyJsonInputs));
+			}
 			let file = File::open(&self.files[0])?;
 			let loaded_txs: SerializedTransactionsWithContext = serde_json::from_reader(file)?;
 			let mut txs: Vec<TransactionWithContext<S, P, DefaultDB>> =
@@ -204,7 +230,11 @@ where
 					})?;
 				txs.append(&mut file_txs);
 			}
-			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
+			if self.ignore_block_context {
+				Ok(SourceTransactions::from_txs_with_context_ignored(txs))
+			} else {
+				Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
+			}
 		}
 	}
 }
@@ -289,8 +319,12 @@ where
 					.expect("time has run backwards")
 					.as_secs(),
 			);
-			let context =
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			let context = BlockContext {
+				tblock: now,
+				tblock_err: 30,
+				parent_block_hash: Default::default(),
+				last_block_time: now,
+			};
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),

@@ -18,11 +18,12 @@ use frame_support::sp_runtime::{
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
 use sidechain_domain::*;
-use sp_io::TestExternalities;
 use sp_runtime::testing::H256;
 
 #[cfg(feature = "std")]
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+#[cfg(feature = "std")]
+use sp_io::TestExternalities;
 
 type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -159,7 +160,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: UndeployedNetwork.id().to_string(),
-			genesis_state_key: midnight_node_ledger::get_root(UndeployedNetwork.genesis_state()),
+			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+				UndeployedNetwork.genesis_state(),
+			),
 		},
 	}
 	.build_storage()

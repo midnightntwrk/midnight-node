@@ -17,9 +17,13 @@ use config::{Config, ConfigError, Environment, File, FileFormat};
 use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
-	networks::{CustomNetwork, InitialAuthorityData, MainChainScripts, UndeployedNetwork},
+	networks::{
+		CustomNetwork, MainChainScripts, PermissionedCandidatesConfig,
+		RegisteredCandidatesAddresses, UndeployedNetwork,
+	},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
+use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
@@ -35,7 +39,6 @@ use self::{
 
 type CfgSourcesMap = BTreeMap<&'static str, config::Config>;
 
-pub mod addresses;
 pub mod chain_spec_cfg;
 pub mod meta_cfg;
 pub mod midnight_cfg;
@@ -83,7 +86,7 @@ impl SubstrateCli for Cfg {
 	}
 
 	fn support_url() -> String {
-		"support.anonymous.an".into()
+		"https://github.com/midnightntwrk/midnight-node/issues".into()
 	}
 
 	fn copyright_start_year() -> i32 {
@@ -97,34 +100,78 @@ impl SubstrateCli for Cfg {
 		let maybe_chain_spec = match id {
 			"" => {
 				// Midnight-specific pre-generated genesis values
-				let genesis_block =
-					std::fs::read(self.chain_spec_cfg.chainspec_genesis_block.as_ref().unwrap())
-						.map_err(|e| format!("failed to read genesis_block: {e}"))?;
-				let genesis_state =
-					std::fs::read(self.chain_spec_cfg.chainspec_genesis_state.as_ref().unwrap())
-						.map_err(|e| format!("failed to read genesis_state: {e}"))?;
+				let genesis_block = std::fs::read(
+					self.chain_spec_cfg
+						.chainspec_genesis_block
+						.as_ref()
+						.ok_or("chainspec_genesis_block not configured")?,
+				)
+				.map_err(|e| format!("failed to read genesis_block: {e}"))?;
+				let genesis_state = std::fs::read(
+					self.chain_spec_cfg
+						.chainspec_genesis_state
+						.as_ref()
+						.ok_or("chainspec_genesis_state not configured")?,
+				)
+				.map_err(|e| format!("failed to read genesis_state: {e}"))?;
 
 				let pc_chain_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_pc_chain_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_pc_chain_config
+						.as_ref()
+						.ok_or("chainspec_pc_chain_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read pc chain config: {e}"))?;
 
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
+				// Load permissioned candidates config
+				let permissioned_candidates_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg
+						.chainspec_permissioned_candidates_config
+						.as_ref()
+						.ok_or("chainspec_permissioned_candidates_config not configured")?,
+				)
+				.map_err(|e| format!("failed to read permissioned candidates config: {e}"))?;
+
+				let permissioned_candidates_config: PermissionedCandidatesConfig =
+					serde_json::from_str(&permissioned_candidates_config_str).map_err(|e| {
+						format!("failed to parse permissioned candidates config: {e}")
+					})?;
+
+				// Load registered candidates addresses
+				let registered_candidates_addresses_str = std::fs::read_to_string(
+					self.chain_spec_cfg
+						.chainspec_registered_candidates_addresses
+						.as_ref()
+						.ok_or("chainspec_registered_candidates_addresses not configured")?,
+				)
+				.map_err(|e| format!("failed to read registered candidates addresses: {e}"))?;
+
+				let registered_candidates_addresses: RegisteredCandidatesAddresses =
+					serde_json::from_str(&registered_candidates_addresses_str).map_err(|e| {
+						format!("failed to parse registered candidates addresses: {e}")
+					})?;
+
 				let initial_authorities =
-					InitialAuthorityData::load_from_pc_chain_config(&pc_chain_config);
+					permissioned_candidates_config.initial_permissioned_candidates.clone();
 
 				let cnight_genesis_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_cnight_genesis.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_cnight_genesis
+						.as_ref()
+						.ok_or("chainspec_cnight_genesis not configured")?,
 				)
 				.map_err(|e| format!("failed to read cnight-genesis: {e}"))?;
 
 				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
 					.map_err(|e| format!("failed to read cnight-genesis as json: {e}"))?;
 
-				let main_chain_scripts =
-					MainChainScripts::load_from_pc_chain_config(&pc_chain_config);
+				let main_chain_scripts = MainChainScripts::load_from_configs(
+					&registered_candidates_addresses,
+					&permissioned_candidates_config,
+				);
 
 				let genesis_utxo = pc_chain_config
 					.get("chain_parameters")
@@ -132,7 +179,10 @@ impl SubstrateCli for Cfg {
 					.ok_or("failed to find genesis_utxo in pc_chain_config".to_string())?;
 
 				let federated_authority_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_federated_authority_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_federated_authority_config
+						.as_ref()
+						.ok_or("chainspec_federated_authority_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
 
@@ -142,7 +192,10 @@ impl SubstrateCli for Cfg {
 					})?;
 
 				let system_parameters_config_str = std::fs::read_to_string(
-					self.chain_spec_cfg.chainspec_system_parameters_config.as_ref().unwrap(),
+					self.chain_spec_cfg
+						.chainspec_system_parameters_config
+						.as_ref()
+						.ok_or("chainspec_system_parameters_config not configured")?,
 				)
 				.map_err(|e| format!("failed to read system_parameters_config: {e}"))?;
 
@@ -150,18 +203,45 @@ impl SubstrateCli for Cfg {
 					serde_json::from_str(&system_parameters_config_str)
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
+				let ics_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg
+						.chainspec_ics_config
+						.as_ref()
+						.ok_or("chainspec_ics_config not configured")?,
+				)
+				.map_err(|e| format!("failed to read ics_config: {e}"))?;
+
+				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
+					.map_err(|e| format!("failed to parse IcsConfig: {e}"))?;
+
 				let network: CustomNetwork = CustomNetwork {
-					name: self.chain_spec_cfg.chainspec_name.as_ref().unwrap().clone(),
-					id: self.chain_spec_cfg.chainspec_id.as_ref().unwrap().clone(),
+					name: self
+						.chain_spec_cfg
+						.chainspec_name
+						.as_ref()
+						.ok_or("chainspec_name not configured")?
+						.clone(),
+					id: self
+						.chain_spec_cfg
+						.chainspec_id
+						.as_ref()
+						.ok_or("chainspec_id not configured")?
+						.clone(),
 					genesis_block,
 					genesis_state,
 					initial_authorities,
 					cnight_genesis,
-					chain_type: self.chain_spec_cfg.chainspec_chain_type.as_ref().unwrap().clone(),
+					chain_type: self
+						.chain_spec_cfg
+						.chainspec_chain_type
+						.as_ref()
+						.ok_or("chainspec_chain_type not configured")?
+						.clone(),
 					main_chain_scripts,
 					genesis_utxo: genesis_utxo.to_string(),
 					federated_authority_config,
 					system_parameters_config,
+					ics_config,
 				};
 				chain_config(network)
 			},
@@ -322,7 +402,7 @@ impl Cfg {
 
 	pub fn render_help<T: std::io::Write>(mut buf: T) -> Result<(), CfgError> {
 		let all_config = Self::get_all_config()?;
-		let meta_cfg: MetaCfg = all_config.clone().try_deserialize().unwrap();
+		let meta_cfg: MetaCfg = all_config.clone().try_deserialize()?;
 		let show_secrets = meta_cfg.show_secrets;
 
 		Self::render_header(&mut buf, "ChainSpecCfg")?;

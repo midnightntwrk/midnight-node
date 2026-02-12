@@ -11,12 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 use frame_support::traits::{
 	ChangeMembers, InitializeMembers, SortedMembers, UnfilteredDispatchable,
 };
 use pallet_collective::{DefaultVote, MemberCount};
 use sp_runtime::traits::Dispatchable;
-use sp_std::{marker::PhantomData, vec::Vec};
 
 /// Wrapper struct to handle frame_system sufficients and delegate
 /// `InitializeMembers` and `ChangeMembers` calls to `P`.

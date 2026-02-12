@@ -32,11 +32,11 @@ rm register-$1-signed.tx 2>/dev/null
 # Build transaction body, fees included
 cardano-cli conway transaction build \
   --tx-in $UTXO \
-  --tx-out $(< mapping_validator.addr)+"2000000 lovelace + 1 $(< auth_token.hash)" \
+  --tx-out $(< mapping_validator.addr)+"2000000 lovelace + 1 $(< mapping_validator.hash)" \
   --tx-out-inline-datum-file datum-$1.json \
   --tx-in-collateral $COLLATERAL \
-  --mint="1 $(< auth_token.hash)" \
-  --mint-script-file auth_token_policy.plutus \
+  --mint="1 $(< mapping_validator.hash)" \
+  --mint-script-file mapping_validator.plutus \
   --mint-redeemer-file register_red.json  \
   --change-address $(< payment-$1.addr) \
   --required-signer-hash $USER_PKH \

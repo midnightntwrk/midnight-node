@@ -86,6 +86,20 @@ pub struct MidnightCfg {
 
 	/// Allow non-SSL database connections (not recommended for production)
 	pub allow_non_ssl: bool,
+
+	/// URL of the Prometheus Remote Write endpoint to push metrics to.
+	/// Example: https://thanos.example.com/api/v1/receive
+	/// Supports Thanos Receive, Cortex, Mimir, and other remote write compatible endpoints.
+	/// If not set, metrics will only be available via the pull endpoint.
+	pub prometheus_push_endpoint: Option<String>,
+
+	/// Interval in seconds between metric pushes to the remote write endpoint.
+	/// Default: 15 seconds
+	pub prometheus_push_interval_secs: Option<u64>,
+
+	/// Job name label to include with pushed metrics.
+	/// Default: "midnight-node"
+	pub prometheus_push_job_name: Option<String>,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {

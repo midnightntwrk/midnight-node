@@ -26,6 +26,9 @@ pub enum RuntimeVersion {
 	V0_18_0,
 	V0_18_1,
 	V0_19_0,
+	V0_20_0,
+	V0_21_0,
+	V0_22_0,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -36,6 +39,9 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_018_000 => Ok(Self::V0_18_0),
 			000_018_001 => Ok(Self::V0_18_1),
 			000_019_000 => Ok(Self::V0_19_0),
+			000_020_000 => Ok(Self::V0_20_0),
+			000_021_000 => Ok(Self::V0_21_0),
+			000_022_000 => Ok(Self::V0_22_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -60,7 +66,6 @@ pub trait MidnightMetadata {
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn timestamp_set(call: &Self::Call) -> Option<u64>;
-	fn check_for_events(call: &Self::Call) -> bool;
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8>;
 }
 
@@ -109,10 +114,6 @@ macro_rules! impl_midnight_metadata {
 				}
 			}
 
-			fn check_for_events(call: &Self::Call) -> bool {
-				matches!(call, $meta_ident::Call::CNightObservation(_))
-			}
-
 			fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
 				event.0.serialized_system_transaction
 			}
@@ -142,6 +143,24 @@ impl_midnight_metadata!(
 	MidnightMetadata0_19_0,
 	mn_meta_0_19_0,
 	midnight_node_metadata::midnight_metadata_0_19_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata0_20_0,
+	mn_meta_0_20_0,
+	midnight_node_metadata::midnight_metadata_0_20_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata0_21_0,
+	mn_meta_0_21_0,
+	midnight_node_metadata::midnight_metadata_0_21_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata0_22_0,
+	mn_meta_0_22_0,
+	midnight_node_metadata::midnight_metadata_0_22_0
 );
 
 // Manually implement 0.17.0
@@ -185,10 +204,6 @@ impl MidnightMetadata for MidnightMetadata0_17_0 {
 		} else {
 			None
 		}
-	}
-
-	fn check_for_events(call: &Self::Call) -> bool {
-		matches!(call, mn_meta_0_17_0::Call::NativeTokenObservation(_))
 	}
 
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {

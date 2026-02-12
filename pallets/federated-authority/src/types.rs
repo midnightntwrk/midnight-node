@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::marker::PhantomData;
 use frame_support::traits::{EnsureOrigin, PalletInfoAccess};
-use sp_std::marker::PhantomData;
 
 pub type AuthId = u32;
 

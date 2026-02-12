@@ -99,6 +99,7 @@ mod test {
 			fetch_concurrency: 0,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			ignore_block_context: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
@@ -107,6 +108,7 @@ mod test {
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
 			to_bytes: false,
+			no_watch_progress: false,
 		};
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");

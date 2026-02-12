@@ -17,6 +17,7 @@ use crate::{
 	extensions::ExtensionsFactory,
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
+	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
 };
 use futures::FutureExt;
@@ -34,7 +35,6 @@ use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
-	resolve_state_version_from_wasm,
 };
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
@@ -47,13 +47,11 @@ use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
-use sp_runtime::{
-	BuildStorage,
-	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
-};
+use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
 use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
+	path::Path,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
@@ -62,6 +60,55 @@ use time_source::SystemTimeSource;
 pub struct StorageInit {
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
+}
+
+/// Initialize Ledger Storage based on the RuntimeVersion
+fn init_ledger_storage<P: AsRef<Path>>(
+	parity_db_path: P,
+	storage_config: &StorageInit,
+	runtime_version: sp_version::RuntimeVersion,
+) {
+	#[allow(clippy::zero_prefixed_literal)]
+	if runtime_version.spec_version < 000_022_000 {
+		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
+			parity_db_path.as_ref(),
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+	} else {
+		midnight_node_ledger::ledger_8::storage::init_storage_paritydb(
+			&parity_db_path,
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+	}
+}
+
+/// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
+/// `RuntimeVersion` so we can read `spec_version` from the chainspec WASM blob rather
+/// than from the compiled-in native runtime constant.
+fn resolve_runtime_version_from_wasm<E, H>(
+	storage: &Storage,
+	executor: &E,
+) -> sp_blockchain::Result<sp_version::RuntimeVersion>
+where
+	E: RuntimeVersionOf,
+	H: HashT,
+{
+	let wasm = storage.top.get(sp_core::storage::well_known_keys::CODE).ok_or_else(|| {
+		sp_blockchain::Error::VersionInvalid(
+			"Runtime missing from initial storage, could not read runtime version.".into(),
+		)
+	})?;
+	let mut ext = sp_state_machine::BasicExternalities::new_empty();
+	let code_fetcher = sp_core::traits::WrappedRuntimeCode(wasm.as_slice().into());
+	let runtime_code = sp_core::traits::RuntimeCode {
+		code_fetcher: &code_fetcher,
+		heap_pages: None,
+		hash: <H as HashT>::hash(wasm).encode(),
+	};
+	RuntimeVersionOf::runtime_version(executor, &mut ext, &runtime_code)
+		.map_err(|e| sp_blockchain::Error::VersionInvalid(e.to_string()))
 }
 
 pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
@@ -76,14 +123,12 @@ pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> GenesisBlockBuilder<Block, B, E> {
 	/// Constructs a new instance of [`GenesisBlockBuilder`].
 	pub fn new(
-		build_genesis_storage: &dyn BuildStorage,
+		genesis_storage: Storage,
 		commit_genesis_state: bool,
 		backend: Arc<B>,
 		executor: E,
 		genesis_extrinsics: Vec<Vec<u8>>,
 	) -> sp_blockchain::Result<Self> {
-		let genesis_storage =
-			build_genesis_storage.build_storage().map_err(sp_blockchain::Error::Storage)?;
 		Ok(Self {
 			genesis_storage,
 			commit_genesis_state,
@@ -117,13 +162,18 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Bl
 			extrinsics.push(extrinsic);
 		}
 
-		let genesis_state_version =
-			resolve_state_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let runtime_version =
+			resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let genesis_state_version = runtime_version.state_version();
 		let mut op = backend.begin_operation()?;
 		let state_root =
 			op.set_genesis_state(genesis_storage, commit_genesis_state, genesis_state_version)?;
-		let genesis_block =
-			construct_genesis_block::<Block>(state_root, genesis_state_version, extrinsics);
+		let genesis_block = construct_genesis_block::<Block>(
+			state_root,
+			genesis_state_version,
+			extrinsics,
+			runtime_version.spec_version,
+		);
 
 		Ok((genesis_block, op))
 	}
@@ -134,6 +184,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 	state_root: Block::Hash,
 	state_version: StateVersion,
 	extrinsics: Vec<<Block as BlockT>::Extrinsic>,
+	spec_version: u32,
 ) -> Block {
 	let extrinsics_root =
 		<<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::ordered_trie_root(
@@ -142,10 +193,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 		);
 
 	let block_digest = Digest {
-		logs: vec![DigestItem::Consensus(
-			midnight_node_runtime::VERSION_ID,
-			midnight_node_runtime::VERSION.spec_version.encode(),
-		)],
+		logs: vec![DigestItem::Consensus(midnight_node_runtime::VERSION_ID, spec_version.encode())],
 	};
 
 	Block::new(
@@ -165,15 +213,17 @@ pub fn construct_genesis_block<Block: BlockT>(
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
@@ -214,14 +264,6 @@ pub fn new_partial(
 ) -> Result<MidnightService, ServiceError> {
 	let _mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 
-	// Init Ledger DB
-	let parity_db_path = config.base_path.path().join("ledger_storage");
-	midnight_node_ledger::init_storage_paritydb(
-		&parity_db_path,
-		&storage_config.genesis_state,
-		storage_config.cache_size,
-	);
-
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
@@ -258,8 +300,19 @@ pub fn new_partial(
 		})
 		.collect();
 
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+
+	let runtime_version =
+		resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+	let parity_db_path = config.base_path.path().join("ledger_storage");
+	init_ledger_storage(parity_db_path.clone(), &storage_config, runtime_version);
+
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
-		config.chain_spec.as_storage_builder(),
+		genesis_storage,
 		true,
 		backend.clone(),
 		executor.clone(),
@@ -365,7 +418,6 @@ pub fn new_partial(
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
 			data_sources.cnight_observation.clone(),
-			data_sources.governed_map.clone(),
 			data_sources.federated_authority_observation.clone(),
 			data_sources.bridge.clone(),
 		),
@@ -405,6 +457,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	data_sources: DataSources,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
 	storage_config: StorageInit,
+	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
@@ -492,6 +545,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			metrics,
 		})?;
 
+	// Capture peer_id before network is moved
+	let peer_id = network.local_peer_id().to_base58();
+
 	if config.offchain_worker.enabled {
 		task_manager.spawn_handle().spawn(
 			"offchain-workers-runner",
@@ -526,6 +582,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let name = config.network.node_name.clone();
 	let enable_grandpa = !config.disable_grandpa;
 	let prometheus_registry = config.prometheus_registry().cloned();
+	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
 	let rpc_extensions_builder = {
@@ -627,7 +684,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
 				data_sources.cnight_observation.clone(),
-				data_sources.governed_map.clone(),
 				data_sources.federated_authority_observation.clone(),
 				data_sources.bridge.clone(),
 			),
@@ -705,7 +761,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			// FIXME #1578 make this available through chainspec
 			gossip_duration: Duration::from_millis(333),
 			justification_generation_period: GRANDPA_JUSTIFICATION_PERIOD,
-			name: Some(name),
+			name: Some(name.clone()),
 			observer_enabled: false,
 			keystore,
 			local_role: role,
@@ -748,6 +804,26 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			&task_manager.spawn_essential_handle(),
 		)
 		.map_err(|e| ServiceError::Application(e.into()))?;
+	}
+
+	// Spawn Prometheus metrics push task if configured
+	if let Some(mut push_config) = metrics_push_config {
+		if let Some(registry) = prometheus_registry_for_push {
+			// Fill in node identity from the Configuration and network
+			push_config.peer_id = peer_id.clone();
+			push_config.node_name = name.clone();
+
+			task_manager.spawn_handle().spawn(
+				"prometheus-push",
+				None,
+				run_metrics_push_task(registry, push_config),
+			);
+		} else {
+			log::warn!(
+				"Prometheus push endpoint configured but no Prometheus registry available. \
+				 Enable Prometheus with --prometheus-port to use push functionality."
+			);
+		}
 	}
 
 	Ok(task_manager)
