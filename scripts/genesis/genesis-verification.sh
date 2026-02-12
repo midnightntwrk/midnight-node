@@ -165,6 +165,19 @@ uses_ics_config() {
     esac
 }
 
+# Function to check if network uses reserve config for locked pool
+uses_reserve_config() {
+    local network="$1"
+    case "$network" in
+        qanet|undeployed|devnet|govnet|node-dev-01)
+            return 0  # true
+            ;;
+        *)
+            return 1  # false
+            ;;
+    esac
+}
+
 # Function to show input files info
 show_input_files() {
     local network="$1"
@@ -377,6 +390,21 @@ run_config_regeneration_verification() {
     else
         print_error "Failed to regenerate permissioned-candidates-config.json"
         all_passed=false
+    fi
+
+    # 1e. Regenerate reserve-config.json
+    if uses_reserve_config "$network"; then
+        print_substep "Regenerating reserve-config.json..."
+        local tmp_reserve="$tmp_dir/reserve-config.json"
+
+        if "$node_binary" generate-reserve-genesis --cardano-tip "$cardano_tip" --output "$tmp_reserve" 2>/dev/null; then
+            if ! compare_json_files "$tmp_reserve" "$res_dir/reserve-config.json" "reserve-config.json"; then
+                all_passed=false
+            fi
+        else
+            print_error "Failed to regenerate reserve-config.json"
+            all_passed=false
+        fi
     fi
 
     echo ""

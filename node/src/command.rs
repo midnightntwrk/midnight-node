@@ -24,12 +24,12 @@ use crate::{
 			PcChainConfig, PermissionedCandidatesAddresses,
 			generate_permissioned_candidates_genesis,
 		},
+		reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
 	},
 	genesis::verification::{
 		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
 		verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
 	},
-	reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
 	service::{self, StorageInit},
 };
 use clap::Parser;
