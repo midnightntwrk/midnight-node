@@ -5,5 +5,5 @@ Added a Time-To-Idle for the transaction validation cache to prevent entries lin
 
 Also tuned the limits of the two caches.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/659
 Ticket: https://shielded.atlassian.net/browse/PM-21787
