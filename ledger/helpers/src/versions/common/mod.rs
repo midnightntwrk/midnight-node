@@ -59,7 +59,7 @@ pub use super::{
 		structure::{
 			BindingKind, CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind,
 			ClaimRewardsTransaction, ContractAction, ContractDeploy, ContractOperationVersion,
-			ContractOperationVersionedVerifierKey, FEE_TOKEN, INITIAL_PARAMETERS, Intent,
+			ContractOperationVersionedVerifierKey, FEE_TOKEN, INITIAL_PARAMETERS, MAX_SUPPLY, Intent,
 			IntentHash, LedgerParameters, LedgerState, MaintenanceUpdate,
 			OutputInstructionUnshielded, PedersenDowngradeable, ProofKind, ProofMarker,
 			ProofPreimageMarker, SignatureKind, SingleUpdate, StandardTransaction,

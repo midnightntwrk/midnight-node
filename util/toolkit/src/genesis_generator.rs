@@ -119,7 +119,15 @@ impl GenesisGenerator {
 		reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
-		let state = LedgerState::new(network_id);
+		let locked_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		let state = LedgerState::with_genesis_settings(
+			network_id,
+			INITIAL_PARAMETERS,
+			locked_pool,
+			MAX_SUPPLY - locked_pool,
+			0,
+		)
+		.map_err(SystemTransactionError::from)?;
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
 		me.init(
 			seed,
@@ -176,10 +184,9 @@ impl GenesisGenerator {
 			self.fund_treasury(config, &genesis_block_context)?;
 		}
 
-		// Log reserve config (actual LedgerState integration deferred to ledger update)
 		if let Some(ref config) = reserve_config {
 			println!(
-				"Reserve config: {} Night locked in {} UTxOs at {}",
+				"Reserve config applied: {} Night locked, {} UTxOs observed at {}",
 				config.reserve_amount(),
 				config.utxos.len(),
 				config.reserve_validator_address
@@ -728,6 +735,70 @@ mod test {
 			treasury_balance, TREASURY_AMOUNT,
 			"Treasury should contain {} NIGHT, but has {}",
 			TREASURY_AMOUNT, treasury_balance
+		);
+	}
+
+	#[tokio::test]
+	async fn test_genesis_with_reserve_config() {
+		const LOCKED_AMOUNT: u128 = 5_000_000_000_000; // 5 trillion
+
+		let funding = FundingArgs {
+			shielded_mint_amount: 0,
+			shielded_num_funding_outputs: 0,
+			shielded_alt_token_types: vec![],
+			unshielded_mint_amount: 0,
+			unshielded_num_funding_outputs: 0,
+			unshielded_alt_token_types: vec![],
+		};
+
+		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
+		let network_id = "undeployed";
+
+		let reserve_config = ReserveConfig {
+			reserve_validator_address: "addr_test1qz_reserve".to_string(),
+			asset: midnight_primitives_reserve_observation::ReserveAsset {
+				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
+				asset_name: "NIGHT".to_string(),
+			},
+			utxos: vec![
+				midnight_primitives_reserve_observation::ReserveUtxo {
+					tx_hash: "abc123".to_string(),
+					output_index: 0,
+					amount: 3_000_000_000_000,
+				},
+				midnight_primitives_reserve_observation::ReserveUtxo {
+					tx_hash: "def456".to_string(),
+					output_index: 1,
+					amount: 2_000_000_000_000,
+				},
+			],
+			total_amount: LOCKED_AMOUNT,
+		};
+
+		reserve_config.validate().expect("Reserve config should be valid");
+
+		let genesis = GenesisGenerator::new(
+			seed,
+			network_id,
+			None,
+			funding,
+			None, // no wallets — keeps pool accounting simple
+			None,
+			None,
+			Some(reserve_config),
+			None,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(
+			genesis.state.locked_pool, LOCKED_AMOUNT,
+			"locked_pool should equal reserve config total_amount"
+		);
+		assert_eq!(
+			genesis.state.reserve_pool,
+			MAX_SUPPLY - LOCKED_AMOUNT,
+			"reserve_pool should be MAX_SUPPLY minus locked_pool"
 		);
 	}
 
