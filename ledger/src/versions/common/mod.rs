@@ -158,7 +158,10 @@ where
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
 		let now = std::time::Instant::now();
-		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		default_storage::<D>().with_backend(|backend| {
+			backend.flush_all_changes_to_db();
+			backend.gc();
+		});
 		let elapsed = now.elapsed().as_secs_f64();
 
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
