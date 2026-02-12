@@ -876,6 +876,14 @@ where
 		api.tagged_serialize(&event)
 	}
 
+	pub fn is_governance_allowed_system_tx(tx_serialized: &[u8]) -> bool {
+		let api = api::new();
+		let Ok(tx) = api.tagged_deserialize::<SystemTransaction>(tx_serialized) else {
+			return false;
+		};
+		matches!(tx, SystemTransaction::OverwriteParameters(_))
+	}
+
 	pub fn construct_cnight_generates_dust_system_tx(
 		events: Vec<Vec<u8>>,
 	) -> Result<Vec<u8>, LedgerApiError> {
