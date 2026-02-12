@@ -631,8 +631,6 @@ mod test {
 
 	#[tokio::test]
 	async fn test_genesis_with_ics_config() {
-		const TREASURY_AMOUNT: u128 = 1_000_000_000_000; // 1 trillion
-
 		let funding = FundingArgs {
 			shielded_mint_amount: 0,
 			shielded_num_funding_outputs: 0,
@@ -652,7 +650,8 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		// Create ICS config with UTxOs that sum to TREASURY_AMOUNT
+		// ICS config is currently ignored (hardcoded values used instead),
+		// but we still pass it to exercise the code path.
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
@@ -667,10 +666,9 @@ mod test {
 				IcsUtxo { tx_hash: "abc123".to_string(), output_index: 0, amount: 600_000_000_000 },
 				IcsUtxo { tx_hash: "def456".to_string(), output_index: 1, amount: 400_000_000_000 },
 			],
-			total_amount: TREASURY_AMOUNT,
+			total_amount: 1_000_000_000_000,
 		};
 
-		// Validate config before using
 		ics_config.validate().expect("ICS config should be valid");
 
 		let genesis = GenesisGenerator::new(
@@ -687,20 +685,18 @@ mod test {
 		.await
 		.unwrap();
 
-		// Verify treasury was funded with the expected amount
+		// Treasury uses the hardcoded EXPECTED_ICS_VALUE (not the config value)
 		let night_token_type = TokenType::Unshielded(NIGHT);
 		let treasury_balance = genesis.state.treasury.get(&night_token_type).copied().unwrap_or(0);
 		assert_eq!(
-			treasury_balance, TREASURY_AMOUNT,
+			treasury_balance, EXPECTED_ICS_VALUE,
 			"Treasury should contain {} NIGHT, but has {}",
-			TREASURY_AMOUNT, treasury_balance
+			EXPECTED_ICS_VALUE, treasury_balance
 		);
 	}
 
 	#[tokio::test]
 	async fn test_genesis_with_reserve_config() {
-		const LOCKED_AMOUNT: u128 = 5_000_000_000_000; // 5 trillion
-
 		let funding = FundingArgs {
 			shielded_mint_amount: 0,
 			shielded_num_funding_outputs: 0,
@@ -713,6 +709,8 @@ mod test {
 		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
 		let network_id = "undeployed";
 
+		// Reserve config is currently ignored (hardcoded values used instead),
+		// but we still pass it to exercise the code path.
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
 			asset: midnight_primitives_reserve_observation::ReserveAsset {
@@ -731,7 +729,7 @@ mod test {
 					amount: 2_000_000_000_000,
 				},
 			],
-			total_amount: LOCKED_AMOUNT,
+			total_amount: 5_000_000_000_000,
 		};
 
 		reserve_config.validate().expect("Reserve config should be valid");
@@ -750,14 +748,16 @@ mod test {
 		.await
 		.unwrap();
 
+		// Pools use hardcoded values, not the reserve config
+		let expected_locked =
+			MAX_SUPPLY - EXPECTED_RESERVE_VALUE - EXPECTED_ICS_VALUE;
 		assert_eq!(
-			genesis.state.locked_pool, LOCKED_AMOUNT,
-			"locked_pool should equal reserve config total_amount"
+			genesis.state.locked_pool, expected_locked,
+			"locked_pool should be MAX_SUPPLY minus reserve and ICS expected values"
 		);
 		assert_eq!(
-			genesis.state.reserve_pool,
-			MAX_SUPPLY - LOCKED_AMOUNT,
-			"reserve_pool should be MAX_SUPPLY minus locked_pool"
+			genesis.state.reserve_pool, EXPECTED_RESERVE_VALUE,
+			"reserve_pool should equal EXPECTED_RESERVE_VALUE"
 		);
 	}
 

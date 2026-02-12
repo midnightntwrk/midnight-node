@@ -170,7 +170,7 @@ mod tests {
 		rng_seed: None,
 		shielded_token_type: t_token(),
 		coin_amount: 100,
-		initial_unshielded_intent_value: 500_000_000_000_000,
+		initial_unshielded_intent_value: 50_000_000_000_000,
 		unshielded_token_type: NIGHT,
 		enable_shielded: false,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
