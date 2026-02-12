@@ -30,17 +30,17 @@ pub struct ContractAddressBoth {
 pub fn execute(
 	args: ContractAddressArgs,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-	let bytes = fs::read(&args.src_file).expect("failed to read file");
+	let bytes = fs::read(&args.src_file)?;
 	let tx_with_context: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
 		mn_ledger_serialize::tagged_deserialize(bytes.as_slice())?;
 
 	let (_, deploy) = tx_with_context
 		.tx
 		.as_midnight()
-		.expect("Not called with a standard midnight transaction")
+		.ok_or("not called with a standard midnight transaction")?
 		.deploys()
 		.next()
-		.expect("There is not any `ContractDeploy` in the tx");
+		.ok_or("no ContractDeploy found in the transaction")?;
 
 	let both = ContractAddressBoth {
 		tagged: serialize(&deploy.address())?.encode_hex(),

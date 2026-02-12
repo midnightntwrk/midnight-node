@@ -47,13 +47,11 @@ use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
-use sp_runtime::{
-	BuildStorage,
-	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
-};
+use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
 use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
+	path::Path,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
@@ -62,6 +60,28 @@ use time_source::SystemTimeSource;
 pub struct StorageInit {
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
+}
+
+/// Initialize Ledger Storage based on the RuntimeVersion
+fn init_ledger_storage<P: AsRef<Path>>(
+	parity_db_path: P,
+	storage_config: &StorageInit,
+	runtime_version: sp_version::RuntimeVersion,
+) {
+	#[allow(clippy::zero_prefixed_literal)]
+	if runtime_version.spec_version < 000_022_000 {
+		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
+			parity_db_path.as_ref(),
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+	} else {
+		midnight_node_ledger::ledger_8::storage::init_storage_paritydb(
+			&parity_db_path,
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+	}
 }
 
 /// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
@@ -103,14 +123,12 @@ pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> GenesisBlockBuilder<Block, B, E> {
 	/// Constructs a new instance of [`GenesisBlockBuilder`].
 	pub fn new(
-		build_genesis_storage: &dyn BuildStorage,
+		genesis_storage: Storage,
 		commit_genesis_state: bool,
 		backend: Arc<B>,
 		executor: E,
 		genesis_extrinsics: Vec<Vec<u8>>,
 	) -> sp_blockchain::Result<Self> {
-		let genesis_storage =
-			build_genesis_storage.build_storage().map_err(sp_blockchain::Error::Storage)?;
 		Ok(Self {
 			genesis_storage,
 			commit_genesis_state,
@@ -195,15 +213,17 @@ pub fn construct_genesis_block<Block: BlockT>(
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
@@ -244,14 +264,6 @@ pub fn new_partial(
 ) -> Result<MidnightService, ServiceError> {
 	let _mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 
-	// Init Ledger DB
-	let parity_db_path = config.base_path.path().join("ledger_storage");
-	midnight_node_ledger::init_storage_paritydb(
-		&parity_db_path,
-		&storage_config.genesis_state,
-		storage_config.cache_size,
-	);
-
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
@@ -288,8 +300,19 @@ pub fn new_partial(
 		})
 		.collect();
 
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+
+	let runtime_version =
+		resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+	let parity_db_path = config.base_path.path().join("ledger_storage");
+	init_ledger_storage(parity_db_path.clone(), &storage_config, runtime_version);
+
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
-		config.chain_spec.as_storage_builder(),
+		genesis_storage,
 		true,
 		backend.clone(),
 		executor.clone(),

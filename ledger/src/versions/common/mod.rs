@@ -33,6 +33,9 @@ pub mod types;
 use types::LedgerApiError;
 
 #[cfg(feature = "std")]
+pub mod storage;
+
+#[cfg(feature = "std")]
 pub mod api;
 
 #[cfg(feature = "std")]
@@ -63,14 +66,20 @@ use {
 			Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
-	std::{any::Any, sync::Arc, time::Instant},
+	std::{
+		any::Any,
+		sync::Arc,
+		time::{Duration, Instant},
+	},
 };
 
 use crate::common::types::{
-	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails,
-	Tx, WrappedHash,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
+	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
+	WrappedHash,
 };
+
+use super::BlockContext;
 
 #[cfg(feature = "std")]
 use {lazy_static::lazy_static, moka::sync::Cache};
@@ -88,6 +97,24 @@ pub struct SoftTxValidationKey {
 	tx_hash: Hash,
 }
 
+/// Set this high to ensure that even large mempool sizes don't cause performance issues due to
+/// unnecessary revalidation.
+#[cfg(feature = "std")]
+const SOFT_TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
+
+/// This should be set to no more than the max expected txs per block
+/// 600 txs/block allows for 100 TPS (considerable higher than our real max at the time of writing)
+#[cfg(feature = "std")]
+const STRICT_TX_VALIDATION_CACHE_CAPACITY: u64 = 600;
+
+/// Time-to-idle for transaction validation cache entries.
+/// Entries not accessed within this duration are evicted, preventing stale VerifiedTransaction
+/// objects (which contain ZK proof data and can be 50-200 KiB each) from persisting indefinitely
+/// on low-traffic networks. Without this TTL, the cache only evicts by count — on quiet chains
+/// entries live forever and contribute to steady-state memory growth.
+#[cfg(feature = "std")]
+const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
+
 #[cfg(feature = "std")]
 lazy_static! {
 	/// Strict cache: stores VerifiedTransaction for reuse in validate_guaranteed_execution.
@@ -100,12 +127,18 @@ lazy_static! {
 	///
 	/// When retrieving, we downcast to the concrete VerifiedTransaction type.
 	static ref STRICT_TX_VALIDATION_CACHE: Cache<StrictTxValidationKey, Arc<dyn Any + Send + Sync>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(STRICT_TX_VALIDATION_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 
 	/// Soft cache: stores validation result for mempool revalidation.
 	/// No type erasure needed since Result<(), LedgerApiError> is not generic.
 	static ref SOFT_TX_VALIDATION_CACHE: Cache<SoftTxValidationKey, Result<(), LedgerApiError>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(SOFT_TX_VALIDATION_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 }
 
 #[cfg(feature = "std")]
@@ -158,7 +191,10 @@ where
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
 		let now = std::time::Instant::now();
-		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		default_storage::<D>().with_backend(|backend| {
+			backend.flush_all_changes_to_db();
+			backend.gc();
+		});
 		let elapsed = now.elapsed().as_secs_f64();
 
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -226,7 +262,7 @@ where
 		let verified_tx = Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
 
 		// Apply the verified transaction
-		let tx_ctx = ledger.get_transaction_context(block_context.clone());
+		let tx_ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (mut new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 
@@ -691,7 +727,7 @@ where
 		}
 
 		// Cache miss: compute VerifiedTransaction
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let verified_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
@@ -745,7 +781,7 @@ where
 		};
 
 		// Dry-run apply to validate guaranteed execution against current state
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
 		match result {
@@ -799,7 +835,7 @@ where
 
 		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
 
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
 		match result {

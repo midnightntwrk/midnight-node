@@ -51,6 +51,8 @@ pub enum GenesisGeneratorError<D: DB> {
 	FeeCalculationError(#[from] FeeCalculationError),
 	#[error("Failure applying block: {0:?}")]
 	BlockLimitExceeded(#[from] BlockLimitExceeded),
+	#[error("Missing verifying key for wallet")]
+	MissingVerifyingKey,
 }
 
 /// Common arguments for funding wallets (shielded, unshielded, dust)
@@ -154,6 +156,7 @@ impl GenesisGenerator {
 			tblock: BEGINNING,
 			tblock_err: 30,
 			parent_block_hash: HashOutput::default(),
+			last_block_time: BEGINNING,
 		};
 
 		// If custom ledger parameters are provided, apply them first
@@ -234,7 +237,12 @@ impl GenesisGenerator {
 		// And now reward it to each wallet.
 		let mut night_distribution_instructions = vec![];
 		for wallet in wallets.iter() {
-			let target_address = wallet.unshielded.verifying_key.clone().unwrap().into();
+			let target_address = wallet
+				.unshielded
+				.verifying_key
+				.clone()
+				.ok_or(GenesisGeneratorError::MissingVerifyingKey)?
+				.into();
 			for _ in 0..funding.unshielded_num_funding_outputs {
 				night_distribution_instructions.push(OutputInstructionUnshielded {
 					amount: funding.unshielded_mint_amount,

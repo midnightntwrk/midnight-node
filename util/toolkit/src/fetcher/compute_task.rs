@@ -26,7 +26,7 @@ use crate::fetcher::{
 	runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
 		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0,
-		MidnightMetadata0_21_0, RuntimeVersion, RuntimeVersionError,
+		MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion, RuntimeVersionError,
 	},
 };
 
@@ -173,6 +173,9 @@ impl ComputeTask {
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0, S, P, D>(block).await
 			},
+			RuntimeVersion::V0_22_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_22_0, S, P, D>(block).await
+			},
 		}
 	}
 
@@ -247,10 +250,12 @@ impl ComputeTask {
 		}
 
 		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
+		let tblock = Timestamp::from_secs(timestamp_ms / 1000);
 		let context = BlockContext {
-			tblock: Timestamp::from_secs(timestamp_ms / 1000),
+			tblock,
 			tblock_err: 30,
 			parent_block_hash: HashOutput(parent_block_hash.0),
+			last_block_time: tblock, // We fix this later in fetcher.rs
 		};
 		let hash = block.block.hash();
 		let parent_hash = block.block.header().parent_hash;

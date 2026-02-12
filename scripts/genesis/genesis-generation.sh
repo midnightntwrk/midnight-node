@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("qanet" "devnet" "govnet" "node-dev-01" "preview")
+AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "node-dev-01" "preview")
 
 # Default RNG seed (same as in Earthfile)
 DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
@@ -330,14 +330,21 @@ run_ledger_state_generation() {
     local earthly_target
     earthly_target=$(get_genesis_state_target "$network")
 
-    echo -e "${BOLD}Command to execute:${NC}"
-    echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
+    # For mainnet, RNG_SEED is not used (no faucet wallets), so don't pass it
+    local earthly_cmd
+    if [[ "$network" == "mainnet" ]]; then
+        echo -e "${BOLD}Command to execute:${NC}"
+        echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target${NC}"
+        earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target")
+    else
+        echo -e "${BOLD}Command to execute:${NC}"
+        echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
+        earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target" "--RNG_SEED=$rng_seed")
+    fi
     echo ""
 
     print_info "Running Earthly target..."
     echo ""
-
-    local earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target" "--RNG_SEED=$rng_seed")
 
     cd "$REPO_ROOT"
     if "${earthly_cmd[@]}"; then
@@ -348,9 +355,15 @@ run_ledger_state_generation() {
         print_file "$REPO_ROOT/res/genesis/genesis_block_$network.mn"
         print_file "$REPO_ROOT/res/genesis/genesis_state_$network.mn"
 
-        print_step_summary "Step 1: Ledger State Generation" \
-            "Network: $network" \
-            "RNG Seed: $rng_seed"
+        if [[ "$network" == "mainnet" ]]; then
+            print_step_summary "Step 1: Ledger State Generation" \
+                "Network: $network" \
+                "RNG Seed: (not used - no faucet wallets)"
+        else
+            print_step_summary "Step 1: Ledger State Generation" \
+                "Network: $network" \
+                "RNG Seed: $rng_seed"
+        fi
 
         return 0
     else
@@ -561,16 +574,23 @@ main() {
     fi
     echo ""
 
-    local rng_seed
-    rng_seed=$(prompt_input "RNG seed for ledger state" "$DEFAULT_RNG_SEED")
-    echo ""
+    # RNG seed is only needed for networks that fund faucet wallets (not mainnet)
+    local rng_seed="$DEFAULT_RNG_SEED"
+    if [[ "$network" != "mainnet" ]]; then
+        rng_seed=$(prompt_input "RNG seed for ledger state" "$DEFAULT_RNG_SEED")
+        echo ""
+    fi
 
     # Show configuration summary
     echo -e "${BOLD}Configuration Summary:${NC}"
     echo -e "  Network:              ${CYAN}$network${NC}"
     echo -e "  Security Parameter:   ${CYAN}$security_param${NC}"
     echo -e "  Cardano Tip:          ${CYAN}$cardano_tip${NC}"
-    echo -e "  RNG Seed:             ${CYAN}$rng_seed${NC}"
+    if [[ "$network" != "mainnet" ]]; then
+        echo -e "  RNG Seed:             ${CYAN}$rng_seed${NC}"
+    else
+        echo -e "  RNG Seed:             ${CYAN}(not used - no faucet wallets)${NC}"
+    fi
     echo ""
 
     # Track completed steps and config generation
