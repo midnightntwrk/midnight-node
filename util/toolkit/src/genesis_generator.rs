@@ -104,6 +104,10 @@ pub struct GenesisGenerator {
 const GLACIER_DROP_START_UNIX_EPOC: u64 = 1754395200;
 const BEGINNING: Timestamp = Timestamp::from_secs(GLACIER_DROP_START_UNIX_EPOC);
 
+// Provisional hardcoded expected values until transfers from iterim ICS to new ICS happens
+const EXPECTED_RESERVE_VALUE: u128 = 6000000000873988; // STARS
+const EXPECTED_ICS_VALUE: u128 = 1200000000000000; // STARS
+
 type Result<T, E = GenesisGeneratorError<DefaultDB>> = std::result::Result<T, E>;
 
 impl GenesisGenerator {
@@ -115,17 +119,29 @@ impl GenesisGenerator {
 		funding: FundingArgs,
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
-		ics_config: Option<IcsConfig>,
-		reserve_config: Option<ReserveConfig>,
+		_ics_config: Option<IcsConfig>,
+		_reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
-		let locked_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		// TODO: Uncomment after transfers from iterim ICS to new ICS happens
+		// let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		// let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+
+		// Provisional hardcoded expected values until transfers from iterim ICS to new ICS happens
+		let reserve_pool = EXPECTED_RESERVE_VALUE;
+		let treasury = EXPECTED_ICS_VALUE;
+		let locked_pool = MAX_SUPPLY - reserve_pool - treasury;
+
+		// If custom ledger parameters are provided, apply them first
+		let original_parameters =
+			if let Some(params) = ledger_parameters { params } else { INITIAL_PARAMETERS };
+
 		let state = LedgerState::with_genesis_settings(
 			network_id,
-			INITIAL_PARAMETERS,
+			original_parameters.clone(),
 			locked_pool,
-			MAX_SUPPLY - locked_pool,
-			0,
+			reserve_pool,
+			treasury,
 		)
 		.map_err(SystemTransactionError::from)?;
 		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
@@ -136,9 +152,7 @@ impl GenesisGenerator {
 			&funding,
 			seeds,
 			cnight_system_tx,
-			ics_config,
-			reserve_config,
-			ledger_parameters,
+			original_parameters,
 		)
 		.await?;
 		Ok(me)
@@ -153,9 +167,7 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
-		ics_config: Option<IcsConfig>,
-		reserve_config: Option<ReserveConfig>,
-		ledger_parameters: Option<LedgerParameters>,
+		original_parameters: LedgerParameters,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> = seeds
 			.map(|s| s.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect())
@@ -170,28 +182,6 @@ impl GenesisGenerator {
 			parent_block_hash: HashOutput::default(),
 			last_block_time: BEGINNING,
 		};
-
-		// If custom ledger parameters are provided, apply them first
-		let original_parameters = if let Some(params) = ledger_parameters {
-			self.set_parameters(params.clone(), &genesis_block_context)?;
-			params
-		} else {
-			(*self.state.parameters).clone()
-		};
-
-		// Fund treasury (if configured)
-		if let Some(ref config) = ics_config {
-			self.fund_treasury(config, &genesis_block_context)?;
-		}
-
-		if let Some(ref config) = reserve_config {
-			println!(
-				"Reserve config applied: {} Night locked, {} UTxOs observed at {}",
-				config.reserve_amount(),
-				config.utxos.len(),
-				config.reserve_validator_address
-			);
-		}
 
 		// Only fund faucet wallets if seeds were provided
 		if !wallets.is_empty() {
@@ -285,37 +275,6 @@ impl GenesisGenerator {
 	) -> Result<()> {
 		let sys_tx_params = SystemTransaction::OverwriteParameters(parameters);
 		self.apply_system_tx(sys_tx_params, block_context)
-	}
-
-	/// Fund the treasury from observed ICS contract deposits.
-	///
-	/// This uses a two-step process:
-	/// 1. DistributeReserve: Move tokens from reserve_pool to block_reward_pool
-	/// 2. PayBlockRewardsToTreasury: Move tokens from block_reward_pool to treasury
-	///
-	/// This sequence is required because the ledger doesn't support direct
-	/// reserve -> treasury transfers.
-	fn fund_treasury(&mut self, config: &IcsConfig, block_context: &BlockContext) -> Result<()> {
-		let amount = config.treasury_amount();
-
-		if amount == 0 {
-			// Nothing to fund
-			return Ok(());
-		}
-
-		println!("Funding treasury with {} Night from ICS observations", amount);
-
-		// Step 1: Move from reserve_pool to block_reward_pool
-		let distribute_tx = SystemTransaction::DistributeReserve(amount);
-		self.apply_system_tx(distribute_tx, block_context)?;
-
-		// Step 2: Move from block_reward_pool to treasury
-		let treasury_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
-		self.apply_system_tx(treasury_tx, block_context)?;
-
-		println!("Treasury funded successfully.");
-
-		Ok(())
 	}
 
 	fn claim_rewards(
