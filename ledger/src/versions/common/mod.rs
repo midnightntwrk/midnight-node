@@ -63,7 +63,11 @@ use {
 			Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
-	std::{any::Any, sync::Arc, time::Instant},
+	std::{
+		any::Any,
+		sync::Arc,
+		time::{Duration, Instant},
+	},
 };
 
 use crate::common::types::{
@@ -88,6 +92,24 @@ pub struct SoftTxValidationKey {
 	tx_hash: Hash,
 }
 
+/// Set this high to ensure that even large mempool sizes don't cause performance issues due to
+/// unnecessary revalidation.
+#[cfg(feature = "std")]
+const SOFT_TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
+
+/// This should be set to no more than the max expected txs per block
+/// 600 txs/block allows for 100 TPS (considerable higher than our real max at the time of writing)
+#[cfg(feature = "std")]
+const STRICT_TX_VALIDATION_CACHE_CAPACITY: u64 = 600;
+
+/// Time-to-idle for transaction validation cache entries.
+/// Entries not accessed within this duration are evicted, preventing stale VerifiedTransaction
+/// objects (which contain ZK proof data and can be 50-200 KiB each) from persisting indefinitely
+/// on low-traffic networks. Without this TTL, the cache only evicts by count — on quiet chains
+/// entries live forever and contribute to steady-state memory growth.
+#[cfg(feature = "std")]
+const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
+
 #[cfg(feature = "std")]
 lazy_static! {
 	/// Strict cache: stores VerifiedTransaction for reuse in validate_guaranteed_execution.
@@ -100,12 +122,18 @@ lazy_static! {
 	///
 	/// When retrieving, we downcast to the concrete VerifiedTransaction type.
 	static ref STRICT_TX_VALIDATION_CACHE: Cache<StrictTxValidationKey, Arc<dyn Any + Send + Sync>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(STRICT_TX_VALIDATION_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 
 	/// Soft cache: stores validation result for mempool revalidation.
 	/// No type erasure needed since Result<(), LedgerApiError> is not generic.
 	static ref SOFT_TX_VALIDATION_CACHE: Cache<SoftTxValidationKey, Result<(), LedgerApiError>> =
-		Cache::new(1000);
+		Cache::builder()
+			.max_capacity(SOFT_TX_VALIDATION_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
 }
 
 #[cfg(feature = "std")]
