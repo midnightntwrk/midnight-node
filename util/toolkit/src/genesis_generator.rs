@@ -23,6 +23,7 @@ use thiserror::Error;
 
 // Re-export ICS types from the primitives crate
 pub use midnight_primitives_ics_observation::{IcsAsset, IcsConfig, IcsUtxo};
+pub use midnight_primitives_reserve_observation::ReserveConfig;
 
 pub const MINT_AMOUNT: u128 = 500_000_000_000_000;
 pub const GENESIS_NONCE_SEED: &str =
@@ -115,6 +116,7 @@ impl GenesisGenerator {
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
 		ics_config: Option<IcsConfig>,
+		reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<Self> {
 		let state = LedgerState::new(network_id);
@@ -127,6 +129,7 @@ impl GenesisGenerator {
 			seeds,
 			cnight_system_tx,
 			ics_config,
+			reserve_config,
 			ledger_parameters,
 		)
 		.await?;
@@ -143,6 +146,7 @@ impl GenesisGenerator {
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
 		ics_config: Option<IcsConfig>,
+		reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> = seeds
@@ -170,6 +174,16 @@ impl GenesisGenerator {
 		// Fund treasury (if configured)
 		if let Some(ref config) = ics_config {
 			self.fund_treasury(config, &genesis_block_context)?;
+		}
+
+		// Log reserve config (actual LedgerState integration deferred to ledger update)
+		if let Some(ref config) = reserve_config {
+			println!(
+				"Reserve config: {} Night locked in {} UTxOs at {}",
+				config.reserve_amount(),
+				config.utxos.len(),
+				config.reserve_validator_address
+			);
 		}
 
 		// Only fund faucet wallets if seeds were provided
@@ -701,6 +715,7 @@ mod test {
 			Some(&seeds),
 			None,
 			Some(ics_config),
+			None, // no reserve config
 			None, // no custom ledger parameters
 		)
 		.await
@@ -745,6 +760,7 @@ mod test {
 			proof_server,
 			funding,
 			Some(&seeds),
+			None,
 			None,
 			None,
 			None,

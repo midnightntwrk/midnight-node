@@ -7617,6 +7617,7 @@ dependencies = [
  "midnight-primitives-ics-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
+ "midnight-primitives-reserve-observation",
  "midnight-primitives-system-parameters",
  "mmr-gadget",
  "mmr-rpc",
@@ -7826,6 +7827,7 @@ dependencies = [
  "hex-literal 0.4.1",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
+ "midnight-primitives-reserve-observation",
  "midnight-primitives-system-parameters",
  "midnight-serialize",
  "pallet-cnight-observation",
@@ -7931,6 +7933,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-primitives-ics-observation",
+ "midnight-primitives-reserve-observation",
  "num_cpus",
  "parity-scale-codec",
  "rand 0.8.5",
@@ -8253,6 +8256,15 @@ dependencies = [
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
+]
+
+[[package]]
+name = "midnight-primitives-reserve-observation"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sidechain-domain",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
