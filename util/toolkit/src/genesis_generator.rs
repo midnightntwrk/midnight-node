@@ -156,6 +156,7 @@ impl GenesisGenerator {
 			tblock: BEGINNING,
 			tblock_err: 30,
 			parent_block_hash: HashOutput::default(),
+			last_block_time: BEGINNING,
 		};
 
 		// If custom ledger parameters are provided, apply them first

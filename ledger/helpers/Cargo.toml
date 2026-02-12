@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
+
 mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }
@@ -16,11 +17,21 @@ transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
 
+mn-ledger-8 = { workspace = true, features = ["proving", "test-utilities"] }
+# base-crypto-ledger-8 // same as base-crypto
+coin-structure-ledger-8 = { workspace = true }
+onchain-runtime-ledger-8 = { workspace = true }
+# midnight-serialize-ledger-8 // same as midnight-serialize
+ledger-storage-ledger-8 = { workspace = true }
+transient-crypto-ledger-8 = { workspace = true }
+zswap-ledger-8 = { workspace = true }
+zkir-ledger-8 = { workspace = true }
+
 mn-ledger-hf = { workspace = true, features = ["proving", "test-utilities"] }
-base-crypto-hf = { workspace = true }
+# base-crypto-hf = { workspace = true }
 coin-structure-hf = { workspace = true }
 onchain-runtime-hf = { workspace = true }
-midnight-serialize-hf = { workspace = true }
+# midnight-serialize-hf = { workspace = true }
 ledger-storage-hf = { workspace = true }
 transient-crypto-hf = { workspace = true }
 zswap-hf = { workspace = true }
@@ -48,4 +59,4 @@ default = []
 can-panic = []
 erase-proof = []
 test-utils = []
-fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde"]
+fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde"]

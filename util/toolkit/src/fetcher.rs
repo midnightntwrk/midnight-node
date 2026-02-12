@@ -280,13 +280,19 @@ pub async fn fetch_all<
 	compute_to_compute_rx.close();
 	final_jobs_rx.close();
 
-	let blocks: Vec<_> = fetch_storage
+	let mut blocks: Vec<_> = fetch_storage
 		.get_block_data_range(chain_id, (0..max_height).into_iter())
 		.await
 		.into_iter()
 		.enumerate()
 		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
+
+	// Set last_block_time for all blocks
+	// windows_mut() iterator does not exist - so we're indexing here
+	for i in 1..blocks.len() {
+		blocks[i].context.last_block_time = blocks[i - 1].context.tblock;
+	}
 
 	// Set highest verified height for quicker fetch next time
 	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;

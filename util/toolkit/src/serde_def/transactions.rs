@@ -44,8 +44,12 @@ where
 				.expect("time has run backwards")
 				.as_secs(),
 		);
-		let context =
-			BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+		let context = BlockContext {
+			tblock: now,
+			tblock_err: 30,
+			parent_block_hash: Default::default(),
+			last_block_time: Default::default(),
+		};
 		let blocks = vec![BlockData {
 			hash: H256::zero(),
 			parent_hash: H256::zero(),
@@ -81,13 +85,13 @@ where
 			current_batch.push(tx.tx);
 			last_context = Some(tx.block_context);
 		}
-		if let Some(context) = last_context {
+		if let Some(ref context) = last_context {
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),
 				number,
 				transactions: current_batch,
-				context,
+				context: context.clone(),
 				state_root: None,
 			});
 		}
@@ -100,8 +104,12 @@ where
 					.expect("time has run backwards")
 					.as_secs(),
 			);
-			let context =
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			let context = BlockContext {
+				tblock: now,
+				tblock_err: 30,
+				parent_block_hash: Default::default(),
+				last_block_time: last_context.map(|c| c.tblock).unwrap_or(now),
+			};
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),
