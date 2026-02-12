@@ -400,6 +400,30 @@ fn test_get_zswap_state_root() {
 	});
 }
 
+#[test]
+fn test_get_ledger_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let root = mock::Midnight::get_ledger_state_root();
+
+		assert_ok!(&root);
+		assert!(!root.unwrap().is_empty());
+	});
+}
+
+#[test]
+fn test_get_ledger_state_root_differs_from_zswap_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let ledger_root = mock::Midnight::get_ledger_state_root().unwrap();
+		let zswap_root = mock::Midnight::get_zswap_state_root().unwrap();
+
+		assert_ne!(ledger_root, zswap_root);
+	});
+}
+
 #[cfg(feature = "experimental")]
 #[ignore = "TODO UNSHIELDED - fix when Claim Mint is properly handled for Unshielded"]
 #[test]
