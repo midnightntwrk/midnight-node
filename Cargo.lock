@@ -7592,6 +7592,7 @@ version = "0.22.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
+ "blake2b_simd",
  "clap",
  "config",
  "derive-new",

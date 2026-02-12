@@ -118,6 +118,19 @@ get_security_parameter() {
     fi
 }
 
+# Function to get cardano tip from cardano-tip.json
+get_cardano_tip() {
+    local network="$1"
+    local config_file="$REPO_ROOT/res/$network/cardano-tip.json"
+
+    if [[ -f "$config_file" ]]; then
+        # Extract cardano_tip value using grep and sed (portable)
+        grep -o '"cardano_tip"[[:space:]]*:[[:space:]]*"[^"]*"' "$config_file" | sed 's/.*"\(0x[^"]*\)".*/\1/'
+    else
+        echo ""
+    fi
+}
+
 # Function to check if network uses cNIGHT config for DUST address registration
 uses_cnight_config() {
     local network="$1"
@@ -566,8 +579,15 @@ main() {
     db_connection=$(prompt_input "DB Sync PostgreSQL connection string" "postgres://cardano@localhost:54322/cexplorer")
     echo ""
 
+    # Get default cardano tip from cardano-tip.json if available
+    local default_cardano_tip
+    default_cardano_tip=$(get_cardano_tip "$network")
+    if [[ -n "$default_cardano_tip" ]]; then
+        print_info "Found cardano tip in res/$network/cardano-tip.json"
+    fi
+
     local cardano_tip
-    cardano_tip=$(prompt_input "Cardano block hash (tip)" "")
+    cardano_tip=$(prompt_input "Cardano block hash (tip)" "$default_cardano_tip")
     if [[ -z "$cardano_tip" ]]; then
         print_error "Cardano tip is required!"
         exit 1
