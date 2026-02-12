@@ -51,9 +51,13 @@ use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiSe
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
+use sc_network::service::traits::NetworkPeers;
 pub use sc_rpc_api::DenyUnsafe;
+use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
+
+use crate::peer_info_rpc::{PeerInfoApiServer, PeerInfoRpc};
 
 /// Extra dependencies for GRANDPA
 pub struct GrandpaDeps<B> {
@@ -97,6 +101,10 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub main_chain_epoch_config: MainchainEpochConfig,
 	/// Backend used by the node.
 	pub backend: Arc<B>,
+	/// Network service for peer reputation queries.
+	pub network: Arc<dyn NetworkPeers + Send + Sync>,
+	/// Channel for system RPC requests (used to query connected peers).
+	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
 }
 
 /// Instantiate all full RPC extensions.
@@ -146,6 +154,8 @@ where
 		time_source,
 		main_chain_epoch_config,
 		backend,
+		network,
+		system_rpc_tx,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -208,6 +218,7 @@ where
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
+	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
 	// Extend this RPC with a custom API by using the following syntax.
 	// `YourRpcStruct` should have a reference to a client, which is needed
