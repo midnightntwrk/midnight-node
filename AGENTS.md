@@ -40,7 +40,13 @@ just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 ```bash
 ./scripts/genesis/genesis-generation.sh  # Interactive genesis generation wizard
 ```
-See [Genesis Generation Guide](docs/genesis/README.md) for complete documentation.
+See [Genesis Generation Guide](docs/genesis/generation.md) for complete documentation.
+
+**Genesis verification:**
+```bash
+./scripts/genesis/genesis-verification.sh  # Interactive genesis verification wizard
+```
+See [Genesis Verification Guide](docs/genesis/verification.md) for complete documentation.
 
 ## Architecture
 
