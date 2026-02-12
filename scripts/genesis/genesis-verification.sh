@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "node-dev-01" "preview" "preprod")
+AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet")
 
 # Default RNG seed (same as in Earthfile)
 DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
