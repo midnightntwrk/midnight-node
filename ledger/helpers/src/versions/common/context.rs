@@ -121,7 +121,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(&tx, &block_context);
+			let (events, cost) = self.update_from_tx(tx, block_context);
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
