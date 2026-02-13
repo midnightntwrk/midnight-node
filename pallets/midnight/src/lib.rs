@@ -71,9 +71,7 @@ pub mod pallet {
 
 			let (new_state_key, custom_result) = f(state_key)?;
 
-			let new_state_key: BoundedVec<_, _> =
-				new_state_key.to_vec().try_into().expect("State key size out of boundaries");
-			StateKey::<T>::put(new_state_key.clone());
+			StateKey::<T>::put(new_state_key);
 
 			Ok(custom_result)
 		}
@@ -153,7 +151,11 @@ pub mod pallet {
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
-	pub type StateKey<T> = StorageValue<_, BoundedVec<u8, StateKeyLength>, ValueQuery>;
+	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.
+	/// We might want still to verify the bounded length for genesis build due it may be not set by a ledger.
+	/// Handling of the case that state key will go out of boundaries during runtime operation is unrecoverable.
+	#[pallet::unbounded]
+	pub type StateKey<T> = StorageValue<_, Vec<u8>, ValueQuery>;
 
 	#[pallet::type_value]
 	pub fn DefaultParentTimestamp() -> u64 {
@@ -337,9 +339,7 @@ pub mod pallet {
 			let state_root = LedgerApi::post_block_update(&state_key, block_context.clone())
 				.expect("Post block update failed");
 
-			let new_state_key: BoundedVec<_, _> =
-				state_root.to_vec().try_into().expect("State key size out of boundaries");
-			StateKey::<T>::put(new_state_key);
+			StateKey::<T>::put(state_root);
 
 			// Flush ledger storage changes to disk
 			LedgerApi::flush_storage();
@@ -379,12 +379,8 @@ pub mod pallet {
 			)
 			.map_err(Error::<T>::from)?;
 
-			let state_key: BoundedVec<_, _> = result
-				.state_root
-				.to_vec()
-				.try_into()
-				.map_err(|_| Error::<T>::NewStateOutOfBounds)?;
-			StateKey::<T>::put(state_key);
+			let new_state_key = result.state_root;
+			StateKey::<T>::put(new_state_key);
 
 			let tx_hash = result.tx_hash;
 			for address in result.call_addresses {
@@ -486,7 +482,7 @@ pub mod pallet {
 		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
 			// It is correct to call expect for genesis initialization
-			let genesis_state_key: BoundedVec<_, _> =
+			let genesis_state_key: BoundedVec<u8, StateKeyLength> =
 				state_key.to_vec().try_into().expect("Genesis state key size out of boundaries");
 			StateKey::<T>::put(genesis_state_key);
 

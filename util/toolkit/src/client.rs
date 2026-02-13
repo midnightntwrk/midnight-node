@@ -90,7 +90,7 @@ impl MidnightNodeClient {
 			None => self.api.storage().at_latest().await?,
 		};
 		let state_key = storage.fetch(&storage_query).await?;
-		Ok(state_key.map(|bounded| bounded.0))
+		Ok(state_key)
 	}
 
 	pub async fn get_block_one_hash(
