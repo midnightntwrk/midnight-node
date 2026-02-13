@@ -171,6 +171,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// This case is hit for the genesis block - in this case, we still need to process the txs
 		// to set dust info correctly for all the wallets, but we want the final ledger state for
 		// this block to == the final state in the genesis block
+		//
+		// Values used in the ledger state constructor are not directly observable in the genesis
+		// block, so it's no possible to reconstruct the ledger state by applying the genesis
+		// transactions to an empty state.
 		if let Some(state) = state {
 			self.update_ledger_state_from_bytes(state);
 		}
