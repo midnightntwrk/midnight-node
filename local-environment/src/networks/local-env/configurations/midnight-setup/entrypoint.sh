@@ -27,11 +27,9 @@ check_json_validity() {
   fi
 }
 
-# Contracts deployed, get current epoch to know when it will be active
-epoch=$(curl -s --request POST \
-    --url "http://ogmios:1337" \
-    --header 'Content-Type: application/json' \
-    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
+# Read contracts-active-epoch saved by contract-compiler
+contracts_active_epoch=$(cat /runtime-values/contracts-active-epoch)
+echo "Contracts will be active at epoch: $contracts_active_epoch"
 
 echo "Using Partner Chains node version:"
 ./midnight-node --version
@@ -167,10 +165,13 @@ echo "Partnerchain configuration is complete, and will be able to start after tw
 
 echo -e "\n===== Partnerchain Configuration Complete =====\n"
 
-echo "Waiting 2 epochs for DParam to become active and contracts to be queryable..."
-n_2_epoch=$((epoch + 2))
+echo "Waiting for contracts to become active at epoch $contracts_active_epoch..."
+epoch=$(curl -s --request POST \
+    --url "http://ogmios:1337" \
+    --header 'Content-Type: application/json' \
+    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
 echo "Current epoch: $epoch"
-while [ "$epoch" -lt $n_2_epoch ]; do
+while [ "$epoch" -lt "$contracts_active_epoch" ]; do
   sleep 10
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
