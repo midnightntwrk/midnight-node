@@ -13,11 +13,9 @@
 
 use super::{
 	base_crypto_local, helpers_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
+	mn_ledger_local, transient_crypto_local, zswap_local,
 };
-use base_crypto_local::{
-	cost_model::SyntheticCost, hash::HashOutput as HashOutputLedger, time::Timestamp,
-};
+use base_crypto_local::{cost_model::SyntheticCost, time::Timestamp};
 use derive_where::derive_where;
 use ledger_storage_local::{
 	self as storage, Storable,
@@ -33,18 +31,16 @@ use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
-use onchain_runtime_local::context::BlockContext as LedgerBlockContext;
 use std::{borrow::Borrow, collections::HashMap};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
 use super::{
+	super::super::BlockContext,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
-
-use crate::common::types::BlockContext;
 
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
@@ -217,21 +213,15 @@ impl<D: DB> Ledger<D> {
 	pub(crate) fn get_transaction_context(
 		&self,
 		block_context: BlockContext,
-	) -> TransactionContext<D> {
-		let block_hash: [u8; 32] = block_context
-			.parent_block_hash
-			.try_into()
-			.expect("Runtime is using `sp_core:H256` which is 32 bytes");
-
-		TransactionContext {
+	) -> Result<TransactionContext<D>, LedgerApiError> {
+		Ok(TransactionContext {
 			ref_state: self.state.clone(),
-			block_context: LedgerBlockContext {
-				tblock: Timestamp::from_secs(block_context.tblock),
-				tblock_err: block_context.tblock_err,
-				parent_block_hash: HashOutputLedger(block_hash),
-			},
+			block_context: block_context.try_into().map_err(|e| {
+				log::error!(target: LOG_TARGET, "failed to convert block_context: {}", hex::encode(e));
+				LedgerApiError::GetTransactionContextError
+			})?,
 			whitelist: None,
-		}
+		})
 	}
 }
 
@@ -279,7 +269,7 @@ mod tests {
 		let tx = api
 			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
 			.expect("failed to deserialize tx");
-		let tx_ctx = ledger.get_transaction_context(block_context.clone());
+		let tx_ctx = ledger.get_transaction_context(block_context.clone()).unwrap();
 		let verified_tx =
 			tx.0.well_formed(
 				&tx_ctx.ref_state,

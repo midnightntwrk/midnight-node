@@ -18,6 +18,8 @@ use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info_derive::TypeInfo;
 use sp_runtime::RuntimeDebug;
 
+pub use super::super::BlockContext;
+
 use DeserializationError::{
 	ContractAddress as DeserializationContractAddress, LedgerState as DeserializationLedgerState,
 	NetworkId, PublicKey, Transaction,
@@ -144,6 +146,7 @@ pub enum LedgerApiError {
 	BlockLimitExceededError,
 	FeeCalculationError,
 	HostApiError,
+	GetTransactionContextError,
 }
 
 impl core::fmt::Display for LedgerApiError {
@@ -228,6 +231,9 @@ impl core::fmt::Display for LedgerApiError {
 			},
 			LedgerApiError::HostApiError => {
 				write!(f, "Error while processing the transaction in the host API")
+			},
+			LedgerApiError::GetTransactionContextError => {
+				write!(f, "Error while getting transaction context")
 			},
 		}
 	}
@@ -334,6 +340,7 @@ impl From<LedgerApiError> for u8 {
 			LedgerApiError::ContractCallCostError => 153,
 			LedgerApiError::BlockLimitExceededError => 154,
 			LedgerApiError::FeeCalculationError => 155,
+			LedgerApiError::GetTransactionContextError => 165,
 			// Error in the Host API, not coming from Ledger
 			LedgerApiError::HostApiError => 255,
 		}

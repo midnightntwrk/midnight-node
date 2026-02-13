@@ -267,6 +267,14 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
+      - name: Generate dummy genesis seeds
+        run: |
+          mkdir -p secrets
+          for cfg in res/cfg/*.toml; do
+            network=$(basename "$cfg" .toml)
+            python3 scripts/generate-genesis-seeds.py -c 4 -o "secrets/${network}-genesis-seeds.json"
+          done
+
       - name: Check Genesis Rebuild
         run: |
           mkdir -p $HOME/.cargo
@@ -601,7 +609,7 @@ jobs:
         run: scripts/free-disk-space.sh
 
       - name: Install just
-        uses: taiki-e/install-action@650c5ca14212efbbf3e580844b04bdccf68dac31 #v2.67.18
+        uses: taiki-e/install-action@1e67dedb5e3c590e1c9d9272ace46ef689da250d #v2.67.27
         with:
           tool: just
 

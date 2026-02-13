@@ -1,21 +1,26 @@
+use derive_where::derive_where;
 use thiserror::Error;
 
 use super::super::{
-	DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier, DustOutput,
-	DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError, HRP_CONSTANT,
-	HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, MnLedgerDustSpendError,
-	ProofPreimageMarker, QualifiedDustOutput, Role, Serializable, ShortTaggedDeserializeError,
-	Tagged, Timestamp, WalletAddress, WalletSeed, short_tagged_deserialize, short_tagged_serialize,
+	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier,
+	DustOutput, DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError,
+	HRP_CONSTANT, HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, Loader,
+	MnLedgerDustSpendError, ProofPreimageMarker, QualifiedDustOutput, Role, Serializable,
+	ShortTaggedDeserializeError, Sp, Storable, Tagged, Timestamp, WalletAddress, WalletSeed,
+	mn_ledger_serialize as serialize, mn_ledger_storage as storage, short_tagged_deserialize,
+	short_tagged_serialize,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
 pub struct DustWallet<D: DB> {
 	pub public_key: DustPublicKey,
-	secret_key: Option<DustSecretKey>,
-	pub dust_local_state: Option<DustLocalState<D>>,
+	secret_key: Option<Sp<DustSecretKey, D>>,
+	pub dust_local_state: Option<Sp<DustLocalState<D>, D>>,
 	// We track the UTXOs we spent, to avoid spending the same UTXO twice in one batch of TXs.
 	// This set is cleared in `process_ttls`, because that is called when a new block is produced.
-	spent_utxos: HashSet<DustNullifier>,
+	spent_utxos: HashSet<DustNullifier, D>,
 }
 
 impl<D: DB> DeriveSeed for DustWallet<D> {}
@@ -38,9 +43,9 @@ impl<D: DB> DustWallet<D> {
 	fn from_seed(derived_seed: [u8; 32], params: Option<&LedgerParameters>) -> Self {
 		let secret_key = DustSecretKey::derive_secret_key(&derived_seed);
 		let public_key = secret_key.clone().into();
-		let dust_local_state = params.map(|p| DustLocalState::new(p.dust));
+		let dust_local_state = params.map(|p| Sp::new(DustLocalState::new(p.dust)));
 		let spent_utxos = HashSet::new();
-		Self { public_key, secret_key: Some(secret_key), dust_local_state, spent_utxos }
+		Self { public_key, secret_key: Some(Sp::new(secret_key)), dust_local_state, spent_utxos }
 	}
 
 	pub fn default(root_seed: WalletSeed, params: Option<&LedgerParameters>) -> Self {
@@ -65,14 +70,14 @@ impl<D: DB> DustWallet<D> {
 		if let Some(state) = self.dust_local_state.as_mut()
 			&& let Some(sk) = self.secret_key.as_ref()
 		{
-			*state = state.clone().replay_events(sk, events)?;
+			*state = Sp::new(state.replay_events(sk, events)?);
 		}
 		Ok(())
 	}
 
 	pub fn process_ttls(&mut self, tblock: Timestamp) {
 		if let Some(state) = self.dust_local_state.as_mut() {
-			*state = state.clone().process_ttls(tblock);
+			*state = Sp::new(state.process_ttls(tblock));
 		}
 		self.spent_utxos = HashSet::new()
 	}
@@ -107,7 +112,7 @@ impl<D: DB> DustWallet<D> {
 			let (new_state, spend) = state
 				.spend(sk, &qdo, v_fee, ctime)
 				.map_err(|e| DustSpendError::Internal(Box::new(e)))?;
-			state = new_state;
+			state = Sp::new(new_state);
 			spends.push(spend);
 			remaining_amount -= v_fee;
 			if remaining_amount == 0 {

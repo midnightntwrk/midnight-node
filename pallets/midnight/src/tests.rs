@@ -20,9 +20,8 @@ use crate::{
 use assert_matches::assert_matches;
 use frame_support::{assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize};
 use frame_system::RawOrigin;
-use midnight_node_ledger::types::{
-	BlockContext,
-	active_version::{DeserializationError, LedgerApiError, MalformedError, TransactionError},
+use midnight_node_ledger::types::active_version::{
+	BlockContext, DeserializationError, LedgerApiError, MalformedError, TransactionError,
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -38,7 +37,7 @@ use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -398,6 +397,30 @@ fn test_get_zswap_state_root() {
 		let new_root = mock::Midnight::get_zswap_state_root().unwrap();
 
 		assert_ne!(new_root, root);
+	});
+}
+
+#[test]
+fn test_get_ledger_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let root = mock::Midnight::get_ledger_state_root();
+
+		assert_ok!(&root);
+		assert!(!root.unwrap().is_empty());
+	});
+}
+
+#[test]
+fn test_get_ledger_state_root_differs_from_zswap_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let ledger_root = mock::Midnight::get_ledger_state_root().unwrap();
+		let zswap_root = mock::Midnight::get_zswap_state_root().unwrap();
+
+		assert_ne!(ledger_root, zswap_root);
 	});
 }
 

@@ -16,11 +16,18 @@
 use crate::{
 	cfg::Cfg,
 	cli::{self, Cli, Subcommand},
-	cnight_genesis::generate_cnight_genesis,
-	federated_authority_genesis::generate_federated_authority_genesis,
-	ics_genesis::{IcsAddresses, generate_ics_genesis},
-	permissioned_candidates_genesis::{
-		PcChainConfig, PermissionedCandidatesAddresses, generate_permissioned_candidates_genesis,
+	genesis::creation::{
+		cnight_genesis::generate_cnight_genesis,
+		federated_authority_genesis::generate_federated_authority_genesis,
+		ics_genesis::{IcsAddresses, generate_ics_genesis},
+		permissioned_candidates_genesis::{
+			PcChainConfig, PermissionedCandidatesAddresses,
+			generate_permissioned_candidates_genesis,
+		},
+	},
+	genesis::verification::{
+		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
+		verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
 	},
 	service::{self, StorageInit},
 };
@@ -861,6 +868,341 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 				log::info!("All genesis config files generated successfully!");
 				Ok(())
+			})
+		},
+		Subcommand::VerifyLedgerStateGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			let result = verify_ledger_state_genesis::verify_ledger_state_genesis(
+				&cmd.chain_spec,
+				cmd.cnight_config.as_deref(),
+				cmd.ledger_parameters_config.as_deref(),
+				cmd.network.as_deref(),
+			)
+			.map_err(|e| sc_cli::Error::Input(format!("Genesis verification failed: {e}")))?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+			}
+		},
+		Subcommand::VerifyCardanoTipFinalized(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let pc_config_path =
+				cmd.pc_config.clone().unwrap_or_else(|| res_dir.join("pc-chain-config.json"));
+
+			// Load security_parameter from pc-chain-config.json
+			let pc_config_content = std::fs::read_to_string(&pc_config_path).map_err(|e| {
+				sc_cli::Error::Input(format!("Failed to read {}: {}", pc_config_path.display(), e))
+			})?;
+			let pc_config: PcChainConfig =
+				serde_json::from_str(&pc_config_content).map_err(|e| {
+					sc_cli::Error::Input(format!(
+						"Failed to parse {}: {}",
+						pc_config_path.display(),
+						e
+					))
+				})?;
+			let security_parameter = pc_config.cardano.security_parameter;
+			log::info!(
+				"Using security_parameter={} from {}",
+				security_parameter,
+				pc_config_path.display()
+			);
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				// Get the block number for the provided tip
+				let tip_block_number =
+					verify_auth_script_common::get_block_number(&pool, &cmd.cardano_tip)
+						.await
+						.map_err(|e| {
+							sc_cli::Error::Input(format!(
+								"Failed to get block number for tip {}: {}",
+								cmd.cardano_tip, e
+							))
+						})?;
+
+				// Get the latest block number from db-sync
+				let latest_block_number: (i32,) = sqlx::query_as(
+					r#"
+					SELECT block_no
+					FROM block
+					WHERE block_no IS NOT NULL
+					ORDER BY block_no DESC
+					LIMIT 1
+					"#,
+				)
+				.fetch_one(&pool)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Failed to get latest block number: {}", e))
+				})?;
+
+				let confirmations = latest_block_number.0 as u32 - tip_block_number;
+				let is_finalized = confirmations >= security_parameter;
+
+				println!("\n=== Cardano Tip Finalization Check ===\n");
+				println!("Cardano tip:          {}", cmd.cardano_tip);
+				println!("Tip block number:     {}", tip_block_number);
+				println!("Latest block number:  {}", latest_block_number.0);
+				println!("Confirmations:        {}", confirmations);
+				println!("Security parameter:   {}", security_parameter);
+				println!();
+
+				if is_finalized {
+					println!(
+						"RESULT: FINALIZED (confirmations {} >= security_parameter {})",
+						confirmations, security_parameter
+					);
+					Ok(())
+				} else {
+					println!(
+						"RESULT: NOT FINALIZED (confirmations {} < security_parameter {})",
+						confirmations, security_parameter
+					);
+					Err(sc_cli::Error::Input(format!(
+						"Block is not finalized: {} confirmations < {} security_parameter",
+						confirmations, security_parameter
+					)))
+				}
+			})
+		},
+		Subcommand::VerifyAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let federated_authority_addresses = cmd
+				.federated_authority_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("federated-authority-addresses.json"));
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let permissioned_candidates_addresses = cmd
+				.permissioned_candidates_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("permissioned-candidates-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let mut all_passed = true;
+
+				// 1. Verify Federated Authority
+				let fa_result =
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+						&federated_authority_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Federated authority auth script verification failed: {e}"
+						))
+					})?;
+				fa_result.print_summary();
+				if !fa_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 2. Verify ICS
+				let ics_result = verify_ics_auth_script::verify_ics_auth_script(
+					&ics_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("ICS auth script verification failed: {e}"))
+				})?;
+				ics_result.print_summary();
+				if !ics_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 3. Verify Permissioned Candidates
+				let pc_result =
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+						&permissioned_candidates_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Permissioned candidates auth script verification failed: {e}"
+						))
+					})?;
+				pc_result.print_summary();
+				if !pc_result.all_passed() {
+					all_passed = false;
+				}
+
+				println!("\n=== Overall Auth Script Verification ===\n");
+				if all_passed {
+					println!("RESULT: ALL CHECKS PASSED");
+					Ok(())
+				} else {
+					println!("RESULT: SOME CHECKS FAILED");
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyFederatedAuthorityAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let federated_authority_addresses = cmd
+				.federated_authority_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("federated-authority-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result =
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+						&federated_authority_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Federated authority auth script verification failed: {e}"
+						))
+					})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyIcsAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result = verify_ics_auth_script::verify_ics_auth_script(
+					&ics_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("ICS auth script verification failed: {e}"))
+				})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyPermissionedCandidatesAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let permissioned_candidates_addresses = cmd
+				.permissioned_candidates_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("permissioned-candidates-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result =
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+						&permissioned_candidates_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Permissioned candidates auth script verification failed: {e}"
+						))
+					})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
 			})
 		},
 	}

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::prelude::string::String;
 use scale_info_derive::TypeInfo;
@@ -77,21 +77,6 @@ pub struct Tx {
 	pub identifiers: Vec<Vec<u8>>,
 	pub has_fallible_coins: bool,
 	pub has_guaranteed_coins: bool,
-}
-
-/// A scale friendly version of mn_ledger::onchain_runtime::context::BlockContext
-/// that can be used to pass across the host interface.
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, Debug, TypeInfo, Eq, PartialEq)]
-pub struct BlockContext {
-	pub tblock: u64,
-	pub tblock_err: u32,
-	pub parent_block_hash: Vec<u8>,
-}
-
-impl Default for BlockContext {
-	fn default() -> Self {
-		BlockContext { tblock: 0, tblock_err: 0, parent_block_hash: vec![0u8; 32] }
-	}
 }
 
 pub type StorageCost = u128;
