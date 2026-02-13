@@ -311,7 +311,7 @@ jobs:
 
           # Extract midnight-node
           NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
-          NODE_RELEASE="midnight-node-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $NODE_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$NODE_IMAGE"
@@ -325,7 +325,7 @@ jobs:
 
           # Extract midnight-node-toolkit
           TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
-          TOOLKIT_RELEASE="midnight-node-toolkit-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $TOOLKIT_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE"
