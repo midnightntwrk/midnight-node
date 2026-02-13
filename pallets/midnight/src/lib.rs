@@ -41,10 +41,12 @@ pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use crate::alloc::string::ToString;
 	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
 	use scale_info::prelude::{string::String, vec::Vec};
+	use sidechain_domain::byte_string::BoundedString;
 
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
@@ -162,7 +164,7 @@ pub mod pallet {
 	pub type ParentTimestamp<T> = StorageValue<_, u64, ValueQuery, DefaultParentTimestamp>;
 
 	#[pallet::storage]
-	pub type NetworkId<T> = StorageValue<_, BoundedVec<u8, MaxNetworkIdLength>>;
+	pub type NetworkId<T> = StorageValue<_, BoundedString<MaxNetworkIdLength>, ValueQuery>;
 
 	#[pallet::type_value]
 	pub fn DefaultWeight() -> Weight {
@@ -483,14 +485,13 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
+			// It is correct to call expect for genesis initialization
 			let genesis_state_key: BoundedVec<_, _> =
 				state_key.to_vec().try_into().expect("Genesis state key size out of boundaries");
 			StateKey::<T>::put(genesis_state_key);
 
-			let network_id: BoundedVec<_, _> = network_id
-				.as_bytes()
-				.to_vec()
-				.try_into()
+			// It is correct to call expect for genesis initialization
+			let network_id = BoundedString::<MaxNetworkIdLength>::try_from(network_id)
 				.expect("Network Id size out of boundaries");
 			NetworkId::<T>::put(network_id);
 		}
@@ -512,10 +513,7 @@ pub mod pallet {
 
 		// grcov-excl-start
 		pub fn get_network_id() -> String {
-			match <NetworkId<T>>::get() {
-				None => String::new(),
-				Some(name) => String::from_utf8(name.to_vec()).expect("NetworkId is not a String"),
-			}
+			NetworkId::<T>::get().to_string()
 		}
 
 		pub fn get_zswap_chain_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {

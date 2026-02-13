@@ -10506,6 +10506,7 @@ dependencies = [
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
+ "sidechain-domain",
  "sp-api",
  "sp-core",
  "sp-io",
