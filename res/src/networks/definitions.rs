@@ -13,6 +13,7 @@
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
@@ -69,6 +70,11 @@ impl MidnightNetwork for UndeployedNetwork {
 		serde_json::from_str(&config_str).unwrap()
 	}
 
+	fn reserve_config(&self) -> ReserveConfig {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/reserve-config.json"));
+		serde_json::from_str(&config_str).unwrap()
+	}
+
 	fn genesis_utxo(&self) -> &str {
 		"c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
 	}
@@ -104,6 +110,7 @@ pub struct CustomNetwork {
 	pub federated_authority_config: FederatedAuthorityObservationConfig,
 	pub system_parameters_config: SystemParametersConfig,
 	pub ics_config: IcsConfig,
+	pub reserve_config: ReserveConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -144,6 +151,10 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn ics_config(&self) -> IcsConfig {
 		self.ics_config.clone()
+	}
+
+	fn reserve_config(&self) -> ReserveConfig {
+		self.reserve_config.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {

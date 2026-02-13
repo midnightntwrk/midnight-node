@@ -24,6 +24,7 @@ use midnight_node_res::{
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
@@ -214,6 +215,17 @@ impl SubstrateCli for Cfg {
 				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
 					.map_err(|e| format!("failed to parse IcsConfig: {e}"))?;
 
+				let reserve_config_str = std::fs::read_to_string(
+					self.chain_spec_cfg
+						.chainspec_reserve_config
+						.as_ref()
+						.ok_or("chainspec_reserve_config not configured")?,
+				)
+				.map_err(|e| format!("failed to read reserve_config: {e}"))?;
+
+				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
+					.map_err(|e| format!("failed to parse ReserveConfig: {e}"))?;
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self
 						.chain_spec_cfg
@@ -242,6 +254,7 @@ impl SubstrateCli for Cfg {
 					federated_authority_config,
 					system_parameters_config,
 					ics_config,
+					reserve_config,
 				};
 				chain_config(network)
 			},

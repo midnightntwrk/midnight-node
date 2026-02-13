@@ -205,6 +205,20 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::get_zswap_state_root(state_key)
 	}
 
+	fn is_governance_allowed_system_tx(system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
+		Bridge::<Signature, Database>::is_governance_allowed_system_tx(system_tx)
+	}
+
+	/*
+	 * Returns the pure ledger state root (without StorableLedgerState wrapping)
+	 */
+	fn get_ledger_state_root(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::get_ledger_state_root(state_key)
+	}
+
 	fn construct_cnight_generates_dust_event(
 		value: PassFatPointerAndDecode<u128>,
 		owner: PassFatPointerAndRead<&[u8]>,

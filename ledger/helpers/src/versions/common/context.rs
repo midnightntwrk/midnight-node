@@ -17,7 +17,7 @@ use super::{
 	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Sp, Storable, SyntheticCost,
 	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	clamp_and_normalize, compute_overall_fullness, default_storage,
+	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
@@ -112,17 +112,16 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
-	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+	pub fn update_ledger_state_from_txs<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
-		txs: Vec<SerdeTransaction<S, P, D>>,
-		block_context: BlockContext,
-		state_root: Option<Vec<u8>>,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
 	) where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(&tx, &block_context);
+			let (events, cost) = self.update_from_tx(tx, block_context);
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
@@ -148,12 +147,47 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 				.expect("Error applying block updates"),
 		);
+	}
+
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
+		let mut latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let new_state: LedgerState<D> =
+			deserialize(state).expect("failed to deserialize state bytes");
+		*latest_ledger_state = Sp::new(new_state);
+	}
+
+	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+		&self,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
+		state_root: Option<&Vec<u8>>,
+		state: Option<&Vec<u8>>,
+	) where
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		self.update_ledger_state_from_txs(txs, block_context);
+
+		// This case is hit for the genesis block - in this case, we still need to process the txs
+		// to set dust info correctly for all the wallets, but we want the final ledger state for
+		// this block to == the final state in the genesis block
+		//
+		// Values used in the ledger state constructor are not directly observable in the genesis
+		// block, so it's no possible to reconstruct the ledger state by applying the genesis
+		// transactions to an empty state.
+		if let Some(state) = state {
+			self.update_ledger_state_from_bytes(state);
+		}
+
+		// Only when done processing txs for the same block, it's time to call `post_block_update`
+		let latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
-				Some(actual_root) if actual_root != expected_root => {
+				Some(actual_root) if actual_root != *expected_root => {
 					panic!(
 						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(&expected_root),
+						hex_encode(expected_root),
 						hex_encode(&actual_root),
 						hex_encode(block_context.parent_block_hash.0),
 					);
@@ -166,7 +200,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		for wallet in
 			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
-			wallet.update_dust_from_block(&block_context);
+			wallet.update_dust_from_block(block_context);
 		}
 		// Update latest block context
 		*self.latest_block_context.lock().expect("error locking latest_block_context") =

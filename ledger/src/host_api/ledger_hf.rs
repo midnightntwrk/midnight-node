@@ -193,6 +193,10 @@ pub trait LedgerBridgeHf {
 		Bridge::<Signature, Database>::get_zswap_chain_state(state_key, contract_address)
 	}
 
+	fn is_governance_allowed_system_tx(system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
+		Bridge::<Signature, Database>::is_governance_allowed_system_tx(system_tx)
+	}
+
 	fn construct_cnight_generates_dust_event(
 		value: PassFatPointerAndDecode<u128>,
 		owner: PassFatPointerAndRead<&[u8]>,
@@ -268,5 +272,12 @@ pub trait LedgerBridgeHf {
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		Bridge::<Signature, Database>::get_zswap_state_root(state_key)
+	}
+
+	fn get_ledger_state_root(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::get_ledger_state_root(state_key)
 	}
 }

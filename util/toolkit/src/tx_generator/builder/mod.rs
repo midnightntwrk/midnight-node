@@ -431,7 +431,12 @@ pub trait BuildTxsExt {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let context_arc = Arc::new(context);
@@ -520,7 +525,12 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	}
 
 	for block in blocks_to_replay {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
 	}
 
 	// Save updated cache if storage is provided and blocks were replayed

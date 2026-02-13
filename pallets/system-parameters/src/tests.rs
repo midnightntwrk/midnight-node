@@ -13,10 +13,16 @@
 
 //! Tests for system-parameters pallet
 
-use crate::{Error, Event, mock::*};
+use crate::{
+	Error, Event,
+	mock::*,
+	pallet::{DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES, DEFAULT_TERMS_AND_CONDITIONS_URL},
+};
 use frame_support::{assert_noop, assert_ok};
 use sidechain_domain::DParameter;
 use sp_core::H256;
+
+const DEFAULT_TERMS_AND_CONDITIONS_HASH: H256 = H256(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES);
 
 #[test]
 fn update_terms_and_conditions_works_with_root() {
@@ -127,7 +133,12 @@ fn genesis_config_initializes_terms_and_conditions() {
 fn genesis_config_initializes_d_parameter() {
 	let d_param = DParameter::new(15, 10);
 
-	new_test_ext_with_genesis(None, None, Some(d_param.clone())).execute_with(|| {
+	new_test_ext_with_genesis(
+		Some(DEFAULT_TERMS_AND_CONDITIONS_HASH),
+		Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()),
+		Some(d_param.clone()),
+	)
+	.execute_with(|| {
 		let stored = SystemParameters::get_d_parameter();
 		assert_eq!(stored.num_permissioned_candidates, 15);
 		assert_eq!(stored.num_registered_candidates, 10);
