@@ -17,3 +17,4 @@ pub mod cnight_genesis;
 pub mod federated_authority_genesis;
 pub mod ics_genesis;
 pub mod permissioned_candidates_genesis;
+pub mod reserve_genesis;

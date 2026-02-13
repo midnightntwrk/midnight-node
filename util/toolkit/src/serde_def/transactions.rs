@@ -57,6 +57,7 @@ where
 			transactions: txs_with_context.into_iter().map(|t| t.tx).collect(),
 			context,
 			state_root: None,
+			state: None,
 		}];
 
 		Self { blocks }
@@ -79,6 +80,7 @@ where
 					transactions: std::mem::take(&mut current_batch),
 					context: last_context.unwrap(),
 					state_root: None,
+					state: None,
 				});
 				number += 1;
 			}
@@ -93,6 +95,7 @@ where
 				transactions: current_batch,
 				context: context.clone(),
 				state_root: None,
+				state: None,
 			});
 		}
 
@@ -117,6 +120,7 @@ where
 				transactions: Vec::new(),
 				context,
 				state_root: None,
+				state: None,
 			});
 		}
 		Self { blocks }

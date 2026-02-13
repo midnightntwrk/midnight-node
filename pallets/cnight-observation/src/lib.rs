@@ -223,6 +223,12 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
+			// Genesis configuration validation: BuildGenesisConfig::build() returns () and
+			// cannot propagate errors via Result. Panicking on invalid configuration values
+			// is the standard Substrate genesis fail-fast convention — an invalid chain spec
+			// must halt node startup rather than silently produce incorrect chain state.
+			// Each expect() below validates a bounded-length conversion from the chain spec;
+			// failure indicates a misconfigured genesis that must be corrected before launch.
 			MainChainMappingValidatorAddress::<T>::set(
 				self.config
 					.addresses
@@ -310,8 +316,10 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
-		// Intentionally panic on codec error — corrupted inherent data is an unrecoverable
-		// programming error; silently returning None would drop token movements for this block.
+		// Intentionally panic on codec error. Inherent data is produced by the node's own
+		// inherent data provider — a decoding failure here indicates a node-internal programming
+		// error, not malformed external input. Silently returning None would drop token movements
+		// for the entire block, a strictly worse failure mode than surfacing the error immediately.
 		#[allow(clippy::unwrap_in_result)]
 		fn get_data_from_inherent_data(
 			data: &InherentData,

@@ -128,6 +128,31 @@ pub struct GenesisConfigCmd {
 	/// Output path for the permissioned candidates genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
 	#[arg(long)]
 	pub permissioned_candidates_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(long)]
+	pub reserve_output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct ReserveGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Parser)]
@@ -290,6 +315,10 @@ pub enum Subcommand {
 	/// contract on Cardano to determine the total cNIGHT locked, which will be allocated to
 	/// the Midnight treasury at genesis.
 	GenerateIcsGenesis(IcsGenesisCmd),
+
+	/// Generate reserve contract genesis file. This queries the reserve contract on Cardano
+	/// to determine the total cNIGHT locked.
+	GenerateReserveGenesis(ReserveGenesisCmd),
 
 	/// Generate Federed Authority Genesis file.
 	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),

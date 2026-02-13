@@ -60,7 +60,7 @@ pub use super::{
 			BindingKind, CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind,
 			ClaimRewardsTransaction, ContractAction, ContractDeploy, ContractOperationVersion,
 			ContractOperationVersionedVerifierKey, FEE_TOKEN, INITIAL_PARAMETERS, Intent,
-			IntentHash, LedgerParameters, LedgerState, MaintenanceUpdate,
+			IntentHash, LedgerParameters, LedgerState, MAX_SUPPLY, MaintenanceUpdate,
 			OutputInstructionUnshielded, PedersenDowngradeable, ProofKind, ProofMarker,
 			ProofPreimageMarker, SignatureKind, SingleUpdate, StandardTransaction,
 			SystemTransaction, Transaction, TransactionCostModel, TransactionHash, UnshieldedOffer,

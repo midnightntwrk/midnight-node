@@ -24,6 +24,7 @@ use crate::{
 			PcChainConfig, PermissionedCandidatesAddresses,
 			generate_permissioned_candidates_genesis,
 		},
+		reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
 	},
 	genesis::verification::{
 		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
@@ -560,6 +561,41 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok(())
 			})
 		},
+		Subcommand::GenerateReserveGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("reserve-config.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
+				let addresses: ReserveAddresses = serde_json::from_str(&reserve_addresses_str)
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read reserve addresses file as json: {e:?}"
+						))
+					})?;
+				generate_reserve_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
+					})?;
+
+				Ok(())
+			})
+		},
 		Subcommand::GenerateFederatedAuthorityGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
@@ -864,6 +900,40 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					sc_cli::Error::Input(format!(
 						"permissioned candidates genesis generation failed: {e}"
 					))
+				})?;
+
+				// 4. Generate reserve genesis
+				log::info!("Generating reserve genesis config...");
+				let reserve_addresses = cmd
+					.reserve_addresses
+					.clone()
+					.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+				let reserve_output = cmd
+					.reserve_output
+					.clone()
+					.unwrap_or_else(|| res_dir.join("reserve-config.json"));
+
+				let reserve_pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
+				let reserve_addresses_parsed: ReserveAddresses =
+					serde_json::from_str(&reserve_addresses_str).map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read reserve addresses file as json: {e:?}"
+						))
+					})?;
+
+				generate_reserve_genesis(
+					reserve_addresses_parsed,
+					&reserve_pool,
+					cmd.cardano_tip.clone(),
+					&reserve_output,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("reserve genesis generation failed: {e}"))
 				})?;
 
 				log::info!("All genesis config files generated successfully!");

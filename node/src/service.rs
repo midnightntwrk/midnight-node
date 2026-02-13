@@ -594,6 +594,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let justification_stream = grandpa_link.justification_stream();
 		let main_chain_follower_data_sources = data_sources.clone();
 		let epoch_config = epoch_config.clone();
+		let network_for_rpc = network.clone();
+		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
 
 		move |subscription_executor: SubscriptionTaskExecutor| {
 			let grandpa = GrandpaDeps {
@@ -622,6 +624,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				time_source: Arc::new(SystemTimeSource),
 				main_chain_epoch_config: epoch_config.clone(),
 				backend: backend.clone(),
+				network: network_for_rpc.clone(),
+				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
