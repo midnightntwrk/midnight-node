@@ -581,6 +581,11 @@ pub mod pallet {
 			LedgerApi::get_zswap_state_root(&state_key)
 		}
 
+		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
+			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			LedgerApi::get_ledger_state_root(&state_key)
+		}
+
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
 			Self::get_transaction_cost(tx)
