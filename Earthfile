@@ -230,10 +230,12 @@ rebuild-genesis-state:
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         COPY res/dev/ics-config.json /genesis-config/ics-config.json
+        COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
+        COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -259,7 +261,8 @@ rebuild-genesis-state:
             --seeds-file /secrets/genesis-seeds.json \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
@@ -267,7 +270,8 @@ rebuild-genesis-state:
             --network ${NETWORK} \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"

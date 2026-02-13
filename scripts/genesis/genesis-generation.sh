@@ -157,6 +157,19 @@ uses_ics_config() {
     esac
 }
 
+# Function to check if network uses reserve config
+uses_reserve_config() {
+    local network="$1"
+    case "$network" in
+        qanet|undeployed|devnet|govnet|node-dev-01)
+            return 0  # true
+            ;;
+        *)
+            return 1  # false
+            ;;
+    esac
+}
+
 # Function to show input files info
 show_input_files() {
     local network="$1"
@@ -168,6 +181,7 @@ show_input_files() {
     local files=(
         "cnight-addresses.json"
         "ics-addresses.json"
+        "reserve-addresses.json"
         "ledger-parameters-config.json"
         "federated-authority-addresses.json"
         "permissioned-candidates-addresses.json"
@@ -323,6 +337,43 @@ run_ics_genesis_generation() {
         return 0
     else
         print_error "ICS genesis generation failed!"
+        return 1
+    fi
+}
+
+# Function to run reserve genesis generation
+run_reserve_genesis_generation() {
+    local network="$1"
+    local db_connection="$2"
+    local cardano_tip="$3"
+    local node_binary="$4"
+
+    echo -e "${BOLD}Command to execute:${NC}"
+    echo -e "  ${CYAN}CFG_PRESET=$network \\\\${NC}"
+    echo -e "  ${CYAN}ALLOW_NON_SSL=true \\\\${NC}"
+    echo -e "  ${CYAN}DB_SYNC_POSTGRES_CONNECTION_STRING=\"...\" \\\\${NC}"
+    echo -e "  ${CYAN}$node_binary generate-reserve-genesis \\\\${NC}"
+    echo -e "  ${CYAN}--cardano-tip $cardano_tip${NC}"
+    echo ""
+
+    print_info "Running reserve genesis generation..."
+    echo ""
+
+    cd "$REPO_ROOT"
+    export CFG_PRESET="$network"
+    export ALLOW_NON_SSL=true
+    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
+
+    if "$node_binary" generate-reserve-genesis --cardano-tip "$cardano_tip"; then
+        echo ""
+        print_success "Reserve genesis generation completed!"
+        echo ""
+        echo "File created/updated:"
+        print_file "$REPO_ROOT/res/$network/reserve-config.json"
+
+        return 0
+    else
+        print_error "Reserve genesis generation failed!"
         return 1
     fi
 }
@@ -636,6 +687,7 @@ main() {
     print_file "$REPO_ROOT/res/$network/permissioned-candidates-addresses.json -> permissioned-candidates-config.json"
     print_file "$REPO_ROOT/res/$network/cnight-addresses.json -> cnight-config.json"
     print_file "$REPO_ROOT/res/$network/ics-addresses.json -> ics-config.json (for treasury funding)"
+    print_file "$REPO_ROOT/res/$network/reserve-addresses.json -> reserve-config.json"
     echo ""
 
     if confirm "Run Step 1 (Genesis Config Generation)?" "y"; then
@@ -650,6 +702,16 @@ main() {
         elif [[ $result -eq 1 ]]; then
             print_error "Step 1 failed. Exiting."
             exit 1
+        fi
+
+        # Generate reserve config if the network uses it
+        if uses_reserve_config "$network"; then
+            echo ""
+            run_reserve_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+            local reserve_result=$?
+            if [[ $reserve_result -ne 0 ]]; then
+                print_error "Reserve genesis generation failed."
+            fi
         fi
     else
         print_info "Skipping Step 1."
@@ -670,6 +732,9 @@ main() {
     fi
     if uses_ics_config "$network"; then
         print_file "$REPO_ROOT/res/$network/ics-config.json"
+    fi
+    if uses_reserve_config "$network"; then
+        print_file "$REPO_ROOT/res/$network/reserve-config.json"
     fi
     echo ""
 
@@ -807,6 +872,7 @@ main() {
         echo -e "  ${GREEN}✓${NC} Step 1: Genesis Config Generation"
         print_file "$REPO_ROOT/res/$network/cnight-config.json"
         print_file "$REPO_ROOT/res/$network/ics-config.json"
+        print_file "$REPO_ROOT/res/$network/reserve-config.json"
         print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
         print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
     else
