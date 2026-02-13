@@ -97,6 +97,7 @@ pub async fn fetch_all<
 >(
 	url: &str,
 	num_workers: usize,
+	num_compute_workers: usize,
 	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
@@ -118,15 +119,14 @@ pub async fn fetch_all<
 		BLOCKS_PER_JOB
 	};
 
-	let num_cpu_workers = num_cpus::get();
-
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
-	let (fetch_to_compute_tx, fetch_to_compute_rx) = async_channel::bounded(num_cpu_workers * 2);
+	let (fetch_to_compute_tx, fetch_to_compute_rx) =
+		async_channel::bounded(num_compute_workers * 2);
 	// We use a separate unbounded channel here because compute workers produce recursive tasks
 	let (compute_to_compute_tx, compute_to_compute_rx) = async_channel::unbounded();
-	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_cpu_workers * 2);
+	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_compute_workers * 2);
 
 	// Push jobs into queue
 	{
@@ -180,10 +180,10 @@ pub async fn fetch_all<
 		});
 	}
 
-	log::info!("spawning {num_cpu_workers} compute workers");
+	log::info!("spawning {num_compute_workers} compute workers");
 
 	// Spawn compute workers
-	for _ in 0..num_cpus::get() {
+	for _ in 0..num_compute_workers {
 		let fetch_to_compute_rx = fetch_to_compute_rx.clone();
 		let compute_to_compute_rx = compute_to_compute_rx.clone();
 		let compute_to_compute_tx = compute_to_compute_tx.clone();
