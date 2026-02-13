@@ -57,8 +57,7 @@ pub mod pallet {
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
-			state_key.into()
+			StateKey::<T>::get()
 		}
 
 		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
@@ -66,9 +65,9 @@ pub mod pallet {
 		where
 			F: FnOnce(Vec<u8>) -> Result<(Vec<u8>, R), E>,
 		{
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 
-			let (new_state_key, custom_result) = f(state_key.into())?;
+			let (new_state_key, custom_result) = f(state_key)?;
 
 			let new_state_key: BoundedVec<_, _> =
 				new_state_key.to_vec().try_into().expect("State key size out of boundaries");
@@ -152,7 +151,7 @@ pub mod pallet {
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
-	pub type StateKey<T> = StorageValue<_, BoundedVec<u8, StateKeyLength>>;
+	pub type StateKey<T> = StorageValue<_, BoundedVec<u8, StateKeyLength>, ValueQuery>;
 
 	#[pallet::type_value]
 	pub fn DefaultParentTimestamp() -> u64 {
@@ -330,7 +329,7 @@ pub mod pallet {
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
 			// Post Block Ledger Update
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 
 			let state_root = LedgerApi::post_block_update(&state_key, block_context.clone())
@@ -366,7 +365,7 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
-			let state_key = StateKey::<T>::get().ok_or(Error::<T>::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
@@ -466,8 +465,7 @@ pub mod pallet {
 			};
 
 			let block_context = Self::get_block_context();
-			let state_key = StateKey::<T>::get()
-				.ok_or_else(|| Self::invalid_transaction(Default::default()))?;
+			let state_key = StateKey::<T>::get();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
 			LedgerApi::validate_guaranteed_execution(
@@ -498,7 +496,7 @@ pub mod pallet {
 		}
 
 		pub fn get_contract_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_contract_state(&state_key, contract_address)
 		}
 
@@ -521,7 +519,7 @@ pub mod pallet {
 		}
 
 		pub fn get_zswap_chain_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_zswap_chain_state(&state_key, contract_address)
 		}
 		// grcov-excl-stop
@@ -533,8 +531,7 @@ pub mod pallet {
 
 		fn validate_unsigned(call: &Call<T>, block_context: BlockContext) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
-				let state_key = StateKey::<T>::get()
-					.ok_or_else(|| Self::invalid_transaction(Default::default()))?;
+				let state_key = StateKey::<T>::get();
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
@@ -560,29 +557,29 @@ pub mod pallet {
 		}
 
 		pub fn get_unclaimed_amount(beneficiary: &[u8]) -> Result<u128, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_unclaimed_amount(&state_key, beneficiary)
 		}
 
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_zswap_state_root(&state_key)
 		}
 
 		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().ok_or(LedgerApiError::NoLedgerState)?;
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_state_root(&state_key)
 		}
 
