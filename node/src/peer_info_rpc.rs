@@ -19,8 +19,9 @@ use jsonrpsee::{
 	proc_macros::rpc,
 	types::error::{ErrorObject, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
 };
-use sc_network::service::traits::NetworkPeers;
+use sc_network::{ReputationChange, service::traits::NetworkPeers};
 use sc_rpc::system::Request;
+use sc_rpc_api::check_if_safe;
 use sc_utils::mpsc::TracingUnboundedSender;
 use serde::{Deserialize, Serialize};
 use sp_runtime::traits::Block as BlockT;
@@ -58,6 +59,10 @@ pub trait PeerInfoApi<Hash, Number> {
 	#[method(name = "peerReputation")]
 	async fn peer_reputation(&self, peer_id: String)
 	-> RpcResult<PeerReputationInfo<Hash, Number>>;
+
+	/// Unbans a peer by boosting its reputation above the ban threshold.
+	#[method(name = "unbanPeer", with_extensions)]
+	async fn unban_peer(&self, peer_id: String) -> RpcResult<()>;
 }
 
 pub struct PeerInfoRpc<Block: BlockT> {
@@ -181,5 +186,22 @@ where
 			reputation,
 			is_banned: reputation < BANNED_THRESHOLD,
 		})
+	}
+
+	async fn unban_peer(&self, ext: &jsonrpsee::Extensions, peer_id: String) -> RpcResult<()> {
+		check_if_safe(ext)?;
+
+		let pid: sc_network::service::traits::PeerId = peer_id.parse().map_err(|_| {
+			ErrorObject::owned(
+				INVALID_PARAMS_CODE,
+				format!("Invalid peer ID: {peer_id}"),
+				None::<()>,
+			)
+		})?;
+
+		self.network
+			.report_peer(pid, ReputationChange::new(i32::MAX, "manual unban via RPC"));
+
+		Ok(())
 	}
 }
