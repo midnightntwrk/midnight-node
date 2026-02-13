@@ -108,6 +108,8 @@ pub mod pallet {
 
 	impl<Hash: Default + AsMut<[u8]>> Default for TermsAndConditionsGenesisConfig<Hash> {
 		fn default() -> Self {
+			use crate::alloc::string::ToString;
+
 			let mut hash = Hash::default();
 			let hash_bytes = hash.as_mut();
 			let len = hash_bytes.len().min(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES.len());
