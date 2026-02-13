@@ -24,11 +24,13 @@ sign_blob_with_retry() {
 
     if cosign sign-blob "$FILE" \
         --yes \
+        --bundle "${FILE}.bundle" \
         --output-signature "${FILE}.sig" \
         --output-certificate "${FILE}.pem"; then
       echo "Successfully signed $FILE"
       echo "  Signature: ${FILE}.sig"
       echo "  Certificate: ${FILE}.pem"
+      echo "  Bundle: ${FILE}.bundle"
       return 0
     fi
 
