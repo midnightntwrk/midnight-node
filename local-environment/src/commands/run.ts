@@ -114,7 +114,7 @@ async function runEphemeralEnvironment(
 function runLocalEnvironment(runOptions: RunOptions) {
   console.log("⚙️  Preparing local environment...");
   console.log(
-    "ℹ️  Note: Midnight Governance will be active in 2 Caradno epochs.",
+    "ℹ️  Note: Midnight Governance will be active in 2 Cardano epochs.",
   );
   console.log("    The chain should start in 2 minutes.");
 
