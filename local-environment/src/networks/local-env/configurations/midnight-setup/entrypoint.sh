@@ -132,7 +132,7 @@ cat /tmp/cnight-config.json
 
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=localenv
-export CHAINSPEC_NETWORK_ID=devnet
+export CHAINSPEC_NETWORK_ID=undeployed
 export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
 export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
 export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future

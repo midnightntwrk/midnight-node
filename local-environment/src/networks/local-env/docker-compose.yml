@@ -214,7 +214,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
-      APP__APPLICATION__NETWORK_ID: "DevNet"
+      APP__APPLICATION__NETWORK_ID: "undeployed"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
       start_interval: "5s"
@@ -333,7 +333,6 @@ services:
     ports:
       - "30333:30333"
       - "9933:9933"
-      - "9944:9944"
       - "9615:9615"
     restart: always
     deploy:
@@ -445,7 +444,7 @@ services:
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30337:30337"
-      - "9937:9937"
+      - "9944:9944"
       - "9619:9619"
     restart: always
     deploy:
