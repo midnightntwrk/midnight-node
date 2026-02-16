@@ -82,7 +82,8 @@ jobs:
 
       - name: Free disk space
         run: |
-          git checkout "$GITHUB_REF" -- "scripts/free-disk-space.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- "scripts/free-disk-space.sh"
           ./scripts/free-disk-space.sh
 
       - name: Run build
@@ -104,7 +105,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
@@ -219,7 +221,8 @@ jobs:
 
       - name: Sign container images
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
 
           # Calculate IMAGE_TAG (must match definition in Earthfile)
@@ -476,7 +479,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
@@ -497,7 +501,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}"
@@ -577,7 +582,8 @@ jobs:
       - name: Sign Docker Hub images (latest-main)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
 
           # Sign arch-specific images
@@ -593,7 +599,8 @@ jobs:
       - name: Sign `latest-main` images (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
-          git checkout "$GITHUB_REF" -- ".github/scripts/sign-image.sh"
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node:latest-main"
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main"
