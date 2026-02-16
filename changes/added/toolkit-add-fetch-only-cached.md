@@ -3,5 +3,5 @@
 
 Allows a user to reduce the toolkit start-up time by skipping fetching from RPC if the chain is already cached.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/677
 Ticket: https://shielded.atlassian.net/browse/PM-21788
