@@ -13,6 +13,7 @@
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
@@ -29,9 +30,11 @@ where
 	D: Deserializer<'de>,
 {
 	let s = <String as serde::Deserialize>::deserialize(deserializer)?;
-	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).expect("hex decode failed");
-	let bytes = CryptoBytes::from_raw(bytes.try_into().expect("slice to array failed"));
-	Ok(bytes)
+	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).map_err(serde::de::Error::custom)?;
+	let arr: [u8; N] = bytes.try_into().map_err(|v: Vec<u8>| {
+		serde::de::Error::custom(format!("expected {N} bytes, got {}", v.len()))
+	})?;
+	Ok(CryptoBytes::from_raw(arr))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,6 +179,7 @@ pub trait MidnightNetwork {
 	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
 	fn ics_config(&self) -> IcsConfig;
+	fn reserve_config(&self) -> ReserveConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

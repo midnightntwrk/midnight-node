@@ -1,0 +1,17 @@
+{
+  "bootnodes": [
+    "/dns/midnight-node-boot-01/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+  ],
+  "chain_parameters": {
+    "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+  },
+  "cardano": {
+    "security_parameter": 432,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000,
+    "slot_duration_millis": 1000
+  }
+}

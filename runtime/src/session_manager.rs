@@ -52,8 +52,9 @@ impl<T: pallet_session_validator_management::Config + pallet_sidechain::Config>
 		)
 	}
 
-	// Instead of Some((*).expect) we could just use (*). However, we rather panic in presence of
-	// important programming errors.
+	// Intentionally panic if rotate fails — a missing committee is an unrecoverable programming
+	// error that must not be silently swallowed by returning None.
+	#[allow(clippy::unwrap_in_result)]
 	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, T::AuthorityKeys)>> {
 		info!("New session {new_index}");
 		Some(

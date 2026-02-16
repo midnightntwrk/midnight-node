@@ -18,11 +18,15 @@ pub use utils::find_dependency_version;
 #[path = "versions"]
 pub mod hard_fork_test {
 	pub use {
-		base_crypto_hf as base_crypto, coin_structure_hf as coin_structure,
-		ledger_storage_hf as ledger_storage, midnight_serialize_hf as midnight_serialize,
-		mn_ledger_hf as mn_ledger, onchain_runtime_hf as onchain_runtime,
+		base_crypto, coin_structure_hf as coin_structure, ledger_storage_hf as ledger_storage,
+		midnight_serialize, mn_ledger_hf as mn_ledger, onchain_runtime_hf as onchain_runtime,
 		transient_crypto_hf as transient_crypto, zkir_hf as zkir, zswap_hf as zswap,
 	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -30,16 +34,44 @@ pub mod hard_fork_test {
 }
 
 #[path = "versions"]
-pub mod latest {
+pub mod ledger_7 {
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,
 	};
 
+	#[path = "block_context/pre_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
 }
+
+#[path = "versions"]
+pub mod ledger_8 {
+	pub use {
+		base_crypto, coin_structure_ledger_8 as coin_structure,
+		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_8 as mn_ledger,
+		onchain_runtime_ledger_8 as onchain_runtime, transient_crypto_ledger_8 as transient_crypto,
+		zkir_ledger_8 as zkir, zswap_ledger_8 as zswap,
+	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+}
+
+pub use ledger_8 as latest;
+
+#[cfg(feature = "can-panic")]
+pub mod fork;
 
 #[cfg(hardfork_test)]
 pub use hard_fork_test::*;

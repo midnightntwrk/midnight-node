@@ -86,7 +86,12 @@ impl BuildTxs for SingleTxBuilder {
 		let network_id = received_tx.network();
 		let context = LedgerContext::new_from_wallet_seeds(network_id, &wallet_seeds);
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let context = Arc::new(context);
