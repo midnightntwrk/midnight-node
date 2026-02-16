@@ -1,0 +1,5 @@
+#node #client
+# Sync with non-determinism, produce blocks with determinism
+
+Until we patch the chain, we need to allow nodes to sync to tip. This change preserves the non-deterministic behaviour of syncing, while ensuring new blocks are produced deterministically.
+

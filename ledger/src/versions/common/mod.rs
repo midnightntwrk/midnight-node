@@ -52,7 +52,7 @@ use {
 		db::{DB, ParityDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt, SyncStatusExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -193,6 +193,8 @@ where
 
 		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
 
+		let is_syncing =
+			externalities.extension::<SyncStatusExt>().is_some_and(|ext| ext.is_syncing());
 		let mut utxos = tx.unshielded_utxos();
 
 		let failed_segments =
@@ -209,6 +211,14 @@ where
 
 		let (utxo_outputs, utxo_inputs) =
 			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
+
+		// During sync, shuffle segment ordering to probabilistically match historical
+		// blocks produced with non-deterministic HashMap iteration order
+		let (utxo_outputs, utxo_inputs) = if is_syncing {
+			(utxos.outputs_shuffled(), utxos.inputs_shuffled())
+		} else {
+			(utxo_outputs, utxo_inputs)
+		};
 
 		let mut event = TransactionAppliedStateRoot {
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
