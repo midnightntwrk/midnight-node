@@ -38,6 +38,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		#[codec(index = 0)]
 		LedgerApiError(LedgerApiError),
+		#[codec(index = 1)]
+		SystemTransactionNotAllowedForGovernance,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -73,6 +75,10 @@ pub mod pallet {
 			midnight_system_tx: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			ensure!(
+				LedgerApi::is_governance_allowed_system_tx(&midnight_system_tx),
+				Error::<T>::SystemTransactionNotAllowedForGovernance
+			);
 
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();

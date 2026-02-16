@@ -1,0 +1,9 @@
+{
+  "reserve_validator_address": "addr_test1wz6h9v3yqeqgr70kqpaxe9euv2g7uf9sq0tqu8alwqp46usyw3pg6",
+  "asset": {
+    "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+    "asset_name": "NIGHT"
+  },
+  "utxos": [],
+  "total_amount": 0
+}

@@ -12,6 +12,7 @@ default = ["std"]
 chain-spec = [
     "midnight-primitives-federated-authority-observation/std",
     "midnight-primitives-ics-observation/std",
+    "midnight-primitives-reserve-observation/std",
     "midnight-primitives-system-parameters/std",
     "pallet-cnight-observation/std",
     "std",
@@ -35,6 +36,7 @@ sp-session-validator-management = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
 midnight-primitives-federated-authority-observation = { workspace = true, optional = true }
 midnight-primitives-ics-observation = { workspace = true, optional = true }
+midnight-primitives-reserve-observation = { workspace = true, optional = true }
 midnight-primitives-system-parameters = { workspace = true, optional = true }
 pallet-cnight-observation = { workspace = true, optional = true }
 

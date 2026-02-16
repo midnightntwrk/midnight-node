@@ -9,8 +9,7 @@
 #   sign_blob_with_retry "path/to/file.tar.gz"
 #
 # Outputs:
-#   - ${FILE}.sig - The detached signature
-#   - ${FILE}.pem - The certificate (public key) used for signing
+#   - ${FILE}.bundle - The Sigstore bundle (signature + certificate + transparency log entry)
 
 set -euo pipefail
 
@@ -24,11 +23,9 @@ sign_blob_with_retry() {
 
     if cosign sign-blob "$FILE" \
         --yes \
-        --output-signature "${FILE}.sig" \
-        --output-certificate "${FILE}.pem"; then
+        --bundle "${FILE}.bundle"; then
       echo "Successfully signed $FILE"
-      echo "  Signature: ${FILE}.sig"
-      echo "  Certificate: ${FILE}.pem"
+      echo "  Bundle: ${FILE}.bundle"
       return 0
     fi
 

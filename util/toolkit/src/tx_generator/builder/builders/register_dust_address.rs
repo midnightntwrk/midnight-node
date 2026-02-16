@@ -52,7 +52,12 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			LedgerContext::new_from_wallet_seeds(network_id.to_string(), &[seed, funding_seed]);
 
 		for block in &received_tx.blocks {
-			context.update_from_block(block.transactions.clone(), block.context.clone(), None);
+			context.update_from_block(
+				&block.transactions,
+				&block.context.clone(),
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let context = Arc::new(context);

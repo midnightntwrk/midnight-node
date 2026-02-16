@@ -12,15 +12,13 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
-	ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
+	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, Loader, ProofKind,
+	PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
 	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
 	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
-
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
@@ -29,7 +27,8 @@ use std::{
 };
 use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Storable, Serializable)]
+#[storable(base)]
 pub enum WalletSeed {
 	Short([u8; 16]),
 	Medium([u8; 32]),
@@ -64,12 +63,7 @@ fn try_into_seed_array<const N: usize>(bytes: Vec<u8>) -> Result<[u8; N], Wallet
 impl WalletSeed {
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
-		match bytes.len() {
-			16 => Ok(Self::Short(try_into_seed_array(bytes)?)),
-			32 => Ok(Self::Medium(try_into_seed_array(bytes)?)),
-			64 => Ok(Self::Long(try_into_seed_array(bytes)?)),
-			len => Err(WalletSeedError::InvalidLength(len)),
-		}
+		bytes.as_slice().try_into()
 	}
 
 	/// Allow decoding from seeds in the form e.g. 00..01
@@ -115,6 +109,19 @@ impl WalletSeed {
 impl From<[u8; 32]> for WalletSeed {
 	fn from(value: [u8; 32]) -> Self {
 		Self::Medium(value)
+	}
+}
+
+impl TryFrom<&[u8]> for WalletSeed {
+	type Error = WalletSeedError;
+
+	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+		match value.len() {
+			16 => Ok(Self::Short(value.try_into().unwrap())),
+			32 => Ok(Self::Medium(value.try_into().unwrap())),
+			64 => Ok(Self::Long(value.try_into().unwrap())),
+			len => Err(WalletSeedError::InvalidLength(len)),
+		}
 	}
 }
 
@@ -346,27 +353,19 @@ where
 {
 	pub fn new(
 		tx: Transaction<S, P, PureGeneratorPedersen, D>,
-		parent_block_hash_seed: Option<u64>,
+		block_context: Option<BlockContext>,
 	) -> Self {
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards")
-			.as_secs();
-		let delay: u64 = 0;
-		let ttl = now + delay;
-		let timestamp = Timestamp::from_secs(ttl);
+		let block_context = block_context.unwrap_or_else(|| {
+			let now = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Time went backwards")
+				.as_secs();
+			let delay: u64 = 0;
+			let ttl = now + delay;
+			let timestamp = Timestamp::from_secs(ttl);
 
-		// In case `parent_block_hash_seed` wasn't specified, a randmon one is chosen
-		let parent_block_hash_seed =
-			parent_block_hash_seed.unwrap_or_else(|| rand::thread_rng().r#gen());
-
-		// Calculate a deterministic `parent_block_hash` based on the seed
-		let mut rng = SmallRng::seed_from_u64(parent_block_hash_seed);
-		let mut array = [0u8; 32];
-		rng.fill_bytes(&mut array);
-		let parent_block_hash = HashOutput(array);
-
-		let block_context = BlockContext { tblock: timestamp, tblock_err: 30, parent_block_hash };
+			super::make_block_context(timestamp, Default::default(), timestamp)
+		});
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
 	}

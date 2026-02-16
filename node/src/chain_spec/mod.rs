@@ -243,7 +243,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
-			genesis_state_key: midnight_node_ledger::get_root(genesis.genesis_state()),
+			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+				genesis.genesis_state(),
+			),
 		},
 		session: SessionConfig {
 			initial_validators: authority_keys

@@ -12,8 +12,9 @@
 // limitations under the License.
 
 use super::super::{
-	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash,
-	IntoWalletAddress, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress, WalletSeed,
+	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, HRP_CONSTANT,
+	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader, Role,
+	Serializable, SigningKey, Storable, UserAddress, VerifyingKey, WalletAddress, WalletSeed,
 	deserialize_untagged, serialize_untagged,
 };
 use hex::FromHexError;
@@ -64,7 +65,8 @@ impl std::str::FromStr for UtxoId {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Storable, Serializable)]
+#[storable(base)]
 pub struct UnshieldedWallet {
 	pub user_address: UserAddress,
 	pub verifying_key: Option<VerifyingKey>,

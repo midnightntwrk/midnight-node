@@ -216,8 +216,8 @@ rebuild-genesis-state:
     ARG GENERATE_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
-    ARG TOOLKIT_IMAGE=+toolkit-image
-    FROM ${TOOLKIT_IMAGE}
+    # Only include toolkit-js when generating test transactions (requires GITHUB_TOKEN for compactc)
+    FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
     # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
@@ -230,10 +230,12 @@ rebuild-genesis-state:
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         COPY res/dev/ics-config.json /genesis-config/ics-config.json
+        COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
+        COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -259,7 +261,8 @@ rebuild-genesis-state:
             --seeds-file /secrets/genesis-seeds.json \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
@@ -267,7 +270,8 @@ rebuild-genesis-state:
             --network ${NETWORK} \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -502,6 +506,10 @@ rebuild-chainspec:
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
     USER root
+
+    # Copy the `res` folder from local -
+    # We need to do this to use the correct config if running `FROM` a pre-built node image
+    COPY res res
 
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
 
@@ -1063,6 +1071,7 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
@@ -1073,7 +1082,8 @@ node-image:
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1115,6 +1125,9 @@ node-benchmarks-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
+    # Set to false to skip toolkit-js (which requires GITHUB_TOKEN to download compactc)
+    # toolkit-js is only needed when GENERATE_TEST_TXS=true
+    ARG INCLUDE_TOOLKIT_JS=true
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
@@ -1138,15 +1151,21 @@ toolkit-image:
         node --version && npm --version && \
         npm install -g npm@11.8.0 && npm --version
 
-    # Add toolkit-js
+    # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
+    # toolkit-js requires GITHUB_TOKEN to download compactc compiler
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
+        COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    ELSE
+        RUN mkdir -p /toolkit-js
+    END
 
     COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1154,7 +1173,8 @@ toolkit-image:
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # hardfork-test-upgrader-image creates the hardfork test upgrader tool image
 hardfork-test-upgrader-image:

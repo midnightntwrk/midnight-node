@@ -33,6 +33,9 @@ pub mod types;
 use types::LedgerApiError;
 
 #[cfg(feature = "std")]
+pub mod storage;
+
+#[cfg(feature = "std")]
 pub mod api;
 
 #[cfg(feature = "std")]
@@ -71,10 +74,12 @@ use {
 };
 
 use crate::common::types::{
-	BlockContext, ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails,
-	Hash, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails,
-	Tx, WrappedHash,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
+	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
+	WrappedHash,
 };
+
+use super::BlockContext;
 
 #[cfg(feature = "std")]
 use {lazy_static::lazy_static, moka::sync::Cache};
@@ -257,7 +262,7 @@ where
 		let verified_tx = Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
 
 		// Apply the verified transaction
-		let tx_ctx = ledger.get_transaction_context(block_context.clone());
+		let tx_ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (mut new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 
@@ -546,6 +551,13 @@ where
 		api.serialize(&ledger.get_zswap_state_root())
 	}
 
+	pub fn get_ledger_state_root(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ledger_state = default_storage::<D>().arena.alloc(ledger.state.clone());
+		api.serialize(&ledger_state.as_typed_key())
+	}
+
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],
@@ -722,7 +734,7 @@ where
 		}
 
 		// Cache miss: compute VerifiedTransaction
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let verified_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
@@ -776,7 +788,7 @@ where
 		};
 
 		// Dry-run apply to validate guaranteed execution against current state
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
 		match result {
@@ -830,7 +842,7 @@ where
 
 		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
 
-		let ctx = ledger.get_transaction_context(block_context.clone());
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
 		match result {
@@ -869,6 +881,14 @@ where
 			nonce: InitialNonce(HashOutput(nonce)),
 		};
 		api.tagged_serialize(&event)
+	}
+
+	pub fn is_governance_allowed_system_tx(tx_serialized: &[u8]) -> bool {
+		let api = api::new();
+		let Ok(tx) = api.tagged_deserialize::<SystemTransaction>(tx_serialized) else {
+			return false;
+		};
+		matches!(tx, SystemTransaction::OverwriteParameters(_))
 	}
 
 	pub fn construct_cnight_generates_dust_system_tx(
