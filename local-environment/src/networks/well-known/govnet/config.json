@@ -1,0 +1,8 @@
+{
+  "dbsync": {
+    "mode": "rds-proxy"
+  },
+  "secrets": {
+    "mode": "preview-style"
+  }
+}

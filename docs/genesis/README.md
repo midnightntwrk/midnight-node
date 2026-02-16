@@ -146,9 +146,7 @@ The `cardano-tip.json` file in each network's `res/<network>/` directory stores 
    - Local: `postgres://cardano@localhost:54322/cexplorer`
    - Set `DB_SYNC_POSTGRES_CONNECTION_STRING` environment variable
 
-3. **For generation**: `GITHUB_TOKEN` for Earthly targets
-
-4. **For verification**: Generated chain specification files
+3. **For verification**: Generated chain specification files
 
 ## Related Documentation
 

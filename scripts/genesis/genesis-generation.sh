@@ -383,13 +383,6 @@ run_ledger_state_generation() {
     local network="$1"
     local rng_seed="$2"
 
-    # Check if GITHUB_TOKEN is set
-    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-        print_warning "GITHUB_TOKEN environment variable is not set."
-        print_info "You may need to set it for Earthly to access private resources."
-        echo ""
-    fi
-
     # Use the network-specific Earthly target (e.g., +rebuild-genesis-state-qanet)
     local earthly_target
     earthly_target=$(get_genesis_state_target "$network")
@@ -398,12 +391,12 @@ run_ledger_state_generation() {
     local earthly_cmd
     if [[ "$network" == "mainnet" ]]; then
         echo -e "${BOLD}Command to execute:${NC}"
-        echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target${NC}"
-        earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target")
+        echo -e "  ${CYAN}earthly -P +$earthly_target${NC}"
+        earthly_cmd=(earthly -P "+$earthly_target")
     else
         echo -e "${BOLD}Command to execute:${NC}"
-        echo -e "  ${CYAN}earthly --secret GITHUB_TOKEN -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
-        earthly_cmd=(earthly --secret GITHUB_TOKEN -P "+$earthly_target" "--RNG_SEED=$rng_seed")
+        echo -e "  ${CYAN}earthly -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
+        earthly_cmd=(earthly -P "+$earthly_target" "--RNG_SEED=$rng_seed")
     fi
     echo ""
 

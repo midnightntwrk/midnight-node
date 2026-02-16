@@ -216,8 +216,8 @@ rebuild-genesis-state:
     ARG GENERATE_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
-    ARG TOOLKIT_IMAGE=+toolkit-image
-    FROM ${TOOLKIT_IMAGE}
+    # Only include toolkit-js when generating test transactions (requires GITHUB_TOKEN for compactc)
+    FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
     # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
@@ -1125,6 +1125,9 @@ node-benchmarks-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
+    # Set to false to skip toolkit-js (which requires GITHUB_TOKEN to download compactc)
+    # toolkit-js is only needed when GENERATE_TEST_TXS=true
+    ARG INCLUDE_TOOLKIT_JS=true
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
@@ -1148,9 +1151,14 @@ toolkit-image:
         node --version && npm --version && \
         npm install -g npm@11.8.0 && npm --version
 
-    # Add toolkit-js
+    # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
+    # toolkit-js requires GITHUB_TOKEN to download compactc compiler
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
+        COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    ELSE
+        RUN mkdir -p /toolkit-js
+    END
 
     COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync

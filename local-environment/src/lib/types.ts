@@ -78,6 +78,7 @@ export interface SnapshotOptions {
 
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
+  "govnet",
   "node-dev-01",
   "preview",
   "qanet",
