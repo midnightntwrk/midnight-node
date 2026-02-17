@@ -28,7 +28,7 @@ set -euxo pipefail
   --keystore-path=/keystore \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
-  --rpc-port=9937 \
+  --rpc-port=9944 \
   --rpc-cors=all \
   --prometheus-port=9619 \
   --prometheus-external \
