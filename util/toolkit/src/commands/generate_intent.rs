@@ -1,11 +1,10 @@
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
+use crate::tx_generator::builder::build_fork_aware_context;
 use crate::tx_generator::source::Source;
 use crate::{ProofType, SignatureType, toolkit_js};
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{
-	CoinPublicKey, DefaultDB, LedgerContext, WalletSeed, WalletState,
-};
+use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -103,16 +102,7 @@ pub async fn fetch_zswap_state(
 	}
 
 	let received_tx = source.get_txs().await?;
-	let network_id = received_tx.network();
-	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
-	for block in received_tx.blocks {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
-	}
+	let context = build_fork_aware_context(&received_tx, &[wallet_seed]);
 	let wallet = context.wallet_from_seed(wallet_seed);
 	let zswap_local_state = wallet.shielded.state;
 

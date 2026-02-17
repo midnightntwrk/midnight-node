@@ -59,7 +59,7 @@ pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
 
 async fn generate_txs(
 	generator: &TxGenerator<SignatureType, ProofType>,
-	received_txs: SourceTransactions<Signature, ProofMarker>,
+	received_txs: SourceTransactions,
 ) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
 	generator
 		.build_txs(&received_txs)

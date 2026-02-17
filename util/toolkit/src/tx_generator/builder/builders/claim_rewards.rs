@@ -17,11 +17,10 @@ use std::{convert::Infallible, sync::Arc};
 use crate::{
 	builder::{
 		BuildTxs, ClaimMintInfo, DefaultDB, DeserializedTransactionsWithContext, FromContext,
-		LedgerContext, ProofProvider, ProofType, RewardsInfo, SignatureType,
-		TransactionWithContext, Wallet,
+		ProofProvider, ProofType, RewardsInfo, SignatureType, TransactionWithContext, Wallet,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::ClaimRewardsArgs,
+	tx_generator::builder::{ClaimRewardsArgs, build_fork_aware_context},
 };
 
 pub struct ClaimRewardsBuilder {
@@ -41,27 +40,14 @@ impl BuildTxs for ClaimRewardsBuilder {
 	type Error = Infallible;
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		// - Calculate the funding `WalletSeed` (can be more than one)
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 		let inputs_wallet_seeds = vec![funding_seed];
 
-		// initialize `LedgerContext` with the wallets
-		let network_id = received_tx.network();
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &inputs_wallet_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
+		let context = build_fork_aware_context(&received_tx, &inputs_wallet_seeds);
 		let context_arc = Arc::new(context);
 
 		// - Transaction info

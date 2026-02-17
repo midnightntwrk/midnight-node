@@ -18,6 +18,9 @@ use builders::{
 	single_tx::SingleTxBuilder,
 };
 use clap::{Args, Subcommand};
+use midnight_node_ledger_helpers::fork::{
+	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
+};
 use midnight_node_ledger_helpers::*;
 use std::{path::PathBuf, sync::Arc};
 
@@ -359,7 +362,7 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		let x = self.builder.build_txs_from(received_tx, prover_arc).await;
@@ -403,7 +406,7 @@ pub trait BuildTxs {
 	type Error: std::error::Error + Send + Sync + 'static;
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
 }
@@ -417,31 +420,13 @@ pub trait BuildTxsExt {
 	/// Returns a tuple of an Arc<LedgerContext> and the StandardTransactionInfo
 	fn context_and_tx_info(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>) {
-		// - Calculate the funding `WalletSeed` (can be more than one)
-		let input_wallets_seeds = vec![self.funding_seed()];
-
-		// Get the network id from the initial TX
-		let network_id = received_tx.network();
-
-		// initialize `LedgerContext` with the wallets
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &input_wallets_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
+		let seeds = vec![self.funding_seed()];
+		let context = build_fork_aware_context(&received_tx, &seeds);
 		let context_arc = Arc::new(context);
 
-		// - Transaction info
 		let tx_info = StandardTrasactionInfo::new_from_context(
 			context_arc.clone(),
 			prover_arc.clone(),
@@ -474,7 +459,7 @@ pub trait BuildTxsExt {
 /// how many blocks were skipped due to cache (0 if no cache hit).
 pub async fn build_context_with_cache<C: WalletStateCaching>(
 	wallet_seeds: Vec<WalletSeed>,
-	received_tx: SourceTransactions<SignatureType, ProofType>,
+	received_tx: SourceTransactions,
 	prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	rng_seed: Option<[u8; 32]>,
 	chain_id: H256,
@@ -487,31 +472,64 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
 
 	// Try to restore from cache if storage is provided
-	let (context, start_block) = if let Some(storage) = cache_storage {
+	let (mut fork_ctx, start_block) = if let Some(storage) = cache_storage {
 		if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
 			match wallet_state_cache::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
 				Ok((ctx, height)) => {
 					log::info!("Restored wallet state from cache at block {}", height);
-					(ctx, height + 1)
+					(ForkAwareLedgerContext::Ledger8(ctx), height + 1)
 				},
 				Err(e) => {
 					log::warn!("Failed to restore from cache: {}, starting fresh", e);
-					let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-					(ctx, 0u64)
+					let initial_version = received_tx
+						.blocks
+						.first()
+						.map(|b| b.ledger_version())
+						.unwrap_or(LedgerVersion::Ledger8);
+					(
+						ForkAwareLedgerContext::new_from_wallet_seeds(
+							initial_version,
+							&network_id,
+							&wallet_seeds,
+						),
+						0u64,
+					)
 				},
 			}
 		} else {
-			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-			(ctx, 0u64)
+			let initial_version = received_tx
+				.blocks
+				.first()
+				.map(|b| b.ledger_version())
+				.unwrap_or(LedgerVersion::Ledger8);
+			(
+				ForkAwareLedgerContext::new_from_wallet_seeds(
+					initial_version,
+					&network_id,
+					&wallet_seeds,
+				),
+				0u64,
+			)
 		}
 	} else {
-		let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-		(ctx, 0u64)
+		let initial_version = received_tx
+			.blocks
+			.first()
+			.map(|b| b.ledger_version())
+			.unwrap_or(LedgerVersion::Ledger8);
+		(
+			ForkAwareLedgerContext::new_from_wallet_seeds(
+				initial_version,
+				&network_id,
+				&wallet_seeds,
+			),
+			0u64,
+		)
 	};
 
 	// Replay only blocks since start_block
 	let blocks_to_replay: Vec<_> =
-		received_tx.blocks.into_iter().filter(|b| b.number >= start_block).collect();
+		received_tx.blocks.iter().filter(|b| b.number >= start_block).collect();
 
 	let blocks_replayed = blocks_to_replay.len() as u64;
 
@@ -525,13 +543,10 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	}
 
 	for block in blocks_to_replay {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
+		fork_ctx = fork_ctx.update_from_block(block);
 	}
+
+	let context = fork_ctx.into_ledger8().expect("expected ledger 8 after processing all blocks");
 
 	// Save updated cache if storage is provided and blocks were replayed
 	if let Some(storage) = cache_storage {
@@ -596,7 +611,7 @@ pub trait CreateIntentInfo {
 pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(
 		&mut self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 		// the directory where to save the file
 		dir: &str,
@@ -612,4 +627,28 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 
 		tx_info.save_intents_to_file(dir, partial_name).await;
 	}
+}
+
+/// Build a fork-aware context from source transactions, returning a ledger 8 context.
+///
+/// This handles chains that may have forked from ledger 7 to ledger 8 by using
+/// `ForkAwareLedgerContext` to process blocks across version boundaries.
+pub fn build_fork_aware_context(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+) -> LedgerContext<DefaultDB> {
+	let network_id = received_tx.network();
+	let initial_version = received_tx
+		.blocks
+		.first()
+		.map(|b| b.ledger_version())
+		.unwrap_or(LedgerVersion::Ledger8);
+
+	let mut ctx =
+		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
+	for block in &received_tx.blocks {
+		ctx = ctx.update_from_block(block);
+	}
+
+	ctx.into_ledger8().expect("expected ledger 8 after processing all blocks")
 }

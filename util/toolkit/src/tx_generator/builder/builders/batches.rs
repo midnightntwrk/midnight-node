@@ -26,7 +26,7 @@ use crate::{
 		UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::BatchesArgs,
+	tx_generator::builder::{BatchesArgs, build_fork_aware_context},
 };
 
 /// The higher the number of transactions per batch, the longer it will take to generate the
@@ -192,7 +192,7 @@ impl BuildTxs for BatchesBuilder {
 	type Error = JoinError;
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		// --------------------------------------------------------------
@@ -224,23 +224,9 @@ impl BuildTxs for BatchesBuilder {
 		// --------------------------------------------------------------
 		// - First we need to generate the `LedgerContext`
 
-		// grab the network id from the init transaction
-		let network_id = received_tx.network();
-
 		let all_wallet_seeds = [&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat();
 
-		// initialize `LedgerContext` with the wallets
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &all_wallet_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
+		let context = build_fork_aware_context(&received_tx, &all_wallet_seeds);
 		let block_context = context.latest_block_context();
 
 		let context_arc = Arc::new(context);

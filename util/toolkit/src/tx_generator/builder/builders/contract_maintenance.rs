@@ -203,7 +203,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		// - LedgerContext and TransactionInfo

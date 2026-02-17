@@ -1,0 +1,83 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use serde::{Deserialize, Serialize};
+
+/// Which ledger version a block was produced under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LedgerVersion {
+	Ledger7,
+	Ledger8,
+}
+
+/// A transaction stored as raw bytes, before version-specific deserialization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RawTransaction {
+	/// Raw bytes from `send_mn_transaction` extrinsic
+	Midnight(Vec<u8>),
+	/// Raw bytes from system transaction events / extrinsics
+	System(Vec<u8>),
+}
+
+/// Version-agnostic block data that stores transactions as raw serialized bytes.
+///
+/// Deserialization into version-specific ledger types happens lazily in
+/// `ForkAwareLedgerContext::update_from_block`, which knows the current
+/// ledger version and uses the correct types.
+///
+/// The `spec_version` field stores the raw runtime spec version number.
+/// Use `LedgerVersion::from_spec_version()` to convert at point of use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawBlockData {
+	pub hash: [u8; 32],
+	pub parent_hash: [u8; 32],
+	pub number: u64,
+	/// Raw runtime spec version number (e.g. 22000 for v0.22.0)
+	pub spec_version: u32,
+	pub transactions: Vec<RawTransaction>,
+	/// Block timestamp in seconds
+	pub tblock_secs: u64,
+	/// Timestamp error margin (always 30)
+	pub tblock_err: u32,
+	/// Parent block hash (from block header)
+	pub parent_block_hash: [u8; 32],
+	/// Previous block's timestamp in seconds (fixed up after fetch)
+	pub last_block_time_secs: u64,
+	/// State root (for verification)
+	pub state_root: Option<Vec<u8>>,
+	/// Genesis state bytes (only present for block 0)
+	pub state: Option<Vec<u8>>,
+}
+
+impl LedgerVersion {
+	/// Convert a raw spec version to a `LedgerVersion`.
+	///
+	/// Versions up to 0.21.x use Ledger7, version 0.22.0+ uses Ledger8.
+	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
+		match spec_version {
+			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
+			000_022_000.. => Some(LedgerVersion::Ledger8),
+			_ => None,
+		}
+	}
+}
+
+impl RawBlockData {
+	/// Get the ledger version for this block.
+	pub fn ledger_version(&self) -> LedgerVersion {
+		LedgerVersion::from_spec_version(self.spec_version)
+			.unwrap_or_else(|| panic!("unsupported spec version: {}", self.spec_version))
+	}
+}

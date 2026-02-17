@@ -40,7 +40,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let mut builder = builder_and_contract_type.0;
 	let partial_file_name = builder_and_contract_type.1;
 
-	let source = TxGenerator::source(args.source, args.dry_run)
+	let source = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
 	let prover = TxGenerator::<SignatureType, ProofType>::prover(args.proof_server, args.dry_run);

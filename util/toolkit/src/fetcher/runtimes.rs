@@ -47,6 +47,22 @@ impl TryFrom<u32> for RuntimeVersion {
 	}
 }
 
+impl RuntimeVersion {
+	/// Convert back to the raw spec version number.
+	pub fn to_spec_version(self) -> u32 {
+		match self {
+			Self::V0_17_0 => 000_017_000,
+			Self::V0_17_1 => 000_017_001,
+			Self::V0_18_0 => 000_018_000,
+			Self::V0_18_1 => 000_018_001,
+			Self::V0_19_0 => 000_019_000,
+			Self::V0_20_0 => 000_020_000,
+			Self::V0_21_0 => 000_021_000,
+			Self::V0_22_0 => 000_022_000,
+		}
+	}
+}
+
 impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 	type Error = RuntimeVersionError;
 

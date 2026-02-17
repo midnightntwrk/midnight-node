@@ -3,7 +3,8 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{LedgerContext, ProofType, SignatureType, TxGenerator, WalletSeed, source::Source};
+use crate::tx_generator::builder::build_fork_aware_context;
+use crate::{ProofType, SignatureType, TxGenerator, WalletSeed, source::Source};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
@@ -53,18 +54,8 @@ pub async fn execute(
 	}
 
 	let source_blocks = src.get_txs().await?;
-	let network_id = source_blocks.network().to_string();
 
-	let context = LedgerContext::new_from_wallet_seeds(network_id, &[args.seed]);
-
-	for block in source_blocks.blocks {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
-	}
+	let context = build_fork_aware_context(&source_blocks, &[args.seed]);
 
 	context.with_wallet_from_seed(args.seed, |wallet| {
 		let dust_state = wallet.dust.dust_local_state.as_ref().unwrap();

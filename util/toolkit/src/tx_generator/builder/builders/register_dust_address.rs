@@ -3,7 +3,7 @@ use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
-	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
+	FromContext, IntentInfo, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 	WalletAddress,
 };
@@ -12,7 +12,7 @@ use crate::{
 	ProofType, SignatureType,
 	progress::Spin,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
-	tx_generator::builder::{BuildTxs, RegisterDustAddressArgs},
+	tx_generator::builder::{BuildTxs, RegisterDustAddressArgs, build_fork_aware_context},
 };
 
 pub struct RegisterDustAddressBuilder {
@@ -39,7 +39,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		let spin = Spin::new("building register dust address transaction...");
@@ -47,20 +47,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 
-		let network_id = received_tx.network();
-		let context: LedgerContext<DefaultDB> =
-			LedgerContext::new_from_wallet_seeds(network_id.to_string(), &[seed, funding_seed]);
-
-		for block in &received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context.clone(),
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context = Arc::new(context);
+		let context = Arc::new(build_fork_aware_context(&received_tx, &[seed, funding_seed]));
 
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),

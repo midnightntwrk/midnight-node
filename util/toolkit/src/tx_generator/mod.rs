@@ -48,7 +48,7 @@ pub struct TxGenerator<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Se
 where
 	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
 {
-	pub source: Box<dyn GetTxs<S, P>>,
+	pub source: Box<dyn GetTxs>,
 	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
 	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
 	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
@@ -79,7 +79,7 @@ where
 		Ok(Self { source, destinations, builder, prover })
 	}
 
-	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
+	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
 		if let Some(ref src_files) = src.src_files {
 			if dry_run {
 				println!("Dry-run: Source transactions from file(s): {:?}", &src_files);
@@ -87,7 +87,7 @@ where
 			}
 			let path = Path::new(&src_files[0]);
 			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+			let source: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
 				src_files.clone(),
 				extension.to_string(),
 				src.dust_warp,
@@ -99,7 +99,7 @@ where
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+			let source: Box<dyn GetTxs> = Box::new(GetTxsFromUrl::new(
 				&url,
 				src.fetch_concurrency,
 				src.dust_warp,
@@ -168,7 +168,7 @@ where
 
 	pub async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		self.source.get_txs().await
 	}
 
@@ -197,7 +197,7 @@ where
 
 	pub async fn build_txs(
 		&self,
-		received_txs: &SourceTransactions<SignatureType, ProofType>,
+		received_txs: &SourceTransactions,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, DynamicError> {
 		self.builder.build_txs_from(received_txs.clone(), self.prover.clone()).await
 	}

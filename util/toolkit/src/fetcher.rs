@@ -20,7 +20,7 @@ pub mod wallet_state_cache;
 use std::time::Duration;
 
 use backoff::{ExponentialBackoff, future::retry};
-use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
 use tokio::task::JoinSet;
 
@@ -28,7 +28,7 @@ use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
 	fetcher::{
 		compute_task::{ComputeError, ComputeTask},
-		fetch_storage::{BlockData, FetchStorage},
+		fetch_storage::FetchStorage,
 		fetch_task::{FetchTask, FetchTaskError},
 	},
 };
@@ -90,15 +90,11 @@ pub async fn try_new_client(url: &str) -> Result<MidnightNodeClient, ClientError
 	.await
 }
 
-pub async fn fetch_all<
-	S: SignatureKind<D> + Tagged,
-	P: ProofKind<D> + core::fmt::Debug,
-	D: DB + Clone,
->(
+pub async fn fetch_all(
 	url: &str,
 	num_workers: usize,
-	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
-) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(
 			"Error: 'MN_SYNC_CACHE' is defined - please use 'MN_FETCH_CACHE' instead. See `--help` for more info."
@@ -288,10 +284,9 @@ pub async fn fetch_all<
 		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
 
-	// Set last_block_time for all blocks
-	// windows_mut() iterator does not exist - so we're indexing here
+	// Set last_block_time_secs for all blocks
 	for i in 1..blocks.len() {
-		blocks[i].context.last_block_time = blocks[i - 1].context.tblock;
+		blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 	}
 
 	// Set highest verified height for quicker fetch next time

@@ -12,7 +12,11 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::TransactionWithContext;
+use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
+use midnight_node_ledger_helpers::{
+	HashOutput, SerdeTransaction, Timestamp, TransactionWithContext, make_block_context,
+	mn_ledger_serialize::tagged_deserialize,
+};
 use std::{convert::Infallible, sync::Arc};
 
 use crate::{
@@ -36,28 +40,44 @@ impl BuildTxs for DoNothingBuilder {
 	type Error = Infallible;
 	async fn build_txs_from(
 		&self,
-		mut received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		_prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let initial_block = received_tx.blocks.first_mut().unwrap();
-		let initial_tx = TransactionWithContext {
-			tx: initial_block.transactions.remove(0),
-			block_context: initial_block.context.clone(),
-		};
+		// Deserialize all raw blocks into typed transactions
+		let mut all_txs: Vec<TransactionWithContext<SignatureType, ProofType, DefaultDB>> =
+			Vec::new();
+		for block in &received_tx.blocks {
+			let block_context = make_block_context(
+				Timestamp::from_secs(block.tblock_secs),
+				HashOutput(block.parent_block_hash),
+				Timestamp::from_secs(block.last_block_time_secs),
+			);
+			for raw_tx in &block.transactions {
+				let serde_tx = match raw_tx {
+					RawTransaction::Midnight(bytes) => {
+						let tx = tagged_deserialize(bytes.as_slice())
+							.expect("failed to deserialize midnight transaction");
+						SerdeTransaction::Midnight(tx)
+					},
+					RawTransaction::System(bytes) => {
+						let tx = tagged_deserialize(bytes.as_slice())
+							.expect("failed to deserialize system transaction");
+						SerdeTransaction::System(tx)
+					},
+				};
+				all_txs.push(TransactionWithContext {
+					tx: serde_tx,
+					block_context: block_context.clone(),
+				});
+			}
+		}
 
-		let batches = received_tx
-			.blocks
-			.into_iter()
-			.map(|block| {
-				let txs = block
-					.transactions
-					.into_iter()
-					.map(|tx| TransactionWithContext { tx, block_context: block.context.clone() })
-					.collect();
-				DeserializedTransactionsWithContextBatch { txs }
-			})
-			.collect();
+		let initial_tx = all_txs.remove(0);
+		let batch = DeserializedTransactionsWithContextBatch { txs: all_txs };
 
-		Ok(DeserializedTransactionsWithContext { initial_tx, batches })
+		Ok(DeserializedTransactionsWithContext {
+			initial_tx,
+			batches: if batch.txs.is_empty() { vec![] } else { vec![batch] },
+		})
 	}
 }

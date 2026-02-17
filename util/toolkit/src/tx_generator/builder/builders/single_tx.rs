@@ -13,6 +13,7 @@
 
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
+use crate::tx_generator::builder::build_fork_aware_context;
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
@@ -74,7 +75,7 @@ impl BuildTxs for SingleTxBuilder {
 	type Error = Infallible;
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
+		received_tx: SourceTransactions,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
 		let spin = Spin::new("generating single tx...");
@@ -83,18 +84,7 @@ impl BuildTxs for SingleTxBuilder {
 		wallet_seeds.extend(self.funding_seed.iter());
 		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
 
-		let network_id = received_tx.network();
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &wallet_seeds);
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context = Arc::new(context);
+		let context = Arc::new(build_fork_aware_context(&received_tx, &wallet_seeds));
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(

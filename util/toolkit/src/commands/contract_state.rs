@@ -1,7 +1,8 @@
 use super::super::tx_generator::{TxGenerator, source::Source};
+use crate::tx_generator::builder::build_fork_aware_context;
 use crate::{ProofType, SignatureType, cli_parsers as cli};
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, LedgerContext, serialize};
+use midnight_node_ledger_helpers::{ContractAddress, serialize};
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -33,17 +34,8 @@ pub async fn execute(
 	}
 
 	let blocks = source.get_txs().await?;
-	let network_id = blocks.network();
 
-	let context = LedgerContext::new(network_id);
-	for block in blocks.blocks {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
-	}
+	let context = build_fork_aware_context(&blocks, &[]);
 
 	let state = context
 		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))

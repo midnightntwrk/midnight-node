@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::source::Source;
+use crate::tx_generator::builder::build_fork_aware_context;
 use crate::{
-	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, LedgerContext, ProofType, SignatureType, TxGenerator,
-	Utxo, Wallet, WalletAddress, WalletSeed,
+	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, ProofType, SignatureType, TxGenerator, Utxo, Wallet,
+	WalletAddress, WalletSeed,
 };
 use crate::{
 	cli_parsers::{self as cli},
@@ -67,19 +68,9 @@ pub async fn execute(
 	}
 
 	let source_blocks = src.get_txs().await?;
-	let network_id = source_blocks.network().to_string();
 
 	if let Some(seed) = args.seed {
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
-
-		for block in source_blocks.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
+		let context = build_fork_aware_context(&source_blocks, &[seed]);
 
 		Ok(context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed, |wallet| {
@@ -114,15 +105,7 @@ pub async fn execute(
 			return Err("unavailable information - secret key needed".into());
 		}
 
-		let context = LedgerContext::new(network_id);
-		for block in source_blocks.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
+		let context = build_fork_aware_context(&source_blocks, &[]);
 
 		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();
 		Ok(ShowWalletResult::Json(WalletInfoJson {

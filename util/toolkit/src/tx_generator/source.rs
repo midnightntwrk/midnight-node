@@ -13,21 +13,20 @@
 
 use crate::{
 	cli_parsers as cli,
+	client::MidnightNodeClient,
 	fetcher::{fetch_all, fetch_storage},
 };
 use async_trait::async_trait;
 use clap::Args;
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use midnight_node_ledger_helpers::*;
 use std::{
 	fs::File,
-	marker::PhantomData,
 	str::FromStr,
 	time::{SystemTime, UNIX_EPOCH},
 };
-use subxt::utils::H256;
 use thiserror::Error;
 
-use crate::fetcher::fetch_storage::BlockData;
 use crate::{
 	client::ClientError,
 	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
@@ -144,66 +143,44 @@ pub enum SourceError {
 }
 
 #[async_trait]
-pub trait GetTxs<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
-> where
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	async fn get_txs(
-		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>>;
+pub trait GetTxs: Send + Sync {
+	async fn get_txs(&self)
+	-> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
-> GetTxs<S, P> for ()
-{
+impl GetTxs for () {
 	async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(SourceTransactions { blocks: vec![] })
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
+		Ok(SourceTransactions::new(vec![], String::new()))
 	}
 }
 
-pub struct GetTxsFromFile<S, P> {
+pub struct GetTxsFromFile {
 	files: Vec<String>,
 	extension: String,
 	dust_warp: bool,
 	ignore_block_context: bool,
-	_marker_p: PhantomData<P>,
-	_marker_s: PhantomData<S>,
 }
 
-impl<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + Send + std::fmt::Debug + 'static,
-> GetTxsFromFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
+impl GetTxsFromFile {
 	pub fn new(
 		files: Vec<String>,
 		extension: String,
 		dust_warp: bool,
 		ignore_block_context: bool,
 	) -> Self {
-		Self {
-			files,
-			extension,
-			dust_warp,
-			ignore_block_context,
-			_marker_p: PhantomData,
-			_marker_s: PhantomData,
-		}
+		Self { files, extension, dust_warp, ignore_block_context }
 	}
 
 	fn txs_from_files(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
+		// Use concrete ledger 8 types for file deserialization
+		type S = Signature;
+		type P = ProofMarker;
+
 		if self.extension == "json" {
 			// For json extension, we only handle 1 file
 			if self.files.len() > 1 {
@@ -220,7 +197,7 @@ where
 			}
 			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
 		} else {
-			let mut txs = vec![];
+			let mut txs: Vec<TransactionWithContext<S, P, DefaultDB>> = vec![];
 			for file in &self.files {
 				let bytes = std::fs::read(file)?;
 				// files can either be one TransactionWithContext or many of them
@@ -240,17 +217,10 @@ where
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + Sync + 'static,
-> GetTxs<S, P> for GetTxsFromFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
+impl GetTxs for GetTxsFromFile {
 	async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let txs = self.txs_from_files()?;
 		Ok(txs)
 	}
@@ -275,19 +245,10 @@ impl GetTxsFromUrl {
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged,
-	P: ProofKind<DefaultDB> + std::fmt::Debug + Send + 'static,
-> GetTxs<S, P> for GetTxsFromUrl
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
+impl GetTxs for GetTxsFromUrl {
 	async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let mut blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
 				fetch_all(&self.rpc_url, self.num_fetch_workers, fetch_storage::InMemory::default())
@@ -312,30 +273,28 @@ where
 		};
 
 		if self.dust_warp {
-			// Add an empty block with a now() as a block_context
-			let now = Timestamp::from_secs(
-				SystemTime::now()
-					.duration_since(UNIX_EPOCH)
-					.expect("time has run backwards")
-					.as_secs(),
-			);
-			let context = BlockContext {
-				tblock: now,
-				tblock_err: 30,
-				parent_block_hash: Default::default(),
-				last_block_time: now,
-			};
-			blocks.push(BlockData {
-				hash: H256::zero(),
-				parent_hash: H256::zero(),
+			let now_secs = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs();
+			let last_time = blocks.last().map(|b| b.tblock_secs).unwrap_or(now_secs);
+			blocks.push(RawBlockData {
+				hash: [0u8; 32],
+				parent_hash: [0u8; 32],
 				number: 0,
+				spec_version: 000_022_000,
 				transactions: Vec::new(),
-				context,
+				tblock_secs: now_secs,
+				tblock_err: 30,
+				parent_block_hash: [0u8; 32],
+				last_block_time_secs: last_time,
 				state_root: None,
 				state: None,
 			});
 		}
 
-		Ok(SourceTransactions { blocks })
+		let client = MidnightNodeClient::new(&self.rpc_url).await?;
+		let network_id = client.get_network_id().await?;
+		Ok(SourceTransactions::new(blocks, network_id))
 	}
 }

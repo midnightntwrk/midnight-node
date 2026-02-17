@@ -11,126 +11,170 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_node_ledger_helpers::fork::raw_block_data::{
+	RawBlockData, RawTransaction,
+};
+use midnight_node_ledger_helpers::*;
 use serde::{Deserialize, Serialize};
 use std::{
 	fmt::Debug,
 	time::{SystemTime, UNIX_EPOCH},
 };
-use subxt::utils::H256;
 
-use crate::fetcher::fetch_storage::BlockData;
-use midnight_node_ledger_helpers::*;
-
+/// Source transactions loaded from either the network or files.
+///
+/// Stores blocks as version-agnostic [`RawBlockData`] with raw serialized transaction bytes.
+/// Deserialization of transactions happens lazily when building the ledger context.
 #[derive(Clone, Debug)]
-pub struct SourceTransactions<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>>
-where
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	pub blocks: Vec<BlockData<S, P, DefaultDB>>,
+pub struct SourceTransactions {
+	pub blocks: Vec<RawBlockData>,
+	network_id: String,
 }
 
-impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>> SourceTransactions<S, P>
-where
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
-	/// If the transactions are loaded from an off-chain source, i.e. they were never part of any
-	/// block, assume they are all in the same block
-	pub fn from_txs_with_context_ignored(
-		txs_with_context: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
-	) -> Self {
-		let now = Timestamp::from_secs(
-			SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("time has run backwards")
-				.as_secs(),
-		);
-		let context = BlockContext {
-			tblock: now,
-			tblock_err: 30,
-			parent_block_hash: Default::default(),
-			last_block_time: Default::default(),
-		};
-		let blocks = vec![BlockData {
-			hash: H256::zero(),
-			parent_hash: H256::zero(),
-			number: 0,
-			transactions: txs_with_context.into_iter().map(|t| t.tx).collect(),
-			context,
-			state_root: None,
-			state: None,
-		}];
-
-		Self { blocks }
+impl SourceTransactions {
+	/// Create a new SourceTransactions with pre-computed network_id.
+	pub fn new(blocks: Vec<RawBlockData>, network_id: String) -> Self {
+		Self { blocks, network_id }
 	}
 
+	/// Get the network identifier (e.g. "undeployed", "preview").
+	pub fn network(&self) -> &str {
+		&self.network_id
+	}
+
+	/// Convert typed transactions (from file loading) into RawBlockData.
+	///
+	/// If `ignore_block_context` is true, all transactions are placed in a single block
+	/// with the current timestamp.
+	pub fn from_txs_with_context_ignored(
+		txs_with_context: impl IntoIterator<
+			Item = TransactionWithContext<Signature, ProofMarker, DefaultDB>,
+		>,
+	) -> Self {
+		let now_secs = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("time has run backwards")
+			.as_secs();
+
+		let mut network_id = None;
+		let mut raw_txs = Vec::new();
+
+		for twc in txs_with_context {
+			if network_id.is_none() {
+				network_id = twc.tx.network_id().map(|s| s.to_string());
+			}
+			raw_txs.push(serde_tx_to_raw(&twc.tx));
+		}
+
+		let block = RawBlockData {
+			hash: [0u8; 32],
+			parent_hash: [0u8; 32],
+			number: 0,
+			spec_version: 000_022_000, // latest
+			transactions: raw_txs,
+			tblock_secs: now_secs,
+			tblock_err: 30,
+			parent_block_hash: [0u8; 32],
+			last_block_time_secs: 0,
+			state_root: None,
+			state: None,
+		};
+
+		let nid = network_id.expect("no transaction had a network_id");
+		Self { blocks: vec![block], network_id: nid }
+	}
+
+	/// Convert typed transactions (from file loading) into RawBlockData,
+	/// grouping by block context.
 	pub fn from_txs_with_context(
-		txs: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
+		txs: impl IntoIterator<Item = TransactionWithContext<Signature, ProofMarker, DefaultDB>>,
 		dust_warp: bool,
 	) -> Self {
 		let mut blocks = vec![];
-		let mut current_batch = vec![];
+		let mut current_batch: Vec<RawTransaction> = vec![];
 		let mut last_context: Option<BlockContext> = None;
-		let mut number = 0;
-		for tx in txs {
-			if last_context.as_ref().is_some_and(|c| c.tblock != tx.block_context.tblock) {
-				blocks.push(BlockData {
-					hash: H256::zero(),
-					parent_hash: H256::zero(),
+		let mut number = 0u64;
+		let mut network_id = None;
+
+		for tx_with_ctx in txs {
+			if network_id.is_none() {
+				network_id = tx_with_ctx.tx.network_id().map(|s| s.to_string());
+			}
+
+			if last_context
+				.as_ref()
+				.is_some_and(|c| c.tblock != tx_with_ctx.block_context.tblock)
+			{
+				let ctx = last_context.unwrap();
+				blocks.push(RawBlockData {
+					hash: [0u8; 32],
+					parent_hash: [0u8; 32],
 					number,
+					spec_version: 000_022_000,
 					transactions: std::mem::take(&mut current_batch),
-					context: last_context.unwrap(),
+					tblock_secs: ctx.tblock.to_secs(),
+					tblock_err: ctx.tblock_err,
+					parent_block_hash: ctx.parent_block_hash.0,
+					last_block_time_secs: ctx.last_block_time.to_secs(),
 					state_root: None,
 					state: None,
 				});
 				number += 1;
 			}
-			current_batch.push(tx.tx);
-			last_context = Some(tx.block_context);
+			current_batch.push(serde_tx_to_raw(&tx_with_ctx.tx));
+			last_context = Some(tx_with_ctx.block_context);
 		}
-		if let Some(ref context) = last_context {
-			blocks.push(BlockData {
-				hash: H256::zero(),
-				parent_hash: H256::zero(),
+
+		if let Some(ref ctx) = last_context {
+			blocks.push(RawBlockData {
+				hash: [0u8; 32],
+				parent_hash: [0u8; 32],
 				number,
+				spec_version: 000_022_000,
 				transactions: current_batch,
-				context: context.clone(),
+				tblock_secs: ctx.tblock.to_secs(),
+				tblock_err: ctx.tblock_err,
+				parent_block_hash: ctx.parent_block_hash.0,
+				last_block_time_secs: ctx.last_block_time.to_secs(),
 				state_root: None,
 				state: None,
 			});
 		}
 
 		if dust_warp {
-			// Add an empty block with a now() as a block_context
-			let now = Timestamp::from_secs(
-				SystemTime::now()
-					.duration_since(UNIX_EPOCH)
-					.expect("time has run backwards")
-					.as_secs(),
-			);
-			let context = BlockContext {
-				tblock: now,
-				tblock_err: 30,
-				parent_block_hash: Default::default(),
-				last_block_time: last_context.map(|c| c.tblock).unwrap_or(now),
-			};
-			blocks.push(BlockData {
-				hash: H256::zero(),
-				parent_hash: H256::zero(),
+			let now_secs = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs();
+			let last_time = last_context.map(|c| c.tblock.to_secs()).unwrap_or(now_secs);
+			blocks.push(RawBlockData {
+				hash: [0u8; 32],
+				parent_hash: [0u8; 32],
 				number: 0,
+				spec_version: 000_022_000,
 				transactions: Vec::new(),
-				context,
+				tblock_secs: now_secs,
+				tblock_err: 30,
+				parent_block_hash: [0u8; 32],
+				last_block_time_secs: last_time,
 				state_root: None,
 				state: None,
 			});
 		}
-		Self { blocks }
-	}
 
-	pub fn network(&self) -> &str {
-		self.blocks
-			.iter()
-			.find_map(|b| b.transactions.iter().find_map(|tx| tx.network_id()))
-			.expect("no transaction in this batch had a network")
+		let nid = network_id.unwrap_or_default();
+		Self { blocks, network_id: nid }
+	}
+}
+
+/// Convert a typed SerdeTransaction to a RawTransaction by re-serializing the inner type.
+fn serde_tx_to_raw(
+	serde_tx: &SerdeTransaction<Signature, ProofMarker, DefaultDB>,
+) -> RawTransaction {
+	let bytes = serde_tx.serialize_inner().expect("failed to serialize transaction");
+	match serde_tx {
+		SerdeTransaction::Midnight(_) => RawTransaction::Midnight(bytes),
+		SerdeTransaction::System(_) => RawTransaction::System(bytes),
 	}
 }
 
