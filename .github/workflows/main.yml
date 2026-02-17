@@ -485,6 +485,24 @@ jobs:
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
 
+      - name: Mirror arch-specific images to midnightntwrk (GHCR)
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          # Needed only for older branches where Earthly is not pushing to midnightntwrk
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            for ARCH in amd64 arm64; do
+              SRC="ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
+              DST="ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
+              if docker buildx imagetools inspect "$DST" > /dev/null 2>&1; then
+                echo "${DST} already exists, skipping"
+              else
+                echo "Mirroring ${SRC} -> ${DST}"
+                docker buildx imagetools create --tag "$DST" "$SRC"
+              fi
+            done
+          done
+
       - name: Create commit-tagged multi-arch images (GHCR midnightntwrk)
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
