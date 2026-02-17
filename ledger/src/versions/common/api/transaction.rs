@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
@@ -123,8 +123,8 @@ fn from_utxo_spend(spend: UtxoSpend) -> UtxoInfo {
 
 #[derive(Default, Debug)]
 pub struct UnshieldedUtxos {
-	pub outputs: HashMap<SegmentId, Vec<UtxoInfo>>,
-	pub inputs: HashMap<SegmentId, Vec<UtxoInfo>>,
+	pub outputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
+	pub inputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
 }
 
 impl UnshieldedUtxos {
@@ -142,7 +142,9 @@ impl UnshieldedUtxos {
 	}
 
 	pub fn inputs(&self) -> Vec<UtxoInfo> {
-		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
+		// TODO: this rev() is only required to match preview.
+		// We could drop it before mainnet as a breaking change.
+		self.inputs.values().rev().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
@@ -296,8 +298,8 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 	}
 
 	pub(crate) fn unshielded_utxos(&self) -> UnshieldedUtxos {
-		let mut outputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
-		let mut inputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
+		let mut outputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
+		let mut inputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
 
 		let mut update_outputs = |segment_id: SegmentId, outputs_info: Vec<UtxoInfo>| {
 			if !outputs_info.is_empty() {
