@@ -14,18 +14,19 @@
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use midnight_node_ledger_helpers::{
-	HashOutput, SerdeTransaction, Timestamp, TransactionWithContext, make_block_context,
-	mn_ledger_serialize::tagged_deserialize,
+	DefaultDB, HashOutput, LedgerContext, ProofProvider, SerdeTransaction, Timestamp,
+	TransactionWithContext, make_block_context, mn_ledger_serialize::tagged_deserialize,
 };
 use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
-	builder::{
-		BuildTxs, DefaultDB, DeserializedTransactionsWithContext, ProofProvider, ProofType,
-		SignatureType,
+	ProofType, SignatureType,
+	serde_def::{
+		BuiltTransactions, DeserializedTransactionsWithContext,
+		DeserializedTransactionsWithContextBatch, SourceTransactions,
 	},
-	serde_def::{DeserializedTransactionsWithContextBatch, SourceTransactions},
+	tx_generator::builder::BuildTxs,
 };
 
 pub struct ReplaceInitialTxBuilder;
@@ -43,11 +44,13 @@ pub struct ReplaceInitialTxError(String);
 #[async_trait]
 impl BuildTxs for ReplaceInitialTxBuilder {
 	type Error = ReplaceInitialTxError;
+
 	async fn build_txs_from(
 		&self,
 		mut received_tx: SourceTransactions,
+		_context: Option<Arc<LedgerContext<DefaultDB>>>,
 		_prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
 		// Skip the first block (genesis) and start from the second
 		received_tx.blocks.remove(0);
 
@@ -87,9 +90,11 @@ impl BuildTxs for ReplaceInitialTxBuilder {
 		let initial_tx = all_txs.remove(0);
 		let batch = DeserializedTransactionsWithContextBatch { txs: all_txs };
 
-		Ok(DeserializedTransactionsWithContext {
+		let typed = DeserializedTransactionsWithContext {
 			initial_tx,
 			batches: if batch.txs.is_empty() { vec![] } else { vec![batch] },
-		})
+		};
+
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

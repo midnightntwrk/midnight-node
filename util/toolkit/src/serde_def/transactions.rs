@@ -11,15 +11,63 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::fork::raw_block_data::{
-	RawBlockData, RawTransaction,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::{RawBlockData, RawTransaction};
 use midnight_node_ledger_helpers::*;
 use serde::{Deserialize, Serialize};
 use std::{
 	fmt::Debug,
 	time::{SystemTime, UNIX_EPOCH},
 };
+
+/// A single serialized transaction ready for sending or file output.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializedTx {
+	/// Raw bytes from `serialize_inner()` — the payload for `send_mn_transaction`.
+	pub bytes: Vec<u8>,
+	/// Transaction hash for logging.
+	pub tx_hash: [u8; 32],
+}
+
+/// Output of a builder — serialized transactions ready for sending.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BuiltTransactions {
+	pub initial_tx: SerializedTx,
+	pub batches: Vec<Vec<SerializedTx>>,
+}
+
+impl BuiltTransactions {
+	/// Convert typed `DeserializedTransactionsWithContext<S, P>` into `BuiltTransactions`
+	/// by serializing each transaction via `serialize_inner()` and extracting its hash.
+	pub fn from_typed<S, P>(typed: DeserializedTransactionsWithContext<S, P>) -> Self
+	where
+		S: SignatureKind<DefaultDB>,
+		P: ProofKind<DefaultDB> + Send + Sync + 'static,
+		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
+		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
+	{
+		let initial_tx = SerializedTx::from_serde_tx(&typed.initial_tx.tx);
+		let batches = typed
+			.batches
+			.iter()
+			.map(|batch| batch.txs.iter().map(|twc| SerializedTx::from_serde_tx(&twc.tx)).collect())
+			.collect();
+		Self { initial_tx, batches }
+	}
+}
+
+impl SerializedTx {
+	fn from_serde_tx<S, P>(tx: &SerdeTransaction<S, P, DefaultDB>) -> Self
+	where
+		S: SignatureKind<DefaultDB>,
+		P: ProofKind<DefaultDB> + Send + Sync + 'static,
+		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
+		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
+	{
+		let bytes = tx.serialize_inner().expect("failed to serialize transaction");
+		let tx_hash = tx.transaction_hash().0.0;
+		Self { bytes, tx_hash }
+	}
+}
 
 /// Source transactions loaded from either the network or files.
 ///

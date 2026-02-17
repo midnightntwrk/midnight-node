@@ -12,17 +12,17 @@
 // limitations under the License.
 
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt,
-		ContractDeployInfo, DefaultDB, DeserializedTransactionsWithContext, IntentInfo,
-		IntentToFile, MerkleTreeContract, OfferInfo, ProofProvider, ProofType, SignatureType,
-		TransactionWithContext, VerifyingKey, Wallet, WalletSeed,
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::builder::{
+		BuildTxs, BuildTxsExt, ContractDeployArgs, CreateIntentInfo, IntentToFile,
 	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::{ContractDeployArgs, CreateIntentInfo},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::UnshieldedWallet;
+use midnight_node_ledger_helpers::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
+	LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
+	UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
+};
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder {
@@ -84,7 +84,7 @@ impl CreateIntentInfo for ContractDeployBuilder {
 		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![deploy_contract];
 
 		// - Intents
-		let intent_info = IntentInfo {
+		let intent_info = midnight_node_ledger_helpers::IntentInfo {
 			guaranteed_unshielded_offer: None,
 			fallible_unshielded_offer: None,
 			actions,
@@ -98,13 +98,20 @@ impl CreateIntentInfo for ContractDeployBuilder {
 impl BuildTxs for ContractDeployBuilder {
 	type Error = Infallible;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		vec![self.funding_seed()]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
+		let context = context.expect("ContractDeployBuilder requires context");
+
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info(context, prover_arc);
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -132,6 +139,8 @@ impl BuildTxs for ContractDeployBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

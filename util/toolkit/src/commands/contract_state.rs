@@ -1,6 +1,6 @@
 use super::super::tx_generator::{TxGenerator, source::Source};
+use crate::cli_parsers as cli;
 use crate::tx_generator::builder::build_fork_aware_context;
-use crate::{ProofType, SignatureType, cli_parsers as cli};
 use clap::Args;
 use midnight_node_ledger_helpers::{ContractAddress, serialize};
 use std::{fs, path::Path};
@@ -23,7 +23,7 @@ pub struct ContractStateArgs {
 pub async fn execute(
 	args: ContractStateArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run)
+	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
 

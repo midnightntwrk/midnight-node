@@ -16,15 +16,14 @@ use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
-	IntentInfo, NIGHT, ProofProvider, Segment, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
+	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
+	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
 
 use crate::{
-	ProofType, SignatureType,
 	progress::Spin,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
-	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs, build_fork_aware_context},
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs},
 };
 
 /// Builder for generating DUST address deregistration transactions.
@@ -54,17 +53,24 @@ impl DeregisterDustAddressBuilder {
 impl BuildTxs for DeregisterDustAddressBuilder {
 	type Error = Infallible;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
+		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		vec![seed, funding_seed]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
 		let spin = Spin::new("building deregister dust address transaction...");
 
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 
-		let context = Arc::new(build_fork_aware_context(&received_tx, &[seed, funding_seed]));
+		let context = context.expect("DeregisterDustAddressBuilder requires context");
 
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),
@@ -145,6 +151,8 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 
 		spin.finish("generated tx.");
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

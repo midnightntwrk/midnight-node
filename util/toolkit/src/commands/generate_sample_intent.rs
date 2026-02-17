@@ -1,15 +1,13 @@
-use crate::{
-	ProofType, SignatureType,
-	tx_generator::{
-		TxGenerator,
-		builder::{
-			ContractCall, IntentToFile,
-			builders::{ContractCallBuilder, ContractDeployBuilder},
-		},
-		source::Source,
+use crate::tx_generator::{
+	TxGenerator,
+	builder::{
+		ContractCall, IntentToFile, build_fork_aware_context,
+		builders::{ContractCallBuilder, ContractDeployBuilder},
 	},
+	source::Source,
 };
 use clap::Args;
+use std::sync::Arc;
 
 #[derive(Args)]
 pub struct GenerateSampleIntentArgs {
@@ -40,10 +38,10 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let mut builder = builder_and_contract_type.0;
 	let partial_file_name = builder_and_contract_type.1;
 
-	let source = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run)
+	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
-	let prover = TxGenerator::<SignatureType, ProofType>::prover(args.proof_server, args.dry_run);
+	let prover = TxGenerator::prover(args.proof_server, args.dry_run);
 
 	if args.dry_run {
 		println!("Dry-run: generate intent for contract call {:?}", args.contract_call);
@@ -53,8 +51,11 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 
 	let received_txs = source.get_txs().await.expect("should receive txs");
 
+	let seeds = vec![builder.funding_seed()];
+	let context = Arc::new(build_fork_aware_context(&received_txs, &seeds));
+
 	builder
-		.generate_intent_file(received_txs, prover, &args.dest_dir, partial_file_name)
+		.generate_intent_file(context, prover, &args.dest_dir, partial_file_name)
 		.await;
 }
 

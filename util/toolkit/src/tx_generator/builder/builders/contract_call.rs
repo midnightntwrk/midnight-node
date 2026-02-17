@@ -12,17 +12,17 @@
 // limitations under the License.
 
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt, CallInfo,
-		DefaultDB, DeserializedTransactionsWithContext, IntentInfo, IntentToFile,
-		MerkleTreeContract, OfferInfo, ProofProvider, ProofType, SignatureType,
-		TransactionWithContext, Wallet, WalletSeed,
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::builder::{
+		BuildTxs, BuildTxsExt, ContractCallArgs, CreateIntentInfo, IntentToFile,
 	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::{ContractCallArgs, CreateIntentInfo},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::ContractAddress;
+use midnight_node_ledger_helpers::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, CallInfo, ContractAddress,
+	DefaultDB, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
+	Wallet, WalletSeed,
+};
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 const CONTRACT_INPUT: u32 = 12;
@@ -76,7 +76,7 @@ impl CreateIntentInfo for ContractCallBuilder {
 		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
 
 		// - Intents
-		let intent_info = IntentInfo {
+		let intent_info = midnight_node_ledger_helpers::IntentInfo {
 			guaranteed_unshielded_offer: None,
 			fallible_unshielded_offer: None,
 			actions,
@@ -90,13 +90,20 @@ impl CreateIntentInfo for ContractCallBuilder {
 impl BuildTxs for ContractCallBuilder {
 	type Error = Infallible;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		vec![self.funding_seed()]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
+		let context = context.expect("ContractCallBuilder requires context");
+
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info(context, prover_arc);
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -124,6 +131,8 @@ impl BuildTxs for ContractCallBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

@@ -14,13 +14,14 @@
 use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
+use midnight_node_ledger_helpers::{
+	ClaimMintInfo, DefaultDB, FromContext, LedgerContext, ProofProvider, RewardsInfo,
+	TransactionWithContext, Wallet, WalletSeed,
+};
+
 use crate::{
-	builder::{
-		BuildTxs, ClaimMintInfo, DefaultDB, DeserializedTransactionsWithContext, FromContext,
-		ProofProvider, ProofType, RewardsInfo, SignatureType, TransactionWithContext, Wallet,
-	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::{ClaimRewardsArgs, build_fork_aware_context},
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::builder::{BuildTxs, ClaimRewardsArgs},
 };
 
 pub struct ClaimRewardsBuilder {
@@ -38,17 +39,22 @@ impl ClaimRewardsBuilder {
 #[async_trait]
 impl BuildTxs for ClaimRewardsBuilder {
 	type Error = Infallible;
+
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		vec![funding_seed]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
+		let context_arc = context.expect("ClaimRewardsBuilder requires context");
+
 		// - Calculate the funding `WalletSeed` (can be more than one)
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
-		let inputs_wallet_seeds = vec![funding_seed];
-
-		let context = build_fork_aware_context(&received_tx, &inputs_wallet_seeds);
-		let context_arc = Arc::new(context);
 
 		// - Transaction info
 		let mut tx_info =
@@ -67,6 +73,8 @@ impl BuildTxs for ClaimRewardsBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

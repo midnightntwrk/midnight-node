@@ -13,7 +13,6 @@
 
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
-use crate::tx_generator::builder::build_fork_aware_context;
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
@@ -24,9 +23,8 @@ use midnight_node_ledger_helpers::{
 };
 
 use crate::{
-	ProofType, SignatureType,
 	progress::Spin,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
 	tx_generator::builder::{BuildTxs, SingleTxArgs},
 };
 
@@ -73,18 +71,23 @@ impl SingleTxBuilder {
 #[async_trait]
 impl BuildTxs for SingleTxBuilder {
 	type Error = Infallible;
+
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		let mut seeds = vec![self.source_seed];
+		seeds.extend(self.funding_seed.iter());
+		seeds
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
 		let spin = Spin::new("generating single tx...");
 
-		let mut wallet_seeds = vec![self.source_seed];
-		wallet_seeds.extend(self.funding_seed.iter());
+		let context = context.expect("SingleTxBuilder requires context");
 		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
-
-		let context = Arc::new(build_fork_aware_context(&received_tx, &wallet_seeds));
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
@@ -154,7 +157,11 @@ impl BuildTxs for SingleTxBuilder {
 
 		spin.finish("generated tx.");
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: Vec::new() })
+		let typed = DeserializedTransactionsWithContext {
+			initial_tx: tx_with_context,
+			batches: Vec::new(),
+		};
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }
 

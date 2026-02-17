@@ -14,20 +14,19 @@
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
 	BuildIntent, ContractAddress, ContractMaintenanceAuthority,
-	ContractOperationVersionedVerifierKey, EntryPointBuf, SigningKey, UnshieldedWallet,
-	VerifierKey, VerifyingKey, WalletSeed, deserialize, serialize_untagged,
+	ContractOperationVersionedVerifierKey, EntryPointBuf, LedgerContext, SigningKey,
+	UnshieldedWallet, VerifierKey, VerifyingKey, WalletSeed, deserialize, serialize_untagged,
 };
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildOutput, BuildTxs, ContractMaintenanceAuthorityInfo,
-		DefaultDB, DeserializedTransactionsWithContext, IntentInfo, MaintenanceUpdateInfo,
-		OfferInfo, ProofProvider, ProofType, SignatureType, TransactionWithContext, UpdateInfo,
-		Wallet,
-	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs},
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	tx_generator::builder::{BuildTxs, BuildTxsExt, ContractMaintenanceArgs},
+};
+use midnight_node_ledger_helpers::{
+	BuildContractAction, BuildInput, BuildOutput, ContractMaintenanceAuthorityInfo, DefaultDB,
+	IntentInfo, MaintenanceUpdateInfo, OfferInfo, ProofProvider, TransactionWithContext,
+	UpdateInfo, Wallet,
 };
 
 pub struct ContractMaintenanceBuilder {
@@ -201,13 +200,20 @@ fn check_committee(
 impl BuildTxs for ContractMaintenanceBuilder {
 	type Error = ContractMaintenanceBuilderError;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		vec![self.funding_seed()]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
+		let context_val = context.expect("ContractMaintenanceBuilder requires context");
+
 		// - LedgerContext and TransactionInfo
-		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info(context_val, prover_arc);
 
 		let contract_state = context.with_ledger_state(|ref_state| {
 			Ok(ref_state
@@ -309,6 +315,8 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

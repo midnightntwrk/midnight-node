@@ -12,12 +12,11 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::*;
-use std::{fs::File, io::Write, marker::PhantomData, sync::Arc};
+use std::{fs::File, io::Write, sync::Arc};
 
 use crate::{
 	sender::{SendBatchError, Sender},
-	serde_def::{DeserializedTransactionsWithContext, SerializedTransactionsWithContext},
+	serde_def::BuiltTransactions,
 };
 
 pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
@@ -41,139 +40,103 @@ pub struct Destination {
 	pub no_watch_progress: bool,
 }
 
-pub struct SendTxsToFile<S, P> {
+pub struct SendTxsToFile {
 	file: String,
 	to_bytes: bool,
-	_marker_p: PhantomData<P>,
-	_marker_s: PhantomData<S>,
 }
 
-impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-	SendTxsToFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl SendTxsToFile {
 	pub fn new(file: String, to_bytes: bool) -> Self {
-		Self { file, to_bytes, _marker_p: PhantomData, _marker_s: PhantomData }
+		Self { file, to_bytes }
 	}
 
 	fn save_json_file(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &BuiltTransactions,
 		filename: &str,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let mut file = File::create(filename)?;
-		let generated_tx = SerializedTransactionsWithContext::new(txs)?;
-		file.write_all(&serde_json::to_vec(&generated_tx)?)?;
+		file.write_all(&serde_json::to_vec(txs)?)?;
 		Ok(())
 	}
 }
 
-pub struct SendTxsToUrl<
-	S: SignatureKind<DefaultDB>,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> {
+pub struct SendTxsToUrl {
 	urls: Vec<String>,
 	rate: f32,
 	no_watch_progress: bool,
-	_marker: PhantomData<(S, P)>,
 }
 
-impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-	SendTxsToUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-{
+impl SendTxsToUrl {
 	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
-		Self { urls, rate, no_watch_progress, _marker: Default::default() }
+		Self { urls, rate, no_watch_progress }
 	}
 }
 
 #[async_trait]
-pub trait SendTxs<
-	S: SignatureKind<DefaultDB> + Tagged + Send + 'static,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> where
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+pub trait SendTxs: Send + Sync {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + 'static,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> SendTxs<S, P> for ()
-{
+impl SendTxs for () {
 	async fn send_txs(
 		&self,
-		_txs: &DeserializedTransactionsWithContext<S, P>,
+		_txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		Ok(())
 	}
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> SendTxs<S, P> for SendTxsToFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl SendTxs for SendTxsToFile {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		if !self.to_bytes {
-			self.save_json_file(&txs, &self.file)?;
-		} else if txs.batches.is_empty() {
-			std::fs::write(&self.file, serialize(&txs.initial_tx)?)?;
+			self.save_json_file(txs, &self.file)?;
 		} else {
-			std::fs::write(&self.file, serialize(&txs.clone().flat())?)?;
+			// Write initial_tx bytes (or all flattened bytes for batched txs)
+			if txs.batches.is_empty() {
+				std::fs::write(&self.file, &txs.initial_tx.bytes)?;
+			} else {
+				let mut all_bytes = txs.initial_tx.bytes.clone();
+				for batch in &txs.batches {
+					for tx in batch {
+						all_bytes.extend_from_slice(&tx.bytes);
+					}
+				}
+				std::fs::write(&self.file, &all_bytes)?;
+			}
 		}
 		Ok(())
 	}
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> SendTxs<S, P> for SendTxsToUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl SendTxs for SendTxsToUrl {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		if self.rate <= 0.0 {
 			return Err("rate must be greater than 0".into());
 		}
 
-		let sender = Arc::new(Sender::<S, P>::new(&self.urls, self.no_watch_progress).await?);
+		let sender = Arc::new(Sender::new(&self.urls, self.no_watch_progress).await?);
 
 		log::info!("Sending initial tx...");
-		sender.send_tx(&txs.initial_tx.tx).await?;
+		sender.send_tx(&txs.initial_tx).await?;
 
 		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {
 			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
-			let failed = sender.send_worker(self.rate, batch.txs.clone()).await;
+			let failed = sender.send_worker(self.rate, batch.clone()).await;
 			total_failed += failed;
 		}
 

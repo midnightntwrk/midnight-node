@@ -1,12 +1,10 @@
 use crate::{
-	ProofType, SignatureType,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::{
 		TxGenerator, TxGeneratorError, builder::Builder, destination::Destination, source::Source,
 	},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::{ProofMarker, Signature};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -38,7 +36,7 @@ pub struct GenerateTxsArgs {
 }
 
 pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
-	let generator = TxGenerator::<SignatureType, ProofType>::new(
+	let generator = TxGenerator::new(
 		args.source,
 		args.destination,
 		args.builder,
@@ -58,9 +56,9 @@ pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
 }
 
 async fn generate_txs(
-	generator: &TxGenerator<SignatureType, ProofType>,
+	generator: &TxGenerator,
 	received_txs: SourceTransactions,
-) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
+) -> Result<BuiltTransactions, GenerateTxsError> {
 	generator
 		.build_txs(&received_txs)
 		.await
@@ -68,8 +66,8 @@ async fn generate_txs(
 }
 
 async fn send_txs(
-	generator: &TxGenerator<SignatureType, ProofType>,
-	generated_txs: DeserializedTransactionsWithContext<Signature, ProofMarker>,
+	generator: &TxGenerator,
+	generated_txs: BuiltTransactions,
 ) -> Result<(), GenerateTxsError> {
 	generator
 		.send_txs(&generated_txs)
@@ -201,10 +199,8 @@ mod tests {
 		"contract-call-call-tx"
 	)]
 	#[tokio::test]
-	async fn test_generation(
-		args: GenerateTxsArgs,
-	) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
-		let generator = TxGenerator::<SignatureType, ProofType>::new(
+	async fn test_generation(args: GenerateTxsArgs) -> Result<BuiltTransactions, GenerateTxsError> {
+		let generator = TxGenerator::new(
 			args.source,
 			args.destination,
 			args.builder,

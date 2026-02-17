@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::tx_generator::builder::build_fork_aware_context;
-use crate::{ProofType, SignatureType, TxGenerator, WalletSeed, source::Source};
+use crate::{TxGenerator, WalletSeed, source::Source};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
@@ -46,7 +46,7 @@ pub enum DustBalanceResult {
 pub async fn execute(
 	args: DustBalanceArgs,
 ) -> Result<DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
-	let src = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run).await?;
+	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
 		println!("Dry-run: fetching wallet for seed {:?}", args.seed);

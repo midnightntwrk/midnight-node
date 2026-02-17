@@ -1,17 +1,15 @@
 use crate::{
-	builder::{
-		BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt, CustomContractArgs, DefaultDB,
-		DeserializedTransactionsWithContext, IntentCustom, OfferInfo, ProofProvider, ProofType,
-		SignatureType, TransactionWithContext, Wallet, WalletSeed,
-	},
-	serde_def::SourceTransactions,
+	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
+	tx_generator::builder::{BuildTxs, BuildTxsExt, CustomContractArgs},
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildUtxoOutput, BuildUtxoSpend, ClaimedUnshieldedSpendsKey, ContractAction, IntentInfo,
-	ProofPreimageMarker, PublicAddress, ShieldedWallet, StdRng, TokenType, UnshieldedOfferInfo,
-	UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, WalletAddress,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
+	ClaimedUnshieldedSpendsKey, ContractAction, DefaultDB, IntentCustom, IntentInfo, LedgerContext,
+	OfferInfo, ProofPreimageMarker, ProofProvider, PublicAddress, ShieldedWallet, StdRng,
+	TokenType, TransactionWithContext, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
 };
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
@@ -120,14 +118,21 @@ impl CustomContractBuilder {
 impl BuildTxs for CustomContractBuilder {
 	type Error = CustomContractBuilderError;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		vec![self.funding_seed()]
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
 		println!("Building Txs for CustomContract");
+		let context_val = context.expect("CustomContractBuilder requires context");
+
 		// - LedgerContext and TransactionInfo
-		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info(context_val, prover_arc);
 
 		let funding_utxos = context.with_ledger_state(|state| {
 			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
@@ -239,6 +244,8 @@ impl BuildTxs for CustomContractBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

@@ -16,16 +16,15 @@ use std::{path::Path, sync::Arc};
 use thiserror::Error;
 
 use crate::{
-	ProofType, SignatureType,
 	remote_prover::RemoteProofServer,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::{BuiltTransactions, SourceTransactions},
 };
 
 pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{BuildTxs, Builder, DynamicError};
+use builder::{BuildTxs, Builder, DynamicError, build_fork_aware_context};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError};
 
@@ -44,26 +43,14 @@ pub struct DestinationError {
 	source: subxt::Error,
 }
 
-pub struct TxGenerator<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-where
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+pub struct TxGenerator {
 	pub source: Box<dyn GetTxs>,
-	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
+	pub destinations: Vec<Box<dyn SendTxs>>,
 	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
 	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
 }
 
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static + std::fmt::Debug,
-> TxGenerator<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl TxGenerator {
 	pub async fn new(
 		src: Source,
 		dest: Destination,
@@ -114,7 +101,7 @@ where
 	async fn destinations(
 		dest: Destination,
 		dry_run: bool,
-	) -> Result<Vec<Box<dyn SendTxs<S, P>>>, DestinationError> {
+	) -> Result<Vec<Box<dyn SendTxs>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
 			if dry_run {
 				println!("Dry-run: Destination file: {:?}", &dest_file);
@@ -125,7 +112,7 @@ where
 				}
 				return Ok(vec![Box::new(())]);
 			}
-			let destination: Box<dyn SendTxs<S, P>> =
+			let destination: Box<dyn SendTxs> =
 				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
 
 			return Ok(vec![destination]);
@@ -138,11 +125,8 @@ where
 			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
 
-		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
-			dest.dest_urls.clone(),
-			dest.rate,
-			dest.no_watch_progress,
-		));
+		let destination: Box<dyn SendTxs> =
+			Box::new(SendTxsToUrl::new(dest.dest_urls.clone(), dest.rate, dest.no_watch_progress));
 
 		dests.push(destination);
 
@@ -174,7 +158,7 @@ where
 
 	pub async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
@@ -198,7 +182,16 @@ where
 	pub async fn build_txs(
 		&self,
 		received_txs: &SourceTransactions,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, DynamicError> {
-		self.builder.build_txs_from(received_txs.clone(), self.prover.clone()).await
+	) -> Result<BuiltTransactions, DynamicError> {
+		let seeds = self.builder.relevant_wallet_seeds();
+		let context = if seeds.is_empty() {
+			None
+		} else {
+			let ctx = build_fork_aware_context(received_txs, &seeds);
+			Some(Arc::new(ctx))
+		};
+		self.builder
+			.build_txs_from(received_txs.clone(), context, self.prover.clone())
+			.await
 	}
 }

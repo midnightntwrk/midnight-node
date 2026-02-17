@@ -18,16 +18,20 @@ use tokio::{sync::Semaphore, task::JoinError};
 
 use crate::{
 	Progress, Spin,
-	builder::{
-		BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildUtxoOutput, DefaultDB,
-		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch, FromContext,
-		InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, ProofType,
-		Segment, SignatureType, StandardTrasactionInfo, TransactionWithContext,
-		UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
+	serde_def::{
+		BuiltTransactions, DeserializedTransactionsWithContext,
+		DeserializedTransactionsWithContextBatch, SourceTransactions,
 	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::{BatchesArgs, build_fork_aware_context},
+	tx_generator::builder::BatchesArgs,
 };
+use midnight_node_ledger_helpers::{
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, DefaultDB, FromContext, InputInfo,
+	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	UtxoSpendInfo, Wallet, WalletSeed,
+};
+
+use crate::tx_generator::builder::BuildTxs;
 
 /// The higher the number of transactions per batch, the longer it will take to generate the
 /// initial transaction. This is because the time it takes to prove a transaction increases
@@ -59,6 +63,25 @@ impl BatchesBuilder {
 			unshielded_token_type: args.unshielded_token_type,
 			enable_shielded: args.enable_shielded,
 		}
+	}
+
+	/// Compute all wallet seeds needed by this builder.
+	fn compute_all_seeds(&self) -> Vec<WalletSeed> {
+		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		let inputs_wallet_seeds = vec![funding_seed];
+
+		let mut wallet_seed_str =
+			String::from("0000000000000000000000000000000000000000000000000000000000000010");
+		let mut init_output_wallet_seeds = Vec::new();
+		for _ in 0..=self.num_batches {
+			for _ in 0..self.num_txs_per_batch {
+				init_output_wallet_seeds
+					.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
+				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+			}
+		}
+
+		[&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat()
 	}
 
 	fn initial_shielded_offer(
@@ -190,11 +213,19 @@ impl BatchesBuilder {
 #[async_trait]
 impl BuildTxs for BatchesBuilder {
 	type Error = JoinError;
+
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		self.compute_all_seeds()
+	}
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		_received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+	) -> Result<BuiltTransactions, Self::Error> {
+		let context_arc = context.expect("BatchesBuilder requires context");
+
 		// --------------------------------------------------------------
 		// Simulates what in the future will be the output of the YAML file based on `num_batches`
 		// and `num_txs_per_batch` when https://shielded.atlassian.net/browse/PM-10459 is implemented
@@ -222,14 +253,7 @@ impl BuildTxs for BatchesBuilder {
 		// --------------------------------------------------------------
 		// Build the Transaction
 		// --------------------------------------------------------------
-		// - First we need to generate the `LedgerContext`
-
-		let all_wallet_seeds = [&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat();
-
-		let context = build_fork_aware_context(&received_tx, &all_wallet_seeds);
-		let block_context = context.latest_block_context();
-
-		let context_arc = Arc::new(context);
+		let block_context = context_arc.latest_block_context();
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
@@ -436,6 +460,8 @@ impl BuildTxs for BatchesBuilder {
 			batches.push(batch);
 		}
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: initial_tx_with_context, batches })
+		let typed =
+			DeserializedTransactionsWithContext { initial_tx: initial_tx_with_context, batches };
+		Ok(BuiltTransactions::from_typed(typed))
 	}
 }

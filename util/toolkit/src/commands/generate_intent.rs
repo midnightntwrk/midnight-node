@@ -1,7 +1,7 @@
+use crate::toolkit_js;
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
 use crate::tx_generator::builder::build_fork_aware_context;
 use crate::tx_generator::source::Source;
-use crate::{ProofType, SignatureType, toolkit_js};
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
@@ -91,7 +91,7 @@ pub async fn fetch_zswap_state(
 	coin_public: CoinPublicKey,
 	dry_run: bool,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(source, dry_run).await?;
+	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
 		println!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
 		println!("Dry-run: attributing to coin-public {:?}", coin_public);

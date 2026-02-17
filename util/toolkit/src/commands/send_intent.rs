@@ -1,11 +1,8 @@
-use crate::{
-	ProofType, SignatureType,
-	tx_generator::{
-		TxGenerator,
-		builder::{Builder, CustomContractArgs},
-		destination::Destination,
-		source::Source,
-	},
+use crate::tx_generator::{
+	TxGenerator,
+	builder::{Builder, CustomContractArgs},
+	destination::Destination,
+	source::Source,
 };
 use clap::Args;
 
@@ -28,14 +25,9 @@ pub struct SendIntentArgs {
 pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let builder = Builder::ContractCustom(args.contract_args);
 
-	let generator = TxGenerator::<SignatureType, ProofType>::new(
-		args.source,
-		args.destination,
-		builder,
-		args.proof_server,
-		args.dry_run,
-	)
-	.await?;
+	let generator =
+		TxGenerator::new(args.source, args.destination, builder, args.proof_server, args.dry_run)
+			.await?;
 
 	if args.dry_run {
 		return Ok(());

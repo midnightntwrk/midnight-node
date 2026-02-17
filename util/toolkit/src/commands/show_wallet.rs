@@ -3,8 +3,7 @@ use std::collections::HashMap;
 use crate::source::Source;
 use crate::tx_generator::builder::build_fork_aware_context;
 use crate::{
-	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, ProofType, SignatureType, TxGenerator, Utxo, Wallet,
-	WalletAddress, WalletSeed,
+	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, TxGenerator, Utxo, Wallet, WalletAddress, WalletSeed,
 };
 use crate::{
 	cli_parsers::{self as cli},
@@ -56,7 +55,7 @@ pub struct ShowWalletArgs {
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
-	let src = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run).await?;
+	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
 		if let Some(seed) = args.seed {

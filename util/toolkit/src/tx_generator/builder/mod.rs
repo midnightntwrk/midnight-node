@@ -25,12 +25,9 @@ use midnight_node_ledger_helpers::*;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-	ProofType, SignatureType, cli_parsers as cli,
+	cli_parsers as cli,
 	fetcher::{fetch_storage::WalletStateCaching, wallet_state_cache},
-	serde_def::{
-		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
-		SourceTransactions,
-	},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::builders::{DeregisterDustAddressBuilder, RegisterDustAddressBuilder},
 };
 use subxt::utils::H256;
@@ -360,14 +357,20 @@ impl std::fmt::Display for DynamicError {
 impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	type Error = DynamicError;
 
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		self.builder.relevant_wallet_seeds()
+	}
+
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let x = self.builder.build_txs_from(received_tx, prover_arc).await;
-
-		x.map_err(|e| DynamicError { error: Box::new(e) })
+	) -> Result<BuiltTransactions, Self::Error> {
+		self.builder
+			.build_txs_from(received_tx, context, prover_arc)
+			.await
+			.map_err(|e| DynamicError { error: Box::new(e) })
 	}
 }
 
@@ -404,11 +407,21 @@ impl Builder {
 #[async_trait]
 pub trait BuildTxs {
 	type Error: std::error::Error + Send + Sync + 'static;
+
+	/// Wallet seeds needed for context building.
+	/// Return empty vec if no context is needed (pass-through builders).
+	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		vec![]
+	}
+
+	/// Build transactions from pre-built context.
+	/// `context` is `None` for pass-through builders (those returning empty seeds).
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
+		context: Option<Arc<LedgerContext<DefaultDB>>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
+	) -> Result<BuiltTransactions, Self::Error>;
 }
 
 /// An extension to help build transactions
@@ -420,20 +433,16 @@ pub trait BuildTxsExt {
 	/// Returns a tuple of an Arc<LedgerContext> and the StandardTransactionInfo
 	fn context_and_tx_info(
 		&self,
-		received_tx: SourceTransactions,
+		context: Arc<LedgerContext<DefaultDB>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>) {
-		let seeds = vec![self.funding_seed()];
-		let context = build_fork_aware_context(&received_tx, &seeds);
-		let context_arc = Arc::new(context);
-
 		let tx_info = StandardTrasactionInfo::new_from_context(
-			context_arc.clone(),
+			context.clone(),
 			prover_arc.clone(),
 			self.rng_seed(),
 		);
 
-		(context_arc, tx_info)
+		(context, tx_info)
 	}
 }
 
@@ -611,7 +620,7 @@ pub trait CreateIntentInfo {
 pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(
 		&mut self,
-		received_tx: SourceTransactions,
+		context: Arc<LedgerContext<DefaultDB>>,
 		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 		// the directory where to save the file
 		dir: &str,
@@ -619,7 +628,7 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 		partial_name: &str,
 	) {
 		println!("Generate intent file...");
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info(context, prover_arc);
 
 		let intent_info = self.create_intent_info();
 
