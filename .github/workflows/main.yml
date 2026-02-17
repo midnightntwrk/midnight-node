@@ -494,14 +494,10 @@ jobs:
             for ARCH in amd64 arm64; do
               SRC="ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
               DST="ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
-              if docker buildx imagetools inspect "$DST" > /dev/null 2>&1; then
-                echo "${DST} already exists, skipping"
-              else
-                echo "Mirroring ${SRC} -> ${DST}"
-                docker pull --platform "linux/${ARCH}" "$SRC"
-                docker tag "$SRC" "$DST"
-                docker push "$DST"
-              fi
+              echo "Mirroring ${SRC} -> ${DST}"
+              docker pull --platform "linux/${ARCH}" "$SRC"
+              docker tag "$SRC" "$DST"
+              docker push "$DST"
             done
           done
 
