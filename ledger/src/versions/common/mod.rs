@@ -42,6 +42,9 @@ pub mod api;
 pub mod conversions;
 
 #[cfg(feature = "std")]
+pub mod utxo_ordering_override;
+
+#[cfg(feature = "std")]
 use {
 	api::{
 		ContractAddress, ContractState, Ledger, LedgerParameters, SystemTransaction, Transaction,
@@ -255,6 +258,7 @@ where
 			hex::encode(tx_hash)
 		);
 		let ledger = Self::get_ledger(&api, state_key)?;
+		utxo_ordering_override::set_network_id(&ledger.state.network_id);
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
 
 		// Use cached VerifiedTransaction if available
@@ -284,16 +288,19 @@ where
 		let operations =
 			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
 
-		let (utxo_outputs, utxo_inputs) =
-			utxos.check_utxos_response_integrity(initial_utxos_size, &new_ledger)?;
+		// Capture segment counts before flattening — the HashMap→BTreeMap fix
+		// only changes ordering between segments, not within a single segment.
+		let output_segments = utxos.outputs.len();
+		let input_segments = utxos.inputs.len();
 
-		// During sync, shuffle segment ordering to probabilistically match historical
-		// blocks produced with non-deterministic HashMap iteration order
-		let (utxo_outputs, utxo_inputs) = if is_syncing {
-			(utxos.outputs_shuffled(), utxos.inputs_shuffled())
-		} else {
-			(utxo_outputs, utxo_inputs)
-		};
+		let (mut utxo_outputs, mut utxo_inputs) =
+			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
+
+		// Apply ordering override for old blocks produced with HashMap ordering.
+		// Only reorder lists that span multiple segments.
+		if let Some(ordering) = utxo_ordering_override::get_override(&tx_hash) {
+			ordering.apply(&mut utxo_outputs, output_segments, &mut utxo_inputs, input_segments);
+		}
 
 		let mut event = TransactionAppliedStateRoot {
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
