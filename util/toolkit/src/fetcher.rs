@@ -80,7 +80,7 @@ pub async fn read_blocks_from_cache<
 	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
 	let mut blocks: Vec<_> = fetch_storage
-		.get_block_data_range(chain_id, (0..max_height).into_iter())
+		.get_block_data_range(chain_id, (0..max_height + 1).into_iter())
 		.await
 		.into_iter()
 		.enumerate()
