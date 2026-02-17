@@ -11,8 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use frame_support::{
-	assert_ok, inherent::InherentData, pallet_prelude::*, sp_runtime::traits::Dispatchable,
+	assert_noop, assert_ok, inherent::InherentData, pallet_prelude::*,
+	sp_runtime::traits::Dispatchable, traits::Hooks,
 };
+use frame_system::RawOrigin;
 use midnight_node_ledger::latest::types::BlockContext;
 use midnight_node_ledger_helpers::{
 	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DefaultDB, DustPublicKey,
@@ -145,6 +147,13 @@ pub fn get_block_context(genesis_block: &[u8]) -> BlockContext {
 
 fn any_event<F: Fn(&RuntimeEvent) -> bool>(f: F) -> bool {
 	System::events().iter().any(|r| f(&r.event))
+}
+
+fn advance_block_and_reset_events() {
+	CNightObservation::on_finalize(System::block_number());
+	System::set_block_number(System::block_number() + 1);
+	frame_system::Pallet::<Test>::reset_events();
+	CNightObservation::on_initialize(System::block_number());
 }
 
 #[test]
@@ -376,9 +385,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		// Advance block and clear events
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		let reg_header = test_header(4, 2, 0, None);
 
@@ -409,9 +416,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		// Registration is not emitted when a duplicate is received
 		assert!(!registration_found);
 
-		// Advance block and clear events
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		let dereg_header = test_header(5, 0, 0, Some(tx_hash(4, 2)));
 
@@ -608,8 +613,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		// make the removal UTXO reference the registration UTXO so the MappingEntry matches
 		let dereg_header = test_header(21, 0, 0, Some(reg_header.utxo_tx_hash));
@@ -1212,3 +1216,48 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		assert_eq!(len_after_removal, None, "Key removed entirely from storage");
 // 	});
 // }
+
+#[test]
+fn duplicate_inherent_protection_works() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		let utxos = vec![ObservedUtxo {
+			header: test_header(1, 2, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		// First call succeeds
+		let inherent_data = create_inherent(utxos.clone(), test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		// Second call in same block fails
+		let call2 = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(3, 0),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(call2).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted
+		);
+
+		advance_block_and_reset_events();
+
+		// Third call in new block succeeds
+		let utxos2 = vec![ObservedUtxo {
+			header: test_header(4, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key,
+			}),
+		}];
+		let inherent_data2 = create_inherent(utxos2, test_position(5, 0));
+		let call3 = CNightObservation::create_inherent(&inherent_data2).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
+	});
+}

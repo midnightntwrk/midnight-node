@@ -145,6 +145,18 @@ echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
 echo ""
 
+# Query current epoch from ogmios and save when contracts will be active
+echo "=== Contracts Active Epoch ==="
+epoch=$(curl -s --request POST \
+    --url "http://ogmios:1337" \
+    --header 'Content-Type: application/json' \
+    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
+contracts_active_epoch=$((epoch + 2))
+echo "$contracts_active_epoch" > /runtime-values/contracts-active-epoch
+echo "Current epoch: $epoch, contracts will be active at epoch: $contracts_active_epoch"
+echo "=== Contracts Active Epoch Complete ==="
+echo ""
+
 # Export all contract data for midnight-setup
 echo "=== Contracts Data Exporter ==="
 echo "Saving contracts data for chain initialization (midnight-setup) and manual testing"

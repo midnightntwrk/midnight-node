@@ -214,7 +214,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
-      APP__APPLICATION__NETWORK_ID: "DevNet"
+      APP__APPLICATION__NETWORK_ID: "undeployed"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
       start_interval: "5s"
@@ -329,19 +329,10 @@ services:
       - ./configurations/midnight-nodes/midnight-node-1/entrypoint.sh:/entrypoint.sh
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
-      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000001"
-      CARDANO_SECURITY_PARAMETER: "5"
-      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
-      MC__FIRST_EPOCH_NUMBER: "0"
-      MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "30000"
-      ALLOW_NON_SSL: true
-      BLOCK_STABILITY_MARGIN: "0"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30333:30333"
       - "9933:9933"
-      - "9944:9944"
       - "9615:9615"
     restart: always
     deploy:
@@ -365,14 +356,6 @@ services:
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
-      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
-      CARDANO_SECURITY_PARAMETER: "5"
-      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
-      MC__FIRST_EPOCH_NUMBER: "0"
-      MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "30000"
-      BLOCK_STABILITY_MARGIN: "0"
-      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30334:30334"
@@ -400,14 +383,6 @@ services:
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
-      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000003"
-      CARDANO_SECURITY_PARAMETER: "5"
-      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
-      MC__FIRST_EPOCH_NUMBER: "0"
-      MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "30000"
-      BLOCK_STABILITY_MARGIN: "0"
-      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30335:30335"
@@ -437,14 +412,6 @@ services:
       - ./configurations/midnight-nodes/midnight-node-4/network:/network
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
-      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000004"
-      CARDANO_SECURITY_PARAMETER: "5"
-      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
-      MC__FIRST_EPOCH_NUMBER: "0"
-      MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "30000"
-      BLOCK_STABILITY_MARGIN: "0"
-      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30336:30336"
@@ -474,18 +441,10 @@ services:
       - ./configurations/midnight-nodes/midnight-node-5/network:/network
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
-      SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000005"
-      CARDANO_SECURITY_PARAMETER: "5"
-      CARDANO_ACTIVE_SLOTS_COEFF: "0.4"
-      MC__FIRST_EPOCH_NUMBER: "0"
-      MC__FIRST_SLOT_NUMBER: "0"
-      MC__EPOCH_DURATION_MILLIS: "30000"
-      BLOCK_STABILITY_MARGIN: "0"
-      ALLOW_NON_SSL: true
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "30337:30337"
-      - "9937:9937"
+      - "9944:9944"
       - "9619:9619"
     restart: always
     deploy:
