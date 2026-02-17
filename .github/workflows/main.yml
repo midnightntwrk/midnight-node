@@ -498,7 +498,9 @@ jobs:
                 echo "${DST} already exists, skipping"
               else
                 echo "Mirroring ${SRC} -> ${DST}"
-                docker buildx imagetools create --tag "$DST" "$SRC"
+                docker pull --platform "linux/${ARCH}" "$SRC"
+                docker tag "$SRC" "$DST"
+                docker push "$DST"
               fi
             done
           done
