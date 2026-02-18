@@ -12,21 +12,19 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
-	BuildIntent, ContractAddress, ContractMaintenanceAuthority,
-	ContractOperationVersionedVerifierKey, EntryPointBuf, LedgerContext, SigningKey,
-	UnshieldedWallet, VerifierKey, VerifyingKey, WalletSeed, deserialize, serialize_untagged,
+use super::ledger_helpers_local::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractAddress,
+	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
+	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo, LedgerContext,
+	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
+	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
+	serialize_untagged,
 };
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
 	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
 	tx_generator::builder::{BuildTxs, BuildTxsExt, ContractMaintenanceArgs},
-};
-use midnight_node_ledger_helpers::{
-	BuildContractAction, BuildInput, BuildOutput, ContractMaintenanceAuthorityInfo, DefaultDB,
-	IntentInfo, MaintenanceUpdateInfo, OfferInfo, ProofProvider, TransactionWithContext,
-	UpdateInfo, Wallet,
 };
 
 pub struct ContractMaintenanceBuilder {

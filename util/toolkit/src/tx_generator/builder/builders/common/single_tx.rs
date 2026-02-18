@@ -14,7 +14,7 @@
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
 	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,

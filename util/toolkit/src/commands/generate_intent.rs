@@ -102,7 +102,7 @@ pub async fn fetch_zswap_state(
 	}
 
 	let received_tx = source.get_txs().await?;
-	let context = build_fork_aware_context(&received_tx, &[wallet_seed]);
+	let context = build_fork_aware_context(&received_tx, &[wallet_seed])?;
 	let wallet = context.wallet_from_seed(wallet_seed);
 	let zswap_local_state = wallet.shielded.state;
 

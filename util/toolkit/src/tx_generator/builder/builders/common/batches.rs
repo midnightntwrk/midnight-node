@@ -12,7 +12,12 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{SerdeTransaction, ShieldedTokenType, UnshieldedTokenType};
+use super::ledger_helpers_local::{
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, DefaultDB, FromContext, InputInfo,
+	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
+	SerdeTransaction, ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext,
+	UnshieldedOfferInfo, UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
+};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinError};
 
@@ -23,12 +28,6 @@ use crate::{
 		DeserializedTransactionsWithContextBatch, SourceTransactions,
 	},
 	tx_generator::builder::BatchesArgs,
-};
-use midnight_node_ledger_helpers::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, DefaultDB, FromContext, InputInfo,
-	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
-	UtxoSpendInfo, Wallet, WalletSeed,
 };
 
 use crate::tx_generator::builder::BuildTxs;

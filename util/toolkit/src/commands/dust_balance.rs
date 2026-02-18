@@ -55,7 +55,7 @@ pub async fn execute(
 
 	let source_blocks = src.get_txs().await?;
 
-	let context = build_fork_aware_context(&source_blocks, &[args.seed]);
+	let context = build_fork_aware_context(&source_blocks, &[args.seed])?;
 
 	context.with_wallet_from_seed(args.seed, |wallet| {
 		let dust_state = wallet.dust.dust_local_state.as_ref().unwrap();

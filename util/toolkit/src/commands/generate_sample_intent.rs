@@ -52,7 +52,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let received_txs = source.get_txs().await.expect("should receive txs");
 
 	let seeds = vec![builder.funding_seed()];
-	let context = Arc::new(build_fork_aware_context(&received_txs, &seeds));
+	let context = Arc::new(build_fork_aware_context(&received_txs, &seeds).expect("expected ledger 8 context"));
 
 	builder
 		.generate_intent_file(context, prover, &args.dest_dir, partial_file_name)

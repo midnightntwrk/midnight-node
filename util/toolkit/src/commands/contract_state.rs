@@ -35,7 +35,7 @@ pub async fn execute(
 
 	let blocks = source.get_txs().await?;
 
-	let context = build_fork_aware_context(&blocks, &[]);
+	let context = build_fork_aware_context(&blocks, &[])?;
 
 	let state = context
 		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))

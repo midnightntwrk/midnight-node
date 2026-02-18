@@ -353,6 +353,12 @@ impl std::fmt::Display for DynamicError {
 	}
 }
 
+impl From<ContextNotLedger8Error> for DynamicError {
+	fn from(e: ContextNotLedger8Error) -> Self {
+		Self { error: Box::new(e) }
+	}
+}
+
 #[async_trait]
 impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	type Error = DynamicError;
@@ -473,7 +479,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	rng_seed: Option<[u8; 32]>,
 	chain_id: H256,
 	cache_storage: Option<&C>,
-) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64) {
+) -> Result<(Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64), ContextNotLedger8Error> {
 	let network_id = received_tx.network().to_string();
 	let total_blocks = received_tx.blocks.len() as u64;
 
@@ -555,7 +561,9 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 		fork_ctx = fork_ctx.update_from_block(block);
 	}
 
-	let context = fork_ctx.into_ledger8().expect("expected ledger 8 after processing all blocks");
+	let final_version = fork_ctx.version();
+	let context =
+		fork_ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))?;
 
 	// Save updated cache if storage is provided and blocks were replayed
 	if let Some(storage) = cache_storage {
@@ -570,7 +578,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 		StandardTrasactionInfo::new_from_context(context_arc.clone(), prover_arc.clone(), rng_seed);
 
 	let blocks_cached = total_blocks.saturating_sub(blocks_replayed);
-	(context_arc, tx_info, blocks_cached)
+	Ok((context_arc, tx_info, blocks_cached))
 }
 
 /// Compute a wallet identity from seeds.
@@ -638,6 +646,10 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	}
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("chain has not reached ledger 8 (final version: {0:?})")]
+pub struct ContextNotLedger8Error(pub LedgerVersion);
+
 /// Build a fork-aware context from source transactions, returning a ledger 8 context.
 ///
 /// This handles chains that may have forked from ledger 7 to ledger 8 by using
@@ -645,7 +657,7 @@ pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 pub fn build_fork_aware_context(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> LedgerContext<DefaultDB> {
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger8Error> {
 	let network_id = received_tx.network();
 	let initial_version = received_tx
 		.blocks
@@ -659,5 +671,6 @@ pub fn build_fork_aware_context(
 		ctx = ctx.update_from_block(block);
 	}
 
-	ctx.into_ledger8().expect("expected ledger 8 after processing all blocks")
+	let final_version = ctx.version();
+	ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))
 }

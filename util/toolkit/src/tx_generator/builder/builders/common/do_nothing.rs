@@ -13,12 +13,11 @@
 
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	DefaultDB, HashOutput, LedgerContext, ProofProvider, SerdeTransaction, Timestamp,
 	TransactionWithContext, make_block_context, mn_ledger_serialize::tagged_deserialize,
 };
-use std::sync::Arc;
-use thiserror::Error;
+use std::{convert::Infallible, sync::Arc};
 
 use crate::{
 	ProofType, SignatureType,
@@ -29,32 +28,25 @@ use crate::{
 	tx_generator::builder::BuildTxs,
 };
 
-pub struct ReplaceInitialTxBuilder;
+pub struct DoNothingBuilder;
 
-impl ReplaceInitialTxBuilder {
+impl DoNothingBuilder {
 	pub fn new() -> Self {
 		Self
 	}
 }
 
-#[derive(Error, Debug)]
-#[error("error building ReplaceInitialTx: {0}")]
-pub struct ReplaceInitialTxError(String);
-
 #[async_trait]
-impl BuildTxs for ReplaceInitialTxBuilder {
-	type Error = ReplaceInitialTxError;
+impl BuildTxs for DoNothingBuilder {
+	type Error = Infallible;
 
 	async fn build_txs_from(
 		&self,
-		mut received_tx: SourceTransactions,
+		received_tx: SourceTransactions,
 		_context: Option<Arc<LedgerContext<DefaultDB>>>,
 		_prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
-		// Skip the first block (genesis) and start from the second
-		received_tx.blocks.remove(0);
-
-		// Deserialize all remaining raw blocks into typed transactions
+		// Deserialize all raw blocks into typed transactions
 		let mut all_txs: Vec<TransactionWithContext<SignatureType, ProofType, DefaultDB>> =
 			Vec::new();
 		for block in &received_tx.blocks {
@@ -81,10 +73,6 @@ impl BuildTxs for ReplaceInitialTxBuilder {
 					block_context: block_context.clone(),
 				});
 			}
-		}
-
-		if all_txs.is_empty() {
-			return Err(ReplaceInitialTxError("No batches available to migrate".to_string()));
 		}
 
 		let initial_tx = all_txs.remove(0);

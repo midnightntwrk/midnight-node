@@ -18,10 +18,10 @@ use crate::{
 	},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, CallInfo, ContractAddress,
-	DefaultDB, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
-	Wallet, WalletSeed,
+	DefaultDB, IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
+	TransactionWithContext, Wallet, WalletSeed,
 };
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
@@ -76,7 +76,7 @@ impl CreateIntentInfo for ContractCallBuilder {
 		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
 
 		// - Intents
-		let intent_info = midnight_node_ledger_helpers::IntentInfo {
+		let intent_info = IntentInfo {
 			guaranteed_unshielded_offer: None,
 			fallible_unshielded_offer: None,
 			actions,

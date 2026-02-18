@@ -187,7 +187,7 @@ impl TxGenerator {
 		let context = if seeds.is_empty() {
 			None
 		} else {
-			let ctx = build_fork_aware_context(received_txs, &seeds);
+			let ctx = build_fork_aware_context(received_txs, &seeds)?;
 			Some(Arc::new(ctx))
 		};
 		self.builder

@@ -69,7 +69,7 @@ pub async fn execute(
 	let source_blocks = src.get_txs().await?;
 
 	if let Some(seed) = args.seed {
-		let context = build_fork_aware_context(&source_blocks, &[seed]);
+		let context = build_fork_aware_context(&source_blocks, &[seed])?;
 
 		Ok(context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed, |wallet| {
@@ -104,7 +104,7 @@ pub async fn execute(
 			return Err("unavailable information - secret key needed".into());
 		}
 
-		let context = build_fork_aware_context(&source_blocks, &[]);
+		let context = build_fork_aware_context(&source_blocks, &[])?;
 
 		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();
 		Ok(ShowWalletResult::Json(WalletInfoJson {

@@ -14,7 +14,7 @@
 use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	ClaimMintInfo, DefaultDB, FromContext, LedgerContext, ProofProvider, RewardsInfo,
 	TransactionWithContext, Wallet, WalletSeed,
 };

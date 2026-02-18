@@ -4,7 +4,7 @@ use crate::{
 	tx_generator::builder::{BuildTxs, BuildTxsExt, CustomContractArgs},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
 	ClaimedUnshieldedSpendsKey, ContractAction, DefaultDB, IntentCustom, IntentInfo, LedgerContext,
 	OfferInfo, ProofPreimageMarker, ProofProvider, PublicAddress, ShieldedWallet, StdRng,
