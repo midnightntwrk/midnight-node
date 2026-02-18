@@ -12,11 +12,10 @@
 // limitations under the License.
 
 use crate::{
-	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
-	tx_generator::builder::{
-		BuildTxs, BuildTxsExt, ContractDeployArgs, CreateIntentInfo, IntentToFile,
-	},
+	serde_def::{BuiltTransactions, SourceTransactions},
+	tx_generator::builder::{BuildTxs, ContractDeployArgs},
 };
+use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
@@ -26,6 +25,8 @@ use super::ledger_helpers_local::{
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	committee: Vec<VerifyingKey>,
 	committee_threshold: u32,
@@ -33,13 +34,20 @@ pub struct ContractDeployBuilder {
 }
 
 impl ContractDeployBuilder {
-	pub fn new(args: ContractDeployArgs) -> Self {
-		let ContractDeployArgs {
-			funding_seed,
-			authority_seeds: mut committee_seeds,
-			authority_threshold: committee_threshold,
-			rng_seed,
-		} = args;
+	pub fn new(
+		args: ContractDeployArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		let funding_seed = args.funding_seed;
+		let rng_seed = args.rng_seed;
+		let committee_threshold = args.authority_threshold;
+
+		let mut committee_seeds: Vec<WalletSeed> = args
+			.authority_seeds
+			.iter()
+			.map(|s| super::type_convert::convert_wallet_seed(*s))
+			.collect();
 
 		// Set the funding seed as the committee if none is passed
 		if committee_seeds.is_empty() {
@@ -53,7 +61,7 @@ impl ContractDeployBuilder {
 
 		let committee_threshold = committee_threshold.unwrap_or_else(|| committee.len() as u32);
 
-		Self { funding_seed, committee, committee_threshold, rng_seed }
+		Self { context, prover, funding_seed, committee, committee_threshold, rng_seed }
 	}
 }
 
@@ -67,6 +75,14 @@ impl BuildTxsExt for ContractDeployBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -98,20 +114,12 @@ impl CreateIntentInfo for ContractDeployBuilder {
 impl BuildTxs for ContractDeployBuilder {
 	type Error = Infallible;
 
-	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
-		vec![self.funding_seed()]
-	}
-
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-		context: Option<Arc<LedgerContext<DefaultDB>>>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
-		let context = context.expect("ContractDeployBuilder requires context");
-
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(context, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info();
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -139,8 +147,6 @@ impl BuildTxs for ContractDeployBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		let typed =
-			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }

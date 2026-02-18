@@ -1,8 +1,9 @@
 use crate::{
-	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
-	tx_generator::builder::{BuildTxs, BuildTxsExt, CustomContractArgs},
+	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
+use super::build_txs_ext::BuildTxsExt;
 use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
@@ -31,6 +32,8 @@ pub enum CustomContractBuilderError {
 }
 
 pub struct CustomContractBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	artifact_dirs: Vec<String>,
@@ -41,7 +44,11 @@ pub struct CustomContractBuilder {
 }
 
 impl CustomContractBuilder {
-	pub fn new(args: CustomContractArgs) -> Self {
+	pub fn new(
+		args: CustomContractArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
 		let CustomContractArgs {
 			funding_seed,
 			rng_seed,
@@ -52,6 +59,8 @@ impl CustomContractBuilder {
 			shielded_destinations,
 		} = args;
 		Self {
+			context,
+			prover,
 			funding_seed,
 			rng_seed,
 			artifact_dirs: compiled_contract_dirs,
@@ -70,6 +79,14 @@ impl BuildTxsExt for CustomContractBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -118,21 +135,14 @@ impl CustomContractBuilder {
 impl BuildTxs for CustomContractBuilder {
 	type Error = CustomContractBuilderError;
 
-	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
-		vec![self.funding_seed()]
-	}
-
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-		context: Option<Arc<LedgerContext<DefaultDB>>>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
 		println!("Building Txs for CustomContract");
-		let context_val = context.expect("CustomContractBuilder requires context");
 
 		// - LedgerContext and TransactionInfo
-		let (context, mut tx_info) = self.context_and_tx_info(context_val, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info();
 
 		let funding_utxos = context.with_ledger_state(|state| {
 			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
@@ -244,8 +254,6 @@ impl BuildTxs for CustomContractBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		let typed =
-			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }

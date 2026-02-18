@@ -14,17 +14,13 @@
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use super::ledger_helpers_local::{
-	DefaultDB, HashOutput, LedgerContext, ProofProvider, SerdeTransaction, Timestamp,
+	DefaultDB, HashOutput, ProofMarker, SerdeTransaction, Signature, Timestamp,
 	TransactionWithContext, make_block_context, mn_ledger_serialize::tagged_deserialize,
 };
-use std::{convert::Infallible, sync::Arc};
+use std::convert::Infallible;
 
 use crate::{
-	ProofType, SignatureType,
-	serde_def::{
-		BuiltTransactions, DeserializedTransactionsWithContext,
-		DeserializedTransactionsWithContextBatch, SourceTransactions,
-	},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::BuildTxs,
 };
 
@@ -43,11 +39,9 @@ impl BuildTxs for DoNothingBuilder {
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
-		_context: Option<Arc<LedgerContext<DefaultDB>>>,
-		_prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
 		// Deserialize all raw blocks into typed transactions
-		let mut all_txs: Vec<TransactionWithContext<SignatureType, ProofType, DefaultDB>> =
+		let mut all_txs: Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>> =
 			Vec::new();
 		for block in &received_tx.blocks {
 			let block_context = make_block_context(
@@ -76,13 +70,8 @@ impl BuildTxs for DoNothingBuilder {
 		}
 
 		let initial_tx = all_txs.remove(0);
-		let batch = DeserializedTransactionsWithContextBatch { txs: all_txs };
+		let batches = if all_txs.is_empty() { vec![] } else { vec![all_txs] };
 
-		let typed = DeserializedTransactionsWithContext {
-			initial_tx,
-			batches: if batch.txs.is_empty() { vec![] } else { vec![batch] },
-		};
-
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_batched(initial_tx, batches))
 	}
 }

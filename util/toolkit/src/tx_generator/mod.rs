@@ -11,20 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::*;
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 use thiserror::Error;
 
-use crate::{
-	remote_prover::RemoteProofServer,
-	serde_def::{BuiltTransactions, SourceTransactions},
-};
+use crate::serde_def::{BuiltTransactions, SourceTransactions};
 
 pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{BuildTxs, Builder, DynamicError, build_fork_aware_context};
+use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_raw};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError};
 
@@ -46,8 +42,9 @@ pub struct DestinationError {
 pub struct TxGenerator {
 	pub source: Box<dyn GetTxs>,
 	pub destinations: Vec<Box<dyn SendTxs>>,
-	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
-	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
+	pub builder_config: Builder,
+	pub prover_config: ProverConfig,
+	pub dry_run: bool,
 }
 
 impl TxGenerator {
@@ -60,10 +57,12 @@ impl TxGenerator {
 	) -> Result<Self, TxGeneratorError> {
 		let source = Self::source(src, dry_run).await?;
 		let destinations = Self::destinations(dest, dry_run).await?;
-		let builder = builder.to_builder(dry_run);
-		let prover = Self::prover(proof_server, dry_run);
+		if dry_run {
+			println!("Dry-run: Builder type: {:?}", &builder);
+		}
+		let prover_config = Self::prover_config(proof_server, dry_run);
 
-		Ok(Self { source, destinations, builder, prover })
+		Ok(Self { source, destinations, builder_config: builder, prover_config, dry_run })
 	}
 
 	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
@@ -133,20 +132,17 @@ impl TxGenerator {
 		Ok(dests)
 	}
 
-	pub fn prover(
-		proof_server: Option<String>,
-		dry_run: bool,
-	) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn prover_config(proof_server: Option<String>, dry_run: bool) -> ProverConfig {
 		if let Some(url) = proof_server {
 			if dry_run {
-				println!("Dry-run: remove prover: {url}");
+				println!("Dry-run: remote prover: {url}");
 			}
-			Arc::new(RemoteProofServer::new(url))
+			ProverConfig::Remote(url)
 		} else {
 			if dry_run {
 				println!("Dry-run: local prover (no proof server)");
 			}
-			Arc::new(LocalProofServer::new())
+			ProverConfig::Local
 		}
 	}
 
@@ -183,15 +179,18 @@ impl TxGenerator {
 		&self,
 		received_txs: &SourceTransactions,
 	) -> Result<BuiltTransactions, DynamicError> {
-		let seeds = self.builder.relevant_wallet_seeds();
-		let context = if seeds.is_empty() {
+		let seeds = self.builder_config.relevant_wallet_seeds();
+		let fork_ctx = if seeds.is_empty() {
 			None
 		} else {
-			let ctx = build_fork_aware_context(received_txs, &seeds)?;
-			Some(Arc::new(ctx))
+			Some(build_fork_aware_context_raw(received_txs, &seeds))
 		};
-		self.builder
-			.build_txs_from(received_txs.clone(), context, self.prover.clone())
-			.await
+
+		let builder = self
+			.builder_config
+			.clone()
+			.to_versioned_builder(fork_ctx, &self.prover_config, self.dry_run)?;
+
+		builder.build_txs_from(received_txs.clone()).await
 	}
 }

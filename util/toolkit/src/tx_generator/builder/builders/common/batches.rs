@@ -23,19 +23,40 @@ use tokio::{sync::Semaphore, task::JoinError};
 
 use crate::{
 	Progress, Spin,
-	serde_def::{
-		BuiltTransactions, DeserializedTransactionsWithContext,
-		DeserializedTransactionsWithContextBatch, SourceTransactions,
-	},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::BatchesArgs,
 };
 
 use crate::tx_generator::builder::BuildTxs;
 
+/// Compute wallet seeds for a batches configuration without constructing a full builder.
+pub fn compute_batches_seeds(
+	funding_seed: &str,
+	num_txs_per_batch: usize,
+	num_batches: usize,
+) -> Vec<WalletSeed> {
+	let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(funding_seed);
+	let inputs_wallet_seeds = vec![funding_seed];
+
+	let mut wallet_seed_str =
+		String::from("0000000000000000000000000000000000000000000000000000000000000010");
+	let mut init_output_wallet_seeds = Vec::new();
+	for _ in 0..=num_batches {
+		for _ in 0..num_txs_per_batch {
+			init_output_wallet_seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
+			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+		}
+	}
+
+	[&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat()
+}
+
 /// The higher the number of transactions per batch, the longer it will take to generate the
 /// initial transaction. This is because the time it takes to prove a transaction increases
 /// with the number of outputs in the transaction.
 pub struct BatchesBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	num_txs_per_batch: usize,
 	num_batches: usize,
@@ -49,38 +70,26 @@ pub struct BatchesBuilder {
 }
 
 impl BatchesBuilder {
-	pub fn new(args: BatchesArgs) -> Self {
+	pub fn new(
+		args: BatchesArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		use super::type_convert::{convert_shielded_token_type, convert_unshielded_token_type};
 		Self {
+			context,
+			prover,
 			funding_seed: args.funding_seed,
 			num_txs_per_batch: args.num_txs_per_batch,
 			num_batches: args.num_batches,
 			concurrency: args.concurrency,
 			rng_seed: args.rng_seed,
 			coin_amount: args.coin_amount,
-			shielded_token_type: args.shielded_token_type,
+			shielded_token_type: convert_shielded_token_type(args.shielded_token_type),
 			initial_unshielded_intent_value: args.initial_unshielded_intent_value,
-			unshielded_token_type: args.unshielded_token_type,
+			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
 			enable_shielded: args.enable_shielded,
 		}
-	}
-
-	/// Compute all wallet seeds needed by this builder.
-	fn compute_all_seeds(&self) -> Vec<WalletSeed> {
-		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
-		let inputs_wallet_seeds = vec![funding_seed];
-
-		let mut wallet_seed_str =
-			String::from("0000000000000000000000000000000000000000000000000000000000000010");
-		let mut init_output_wallet_seeds = Vec::new();
-		for _ in 0..=self.num_batches {
-			for _ in 0..self.num_txs_per_batch {
-				init_output_wallet_seeds
-					.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
-				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
-			}
-		}
-
-		[&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat()
 	}
 
 	fn initial_shielded_offer(
@@ -213,17 +222,12 @@ impl BatchesBuilder {
 impl BuildTxs for BatchesBuilder {
 	type Error = JoinError;
 
-	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
-		self.compute_all_seeds()
-	}
-
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-		context: Option<Arc<LedgerContext<DefaultDB>>>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
-		let context_arc = context.expect("BatchesBuilder requires context");
+		let context_arc = self.context.clone();
+		let prover_arc = self.prover.clone();
 
 		// --------------------------------------------------------------
 		// Simulates what in the future will be the output of the YAML file based on `num_batches`
@@ -331,7 +335,7 @@ impl BuildTxs for BatchesBuilder {
 		// The `output_wallet_seeds` vector should contain `num_txs_per_batch * num_batches` elements.
 		// The first slice of size `num_txs_per_batch` from `output_wallet_seeds` will send
 		// funds to the next slice, which in turn sends funds to the next, and so on.
-		let mut batches = Vec::with_capacity(self.num_batches);
+		let mut batches: Vec<Vec<TransactionWithContext<_, _, _>>> = Vec::with_capacity(self.num_batches);
 
 		for batch_num in 0..self.num_batches {
 			// Indexes of the `WalletSeed` to fund the txs (inputs)
@@ -455,12 +459,9 @@ impl BuildTxs for BatchesBuilder {
 				txs.push(tx_with_context);
 			}
 
-			let batch = DeserializedTransactionsWithContextBatch { txs };
-			batches.push(batch);
+			batches.push(txs);
 		}
 
-		let typed =
-			DeserializedTransactionsWithContext { initial_tx: initial_tx_with_context, batches };
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_batched(initial_tx_with_context, batches))
 	}
 }

@@ -119,6 +119,16 @@ where
 		}
 	}
 
+	/// Extract the inner Ledger7 context, consuming self.
+	///
+	/// Returns `None` if the context has already forked to Ledger8.
+	pub fn into_ledger7(self) -> Option<crate::ledger_7::context::LedgerContext<D>> {
+		match self {
+			Self::Ledger7(ctx) => Some(ctx),
+			Self::Ledger8(_) => None,
+		}
+	}
+
 	/// Extract the inner Ledger8 context, consuming self.
 	///
 	/// Returns `None` if the context is still at Ledger7.

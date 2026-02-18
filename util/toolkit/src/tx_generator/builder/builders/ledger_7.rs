@@ -13,9 +13,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Ledger 7 version wrapper — mirrors ledger_8.rs structure.
-// Builders are not yet compiled here because the `BuildTxs` trait and CLI args
-// types are defined against ledger 8 types. Individual builders will be enabled
-// once the traits are parameterised per ledger version.
-#[allow(unused_imports)]
-pub use midnight_node_ledger_helpers::ledger_7 as ledger_helpers_local;
+#[path = "common"]
+#[allow(clippy::duplicate_mod)]
+pub mod inner {
+	pub use midnight_node_ledger_helpers::ledger_7 as ledger_helpers_local;
+
+	mod build_txs_ext;
+	pub mod type_convert;
+	mod tx_serialization;
+	mod batches;
+	mod claim_rewards;
+	mod contract_call;
+	// contract_custom excluded: EncodedOutputInfo does not implement ledger_7 BuildOutput
+	mod contract_deploy;
+	mod contract_maintenance;
+	mod deregister_dust_address;
+	mod do_nothing;
+	mod register_dust_address;
+	mod replace_initial_tx;
+	pub mod single_tx;
+
+	pub use build_txs_ext::*;
+	pub use batches::*;
+	pub use claim_rewards::*;
+	pub use contract_call::*;
+	pub use contract_deploy::*;
+	pub use contract_maintenance::*;
+	pub use deregister_dust_address::*;
+	pub use do_nothing::*;
+	pub use register_dust_address::*;
+	pub use replace_initial_tx::*;
+}
+pub use inner::*;

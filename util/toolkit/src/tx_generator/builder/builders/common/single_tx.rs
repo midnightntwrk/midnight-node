@@ -24,13 +24,15 @@ use super::ledger_helpers_local::{
 
 use crate::{
 	progress::Spin,
-	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::{BuildTxs, SingleTxArgs},
 };
 
 const MAX_GUARANTEED_OUTPUTS: usize = 2;
 
 pub struct SingleTxBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	shielded_amount: Option<u128>,
 	shielded_token_type: ShieldedTokenType,
 	unshielded_amount: Option<u128>,
@@ -42,26 +44,27 @@ pub struct SingleTxBuilder {
 }
 
 impl SingleTxBuilder {
-	pub fn new(args: SingleTxArgs) -> Self {
-		let SingleTxArgs {
-			shielded_amount,
-			shielded_token_type,
-			unshielded_amount,
-			unshielded_token_type,
-			source_seed,
-			funding_seed,
-			destination_address,
-			rng_seed,
-		} = args;
+	pub fn new(
+		args: SingleTxArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		use super::type_convert::*;
 		Self {
-			shielded_amount,
-			shielded_token_type,
-			unshielded_amount,
-			unshielded_token_type,
-			source_seed,
-			funding_seed,
-			destination_address,
-			rng_seed,
+			context,
+			prover,
+			shielded_amount: args.shielded_amount,
+			shielded_token_type: convert_shielded_token_type(args.shielded_token_type),
+			unshielded_amount: args.unshielded_amount,
+			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
+			source_seed: convert_wallet_seed(args.source_seed),
+			funding_seed: args.funding_seed.map(convert_wallet_seed),
+			destination_address: args
+				.destination_address
+				.iter()
+				.map(convert_wallet_address)
+				.collect(),
+			rng_seed: args.rng_seed,
 		}
 	}
 
@@ -72,27 +75,19 @@ impl SingleTxBuilder {
 impl BuildTxs for SingleTxBuilder {
 	type Error = Infallible;
 
-	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
-		let mut seeds = vec![self.source_seed];
-		seeds.extend(self.funding_seed.iter());
-		seeds
-	}
-
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-		context: Option<Arc<LedgerContext<DefaultDB>>>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
 		let spin = Spin::new("generating single tx...");
 
-		let context = context.expect("SingleTxBuilder requires context");
+		let context = self.context.clone();
 		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),
-			prover_arc.clone(),
+			self.prover.clone(),
 			self.rng_seed,
 		);
 
@@ -157,11 +152,7 @@ impl BuildTxs for SingleTxBuilder {
 
 		spin.finish("generated tx.");
 
-		let typed = DeserializedTransactionsWithContext {
-			initial_tx: tx_with_context,
-			batches: Vec::new(),
-		};
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
 

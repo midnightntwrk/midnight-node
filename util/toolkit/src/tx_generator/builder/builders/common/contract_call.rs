@@ -12,11 +12,10 @@
 // limitations under the License.
 
 use crate::{
-	serde_def::{BuiltTransactions, DeserializedTransactionsWithContext, SourceTransactions},
-	tx_generator::builder::{
-		BuildTxs, BuildTxsExt, ContractCallArgs, CreateIntentInfo, IntentToFile,
-	},
+	serde_def::{BuiltTransactions, SourceTransactions},
+	tx_generator::builder::{BuildTxs, ContractCallArgs},
 };
+use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, CallInfo, ContractAddress,
@@ -28,6 +27,8 @@ use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 const CONTRACT_INPUT: u32 = 12;
 
 pub struct ContractCallBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	call_key: &'static str,
 	funding_seed: String,
 	contract_address: ContractAddress,
@@ -35,13 +36,19 @@ pub struct ContractCallBuilder {
 }
 
 impl ContractCallBuilder {
-	pub fn new(args: ContractCallArgs) -> Self {
+	pub fn new(
+		args: ContractCallArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
 		let call_key: &'static str = Box::leak(args.call_key.into_boxed_str());
 
 		Self {
+			context,
+			prover,
 			call_key,
 			funding_seed: args.funding_seed,
-			contract_address: args.contract_address,
+			contract_address: super::type_convert::convert_contract_address(args.contract_address),
 			rng_seed: args.rng_seed,
 		}
 	}
@@ -57,6 +64,14 @@ impl BuildTxsExt for ContractCallBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -90,20 +105,12 @@ impl CreateIntentInfo for ContractCallBuilder {
 impl BuildTxs for ContractCallBuilder {
 	type Error = Infallible;
 
-	fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
-		vec![self.funding_seed()]
-	}
-
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-		context: Option<Arc<LedgerContext<DefaultDB>>>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Result<BuiltTransactions, Self::Error> {
-		let context = context.expect("ContractCallBuilder requires context");
-
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(context, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info();
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -131,8 +138,6 @@ impl BuildTxs for ContractCallBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		let typed =
-			DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] };
-		Ok(BuiltTransactions::from_typed(typed))
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
