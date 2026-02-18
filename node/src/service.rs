@@ -543,14 +543,18 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let sync_service = sync_service.clone();
 		let is_syncing = is_syncing.clone();
 		task_manager.spawn_handle().spawn("sync-status-monitor", None, async move {
+			let mut was_syncing = true;
 			loop {
 				tokio::time::sleep(Duration::from_secs(1)).await;
 				let syncing = sync_service.is_major_syncing();
 				is_syncing.store(syncing, Ordering::Relaxed);
-				if !syncing {
-					log::info!(target: "midnight", "Major sync complete, switching to deterministic UTXO ordering");
-					break;
+				if was_syncing && !syncing {
+					log::info!(target: "midnight", "Sync stopped, switching to deterministic UTXO ordering");
 				}
+				if !was_syncing && syncing {
+					log::info!(target: "midnight", "Sync started, switching to non-deterministic UTXO ordering");
+				}
+				was_syncing = syncing;
 			}
 		});
 	}
