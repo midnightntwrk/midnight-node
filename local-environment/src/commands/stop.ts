@@ -85,6 +85,13 @@ async function stopEphemeralEnvironment(
   });
 
   stopPortForwardWatchdogs(namespace);
+
+  const networkDir = path.dirname(composeFile);
+  const dataDir = path.resolve(networkDir, "data");
+  if (existsSync(dataDir)) {
+    rmSync(dataDir, { recursive: true, force: true });
+    console.log("🧹 Cleaned up chain data");
+  }
 }
 
 function stopLocalEnvironment(runOptions: RunOptions) {

@@ -473,17 +473,3 @@ services:
       retries: 5
       start_period: 30s
 
-volumes:
-  boot-node-data:
-  node-data-1:
-  node-data-2:
-  node-data-3:
-  node-data-4:
-  node-data-5:
-  node-data-6:
-  node-data-7:
-  node-data-8:
-  node-data-9:
-  node-data-10:
-  node-data-11:
-  node-data-12:

@@ -13,7 +13,7 @@
 
 import path from "path";
 import { globSync } from "glob";
-import fs, { existsSync } from "fs";
+import fs, { existsSync, rmSync } from "fs";
 import { parse } from "dotenv";
 import { connectToPostgres } from "../lib/connectToPostgres";
 import { getSecrets } from "../lib/getSecretsForEnv";
@@ -57,13 +57,15 @@ async function runEphemeralEnvironment(
   const networkConfig = loadNetworkConfig(namespace);
   const dbsyncMode = networkConfig.dbsync.mode;
 
-  switch(dbsyncMode) {
-  case "public":
-    console.log("Skipping port-forward: DB marked as publicly reachable");
-  case "rds-proxy":
-    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
-  default:
-    await connectToPostgres(namespace);
+  switch (dbsyncMode) {
+    case "public":
+      console.log("Skipping port-forward: DB marked as publicly reachable");
+    case "rds-proxy":
+      console.log(
+        "Skipping pod port-forward: DB will be proxied via RDS helper",
+      );
+    default:
+      await connectToPostgres(namespace);
   }
 
   console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
@@ -86,6 +88,13 @@ async function runEphemeralEnvironment(
   }
 
   const composeFile = resolveComposeFile(namespace);
+
+  const networkDir = path.dirname(composeFile);
+  const dataDir = path.resolve(networkDir, "data");
+  if (existsSync(dataDir)) {
+    console.log("🧹 Cleaning up stale chain data from previous run...");
+    rmSync(dataDir, { recursive: true, force: true });
+  }
 
   if (runOptions.fromSnapshot) {
     ensureSnapshotCredentials(env);

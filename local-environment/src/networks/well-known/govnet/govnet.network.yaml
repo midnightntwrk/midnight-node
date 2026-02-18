@@ -168,9 +168,3 @@ services:
       retries: 5
       start_period: 30s
 
-volumes:
-  node-data-1:
-  node-data-2:
-  node-data-3:
-  node-data-4:
-  node-data-5:
