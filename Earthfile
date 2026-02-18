@@ -1101,8 +1101,6 @@ srtool-build:
     COPY Cargo.lock Cargo.toml ./
     # Include .sqlx for offline query validation (sqlx macros need this)
     COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
-    # Remove rust-toolchain.toml to use srtool's pinned Rust version
-    RUN rm -f rust-toolchain.toml
     # Fix ownership for builder user
     RUN chown -R builder:builder /build
 
@@ -1128,7 +1126,6 @@ srtool-info:
     USER root
     COPY Cargo.lock Cargo.toml ./
     COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
-    RUN rm -f rust-toolchain.toml
     RUN chown -R builder:builder /build
     ENV PACKAGE=midnight-node-runtime
     ENV RUNTIME_DIR=runtime
