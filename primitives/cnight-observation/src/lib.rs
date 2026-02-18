@@ -331,7 +331,7 @@ pub struct ObservedUtxoHeader {
 	pub utxo_index: UtxoIndexInTx,
 }
 impl ObservedUtxoHeader {
-	fn is_spend(&self) -> bool {
+	fn is_create(&self) -> bool {
 		self.tx_hash == self.utxo_tx_hash
 	}
 }
@@ -370,10 +370,10 @@ impl PartialOrd for ObservedUtxoHeader {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
-		if self.is_spend() && !other.is_spend() {
+		if self.is_create() && !other.is_create() {
 			return Some(core::cmp::Ordering::Less);
 		}
-		if !self.is_spend() && other.is_spend() {
+		if !self.is_create() && other.is_create() {
 			return Some(core::cmp::Ordering::Greater);
 		}
 		// We need an ordering which is consistent between validators,
