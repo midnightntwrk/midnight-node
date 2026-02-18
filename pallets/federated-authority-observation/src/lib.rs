@@ -79,6 +79,9 @@ pub mod pallet {
 	pub type TechnicalCommitteeMainchainMembers<T: Config> =
 		StorageValue<_, BoundedVec<MainchainMember, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
 
+	#[pallet::storage]
+	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
+
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// The MAX number of members for the Council
@@ -163,10 +166,21 @@ pub mod pallet {
 		EmptyMembers,
 		/// Duplicate Members
 		DuplicatedMembers,
+		/// Only one inherent is allowed per block
+		InherentAlreadyExecuted,
 	}
 
 	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
+			// Pre-account for on_finalize weight (storage write to reset inherent flag)
+			T::DbWeight::get().writes(1)
+		}
+
+		fn on_finalize(_n: BlockNumberFor<T>) {
+			InherentExecutedThisBlock::<T>::kill();
+		}
+	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
@@ -186,6 +200,8 @@ pub mod pallet {
 			>,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
+			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
+			InherentExecutedThisBlock::<T>::put(true);
 
 			let (mut council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
 				council_authorities.clone().into_iter().unzip();

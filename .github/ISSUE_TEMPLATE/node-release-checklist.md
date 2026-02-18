@@ -55,6 +55,7 @@ assignees: ''
 # Post-release checklist
 
  - [ ] Verified image signatures work: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:<tag>`
+ - [ ] Verified binary signatures work: `./scripts/verify-binary.sh midnight-node-node-<tag>-linux-amd64.tar.gz`
  - [ ] All code on release branch backported to `main`?
  - [ ] Metadata file in main matches the release
    - (e.g. `git checkout node-0.18.0-rc.7 metadata/static/midnight_metadata_0.18.0.scale`)
