@@ -16,15 +16,15 @@
 //! Provides helpers to serialize version-local `TransactionWithContext` into
 //! the version-agnostic `BuiltTransactions` output format.
 
-use super::ledger_helpers_local::{DefaultDB, ProofMarker, SerdeTransaction, Signature};
+use super::ledger_helpers_local::{DefaultDB, ProofMarker, Signature, serialize};
 use crate::serde_def::{BuiltTransactions, SerializedTx};
 
 use super::ledger_helpers_local::TransactionWithContext;
 
 /// Serialize a single SerdeTransaction into a SerializedTx.
-fn serialize_tx(tx: &SerdeTransaction<Signature, ProofMarker, DefaultDB>) -> SerializedTx {
-	let bytes = tx.serialize_inner().expect("failed to serialize transaction");
-	let tx_hash = tx.transaction_hash().0.0;
+fn serialize_tx(tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>) -> SerializedTx {
+	let bytes = serialize(&tx).expect("failed to serialize transaction");
+	let tx_hash = tx.tx.transaction_hash().0.0;
 	SerializedTx { bytes, tx_hash }
 }
 
@@ -32,7 +32,7 @@ fn serialize_tx(tx: &SerdeTransaction<Signature, ProofMarker, DefaultDB>) -> Ser
 pub fn build_single(
 	tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> BuiltTransactions {
-	let initial_tx = serialize_tx(&tx_with_context.tx);
+	let initial_tx = serialize_tx(&tx_with_context);
 	BuiltTransactions { initial_tx, batches: vec![] }
 }
 
@@ -41,10 +41,10 @@ pub fn build_batched(
 	initial: TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 	batches: Vec<Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>>>,
 ) -> BuiltTransactions {
-	let initial_tx = serialize_tx(&initial.tx);
+	let initial_tx = serialize_tx(&initial);
 	let batches = batches
 		.iter()
-		.map(|batch| batch.iter().map(|twc| serialize_tx(&twc.tx)).collect())
+		.map(|batch| batch.iter().map(|twc| serialize_tx(&twc)).collect())
 		.collect();
 	BuiltTransactions { initial_tx, batches }
 }
