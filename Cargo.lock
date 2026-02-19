@@ -7755,6 +7755,7 @@ dependencies = [
  "midnight-zswap 8.0.0-rc.2 (git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-8.0.0-rc.2)",
  "moka 0.11.3",
  "parity-scale-codec",
+ "rand 0.8.5",
  "scale-info",
  "scale-info-derive",
  "serde",
