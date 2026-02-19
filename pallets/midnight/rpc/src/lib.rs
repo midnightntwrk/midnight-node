@@ -41,6 +41,9 @@ pub trait MidnightApi<BlockHash> {
 	#[method(name = "midnight_zswapStateRoot")]
 	fn get_zswap_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
 
+	#[method(name = "midnight_ledgerStateRoot")]
+	fn get_ledger_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
+
 	#[method(name = "midnight_apiVersions")]
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>>;
 
@@ -55,6 +58,7 @@ pub enum StateRpcError {
 	UnableToGetContractState,
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
+	UnableToGetLedgerStateRoot,
 }
 
 #[derive(Debug)]
@@ -116,6 +120,9 @@ impl Display for StateRpcError {
 			},
 			StateRpcError::UnableToGetZSwapStateRoot => {
 				write!(f, "Unable to get requested zswap state root")
+			},
+			StateRpcError::UnableToGetLedgerStateRoot => {
+				write!(f, "Unable to get requested ledger state root")
 			},
 		}
 	}
@@ -287,6 +294,24 @@ where
 			.map_err(|_e| StateRpcError::UnableToGetZSwapStateRoot)
 			.and_then(|inner_res| {
 				inner_res.map_err(|_| StateRpcError::UnableToGetZSwapStateRoot)
+			})?;
+
+		Ok(root)
+	}
+
+	fn get_ledger_state_root(
+		&self,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<Vec<u8>, StateRpcError> {
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let root = self
+			.client
+			.runtime_api()
+			.get_ledger_state_root(at)
+			.map_err(|_e| StateRpcError::UnableToGetLedgerStateRoot)
+			.and_then(|inner_res| {
+				inner_res.map_err(|_| StateRpcError::UnableToGetLedgerStateRoot)
 			})?;
 
 		Ok(root)

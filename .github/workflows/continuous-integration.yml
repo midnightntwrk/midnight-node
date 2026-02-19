@@ -267,6 +267,14 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
+      - name: Generate dummy genesis seeds
+        run: |
+          mkdir -p secrets
+          for cfg in res/cfg/*.toml; do
+            network=$(basename "$cfg" .toml)
+            python3 scripts/generate-genesis-seeds.py -c 4 -o "secrets/${network}-genesis-seeds.json"
+          done
+
       - name: Check Genesis Rebuild
         run: |
           mkdir -p $HOME/.cargo

@@ -28,7 +28,7 @@ pub struct ShieldedWallet<D: DB + Clone> {
 	pub state: WalletState<D>,
 	pub coin_public_key: CoinPublicKey,
 	pub enc_public_key: EncryptionPublicKey,
-	secret_keys: Option<SecretKeys>,
+	pub(crate) secret_keys: Option<SecretKeys>,
 }
 
 impl<D: DB + Clone> DeriveSeed for ShieldedWallet<D> {}

@@ -114,9 +114,9 @@ async function runEphemeralEnvironment(
 function runLocalEnvironment(runOptions: RunOptions) {
   console.log("⚙️  Preparing local environment...");
   console.log(
-    "ℹ️  Note: The midnight-setup container will wait for the Cardano devnet to reach epoch 4.",
+    "ℹ️  Note: Midnight Governance will be active in 2 Cardano epochs.",
   );
-  console.log("   This typically takes 2-5 minutes on a fresh start.");
+  console.log("    The chain should start in 2 minutes.");
 
   if (runOptions.fromSnapshot) {
     console.warn(

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use subxt::backend::legacy::rpc_methods::BlockNumber;
+use subxt::backend::legacy::rpc_methods::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
@@ -75,6 +75,11 @@ impl MidnightNodeClient {
 	) -> Result<HashFor<MidnightNodeClientConfig>, ClientError> {
 		let hash = self.rpc.chain_get_block_hash(Some(BlockNumber::Number(1))).await?;
 		hash.ok_or_else(|| ClientError::BlockHashNotFound(1))
+	}
+
+	pub async fn get_system_properties(&self) -> Result<SystemProperties, ClientError> {
+		let system_properties = self.rpc.system_properties().await?;
+		Ok(system_properties)
 	}
 
 	pub async fn get_finalized_height(&self) -> Result<u64, ClientError> {

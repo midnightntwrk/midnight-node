@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
@@ -123,8 +123,8 @@ fn from_utxo_spend(spend: UtxoSpend) -> UtxoInfo {
 
 #[derive(Default, Debug)]
 pub struct UnshieldedUtxos {
-	pub outputs: HashMap<SegmentId, Vec<UtxoInfo>>,
-	pub inputs: HashMap<SegmentId, Vec<UtxoInfo>>,
+	pub outputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
+	pub inputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
 }
 
 impl UnshieldedUtxos {
@@ -142,11 +142,27 @@ impl UnshieldedUtxos {
 	}
 
 	pub fn inputs(&self) -> Vec<UtxoInfo> {
-		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
+		// TODO: this rev() is only required to match preview.
+		// We could drop it before mainnet as a breaking change.
+		self.inputs.values().rev().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
+	}
+
+	pub fn outputs_shuffled(&self) -> Vec<UtxoInfo> {
+		use rand::seq::SliceRandom;
+		let mut segments: Vec<_> = self.outputs.values().collect();
+		segments.shuffle(&mut rand::thread_rng());
+		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
+	}
+
+	pub fn inputs_shuffled(&self) -> Vec<UtxoInfo> {
+		use rand::seq::SliceRandom;
+		let mut segments: Vec<_> = self.inputs.values().collect();
+		segments.shuffle(&mut rand::thread_rng());
+		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	/// Checks the integrity of UTXO events against the final Ledger state.
@@ -296,8 +312,8 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 	}
 
 	pub(crate) fn unshielded_utxos(&self) -> UnshieldedUtxos {
-		let mut outputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
-		let mut inputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
+		let mut outputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
+		let mut inputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
 
 		let mut update_outputs = |segment_id: SegmentId, outputs_info: Vec<UtxoInfo>| {
 			if !outputs_info.is_empty() {
@@ -392,10 +408,9 @@ pub enum Operation {
 mod tests {
 	use super::super::super::{
 		super::{CRATE_NAME, helpers_local::extract_info_from_tx_with_context},
-		api,
+		BlockContext, api,
 	};
 	use super::*;
-	use crate::common::types::BlockContext;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};

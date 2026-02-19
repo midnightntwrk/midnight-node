@@ -13,6 +13,7 @@
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
@@ -178,6 +179,7 @@ pub trait MidnightNetwork {
 	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
 	fn ics_config(&self) -> IcsConfig;
+	fn reserve_config(&self) -> ReserveConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

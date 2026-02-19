@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "0.21.0"
+version = "0.22.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -48,6 +48,7 @@ sc-consensus-slots.workspace = true
 sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
+sc-utils.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
@@ -76,7 +77,7 @@ frame-benchmarking-cli = {workspace = true, optional = true, default-features = 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
-midnight-node-ledger-helpers = {workspace = true, default-features = true }
+midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
@@ -86,6 +87,7 @@ midnight-primitives-federated-authority-observation = { workspace = true, defaul
 midnight-primitives-system-parameters = { workspace = true, default-features = true }
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
+midnight-primitives-reserve-observation = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-system-parameters = { workspace = true, default-features = true }
@@ -140,6 +142,7 @@ derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
+blake2b_simd = "1.0"
 
 [dev-dependencies]
 

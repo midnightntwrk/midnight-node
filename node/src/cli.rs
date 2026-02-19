@@ -128,6 +128,31 @@ pub struct GenesisConfigCmd {
 	/// Output path for the permissioned candidates genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
 	#[arg(long)]
 	pub permissioned_candidates_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(long)]
+	pub reserve_output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct ReserveGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Parser)]
@@ -145,6 +170,125 @@ pub struct IcsGenesisCmd {
 	/// Output path for the ICS genesis config. Defaults to res/<CFG_PRESET>/ics-config.json
 	#[arg(short, long)]
 	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyLedgerStateGenesisCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to cnight-config.json for DustState verification
+	#[arg(long)]
+	pub cnight_config: Option<std::path::PathBuf>,
+
+	/// Path to ledger-parameters-config.json for parameter verification
+	#[arg(long)]
+	pub ledger_parameters_config: Option<std::path::PathBuf>,
+
+	/// Network name (e.g., "mainnet", "qanet"). Used for network-specific checks like empty state
+	#[arg(long)]
+	pub network: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyCardanoTipFinalizedCmd {
+	/// The Cardano block hash to check for finalization.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter.
+	/// Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyFederatedAuthorityAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyIcsAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyPermissionedCandidatesAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -172,6 +316,10 @@ pub enum Subcommand {
 	/// the Midnight treasury at genesis.
 	GenerateIcsGenesis(IcsGenesisCmd),
 
+	/// Generate reserve contract genesis file. This queries the reserve contract on Cardano
+	/// to determine the total cNIGHT locked.
+	GenerateReserveGenesis(ReserveGenesisCmd),
+
 	/// Generate Federed Authority Genesis file.
 	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),
 
@@ -180,6 +328,40 @@ pub enum Subcommand {
 
 	/// Generate all genesis config files (cNight, federated authority, and permissioned candidates) in a single command.
 	GenerateGenesisConfig(GenesisConfigCmd),
+
+	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
+	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
+	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
+
+	/// Verify that a Cardano block hash is finalized (i.e., has enough confirmations based on
+	/// the security_parameter from pc-chain-config.json).
+	VerifyCardanoTipFinalized(VerifyCardanoTipFinalizedCmd),
+
+	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates)
+	/// use the expected authorization script. This runs all three verification commands and
+	/// checks that they all share the same authorization script.
+	VerifyAuthScript(VerifyAuthScriptCmd),
+
+	/// Verify that the federated authority contracts (Council, Technical Committee) use the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyFederatedAuthorityAuthScript(VerifyFederatedAuthorityAuthScriptCmd),
+
+	/// Verify that the ICS (Illiquid Circulation Supply) validator contract uses the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyIcsAuthScript(VerifyIcsAuthScriptCmd),
+
+	/// Verify that the permissioned candidates contract uses the expected authorization script.
+	/// This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyPermissionedCandidatesAuthScript(VerifyPermissionedCandidatesAuthScriptCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),

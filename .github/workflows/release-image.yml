@@ -100,7 +100,6 @@ jobs:
       - name: Checkout node repository (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           path: ./.tmp-node-scripts
           sparse-checkout: .github/scripts
 
@@ -117,22 +116,45 @@ jobs:
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
 
+      - name: Create release images (GHCR midnightntwrk)
+        run: |
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-arm64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+          done
+
+      - name: Sign release images (GHCR midnightntwrk)
+        run: |
+          source ./.tmp-node-scripts/.github/scripts/sign-image.sh
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
+          sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
+
       - name: Retag and push release images (Docker Hub)
         run: |
           export IMAGE_TAG="$SEASON_IMAGE_TAG_COMMIT"
           export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
 
           echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
+          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
 
           echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
+          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
 
           echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
           docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
@@ -178,7 +200,7 @@ jobs:
   finalize-release:
     name: Create release
     runs-on: ubuntu-latest
-    needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit]
+    needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
     env:
       FORCE_COLOR: 1
     steps:
@@ -262,7 +284,6 @@ jobs:
       - name: Checkout (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           sparse-checkout: .github/scripts
 
       - name: Install Cosign
@@ -289,7 +310,7 @@ jobs:
 
           # Extract midnight-node
           NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
-          NODE_RELEASE="midnight-node-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $NODE_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$NODE_IMAGE"
@@ -303,7 +324,7 @@ jobs:
 
           # Extract midnight-node-toolkit
           TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
-          TOOLKIT_RELEASE="midnight-node-toolkit-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $TOOLKIT_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE"
@@ -342,8 +363,8 @@ jobs:
 
           echo "Uploading assets to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            "$NODE_FILE" "${NODE_FILE}.sig" "${NODE_FILE}.pem" \
-            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.sig" "${TOOLKIT_FILE}.pem" \
+            "$NODE_FILE" "${NODE_FILE}.bundle" \
+            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.bundle" \
             "SHA256SUMS-${{ matrix.platform }}"
 
   finalize-checksums:
@@ -354,7 +375,6 @@ jobs:
       - name: Checkout (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           sparse-checkout: .github/scripts
 
       - name: Install Cosign
@@ -393,8 +413,7 @@ jobs:
           echo "Uploading signed checksums to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             SHA256SUMS \
-            SHA256SUMS.sig \
-            SHA256SUMS.pem
+            SHA256SUMS.bundle
 
   sbom-scan-ghcr-node:
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})
@@ -444,4 +463,32 @@ jobs:
     with:
       image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-node:
+    name: SBOM/Scan Node midnightntwrk (${{ matrix.arch }})
+    needs: [prepare-release]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
+      platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
+    secrets: inherit
+
+  sbom-scan-midnightntwrk-toolkit:
+    name: SBOM/Scan Toolkit midnightntwrk (${{ matrix.arch }})
+    needs: [prepare-release]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
+      platform: linux/${{ matrix.arch }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
     secrets: inherit

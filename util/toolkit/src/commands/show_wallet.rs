@@ -73,7 +73,12 @@ pub async fn execute(
 		let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
 
 		for block in source_blocks.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		Ok(context.with_ledger_state(|ledger_state| {
@@ -111,7 +116,12 @@ pub async fn execute(
 
 		let context = LedgerContext::new(network_id);
 		for block in source_blocks.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();

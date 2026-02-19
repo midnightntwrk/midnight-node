@@ -16,6 +16,7 @@ use crate::{
 };
 use core::str::FromStr;
 use frame_support::inherent::ProvideInherent;
+use frame_support::traits::Hooks;
 use frame_support::{BoundedVec, assert_noop, assert_ok};
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
@@ -66,6 +67,13 @@ fn with_different_mainchain_members(account_ids: &[u64]) -> Vec<(u64, MainchainM
 			(id, PolicyId(bytes))
 		})
 		.collect()
+}
+
+fn advance_block_and_reset_events() {
+	FederatedAuthorityObservation::on_finalize(System::block_number());
+	System::set_block_number(System::block_number() + 1);
+	System::reset_events();
+	FederatedAuthorityObservation::on_initialize(System::block_number());
 }
 
 // Helper function to create inherent data
@@ -186,6 +194,8 @@ fn reset_members_accepts_duplicated_council_members() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		// Create members with duplicates
 		let duplicated_members = vec![1, 2, 2, 3];
 		let tc_members = vec![4, 5, 6];
@@ -215,6 +225,8 @@ fn reset_members_accepts_duplicated_technical_committee_members() {
 			with_mainchain_members_council(&initial_council),
 			with_mainchain_members_tc(&initial_tc),
 		));
+
+		advance_block_and_reset_events();
 
 		// Create members with duplicates
 		let council_members = vec![1, 2, 3];
@@ -271,8 +283,7 @@ fn no_event_when_same_members() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Reset events
-		System::reset_events();
+		advance_block_and_reset_events();
 
 		// Call with same members
 		assert_ok!(FederatedAuthorityObservation::reset_members(
@@ -310,6 +321,8 @@ fn create_inherent_works_when_council_changes() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		// Now create inherent with different members
 		let inherent_data = create_inherent_data(
 			with_mainchain_members(&new_council),
@@ -345,8 +358,7 @@ fn create_inherent_with_same_members_emits_no_events() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Reset events
-		System::reset_events();
+		advance_block_and_reset_events();
 
 		// Create inherent data with same members
 		let inherent_data = create_inherent_data(
@@ -381,6 +393,8 @@ fn create_inherent_works_when_only_council_changes() {
 			with_mainchain_members_council(&initial_council),
 			with_mainchain_members_tc(&tc_members),
 		));
+
+		advance_block_and_reset_events();
 
 		// Create inherent with changed council but same TC
 		let inherent_data = create_inherent_data(
@@ -421,6 +435,8 @@ fn create_inherent_works_when_only_technical_committee_changes() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		// Create inherent with same council but changed TC
 		let inherent_data = create_inherent_data(
 			with_mainchain_members(&council_members),
@@ -456,8 +472,7 @@ fn reset_members_emits_event_when_only_council_mainchain_members_change() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Reset events
-		System::reset_events();
+		advance_block_and_reset_events();
 
 		// Create inherent with same account IDs but different mainchain members for council only
 		let inherent_data = create_inherent_data(
@@ -515,8 +530,7 @@ fn reset_members_emits_event_when_only_tc_mainchain_members_change() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Reset events
-		System::reset_events();
+		advance_block_and_reset_events();
 
 		// Create inherent with same account IDs but different mainchain members for TC only
 		let inherent_data = create_inherent_data(
@@ -576,8 +590,7 @@ fn reset_members_emits_both_events_when_both_mainchain_members_change() {
 			with_mainchain_members_tc(&tc_members),
 		));
 
-		// Reset events
-		System::reset_events();
+		advance_block_and_reset_events();
 
 		// Create inherent with same account IDs but different mainchain members for both
 		let inherent_data = create_inherent_data(
@@ -682,6 +695,8 @@ fn empty_council_members_list_shortcircuits() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		let tc_members = vec![4, 5, 6];
 
 		// Attempting to reset with empty council list should shortcircuit
@@ -710,6 +725,8 @@ fn empty_tc_members_list_shortcircuits() {
 			with_mainchain_members_tc(&initial_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		let council_members = vec![1, 2, 3];
 
 		// Attempting to reset with empty TC list should shortcircuit
@@ -737,6 +754,8 @@ fn duplicate_members_are_accepted() {
 			with_mainchain_members_council(&initial_council),
 			with_mainchain_members_tc(&initial_tc),
 		));
+
+		advance_block_and_reset_events();
 
 		// Duplicates are now accepted by the pallet
 		let members_with_duplicates = vec![1, 2, 2, 3];
@@ -815,6 +834,8 @@ fn multiple_consecutive_resets_work() {
 			with_mainchain_members_tc(&first_tc),
 		));
 
+		advance_block_and_reset_events();
+
 		// Second reset
 		assert_ok!(FederatedAuthorityObservation::reset_members(
 			frame_system::RawOrigin::None.into(),
@@ -868,6 +889,8 @@ fn membership_handler_integration_test() {
 				member
 			);
 		}
+
+		advance_block_and_reset_events();
 
 		// Update members - some old, some new
 		let new_council = vec![2, 3, 7]; // 1 is removed, 7 is added, 2 and 3 remain
@@ -1107,6 +1130,37 @@ fn set_technical_committee_policy_id_requires_root() {
 			),
 			sp_runtime::DispatchError::BadOrigin
 		);
+	});
+}
+
+#[test]
+fn duplicate_inherent_protection_works() {
+	new_test_ext().execute_with(|| {
+		// First call succeeds
+		assert_ok!(FederatedAuthorityObservation::reset_members(
+			frame_system::RawOrigin::None.into(),
+			with_mainchain_members_council(&[1, 2, 3]),
+			with_mainchain_members_tc(&[4, 5, 6]),
+		));
+
+		// Second call in same block fails
+		assert_noop!(
+			FederatedAuthorityObservation::reset_members(
+				frame_system::RawOrigin::None.into(),
+				with_mainchain_members_council(&[7, 8, 9]),
+				with_mainchain_members_tc(&[10, 11, 12]),
+			),
+			crate::Error::<Test>::InherentAlreadyExecuted
+		);
+
+		advance_block_and_reset_events();
+
+		// Third call in new block succeeds
+		assert_ok!(FederatedAuthorityObservation::reset_members(
+			frame_system::RawOrigin::None.into(),
+			with_mainchain_members_council(&[7, 8, 9]),
+			with_mainchain_members_tc(&[10, 11, 12]),
+		));
 	});
 }
 
