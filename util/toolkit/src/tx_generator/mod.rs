@@ -186,10 +186,11 @@ impl TxGenerator {
 			Some(build_fork_aware_context_raw(received_txs, &seeds))
 		};
 
-		let builder = self
-			.builder_config
-			.clone()
-			.to_versioned_builder(fork_ctx, &self.prover_config, self.dry_run)?;
+		let builder = self.builder_config.clone().to_versioned_builder(
+			fork_ctx,
+			&self.prover_config,
+			self.dry_run,
+		)?;
 
 		builder.build_txs_from(received_txs.clone()).await
 	}

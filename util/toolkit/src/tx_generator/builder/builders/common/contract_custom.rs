@@ -1,10 +1,4 @@
-use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
-	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
-	tx_generator::builder::{BuildTxs, CustomContractArgs},
-};
 use super::build_txs_ext::BuildTxsExt;
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
 	ClaimedUnshieldedSpendsKey, ContractAction, DefaultDB, IntentCustom, IntentInfo, LedgerContext,
@@ -12,6 +6,12 @@ use super::ledger_helpers_local::{
 	TokenType, TransactionWithContext, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
 };
+use crate::{
+	serde_def::{BuiltTransactions, SourceTransactions},
+	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
+	tx_generator::builder::{BuildTxs, CustomContractArgs},
+};
+use async_trait::async_trait;
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 

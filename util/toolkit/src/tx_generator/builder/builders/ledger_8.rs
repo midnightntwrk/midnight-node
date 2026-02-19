@@ -18,10 +18,8 @@
 pub mod inner {
 	pub use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
 
-	mod build_txs_ext;
-	pub mod type_convert;
-	mod tx_serialization;
 	mod batches;
+	mod build_txs_ext;
 	mod claim_rewards;
 	mod contract_call;
 	mod contract_custom;
@@ -32,9 +30,11 @@ pub mod inner {
 	mod register_dust_address;
 	mod replace_initial_tx;
 	pub mod single_tx;
+	mod tx_serialization;
+	pub mod type_convert;
 
-	pub use build_txs_ext::*;
 	pub use batches::*;
+	pub use build_txs_ext::*;
 	pub use claim_rewards::*;
 	pub use contract_call::*;
 	pub use contract_custom::*;

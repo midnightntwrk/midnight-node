@@ -13,12 +13,12 @@
 
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
 	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 };
+use async_trait::async_trait;
 
 use crate::{
 	progress::Spin,

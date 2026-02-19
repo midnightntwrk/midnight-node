@@ -1,12 +1,12 @@
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
 	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 	WalletAddress,
 };
+use async_trait::async_trait;
 
 use crate::{
 	progress::Spin,
@@ -35,7 +35,10 @@ impl RegisterDustAddressBuilder {
 			seed: args.wallet_seed,
 			rng_seed: args.rng_seed,
 			funding_seed: args.funding_seed,
-			destination_dust: args.destination_dust.as_ref().map(super::type_convert::convert_wallet_address),
+			destination_dust: args
+				.destination_dust
+				.as_ref()
+				.map(super::type_convert::convert_wallet_address),
 		}
 	}
 }

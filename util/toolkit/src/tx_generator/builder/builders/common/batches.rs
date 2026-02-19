@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, DefaultDB, FromContext, InputInfo,
-	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
-	SerdeTransaction, ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedOfferInfo, UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
+	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment, SerdeTransaction,
+	ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo,
+	UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
+use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinError};
 
@@ -43,7 +43,8 @@ pub fn compute_batches_seeds(
 	let mut init_output_wallet_seeds = Vec::new();
 	for _ in 0..=num_batches {
 		for _ in 0..num_txs_per_batch {
-			init_output_wallet_seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
+			init_output_wallet_seeds
+				.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
 			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
 		}
 	}
@@ -335,7 +336,8 @@ impl BuildTxs for BatchesBuilder {
 		// The `output_wallet_seeds` vector should contain `num_txs_per_batch * num_batches` elements.
 		// The first slice of size `num_txs_per_batch` from `output_wallet_seeds` will send
 		// funds to the next slice, which in turn sends funds to the next, and so on.
-		let mut batches: Vec<Vec<TransactionWithContext<_, _, _>>> = Vec::with_capacity(self.num_batches);
+		let mut batches: Vec<Vec<TransactionWithContext<_, _, _>>> =
+			Vec::with_capacity(self.num_batches);
 
 		for batch_num in 0..self.num_batches {
 			// Indexes of the `WalletSeed` to fund the txs (inputs)

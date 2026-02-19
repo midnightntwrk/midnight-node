@@ -13,7 +13,6 @@
 
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
@@ -21,6 +20,7 @@ use super::ledger_helpers_local::{
 	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo,
 	WalletAddress, WalletSeed,
 };
+use async_trait::async_trait;
 
 use crate::{
 	progress::Spin,

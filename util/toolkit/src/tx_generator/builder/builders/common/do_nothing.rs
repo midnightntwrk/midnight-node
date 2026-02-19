@@ -11,12 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use super::ledger_helpers_local::{
 	DefaultDB, HashOutput, ProofMarker, SerdeTransaction, Signature, Timestamp,
 	TransactionWithContext, make_block_context, mn_ledger_serialize::tagged_deserialize,
 };
+use async_trait::async_trait;
+use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use std::convert::Infallible;
 
 use crate::{

@@ -11,17 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
+use super::ledger_helpers_local::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
+	IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
+	TransactionWithContext, UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
+};
 use crate::{
 	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::{BuildTxs, ContractDeployArgs},
 };
-use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use async_trait::async_trait;
-use super::ledger_helpers_local::{
-	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
-	IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
-	UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
-};
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder {

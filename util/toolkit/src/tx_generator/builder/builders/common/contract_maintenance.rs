@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractAddress,
 	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
@@ -20,13 +19,14 @@ use super::ledger_helpers_local::{
 	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
 	serialize_untagged,
 };
+use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
 
+use super::build_txs_ext::BuildTxsExt;
 use crate::{
 	serde_def::{BuiltTransactions, SourceTransactions},
 	tx_generator::builder::{BuildTxs, ContractMaintenanceArgs},
 };
-use super::build_txs_ext::BuildTxsExt;
 
 pub struct ContractMaintenanceBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,

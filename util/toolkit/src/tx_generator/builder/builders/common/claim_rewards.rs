@@ -38,7 +38,13 @@ impl ClaimRewardsBuilder {
 		context: Arc<LedgerContext<DefaultDB>>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
-		Self { context, prover, funding_seed: args.funding_seed, rng_seed: args.rng_seed, amount: args.amount }
+		Self {
+			context,
+			prover,
+			funding_seed: args.funding_seed,
+			rng_seed: args.rng_seed,
+			amount: args.amount,
+		}
 	}
 }
 
@@ -56,8 +62,11 @@ impl BuildTxs for ClaimRewardsBuilder {
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 
 		// - Transaction info
-		let mut tx_info =
-			ClaimMintInfo::new_from_context(context_arc.clone(), self.prover.clone(), self.rng_seed);
+		let mut tx_info = ClaimMintInfo::new_from_context(
+			context_arc.clone(),
+			self.prover.clone(),
+			self.rng_seed,
+		);
 
 		// - Mint
 		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };

@@ -24,19 +24,19 @@ use std::str::FromStr;
 pub fn convert_shielded_token_type(
 	stt: midnight_node_ledger_helpers::ShieldedTokenType,
 ) -> ShieldedTokenType {
-	ShieldedTokenType(HashOutput(stt.0 .0))
+	ShieldedTokenType(HashOutput(stt.0.0))
 }
 
 pub fn convert_unshielded_token_type(
 	utt: midnight_node_ledger_helpers::UnshieldedTokenType,
 ) -> UnshieldedTokenType {
-	UnshieldedTokenType(HashOutput(utt.0 .0))
+	UnshieldedTokenType(HashOutput(utt.0.0))
 }
 
 pub fn convert_contract_address(
 	ca: midnight_node_ledger_helpers::ContractAddress,
 ) -> ContractAddress {
-	ContractAddress(HashOutput(ca.0 .0))
+	ContractAddress(HashOutput(ca.0.0))
 }
 
 pub fn convert_wallet_seed(ws: midnight_node_ledger_helpers::WalletSeed) -> WalletSeed {

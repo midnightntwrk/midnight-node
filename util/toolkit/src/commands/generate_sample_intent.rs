@@ -56,30 +56,26 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let version = fork_ctx.version();
 
 	// Intent generation only supports ledger 8 for now
-	assert_eq!(
-		version,
-		LedgerVersion::Ledger8,
-		"intent generation requires ledger 8 context"
-	);
+	assert_eq!(version, LedgerVersion::Ledger8, "intent generation requires ledger 8 context");
 
 	let context = Arc::new(fork_ctx.into_ledger8().expect("expected ledger 8 context"));
 
 	if matches!(prover_config, ProverConfig::Remote(_)) {
 		panic!("remote prover is not supported for intent generation");
 	}
-	let prover: Arc<dyn midnight_node_ledger_helpers::ProofProvider<midnight_node_ledger_helpers::DefaultDB>> =
-		Arc::new(midnight_node_ledger_helpers::LocalProofServer::new());
+	let prover: Arc<
+		dyn midnight_node_ledger_helpers::ProofProvider<midnight_node_ledger_helpers::DefaultDB>,
+	> = Arc::new(midnight_node_ledger_helpers::LocalProofServer::new());
 
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) =
-		match args.contract_call {
-			ContractCall::Deploy(a) => {
-				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-			},
-			ContractCall::Call(a) => {
-				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
-			},
-			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
-		};
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) = match args
+		.contract_call
+	{
+		ContractCall::Deploy(a) => {
+			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+		},
+		ContractCall::Call(a) => (Box::new(ContractCallBuilder::new(a, context, prover)), "call"),
+		ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+	};
 
 	builder.generate_intent_file(&args.dest_dir, partial_file_name).await;
 }

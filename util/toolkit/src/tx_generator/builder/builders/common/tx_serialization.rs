@@ -24,7 +24,7 @@ use super::ledger_helpers_local::TransactionWithContext;
 /// Serialize a single SerdeTransaction into a SerializedTx.
 fn serialize_tx(tx: &SerdeTransaction<Signature, ProofMarker, DefaultDB>) -> SerializedTx {
 	let bytes = tx.serialize_inner().expect("failed to serialize transaction");
-	let tx_hash = tx.transaction_hash().0 .0;
+	let tx_hash = tx.transaction_hash().0.0;
 	SerializedTx { bytes, tx_hash }
 }
 
