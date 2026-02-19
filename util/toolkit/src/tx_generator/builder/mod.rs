@@ -12,12 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{
-	BatchesBuilder, ClaimRewardsBuilder, ContractCallBuilder, ContractDeployBuilder,
-	ContractMaintenanceBuilder, CustomContractBuilder, DoNothingBuilder, RegisterDustAddressBuilder,
-	DeregisterDustAddressBuilder, ReplaceInitialTxBuilder, compute_batches_seeds,
-	single_tx::SingleTxBuilder,
-};
+use builders::{DoNothingBuilder, ReplaceInitialTxBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
@@ -456,9 +451,8 @@ impl Builder {
 		match fork_ctx {
 			Some(ctx) => match ctx.version() {
 				LedgerVersion::Ledger8 => {
-					let context = ctx
-						.into_ledger8()
-						.ok_or(BuilderConstructionError::VersionMismatch)?;
+					let context =
+						ctx.into_ledger8().ok_or(BuilderConstructionError::VersionMismatch)?;
 					let prover = Self::make_prover(prover_config);
 					Ok(self.to_builder_v8(Arc::new(context), prover))
 				},
@@ -466,11 +460,11 @@ impl Builder {
 					if matches!(prover_config, ProverConfig::Remote(_)) {
 						return Err(BuilderConstructionError::RemoteProverNotSupportedForLedger7);
 					}
-					let context = ctx
-						.into_ledger7()
-						.ok_or(BuilderConstructionError::VersionMismatch)?;
-					let prover: Arc<dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>> =
-						Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
+					let context =
+						ctx.into_ledger7().ok_or(BuilderConstructionError::VersionMismatch)?;
+					let prover: Arc<
+						dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
+					> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
 					self.to_builder_v7(Arc::new(context), prover)
 				},
 			},
@@ -501,32 +495,38 @@ impl Builder {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
+		use builders::ledger_8 as v8;
+
 		match self {
-			Builder::Batches(args) => constr(BatchesBuilder::new(args, context, prover)),
+			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
-					constr(ContractDeployBuilder::new(args, context, prover))
+					constr(v8::ContractDeployBuilder::new(args, context, prover))
 				},
-				ContractCall::Call(args) => constr(ContractCallBuilder::new(args, context, prover)),
+				ContractCall::Call(args) => {
+					constr(v8::ContractCallBuilder::new(args, context, prover))
+				},
 				ContractCall::Maintenance(args) => {
-					constr(ContractMaintenanceBuilder::new(args, context, prover))
+					constr(v8::ContractMaintenanceBuilder::new(args, context, prover))
 				},
 			},
 			Builder::ContractCustom(args) => {
-				constr(CustomContractBuilder::new(args, context, prover))
+				constr(v8::CustomContractBuilder::new(args, context, prover))
 			},
 			Builder::ClaimRewards(args) => {
-				constr(ClaimRewardsBuilder::new(args, context, prover))
+				constr(v8::ClaimRewardsBuilder::new(args, context, prover))
 			},
-			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args, context, prover)),
+			Builder::SingleTx(args) => {
+				constr(v8::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
 			Builder::RegisterDustAddress(args) => {
-				constr(RegisterDustAddressBuilder::new(args, context, prover))
+				constr(v8::RegisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::DeregisterDustAddress(args) => {
-				constr(DeregisterDustAddressBuilder::new(args, context, prover))
+				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
-			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
+			Builder::Send => constr(v8::DoNothingBuilder::new()),
+			Builder::Migrate => constr(v8::ReplaceInitialTxBuilder::new()),
 		}
 	}
 
@@ -603,7 +603,6 @@ pub trait BuildTxs {
 	) -> Result<BuiltTransactions, Self::Error>;
 }
 
-
 /// Build context with optional wallet state caching.
 ///
 /// This function wraps the standard context building with cache support:
@@ -631,7 +630,10 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	rng_seed: Option<[u8; 32]>,
 	chain_id: H256,
 	cache_storage: Option<&C>,
-) -> Result<(Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64), ContextNotLedger8Error> {
+) -> Result<
+	(Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64),
+	ContextNotLedger8Error,
+> {
 	let network_id = received_tx.network().to_string();
 	let total_blocks = received_tx.blocks.len() as u64;
 
@@ -714,8 +716,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	}
 
 	let final_version = fork_ctx.version();
-	let context =
-		fork_ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))?;
+	let context = fork_ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))?;
 
 	// Save updated cache if storage is provided and blocks were replayed
 	if let Some(storage) = cache_storage {
@@ -769,7 +770,6 @@ async fn save_context_to_cache<C: WalletStateCaching>(
 	storage.set_wallet_state(chain_id, wallet_id, cache).await;
 	log::info!("Saved wallet state cache at block {}", block_height);
 }
-
 
 #[derive(Debug, thiserror::Error)]
 #[error("chain has not reached ledger 8 (final version: {0:?})")]
