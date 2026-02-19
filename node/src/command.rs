@@ -392,7 +392,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 
 						cmd.run(partial.client)
@@ -417,7 +416,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
@@ -437,7 +435,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
 
@@ -463,7 +460,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						// Register the *Remark* and *TKA* builders.
 						let ext_factory = ExtrinsicFactory(vec![
