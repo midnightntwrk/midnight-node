@@ -533,6 +533,17 @@ run_partial_genesis_config_generation() {
 # Function to run chainspec generation
 run_chainspec_generation() {
     local network="$1"
+    local deterministic="${2:-false}"
+
+    # Check for sha256 hashing tool (needed for chain-spec-hash.json)
+    if ! command -v sha256sum &>/dev/null && ! command -v shasum &>/dev/null; then
+        print_error "Neither 'sha256sum' nor 'shasum' is installed."
+        print_info "Please install one of them:"
+        echo -e "  ${CYAN}Linux:${NC}   sudo apt install coreutils    ${CYAN}# provides sha256sum${NC}"
+        echo -e "  ${CYAN}macOS:${NC}   brew install coreutils         ${CYAN}# provides sha256sum${NC}"
+        echo ""
+        return 1
+    fi
 
     echo -e "${BOLD}Input files used:${NC}"
     print_file "$REPO_ROOT/res/$network/pc-chain-config.json"
@@ -547,12 +558,19 @@ run_chainspec_generation() {
     echo ""
 
     local earthly_cmd=(earthly -P +rebuild-chainspec "--NETWORK=$network")
+    if [[ "$deterministic" == "true" ]]; then
+        earthly_cmd+=("--DETERMINISTIC=true")
+    fi
 
     echo -e "${BOLD}Command to execute:${NC}"
     echo -e "  ${CYAN}${earthly_cmd[*]}${NC}"
     echo ""
 
-    print_info "Running Earthly target..."
+    if [[ "$deterministic" == "true" ]]; then
+        print_info "Using srtool for deterministic WASM build (this may take longer)..."
+    else
+        print_info "Running Earthly target..."
+    fi
     echo ""
 
     cd "$REPO_ROOT"
@@ -560,13 +578,42 @@ run_chainspec_generation() {
         echo ""
         print_success "Chain specification generation completed!"
         echo ""
+
+        # Generate hash of chain-spec-raw.json
+        local raw_spec_file="$REPO_ROOT/res/$network/chain-spec-raw.json"
+        local hash_file="$REPO_ROOT/res/$network/chain-spec-hash.json"
+        if [[ -f "$raw_spec_file" ]]; then
+            print_info "Generating hash of chain-spec-raw.json..."
+            local spec_hash
+            if command -v sha256sum &>/dev/null; then
+                spec_hash=$(sha256sum "$raw_spec_file" | awk '{print $1}')
+            elif command -v shasum &>/dev/null; then
+                spec_hash=$(shasum -a 256 "$raw_spec_file" | awk '{print $1}')
+            else
+                print_error "Neither sha256sum nor shasum found. Cannot generate hash."
+                return 0
+            fi
+            echo "{\"hash\": \"$spec_hash\"}" > "$hash_file"
+            print_success "Hash generated: $spec_hash"
+            echo ""
+        fi
+
         echo "Files created:"
         print_file "$REPO_ROOT/res/$network/chain-spec.json"
         print_file "$REPO_ROOT/res/$network/chain-spec-abridged.json"
         print_file "$REPO_ROOT/res/$network/chain-spec-raw.json"
+        print_file "$REPO_ROOT/res/$network/chain-spec-hash.json"
+        if [[ "$deterministic" == "true" ]]; then
+            print_file "$REPO_ROOT/res/$network/srtool-digest.json"
+        fi
 
+        local summary_note=""
+        if [[ "$deterministic" == "true" ]]; then
+            summary_note="Deterministic build: Yes (srtool)"
+        fi
         print_step_summary "Step 3: Chain Spec Generation" \
-            "Network: $network"
+            "Network: $network" \
+            "$summary_note"
 
         return 0
     else
@@ -829,7 +876,16 @@ main() {
 
     if confirm "Run Step 3 (Chain Spec Generation)?" "y"; then
         echo ""
-        run_chainspec_generation "$network"
+        local use_deterministic="false"
+        echo -e "${BOLD}Deterministic builds use srtool to create reproducible runtime WASM.${NC}"
+        echo -e "This ensures the same WASM hash across different build environments."
+        echo -e "${YELLOW}Note: Deterministic builds take longer but are recommended for production networks.${NC}"
+        echo ""
+        if confirm "Use deterministic build (srtool)?" "n"; then
+            use_deterministic="true"
+        fi
+        echo ""
+        run_chainspec_generation "$network" "$use_deterministic"
         local result=$?
         if [[ $result -eq 0 ]]; then
             step3_completed=true
@@ -887,6 +943,7 @@ main() {
         print_file "$REPO_ROOT/res/$network/chain-spec.json"
         print_file "$REPO_ROOT/res/$network/chain-spec-abridged.json"
         print_file "$REPO_ROOT/res/$network/chain-spec-raw.json"
+        print_file "$REPO_ROOT/res/$network/chain-spec-hash.json"
     else
         echo -e "  ${YELLOW}○${NC} Step 3: Chain Spec Generation (skipped)"
     fi
