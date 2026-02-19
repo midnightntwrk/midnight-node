@@ -17,7 +17,6 @@ import CompactStandardLibrary;
 
 export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): Bytes<32> {
   const color = mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
-  receiveUnshielded(color, disclose(amount));
   return color;
 }
 
