@@ -89,6 +89,7 @@ impl TxGenerator {
 				&url,
 				src.fetch_concurrency,
 				src.dust_warp,
+				src.fetch_only_cached,
 				src.fetch_cache,
 			));
 			Ok(source)

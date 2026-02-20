@@ -88,6 +88,9 @@ pub struct Source {
 		global = true
 	)]
 	pub src_url: Option<String>,
+	/// Read transactions from the cache only - don't fetch anything from RPC
+	#[arg(long, global = true)]
+	pub fetch_only_cached: bool,
 	/// Number of threads to use when fetching transactions from a live network
 	#[arg(long, conflicts_with = "src_files", default_value = "20", global = true)]
 	pub fetch_concurrency: usize,
@@ -230,6 +233,7 @@ pub struct GetTxsFromUrl {
 	pub rpc_url: String,
 	pub num_fetch_workers: usize,
 	pub dust_warp: bool,
+	pub fetch_only_cache: bool,
 	pub fetch_cache_config: FetchCacheConfig,
 }
 
@@ -238,9 +242,16 @@ impl GetTxsFromUrl {
 		rpc_url: &str,
 		num_fetch_workers: usize,
 		dust_warp: bool,
+		fetch_only_cache: bool,
 		fetch_cache_config: FetchCacheConfig,
 	) -> Self {
-		Self { rpc_url: rpc_url.to_string(), num_fetch_workers, dust_warp, fetch_cache_config }
+		Self {
+			rpc_url: rpc_url.to_string(),
+			num_fetch_workers,
+			dust_warp,
+			fetch_only_cache,
+			fetch_cache_config,
+		}
 	}
 }
 
@@ -251,13 +262,19 @@ impl GetTxs for GetTxsFromUrl {
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let mut blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
-				fetch_all(&self.rpc_url, self.num_fetch_workers, fetch_storage::InMemory::default())
-					.await?
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					self.fetch_only_cache,
+					fetch_storage::InMemory::default(),
+				)
+				.await?
 			},
 			FetchCacheConfig::Redb { filename } => {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.fetch_only_cache,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
 				)
 				.await?
@@ -266,6 +283,7 @@ impl GetTxs for GetTxsFromUrl {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.fetch_only_cache,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
 				)
 				.await?
@@ -293,7 +311,7 @@ impl GetTxs for GetTxsFromUrl {
 			});
 		}
 
-		let client = MidnightNodeClient::new(&self.rpc_url).await?;
+		let client = MidnightNodeClient::new(&self.rpc_url, None).await?;
 		let network_id = client.get_network_id().await?;
 		Ok(SourceTransactions::new(blocks, network_id))
 	}

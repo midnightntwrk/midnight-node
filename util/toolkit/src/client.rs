@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
+use backoff::ExponentialBackoff;
+use backoff::future::retry;
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use subxt::backend::legacy::rpc_methods::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
@@ -21,6 +25,9 @@ use subxt::{
 	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
 };
 use thiserror::Error;
+
+/// Maximum time to wait for a client connection before giving up.
+const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub struct MidnightNodeClientConfig;
 
@@ -40,7 +47,22 @@ pub struct MidnightNodeClient {
 }
 
 impl MidnightNodeClient {
-	pub async fn new(rpc_url: &str) -> Result<Self, ClientError> {
+	pub async fn new(rpc_url: &str, timeout: Option<Duration>) -> Result<Self, ClientError> {
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(timeout.unwrap_or(CLIENT_CONNECT_TIMEOUT)),
+			..ExponentialBackoff::default()
+		};
+
+		retry(backoff, || async {
+			MidnightNodeClient::new_without_timeout(rpc_url).await.map_err(|e| {
+				log::warn!("rpc connection attempt failed, retrying: {e}");
+				backoff::Error::transient(e)
+			})
+		})
+		.await
+	}
+
+	pub async fn new_without_timeout(rpc_url: &str) -> Result<Self, ClientError> {
 		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
 		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
 		let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(rpc_url).await?;

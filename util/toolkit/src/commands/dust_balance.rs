@@ -119,6 +119,7 @@ mod tests {
 				src_files: Some(src_files),
 				dust_warp: true,
 				ignore_block_context: false,
+				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed,
