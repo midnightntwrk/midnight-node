@@ -19,9 +19,8 @@ pub mod wallet_state_cache;
 
 use std::time::Duration;
 
-use backoff::{ExponentialBackoff, future::retry};
 use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
-use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs};
+use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -37,9 +36,6 @@ pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNo
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
-
-/// Maximum time to wait for a client connection before giving up.
-const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Maximum time to wait for a block fetch before giving up.
 pub const BLOCK_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -73,21 +69,31 @@ enum TaskResult {
 	ComputeWorker,
 }
 
-/// Attempts to create a new client with bounded retries.
-/// Returns `Err` if the connection is refused after all retry attempts.
-pub async fn try_new_client(url: &str) -> Result<MidnightNodeClient, ClientError> {
-	let backoff = ExponentialBackoff {
-		max_elapsed_time: Some(CLIENT_CONNECT_TIMEOUT),
-		..ExponentialBackoff::default()
-	};
+pub async fn read_blocks_from_cache<
+	S: SignatureKind<D> + Tagged,
+	P: ProofKind<D> + core::fmt::Debug,
+	D: DB + Clone,
+>(
+	chain_id: H256,
+	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
+) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
-	retry(backoff, || async {
-		MidnightNodeClient::new(url).await.map_err(|e| {
-			log::warn!("rpc connection attempt failed, retrying: {e}");
-			backoff::Error::transient(e)
-		})
-	})
-	.await
+	let mut blocks: Vec<_> = fetch_storage
+		.get_block_data_range(chain_id, (0..max_height + 1).into_iter())
+		.await
+		.into_iter()
+		.enumerate()
+		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
+		.collect();
+
+	// Set last_block_time for all blocks
+	// windows_mut() iterator does not exist - so we're indexing here
+	for i in 1..blocks.len() {
+		blocks[i].context.last_block_time = blocks[i - 1].context.tblock;
+	}
+
+	Ok(blocks)
 }
 
 pub async fn fetch_all<
@@ -97,6 +103,34 @@ pub async fn fetch_all<
 >(
 	url: &str,
 	num_workers: usize,
+	fetch_only_cache: bool,
+	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
+) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	let client = MidnightNodeClient::new(&url, None).await?;
+	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
+	if fetch_only_cache {
+		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
+
+		log::info!(
+			"read {} blocks from cache, total transations: {}",
+			blocks.len(),
+			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
+		);
+
+		Ok(blocks)
+	} else {
+		fetch_from_rpc(url, chain_id, num_workers, fetch_storage).await
+	}
+}
+
+pub async fn fetch_from_rpc<
+	S: SignatureKind<D> + Tagged,
+	P: ProofKind<D> + core::fmt::Debug,
+	D: DB + Clone,
+>(
+	url: &str,
+	chain_id: H256,
+	num_workers: usize,
 	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
@@ -105,11 +139,10 @@ pub async fn fetch_all<
 		);
 	}
 
-	let client = try_new_client(&url).await?;
+	let client = MidnightNodeClient::new(&url, None).await?;
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let max_height = finalized_height + 1;
-	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
 	let blocks_per_job = if (max_height - min_height) < BLOCKS_PER_JOB * num_workers as u64 {
@@ -155,7 +188,7 @@ pub async fn fetch_all<
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
 		join_set.spawn(async move {
-			let Ok(client) = try_new_client(&url).await else {
+			let Ok(client) = MidnightNodeClient::new(&url, None).await else {
 				log::warn!(
 					"fetch worker {worker_id} could not connect to {url}, exiting. \
 					 This may be due to connection limits on the remote node."
@@ -280,26 +313,14 @@ pub async fn fetch_all<
 	compute_to_compute_rx.close();
 	final_jobs_rx.close();
 
-	let mut blocks: Vec<_> = fetch_storage
-		.get_block_data_range(chain_id, (0..max_height).into_iter())
-		.await
-		.into_iter()
-		.enumerate()
-		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
-		.collect();
-
-	// Set last_block_time for all blocks
-	// windows_mut() iterator does not exist - so we're indexing here
-	for i in 1..blocks.len() {
-		blocks[i].context.last_block_time = blocks[i - 1].context.tblock;
-	}
-
 	// Set highest verified height for quicker fetch next time
 	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 
-	log::info!("fetched {} blocks", blocks.len());
 	log::info!(
-		"fetched {} transactions",
+		"fetched {} blocks, read {} blocks from cache, total transations: {}",
+		finalized_height - min_height,
+		blocks.len() - (finalized_height - min_height) as usize,
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 	);
 

@@ -247,6 +247,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				&src.src_url.unwrap(),
 				src.fetch_concurrency,
 				src.dust_warp,
+				src.fetch_only_cached,
 				src.fetch_cache,
 			)
 			.get_txs()

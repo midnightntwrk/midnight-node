@@ -109,7 +109,7 @@ where
 			futures::future::try_join_all(urls.iter().map(|url| async move {
 				Ok(ClientHandle {
 					url: url.clone(),
-					client: Arc::new(MidnightNodeClient::new(url).await?),
+					client: Arc::new(MidnightNodeClient::new(url, None).await?),
 				})
 			}))
 			.await;
