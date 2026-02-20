@@ -115,6 +115,15 @@ const STRICT_TX_VALIDATION_CACHE_CAPACITY: u64 = 600;
 #[cfg(feature = "std")]
 const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
 
+/// Time-to-live for soft validation cache entries.
+/// Unlike TTI, TTL evicts entries unconditionally after this duration regardless of access.
+/// This is critical for relay nodes (non-block-producers) where soft cache entries are never
+/// invalidated by block authoring — without a TTL, revalidation keeps accessing entries and
+/// resetting the TTI timer, so invalid transactions persist in the mempool indefinitely.
+/// Set to 60s (~10 blocks at 6s/block) to balance eviction latency against revalidation cost.
+#[cfg(feature = "std")]
+const SOFT_TX_VALIDATION_CACHE_TTL: Duration = Duration::from_secs(60);
+
 #[cfg(feature = "std")]
 lazy_static! {
 	/// Strict cache: stores VerifiedTransaction for reuse in validate_guaranteed_execution.
@@ -138,6 +147,7 @@ lazy_static! {
 		Cache::builder()
 			.max_capacity(SOFT_TX_VALIDATION_CACHE_CAPACITY)
 			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.time_to_live(SOFT_TX_VALIDATION_CACHE_TTL)
 			.build();
 }
 
