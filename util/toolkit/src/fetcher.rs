@@ -120,7 +120,7 @@ pub async fn fetch_all<
 
 		Ok(blocks)
 	} else {
-		fetch_from_rpc(url, chain_id, num_workers, fetch_storage).await
+		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage).await
 	}
 }
 
@@ -132,6 +132,7 @@ pub async fn fetch_from_rpc<
 	url: &str,
 	chain_id: H256,
 	num_workers: usize,
+	num_compute_workers: usize,
 	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
 ) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {

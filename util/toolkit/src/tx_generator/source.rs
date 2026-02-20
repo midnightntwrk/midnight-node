@@ -286,7 +286,6 @@ impl GetTxsFromUrl {
 			num_fetch_workers,
 			num_compute_workers,
 			dust_warp,
-			dust_warp,
 			fetch_only_cache,
 			fetch_cache_config,
 		}

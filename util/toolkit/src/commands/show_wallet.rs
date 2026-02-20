@@ -170,6 +170,7 @@ mod tests {
 			source: Source {
 				src_url: None,
 				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
 				dust_warp: false,
 				ignore_block_context: false,
@@ -219,6 +220,7 @@ mod tests {
 			source: Source {
 				src_url: None,
 				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
 				dust_warp: true,
 				ignore_block_context: false,
