@@ -501,8 +501,10 @@ rebuild-all-genesis-states:
     #BUILD +rebuild-genesis-state-mainnet
 
 # rebuild-chainspec for a given NETWORK
+# Use DETERMINISTIC=true to build with srtool for reproducible WASM (slower but verifiable)
 rebuild-chainspec:
     ARG NETWORK
+    ARG DETERMINISTIC=false
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
     USER root
@@ -511,7 +513,23 @@ rebuild-chainspec:
     # We need to do this to use the correct config if running `FROM` a pre-built node image
     COPY res res
 
+    # If DETERMINISTIC=true, use srtool-built WASM for reproducible builds
+    IF [ "$DETERMINISTIC" = "true" ]
+        COPY +srtool-build/midnight_node_runtime.compact.compressed.wasm /srtool-runtime.wasm
+        COPY +srtool-build/srtool-digest.json /srtool-digest.json
+        # Log the srtool build digest for verification
+        RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
+    END
+
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+
+    # If deterministic, replace the runtime code with srtool-built WASM
+    IF [ "$DETERMINISTIC" = "true" ]
+        # Write hex to file to avoid "Argument list too long" with large WASM blobs
+        RUN printf '0x' > /tmp/wasm-hex.txt && xxd -p /srtool-runtime.wasm | tr -d '\n' >> /tmp/wasm-hex.txt && \
+            jq --rawfile code /tmp/wasm-hex.txt '.genesis.runtimeGenesis.code = ($code | rtrimstr("\n"))' res/$NETWORK/chain-spec.json > res/$NETWORK/chain-spec-tmp.json && \
+            mv res/$NETWORK/chain-spec-tmp.json res/$NETWORK/chain-spec.json
+    END
 
     # create abridge chain-spec that is diff tools and github friendly:
     RUN cat res/$NETWORK/chain-spec.json | \
@@ -520,18 +538,28 @@ rebuild-chainspec:
     RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
+    # Save srtool digest alongside chain-spec if deterministic build
+    IF [ "$DETERMINISTIC" = "true" ]
+        SAVE ARTIFACT /srtool-digest.json AS LOCAL res/$NETWORK/srtool-digest.json
+    END
 
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
+# Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
     # Preview is not meant to be reset
-    #BUILD +rebuild-chainspec --NETWORK=preview
+    #BUILD +rebuild-chainspec --NETWORK=preview 
     # Preprod is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preprod
     # Mainnet is not meant to be reset
-    #BUILD +rebuild-chainspec --NETWORK=mainnet
+    #BUILD +rebuild-chainspec --NETWORK=mainnet --DETERMINISTIC=true
+
+# rebuild-chainspec-deterministic Rebuild chainspec with deterministic srtool WASM for a given NETWORK
+rebuild-chainspec-deterministic:
+    ARG NETWORK
+    BUILD +rebuild-chainspec --NETWORK=$NETWORK --DETERMINISTIC=true
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -1051,6 +1079,58 @@ subwasm:
     # Saves testnet runtime as runtime_000.wasm
     RUN subwasm get wss://rpc.testnet.midnight.network/ \
         && subwasm diff ./runtime_000.wasm /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
+
+# srtool-build creates deterministic runtime WASM builds using srtool
+# This ensures reproducible builds across different environments
+# See: https://github.com/paritytech/srtool
+#
+# Note: srtool uses its own pinned Rust version (currently 1.88.0) for deterministic builds.
+# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified.
+srtool-build:
+    # renovate: datasource=docker packageName=paritytech/srtool
+    ARG SRTOOL_VERSION=0.18.3
+    # srtool 1.88.0 uses Rust 1.88.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+
+    # srtool expects source code in /build
+    WORKDIR /build
+
+    # Copy source code as root - include all workspace members referenced in Cargo.toml
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    # Include .sqlx for offline query validation (sqlx macros need this)
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    # Fix ownership for builder user
+    RUN chown -R builder:builder /build
+
+    # Set srtool environment variables
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+
+    # Build the runtime deterministically as builder user
+    USER builder
+    # Run srtool build with --app flag to show all output, save JSON result
+    RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
+        tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
+
+    # Save artifacts
+    SAVE ARTIFACT /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm AS LOCAL artifacts/srtool/
+    SAVE ARTIFACT /build/srtool-digest.json AS LOCAL artifacts/srtool/
+
+# srtool-info displays information about the srtool build without building
+srtool-info:
+    ARG SRTOOL_VERSION=0.18.3
+    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    WORKDIR /build
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    RUN chown -R builder:builder /build
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+    USER builder
+    RUN /srtool/info
 
 # node-image creates the Midnight Substrate Node's image
 node-image:
