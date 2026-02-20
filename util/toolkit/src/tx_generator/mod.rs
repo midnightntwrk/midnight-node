@@ -104,6 +104,7 @@ where
 				src.fetch_concurrency,
 				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),
 				src.dust_warp,
+				src.fetch_only_cached,
 				src.fetch_cache,
 			));
 			Ok(source)

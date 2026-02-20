@@ -216,7 +216,7 @@ rebuild-genesis-state:
     ARG GENERATE_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
-    # Only include toolkit-js when generating test transactions (requires GITHUB_TOKEN for compactc)
+    # Only include toolkit-js when generating test transactions
     FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
@@ -769,11 +769,10 @@ toolkit-js-prep:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
+    RUN npm ci
     RUN npm run build
     # Run npm compact script (includes fetch-compactc + compile steps)
-    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
@@ -924,7 +923,6 @@ test-pallet-fixtures:
 # NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
 build-test-toolkit:
     ARG NATIVEARCH
-    ARG GITHUB_TOKEN
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
@@ -1205,7 +1203,7 @@ node-benchmarks-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
-    # Set to false to skip toolkit-js (which requires GITHUB_TOKEN to download compactc)
+    # Set to false to skip toolkit-js
     # toolkit-js is only needed when GENERATE_TEST_TXS=true
     ARG INCLUDE_TOOLKIT_JS=true
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
@@ -1232,7 +1230,6 @@ toolkit-image:
         npm install -g npm@11.8.0 && npm --version
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
-    # toolkit-js requires GITHUB_TOKEN to download compactc compiler
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
         COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
