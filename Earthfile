@@ -843,6 +843,12 @@ check-rust:
         done; \
         exit $status
 
+# Helper: pull an image through BuildKit's resolver (respects buildkit_additional_config)
+pull-image:
+    ARG IMAGE
+    FROM ${IMAGE}
+    SAVE IMAGE pulled-img
+
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
@@ -851,11 +857,11 @@ check-metadata:
     DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
-    WITH DOCKER --pull ${NODE_IMAGE}
-      RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
+    WITH DOCKER --load pulled-img=(+pull-image --IMAGE=${NODE_IMAGE})
+      RUN docker run --env CFG_PRESET=dev -p 9944:9944 pulled-img & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /image_metadata.scale && \
-          docker kill $(docker ps -q --filter ancestor=${NODE_IMAGE})
+          docker kill $(docker ps -q --filter ancestor=pulled-img)
     END
     COPY metadata/static/midnight_metadata.scale repo_metadata.scale
     RUN diff image_metadata.scale repo_metadata.scale

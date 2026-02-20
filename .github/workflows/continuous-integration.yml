@@ -5,6 +5,7 @@ env:
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_EKS_CLUSTER_NAME: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
+  IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true }}
 
 on:
   merge_group:
@@ -32,8 +33,10 @@ jobs:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
-      node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
-      toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+      node_image: ${{ steps.image_tags.outputs.node_image }}
+      toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
+      version: ${{ steps.image_tags.outputs.version }}
+      short_hash: ${{ steps.image_tags.outputs.short_hash }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -49,6 +52,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
+        if: env.IS_FORK != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
@@ -61,15 +65,42 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
+          PUSH_FLAG=""
+          if [ "$IS_FORK" != "true" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --strict $PUSH_FLAG +images
 
-      - name: Export image tags
+      - name: Get image tags
         id: image_tags
         run: |
           short_hash=$(git rev-parse --short=8 HEAD)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> $GITHUB_OUTPUT
-          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
+          echo "short_hash=$short_hash" >> $GITHUB_OUTPUT
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "node_image=ghcr.io/midnight-ntwrk/midnight-node:${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
+          echo "toolkit_image=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
+
+      - name: Save Docker images
+        run: |
+          docker save "${{ steps.image_tags.outputs.node_image }}" | zstd -T0 -3 > /tmp/node-image.tar.zst
+          docker save "${{ steps.image_tags.outputs.toolkit_image }}" | zstd -T0 -3 > /tmp/toolkit-image.tar.zst
+
+      - name: Upload node image
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: docker-image-node
+          path: /tmp/node-image.tar.zst
+          retention-days: 1
+          compression-level: 0
+
+      - name: Upload toolkit image
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: docker-image-toolkit
+          path: /tmp/toolkit-image.tar.zst
+          retention-days: 1
+          compression-level: 0
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -136,6 +167,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
+        if: env.IS_FORK != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
@@ -148,7 +180,11 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +images
+          PUSH_FLAG=""
+          if [ "$IS_FORK" != "true" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --strict $PUSH_FLAG +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -174,6 +210,7 @@ jobs:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
+      upgrader_image: ${{ steps.image_tags.outputs.upgrader_image }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -189,6 +226,7 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
+        if: env.IS_FORK != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
@@ -204,7 +242,32 @@ jobs:
           echo "[net]" >> "$HOME/.cargo/config"
           echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +hardfork-test-upgrader-image
+          PUSH_FLAG=""
+          if [ "$IS_FORK" != "true" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --strict $PUSH_FLAG +hardfork-test-upgrader-image
+
+      - name: Get image tags
+        id: image_tags
+        run: |
+          short_hash=$(git rev-parse --short=8 HEAD)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "short_hash=$short_hash" >> $GITHUB_OUTPUT
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "upgrader_image=ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${version}-${short_hash}-" >> $GITHUB_OUTPUT
+
+      - name: Save upgrader image
+        run: |
+          docker save "${{ steps.image_tags.outputs.upgrader_image }}" | zstd -T0 -3 > /tmp/upgrader-image.tar.zst
+
+      - name: Upload upgrader image
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: docker-image-upgrader
+          path: /tmp/upgrader-image.tar.zst
+          retention-days: 1
+          compression-level: 0
 
   check-unused-deps:
     name: Check Unused Dependencies
@@ -249,23 +312,56 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
-
       - name: Get current commit SHA
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
         with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          name: docker-image-node
+          path: /tmp/images
+
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+
+      - name: Start local registry and load images
+        run: |
+          REGISTRY=172.17.0.1:5000
+
+          # Write insecure registry config to the workspace .earthly/config.yml
+          # (earthly prefers workspace config over ~/.earthly/config.yml)
+          cat > .earthly/config.yml <<EOFCFG
+          global:
+            buildkit_additional_args: ["-m", "24Gb"]
+            disable_analytics: true
+            buildkit_max_parallelism: 16
+            cache_size_pct: 50
+            buildkit_additional_config: |
+              [registry."${REGISTRY}"]
+                http = true
+                insecure = true
+          EOFCFG
+
+          # Remove buildkitd so earthly recreates it with the new config
+          # (earthly prune --reset only restarts without re-reading config)
+          docker rm -f earthly-buildkitd 2>/dev/null || true
+
+          docker run -d -p 5000:5000 --name registry registry:2
+
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+
+          TAG="${{ needs.run.outputs.version }}-${{ needs.run.outputs.short_hash }}-amd64"
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node:${TAG}" "127.0.0.1:5000/midnight-ntwrk/midnight-node:${TAG}"
+          docker push "127.0.0.1:5000/midnight-ntwrk/midnight-node:${TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${TAG}" "127.0.0.1:5000/midnight-ntwrk/midnight-node-toolkit:${TAG}"
+          docker push "127.0.0.1:5000/midnight-ntwrk/midnight-node-toolkit:${TAG}"
+          rm -rf /tmp/images
 
       - name: Generate dummy genesis seeds
         run: |
@@ -281,7 +377,9 @@ jobs:
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          . ./.envrc && earthly --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --build-arg TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --secret GITHUB_TOKEN +rebuild-genesis
+          REGISTRY=172.17.0.1:5000
+          TAG="${{ needs.run.outputs.version }}-${{ needs.run.outputs.short_hash }}-amd64"
+          . ./.envrc && earthly --build-arg NODE_IMAGE=${REGISTRY}/midnight-ntwrk/midnight-node:${TAG} --build-arg TOOLKIT_IMAGE=${REGISTRY}/midnight-ntwrk/midnight-node-toolkit:${TAG} --secret GITHUB_TOKEN +rebuild-genesis
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
@@ -294,17 +392,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download upgrader image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-upgrader
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: hardfork-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+          node-image: ${{ needs.run.outputs.node_image }}
+          upgrader-image: ${{ needs.hardfork.outputs.upgrader_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ledger-rollback-e2e:
@@ -314,18 +422,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
       # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
+      # - name: Download node image
+      #   uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+      #   with:
+      #     name: docker-image-node
+      #     path: /tmp/images
+      # - name: Download upgrader image
+      #   uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+      #   with:
+      #     name: docker-image-upgrader
+      #     path: /tmp/images
+      # - name: Load Docker images
+      #   run: |
+      #     for f in /tmp/images/*.tar.zst; do
+      #       zstd -d "$f" --stdout | docker load
+      #     done
+      #     rm -rf /tmp/images
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
       #     just-command: ledger-rollback-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+      #     node-image: ${{ needs.run.outputs.node_image }}
+      #     upgrader-image: ${{ needs.hardfork.outputs.upgrader_image }}
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
@@ -337,18 +455,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      # - name: Get Version and git commit
-      #   id: meta
+      # - name: Download node image
+      #   uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+      #   with:
+      #     name: docker-image-node
+      #     path: /tmp/images
+      # - name: Download toolkit image
+      #   uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+      #   with:
+      #     name: docker-image-toolkit
+      #     path: /tmp/images
+      # - name: Load Docker images
       #   run: |
-      #     echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-      #     version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-      #     echo "version=$version" >> $GITHUB_OUTPUT
+      #     for f in /tmp/images/*.tar.zst; do
+      #       zstd -d "$f" --stdout | docker load
+      #     done
+      #     rm -rf /tmp/images
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
       #     just-command: node-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+      #     node-image: ${{ needs.run.outputs.node_image }}
+      #     toolkit-image: ${{ needs.run.outputs.toolkit_image }}
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
@@ -406,17 +533,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-update-ledger-parameters-e2e:
@@ -426,17 +563,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-update-ledger-parameters-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-maintenance-e2e:
@@ -446,17 +593,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-maintenance-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-mint-e2e:
@@ -466,17 +623,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-tokens-minter-e2e:
@@ -486,17 +653,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-tokens-minter-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   metadata-check:
@@ -509,25 +686,54 @@ jobs:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+
+      - name: Start local registry and load images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          REGISTRY=172.17.0.1:5000
+
+          # Write insecure registry config to the workspace .earthly/config.yml
+          # (earthly prefers workspace config over ~/.earthly/config.yml)
+          cat > .earthly/config.yml <<EOFCFG
+          global:
+            buildkit_additional_args: ["-m", "24Gb"]
+            disable_analytics: true
+            buildkit_max_parallelism: 16
+            cache_size_pct: 50
+            buildkit_additional_config: |
+              [registry."${REGISTRY}"]
+                http = true
+                insecure = true
+          EOFCFG
+
+          # Remove buildkitd so earthly recreates it with the new config
+          # (earthly prune --reset only restarts without re-reading config)
+          docker rm -f earthly-buildkitd 2>/dev/null || true
+
+          docker run -d -p 5000:5000 --name registry registry:2
+
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+
+          NODE_TAG="${{ needs.run.outputs.version }}-${{ needs.run.outputs.short_hash }}-amd64"
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node:${NODE_TAG}" "127.0.0.1:5000/midnight-ntwrk/midnight-node:${NODE_TAG}"
+          docker push "127.0.0.1:5000/midnight-ntwrk/midnight-node:${NODE_TAG}"
+          rm -rf /tmp/images
 
       - name: Run metadata check
         run: |
-          . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
+          REGISTRY=172.17.0.1:5000
+          NODE_TAG="${{ needs.run.outputs.version }}-${{ needs.run.outputs.short_hash }}-amd64"
+
+          . ./.envrc && earthly --strict -P --build-arg NODE_IMAGE=${REGISTRY}/midnight-ntwrk/midnight-node:${NODE_TAG} +check-metadata
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
@@ -536,17 +742,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-contracts-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
@@ -556,16 +772,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: startup-dev-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   genesis-undeployed-e2e:
@@ -575,17 +796,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+      - name: Load Docker images
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: genesis-wallets-undeployed-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   build-indexer-images:
@@ -624,9 +855,11 @@ jobs:
           export DOCKER_BUILDKIT=1
           export BUILDX_PLATFORM=linux/amd64
 
-          # Login to Docker once at the start
-          echo "🔐 Logging into Docker..."
-          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
+          # Login to Docker (skip for forks)
+          if [ "$IS_FORK" != "true" ]; then
+            echo "Logging into Docker..."
+            echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
+          fi
 
           pwd
           ls
@@ -668,13 +901,13 @@ jobs:
           docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
           docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
 
-          # Push the new tags
-          echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
-
-          echo "✅ Images retagged and pushed successfully!"
+          # Push the new tags (skip for forks)
+          if [ "$IS_FORK" != "true" ]; then
+            echo "Pushing retagged images..."
+            docker push ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
+            docker push ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
+            docker push ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
+          fi
 
       - name: Expose image refs as outputs
         id: image_meta
@@ -684,6 +917,24 @@ jobs:
           echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}" >> "$GITHUB_OUTPUT"
           echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
           echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
+
+      - name: Save indexer images
+        run: |
+          short_hash=$(git rev-parse --short=8 HEAD)
+          docker save "ghcr.io/midnight-ntwrk/indexer-api:${short_hash}" | zstd -T0 -3 > /tmp/indexer-api.tar.zst
+          docker save "ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" | zstd -T0 -3 > /tmp/chain-indexer.tar.zst
+          docker save "ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" | zstd -T0 -3 > /tmp/wallet-indexer.tar.zst
+
+      - name: Upload indexer images
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: docker-images-indexer
+          path: |
+            /tmp/indexer-api.tar.zst
+            /tmp/chain-indexer.tar.zst
+            /tmp/wallet-indexer.tar.zst
+          retention-days: 1
+          compression-level: 0
 
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
 
@@ -725,37 +976,45 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-
-          # Main repo short hash
           short_hash=$(git rev-parse --short=8 HEAD)
           echo "short_hash=$short_hash" >> "$GITHUB_OUTPUT"
 
-          # App version from node/Cargo.toml
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          # Indexer short hash (if indexer is its own git repo/submodule)
           pushd indexer >/dev/null
           indexer_tag=$(git rev-parse --short=8 HEAD)
           popd >/dev/null
           echo "indexer_tag=$indexer_tag" >> "$GITHUB_OUTPUT"
 
-          # Tag for node and toolkit images
-          node_tag="${version}-${short_hash}-amd64"
-          echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
+      - name: Download node image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-node
+          path: /tmp/images
 
-          echo "Get Version and git commit"
-          echo "short_hash: $short_hash"
-          echo "version: $version"
-          echo "indexer_tag: $indexer_tag"
-          echo "node_tag: $node_tag"
+      - name: Download toolkit image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-image-toolkit
+          path: /tmp/images
+
+      - name: Download indexer images
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: docker-images-indexer
+          path: /tmp/images
+
+      - name: Load Docker images
+        run: |
+          for f in /tmp/images/*.tar.zst; do
+            zstd -d "$f" --stdout | docker load
+          done
+          rm -rf /tmp/images
 
       - name: Deploy and test against local environment
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.node_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.node_tag }}
+          image: ${{ needs.run.outputs.node_image }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}

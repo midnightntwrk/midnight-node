@@ -18,7 +18,8 @@ inputs:
     required: true
   ghcr-password:
     description: "Password for Docker login to GHCR"
-    required: true
+    required: false
+    default: ''
   indexer-tag:
     description: "Indexer tag to use for the indexer image"
     required: true
@@ -46,6 +47,7 @@ runs:
         use-cache: false
 
     - name: Docker Login
+      if: ${{ inputs.ghcr-password != '' }}
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
       with:
         registry: ghcr.io

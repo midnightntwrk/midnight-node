@@ -15,7 +15,8 @@ inputs:
     required: false
   ghcr-password:
     description: "Password for Docker login to GHCR"
-    required: true
+    required: false
+    default: ''
 runs:
   using: "composite"
   steps:
@@ -25,6 +26,7 @@ runs:
         tool: just
 
     - name: Docker Login
+      if: ${{ inputs.ghcr-password != '' }}
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
       with:
         registry: ghcr.io
