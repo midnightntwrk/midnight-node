@@ -1,4 +1,4 @@
-#client #runtime #ledger
+#client #ledger
 # Update Ledger to 7.0.2
 
 Bump core ledger versions to 7.0.2.
