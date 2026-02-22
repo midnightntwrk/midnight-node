@@ -89,10 +89,11 @@ jobs:
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          username: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE && 'MidnightCI' || github.actor }}
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE || github.token }}
 
       - name: Login to DockerHub
+        if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.head.repo.fork }}
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
