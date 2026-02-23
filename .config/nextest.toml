@@ -1,2 +1,12 @@
 [profile.ci.junit]  # this can be some other profile, too
 path = "test-results-node.xml"
+
+# Toolkit-js tests that invoke the JS CLI share a working directory where
+# contract.config.ts is compiled to .js at runtime.  Running them in
+# parallel causes a filesystem race on that generated file.
+[test-groups.toolkit-js]
+max-threads = 1
+
+[[profile.ci.overrides]]
+filter = "test(generate_intent)"
+test-group = "toolkit-js"
