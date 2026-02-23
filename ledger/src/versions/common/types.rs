@@ -42,6 +42,14 @@ pub enum InvalidError {
 	VerifierKeyNotFound,
 	VerifierKeyAlreadyPresent,
 	ReplayCounterMismatch,
+	ReplayProtectionViolation,
+	BalanceCheckOutOfBounds,
+	InputNotInUtxos,
+	DustDoubleSpend,
+	DustDeregistrationNotRegistered,
+	GenerationInfoAlreadyPresent,
+	InvariantViolation,
+	RewardTooSmall,
 	UnknownError,
 }
 
@@ -90,6 +98,33 @@ pub enum MalformedError {
 	ThresholdMissed,
 	TooManyZswapEntries,
 	BalanceCheckOverspend,
+	InvalidNetworkId,
+	IllegallyDeclaredGuaranteed,
+	FeeCalculation,
+	InvalidDustRegistrationSignature,
+	InvalidDustSpendProof,
+	OutOfDustValidityWindow,
+	MultipleDustRegistrationsForKey,
+	InsufficientDustForRegistrationFee,
+	MalformedContractDeploy,
+	IntentSignatureVerificationFailure,
+	IntentSignatureKeyMismatch,
+	IntentSegmentIdCollision,
+	IntentAtGuaranteedSegmentId,
+	UnsupportedProofVersion,
+	GuaranteedTranscriptVersion,
+	FallibleTranscriptVersion,
+	TransactionApplicationError,
+	BalanceCheckOutOfBounds,
+	BalanceCheckConversionFailure,
+	PedersenCheckFailure,
+	EffectsCheckFailure,
+	DisjointCheckFailure,
+	SequencingCheckFailure,
+	InputsNotSorted,
+	OutputsNotSorted,
+	DuplicateInputs,
+	InputsSignaturesLengthMismatch,
 	UnknownError,
 }
 
@@ -286,6 +321,14 @@ impl From<LedgerApiError> for u8 {
 					InvalidError::VerifierKeyNotFound => 106,
 					InvalidError::VerifierKeyAlreadyPresent => 107,
 					InvalidError::ReplayCounterMismatch => 108,
+					InvalidError::ReplayProtectionViolation => 193,
+					InvalidError::BalanceCheckOutOfBounds => 194,
+					InvalidError::InputNotInUtxos => 195,
+					InvalidError::DustDoubleSpend => 196,
+					InvalidError::DustDeregistrationNotRegistered => 197,
+					InvalidError::GenerationInfoAlreadyPresent => 198,
+					InvalidError::InvariantViolation => 199,
+					InvalidError::RewardTooSmall => 200,
 					InvalidError::UnknownError => 109,
 				},
 				Malformed(e) => match e {
@@ -318,19 +361,46 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::ThresholdMissed => 136,
 					MalformedError::TooManyZswapEntries => 137,
 					MalformedError::BalanceCheckOverspend => 138,
+					MalformedError::InvalidNetworkId => 166,
+					MalformedError::IllegallyDeclaredGuaranteed => 167,
+					MalformedError::FeeCalculation => 168,
+					MalformedError::InvalidDustRegistrationSignature => 169,
+					MalformedError::InvalidDustSpendProof => 170,
+					MalformedError::OutOfDustValidityWindow => 171,
+					MalformedError::MultipleDustRegistrationsForKey => 172,
+					MalformedError::InsufficientDustForRegistrationFee => 173,
+					MalformedError::MalformedContractDeploy => 174,
+					MalformedError::IntentSignatureVerificationFailure => 175,
+					MalformedError::IntentSignatureKeyMismatch => 176,
+					MalformedError::IntentSegmentIdCollision => 177,
+					MalformedError::IntentAtGuaranteedSegmentId => 178,
+					MalformedError::UnsupportedProofVersion => 179,
+					MalformedError::GuaranteedTranscriptVersion => 180,
+					MalformedError::FallibleTranscriptVersion => 181,
+					MalformedError::TransactionApplicationError => 182,
+					MalformedError::BalanceCheckOutOfBounds => 183,
+					MalformedError::BalanceCheckConversionFailure => 184,
+					MalformedError::PedersenCheckFailure => 185,
+					MalformedError::EffectsCheckFailure => 186,
+					MalformedError::DisjointCheckFailure => 187,
+					MalformedError::SequencingCheckFailure => 188,
+					MalformedError::InputsNotSorted => 189,
+					MalformedError::OutputsNotSorted => 190,
+					MalformedError::DuplicateInputs => 191,
+					MalformedError::InputsSignaturesLengthMismatch => 192,
 					MalformedError::UnknownError => 139,
 				},
 				SystemTransaction(e) => match e {
-					SystemTransactionError::IllegalPayout => 139,
-					SystemTransactionError::InsufficientTreasuryFunds => 140,
-					SystemTransactionError::CommitmentAlreadyPresent => 141,
-					SystemTransactionError::UnknownError => 142,
-					SystemTransactionError::ReplayProtectionFailure => 143,
-					SystemTransactionError::IllegalReserveDistribution => 144,
-					SystemTransactionError::GenerationInfoAlreadyPresent => 145,
-					SystemTransactionError::InvalidBasisPoints => 146,
-					SystemTransactionError::InvariantViolation => 147,
-					SystemTransactionError::TreasuryDisabled => 148,
+					SystemTransactionError::IllegalPayout => 201,
+					SystemTransactionError::InsufficientTreasuryFunds => 202,
+					SystemTransactionError::CommitmentAlreadyPresent => 203,
+					SystemTransactionError::UnknownError => 204,
+					SystemTransactionError::ReplayProtectionFailure => 205,
+					SystemTransactionError::IllegalReserveDistribution => 206,
+					SystemTransactionError::GenerationInfoAlreadyPresent => 207,
+					SystemTransactionError::InvalidBasisPoints => 208,
+					SystemTransactionError::InvariantViolation => 209,
+					SystemTransactionError::TreasuryDisabled => 210,
 				},
 			},
 			// Reserved from [150-255) for future Errors
@@ -350,3 +420,42 @@ impl From<LedgerApiError> for u8 {
 // Implement the `std::error::Error` trait only when `std` is enabled.
 #[cfg(feature = "std")]
 impl std::error::Error for LedgerApiError {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use parity_scale_codec::Decode;
+	use std::collections::HashMap;
+
+	/// Enumerate every `LedgerApiError` value by brute-force SCALE decoding all byte
+	/// sequences up to the maximum nesting depth (3 bytes: LedgerApiError → TransactionError
+	/// → inner error enum). Only exact-length decodes are kept (no leftover bytes).
+	fn all_ledger_api_errors() -> Vec<LedgerApiError> {
+		let mut result = Vec::new();
+		for depth in 1..=3u32 {
+			for n in 0..256u32.pow(depth) {
+				let bytes: Vec<u8> = (0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
+				let mut slice: &[u8] = &bytes;
+				if let Ok(e) = LedgerApiError::decode(&mut slice)
+					&& slice.is_empty()
+				{
+					result.push(e);
+				}
+			}
+		}
+		result
+	}
+
+	#[test]
+	fn error_codes_are_unique() {
+		let mut seen: HashMap<u8, String> = HashMap::new();
+		for error in all_ledger_api_errors() {
+			let desc = format!("{error}");
+			let code: u8 = error.into();
+			if let Some(existing) = seen.get(&code) {
+				panic!("Error code {code} used by both '{existing}' and '{desc}'");
+			}
+			seen.insert(code, desc);
+		}
+	}
+}

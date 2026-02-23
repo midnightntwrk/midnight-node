@@ -480,7 +480,7 @@ pub mod pallet {
 					.concat(),
 			);
 
-			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::take(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
 					hex::encode(data.utxo_tx_hash.0),

@@ -693,7 +693,7 @@ jobs:
 
       - name: Install cargo-nextest
         run: |
-          cargo install cargo-nextest --locked
+          cargo install cargo-nextest@0.9.128 --locked
 
       - name: just test
         env:
