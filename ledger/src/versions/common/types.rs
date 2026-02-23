@@ -420,3 +420,43 @@ impl From<LedgerApiError> for u8 {
 // Implement the `std::error::Error` trait only when `std` is enabled.
 #[cfg(feature = "std")]
 impl std::error::Error for LedgerApiError {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use parity_scale_codec::Decode;
+	use std::collections::HashMap;
+
+	/// Enumerate every `LedgerApiError` value by brute-force SCALE decoding all byte
+	/// sequences up to the maximum nesting depth (3 bytes: LedgerApiError → TransactionError
+	/// → inner error enum). Only exact-length decodes are kept (no leftover bytes).
+	fn all_ledger_api_errors() -> Vec<LedgerApiError> {
+		let mut result = Vec::new();
+		for depth in 1..=3u32 {
+			for n in 0..256u32.pow(depth) {
+				let bytes: Vec<u8> =
+					(0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
+				let mut slice: &[u8] = &bytes;
+				if let Ok(e) = LedgerApiError::decode(&mut slice) {
+					if slice.is_empty() {
+						result.push(e);
+					}
+				}
+			}
+		}
+		result
+	}
+
+	#[test]
+	fn error_codes_are_unique() {
+		let mut seen: HashMap<u8, String> = HashMap::new();
+		for error in all_ledger_api_errors() {
+			let desc = format!("{error}");
+			let code: u8 = error.into();
+			if let Some(existing) = seen.get(&code) {
+				panic!("Error code {code} used by both '{existing}' and '{desc}'");
+			}
+			seen.insert(code, desc);
+		}
+	}
+}
