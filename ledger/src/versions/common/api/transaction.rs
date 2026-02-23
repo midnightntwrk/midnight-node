@@ -568,7 +568,7 @@ mod tests {
 		let infos = result.unwrap();
 		assert_eq!(infos.len(), 3);
 		for (i, info) in infos.iter().enumerate() {
-			assert_eq!(info.output_no, i as u32);
+			assert_eq!(info.output_no, u32::try_from(i).unwrap());
 		}
 	}
 
