@@ -349,6 +349,10 @@ jobs:
   sbom-scan-node-amd64:
     name: SBOM/Scan Node (amd64)
     needs: [publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
@@ -358,6 +362,10 @@ jobs:
   sbom-scan-node-arm64:
     name: SBOM/Scan Node (arm64)
     needs: [publish-amd64, publish-arm64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
@@ -367,6 +375,10 @@ jobs:
   sbom-scan-toolkit-amd64:
     name: SBOM/Scan Toolkit (amd64)
     needs: [publish-amd64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
@@ -376,6 +388,10 @@ jobs:
   sbom-scan-toolkit-arm64:
     name: SBOM/Scan Toolkit (arm64)
     needs: [publish-amd64, publish-arm64]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
@@ -385,6 +401,10 @@ jobs:
   sbom-scan-indexer-images:
     name: SBOM/Scan Indexer (${{ matrix.image }})
     needs: [build-indexer-images]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     strategy:
       matrix:
         image:
