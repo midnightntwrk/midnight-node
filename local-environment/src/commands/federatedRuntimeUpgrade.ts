@@ -286,7 +286,7 @@ async function getCollectiveMembersCount(
       ? await api.query.council.members()
       : await api.query.technicalCommittee.members();
 
-  return members.toRawType.length;
+  return (members.toJSON() as unknown[]).length;
 }
 
 function computeTwoThirdsThreshold(totalMembers: number, label: string): number {
