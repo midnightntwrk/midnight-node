@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../",
+  "sources": ["simple-merkle-tree.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;;;;MAQA,AAAA,KAEC;;;;;cAFa,WAAmB;;;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;kEAAnB,WAAmB;;;OAEhC;MAED,AAAA,KAGC;;;;;cAHa,WAAmB;;;;;;;;;;;;;;;;;;yCAAnB,WAAmB;;;;;;;kEAAnB,WAAmB;;;OAGhC;;;;;;GACA;EAhBD;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;IAIA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;yEAA8C;;;;;;;GAY7C;EC8BD,AAAA,iBAAgC;mEAAA;;;EAEhC,AAAA,kBAAiC;qEAAA;;;EAEjC,AAAA,sBAAkC;yDAAA;;;EAgClC,AAAA,sBAAyC;;;;;;;oFAG8E;8BAChG;;EAYvB,AAAA,2BACE,mBACA;UAEM,SAAO,oBAAkB,oBAAkB;UAC3C,UAAQ;oBAAkB;oBAAsB;kCACd,QAAM;;EDlGhD,AAAA,OAA8D,4BAAjD,SAAiB;;0DAA9B,IAA8D;+DAAjD,SAAiB;;;;;;;;;;;;;;GAAgC;EAE9D,AAAA,QAEC,4BAFa,WAAmB;IAC/B;;;;;;;;;;;;;;;;;;;;;;;;6HAAqB,WAAS;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;wEAA1B;;GACL;EAED,AAAA,QAGC,4BAHa,WAAmB;QACxB,KAAI;;;6EAA0D,WAAS;qDAAvE;;;;;;;;;;;;;;;;;4KAAA,KAAI;;;;0HAAA;;;GAEZ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;"
+}

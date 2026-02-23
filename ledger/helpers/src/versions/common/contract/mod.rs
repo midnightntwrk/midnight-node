@@ -22,25 +22,30 @@ use super::super::{
 
 // Re-export types needed by submodules
 pub use super::super::{
-	ChargedState, ContractMaintenanceAuthority, ContractState, DUST_EXPECTED_FILES, DustResolver,
-	EntryPointBuf, FetchMode, HashMapStorage, HistoricMerkleTree_check_root,
-	HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue, ValueReprAlignedValue,
-	VerifyingKey, key, leaf_hash, partition_transcripts, stval, verifier_key,
+	ChargedState, ContractMaintenanceAuthority, ContractOperationVersion, ContractState,
+	DUST_EXPECTED_FILES, DustResolver, EntryPointBuf, FetchMode, HashMapStorage,
+	HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue,
+	ValueReprAlignedValue, VerifyingKey, key, leaf_hash, partition_transcripts, stval,
+	verifier_key,
 };
 
 #[cfg(feature = "test-utils")]
 pub use super::super::test_resolver;
 
 mod call;
-mod contracts;
 mod deploy;
+#[cfg(feature = "can-panic")]
 mod maintenance;
+#[cfg(feature = "can-panic")]
+mod merkle_tree;
 
 pub use call::*;
-pub use contracts::*;
 pub use deploy::*;
+#[cfg(feature = "can-panic")]
 pub use maintenance::*;
+#[cfg(feature = "can-panic")]
+pub use merkle_tree::*;
 
 #[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {

@@ -15,12 +15,12 @@ import { Command } from "commander";
 import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
-import { runtimeUpgrade } from "./commands/runtimeUpgrade";
+import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { snapshot } from "./commands/snapshot";
 import {
   RunOptions,
   ImageUpgradeOptions,
-  RuntimeUpgradeOptions,
+  FederatedRuntimeUpgradeOptions,
   SnapshotOptions,
 } from "./lib/types";
 
@@ -37,13 +37,15 @@ interface ImageUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   fromSnapshot?: string;
+  waitBefore?: number;
 }
 
-interface RuntimeUpgradeCliOpts {
+interface FederatedRuntimeUpgradeCliOpts {
   wasm: string;
   rpcUrl?: string;
-  sudoUri?: string;
-  delayBlocks?: number;
+  councilUris: string[];
+  technicalUris: string[];
+  executorUri: string;
   profiles?: string[];
   envFile?: string[];
   skipRun?: boolean;
@@ -124,6 +126,11 @@ program
     parseInt,
   )
   .option(
+    "--wait-before <ms>",
+    "Wait time before starting any service upgrades in ms (default 30000)",
+    parseInt,
+  )
+  .option(
     "--health-timeout <sec>",
     "Max seconds to wait for health per service (default 180)",
     parseInt,
@@ -149,6 +156,7 @@ program
       excludePattern: cliOpts.exclude,
       profiles,
       envFile: cliOpts.envFile,
+      waitBeforeMs: cliOpts.waitBefore,
       waitBetweenMs: cliOpts.waitBetween ?? 5000,
       healthTimeoutSec: cliOpts.healthTimeout ?? 180,
       requireHealthy: cliOpts.requireHealthy !== false,
@@ -168,24 +176,27 @@ program
   });
 
 program
-  .command("runtime-upgrade <network>")
+  .command("governance-runtime-upgrade <network>")
   .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
-  .option(
-    "--skip-run",
-    "Do not ensure docker-compose is running before upgrading",
+  .requiredOption(
+    "--council-uris <uri...>",
+    "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
+  )
+  .requiredOption(
+    "--technical-uris <uri...>",
+    "Space-separated sr25519 URIs for technical committee proposers and voters (must meet the 2/3 threshold)",
+  )
+  .requiredOption(
+    "--executor-uri <uri>",
+    "Key URI used to close the federated motion and apply the authorized upgrade",
   )
   .option(
     "--rpc-url <url>",
     "WebSocket RPC endpoint (default ws://localhost:9944)",
   )
   .option(
-    "--sudo-uri <uri>",
-    "Keyring URI used to submit the sudo upgrade (default env or //Alice)",
-  )
-  .option(
-    "--delay-blocks <value>",
-    "Blocks to wait from the current head before sending the upgrade",
-    parseInt,
+    "--skip-run",
+    "Do not ensure docker-compose is running before upgrading",
   )
   .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
   .option("--env-file <path...>", "specify one or more env files")
@@ -193,24 +204,44 @@ program
     "--from-snapshot <id>",
     "Restore a bootnode snapshot before launching services",
   )
-  .description("Submit a sudo runtime upgrade after an optional block delay")
-  .action(async (network: string, cliOpts: RuntimeUpgradeCliOpts) => {
+  .description(
+    "Execute a governance-approved runtime upgrade using the federated-authority pallet",
+  )
+  .action(async (network: string, cliOpts: FederatedRuntimeUpgradeCliOpts) => {
     const profiles = cliOpts.profiles
       ?.map((s: string) => s.trim())
       .filter(Boolean);
+    const councilUris = (cliOpts.councilUris || [])
+      .map((uri: string) => uri.trim())
+      .filter(Boolean);
+    const techUris = (cliOpts.technicalUris || [])
+      .map((uri: string) => uri.trim())
+      .filter(Boolean);
+    const executorUri = cliOpts.executorUri?.trim();
 
-    const opts: RuntimeUpgradeOptions = {
+    if (!councilUris.length) {
+      throw new Error("At least one council URI is required.");
+    }
+    if (!techUris.length) {
+      throw new Error("At least one technical committee URI is required.");
+    }
+    if (!executorUri) {
+      throw new Error("executor-uri is required and cannot be empty");
+    }
+
+    const opts: FederatedRuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
-      sudoUri: cliOpts.sudoUri,
-      delayBlocks: cliOpts.delayBlocks,
-      profiles,
-      envFile: cliOpts.envFile,
       rpcUrl: cliOpts.rpcUrl,
       skipRun: cliOpts.skipRun,
+      profiles,
+      envFile: cliOpts.envFile,
       fromSnapshot: cliOpts.fromSnapshot,
+      councilUris,
+      techCommitteeUris: techUris,
+      motionExecutorUri: executorUri,
     };
 
-    await runtimeUpgrade(network, opts);
+    await federatedRuntimeUpgrade(network, opts);
   });
 
 program.parse();

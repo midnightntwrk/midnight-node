@@ -106,7 +106,12 @@ pub async fn fetch_zswap_state(
 	let network_id = received_tx.network();
 	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
 	for block in received_tx.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
 	}
 	let wallet = context.wallet_from_seed(wallet_seed);
 	let zswap_local_state = wallet.shielded.state;
@@ -143,7 +148,7 @@ pub async fn execute(
 				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
 				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
-			let input_zswap_state = if args.source_wallet.wallet_seed.is_some() {
+			let input_zswap_state = if let Some(wallet_seed) = args.source_wallet.wallet_seed {
 				let Some(source) = args.source_wallet.source else {
 					println!("wallet_seed is present, but source is missing!");
 					return Err(GenerateIntentError::MissingSource.into());
@@ -151,7 +156,7 @@ pub async fn execute(
 				println!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
 					source,
-					args.source_wallet.wallet_seed.unwrap(),
+					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
 				)
@@ -199,7 +204,7 @@ pub async fn execute(
 
 /// Make sure to build toolkit-js before running these tests - this can be done with the earthly
 /// target:
-/// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
+/// $ earthly +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
 /// $ earthly -P +rebuild-genesis-state-undeployed

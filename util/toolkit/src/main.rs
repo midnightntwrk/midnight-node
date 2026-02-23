@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				// Initialize the logger.
 				structured_logger::Builder::new()
 					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::stdout(),
+						tokio::io::stderr(),
 					))
 					.init();
 

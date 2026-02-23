@@ -13,13 +13,11 @@
 
 use midnight_node_ledger_helpers::*;
 use std::{path::Path, sync::Arc};
-use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
 use crate::{
 	ProofType, SignatureType,
 	remote_prover::RemoteProofServer,
-	sender::Sender,
 	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
 };
 
@@ -93,6 +91,7 @@ where
 				src_files.clone(),
 				extension.to_string(),
 				src.dust_warp,
+				src.ignore_block_context,
 			));
 			Ok(source)
 		} else if let Some(url) = src.src_url {
@@ -103,7 +102,9 @@ where
 			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
 				&url,
 				src.fetch_concurrency,
+				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),
 				src.dust_warp,
+				src.fetch_only_cached,
 				src.fetch_cache,
 			));
 			Ok(source)
@@ -134,19 +135,18 @@ where
 
 		// ------ accept multiple urls ------
 		let mut dests = vec![];
-		for url in dest.dest_urls {
-			if dry_run {
-				println!("Dry-run: Destination RPC: {:?}", &url);
-				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
-				continue;
-			}
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api, url));
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::new(sender, dest.rate));
-
-			dests.push(destination);
+		if dry_run {
+			println!("Dry-run: Destination RPC(s): {:?}", &dest.dest_urls);
+			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
+
+		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+		));
+
+		dests.push(destination);
 
 		Ok(dests)
 	}
@@ -181,15 +181,19 @@ where
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
 
-		// send transactions concurrently; no waiting needed for prev async calls
 		let results = futures::future::join_all(sends_txs_futs).await;
 
-		for result in results.iter() {
+		let mut any_failed = false;
+		for result in results {
 			if let Err(e) = result {
 				println!("ERROR: {e}");
+				any_failed = true;
 			}
 		}
 
+		if any_failed {
+			return Err("one or more destination tasks failed".into());
+		}
 		Ok(())
 	}
 

@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
+
 mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }
@@ -15,6 +16,11 @@ ledger-storage = { workspace = true }
 transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
+
+mn-ledger-8 = { workspace = true, features = ["proving", "test-utilities"] }
+onchain-runtime-ledger-8 = { workspace = true }
+ledger-storage-ledger-8 = { workspace = true }
+zswap-ledger-8 = { workspace = true }
 
 mn-ledger-hf = { workspace = true, features = ["proving", "test-utilities"] }
 base-crypto-hf = { workspace = true }
@@ -27,6 +33,7 @@ zswap-hf = { workspace = true }
 zkir-hf = { workspace = true }
 
 rand = { workspace = true, features = ["small_rng"] }
+log.workspace = true
 lazy_static.workspace = true
 itertools = { workspace = true, features = ["use_alloc"] }
 thiserror.workspace = true
@@ -47,3 +54,4 @@ default = []
 can-panic = []
 erase-proof = []
 test-utils = []
+fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde"]

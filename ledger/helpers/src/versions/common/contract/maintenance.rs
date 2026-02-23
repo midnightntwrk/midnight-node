@@ -11,15 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Contract maintenance module.
+
 use async_trait::async_trait;
 use std::sync::Arc;
 
 use super::super::{
-	BuildContractAction, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+	ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
 	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SigningKey,
 	SingleUpdate, StdRng,
 };
+use super::BuildContractAction;
 
 pub struct ContractMaintenanceAuthorityInfo {
 	pub new_committee: Vec<SigningKey>,
@@ -60,7 +63,7 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 					})
 				},
 				UpdateInfo::VerifierKeyRemove(k) => {
-					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V2)
+					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
 				},
 				UpdateInfo::VerifierKeyInsert(k, new_key) => {
 					SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())

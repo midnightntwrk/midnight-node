@@ -12,11 +12,15 @@
 // limitations under the License.
 
 use prometheus_endpoint::{
-	self as prometheus, HistogramOpts, HistogramVec, PrometheusError, Registry,
+	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
+	Registry, U64,
 };
 use std::{
 	path::PathBuf,
-	sync::{Arc, Mutex},
+	sync::{
+		Arc, Mutex,
+		atomic::{AtomicBool, Ordering},
+	},
 };
 
 const LOG_TARGET: &str = "ledger::primitives";
@@ -35,6 +39,12 @@ pub struct LedgerMetrics {
 	pub storage_fetch_time: HistogramVec,
 	/// Storage flush time
 	pub storage_flush_time: HistogramVec,
+	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
+	pub tx_validation_cache_hits: CounterVec<U64>,
+	/// Transaction validation cache misses
+	pub tx_validation_cache_misses: CounterVec<U64>,
+	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
+	pub tx_validation_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -149,6 +159,36 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			tx_validation_cache_hits: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_hits_total",
+						"Transaction validation cache hits",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
+			tx_validation_cache_misses: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_misses_total",
+						"Transaction validation cache misses",
+					),
+					&[],
+				)?,
+				registry,
+			)?,
+			tx_validation_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_size",
+						"Current number of entries in transaction validation cache",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -215,6 +255,24 @@ impl LedgerMetricsExt {
 			m.storage_flush_time.with_label_values(&[label]).observe(time);
 		});
 	}
+
+	pub fn inc_tx_validation_cache_hit(&mut self, cache_type: &str) {
+		self.observe(|m| {
+			m.tx_validation_cache_hits.with_label_values(&[cache_type]).inc();
+		});
+	}
+
+	pub fn inc_tx_validation_cache_miss(&mut self) {
+		self.observe(|m| {
+			m.tx_validation_cache_misses.with_label_values(&[]).inc();
+		});
+	}
+
+	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
 }
 
 /// Ledger Storage info to be sent to host functions
@@ -239,5 +297,23 @@ sp_externalities::decl_extension! {
 impl LedgerStorageExt {
 	pub fn new(storage: LedgerStorage) -> Self {
 		LedgerStorageExt(storage)
+	}
+}
+
+sp_externalities::decl_extension! {
+	/// Extension that indicates whether the node is currently performing a major sync.
+	/// When syncing, historical blocks must use HashMap ordering for UTXO iteration
+	/// to match the original state roots. When not syncing, BTreeMap ordering is used
+	/// for deterministic iteration.
+	pub struct SyncStatusExt(Arc<AtomicBool>);
+}
+
+impl SyncStatusExt {
+	pub fn new(is_syncing: Arc<AtomicBool>) -> Self {
+		SyncStatusExt(is_syncing)
+	}
+
+	pub fn is_syncing(&self) -> bool {
+		self.0.load(Ordering::Relaxed)
 	}
 }

@@ -11,23 +11,71 @@ use midnight_node_metadata::midnight_metadata_latest::{
 	c_night_observation::{self}
 	,
 };
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use subxt::backend::rpc::RpcClient;
 use subxt::blocks::ExtrinsicEvents;
+use subxt::ext::subxt_rpcs::rpc_params;
+use subxt::tx::TxProgress;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
 
+/// D-Parameter response from RPC
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DParameterResponse {
+    /// Number of permissioned candidates
+    pub num_permissioned_candidates: u16,
+    /// Number of registered candidates
+    pub num_registered_candidates: u16,
+}
+
+/// Sidechain status response from sidechain_getStatus RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidechainStatusResponse {
+    /// Current sidechain epoch number
+    pub epoch: u64,
+    /// Current slot within the epoch
+    pub slot: u64,
+    /// Slots per epoch configuration
+    pub slots_per_epoch: u32,
+    /// Slot duration in milliseconds
+    #[serde(default)]
+    pub slot_duration: Option<u64>,
+}
+
+/// Ariadne parameters response from systemParameters_getAriadneParameters RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AriadneParametersResponse {
+    /// The D-parameter (from pallet-system-parameters)
+    pub d_parameter: DParameterResponse,
+    /// List of permissioned candidates from Cardano Aiken contracts
+    pub permissioned_candidates: Option<Vec<serde_json::Value>>,
+    /// Map of candidate registrations
+    pub candidate_registrations: serde_json::Value,
+}
+
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
+    rpc_client: RpcClient,
 }
 
 impl MidnightClient {
     pub async fn new(node_settings: NodeClientSettings) -> Self {
         let online_client =
-            OnlineClient::<SubstrateConfig>::from_insecure_url(node_settings.base_url)
+            OnlineClient::<SubstrateConfig>::from_insecure_url(&node_settings.base_url)
                 .await
-                .expect("Failed to initialize client");
-        Self { online_client }
+                .expect("Failed to initialize online client");
+        let rpc_client = RpcClient::from_insecure_url(&node_settings.base_url)
+            .await
+            .expect("Failed to initialize RPC client");
+        Self {
+            online_client,
+            rpc_client,
+        }
     }
 
     pub fn new_seed() -> WalletSeed {
@@ -183,8 +231,93 @@ impl MidnightClient {
     pub async fn subscribe_to_federated_authority_events(
         &self,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Subscribing to federated authority observation events");
+        println!("Checking for federated authority observation events");
 
+        // Track which events we've found
+        let mut found_council_reset = false;
+        let mut found_tech_committee_reset = false;
+
+        // Helper to check events in a block
+        let check_block_events = |events: subxt::events::Events<SubstrateConfig>,
+                                  block_number: u32,
+                                  found_council: &mut bool,
+                                  found_tech: &mut bool| {
+            // Check for CouncilMembersReset event
+            if let Some(event) = events.find::<CouncilMembersReset>().flatten().next() {
+                println!(
+                    "✓ Found CouncilMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_council = true;
+            }
+
+            // Check for TechnicalCommitteeMembersReset event
+            if let Some(event) = events
+                .find::<TechnicalCommitteeMembersReset>()
+                .flatten()
+                .next()
+            {
+                println!(
+                    "✓ Found TechnicalCommitteeMembersReset event in block #{} with {} members",
+                    block_number,
+                    event.members.len()
+                );
+                *found_tech = true;
+            }
+        };
+
+        // First, check historical finalized blocks for the events
+        // The events may have been emitted before we started listening
+        let finalized_hash = self
+            .online_client
+            .backend()
+            .latest_finalized_block_ref()
+            .await?;
+        let finalized_block = self
+            .online_client
+            .blocks()
+            .at(finalized_hash.hash())
+            .await?;
+        let current_finalized = finalized_block.header().number;
+
+        println!(
+            "Checking historical blocks 1 to {} for federated authority events...",
+            current_finalized
+        );
+
+        // Check historical blocks from genesis (block 1) up to current finalized
+        // We start from block 1 because events are typically emitted early when
+        // the mainchain follower first observes the governance contracts
+        for block_num in 1..=current_finalized {
+            let block_hash: H256 = self
+                .rpc_client
+                .request("chain_getBlockHash", rpc_params![block_num])
+                .await?;
+
+            let block = self.online_client.blocks().at(block_hash).await?;
+            let events = block.events().await?;
+
+            check_block_events(
+                events,
+                block_num,
+                &mut found_council_reset,
+                &mut found_tech_committee_reset,
+            );
+
+            if found_council_reset && found_tech_committee_reset {
+                println!("✓ Both federated authority events found in historical blocks");
+                return Ok(());
+            }
+        }
+
+        println!(
+            "Events not found in historical blocks. Council: {}, TechCommittee: {}",
+            found_council_reset, found_tech_committee_reset
+        );
+
+        // If not found in history, subscribe to new finalized blocks
+        println!("Subscribing to new finalized blocks for remaining events...");
         let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
 
         let result = timeout(Duration::from_secs(120), async {
@@ -195,29 +328,14 @@ impl MidnightClient {
 
                 let events = block.events().await?;
 
-                // Check for CouncilMembersReset event
-                let council_reset = events.find::<CouncilMembersReset>().flatten().next();
+                check_block_events(
+                    events,
+                    block_number,
+                    &mut found_council_reset,
+                    &mut found_tech_committee_reset,
+                );
 
-                // Check for TechnicalCommitteeMembersReset event
-                let tech_committee_reset = events
-                    .find::<TechnicalCommitteeMembersReset>()
-                    .flatten()
-                    .next();
-
-                if let Some(event) = &council_reset {
-                    println!(
-                        "✓ Found CouncilMembersReset event with {} members",
-                        event.members.0.len()
-                    );
-                }
-                if let Some(event) = &tech_committee_reset {
-                    println!(
-                        "✓ Found TechnicalCommitteeMembersReset event with {} members",
-                        event.members.0.len()
-                    );
-                }
-
-                if council_reset.is_some() && tech_committee_reset.is_some() {
+                if found_council_reset && found_tech_committee_reset {
                     return Ok(());
                 }
             }
@@ -226,5 +344,231 @@ impl MidnightClient {
         .await;
 
         result.unwrap_or_else(|_| Err("Timeout waiting for federated authority events".into()))
+    }
+
+    /// Get the current D-Parameter via RPC.
+    ///
+    /// Returns the number of permissioned and registered candidates.
+    pub async fn get_d_parameter(&self) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the D-Parameter at a specific block hash.
+    pub async fn get_d_parameter_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<DParameterResponse, Box<dyn std::error::Error>> {
+        let response: DParameterResponse = self
+            .rpc_client
+            .request("systemParameters_getDParameter", rpc_params![block_hash])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current best block hash from the node.
+    pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let block = self.online_client.blocks().at_latest().await?;
+        Ok(block.hash())
+    }
+
+    /// Get block hash at a specific block height/number.
+    pub async fn get_block_hash_at_height(
+        &self,
+        block_number: u32,
+    ) -> Result<H256, Box<dyn std::error::Error>> {
+        let block_hash: Option<H256> = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![block_number])
+            .await?;
+
+        block_hash.ok_or_else(|| format!("No block found at height {}", block_number).into())
+    }
+
+    /// Wait for a new finalized block and return its hash.
+    pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
+        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+
+        let result = timeout(Duration::from_secs(30), async {
+            if let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+                println!("New finalized block #{}", block.header().number);
+                return Ok(block.hash());
+            }
+            Err("No block received".into())
+        })
+        .await;
+
+        result.unwrap_or_else(|_| Err("Timeout waiting for finalized block".into()))
+    }
+
+    /// Get Ariadne parameters including permissioned candidates and D-Parameter.
+    ///
+    /// The D-Parameter is sourced from pallet-system-parameters (on-chain),
+    /// while permissioned candidates come from Cardano Aiken contracts.
+    pub async fn get_ariadne_parameters(
+        &self,
+        epoch_number: u64,
+        d_parameter_at: Option<H256>,
+    ) -> Result<AriadneParametersResponse, Box<dyn std::error::Error>> {
+        let response: AriadneParametersResponse = match d_parameter_at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request(
+                        "systemParameters_getAriadneParameters",
+                        rpc_params![epoch_number],
+                    )
+                    .await?
+            }
+        };
+
+        Ok(response)
+    }
+
+    // ========== Sidechain Status and Authority Methods ==========
+    // Used for authority selection verification
+
+    /// Get the current sidechain status including epoch number.
+    pub async fn get_sidechain_status(
+        &self,
+    ) -> Result<SidechainStatusResponse, Box<dyn std::error::Error>> {
+        let response: SidechainStatusResponse = self
+            .rpc_client
+            .request("sidechain_getStatus", rpc_params![])
+            .await?;
+
+        Ok(response)
+    }
+
+    /// Get the current sidechain epoch number.
+    pub async fn get_current_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let status = self.get_sidechain_status().await?;
+        Ok(status.epoch)
+    }
+
+    /// Wait until the sidechain reaches a specific epoch.
+    ///
+    /// Polls the sidechain status every 2 seconds until the target epoch is reached,
+    /// with a maximum timeout.
+    pub async fn wait_for_epoch(
+        &self,
+        target_epoch: u64,
+        timeout_secs: u64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let start = Instant::now();
+        let poll_interval = Duration::from_secs(2);
+
+        loop {
+            let status = self.get_sidechain_status().await?;
+            println!(
+                "Current epoch: {}, slot: {}, target: {}",
+                status.epoch, status.slot, target_epoch
+            );
+
+            if status.epoch >= target_epoch {
+                println!("✓ Reached target epoch {}", status.epoch);
+                return Ok(status.epoch);
+            }
+
+            if start.elapsed() > Duration::from_secs(timeout_secs) {
+                return Err(format!(
+                    "Timeout waiting for epoch {} (current: {})",
+                    target_epoch, status.epoch
+                )
+                .into());
+            }
+
+            sleep(poll_interval).await;
+        }
+    }
+
+    // ========== Midnight Transaction Submission Methods ==========
+    // Used for DDoS mitigation E2E tests (TC-0003-06)
+
+    /// Submit a raw Midnight transaction and watch for result.
+    /// Returns the transaction progress if submission succeeds.
+    pub async fn submit_midnight_tx(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<TxProgress<SubstrateConfig, OnlineClient<SubstrateConfig>>, subxt::Error> {
+        let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
+        let unsigned_extrinsic = self.online_client.tx().create_unsigned(&mn_tx)?;
+        unsigned_extrinsic.submit_and_watch().await
+    }
+
+    /// Submit a Midnight transaction expecting it to be rejected at pre_dispatch.
+    /// Returns Ok(error_message) if rejected as expected.
+    /// Returns Err if the transaction was unexpectedly accepted.
+    pub async fn submit_expecting_rejection(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        println!("Submitting transaction expecting rejection...");
+        match self.submit_midnight_tx(tx_bytes).await {
+            Err(e) => {
+                println!("Transaction rejected as expected: {}", e);
+                Ok(e.to_string())
+            }
+            Ok(_) => Err(
+                "Transaction was unexpectedly accepted - should have been rejected at pre_dispatch"
+                    .into(),
+            ),
+        }
+    }
+
+    /// Submit a Midnight transaction expecting it to succeed.
+    /// Waits for the transaction to be included in a block.
+    pub async fn submit_expecting_success(
+        &self,
+        tx_bytes: Vec<u8>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        println!("Submitting transaction expecting success...");
+        let mut progress = self.submit_midnight_tx(tx_bytes).await?;
+
+        // Wait for inclusion in block
+        while let Some(status) = progress.next().await {
+            match status? {
+                subxt::tx::TxStatus::InBestBlock(block_info) => {
+                    println!(
+                        "Transaction included in best block: {:?}",
+                        block_info.block_hash()
+                    );
+                    return Ok(());
+                }
+                subxt::tx::TxStatus::InFinalizedBlock(block_info) => {
+                    println!(
+                        "Transaction finalized in block: {:?}",
+                        block_info.block_hash()
+                    );
+                    return Ok(());
+                }
+                subxt::tx::TxStatus::Error { message } => {
+                    return Err(format!("Transaction error: {}", message).into());
+                }
+                subxt::tx::TxStatus::Invalid { message } => {
+                    return Err(format!("Transaction invalid: {}", message).into());
+                }
+                subxt::tx::TxStatus::Dropped { message } => {
+                    return Err(format!("Transaction dropped: {}", message).into());
+                }
+                _ => {
+                    // Continue waiting for other statuses
+                }
+            }
+        }
+        Err("Transaction progress ended without confirmation".into())
     }
 }

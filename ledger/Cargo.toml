@@ -14,6 +14,11 @@ ledger-storage = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
 zswap = { workspace = true, optional = true }
 
+mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
+onchain-runtime-ledger-8 = { workspace = true, optional = true }
+ledger-storage-ledger-8 = { workspace = true, optional = true }
+zswap-ledger-8 = { workspace = true, optional = true }
+
 mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
 base-crypto-hf = { workspace = true, optional = true }
 coin-structure-hf = { workspace = true, optional = true }
@@ -25,7 +30,6 @@ zswap-hf = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
-sp-std.workspace = true
 sp-externalities.workspace = true
 sp-tracing.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
@@ -42,6 +46,7 @@ lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
 toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
@@ -56,7 +61,6 @@ default = [
 std = [
     "sp-runtime-interface/std",
     "sp-runtime/std",
-    "sp-std/std",
     "sp-externalities/std",
     "midnight-primitives-ledger/std",
     "parity-scale-codec/std",
@@ -84,7 +88,12 @@ std = [
     "ledger-storage-hf",
     "transient-crypto-hf",
     "zswap-hf",
+    "mn-ledger-8",
+    "onchain-runtime-ledger-8",
+    "ledger-storage-ledger-8",
+    "zswap-ledger-8",
     "sha2",
+    "rand",
     "toml",
     "midnight-node-ledger-helpers",
     "derive-where"

@@ -25,21 +25,53 @@ pub mod hard_fork_test {
 	};
 
 	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
-
-#[path = "versions"]
-pub mod latest {
-	pub use {
-		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir, zswap,
-	};
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
 }
+
+#[path = "versions"]
+pub mod ledger_7 {
+	pub use {
+		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
+		onchain_runtime, transient_crypto, zkir, zswap,
+	};
+
+	#[path = "block_context/pre_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+}
+
+#[path = "versions"]
+pub mod ledger_8 {
+	pub use {
+		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
+		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
+		zkir, zswap_ledger_8 as zswap,
+	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+}
+
+pub use ledger_8 as latest;
+
+#[cfg(feature = "can-panic")]
+pub mod fork;
 
 #[cfg(hardfork_test)]
 pub use hard_fork_test::*;

@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use crate::{Config, Error, Event, MotionInfo, Motions, mock::*, weights::WeightInfo};
+use alloc::boxed::Box;
 use frame_support::{
 	BoundedBTreeSet, assert_noop, assert_ok,
 	dispatch::{DispatchErrorWithPostInfo, Pays, PostDispatchInfo},
@@ -19,7 +20,6 @@ use frame_support::{
 use pallet_collective::Proposals;
 use sp_core::H256;
 use sp_runtime::traits::{Dispatchable, Hash};
-use sp_std::boxed::Box;
 
 // Helper functions to reduce code duplication
 

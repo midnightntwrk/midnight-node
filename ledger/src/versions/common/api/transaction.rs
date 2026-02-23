@@ -11,14 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
 	mn_ledger_local, transient_crypto_local,
 };
 
-use base_crypto_local::{hash::HashOutput, time::Timestamp};
+use base_crypto_local::hash::HashOutput;
 use ledger_storage_local::db::DB;
 use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
@@ -28,8 +28,8 @@ use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimRewardsTransaction, ContractAction, IntentHash, LedgerState, ProofKind, ProofMarker,
-		SignatureKind, StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
+		ClaimRewardsTransaction, ContractAction, IntentHash, ProofKind, ProofMarker, SignatureKind,
+		StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
 };
 use std::borrow::Borrow;
@@ -40,7 +40,7 @@ use super::{
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
 use crate::{
-	common::types::{BlockContext, Hash, SegmentId, UtxoInfo},
+	common::types::{Hash, SegmentId, UtxoInfo},
 	types::PERSISTENT_HASH_BYTES,
 };
 
@@ -123,8 +123,8 @@ fn from_utxo_spend(spend: UtxoSpend) -> UtxoInfo {
 
 #[derive(Default, Debug)]
 pub struct UnshieldedUtxos {
-	pub outputs: HashMap<SegmentId, Vec<UtxoInfo>>,
-	pub inputs: HashMap<SegmentId, Vec<UtxoInfo>>,
+	pub outputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
+	pub inputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
 }
 
 impl UnshieldedUtxos {
@@ -142,11 +142,27 @@ impl UnshieldedUtxos {
 	}
 
 	pub fn inputs(&self) -> Vec<UtxoInfo> {
-		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
+		// TODO: this rev() is only required to match preview.
+		// We could drop it before mainnet as a breaking change.
+		self.inputs.values().rev().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
+	}
+
+	pub fn outputs_shuffled(&self) -> Vec<UtxoInfo> {
+		use rand::seq::SliceRandom;
+		let mut segments: Vec<_> = self.outputs.values().collect();
+		segments.shuffle(&mut rand::thread_rng());
+		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
+	}
+
+	pub fn inputs_shuffled(&self) -> Vec<UtxoInfo> {
+		use rand::seq::SliceRandom;
+		let mut segments: Vec<_> = self.inputs.values().collect();
+		segments.shuffle(&mut rand::thread_rng());
+		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	/// Checks the integrity of UTXO events against the final Ledger state.
@@ -218,32 +234,6 @@ impl UnshieldedUtxos {
 }
 
 impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
-	// #[cfg(not(feature = "runtime-benchmarks"))]
-	pub(crate) fn validate(
-		&self,
-		ledger: &Ledger<D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		self.0
-			.well_formed(
-				<Ledger<D> as Borrow<LedgerState<D>>>::borrow(ledger),
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				Timestamp::from_secs(block_context.tblock),
-			)
-			.map_err(|e| {
-				log::error!(target: LOG_TARGET, "Error validating Transaction: {e:?}");
-				LedgerApiError::Transaction(TransactionError::Malformed(e.into()))
-			})?;
-
-		log::info!(
-			target: LOG_TARGET,
-			"✅ Validated Midnight transaction {:?}",
-			hex::encode(self.hash())
-		);
-
-		Ok(())
-	}
-
 	pub(crate) fn hash(&self) -> Hash {
 		self.0.transaction_hash().0.0
 	}
@@ -322,8 +312,8 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 	}
 
 	pub(crate) fn unshielded_utxos(&self) -> UnshieldedUtxos {
-		let mut outputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
-		let mut inputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
+		let mut outputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
+		let mut inputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
 
 		let mut update_outputs = |segment_id: SegmentId, outputs_info: Vec<UtxoInfo>| {
 			if !outputs_info.is_empty() {
@@ -418,13 +408,14 @@ pub enum Operation {
 mod tests {
 	use super::super::super::{
 		super::{CRATE_NAME, helpers_local::extract_info_from_tx_with_context},
-		api,
+		BlockContext, api,
 	};
 	use super::*;
 	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
+	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../../test-data/malformed_tx.json");
@@ -452,6 +443,9 @@ mod tests {
 
 	#[test]
 	fn should_validate_transaction() {
+		use base_crypto_local::time::Timestamp;
+		use std::borrow::Borrow;
+
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
 			return;
@@ -459,8 +453,12 @@ mod tests {
 		let api = api::new();
 		let (tx, block_context) = prepare_transaction(&api, DEPLOY);
 		let ledger = prepare_ledger();
-		let result = tx.validate(&ledger, &block_context);
-		assert!(result.is_ok(), "Transaction is invalid: {}", result.unwrap_err());
+		let result = tx.0.well_formed(
+			<Ledger<DefaultDB> as Borrow<LedgerState<DefaultDB>>>::borrow(&ledger),
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			Timestamp::from_secs(block_context.tblock),
+		);
+		assert!(result.is_ok(), "Transaction is invalid: {result:?}");
 	}
 
 	#[test]

@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
 use frame_support::pallet_prelude::*;
 use frame_system::pallet_prelude::*;
 
@@ -11,10 +13,10 @@ pub mod pallet {
 		LedgerBlockContextProvider, LedgerStateProviderMut, MidnightSystemTransactionExecutor,
 	};
 
+	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
 		Hash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use sp_std::vec::Vec;
 
 	use super::*;
 
@@ -36,6 +38,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		#[codec(index = 0)]
 		LedgerApiError(LedgerApiError),
+		#[codec(index = 1)]
+		SystemTransactionNotAllowedForGovernance,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -71,6 +75,10 @@ pub mod pallet {
 			midnight_system_tx: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			ensure!(
+				LedgerApi::is_governance_allowed_system_tx(&midnight_system_tx),
+				Error::<T>::SystemTransactionNotAllowedForGovernance
+			);
 
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();

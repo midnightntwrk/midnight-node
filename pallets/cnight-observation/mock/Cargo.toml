@@ -35,3 +35,6 @@ std = [
     "pallet-timestamp/std",
     "midnight-node-res/std"
 ]
+
+[package.metadata.cargo-shear]
+ignored = ["parity-scale-codec", "scale-info"]

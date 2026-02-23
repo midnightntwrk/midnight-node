@@ -8,6 +8,7 @@ use crate::commands::{
 	generate_txs::{self, GenerateTxsArgs},
 	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
+	root_call::{self, RootCallArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::ShowAddress,
 	show_address::{self, ShowAddressArgs},
@@ -83,6 +84,12 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Execute a call through governance with Root origin
+	///
+	/// This command allows executing arbitrary runtime calls through the federated authority
+	/// governance mechanism. It requires private keys from both Council and Technical Committee
+	/// members to vote and approve the motion.
+	RootCall(RootCallArgs),
 	/// Get the version information
 	Version,
 	/// Fetch
@@ -197,7 +204,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
 			let ledger_version =
 				find_dependency_version("mn-ledger").expect("missing ledger version");
-			let compactc_version = include_str!("../../toolkit-js/COMPACTC_VERSION").trim();
+			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 
 			println!(
 				"Node: {}\nLedger: {}\nCompactc: {}",
@@ -227,6 +234,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 
 			Ok(())
 		},
+		Commands::RootCall(args) => {
+			root_call::execute(args).await?;
+			Ok(())
+		},
 		Commands::Fetch(FetchArgs { src }) => {
 			if src.src_files.is_some() {
 				panic!("error: fetch command doesn't work with '--src-files'");
@@ -235,7 +246,9 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			let txs: SourceTransactions<Signature, ProofMarker> = GetTxsFromUrl::new(
 				&src.src_url.unwrap(),
 				src.fetch_concurrency,
+				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),
 				src.dust_warp,
+				src.fetch_only_cached,
 				src.fetch_cache,
 			)
 			.get_txs()

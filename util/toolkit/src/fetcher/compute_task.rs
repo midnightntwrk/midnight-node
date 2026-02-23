@@ -25,7 +25,8 @@ use crate::fetcher::{
 	fetch_storage::{BlockData, FetchStorage, FetchedBlock, FetchedTransaction},
 	runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
-		MidnightMetadata0_18_1, RuntimeVersion, RuntimeVersionError,
+		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0,
+		MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion, RuntimeVersionError,
 	},
 };
 
@@ -163,6 +164,18 @@ impl ComputeTask {
 			RuntimeVersion::V0_18_1 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_18_1, S, P, D>(block).await
 			},
+			RuntimeVersion::V0_19_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_19_0, S, P, D>(block).await
+			},
+			RuntimeVersion::V0_20_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_20_0, S, P, D>(block).await
+			},
+			RuntimeVersion::V0_21_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_21_0, S, P, D>(block).await
+			},
+			RuntimeVersion::V0_22_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_22_0, S, P, D>(block).await
+			},
 		}
 	}
 
@@ -191,6 +204,11 @@ impl ComputeTask {
 
 		let mut timestamp_ms = None;
 		let mut transactions = vec![];
+
+		// Get block number to determine extraction strategy
+		let block_number = block.block.number() as u64;
+
+		// Extract timestamp and regular midnight transactions from extrinsics
 		for ext in extrinsics.iter() {
 			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
 				continue;
@@ -204,32 +222,52 @@ impl ComputeTask {
 				let tx = tagged_deserialize(&mut bytes.as_slice())
 					.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
 				transactions.push(FetchedTransaction::Midnight(tx));
-			} else if let Some(bytes) = M::send_mn_system_transaction(&call) {
-				let tx = tagged_deserialize(&mut bytes.as_slice())
-					.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
-				transactions.push(FetchedTransaction::System(tx));
-			} else if M::check_for_events(&call) {
-				let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
-				for ev in ext_events.iter().filter_map(Result::ok) {
-					if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
-						let bytes = M::system_transaction_applied(event);
-						let tx = tagged_deserialize(&mut bytes.as_slice())
-							.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
-						transactions.push(FetchedTransaction::System(tx));
-					}
+			} else if block_number == 0 {
+				// Genesis block: extract system transactions from extrinsics directly
+				// (genesis has no events since events are emitted during block execution)
+				if let Some(bytes) = M::send_mn_system_transaction(&call) {
+					let tx = tagged_deserialize(&mut bytes.as_slice())
+						.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
+					transactions.push(FetchedTransaction::System(tx));
+				}
+			}
+
+			// For non-genesis blocks: extract system transactions from events.
+			// This handles system transactions regardless of how they were triggered:
+			// - Direct send_mn_system_transaction calls
+			// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
+			// - CNightObservation-triggered system transactions
+			// - Any future wrapper patterns
+			let ext_events = ExtrinsicEvents::new(ext.hash(), ext.index(), events.clone());
+			for ev in ext_events.iter().filter_map(Result::ok) {
+				if let Some(event) = ev.as_event::<M::SystemTransactionAppliedEvent>()? {
+					let bytes = M::system_transaction_applied(event);
+					let tx = tagged_deserialize(&mut bytes.as_slice())
+						.map_err(|err| ComputeError::LedgerDeserializationError(err))?;
+					transactions.push(FetchedTransaction::System(tx));
 				}
 			}
 		}
 
 		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
+		let tblock = Timestamp::from_secs(timestamp_ms / 1000);
 		let context = BlockContext {
-			tblock: Timestamp::from_secs(timestamp_ms / 1000),
+			tblock,
 			tblock_err: 30,
 			parent_block_hash: HashOutput(parent_block_hash.0),
+			last_block_time: tblock, // We fix this later in fetcher.rs
 		};
 		let hash = block.block.hash();
 		let parent_hash = block.block.header().parent_hash;
 		let number = block.block.number() as u64;
-		Ok(BlockData { hash, parent_hash, number, transactions, context, state_root })
+		Ok(BlockData {
+			hash,
+			parent_hash,
+			number,
+			transactions,
+			context,
+			state_root,
+			state: block.state.clone(),
+		})
 	}
 }

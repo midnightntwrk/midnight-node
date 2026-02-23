@@ -13,6 +13,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
+use alloc::boxed::Box;
+
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 #[cfg(test)]
@@ -33,8 +37,6 @@ use sp_runtime::{
 	DispatchError, DispatchErrorWithPostInfo, Saturating,
 	traits::{Dispatchable, Hash},
 };
-use sp_std::prelude::*;
-
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;

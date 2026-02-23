@@ -23,12 +23,14 @@ use std::{path::PathBuf, sync::Arc};
 
 use crate::{
 	ProofType, SignatureType, cli_parsers as cli,
+	fetcher::{fetch_storage::WalletStateCaching, wallet_state_cache},
 	serde_def::{
 		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
 		SourceTransactions,
 	},
-	tx_generator::builder::builders::RegisterDustAddressBuilder,
+	tx_generator::builder::builders::{DeregisterDustAddressBuilder, RegisterDustAddressBuilder},
 };
+use subxt::utils::H256;
 
 pub mod builders;
 
@@ -236,8 +238,11 @@ pub struct SingleTxArgs {
 	)]
 	pub unshielded_token_type: UnshieldedTokenType,
 	/// Seed for source wallet
-	#[arg(long)]
-	pub source_seed: String,
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	pub source_seed: WalletSeed,
+	/// Funding seed for transaction. If not set, uses source_seed
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	pub funding_seed: Option<WalletSeed>,
 	/// Destination address, both shielded and unshielded
 	#[arg(long, required = true)]
 	pub destination_address: Vec<WalletAddress>,
@@ -270,6 +275,25 @@ pub struct RegisterDustAddressArgs {
 	pub rng_seed: Option<[u8; 32]>,
 }
 
+#[derive(Args, Clone, Debug)]
+pub struct DeregisterDustAddressArgs {
+	/// Seed for the wallet to deregister
+	#[arg(long)]
+	pub wallet_seed: String,
+	/// Seed for funding wallet
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
+	/// RNG seed for deterministic transaction generation (32 bytes hex)
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+}
+
 #[derive(Subcommand, Clone, Debug)]
 pub enum ContractCall {
 	Deploy(ContractDeployArgs),
@@ -290,7 +314,10 @@ pub enum Builder {
 	ClaimRewards(ClaimRewardsArgs),
 	/// Send single transaction with one-or-many outputs
 	SingleTx(SingleTxArgs),
+	/// Register a DUST address for the wallet
 	RegisterDustAddress(RegisterDustAddressArgs),
+	/// Deregister (unlink) a DUST address for the wallet
+	DeregisterDustAddress(DeregisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
 	Migrate,
@@ -364,6 +391,7 @@ impl Builder {
 			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
 			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
 			Builder::RegisterDustAddress(args) => constr(RegisterDustAddressBuilder::new(args)),
+			Builder::DeregisterDustAddress(args) => constr(DeregisterDustAddressBuilder::new(args)),
 			Builder::Send => constr(DoNothingBuilder::new()),
 			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		}
@@ -403,7 +431,12 @@ pub trait BuildTxsExt {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let context_arc = Arc::new(context);
@@ -417,6 +450,140 @@ pub trait BuildTxsExt {
 
 		(context_arc, tx_info)
 	}
+}
+
+/// Build context with optional wallet state caching.
+///
+/// This function wraps the standard context building with cache support:
+/// 1. If cache exists and is valid, restore from cache
+/// 2. Only replay blocks since the cache checkpoint
+/// 3. Save updated cache after processing
+///
+/// # Arguments
+///
+/// * `wallet_seeds` - The wallet seeds to initialize/restore
+/// * `received_tx` - The source transactions (blocks) from the network
+/// * `prover_arc` - The proof provider
+/// * `rng_seed` - Optional RNG seed
+/// * `chain_id` - The chain identity (block 1 hash)
+/// * `cache_storage` - The wallet state caching backend
+///
+/// # Returns
+///
+/// A tuple of (context_arc, tx_info, blocks_cached) where blocks_cached indicates
+/// how many blocks were skipped due to cache (0 if no cache hit).
+pub async fn build_context_with_cache<C: WalletStateCaching>(
+	wallet_seeds: Vec<WalletSeed>,
+	received_tx: SourceTransactions<SignatureType, ProofType>,
+	prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
+	rng_seed: Option<[u8; 32]>,
+	chain_id: H256,
+	cache_storage: Option<&C>,
+) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64) {
+	let network_id = received_tx.network().to_string();
+	let total_blocks = received_tx.blocks.len() as u64;
+
+	// Compute wallet ID for cache lookup
+	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
+
+	// Try to restore from cache if storage is provided
+	let (context, start_block) = if let Some(storage) = cache_storage {
+		if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
+			match wallet_state_cache::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
+				Ok((ctx, height)) => {
+					log::info!("Restored wallet state from cache at block {}", height);
+					(ctx, height + 1)
+				},
+				Err(e) => {
+					log::warn!("Failed to restore from cache: {}, starting fresh", e);
+					let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+					(ctx, 0u64)
+				},
+			}
+		} else {
+			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+			(ctx, 0u64)
+		}
+	} else {
+		let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
+		(ctx, 0u64)
+	};
+
+	// Replay only blocks since start_block
+	let blocks_to_replay: Vec<_> =
+		received_tx.blocks.into_iter().filter(|b| b.number >= start_block).collect();
+
+	let blocks_replayed = blocks_to_replay.len() as u64;
+
+	if blocks_replayed > 0 {
+		log::info!(
+			"Replaying {} blocks (from {} to {})",
+			blocks_replayed,
+			start_block,
+			start_block + blocks_replayed - 1
+		);
+	}
+
+	for block in blocks_to_replay {
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
+	}
+
+	// Save updated cache if storage is provided and blocks were replayed
+	if let Some(storage) = cache_storage {
+		if blocks_replayed > 0 || start_block == 0 {
+			let final_height = start_block + blocks_replayed.saturating_sub(1);
+			save_context_to_cache(&context, chain_id, wallet_id, final_height, storage).await;
+		}
+	}
+
+	let context_arc = Arc::new(context);
+	let tx_info =
+		StandardTrasactionInfo::new_from_context(context_arc.clone(), prover_arc.clone(), rng_seed);
+
+	let blocks_cached = total_blocks.saturating_sub(blocks_replayed);
+	(context_arc, tx_info, blocks_cached)
+}
+
+/// Compute a wallet identity from seeds.
+fn compute_wallet_id_for_seeds(seeds: &[WalletSeed], network_id: &str) -> H256 {
+	use sha2::{Digest, Sha256};
+
+	let mut hasher = Sha256::new();
+	hasher.update(network_id.as_bytes());
+	for seed in seeds {
+		hasher.update(seed.as_bytes());
+	}
+	H256::from_slice(&hasher.finalize())
+}
+
+/// Save context state to cache.
+async fn save_context_to_cache<C: WalletStateCaching>(
+	context: &LedgerContext<DefaultDB>,
+	chain_id: H256,
+	wallet_id: H256,
+	block_height: u64,
+	storage: &C,
+) {
+	let cache = match wallet_state_cache::create_cache_from_context(
+		context,
+		chain_id,
+		wallet_id,
+		block_height,
+	) {
+		Ok(c) => c,
+		Err(e) => {
+			log::warn!("Failed to create cache: {}", e);
+			return;
+		},
+	};
+
+	storage.set_wallet_state(chain_id, wallet_id, cache).await;
+	log::info!("Saved wallet state cache at block {}", block_height);
 }
 
 /// Create Intent Info

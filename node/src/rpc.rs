@@ -46,12 +46,18 @@ use time_source::TimeSource;
 
 use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer};
+use pallet_system_parameters::SystemParametersApi;
+use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiServer};
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
+use sc_network::service::traits::NetworkPeers;
 pub use sc_rpc_api::DenyUnsafe;
+use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
+
+use crate::peer_info_rpc::{PeerInfoApiServer, PeerInfoRpc};
 
 /// Extra dependencies for GRANDPA
 pub struct GrandpaDeps<B> {
@@ -95,6 +101,10 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub main_chain_epoch_config: MainchainEpochConfig,
 	/// Backend used by the node.
 	pub backend: Arc<B>,
+	/// Network service for peer reputation queries.
+	pub network: Arc<dyn NetworkPeers + Send + Sync>,
+	/// Channel for system RPC requests (used to query connected peers).
+	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
 }
 
 /// Instantiate all full RPC extensions.
@@ -124,6 +134,7 @@ where
 			ScEpochNumber,
 		>,
 	C::Api: CandidateValidationApi<Block>,
+	C::Api: SystemParametersApi<Block, Hash>,
 	P: TransactionPool + 'static,
 	B: sc_client_api::Backend<Block> + Send + Sync + 'static,
 	B::State: sc_client_api::backend::StateBackend<sp_runtime::traits::HashingFor<Block>>,
@@ -143,6 +154,8 @@ where
 		time_source,
 		main_chain_epoch_config,
 		backend,
+		network,
+		system_rpc_tx,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -197,14 +210,15 @@ where
 		.into_rpc(),
 	)?;
 
-	module.merge(
-		SessionValidatorManagementRpc::new(Arc::new(SessionValidatorManagementQuery::new(
-			client.clone(),
-			main_chain_follower_data_sources.authority_selection.clone(),
-		)))
-		.into_rpc(),
-	)?;
-	module.merge(Midnight::new(client).into_rpc())?;
+	let session_validator_query = Arc::new(SessionValidatorManagementQuery::new(
+		client.clone(),
+		main_chain_follower_data_sources.authority_selection.clone(),
+	));
+
+	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
+	module.merge(Midnight::new(client.clone()).into_rpc())?;
+	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
+	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
 	// Extend this RPC with a custom API by using the following syntax.
 	// `YourRpcStruct` should have a reference to a client, which is needed

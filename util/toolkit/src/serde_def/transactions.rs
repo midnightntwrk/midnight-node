@@ -33,6 +33,36 @@ impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB>> SourceTransa
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
+	/// If the transactions are loaded from an off-chain source, i.e. they were never part of any
+	/// block, assume they are all in the same block
+	pub fn from_txs_with_context_ignored(
+		txs_with_context: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
+	) -> Self {
+		let now = Timestamp::from_secs(
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("time has run backwards")
+				.as_secs(),
+		);
+		let context = BlockContext {
+			tblock: now,
+			tblock_err: 30,
+			parent_block_hash: Default::default(),
+			last_block_time: Default::default(),
+		};
+		let blocks = vec![BlockData {
+			hash: H256::zero(),
+			parent_hash: H256::zero(),
+			number: 0,
+			transactions: txs_with_context.into_iter().map(|t| t.tx).collect(),
+			context,
+			state_root: None,
+			state: None,
+		}];
+
+		Self { blocks }
+	}
+
 	pub fn from_txs_with_context(
 		txs: impl IntoIterator<Item = TransactionWithContext<S, P, DefaultDB>>,
 		dust_warp: bool,
@@ -50,20 +80,22 @@ where
 					transactions: std::mem::take(&mut current_batch),
 					context: last_context.unwrap(),
 					state_root: None,
+					state: None,
 				});
 				number += 1;
 			}
 			current_batch.push(tx.tx);
 			last_context = Some(tx.block_context);
 		}
-		if let Some(context) = last_context {
+		if let Some(ref context) = last_context {
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),
 				number,
 				transactions: current_batch,
-				context,
+				context: context.clone(),
 				state_root: None,
+				state: None,
 			});
 		}
 
@@ -75,8 +107,12 @@ where
 					.expect("time has run backwards")
 					.as_secs(),
 			);
-			let context =
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			let context = BlockContext {
+				tblock: now,
+				tblock_err: 30,
+				parent_block_hash: Default::default(),
+				last_block_time: last_context.map(|c| c.tblock).unwrap_or(now),
+			};
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),
@@ -84,6 +120,7 @@ where
 				transactions: Vec::new(),
 				context,
 				state_root: None,
+				state: None,
 			});
 		}
 		Self { blocks }

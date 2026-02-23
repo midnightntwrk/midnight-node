@@ -1,0 +1,3 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:15@sha256:5f07e69ced9ee30ec814cd12c555694276bb1d520e971205f39a833362748a3c}

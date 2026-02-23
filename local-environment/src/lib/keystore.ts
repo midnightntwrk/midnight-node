@@ -183,9 +183,6 @@ function extractNodeSeeds(env: Record<string, string>): NodeSeedSet[] {
 
     const node = ensureNodeEntry(nodes, match.index);
     node.seeds[match.category] = trimmed;
-    console.log(
-      `captured ${match.category} seed for ${node.nodeDir} from env '${key}'`,
-    );
   }
 
   const seeds = Array.from(nodes.values()).sort((a, b) => a.index - b.index);

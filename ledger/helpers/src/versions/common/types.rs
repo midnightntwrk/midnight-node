@@ -12,15 +12,13 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
-	ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
+	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, Loader, ProofKind,
+	PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
 	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
 	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
-use itertools::Itertools;
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
@@ -29,7 +27,8 @@ use std::{
 };
 use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Storable, Serializable)]
+#[storable(base)]
 pub enum WalletSeed {
 	Short([u8; 16]),
 	Medium([u8; 32]),
@@ -56,15 +55,15 @@ pub enum WalletSeedError {
 	LazyHexLengthTooLong(usize),
 }
 
+/// Convert a `Vec<u8>` to a fixed-size array, mapping failure to [`WalletSeedError::InvalidLength`].
+fn try_into_seed_array<const N: usize>(bytes: Vec<u8>) -> Result<[u8; N], WalletSeedError> {
+	bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))
+}
+
 impl WalletSeed {
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
-		match bytes.len() {
-			16 => Ok(Self::Short(bytes.try_into().unwrap())),
-			32 => Ok(Self::Medium(bytes.try_into().unwrap())),
-			64 => Ok(Self::Long(bytes.try_into().unwrap())),
-			len => Err(WalletSeedError::InvalidLength(len)),
-		}
+		bytes.as_slice().try_into()
 	}
 
 	/// Allow decoding from seeds in the form e.g. 00..01
@@ -87,8 +86,8 @@ impl WalletSeed {
 		};
 
 		match total_len {
-			l if l <= 32 => Ok(Self::Medium(extend_to(32).try_into().unwrap())),
-			l if l <= 64 => Ok(Self::Long(extend_to(64).try_into().unwrap())),
+			l if l <= 32 => Ok(Self::Medium(try_into_seed_array(extend_to(32))?)),
+			l if l <= 64 => Ok(Self::Long(try_into_seed_array(extend_to(64))?)),
 			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
 		}
 	}
@@ -113,6 +112,19 @@ impl From<[u8; 32]> for WalletSeed {
 	}
 }
 
+impl TryFrom<&[u8]> for WalletSeed {
+	type Error = WalletSeedError;
+
+	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+		match value.len() {
+			16 => Ok(Self::Short(value.try_into().unwrap())),
+			32 => Ok(Self::Medium(value.try_into().unwrap())),
+			64 => Ok(Self::Long(value.try_into().unwrap())),
+			len => Err(WalletSeedError::InvalidLength(len)),
+		}
+	}
+}
+
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum WalletSeedParseError {
 	#[error("failed to parse as any type: hex: {0}, lazy_hex: {1}, mnemonic: {2}")]
@@ -125,23 +137,20 @@ impl FromStr for WalletSeed {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let s = s.trim();
 
-		let mut errs = vec![];
+		let hex_err = match Self::try_from_hex_str(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let lazy_err = match Self::try_from_lazy_hex(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let mnemonic_err = match Self::try_from_mnemonic(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
 
-		match Self::try_from_hex_str(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_lazy_hex(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_mnemonic(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-
-		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
-		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
+		Err(WalletSeedParseError::FailedToParseAny(hex_err, lazy_err, mnemonic_err))
 	}
 }
 
@@ -150,6 +159,10 @@ pub struct Keypair(pub sr25519::Keypair);
 
 #[derive(Debug, thiserror::Error)]
 pub enum KeypairParseError {
+	#[error("Falied to decode secret as hex")]
+	HexParseFailed(#[from] hex::FromHexError),
+	#[error("Secret key bytes length != 32")]
+	LengthCheckFailed,
 	#[error("Secret URI parse error: {0}")]
 	UriParseFailed(#[from] SecretUriError),
 	#[error("Subxt signer error: {0}")]
@@ -174,9 +187,16 @@ impl FromStr for Keypair {
 		if key_str.contains('/') {
 			let uri = SecretUri::from_str(key_str)?;
 			Ok(sr25519::Keypair::from_uri(&uri)?.into())
-		} else {
+		} else if key_str.contains(' ') {
 			let phrase = Mnemonic::parse(key_str)?;
 			Ok(sr25519::Keypair::from_phrase(&phrase, None)?.into())
+		} else {
+			// Parse hex-encoded private key (32-byte sr25519 mini secret key)
+			let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
+			let seed_bytes = hex::decode(hex_str)?;
+			let secret_key: [u8; 32] =
+				seed_bytes.try_into().map_err(|_| KeypairParseError::LengthCheckFailed)?;
+			Ok(Keypair(sr25519::Keypair::from_secret_key(secret_key)?))
 		}
 	}
 }
@@ -262,6 +282,12 @@ impl From<Segment> for u16 {
 	}
 }
 
+impl From<Segment> for Option<u16> {
+	fn from(val: Segment) -> Self {
+		Some(val.into())
+	}
+}
+
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
@@ -327,27 +353,19 @@ where
 {
 	pub fn new(
 		tx: Transaction<S, P, PureGeneratorPedersen, D>,
-		parent_block_hash_seed: Option<u64>,
+		block_context: Option<BlockContext>,
 	) -> Self {
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards")
-			.as_secs();
-		let delay: u64 = 0;
-		let ttl = now + delay;
-		let timestamp = Timestamp::from_secs(ttl);
+		let block_context = block_context.unwrap_or_else(|| {
+			let now = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Time went backwards")
+				.as_secs();
+			let delay: u64 = 0;
+			let ttl = now + delay;
+			let timestamp = Timestamp::from_secs(ttl);
 
-		// In case `parent_block_hash_seed` wasn't specified, a randmon one is chosen
-		let parent_block_hash_seed =
-			parent_block_hash_seed.unwrap_or_else(|| rand::thread_rng().r#gen());
-
-		// Calculate a deterministic `parent_block_hash` based on the seed
-		let mut rng = SmallRng::seed_from_u64(parent_block_hash_seed);
-		let mut array = [0u8; 32];
-		rng.fill_bytes(&mut array);
-		let parent_block_hash = HashOutput(array);
-
-		let block_context = BlockContext { tblock: timestamp, tblock_err: 30, parent_block_hash };
+			super::make_block_context(timestamp, Default::default(), timestamp)
+		});
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
 	}

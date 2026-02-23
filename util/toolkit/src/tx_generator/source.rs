@@ -89,12 +89,22 @@ pub struct Source {
 		global = true
 	)]
 	pub src_url: Option<String>,
+	/// Read transactions from the cache only - don't fetch anything from RPC
+	#[arg(long, global = true)]
+	pub fetch_only_cached: bool,
 	/// Number of threads to use when fetching transactions from a live network
 	#[arg(long, conflicts_with = "src_files", default_value = "20", global = true)]
 	pub fetch_concurrency: usize,
+	/// Number of threads to use for compute operations when fetching from a live network.
+	/// Defaults to number of CPU cores if not specified.
+	#[arg(long, conflicts_with = "src_files", global = true)]
+	pub fetch_compute_concurrency: Option<usize>,
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
+	/// Ignore block context. Useful when using `send` subcommand
+	#[arg(long, conflicts_with = "src_url", global = true)]
+	pub ignore_block_context: bool,
 	/// Spend DUST with timestamp as system time rather than the previous block timestamp. Useful
 	/// if loading from a genesis file, but may result in invalid proofs when connected to a live
 	/// chain
@@ -108,10 +118,13 @@ pub struct Source {
 		default_value = "redb:toolkit.db",
 		env = "MN_FETCH_CACHE"
 	)]
-	/// Fetch cache config. Available options:
-	/// - "inmemory" (i.e. no cache),
+	/// Fetch cache config. Caches both block data and wallet state.
+	/// Available options:
+	/// - "inmemory" (RAM-only, no persistence),
 	/// - "redb:<filename>" (file-cache, single-writer)
 	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
+	///
+	/// When using redb or postgres backends, wallet state is also cached to speed up subsequent runs.
 	pub fetch_cache: FetchCacheConfig,
 }
 
@@ -131,6 +144,10 @@ pub enum SourceError {
 	NetworkIdFetchError(#[from] subxt::Error),
 	#[error("invalid source args")]
 	InvalidSourceArgs(Source),
+	#[error(
+		"toolkit only supports a single .json transaction as input - use `--to-bytes` and `.mn` format for multiple txs"
+	)]
+	TooManyJsonInputs,
 }
 
 #[async_trait]
@@ -162,6 +179,7 @@ pub struct GetTxsFromFile<S, P> {
 	files: Vec<String>,
 	extension: String,
 	dust_warp: bool,
+	ignore_block_context: bool,
 	_marker_p: PhantomData<P>,
 	_marker_s: PhantomData<S>,
 }
@@ -174,8 +192,20 @@ where
 	<P as ProofKind<DefaultDB>>::Pedersen: Send,
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub fn new(files: Vec<String>, extension: String, dust_warp: bool) -> Self {
-		Self { files, extension, dust_warp, _marker_p: PhantomData, _marker_s: PhantomData }
+	pub fn new(
+		files: Vec<String>,
+		extension: String,
+		dust_warp: bool,
+		ignore_block_context: bool,
+	) -> Self {
+		Self {
+			files,
+			extension,
+			dust_warp,
+			ignore_block_context,
+			_marker_p: PhantomData,
+			_marker_s: PhantomData,
+		}
 	}
 
 	fn txs_from_files(
@@ -183,6 +213,9 @@ where
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
 		if self.extension == "json" {
 			// For json extension, we only handle 1 file
+			if self.files.len() > 1 {
+				return Err(Box::new(SourceError::TooManyJsonInputs));
+			}
 			let file = File::open(&self.files[0])?;
 			let loaded_txs: SerializedTransactionsWithContext = serde_json::from_reader(file)?;
 			let mut txs: Vec<TransactionWithContext<S, P, DefaultDB>> =
@@ -204,7 +237,11 @@ where
 					})?;
 				txs.append(&mut file_txs);
 			}
-			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
+			if self.ignore_block_context {
+				Ok(SourceTransactions::from_txs_with_context_ignored(txs))
+			} else {
+				Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
+			}
 		}
 	}
 }
@@ -229,7 +266,9 @@ where
 pub struct GetTxsFromUrl {
 	pub rpc_url: String,
 	pub num_fetch_workers: usize,
+	pub num_compute_workers: usize,
 	pub dust_warp: bool,
+	pub fetch_only_cache: bool,
 	pub fetch_cache_config: FetchCacheConfig,
 }
 
@@ -237,10 +276,19 @@ impl GetTxsFromUrl {
 	pub fn new(
 		rpc_url: &str,
 		num_fetch_workers: usize,
+		num_compute_workers: usize,
 		dust_warp: bool,
+		fetch_only_cache: bool,
 		fetch_cache_config: FetchCacheConfig,
 	) -> Self {
-		Self { rpc_url: rpc_url.to_string(), num_fetch_workers, dust_warp, fetch_cache_config }
+		Self {
+			rpc_url: rpc_url.to_string(),
+			num_fetch_workers,
+			num_compute_workers,
+			dust_warp,
+			fetch_only_cache,
+			fetch_cache_config,
+		}
 	}
 }
 
@@ -260,13 +308,21 @@ where
 	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
 		let mut blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
-				fetch_all(&self.rpc_url, self.num_fetch_workers, fetch_storage::InMemory::default())
-					.await?
+				fetch_all(
+					&self.rpc_url,
+					self.num_fetch_workers,
+					self.num_compute_workers,
+					self.fetch_only_cache,
+					fetch_storage::InMemory::default(),
+				)
+				.await?
 			},
 			FetchCacheConfig::Redb { filename } => {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.num_compute_workers,
+					self.fetch_only_cache,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
 				)
 				.await?
@@ -275,6 +331,8 @@ where
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.num_compute_workers,
+					self.fetch_only_cache,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
 				)
 				.await?
@@ -289,8 +347,12 @@ where
 					.expect("time has run backwards")
 					.as_secs(),
 			);
-			let context =
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() };
+			let context = BlockContext {
+				tblock: now,
+				tblock_err: 30,
+				parent_block_hash: Default::default(),
+				last_block_time: now,
+			};
 			blocks.push(BlockData {
 				hash: H256::zero(),
 				parent_hash: H256::zero(),
@@ -298,6 +360,7 @@ where
 				transactions: Vec::new(),
 				context,
 				state_root: None,
+				state: None,
 			});
 		}
 

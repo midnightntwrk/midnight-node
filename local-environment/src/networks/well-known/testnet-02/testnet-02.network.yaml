@@ -9,6 +9,7 @@ x-common-variables: &common-variables
   MC__EPOCH_DURATION_MILLIS: 86400000
   MC__FIRST_SLOT_NUMBER: 0
   MC__SLOT_DURATION_MILLIS: 1000
+  ALLOW_NON_SSL: false
 
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"

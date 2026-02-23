@@ -97,8 +97,11 @@ mod test {
 		let source = Source {
 			src_url: None,
 			fetch_concurrency: 0,
+			fetch_compute_concurrency: None,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			ignore_block_context: false,
+			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 		};
 
@@ -107,6 +110,7 @@ mod test {
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
 			to_bytes: false,
+			no_watch_progress: false,
 		};
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");

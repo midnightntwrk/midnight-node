@@ -80,11 +80,7 @@ impl sp_inherents::InherentDataProvider for FederatedAuthorityInherentDataProvid
 	) -> Result<(), sp_inherents::Error> {
 		inherent_data.put_data(
 			midnight_primitives_federated_authority_observation::INHERENT_IDENTIFIER,
-			&FederatedAuthorityData {
-				council_authorities: self.data.council_authorities.clone(),
-				technical_committee_authorities: self.data.technical_committee_authorities.clone(),
-				mc_block_hash: self.data.mc_block_hash.clone(),
-			},
+			&self.data,
 		)
 	}
 

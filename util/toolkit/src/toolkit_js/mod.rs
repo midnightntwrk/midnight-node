@@ -190,6 +190,8 @@ pub enum ToolkitJsError {
 	ExecutionError(std::io::Error),
 	#[error("failed to read toolkit-js output")]
 	ToolkitJsOutputReadError(std::io::Error),
+	#[error("toolkit-js exited with {status}\nstdout: {stdout}\nstderr: {stderr}")]
+	NonZeroExit { status: std::process::ExitStatus, stdout: String, stderr: String },
 }
 
 impl ToolkitJs {
@@ -225,11 +227,14 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args.authority_seed.map(|s| {
-			serialize_untagged(UnshieldedWallet::default(s).signing_key())
-				.unwrap()
-				.encode_hex::<String>()
-		});
+		let signing_key = args
+			.authority_seed
+			.map(|s| {
+				serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map(|bytes| bytes.encode_hex::<String>())
+			})
+			.transpose()
+			.map_err(ToolkitJsError::ExecutionError)?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
@@ -370,6 +375,14 @@ impl ToolkitJs {
 			} else {
 				eprintln!("toolkit-js> {line}");
 			}
+		}
+
+		if !output.status.success() {
+			return Err(ToolkitJsError::NonZeroExit {
+				status: output.status,
+				stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+				stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+			});
 		}
 		Ok(())
 	}
