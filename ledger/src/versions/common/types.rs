@@ -437,7 +437,8 @@ mod tests {
 				let bytes: Vec<u8> = (0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
 				let mut slice: &[u8] = &bytes;
 				if let Ok(e) = LedgerApiError::decode(&mut slice)
-					&& slice.is_empty() {
+					&& slice.is_empty()
+				{
 					result.push(e);
 				}
 			}
