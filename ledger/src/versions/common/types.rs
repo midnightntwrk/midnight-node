@@ -434,8 +434,7 @@ mod tests {
 		let mut result = Vec::new();
 		for depth in 1..=3u32 {
 			for n in 0..256u32.pow(depth) {
-				let bytes: Vec<u8> =
-					(0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
+				let bytes: Vec<u8> = (0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
 				let mut slice: &[u8] = &bytes;
 				if let Ok(e) = LedgerApiError::decode(&mut slice) {
 					if slice.is_empty() {

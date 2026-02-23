@@ -111,8 +111,7 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
 			Mt::OutOfDustValidityWindow { .. } => Me::OutOfDustValidityWindow,
 			Mt::MultipleDustRegistrationsForKey { .. } => Me::MultipleDustRegistrationsForKey,
-			Mt::InsufficientDustForRegistrationFee { .. } =>
-				Me::InsufficientDustForRegistrationFee,
+			Mt::InsufficientDustForRegistrationFee { .. } => Me::InsufficientDustForRegistrationFee,
 			Mt::MalformedContractDeploy(..) => Me::MalformedContractDeploy,
 			Mt::IntentSignatureVerificationFailure => Me::IntentSignatureVerificationFailure,
 			Mt::IntentSignatureKeyMismatch => Me::IntentSignatureKeyMismatch,
