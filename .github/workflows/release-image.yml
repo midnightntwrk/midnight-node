@@ -100,7 +100,6 @@ jobs:
       - name: Checkout node repository (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           path: ./.tmp-node-scripts
           sparse-checkout: .github/scripts
 
@@ -285,7 +284,6 @@ jobs:
       - name: Checkout (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           sparse-checkout: .github/scripts
 
       - name: Install Cosign
@@ -312,7 +310,7 @@ jobs:
 
           # Extract midnight-node
           NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
-          NODE_RELEASE="midnight-node-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $NODE_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$NODE_IMAGE"
@@ -326,7 +324,7 @@ jobs:
 
           # Extract midnight-node-toolkit
           TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
-          TOOLKIT_RELEASE="midnight-node-toolkit-${RELEASE_TAG}-linux-${PLATFORM}.tar.gz"
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $TOOLKIT_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE"
@@ -365,8 +363,8 @@ jobs:
 
           echo "Uploading assets to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            "$NODE_FILE" "${NODE_FILE}.sig" "${NODE_FILE}.pem" \
-            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.sig" "${TOOLKIT_FILE}.pem" \
+            "$NODE_FILE" "${NODE_FILE}.bundle" \
+            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.bundle" \
             "SHA256SUMS-${{ matrix.platform }}"
 
   finalize-checksums:
@@ -377,7 +375,6 @@ jobs:
       - name: Checkout (for signing script)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
           sparse-checkout: .github/scripts
 
       - name: Install Cosign
@@ -416,8 +413,7 @@ jobs:
           echo "Uploading signed checksums to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             SHA256SUMS \
-            SHA256SUMS.sig \
-            SHA256SUMS.pem
+            SHA256SUMS.bundle
 
   sbom-scan-ghcr-node:
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})

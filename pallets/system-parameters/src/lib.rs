@@ -88,12 +88,34 @@ pub mod pallet {
 	// Genesis configuration
 
 	/// Genesis configuration for Terms and Conditions
-	#[derive(Debug, Clone, Default, frame_support::Serialize, frame_support::Deserialize)]
+	#[derive(Debug, Clone, frame_support::Serialize, frame_support::Deserialize)]
 	pub struct TermsAndConditionsGenesisConfig<Hash> {
 		/// SHA-256 hash of the terms and conditions document
 		pub hash: Option<Hash>,
 		/// URL where the terms and conditions can be found
 		pub url: Option<String>,
+	}
+
+	/// Default terms and conditions URL used across all networks
+	pub const DEFAULT_TERMS_AND_CONDITIONS_URL: &str = "https://www.midnight.gd/global-terms-txt";
+
+	/// Default terms and conditions hash bytes (SHA-256 of the terms document)
+	pub const DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES: [u8; 32] = [
+		0xca, 0x85, 0xed, 0x77, 0xbc, 0xe6, 0x82, 0x88, 0xe5, 0x53, 0x00, 0xf0, 0x06, 0xcc, 0xd5,
+		0xcc, 0xe5, 0xd4, 0x94, 0x0d, 0xc3, 0x9f, 0xc4, 0x11, 0x73, 0xa9, 0xc2, 0xec, 0xd1, 0xeb,
+		0x61, 0x6e,
+	];
+
+	impl<Hash: Default + AsMut<[u8]>> Default for TermsAndConditionsGenesisConfig<Hash> {
+		fn default() -> Self {
+			use crate::alloc::string::ToString;
+
+			let mut hash = Hash::default();
+			let hash_bytes = hash.as_mut();
+			let len = hash_bytes.len().min(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES.len());
+			hash_bytes[..len].copy_from_slice(&DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES[..len]);
+			Self { hash: Some(hash), url: Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()) }
+		}
 	}
 
 	/// Genesis configuration for D-Parameter
@@ -119,21 +141,28 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			// Initialize Terms and Conditions if both hash and url are provided
-			if let (Some(hash), Some(url)) =
-				(&self.terms_and_conditions.hash, &self.terms_and_conditions.url)
-			{
-				let url_bounded: BoundedVec<u8, ConstU32<MAX_URL_SIZE>> = url
-					.as_bytes()
-					.to_vec()
-					.try_into()
-					.expect("Terms and conditions URL exceeds maximum length");
+			// Initialize Terms and Conditions; both hash and url must be present.
+			let hash = self
+				.terms_and_conditions
+				.hash
+				.as_ref()
+				.expect("Genesis terms and conditions hash must be set");
+			let url = self
+				.terms_and_conditions
+				.url
+				.as_ref()
+				.expect("Genesis terms and conditions URL must be set");
 
-				TermsAndConditionsStorage::<T>::put(TermsAndConditions {
-					hash: *hash,
-					url: url_bounded,
-				});
-			}
+			let url_bounded: BoundedVec<u8, ConstU32<MAX_URL_SIZE>> = url
+				.as_bytes()
+				.to_vec()
+				.try_into()
+				.expect("Terms and conditions URL exceeds maximum length");
+
+			TermsAndConditionsStorage::<T>::put(TermsAndConditions {
+				hash: *hash,
+				url: url_bounded,
+			});
 
 			// Initialize D-Parameter if provided
 			if let (Some(num_permissioned), Some(num_registered)) = (

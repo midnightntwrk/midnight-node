@@ -111,9 +111,11 @@ mod tests {
 				source: Source {
 					src_url: None,
 					fetch_concurrency: 20,
+					fetch_compute_concurrency: None,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
 					ignore_block_context: false,
+					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 				},
 				destination: Destination {

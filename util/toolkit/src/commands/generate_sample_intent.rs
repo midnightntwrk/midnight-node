@@ -87,9 +87,11 @@ mod test {
 		let source = Source {
 			src_url: None,
 			fetch_concurrency: 0,
+			fetch_compute_concurrency: None,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
 			ignore_block_context: false,
+			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 		};
 

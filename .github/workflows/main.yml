@@ -76,12 +76,15 @@ jobs:
           changes_archive_dir: .changes_archive
 
       - name: Install just
-        uses: taiki-e/install-action@1e67dedb5e3c590e1c9d9272ace46ef689da250d #v2.67.27
+        uses: taiki-e/install-action@f8d25fb8a2df08dcd3cead89780d572767b8655f #v2.68.0
         with:
           tool: just
 
       - name: Free disk space
-        run: scripts/free-disk-space.sh
+        run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- "scripts/free-disk-space.sh"
+          ./scripts/free-disk-space.sh
 
       - name: Run build
         id: export
@@ -102,6 +105,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
@@ -216,6 +221,8 @@ jobs:
 
       - name: Sign container images
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
 
           # Calculate IMAGE_TAG (must match definition in Earthfile)
@@ -275,7 +282,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@1e67dedb5e3c590e1c9d9272ace46ef689da250d #v2.67.27
+        uses: taiki-e/install-action@f8d25fb8a2df08dcd3cead89780d572767b8655f #v2.68.0
         with:
           tool: just
 
@@ -398,29 +405,29 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-arm64
     secrets: inherit
 
-  sbom-scan-indexer-images:
-    name: SBOM/Scan Indexer (${{ matrix.image }})
-    needs: [build-indexer-images]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    strategy:
-      matrix:
-        image:
-          - indexer-api
-          - chain-indexer
-          - wallet-indexer
-    uses: ./.github/workflows/sbom-scan-image.yml
-    with:
-      image: ghcr.io/midnight-ntwrk/${{ matrix.image }}:${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}
-      sbom-artifact-name: sbom-${{ matrix.image }}
-    secrets: inherit
+#  sbom-scan-indexer-images:
+#    name: SBOM/Scan Indexer (${{ matrix.image }})
+#    needs: [build-indexer-images]
+#    permissions:
+#      contents: read
+#      packages: write
+#      id-token: write
+#    strategy:
+#      matrix:
+#        image:
+#          - indexer-api
+#          - chain-indexer
+#          - wallet-indexer
+#    uses: ./.github/workflows/sbom-scan-image.yml
+#    with:
+#      image: ghcr.io/midnight-ntwrk/${{ matrix.image }}:${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}
+#      sbom-artifact-name: sbom-${{ matrix.image }}
+#    secrets: inherit
 
   publish-multi-arch:
     name: Publish multi-arch image
     runs-on: ubuntu-latest
-    needs: [publish-amd64, publish-arm64, build-indexer-images, sbom-scan-node-amd64, sbom-scan-node-arm64, sbom-scan-toolkit-amd64, sbom-scan-toolkit-arm64, sbom-scan-indexer-images]
+    needs: [publish-amd64, publish-arm64, build-indexer-images, sbom-scan-node-amd64, sbom-scan-node-arm64, sbom-scan-toolkit-amd64, sbom-scan-toolkit-arm64]
     permissions:
       contents: write
       packages: write
@@ -472,9 +479,31 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
+
+      - name: Mirror arch-specific images to midnightntwrk (GHCR)
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          # Needed only for older branches where Earthly is not pushing to midnightntwrk
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            for ARCH in amd64 arm64; do
+              SRC="ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
+              DST="ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
+              if docker buildx imagetools inspect "$DST" > /dev/null 2>&1; then
+                echo "${DST} already exists, skipping"
+              else
+                echo "Mirroring ${SRC} -> ${DST}"
+                docker pull --platform "linux/${ARCH}" "$SRC"
+                docker tag "$SRC" "$DST"
+                docker push "$DST"
+              fi
+            done
+          done
 
       - name: Create commit-tagged multi-arch images (GHCR midnightntwrk)
         env:
@@ -492,6 +521,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}"
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}"
@@ -571,6 +602,8 @@ jobs:
       - name: Sign Docker Hub images (latest-main)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
 
           # Sign arch-specific images
@@ -586,6 +619,8 @@ jobs:
       - name: Sign `latest-main` images (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
+          git fetch origin "$GITHUB_REF" --depth=1
+          git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node:latest-main"
           sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main"

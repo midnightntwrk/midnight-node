@@ -177,7 +177,7 @@ midnight-node generate-permissioned-candidates-genesis --cardano-tip <block_hash
 
 ```bash
 # Generate ledger state for a specific network
-earthly --secret GITHUB_TOKEN -P +rebuild-genesis-state-<network> --RNG_SEED=<seed>
+earthly -P +rebuild-genesis-state-<network> --RNG_SEED=<seed>
 
 # Generate chain specification
 earthly -P +rebuild-chainspec --NETWORK=<network>
@@ -194,7 +194,6 @@ earthly -P +rebuild-all-chainspecs
 | `DB_SYNC_POSTGRES_CONNECTION_STRING` | PostgreSQL connection to Cardano db-sync |
 | `CARDANO_SECURITY_PARAMETER` | Cardano security parameter (default from pc-chain-config.json) |
 | `ALLOW_NON_SSL` | Allow non-SSL database connections (dev only) |
-| `GITHUB_TOKEN` | GitHub token for Earthly private resources |
 
 ## Dependency Sequence
 
@@ -243,8 +242,6 @@ The `genesis-generation.sh` script provides an interactive wizard for genesis ge
    - Or a remote db-sync instance
 
 3. **Cardano block hash** (tip) for querying smart contract state
-
-4. **GITHUB_TOKEN** environment variable (for Earthly targets)
 
 ### Running the Tool
 
@@ -368,13 +365,6 @@ Configuration Summary:
 If you see SSL-related errors:
 ```bash
 export ALLOW_NON_SSL=true  # Only for local development!
-```
-
-### Missing GITHUB_TOKEN
-
-```bash
-export GITHUB_TOKEN=<your_token>
-# Or use direnv with .envrc
 ```
 
 ### Earthly Build Failures

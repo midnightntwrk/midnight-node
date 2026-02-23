@@ -37,7 +37,18 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::VerifierKeyNotFound(..) => Ie::VerifierKeyNotFound,
 			Ti::VerifierKeyAlreadyPresent(..) => Ie::VerifierKeyAlreadyPresent,
 			Ti::ReplayCounterMismatch(..) => Ie::ReplayCounterMismatch,
-			_ => Ie::UnknownError,
+			Ti::ReplayProtectionViolation(..) => Ie::ReplayProtectionViolation,
+			Ti::BalanceCheckOutOfBounds { .. } => Ie::BalanceCheckOutOfBounds,
+			Ti::InputNotInUtxos(..) => Ie::InputNotInUtxos,
+			Ti::DustDoubleSpend(..) => Ie::DustDoubleSpend,
+			Ti::DustDeregistrationNotRegistered(..) => Ie::DustDeregistrationNotRegistered,
+			Ti::GenerationInfoAlreadyPresent(..) => Ie::GenerationInfoAlreadyPresent,
+			Ti::InvariantViolation(..) => Ie::InvariantViolation,
+			Ti::RewardTooSmall { .. } => Ie::RewardTooSmall,
+			other => {
+				log::warn!("Unmapped TransactionInvalid variant: {other:?}");
+				Ie::UnknownError
+			},
 		}
 	}
 }
@@ -93,7 +104,37 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::ThresholdMissed { .. } => Me::ThresholdMissed,
 			Mt::TooManyZswapEntries => Me::TooManyZswapEntries,
 			Mt::BalanceCheckOverspend { .. } => Me::BalanceCheckOverspend,
-			_ => Me::UnknownError,
+			Mt::InvalidNetworkId { .. } => Me::InvalidNetworkId,
+			Mt::IllegallyDeclaredGuaranteed => Me::IllegallyDeclaredGuaranteed,
+			Mt::FeeCalculation(..) => Me::FeeCalculation,
+			Mt::InvalidDustRegistrationSignature { .. } => Me::InvalidDustRegistrationSignature,
+			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
+			Mt::OutOfDustValidityWindow { .. } => Me::OutOfDustValidityWindow,
+			Mt::MultipleDustRegistrationsForKey { .. } => Me::MultipleDustRegistrationsForKey,
+			Mt::InsufficientDustForRegistrationFee { .. } => Me::InsufficientDustForRegistrationFee,
+			Mt::MalformedContractDeploy(..) => Me::MalformedContractDeploy,
+			Mt::IntentSignatureVerificationFailure => Me::IntentSignatureVerificationFailure,
+			Mt::IntentSignatureKeyMismatch => Me::IntentSignatureKeyMismatch,
+			Mt::IntentSegmentIdCollision(..) => Me::IntentSegmentIdCollision,
+			Mt::IntentAtGuaranteedSegmentId => Me::IntentAtGuaranteedSegmentId,
+			Mt::UnsupportedProofVersion { .. } => Me::UnsupportedProofVersion,
+			Mt::GuaranteedTranscriptVersion { .. } => Me::GuaranteedTranscriptVersion,
+			Mt::FallibleTranscriptVersion { .. } => Me::FallibleTranscriptVersion,
+			Mt::TransactionApplicationError(..) => Me::TransactionApplicationError,
+			Mt::BalanceCheckOutOfBounds { .. } => Me::BalanceCheckOutOfBounds,
+			Mt::BalanceCheckConversionFailure { .. } => Me::BalanceCheckConversionFailure,
+			Mt::PedersenCheckFailure { .. } => Me::PedersenCheckFailure,
+			Mt::EffectsCheckFailure(..) => Me::EffectsCheckFailure,
+			Mt::DisjointCheckFailure(..) => Me::DisjointCheckFailure,
+			Mt::SequencingCheckFailure(..) => Me::SequencingCheckFailure,
+			Mt::InputsNotSorted(..) => Me::InputsNotSorted,
+			Mt::OutputsNotSorted(..) => Me::OutputsNotSorted,
+			Mt::DuplicateInputs(..) => Me::DuplicateInputs,
+			Mt::InputsSignaturesLengthMismatch { .. } => Me::InputsSignaturesLengthMismatch,
+			other => {
+				log::warn!("Unmapped MalformedTransaction variant: {other:?}");
+				Me::UnknownError
+			},
 		}
 	}
 }

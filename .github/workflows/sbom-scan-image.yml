@@ -73,7 +73,7 @@ jobs:
 
       - name: Install Syft
         id: syft
-        uses: anchore/sbom-action/download-syft@deef08a0db64bfad603422135db61477b16cef56 # v0.22.1
+        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
 
       - name: Install Grype
         id: grype
@@ -89,10 +89,11 @@ jobs:
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          username: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE && 'MidnightCI' || github.actor }}
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE || github.token }}
 
       - name: Login to DockerHub
+        if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.head.repo.fork }}
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
