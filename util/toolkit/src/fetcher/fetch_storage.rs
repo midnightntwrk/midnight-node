@@ -52,6 +52,7 @@ pub trait WalletStateCaching: Send + Sync {
 pub struct FetchedBlock {
 	pub block: MidnightBlock,
 	pub state_root: Option<Vec<u8>>,
+	pub state: Option<Vec<u8>>,
 }
 
 pub type FetchedTransaction<S, P, D> = SerdeTransaction<S, P, D>;
@@ -69,6 +70,7 @@ pub struct BlockData<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
 	pub transactions: Vec<FetchedTransaction<S, P, D>>,
 	pub context: BlockContext,
 	pub state_root: Option<Vec<u8>>,
+	pub state: Option<Vec<u8>>,
 }
 
 /// Storage backend for fetched block data and wallet state caching.

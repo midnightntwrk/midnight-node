@@ -278,7 +278,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 000_020_000,
+	spec_version: 000_022_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -1090,6 +1090,9 @@ impl_runtime_apis! {
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_zswap_state_root()
 		}
+		fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
+			Midnight::get_ledger_state_root()
+		}
 	}
 
 	impl sp_partner_chains_bridge::TokenBridgeIDPRuntimeApi<Block> for Runtime {
@@ -1478,10 +1481,6 @@ impl_runtime_apis! {
 	}
 
 	impl midnight_primitives_cnight_observation::CNightObservationApi<Block> for Runtime {
-		fn get_redemption_validator_address() -> Vec<u8> {
-			pallet_cnight_observation::MainChainRedemptionValidatorAddress::<Runtime>::get().into_inner()
-		}
-
 		fn get_mapping_validator_address() -> Vec<u8> {
 			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}

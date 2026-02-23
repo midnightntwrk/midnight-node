@@ -1,0 +1,9 @@
+{
+  "illiquid_circulation_supply_validator_address": "addr_test1wpr4mvu8h2fzs23c06waldlc6t7jjlumvcz9qqzl8mfh25qw9zcjz",
+  "asset": {
+    "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+    "asset_name": ""
+  },
+  "utxos": [],
+  "total_amount": 0
+}

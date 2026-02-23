@@ -73,7 +73,12 @@ pub async fn execute(
 		let context = LedgerContext::new_from_wallet_seeds(network_id, &[seed]);
 
 		for block in source_blocks.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		Ok(context.with_ledger_state(|ledger_state| {
@@ -111,7 +116,12 @@ pub async fn execute(
 
 		let context = LedgerContext::new(network_id);
 		for block in source_blocks.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 
 		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();
@@ -160,9 +170,11 @@ mod tests {
 			source: Source {
 				src_url: None,
 				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
 				dust_warp: false,
 				ignore_block_context: false,
+				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: None,
@@ -208,9 +220,11 @@ mod tests {
 			source: Source {
 				src_url: None,
 				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
 				dust_warp: true,
 				ignore_block_context: false,
+				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed: Some(seed),

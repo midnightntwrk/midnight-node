@@ -39,5 +39,6 @@ sp_api::decl_runtime_apis! {
 		fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError>;
 		fn get_transaction_cost(transaction_bytes: Vec<u8>) -> Result<GasCost, LedgerApiError>;
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError>;
+		fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError>;
 	}
 }

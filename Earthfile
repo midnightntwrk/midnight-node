@@ -112,16 +112,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-
-    # Install curl for rust installation
-    RUN microdnf -y install curl-minimal ca-certificates gcc gcc-c++ make jq docker && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install rust with complete profile for profiler runtime support
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile complete
-    ENV PATH="/root/.cargo/bin:${PATH}"
-
+    FROM rust:1.92-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -129,7 +120,6 @@ subxt:
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
     RUN cargo install subxt-cli@${SUBXT_VERSION}
-    RUN cp /root/.cargo/bin/subxt /usr/local/bin/subxt
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
@@ -141,7 +131,7 @@ build-node-only:
 
     ARG NATIVEARCH
 
-    RUN cargo build -p midnight-node --locked --release
+    RUN cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH
@@ -207,7 +197,8 @@ rebuild-redemption-skeleton:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -222,21 +213,29 @@ rebuild-redemption-skeleton:
 
 rebuild-genesis-state:
     ARG NETWORK
-    ARG GENERATE_TEST_TXS=true
+    ARG GENERATE_TEST_TXS=false
+    ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
-    ARG TOOLKIT_IMAGE=+toolkit-image
-    FROM ${TOOLKIT_IMAGE}
+    # Only include toolkit-js when generating test transactions
+    FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
-    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
+    # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
+    # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy ledger parameters config (undeployed uses res/dev/)
+    # Copy genesis config files (undeployed uses res/dev/)
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/dev/ics-config.json /genesis-config/ics-config.json
+        COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
+        COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -252,11 +251,27 @@ rebuild-genesis-state:
         fi
 
     RUN mkdir -p /res/genesis
-    IF [ -f /secrets/genesis-seeds.json ]
+    # Generate genesis with or without faucet wallet funding
+    # - If FUND_FAUCET_WALLETS=true and seeds file exists: fund faucet wallets
+    # - If FUND_FAUCET_WALLETS=false: generate genesis without faucet wallet funding (e.g., mainnet)
+    # - If no seeds file and FUND_FAUCET_WALLETS=true: use existing genesis state
+    IF [ "${FUND_FAUCET_WALLETS}" = "true" ] && [ -f /secrets/genesis-seeds.json ]
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
             --seeds-file /secrets/genesis-seeds.json \
-            --ledger-parameters-config /genesis-config/ledger-parameters-config.json
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
+        RUN cp out/genesis_*.mn /res/genesis/
+    ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
+        RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
+        RUN /midnight-node-toolkit generate-genesis \
+            --network ${NETWORK} \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -433,70 +448,118 @@ rebuild-genesis-state:
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
-        --NETWORK=undeployed
+        --NETWORK=undeployed \
+        --GENERATE_TEST_TXS=true
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=devnet
 
-# rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-govnet rebuilds the genesis ledger state for govnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-govnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=govnet
+
+# rebuild-genesis-state-node-dev-01 rebuilds the genesis ledger state for node-dev-01 network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-node-dev-01:
     BUILD +rebuild-genesis-state \
-        --NETWORK=node-dev-01 \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=node-dev-01
 
-# rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-qanet rebuilds the genesis ledger state for qanet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=qanet \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=qanet
 
 # rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preview \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=preview
 
 # rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preprod:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preprod \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=preprod
+
+# rebuild-genesis-state-mainnet rebuilds the genesis ledger state for mainnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-mainnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=mainnet \
+        --FUND_FAUCET_WALLETS=false
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
-    BUILD +rebuild-genesis-state-node-dev-01
+    BUILD +rebuild-genesis-state-govnet
     BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-preview
-    BUILD +rebuild-genesis-state-preprod
+    # Preview is not meant to be reset
+    #BUILD +rebuild-genesis-state-preview
+    # Preprod is not meant to be reset
+    #BUILD +rebuild-genesis-state-preprod
+    # Mainnet is not meant to be reset
+    #BUILD +rebuild-genesis-state-mainnet
 
 # rebuild-chainspec for a given NETWORK
+# Use DETERMINISTIC=true to build with srtool for reproducible WASM (slower but verifiable)
 rebuild-chainspec:
     ARG NETWORK
+    ARG DETERMINISTIC=false
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
     USER root
 
+    # Copy the `res` folder from local -
+    # We need to do this to use the correct config if running `FROM` a pre-built node image
+    COPY res res
+
+    # If DETERMINISTIC=true, use srtool-built WASM for reproducible builds
+    IF [ "$DETERMINISTIC" = "true" ]
+        COPY +srtool-build/midnight_node_runtime.compact.compressed.wasm /srtool-runtime.wasm
+        COPY +srtool-build/srtool-digest.json /srtool-digest.json
+        # Log the srtool build digest for verification
+        RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
+    END
+
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+
+    # If deterministic, replace the runtime code with srtool-built WASM
+    IF [ "$DETERMINISTIC" = "true" ]
+        # Write hex to file to avoid "Argument list too long" with large WASM blobs
+        RUN printf '0x' > /tmp/wasm-hex.txt && xxd -p /srtool-runtime.wasm | tr -d '\n' >> /tmp/wasm-hex.txt && \
+            jq --rawfile code /tmp/wasm-hex.txt '.genesis.runtimeGenesis.code = ($code | rtrimstr("\n"))' res/$NETWORK/chain-spec.json > res/$NETWORK/chain-spec-tmp.json && \
+            mv res/$NETWORK/chain-spec-tmp.json res/$NETWORK/chain-spec.json
+    END
 
     # create abridge chain-spec that is diff tools and github friendly:
     RUN cat res/$NETWORK/chain-spec.json | \
-      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
+      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
     RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
+    # Save srtool digest alongside chain-spec if deterministic build
+    IF [ "$DETERMINISTIC" = "true" ]
+        SAVE ARTIFACT /srtool-digest.json AS LOCAL res/$NETWORK/srtool-digest.json
+    END
 
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
+# Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
-    BUILD +rebuild-chainspec --NETWORK=node-dev-01
+    BUILD +rebuild-chainspec --NETWORK=devnet
+    BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=preview
-    BUILD +rebuild-chainspec --NETWORK=preprod
+    # Preview is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=preview 
+    # Preprod is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=preprod
+    # Mainnet is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=mainnet --DETERMINISTIC=true
+
+# rebuild-chainspec-deterministic Rebuild chainspec with deterministic srtool WASM for a given NETWORK
+rebuild-chainspec-deterministic:
+    ARG NETWORK
+    BUILD +rebuild-chainspec --NETWORK=$NETWORK --DETERMINISTIC=true
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -631,7 +694,7 @@ node-ci-image-single-platform:
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
     RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
+    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
 
     # subwasm can be used to diff between runtimes
     # renovate: datasource=github-releases packageName=chevdor/subwasm
@@ -655,8 +718,8 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
-    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    # FROM midnightntwrk/midnight-node-ci:$RUST_VERSION-$NATIVEARCH
+    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN microdnf -y update && \
@@ -664,6 +727,7 @@ prep-no-copy:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
@@ -696,7 +760,8 @@ toolkit-js-prep:
     RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && \
+        npm install -g npm@11.8.0 && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -704,11 +769,10 @@ toolkit-js-prep:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
+    RUN npm ci
     RUN npm run build
     # Run npm compact script (includes fetch-compactc + compile steps)
-    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
@@ -762,20 +826,19 @@ check-rust:
     RUN cargo fmt --all -- --check
 
     ENV SKIP_WASM_BUILD=1
+    ENV CARGO_INCREMENTAL=0
 
     # ensure runtime benchmark feature enable to check they compile.
     RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
-    # unfortunately we need to do cargo clean here to run within disk space limits
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[].name'); do \
             echo "===> Checking $pkg"; \
             if ! cargo check -p "$pkg"; then \
-            echo "Failed: $pkg"; \
-            status=1; \
+                echo "Failed: $pkg"; \
+                status=1; \
             fi; \
-            cargo clean; \
         done; \
         exit $status
 
@@ -784,6 +847,7 @@ check-metadata:
     ARG NODE_IMAGE
     #=ghcr.io/midnight-ntwrk/midnight-node:latest
     FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
     WITH DOCKER --pull ${NODE_IMAGE}
@@ -859,7 +923,6 @@ test-pallet-fixtures:
 # NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
 build-test-toolkit:
     ARG NATIVEARCH
-    ARG GITHUB_TOKEN
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
@@ -933,42 +996,8 @@ build-prepare:
     # TODO: re-enable when chef is improved.
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-build-upgrader:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
-        && mv /target/release/upgrader /artifacts-$NATIVEARCH
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
 # build creates production ready binaries
 build:
-    ARG NATIVEARCH
-
-    FROM +prep
-
-    ARG EARTHLY_GIT_SHORT_HASH
-    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
-    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
-    ENV CC=clang
-    ENV CXX=clang++
-
-    WAIT
-        BUILD +build-upgrader
-        BUILD +build-fork
-        BUILD +build-undo
-    END
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-
-    # Already saved as local
-    SAVE ARTIFACT /artifacts-$NATIVEARCH
-
-build-normal:
     FROM +build-prepare
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
@@ -989,7 +1018,7 @@ build-normal:
 
     # Default build (no hardfork)
     RUN \
-        cargo build --workspace --locked --release
+        cargo auditable build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -1002,28 +1031,22 @@ build-normal:
 
 build-fork:
     FROM +prep
+    ARG NATIVEARCH
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives res metadata runtime util tests relay .
 
-    ARG NATIVEARCH
-
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
+    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
+        && mv /target/release/upgrader /artifacts-$NATIVEARCH
 
     # Hardfork build
     RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
-build-undo:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
     RUN rm -Rf /target/release/build/midnight-node-runtime-*
     # Rollback build
     RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
@@ -1041,7 +1064,7 @@ build-benchmarks:
 
     # Build with runtime-benchmarks feature
     RUN \
-        cargo build --workspace --locked --release --features runtime-benchmarks
+        cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
@@ -1050,10 +1073,62 @@ build-benchmarks:
 
 subwasm:
     ARG NATIVEARCH
-    FROM +build-normal
+    FROM +build
     # Saves testnet runtime as runtime_000.wasm
     RUN subwasm get wss://rpc.testnet.midnight.network/ \
         && subwasm diff ./runtime_000.wasm /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
+
+# srtool-build creates deterministic runtime WASM builds using srtool
+# This ensures reproducible builds across different environments
+# See: https://github.com/paritytech/srtool
+#
+# Note: srtool uses its own pinned Rust version (currently 1.88.0) for deterministic builds.
+# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified.
+srtool-build:
+    # renovate: datasource=docker packageName=paritytech/srtool
+    ARG SRTOOL_VERSION=0.18.3
+    # srtool 1.88.0 uses Rust 1.88.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+
+    # srtool expects source code in /build
+    WORKDIR /build
+
+    # Copy source code as root - include all workspace members referenced in Cargo.toml
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    # Include .sqlx for offline query validation (sqlx macros need this)
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    # Fix ownership for builder user
+    RUN chown -R builder:builder /build
+
+    # Set srtool environment variables
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+
+    # Build the runtime deterministically as builder user
+    USER builder
+    # Run srtool build with --app flag to show all output, save JSON result
+    RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
+        tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
+
+    # Save artifacts
+    SAVE ARTIFACT /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm AS LOCAL artifacts/srtool/
+    SAVE ARTIFACT /build/srtool-digest.json AS LOCAL artifacts/srtool/
+
+# srtool-info displays information about the srtool build without building
+srtool-info:
+    ARG SRTOOL_VERSION=0.18.3
+    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    WORKDIR /build
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    RUN chown -R builder:builder /build
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+    USER builder
+    RUN /srtool/info
 
 # node-image creates the Midnight Substrate Node's image
 node-image:
@@ -1065,15 +1140,16 @@ node-image:
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build-normal/artifacts-$NATIVEARCH/aiken-deployer /
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
+    COPY +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
     ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
@@ -1084,12 +1160,13 @@ node-image:
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
     COPY res/ /artifacts-$NATIVEARCH/res/
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
@@ -1126,16 +1203,21 @@ node-benchmarks-image:
 toolkit-image:
     ARG NATIVEARCH
     ARG EARTHLY_GIT_SHORT_HASH
+    # Set to false to skip toolkit-js
+    # toolkit-js is only needed when GENERATE_TEST_TXS=true
+    ARG INCLUDE_TOOLKIT_JS=true
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    # Install dependencies for Node.js (curl-minimal already in base image)
+    # Install dependencies for Node.js and update vulnerable system packages
     RUN microdnf -y install tar gzip xz && \
+        microdnf -y update libxml2 python3-pip python3-pip-wheel python3-setuptools && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1144,17 +1226,23 @@ toolkit-image:
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && \
+        npm install -g npm@11.8.0 && npm --version
 
-    # Add toolkit-js
+    # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
+        COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    ELSE
+        RUN mkdir -p /toolkit-js
+    END
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
     ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1162,7 +1250,8 @@ toolkit-image:
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # hardfork-test-upgrader-image creates the hardfork test upgrader tool image
 hardfork-test-upgrader-image:
@@ -1171,9 +1260,9 @@ hardfork-test-upgrader-image:
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
     USER root
 
-    COPY +build/artifacts-$NATIVEARCH/upgrader /
-    COPY +build/artifacts-$NATIVEARCH/test/* /
-    COPY +build/artifacts-$NATIVEARCH/rollback/* /
+    COPY +build-fork/artifacts-$NATIVEARCH/upgrader /
+    COPY +build-fork/artifacts-$NATIVEARCH/test/* /
+    COPY +build-fork/artifacts-$NATIVEARCH/rollback/* /
 
     COPY node/Cargo.toml /node/
     LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
@@ -1209,7 +1298,8 @@ audit-npm:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1238,7 +1328,8 @@ audit-yarn:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=22.13.1
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \

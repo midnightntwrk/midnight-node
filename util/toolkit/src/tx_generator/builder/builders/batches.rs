@@ -234,7 +234,12 @@ impl BuildTxs for BatchesBuilder {
 
 		// update the context applying all existing previous txs queried from source (either genesis or live network)
 		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+			context.update_from_block(
+				&block.transactions,
+				&block.context,
+				block.state_root.as_ref(),
+				block.state.as_ref(),
+			);
 		}
 		let block_context = context.latest_block_context();
 

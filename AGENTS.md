@@ -20,7 +20,7 @@ earthly -P +rebuild-all-chainspecs        # Rebuild all chainspecs
 earthly -P +rebuild-genesis-state-<NETWORK>  # Rebuild genesis for specific network
 earthly -P +rebuild-all-genesis-states    # Rebuild all network genesis states
 earthly +node-image                       # Build node Docker image
-earthly --secret GITHUB_TOKEN +toolkit-image  # Build toolkit image
+earthly +toolkit-image                    # Build toolkit image
 earthly doc                               # List all available targets
 ```
 
@@ -35,6 +35,18 @@ just node-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 just hardfork-e2e <NODE_IMAGE> <UPGRADER_IMAGE>
 just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 ```
+
+**Genesis generation:**
+```bash
+./scripts/genesis/genesis-generation.sh  # Interactive genesis generation wizard
+```
+See [Genesis Generation Guide](docs/genesis/generation.md) for complete documentation.
+
+**Genesis verification:**
+```bash
+./scripts/genesis/genesis-verification.sh  # Interactive genesis verification wizard
+```
+See [Genesis Verification Guide](docs/genesis/verification.md) for complete documentation.
 
 ## Architecture
 
@@ -66,7 +78,7 @@ just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 ## Development Setup
 
 ```bash
-source .envrc  # Load environment with direnv (sets GITHUB_TOKEN, etc.)
+source .envrc  # Load environment with direnv
 cargo check
 ```
 

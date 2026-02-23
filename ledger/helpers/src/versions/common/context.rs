@@ -14,10 +14,10 @@
 use super::{
 	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
 	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
-	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Storable, SyntheticCost,
+	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Sp, Storable, SyntheticCost,
 	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	clamp_and_normalize, compute_overall_fullness, default_storage,
+	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
@@ -46,7 +46,7 @@ lazy_static! {
 }
 
 pub struct LedgerContext<D: DB + Clone> {
-	pub ledger_state: Mutex<LedgerState<D>>,
+	pub ledger_state: Mutex<Sp<LedgerState<D>, D>>,
 	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
@@ -79,7 +79,7 @@ impl<D: DB> Tagged for StorableLedgerState<D> {
 impl<D: DB + Clone> LedgerContext<D> {
 	pub fn new(network_id: impl Into<String>) -> Self {
 		Self {
-			ledger_state: Mutex::new(LedgerState::new(network_id)),
+			ledger_state: Mutex::new(Sp::new(LedgerState::new(network_id))),
 			wallets: Mutex::new(HashMap::new()),
 			resolver: MutexTokio::new(&DEFAULT_RESOLVER),
 			latest_block_context: Mutex::new(None),
@@ -105,24 +105,23 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 
 		Self {
-			ledger_state: Mutex::new(ledger_state),
+			ledger_state: Mutex::new(Sp::new(ledger_state)),
 			wallets,
 			resolver,
 			latest_block_context: Mutex::new(None),
 		}
 	}
 
-	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+	pub fn update_ledger_state_from_txs<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
-		txs: Vec<SerdeTransaction<S, P, D>>,
-		block_context: BlockContext,
-		state_root: Option<Vec<u8>>,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
 	) where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(&tx, &block_context);
+			let (events, cost) = self.update_from_tx(tx, block_context);
 			for wallet in
 				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 			{
@@ -143,15 +142,52 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let normalized_fullness =
 			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
-		*latest_ledger_state = latest_ledger_state
-			.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
-			.expect("Error applying block updates");
+		*latest_ledger_state = Sp::new(
+			latest_ledger_state
+				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
+				.expect("Error applying block updates"),
+		);
+	}
+
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
+		let mut latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let new_state: LedgerState<D> =
+			deserialize(state).expect("failed to deserialize state bytes");
+		*latest_ledger_state = Sp::new(new_state);
+	}
+
+	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+		&self,
+		txs: &[SerdeTransaction<S, P, D>],
+		block_context: &BlockContext,
+		state_root: Option<&Vec<u8>>,
+		state: Option<&Vec<u8>>,
+	) where
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		self.update_ledger_state_from_txs(txs, block_context);
+
+		// This case is hit for the genesis block - in this case, we still need to process the txs
+		// to set dust info correctly for all the wallets, but we want the final ledger state for
+		// this block to == the final state in the genesis block
+		//
+		// Values used in the ledger state constructor are not directly observable in the genesis
+		// block, so it's no possible to reconstruct the ledger state by applying the genesis
+		// transactions to an empty state.
+		if let Some(state) = state {
+			self.update_ledger_state_from_bytes(state);
+		}
+
+		// Only when done processing txs for the same block, it's time to call `post_block_update`
+		let latest_ledger_state =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
-				Some(actual_root) if actual_root != expected_root => {
+				Some(actual_root) if actual_root != *expected_root => {
 					panic!(
 						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(&expected_root),
+						hex_encode(expected_root),
 						hex_encode(&actual_root),
 						hex_encode(block_context.parent_block_hash.0),
 					);
@@ -164,7 +200,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		for wallet in
 			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
-			wallet.update_dust_from_block(&block_context);
+			wallet.update_dust_from_block(block_context);
 		}
 		// Update latest block context
 		*self.latest_block_context.lock().expect("error locking latest_block_context") =
@@ -184,7 +220,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						.expect("time has run backwards")
 						.as_secs(),
 				);
-				BlockContext { tblock: now, tblock_err: 30, parent_block_hash: Default::default() }
+				super::make_block_context(now, Default::default(), Default::default())
 			})
 	}
 
@@ -267,7 +303,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 
 		*self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state") =
-			new_ledger_state;
+			Sp::new(new_ledger_state);
 		(events, cost)
 	}
 
@@ -380,7 +416,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	pub fn with_ledger_state<F, R>(&self, f: F) -> R
 	where
-		F: FnOnce(&mut LedgerState<D>) -> R,
+		F: FnOnce(&mut Sp<LedgerState<D>, D>) -> R,
 	{
 		let mut ledger_state =
 			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
@@ -389,7 +425,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	pub fn tx_context(&self, block_context: BlockContext) -> TransactionContext<D> {
 		self.with_ledger_state(|ledger_state| TransactionContext {
-			ref_state: ledger_state.clone(),
+			ref_state: (**ledger_state).clone(),
 			block_context,
 			whitelist: None,
 		})

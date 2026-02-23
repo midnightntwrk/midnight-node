@@ -111,9 +111,11 @@ mod tests {
 				source: Source {
 					src_url: None,
 					fetch_concurrency: 20,
+					fetch_compute_concurrency: None,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
 					ignore_block_context: false,
+					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 				},
 				destination: Destination {
@@ -170,7 +172,7 @@ mod tests {
 		rng_seed: None,
 		shielded_token_type: t_token(),
 		coin_amount: 100,
-		initial_unshielded_intent_value: 500_000_000_000_000,
+		initial_unshielded_intent_value: 50_000_000_000_000,
 		unshielded_token_type: NIGHT,
 		enable_shielded: false,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>

@@ -25,8 +25,8 @@ pub struct DustBalanceArgs {
 
 #[derive(Debug, serde::Serialize)]
 pub struct GenerationInfoPair {
-	dust_output: QualifiedDustOutputSer,
-	generation_info: Option<DustGenerationInfoSer>,
+	pub dust_output: QualifiedDustOutputSer,
+	pub generation_info: Option<DustGenerationInfoSer>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -58,7 +58,12 @@ pub async fn execute(
 	let context = LedgerContext::new_from_wallet_seeds(network_id, &[args.seed]);
 
 	for block in source_blocks.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
 	}
 
 	context.with_wallet_from_seed(args.seed, |wallet| {
@@ -120,9 +125,11 @@ mod tests {
 			source: Source {
 				src_url: None,
 				fetch_concurrency: 1,
+				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
 				dust_warp: true,
 				ignore_block_context: false,
+				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 			},
 			seed,

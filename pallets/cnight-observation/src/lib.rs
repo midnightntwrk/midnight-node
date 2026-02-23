@@ -67,7 +67,7 @@ pub mod pallet {
 	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-		RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData,
+		RegistrationData, SpendData,
 	};
 	use scale_info::prelude::vec::Vec;
 	use sidechain_domain::McTxHash;
@@ -150,6 +150,8 @@ pub mod pallet {
 		MaxCardanoAddrLengthExceeded,
 		MaxRegistrationsExceeded,
 		LedgerApiError(LedgerApiError),
+		/// Only one inherent is allowed per block
+		InherentAlreadyExecuted,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -167,11 +169,6 @@ pub mod pallet {
 	// Asset name for auth token used in MappingValidator
 	pub type MainChainAuthTokenAssetName<T: Config> =
 		StorageValue<_, BoundedVec<u8, ConstU32<32>>, ValueQuery>;
-
-	#[pallet::storage]
-	// Script address for executing Glacier Drop redemptions on Cardano
-	pub type MainChainRedemptionValidatorAddress<T: Config> =
-		StorageValue<_, BoundedCardanoAddress, ValueQuery>;
 
 	#[pallet::storage]
 	pub type Mappings<T: Config> =
@@ -218,6 +215,9 @@ pub mod pallet {
 	pub type CardanoTxCapacityPerBlock<T: Config> =
 		StorageValue<_, u32, ValueQuery, DefaultCardanoTxCapacityPerBlock>;
 
+	#[pallet::storage]
+	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
+
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
 	pub struct GenesisConfig<T: Config> {
@@ -228,6 +228,12 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
+			// Genesis configuration validation: BuildGenesisConfig::build() returns () and
+			// cannot propagate errors via Result. Panicking on invalid configuration values
+			// is the standard Substrate genesis fail-fast convention — an invalid chain spec
+			// must halt node startup rather than silently produce incorrect chain state.
+			// Each expect() below validates a bounded-length conversion from the chain spec;
+			// failure indicates a misconfigured genesis that must be corrected before launch.
 			MainChainMappingValidatorAddress::<T>::set(
 				self.config
 					.addresses
@@ -236,16 +242,6 @@ pub mod pallet {
 					.to_vec()
 					.try_into()
 					.expect("Mapping Validator address longer than expected"),
-			);
-
-			MainChainRedemptionValidatorAddress::<T>::set(
-				self.config
-					.addresses
-					.redemption_validator_address
-					.as_bytes()
-					.to_vec()
-					.try_into()
-					.expect("Redemption Validator address longer than expected"),
 			);
 
 			CNightIdentifier::<T>::set((
@@ -325,6 +321,11 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
+		// Intentionally panic on codec error. Inherent data is produced by the node's own
+		// inherent data provider — a decoding failure here indicates a node-internal programming
+		// error, not malformed external input. Silently returning None would drop token movements
+		// for the entire block, a strictly worse failure mode than surfacing the error immediately.
+		#[allow(clippy::unwrap_in_result)]
 		fn get_data_from_inherent_data(
 			data: &InherentData,
 		) -> Option<MidnightObservationTokenMovement> {
@@ -504,81 +505,17 @@ pub mod pallet {
 				},
 			}
 		}
+	}
 
-		fn handle_redemption_create(
-			cur_time: u64,
-			data: RedemptionCreateData,
-		) -> Option<CNightGeneratesDustEventSerialized> {
-			let Some(ref dust_public_key) = Self::get_registration(&data.owner) else {
-				log::warn!("No valid dust registration for {:?}", &data.owner);
-				return None;
-			};
-
-			let nonce = T::Hashing::hash(
-				&[
-					b"redemption_create",
-					&data.utxo_tx_hash.0[..],
-					&data.utxo_tx_index.to_be_bytes()[..],
-				]
-				.concat(),
-			);
-
-			UtxoOwners::<T>::insert(nonce, dust_public_key.clone());
-
-			let event = LedgerApi::construct_cnight_generates_dust_event(
-				data.value,
-				&dust_public_key.0,
-				cur_time,
-				UtxoActionType::Create as u8,
-				nonce.0,
-			);
-
-			match event {
-				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
-				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
-					None
-				},
-			}
+	#[pallet::hooks]
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
+			// Pre-account for on_finalize weight (storage write to reset inherent flag)
+			T::DbWeight::get().writes(1)
 		}
 
-		fn handle_redemption_spend(
-			cur_time: u64,
-			data: RedemptionSpendData,
-		) -> Option<CNightGeneratesDustEventSerialized> {
-			let nonce = T::Hashing::hash(
-				&[
-					b"redemption_create",
-					&data.utxo_tx_hash.0[..],
-					&data.utxo_tx_index.to_be_bytes()[..],
-				]
-				.concat(),
-			);
-
-			let Some(ref dust_public_key) = UtxoOwners::<T>::get(nonce) else {
-				log::warn!(
-					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash.0),
-					data.utxo_tx_index
-				);
-				return None;
-			};
-
-			let event = LedgerApi::construct_cnight_generates_dust_event(
-				data.value,
-				&dust_public_key.0,
-				cur_time,
-				UtxoActionType::Destroy as u8,
-				nonce.0,
-			);
-
-			match event {
-				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
-				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
-					None
-				},
-			}
+		fn on_finalize(_n: BlockNumberFor<T>) {
+			InherentExecutedThisBlock::<T>::kill();
 		}
 	}
 
@@ -592,6 +529,8 @@ pub mod pallet {
 			next_cardano_position: CardanoPosition,
 		) -> DispatchResult {
 			ensure_none(origin)?;
+			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
+			InherentExecutedThisBlock::<T>::put(true);
 
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 
@@ -606,18 +545,6 @@ pub mod pallet {
 				let now = utxo.header.tx_position.block_timestamp.0 as u64 / 1000;
 
 				match utxo.data {
-					ObservedUtxoData::RedemptionCreate(data) => {
-						log::debug!("Processing Redemption Create: {data:?}");
-						if let Some(event) = Self::handle_redemption_create(now, data) {
-							events.push(event);
-						}
-					},
-					ObservedUtxoData::RedemptionSpend(data) => {
-						log::debug!("Processing Redemption Spend: {data:?}");
-						if let Some(event) = Self::handle_redemption_spend(now, data) {
-							events.push(event);
-						}
-					},
 					ObservedUtxoData::Registration(data) => {
 						log::debug!("Processing Registration: {data:?}");
 						Self::handle_registration(&utxo.header, data);
@@ -683,7 +610,7 @@ pub mod pallet {
 				address
 					.clone()
 					.try_into()
-					.expect("Mainchain contract address longer than expected"),
+					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
 			);
 
 			Ok(())

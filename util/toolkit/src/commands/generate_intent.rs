@@ -106,7 +106,12 @@ pub async fn fetch_zswap_state(
 	let network_id = received_tx.network();
 	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
 	for block in received_tx.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+		context.update_from_block(
+			&block.transactions,
+			&block.context,
+			block.state_root.as_ref(),
+			block.state.as_ref(),
+		);
 	}
 	let wallet = context.wallet_from_seed(wallet_seed);
 	let zswap_local_state = wallet.shielded.state;
@@ -199,7 +204,7 @@ pub async fn execute(
 
 /// Make sure to build toolkit-js before running these tests - this can be done with the earthly
 /// target:
-/// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
+/// $ earthly +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
 /// $ earthly -P +rebuild-genesis-state-undeployed

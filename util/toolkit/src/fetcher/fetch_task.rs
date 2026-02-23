@@ -124,6 +124,21 @@ impl FetchTask {
 
 		let state_root = client.get_state_root_at(Some(block.hash())).await?;
 
-		Ok(FetchedBlock { block, state_root })
+		let state = if block.header().parent_hash.is_zero() {
+			let system_properties = client.get_system_properties().await?;
+			let genesis_state_value = system_properties
+				.get("genesis_state")
+				.expect("missing 'genesis_state' from system_properties");
+			let genesis_state = hex::decode(
+				genesis_state_value.as_str().expect("system_properties.genesis_state not str"),
+			)
+			.expect("system_properties.genesis_state not hex");
+
+			Some(genesis_state)
+		} else {
+			None
+		};
+
+		Ok(FetchedBlock { block, state_root, state })
 	}
 }

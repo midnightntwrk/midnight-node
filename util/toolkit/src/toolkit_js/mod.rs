@@ -225,11 +225,14 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args.authority_seed.map(|s| {
-			serialize_untagged(UnshieldedWallet::default(s).signing_key())
-				.unwrap()
-				.encode_hex::<String>()
-		});
+		let signing_key = args
+			.authority_seed
+			.map(|s| {
+				serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map(|bytes| bytes.encode_hex::<String>())
+			})
+			.transpose()
+			.map_err(ToolkitJsError::ExecutionError)?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
