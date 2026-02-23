@@ -16,7 +16,7 @@ use std::{fs::File, io::Write, sync::Arc};
 
 use crate::{
 	sender::{SendBatchError, Sender},
-	serde_def::BuiltTransactions,
+	serde_def::{BuiltTransactions, SerializedTx},
 };
 
 pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
@@ -32,9 +32,6 @@ pub struct Destination {
 	/// Output filename to write generated transaction.
 	#[arg(long, conflicts_with = "dest_urls", global = true)]
 	pub dest_file: Option<String>,
-	/// Save generated tx file as bytes rather than JSON.
-	#[arg(long, default_value = "false", conflicts_with = "dest_urls", global = true)]
-	pub to_bytes: bool,
 	/// Do not wait for finalization when sending transactions. May cause errors when sending batches.
 	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
 	pub no_watch_progress: bool,
@@ -42,21 +39,30 @@ pub struct Destination {
 
 pub struct SendTxsToFile {
 	file: String,
-	to_bytes: bool,
 }
 
 impl SendTxsToFile {
-	pub fn new(file: String, to_bytes: bool) -> Self {
-		Self { file, to_bytes }
+	pub fn new(file: String) -> Self {
+		Self { file }
 	}
 
-	fn save_json_file(
+	fn save_multiple(
 		&self,
 		txs: &BuiltTransactions,
 		filename: &str,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let mut file = File::create(filename)?;
 		file.write_all(&serde_json::to_vec(txs)?)?;
+		Ok(())
+	}
+
+	fn save_single(
+		&self,
+		tx: &SerializedTx,
+		filename: &str,
+	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		let mut file = File::create(filename)?;
+		file.write_all(&serde_json::to_vec(tx)?)?;
 		Ok(())
 	}
 }
@@ -97,21 +103,13 @@ impl SendTxs for SendTxsToFile {
 		&self,
 		txs: &BuiltTransactions,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		if !self.to_bytes {
-			self.save_json_file(txs, &self.file)?;
+		// If txs.len() == 1, save SerializedTx
+		if let [batch] = txs.batches.as_slice()
+			&& let [tx] = batch.as_slice()
+		{
+			self.save_single(tx, &self.file)?;
 		} else {
-			// Write initial_tx bytes (or all flattened bytes for batched txs)
-			if txs.batches.is_empty() {
-				std::fs::write(&self.file, &txs.initial_tx.bytes)?;
-			} else {
-				let mut all_bytes = txs.initial_tx.bytes.clone();
-				for batch in &txs.batches {
-					for tx in batch {
-						all_bytes.extend_from_slice(&tx.bytes);
-					}
-				}
-				std::fs::write(&self.file, &all_bytes)?;
-			}
+			self.save_multiple(txs, &self.file)?;
 		}
 		Ok(())
 	}
@@ -128,9 +126,6 @@ impl SendTxs for SendTxsToUrl {
 		}
 
 		let sender = Arc::new(Sender::new(&self.urls, self.no_watch_progress).await?);
-
-		log::info!("Sending initial tx...");
-		sender.send_tx(&txs.initial_tx).await?;
 
 		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {

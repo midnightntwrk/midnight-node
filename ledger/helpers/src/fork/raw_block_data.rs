@@ -14,11 +14,13 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 /// Which ledger version a block was produced under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LedgerVersion {
 	Ledger7,
+	#[default]
 	Ledger8,
 }
 
@@ -29,6 +31,15 @@ pub enum RawTransaction {
 	Midnight(Vec<u8>),
 	/// Raw bytes from system transaction events / extrinsics
 	System(Vec<u8>),
+}
+
+impl RawTransaction {
+	pub fn as_bytes(&self) -> &[u8] {
+		match self {
+			RawTransaction::Midnight(tx) => tx,
+			RawTransaction::System(tx) => tx,
+		}
+	}
 }
 
 /// Version-agnostic block data that stores transactions as raw serialized bytes.
@@ -44,8 +55,7 @@ pub struct RawBlockData {
 	pub hash: [u8; 32],
 	pub parent_hash: [u8; 32],
 	pub number: u64,
-	/// Raw runtime spec version number (e.g. 22000 for v0.22.0)
-	pub spec_version: u32,
+	pub ledger_version: LedgerVersion,
 	pub transactions: Vec<RawTransaction>,
 	/// Block timestamp in seconds
 	pub tblock_secs: u64,
@@ -61,13 +71,35 @@ pub struct RawBlockData {
 	pub state: Option<Vec<u8>>,
 }
 
+impl PartialOrd for RawBlockData {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for RawBlockData {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.tblock_secs.cmp(&other.tblock_secs)
+	}
+}
+
+impl PartialEq for RawBlockData {
+	fn eq(&self, other: &Self) -> bool {
+		self.tblock_secs == other.tblock_secs
+	}
+}
+
+impl Eq for RawBlockData {}
+
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
 	/// Versions up to 0.21.x use Ledger7, version 0.22.0+ uses Ledger8.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
 		match spec_version {
+			#[allow(clippy::zero_prefixed_literal)]
 			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
+			#[allow(clippy::zero_prefixed_literal)]
 			000_022_000.. => Some(LedgerVersion::Ledger8),
 			_ => None,
 		}
@@ -75,9 +107,29 @@ impl LedgerVersion {
 }
 
 impl RawBlockData {
+	/// Construct a new block with a timestamp
+	pub fn new_from_timestamp(
+		timestamp_s: u64,
+		ledger_version: LedgerVersion,
+		transactions: Vec<RawTransaction>,
+	) -> RawBlockData {
+		RawBlockData {
+			hash: [0u8; 32],
+			parent_hash: [0u8; 32],
+			number: 0,
+			ledger_version,
+			transactions,
+			tblock_secs: timestamp_s,
+			tblock_err: 30,
+			parent_block_hash: [0u8; 32],
+			last_block_time_secs: 0,
+			state_root: None,
+			state: None,
+		}
+	}
+
 	/// Get the ledger version for this block.
 	pub fn ledger_version(&self) -> LedgerVersion {
-		LedgerVersion::from_spec_version(self.spec_version)
-			.unwrap_or_else(|| panic!("unsupported spec version: {}", self.spec_version))
+		self.ledger_version
 	}
 }

@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::fork::raw_block_data::{RawBlockData, RawTransaction};
+use midnight_node_ledger_helpers::fork::raw_block_data::{
+	LedgerVersion, RawBlockData, RawTransaction,
+};
 use subxt::{
 	blocks::ExtrinsicEvents,
 	config::substrate::{ConsensusEngineId, DigestItem},
@@ -39,6 +41,8 @@ pub enum ComputeError {
 	RuntimeVersionError(#[from] RuntimeVersionError),
 	#[error("verification failed, child block {0}")]
 	ChildBlockVerificationFailed(u64),
+	#[error("spec version in block {0} doesn't have a defined ledger version mapping")]
+	LedgerVersionMissing(u64),
 }
 
 pub enum ComputeTask {
@@ -242,7 +246,8 @@ impl ComputeTask {
 			hash: hash.0,
 			parent_hash: parent_hash.0,
 			number,
-			spec_version: version.to_spec_version(),
+			ledger_version: LedgerVersion::from_spec_version(version.to_spec_version())
+				.ok_or_else(|| ComputeError::LedgerVersionMissing(number))?,
 			transactions,
 			tblock_secs,
 			tblock_err: 30,

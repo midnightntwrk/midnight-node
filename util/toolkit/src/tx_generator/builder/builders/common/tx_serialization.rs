@@ -16,35 +16,27 @@
 //! Provides helpers to serialize version-local `TransactionWithContext` into
 //! the version-agnostic `BuiltTransactions` output format.
 
-use super::ledger_helpers_local::{DefaultDB, ProofMarker, Signature, serialize};
-use crate::serde_def::{BuiltTransactions, SerializedTx};
+use super::super::serialize_tx;
+use super::ledger_helpers_local::{DefaultDB, ProofMarker, Signature};
+use crate::serde_def::BuiltTransactions;
 
 use super::ledger_helpers_local::TransactionWithContext;
-
-/// Serialize a single SerdeTransaction into a SerializedTx.
-fn serialize_tx(tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>) -> SerializedTx {
-	let bytes = serialize(&tx).expect("failed to serialize transaction");
-	let tx_hash = tx.tx.transaction_hash().0.0;
-	SerializedTx { bytes, tx_hash }
-}
 
 /// Build BuiltTransactions from a single initial transaction (no batches).
 pub fn build_single(
 	tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> BuiltTransactions {
 	let initial_tx = serialize_tx(&tx_with_context);
-	BuiltTransactions { initial_tx, batches: vec![] }
+	BuiltTransactions { batches: vec![vec![initial_tx]] }
 }
 
 /// Build BuiltTransactions from an initial transaction and batched transactions.
 pub fn build_batched(
-	initial: TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 	batches: Vec<Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>>>,
 ) -> BuiltTransactions {
-	let initial_tx = serialize_tx(&initial);
 	let batches = batches
 		.iter()
 		.map(|batch| batch.iter().map(|twc| serialize_tx(&twc)).collect())
 		.collect();
-	BuiltTransactions { initial_tx, batches }
+	BuiltTransactions { batches }
 }

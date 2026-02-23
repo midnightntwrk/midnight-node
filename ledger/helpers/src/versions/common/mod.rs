@@ -122,6 +122,8 @@ mod input;
 #[cfg(feature = "can-panic")]
 mod intent;
 #[cfg(feature = "can-panic")]
+mod network_id;
+#[cfg(feature = "can-panic")]
 mod offer;
 #[cfg(feature = "can-panic")]
 mod output;
@@ -145,8 +147,8 @@ pub mod types;
 // Re-exports with can-panic feature
 #[cfg(feature = "can-panic")]
 pub use {
-	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
-	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+	context::*, contract::*, input::*, intent::*, network_id::*, offer::*, output::*, proving::*,
+	transaction::*, transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
 };
 
 // Re-exports without can-panic feature

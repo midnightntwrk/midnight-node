@@ -80,9 +80,8 @@ impl BuildTxs for ReplaceInitialTxBuilder {
 			return Err(ReplaceInitialTxError("No batches available to migrate".to_string()));
 		}
 
-		let initial_tx = all_txs.remove(0);
 		let batches = if all_txs.is_empty() { vec![] } else { vec![all_txs] };
 
-		Ok(super::tx_serialization::build_batched(initial_tx, batches))
+		Ok(super::tx_serialization::build_batched(batches))
 	}
 }

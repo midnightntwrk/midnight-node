@@ -171,7 +171,7 @@ impl Sender {
 		let midnight_tx_hash = TransactionHash(HashOutput(tx.tx_hash));
 		log::debug!(url = client.url; "send_tx_no_wait: computed hash");
 
-		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.bytes.clone());
+		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.tx.clone());
 		log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
 
 		let unsigned_extrinsic = client

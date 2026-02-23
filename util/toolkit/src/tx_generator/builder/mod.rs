@@ -634,11 +634,11 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	(Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64),
 	ContextNotLedger8Error,
 > {
-	let network_id = received_tx.network().to_string();
 	let total_blocks = received_tx.blocks.len() as u64;
+	let network_id = &received_tx.network_id;
 
 	// Compute wallet ID for cache lookup
-	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
+	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, network_id);
 
 	// Try to restore from cache if storage is provided
 	let (mut fork_ctx, start_block) = if let Some(storage) = cache_storage {
@@ -658,7 +658,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 					(
 						ForkAwareLedgerContext::new_from_wallet_seeds(
 							initial_version,
-							&network_id,
+							network_id,
 							&wallet_seeds,
 						),
 						0u64,
@@ -674,7 +674,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 			(
 				ForkAwareLedgerContext::new_from_wallet_seeds(
 					initial_version,
-					&network_id,
+					network_id,
 					&wallet_seeds,
 				),
 				0u64,
@@ -689,7 +689,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 		(
 			ForkAwareLedgerContext::new_from_wallet_seeds(
 				initial_version,
-				&network_id,
+				network_id,
 				&wallet_seeds,
 			),
 			0u64,
@@ -781,7 +781,7 @@ pub fn build_fork_aware_context_raw(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
 ) -> ForkAwareLedgerContext<DefaultDB> {
-	let network_id = received_tx.network();
+	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks
 		.first()

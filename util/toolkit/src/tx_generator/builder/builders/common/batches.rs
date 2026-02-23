@@ -337,7 +337,9 @@ impl BuildTxs for BatchesBuilder {
 		// The first slice of size `num_txs_per_batch` from `output_wallet_seeds` will send
 		// funds to the next slice, which in turn sends funds to the next, and so on.
 		let mut batches: Vec<Vec<TransactionWithContext<_, _, _>>> =
-			Vec::with_capacity(self.num_batches);
+			Vec::with_capacity(self.num_batches + 1);
+
+		batches.push(vec![initial_tx_with_context]);
 
 		for batch_num in 0..self.num_batches {
 			// Indexes of the `WalletSeed` to fund the txs (inputs)
@@ -464,6 +466,6 @@ impl BuildTxs for BatchesBuilder {
 			batches.push(txs);
 		}
 
-		Ok(super::tx_serialization::build_batched(initial_tx_with_context, batches))
+		Ok(super::tx_serialization::build_batched(batches))
 	}
 }

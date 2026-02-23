@@ -49,6 +49,7 @@ redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 zstd = "0.13"
+strum.workspace = true
 
 [dev-dependencies]
 test-case = "3.3.1"

@@ -45,3 +45,22 @@ pub mod inner {
 	pub use replace_initial_tx::*;
 }
 pub use inner::*;
+
+use crate::serde_def::SerializedTx;
+use midnight_node_ledger_helpers::ledger_7::{
+	DefaultDB, ProofMarker, Signature, TransactionWithContext,
+};
+
+pub fn serialize_tx(
+	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
+) -> SerializedTx {
+	let tx_bytes = tx.tx.serialize_inner().expect("failed to serialize transaction");
+	let context = midnight_node_ledger_helpers::ledger_8::BlockContext {
+		tblock: tx.block_context.tblock,
+		tblock_err: tx.block_context.tblock_err,
+		parent_block_hash: tx.block_context.parent_block_hash,
+		last_block_time: tx.block_context.tblock,
+	};
+	let tx_hash = tx.tx.transaction_hash().0.0;
+	SerializedTx { tx: tx_bytes, context, tx_hash }
+}

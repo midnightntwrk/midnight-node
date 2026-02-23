@@ -15,22 +15,14 @@ use crate::{
 	cli_parsers as cli,
 	client::MidnightNodeClient,
 	fetcher::{fetch_all, fetch_storage},
+	serde_def::{BuiltTransactions, SerializedTx},
 };
 use async_trait::async_trait;
 use clap::Args;
-use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
-use midnight_node_ledger_helpers::*;
-use std::{
-	fs::File,
-	str::FromStr,
-	time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs::File, str::FromStr};
 use thiserror::Error;
 
-use crate::{
-	client::ClientError,
-	serde_def::{SerializedTransactionsWithContext, SourceTransactions},
-};
+use crate::{client::ClientError, serde_def::SourceTransactions};
 
 #[derive(Clone, Debug)]
 pub enum FetchCacheConfig {
@@ -156,7 +148,7 @@ impl GetTxs for () {
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(SourceTransactions::new(vec![], String::new()))
+		Ok(SourceTransactions::new(vec![], "undeployed"))
 	}
 }
 
@@ -177,43 +169,48 @@ impl GetTxsFromFile {
 		Self { files, extension, dust_warp, ignore_block_context }
 	}
 
+	fn load_single(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+		let file = File::open(filename)?;
+		let tx: SerializedTx = serde_json::from_reader(file)?;
+		Ok(BuiltTransactions { batches: vec![vec![tx]] })
+	}
+
+	fn load_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+		let file = File::open(filename)?;
+		Ok(serde_json::from_reader(file)?)
+	}
+
+	fn load_single_or_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+		if let Ok(loaded) = Self::load_single(filename) {
+			return Ok(loaded);
+		};
+		log::debug!("failed to load {} as single tx, loading as multiple...", filename);
+		return Self::load_multiple(filename);
+	}
+
 	fn txs_from_files(
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
-		// Use concrete ledger 8 types for file deserialization
-		type S = Signature;
-		type P = ProofMarker;
+		if let [filename] = self.files.as_slice() {
+			let built_txs = Self::load_single_or_multiple(filename)?;
 
-		if self.extension == "json" {
-			// For json extension, we only handle 1 file
-			if self.files.len() > 1 {
-				return Err(Box::new(SourceError::TooManyJsonInputs));
-			}
-			let file = File::open(&self.files[0])?;
-			let loaded_txs: SerializedTransactionsWithContext = serde_json::from_reader(file)?;
-			let mut txs: Vec<TransactionWithContext<S, P, DefaultDB>> =
-				vec![serde_json::from_str(&loaded_txs.initial_tx).map_err(|e| Box::new(e))?];
-			for batch in loaded_txs.batches {
-				for tx in batch.txs {
-					txs.push(serde_json::from_str(&tx).map_err(|e| Box::new(e))?);
-				}
-			}
-			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
-		} else {
-			let mut txs: Vec<TransactionWithContext<S, P, DefaultDB>> = vec![];
-			for file in &self.files {
-				let bytes = std::fs::read(file)?;
-				// files can either be one TransactionWithContext or many of them
-				let mut file_txs = mn_ledger_serialize::tagged_deserialize(bytes.as_slice())
-					.or_else(|_| {
-						mn_ledger_serialize::tagged_deserialize(bytes.as_slice()).map(|tx| vec![tx])
-					})?;
-				txs.append(&mut file_txs);
-			}
 			if self.ignore_block_context {
-				Ok(SourceTransactions::from_txs_with_context_ignored(txs))
+				let txs: Vec<SerializedTx> = built_txs.batches.into_iter().flatten().collect();
+				Ok(SourceTransactions::from_txs(txs))
 			} else {
-				Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
+				Ok(SourceTransactions::from_batches(built_txs.batches, self.dust_warp))
+			}
+		} else {
+			// Load from multiple files
+			let res: Result<Vec<BuiltTransactions>, _> =
+				self.files.iter().map(|f| Self::load_single_or_multiple(f)).collect();
+			let batches: Vec<Vec<SerializedTx>> =
+				res?.into_iter().flat_map(|b| b.batches).collect();
+
+			if self.ignore_block_context {
+				Ok(SourceTransactions::from_txs(batches.into_iter().flatten()))
+			} else {
+				Ok(SourceTransactions::from_batches(batches, self.dust_warp))
 			}
 		}
 	}
@@ -260,7 +257,7 @@ impl GetTxs for GetTxsFromUrl {
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
-		let mut blocks = match &self.fetch_cache_config {
+		let blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
 				fetch_all(
 					&self.rpc_url,
@@ -290,29 +287,9 @@ impl GetTxs for GetTxsFromUrl {
 			},
 		};
 
-		if self.dust_warp {
-			let now_secs = SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("time has run backwards")
-				.as_secs();
-			let last_time = blocks.last().map(|b| b.tblock_secs).unwrap_or(now_secs);
-			blocks.push(RawBlockData {
-				hash: [0u8; 32],
-				parent_hash: [0u8; 32],
-				number: 0,
-				spec_version: 000_022_000,
-				transactions: Vec::new(),
-				tblock_secs: now_secs,
-				tblock_err: 30,
-				parent_block_hash: [0u8; 32],
-				last_block_time_secs: last_time,
-				state_root: None,
-				state: None,
-			});
-		}
-
 		let client = MidnightNodeClient::new(&self.rpc_url, None).await?;
 		let network_id = client.get_network_id().await?;
-		Ok(SourceTransactions::new(blocks, network_id))
+
+		Ok(SourceTransactions::from_blocks(blocks, &network_id, self.dust_warp))
 	}
 }

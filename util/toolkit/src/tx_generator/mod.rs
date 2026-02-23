@@ -105,15 +105,9 @@ impl TxGenerator {
 		if let Some(ref dest_file) = dest.dest_file {
 			if dry_run {
 				println!("Dry-run: Destination file: {:?}", &dest_file);
-				if dest.to_bytes {
-					println!("Dry-run: Destination file-format: bytes");
-				} else {
-					println!("Dry-run: Destination file-format: json");
-				}
 				return Ok(vec![Box::new(())]);
 			}
-			let destination: Box<dyn SendTxs> =
-				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
+			let destination: Box<dyn SendTxs> = Box::new(SendTxsToFile::new(dest_file.clone()));
 
 			return Ok(vec![destination]);
 		}

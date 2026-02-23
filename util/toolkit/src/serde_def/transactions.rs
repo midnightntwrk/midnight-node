@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::fork::raw_block_data::{RawBlockData, RawTransaction};
+use midnight_node_ledger_helpers::fork::raw_block_data::{
+	LedgerVersion, RawBlockData, RawTransaction,
+};
 use midnight_node_ledger_helpers::*;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,8 +24,10 @@ use std::{
 /// A single serialized transaction ready for sending or file output.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializedTx {
-	/// Raw bytes from `serialize_inner()` — the payload for `send_mn_transaction`.
-	pub bytes: Vec<u8>,
+	/// Serialized `Transaction` — the payload for `send_mn_transaction`.
+	pub tx: Vec<u8>,
+	/// Serialized `BlockContext`
+	pub context: BlockContext,
 	/// Transaction hash for logging.
 	pub tx_hash: [u8; 32],
 }
@@ -31,7 +35,6 @@ pub struct SerializedTx {
 /// Output of a builder — serialized transactions ready for sending.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltTransactions {
-	pub initial_tx: SerializedTx,
 	pub batches: Vec<Vec<SerializedTx>>,
 }
 
@@ -45,13 +48,30 @@ impl BuiltTransactions {
 		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
 		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 	{
-		let initial_tx = SerializedTx::from_serde_tx(&typed.initial_tx.tx);
 		let batches = typed
 			.batches
 			.iter()
 			.map(|batch| batch.txs.iter().map(|twc| SerializedTx::from_serde_tx(&twc.tx)).collect())
 			.collect();
-		Self { initial_tx, batches }
+		Self { batches }
+	}
+
+	pub fn get_context(batch: &[SerializedTx]) -> Result<BlockContext, String> {
+		let mut context: Option<BlockContext> = None;
+		for tx in batch {
+			if let Some(ref context) = context {
+				if context.tblock != tx.context.tblock {
+					return Err(format!(
+						"Internal error: Txs in the same batch have mismatched context: {context:?} != {:?}",
+						tx.context
+					));
+				}
+			} else {
+				context = Some(tx.context.clone());
+			}
+		}
+
+		context.ok_or("batch is empty, block context not found".to_string())
 	}
 }
 
@@ -63,9 +83,9 @@ impl SerializedTx {
 		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
 		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 	{
-		let bytes = tx.serialize_inner().expect("failed to serialize transaction");
+		let tx_bytes = tx.serialize_inner().expect("failed to serialize transaction");
 		let tx_hash = tx.transaction_hash().0.0;
-		Self { bytes, tx_hash }
+		Self { tx: tx_bytes, context: BlockContext::default(), tx_hash }
 	}
 }
 
@@ -76,142 +96,108 @@ impl SerializedTx {
 #[derive(Clone, Debug)]
 pub struct SourceTransactions {
 	pub blocks: Vec<RawBlockData>,
-	network_id: String,
+	pub network_id: String,
 }
 
 impl SourceTransactions {
 	/// Create a new SourceTransactions with pre-computed network_id.
-	pub fn new(blocks: Vec<RawBlockData>, network_id: String) -> Self {
-		Self { blocks, network_id }
+	pub fn new(blocks: Vec<RawBlockData>, network_id: &str) -> Self {
+		Self { blocks, network_id: network_id.to_string() }
 	}
 
-	/// Get the network identifier (e.g. "undeployed", "preview").
-	pub fn network(&self) -> &str {
-		&self.network_id
-	}
-
-	/// Convert typed transactions (from file loading) into RawBlockData.
-	///
-	/// If `ignore_block_context` is true, all transactions are placed in a single block
-	/// with the current timestamp.
-	pub fn from_txs_with_context_ignored(
-		txs_with_context: impl IntoIterator<
-			Item = TransactionWithContext<Signature, ProofMarker, DefaultDB>,
-		>,
-	) -> Self {
-		let now_secs = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("time has run backwards")
-			.as_secs();
-
-		let mut network_id = None;
-		let mut raw_txs = Vec::new();
-
-		for twc in txs_with_context {
-			if network_id.is_none() {
-				network_id = twc.tx.network_id().map(|s| s.to_string());
-			}
-			raw_txs.push(serde_tx_to_raw(&twc.tx));
-		}
-
-		let block = RawBlockData {
-			hash: [0u8; 32],
-			parent_hash: [0u8; 32],
-			number: 0,
-			spec_version: 000_022_000, // latest
-			transactions: raw_txs,
-			tblock_secs: now_secs,
-			tblock_err: 30,
-			parent_block_hash: [0u8; 32],
-			last_block_time_secs: 0,
-			state_root: None,
-			state: None,
-		};
-
-		let nid = network_id.expect("no transaction had a network_id");
-		Self { blocks: vec![block], network_id: nid }
-	}
-
-	/// Convert typed transactions (from file loading) into RawBlockData,
-	/// grouping by block context.
-	pub fn from_txs_with_context(
-		txs: impl IntoIterator<Item = TransactionWithContext<Signature, ProofMarker, DefaultDB>>,
+	/// Convert untyped transactions (from file loading) into RawBlockData.
+	pub fn from_blocks(
+		blocks: impl IntoIterator<Item = RawBlockData>,
+		network_id: &str,
 		dust_warp: bool,
 	) -> Self {
-		let mut blocks = vec![];
-		let mut current_batch: Vec<RawTransaction> = vec![];
-		let mut last_context: Option<BlockContext> = None;
-		let mut number = 0u64;
-		let mut network_id = None;
-
-		for tx_with_ctx in txs {
-			if network_id.is_none() {
-				network_id = tx_with_ctx.tx.network_id().map(|s| s.to_string());
-			}
-
-			if last_context
-				.as_ref()
-				.is_some_and(|c| c.tblock != tx_with_ctx.block_context.tblock)
-			{
-				let ctx = last_context.unwrap();
-				blocks.push(RawBlockData {
-					hash: [0u8; 32],
-					parent_hash: [0u8; 32],
-					number,
-					spec_version: 000_022_000,
-					transactions: std::mem::take(&mut current_batch),
-					tblock_secs: ctx.tblock.to_secs(),
-					tblock_err: ctx.tblock_err,
-					parent_block_hash: ctx.parent_block_hash.0,
-					last_block_time_secs: ctx.last_block_time.to_secs(),
-					state_root: None,
-					state: None,
-				});
-				number += 1;
-			}
-			current_batch.push(serde_tx_to_raw(&tx_with_ctx.tx));
-			last_context = Some(tx_with_ctx.block_context);
-		}
-
-		if let Some(ref ctx) = last_context {
-			blocks.push(RawBlockData {
-				hash: [0u8; 32],
-				parent_hash: [0u8; 32],
-				number,
-				spec_version: 000_022_000,
-				transactions: current_batch,
-				tblock_secs: ctx.tblock.to_secs(),
-				tblock_err: ctx.tblock_err,
-				parent_block_hash: ctx.parent_block_hash.0,
-				last_block_time_secs: ctx.last_block_time.to_secs(),
-				state_root: None,
-				state: None,
-			});
-		}
-
+		let mut blocks: Vec<_> = blocks.into_iter().collect();
 		if dust_warp {
 			let now_secs = SystemTime::now()
 				.duration_since(UNIX_EPOCH)
 				.expect("time has run backwards")
 				.as_secs();
-			let last_time = last_context.map(|c| c.tblock.to_secs()).unwrap_or(now_secs);
-			blocks.push(RawBlockData {
-				hash: [0u8; 32],
-				parent_hash: [0u8; 32],
-				number: 0,
-				spec_version: 000_022_000,
-				transactions: Vec::new(),
-				tblock_secs: now_secs,
-				tblock_err: 30,
-				parent_block_hash: [0u8; 32],
-				last_block_time_secs: last_time,
-				state_root: None,
-				state: None,
-			});
+			blocks.push(RawBlockData::new_from_timestamp(
+				now_secs,
+				blocks.get(0).map(|b| b.ledger_version).unwrap_or_default(),
+				Default::default(),
+			));
 		}
 
-		let nid = network_id.unwrap_or_default();
-		Self { blocks, network_id: nid }
+		Self { blocks, network_id: network_id.to_string() }
+	}
+
+	/// Convert untyped transactions (from file loading) into RawBlockData.
+	pub fn from_batches(
+		batches: impl IntoIterator<Item = Vec<SerializedTx>>,
+		dust_warp: bool,
+	) -> Self {
+		let mut blocks = Vec::new();
+		let mut network_id: Option<String> = None;
+		let mut ledger_version = LedgerVersion::default();
+		for batch in batches {
+			let context =
+				BuiltTransactions::get_context(&batch).expect("failed to get context for batch");
+			// block.transactions = '
+			let transactions: Vec<_> =
+				batch.iter().map(|t| RawTransaction::Midnight(t.tx.clone())).collect();
+
+			if network_id.is_none() && !transactions.is_empty() {
+				let (new_network_id, new_ledger_version) =
+					fork::network_id_and_ledger_version_from_tx_bytes(transactions[0].as_bytes());
+				network_id = Some(new_network_id);
+				ledger_version = new_ledger_version;
+			}
+
+			let block = RawBlockData::new_from_timestamp(
+				context.tblock.to_secs(),
+				ledger_version,
+				transactions,
+			);
+			blocks.push(block);
+		}
+
+		// Sort the blocks + set last block time
+		blocks.sort();
+
+		for i in 0..blocks.len() {
+			// Set last_block_time for all blocks apart from genesis
+			if i > 1 {
+				blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
+			}
+			blocks[i].ledger_version = ledger_version;
+		}
+
+		Self::from_blocks(
+			blocks,
+			&network_id.expect("no transactions found, can't derive network id"),
+			dust_warp,
+		)
+	}
+
+	/// Convert untyped transactions (from file loading) into RawBlockData.
+	pub fn from_txs(txs: impl IntoIterator<Item = SerializedTx>) -> Self {
+		let now_secs = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.expect("time has run backwards")
+			.as_secs();
+
+		let mut transactions = Vec::new();
+		let mut network_id: Option<String> = None;
+		let mut ledger_version: LedgerVersion = LedgerVersion::default();
+		for tx in txs {
+			if network_id.is_none() {
+				let (new_network_id, new_ledger_version) =
+					fork::network_id_and_ledger_version_from_tx_bytes(&tx.tx);
+				network_id = Some(new_network_id);
+				ledger_version = new_ledger_version;
+			}
+			transactions.push(RawTransaction::Midnight(tx.tx));
+		}
+		let block = RawBlockData::new_from_timestamp(now_secs, ledger_version, transactions);
+
+		let network_id = network_id.expect("no transactions found, can't derive network id");
+		Self { blocks: vec![block], network_id }
 	}
 }
 
@@ -253,7 +239,6 @@ pub struct DeserializedTransactionsWithContext<S: SignatureKind<DefaultDB>, P: P
 where
 	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
 {
-	pub initial_tx: TransactionWithContext<S, P, DefaultDB>,
 	pub batches: Vec<DeserializedTransactionsWithContextBatch<S, P>>,
 }
 
@@ -266,7 +251,6 @@ where
 	pub fn flat(self) -> Vec<TransactionWithContext<S, P, DefaultDB>> {
 		let mut result =
 			Vec::with_capacity(1 + self.batches.iter().map(|b| b.txs.len()).sum::<usize>());
-		result.push(self.initial_tx); // Add initial_tx first
 		for batch in self.batches {
 			result.extend(batch.txs); // Append each batch's transactions
 		}
@@ -274,65 +258,13 @@ where
 	}
 
 	pub fn network(&self) -> &str {
-		self.initial_tx
+		self.batches
+			.iter()
+			.flat_map(|s| &s.txs)
+			.next()
+			.expect("all batches empty")
 			.tx
 			.network_id()
-			.or_else(|| {
-				self.batches.iter().find_map(|b| b.txs.iter().find_map(|t| t.tx.network_id()))
-			})
 			.expect("no transaction in this batch had a network")
-	}
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SerializedTransactionsWithContextBatch {
-	pub txs: Vec<String>,
-}
-
-impl SerializedTransactionsWithContextBatch {
-	fn new<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>(
-		batch_txs: &[TransactionWithContext<S, P, DefaultDB>],
-	) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
-	where
-		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		let txs = batch_txs
-			.iter()
-			.map(|tx_with_context| {
-				// Serialize TransactionWithContext to a string
-				serde_json::to_string(&tx_with_context).map_err(|e| Box::new(e))
-			})
-			.collect::<Result<Vec<String>, Box<_>>>()?;
-
-		Ok(SerializedTransactionsWithContextBatch { txs })
-	}
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SerializedTransactionsWithContext {
-	pub initial_tx: String,
-	pub batches: Vec<SerializedTransactionsWithContextBatch>,
-}
-
-impl SerializedTransactionsWithContext {
-	pub fn new<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>(
-		txs: &DeserializedTransactionsWithContext<S, P>,
-	) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>
-	where
-		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		// Serialize initial_tx
-		let initial_tx = serde_json::to_string(&txs.initial_tx).map_err(|e| Box::new(e))?;
-
-		// Serialize each batch
-		let batches = txs
-			.batches
-			.iter()
-			.map(|batch| SerializedTransactionsWithContextBatch::new(&batch.txs))
-			.collect::<Result<Vec<_>, Box<_>>>()?;
-
-		Ok(SerializedTransactionsWithContext { initial_tx, batches })
 	}
 }
