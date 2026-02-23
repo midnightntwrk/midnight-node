@@ -550,7 +550,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
     # Preview is not meant to be reset
-    #BUILD +rebuild-chainspec --NETWORK=preview 
+    #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preprod
     # Mainnet is not meant to be reset
@@ -907,6 +907,8 @@ test-pallet-fixtures:
 
     # Compile the tests to go as fast as possible on this machine:
     ENV RUSTFLAGS="-C target-cpu=native"
+    # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
+    ENV SKIP_WASM_BUILD=1
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
