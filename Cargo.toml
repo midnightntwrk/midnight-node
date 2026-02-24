@@ -11,6 +11,7 @@ members = [
     "pallets/midnight-system",
     "pallets/system-parameters",
     "pallets/system-parameters/rpc",
+    "pallets/throttle",
     "pallets/version",
     "primitives/beefy",
     "primitives/ics-observation",
@@ -112,6 +113,7 @@ pallet-cnight-observation = { path = "pallets/cnight-observation", default-featu
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
+pallet-throttle = { path = "pallets/throttle", default-features = false }
 pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
