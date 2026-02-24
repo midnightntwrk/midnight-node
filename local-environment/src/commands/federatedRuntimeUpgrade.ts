@@ -34,7 +34,6 @@ interface ProposalInfo {
   proposalIndex: number;
 }
 
-const APPROVAL_THRESHOLD = 2;
 const CLOSE_WEIGHT = { refTime: new BN(10_000_000_000), proofSize: new BN(65_536) };
 
 export async function federatedRuntimeUpgrade(
@@ -62,6 +61,33 @@ export async function federatedRuntimeUpgrade(
       "Motion executor",
     );
 
+    const councilMemberCount = await getCollectiveMembersCount(api, "council");
+    const councilApprovalThreshold = computeTwoThirdsThreshold(
+      councilMemberCount,
+      "Council",
+    );
+    ensureSufficientAuthorities(
+      councilMembers,
+      councilApprovalThreshold,
+      "Council",
+      councilMemberCount,
+    );
+
+    const techCommitteeMemberCount = await getCollectiveMembersCount(
+      api,
+      "technicalCommittee",
+    );
+    const techCommitteeApprovalThreshold = computeTwoThirdsThreshold(
+      techCommitteeMemberCount,
+      "Technical Committee",
+    );
+    ensureSufficientAuthorities(
+      techCommitteeMembers,
+      techCommitteeApprovalThreshold,
+      "Technical Committee",
+      techCommitteeMemberCount,
+    );
+
     const authorizeUpgradeCall = api.tx.system.authorizeUpgrade(wasm.hash);
     const federatedApproveCall = api.tx.federatedAuthority.motionApprove(
       authorizeUpgradeCall.method,
@@ -77,6 +103,7 @@ export async function federatedRuntimeUpgrade(
       federatedApproveCall.method,
       lengthBound,
       councilMembers[0],
+      councilApprovalThreshold,
     );
     await voteCollectiveMotion(
       api,
@@ -101,6 +128,7 @@ export async function federatedRuntimeUpgrade(
       federatedApproveCall.method,
       lengthBound,
       techCommitteeMembers[0],
+      techCommitteeApprovalThreshold,
     );
     await voteCollectiveMotion(
       api,
@@ -125,7 +153,7 @@ export async function federatedRuntimeUpgrade(
 
     console.log("Applying authorized upgrade...");
     const applyResult = await signAndWait(
-      api.tx.system.applyAuthorizedUpgrade(wasm.bytes),
+      api.tx.system.applyAuthorizedUpgrade(wasm.hex),
       motionExecutor,
       "system.applyAuthorizedUpgrade",
     );
@@ -156,11 +184,16 @@ async function proposeCollectiveMotion(
   call: SubmittableExtrinsic["method"],
   lengthBound: number,
   proposer: KeyringPair,
+  approvalThreshold: number,
 ): Promise<ProposalInfo> {
   const extrinsic =
     collective === "council"
-      ? api.tx.council.propose(APPROVAL_THRESHOLD, call, lengthBound)
-      : api.tx.technicalCommittee.propose(APPROVAL_THRESHOLD, call, lengthBound);
+      ? api.tx.council.propose(approvalThreshold, call, lengthBound)
+      : api.tx.technicalCommittee.propose(
+          approvalThreshold,
+          call,
+          lengthBound,
+        );
 
   const result = await signAndWait(extrinsic, proposer, `${collective}.propose`);
   return extractProposalInfo(result, collective);
@@ -242,4 +275,40 @@ function extractProposalInfo(
   const proposalHash = proposed.event.data[2].toHex();
 
   return { proposalHash, proposalIndex };
+}
+
+async function getCollectiveMembersCount(
+  api: ApiPromise,
+  collective: Collective,
+): Promise<number> {
+  const members =
+    collective === "council"
+      ? await api.query.council.members()
+      : await api.query.technicalCommittee.members();
+
+  return (members.toJSON() as unknown[]).length;
+}
+
+function computeTwoThirdsThreshold(totalMembers: number, label: string): number {
+  if (totalMembers <= 0) {
+    throw new Error(
+      `${label} has no on-chain members; cannot compute approval threshold.`,
+    );
+  }
+
+  return Math.ceil((totalMembers * 2) / 3);
+}
+
+function ensureSufficientAuthorities(
+  signers: KeyringPair[],
+  required: number,
+  label: string,
+  totalMembers: number,
+) {
+  const uniqueSigners = new Set(signers.map((signer) => signer.address));
+  if (uniqueSigners.size < required) {
+    throw new Error(
+      `${label} requires at least ${required} unique authorities (2/3 of ${totalMembers}) but only ${uniqueSigners.size} were provided.`,
+    );
+  }
 }
