@@ -357,6 +357,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-amd64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-node-arm64:
@@ -370,6 +371,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-arm64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-toolkit-amd64:
@@ -383,6 +385,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-toolkit-amd64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-toolkit-arm64:
@@ -396,6 +399,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-toolkit-arm64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-indexer-images:
@@ -415,6 +419,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/${{ matrix.image }}:${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}
       sbom-artifact-name: sbom-${{ matrix.image }}
+      skip-attestation: true
     secrets: inherit
 
   publish-multi-arch:

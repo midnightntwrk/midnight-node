@@ -92,7 +92,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
       sbom-artifact-name: sbom-midnight-node-ci
-      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+      skip-attestation: true  # Temporarily disabled: Sigstore Rekor rejecting cosign attest payloads
     secrets: inherit
 
   sbom-scan-toolkit:
@@ -102,7 +102,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ci
-      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+      skip-attestation: true  # Temporarily disabled: Sigstore Rekor rejecting cosign attest payloads
     secrets: inherit
 
   run-arm64:
