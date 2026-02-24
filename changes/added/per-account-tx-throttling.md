@@ -9,4 +9,4 @@ Adds a new `pallet-throttle` with a `CheckThrottle` transaction extension that l
 - 25 unit tests covering accumulation, window expiry, boundary conditions, multi-account isolation, and overflow safety
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/770
-Ticket: https://github.com/midnightntwrk/midnight-node/pull/770
+Ticket: https://shielded.atlassian.net/browse/PM-21204
