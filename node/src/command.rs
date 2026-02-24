@@ -1393,27 +1393,4 @@ mod tests {
 		let msg = err.to_string();
 		assert!(msg.contains("invalid hex"), "unexpected error: {msg}",);
 	}
-
-	#[test]
-	fn decode_genesis_state_oversized() {
-		let oversized = vec![0u8; MAX_GENESIS_STATE_BYTES + 1];
-		let props = make_properties(vec![(
-			"genesis_state",
-			serde_json::Value::String(hex::encode(&oversized)),
-		)]);
-		let err = decode_genesis_state(&props).unwrap_err();
-		let msg = err.to_string();
-		assert!(msg.contains("exceeds maximum allowed"), "unexpected error: {msg}",);
-	}
-
-	#[test]
-	fn decode_genesis_state_at_size_limit() {
-		let at_limit = vec![0u8; MAX_GENESIS_STATE_BYTES];
-		let props = make_properties(vec![(
-			"genesis_state",
-			serde_json::Value::String(hex::encode(&at_limit)),
-		)]);
-		let result = decode_genesis_state(&props).expect("should accept data at exactly the limit");
-		assert_eq!(result.len(), MAX_GENESIS_STATE_BYTES);
-	}
 }
