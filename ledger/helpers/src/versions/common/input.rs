@@ -56,7 +56,7 @@ impl InputInfo<WalletSeed> {
 			.first()
 			.unwrap_or_else(|| {
 				panic!(
-					"There are no fundings of Token {:?} and amount >= {:?} to spend by Wallet {:?}",
+					"There is no single UTXO with {:?} and amount >= {:?} to spend by {:?}",
 					self.token_type, self.value, wallet
 				)
 			})
@@ -89,5 +89,3 @@ impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
 		})
 	}
 }
-
-// TODO: impl BuildOutput for OutputInfo<ContractAddress>

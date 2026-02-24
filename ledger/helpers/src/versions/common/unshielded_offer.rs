@@ -26,9 +26,7 @@ pub struct UnshieldedOfferInfo<D: DB + Clone> {
 impl<D: DB + Clone> UnshieldedOfferInfo<D> {
 	pub fn build(&self, context: Arc<LedgerContext<D>>) -> Sp<UnshieldedOffer<Signature, D>, D> {
 		let inputs = self.build_inputs(context.clone());
-		let mut outputs = self.build_outputs(context.clone());
-
-		outputs.sort();
+		let outputs = self.build_outputs(context.clone());
 
 		let unshielded_offer = UnshieldedOffer {
 			inputs: inputs.into(),
@@ -40,10 +38,16 @@ impl<D: DB + Clone> UnshieldedOfferInfo<D> {
 	}
 
 	pub fn build_inputs(&self, context: Arc<LedgerContext<D>>) -> Vec<UtxoSpend> {
-		self.inputs.iter().map(|input| input.build(context.clone())).collect()
+		let mut inputs: Vec<_> =
+			self.inputs.iter().map(|input| input.build(context.clone())).collect();
+		inputs.sort();
+		inputs
 	}
 
 	pub fn build_outputs(&self, context: Arc<LedgerContext<D>>) -> Vec<UtxoOutput> {
-		self.outputs.iter().map(|output| output.build(context.clone())).collect()
+		let mut outputs: Vec<_> =
+			self.outputs.iter().map(|output| output.build(context.clone())).collect();
+		outputs.sort();
+		outputs
 	}
 }
