@@ -24,7 +24,7 @@ pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
 #[derive(clap::Args)]
 pub struct Destination {
 	/// RPC URL(s) of node instance(s) used to send generated transactions. Can set multiple.
-	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()], global = true)]
+	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()], env = "MN_DEST_URL", global = true)]
 	pub dest_urls: Vec<String>,
 	/// The rate at which to send txs (per second)
 	#[arg(long, short, default_value = "1", conflicts_with = "dest_file", global = true)]
