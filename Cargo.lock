@@ -7503,9 +7503,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-ledger"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e56470c6b7cfc363014ec7d1031accc96906f55e51930988f85521be5a1cb0c9"
+checksum = "ab61fc4adc53b2d6ae670e4b01d27429c1f85ea2f6502b6d0e136166a85d8686"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -7524,7 +7524,7 @@ dependencies = [
  "midnight-storage 2.0.1",
  "midnight-transient-crypto 2.0.1",
  "midnight-zkir 2.1.0",
- "midnight-zswap 8.0.0-rc.3",
+ "midnight-zswap 8.0.0-rc.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.22",
@@ -7558,7 +7558,7 @@ dependencies = [
  "midnight-storage 2.0.1-hard-fork-test",
  "midnight-transient-crypto 2.0.1-hard-fork-test",
  "midnight-zkir 2.1.0-hard-fork-test",
- "midnight-zswap 8.0.0-rc.4",
+ "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.22",
@@ -7738,8 +7738,8 @@ dependencies = [
  "midnight-coin-structure 2.0.1",
  "midnight-coin-structure 2.0.1-hard-fork-test",
  "midnight-ledger 7.0.2",
- "midnight-ledger 8.0.0-rc.3",
- "midnight-ledger 8.0.0-rc.4",
+ "midnight-ledger 8.0.0-rc.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midnight-ledger 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-onchain-runtime 2.0.1",
@@ -7754,8 +7754,8 @@ dependencies = [
  "midnight-transient-crypto 2.0.1",
  "midnight-transient-crypto 2.0.1-hard-fork-test",
  "midnight-zswap 7.0.2",
- "midnight-zswap 8.0.0-rc.3",
- "midnight-zswap 8.0.0-rc.4",
+ "midnight-zswap 8.0.0-rc.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "moka 0.11.3",
  "parity-scale-codec",
  "rand 0.8.5",
@@ -7790,8 +7790,8 @@ dependencies = [
  "midnight-coin-structure 2.0.1",
  "midnight-coin-structure 2.0.1-hard-fork-test",
  "midnight-ledger 7.0.2",
- "midnight-ledger 8.0.0-rc.3",
- "midnight-ledger 8.0.0-rc.4",
+ "midnight-ledger 8.0.0-rc.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midnight-ledger 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.0.0-rc.1",
  "midnight-onchain-runtime 3.0.0-rc.1-hard-fork-test",
@@ -7805,8 +7805,8 @@ dependencies = [
  "midnight-zkir 2.1.0",
  "midnight-zkir 2.1.0-hard-fork-test",
  "midnight-zswap 7.0.2",
- "midnight-zswap 8.0.0-rc.3",
- "midnight-zswap 8.0.0-rc.4",
+ "midnight-zswap 8.0.0-rc.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "rand 0.8.5",
  "serde",
  "subxt 0.44.0",
@@ -8653,9 +8653,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "8.0.0-rc.3"
+version = "8.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f24cd767b2cfae2f5ada334e89f902ad1d57600fe4d6c9b22372b014157135d0"
+checksum = "ee1389b3809027c4f8a0f6f3e7c368ae18ae392bb09de3c6442bc9df6bc39d4d"
 dependencies = [
  "derive-where",
  "fake",

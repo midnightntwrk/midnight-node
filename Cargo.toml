@@ -74,10 +74,10 @@ zswap = { package = "midnight-zswap", version = "7.0.2" }
 zkir = { package = "midnight-zkir", version = "2.1.0" }
 
 # Ledger 8
-mn-ledger-8 = { package = "midnight-ledger", version = "=8.0.0-rc.3" }
+mn-ledger-8 = { package = "midnight-ledger", version = "=8.0.0-rc.4" }
 ledger-storage-ledger-8 = { package = "midnight-storage", version = "2.0.0", features = ["parity-db"] }
 onchain-runtime-ledger-8 = { package = "midnight-onchain-runtime", version = "=3.0.0-rc.1" }
-zswap-ledger-8 = { package = "midnight-zswap", version = "=8.0.0-rc.3" }
+zswap-ledger-8 = { package = "midnight-zswap", version = "=8.0.0-rc.4" }
 
 # Hard-fork test dependencies
 
