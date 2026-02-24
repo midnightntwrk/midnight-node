@@ -101,7 +101,6 @@ mod test {
 			dest_urls: vec![],
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
-			to_bytes: false,
 			no_watch_progress: false,
 		};
 

@@ -1,8 +1,9 @@
-use crate::{ProofType, SignatureType};
+use crate::{ProofType, SignatureType, tx_generator::source::GetTxsFromFile};
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{
-	DefaultDB, TransactionWithContext, mn_ledger_serialize, serialize, serialize_untagged,
+	DefaultDB, FinalizedTransaction, TransactionWithContext, mn_ledger_serialize, serialize,
+	serialize_untagged,
 };
 use serde::Serialize;
 use std::fs;
@@ -30,17 +31,11 @@ pub struct ContractAddressBoth {
 pub fn execute(
 	args: ContractAddressArgs,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-	let bytes = fs::read(&args.src_file)?;
-	let tx_with_context: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
-		mn_ledger_serialize::tagged_deserialize(bytes.as_slice())?;
+	let tx = GetTxsFromFile::load_single(&args.src_file)?;
+	let mn_tx: FinalizedTransaction<DefaultDB> =
+		mn_ledger_serialize::tagged_deserialize(tx.tx.as_slice())?;
 
-	let (_, deploy) = tx_with_context
-		.tx
-		.as_midnight()
-		.ok_or("not called with a standard midnight transaction")?
-		.deploys()
-		.next()
-		.ok_or("no ContractDeploy found in the transaction")?;
+	let (_, deploy) = mn_tx.deploys().next().ok_or("no ContractDeploy found in the transaction")?;
 
 	let both = ContractAddressBoth {
 		tagged: serialize(&deploy.address())?.encode_hex(),

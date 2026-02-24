@@ -174,10 +174,10 @@ impl GetTxsFromFile {
 		Self { files, extension, dust_warp, ignore_block_context }
 	}
 
-	fn load_single(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+	pub fn load_single(filename: &str) -> Result<SerializedTx, std::io::Error> {
 		let file = File::open(filename)?;
-		let tx: SerializedTx = serde_json::from_reader(file)?;
-		Ok(BuiltTransactions { batches: vec![vec![tx]] })
+		let tx = serde_json::from_reader(file)?;
+		Ok(tx)
 	}
 
 	fn load_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
@@ -187,7 +187,7 @@ impl GetTxsFromFile {
 
 	fn load_single_or_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
 		if let Ok(loaded) = Self::load_single(filename) {
-			return Ok(loaded);
+			return Ok(BuiltTransactions { batches: vec![vec![loaded]] });
 		};
 		log::debug!("failed to load {} as single tx, loading as multiple...", filename);
 		return Self::load_multiple(filename);
