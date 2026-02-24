@@ -93,7 +93,7 @@ fn validate_and_prepare(who: u64, len: usize) {
 #[test]
 fn account_usage_defaults_to_zero() {
 	new_test_ext().execute_with(|| {
-		let (bytes, block) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, block) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 0);
 		assert_eq!(block, 0);
 	});
@@ -102,8 +102,8 @@ fn account_usage_defaults_to_zero() {
 #[test]
 fn account_usage_can_be_set_and_read() {
 	new_test_ext().execute_with(|| {
-		AccountUsage::<Test>::insert(&1u64, (500u64, 10u64));
-		let (bytes, block) = AccountUsage::<Test>::get(&1u64);
+		AccountUsage::<Test>::insert(1u64, (500u64, 10u64));
+		let (bytes, block) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 500);
 		assert_eq!(block, 10);
 	});
@@ -112,12 +112,12 @@ fn account_usage_can_be_set_and_read() {
 #[test]
 fn account_usage_is_independent_per_account() {
 	new_test_ext().execute_with(|| {
-		AccountUsage::<Test>::insert(&1u64, (100u64, 5u64));
-		AccountUsage::<Test>::insert(&2u64, (200u64, 10u64));
+		AccountUsage::<Test>::insert(1u64, (100u64, 5u64));
+		AccountUsage::<Test>::insert(2u64, (200u64, 10u64));
 
-		assert_eq!(AccountUsage::<Test>::get(&1u64), (100, 5));
-		assert_eq!(AccountUsage::<Test>::get(&2u64), (200, 10));
-		assert_eq!(AccountUsage::<Test>::get(&3u64), (0, 0));
+		assert_eq!(AccountUsage::<Test>::get(1u64), (100, 5));
+		assert_eq!(AccountUsage::<Test>::get(2u64), (200, 10));
+		assert_eq!(AccountUsage::<Test>::get(3u64), (0, 0));
 	});
 }
 
@@ -255,7 +255,7 @@ fn validate_resets_after_window_expires() {
 fn validate_does_not_reset_before_window_expires() {
 	new_test_ext().execute_with(|| {
 		// Set known initial state: max bytes used, window started at block 10
-		AccountUsage::<Test>::insert(&1u64, (MaxBytes::get(), 10u64));
+		AccountUsage::<Test>::insert(1u64, (MaxBytes::get(), 10u64));
 
 		// One block before window expires
 		System::set_block_number(10 + WindowSize::get() as u64 - 1);
@@ -270,7 +270,7 @@ fn validate_does_not_reset_before_window_expires() {
 #[test]
 fn validate_resets_at_exact_window_boundary() {
 	new_test_ext().execute_with(|| {
-		AccountUsage::<Test>::insert(&1u64, (MaxBytes::get(), 10u64));
+		AccountUsage::<Test>::insert(1u64, (MaxBytes::get(), 10u64));
 
 		// Exactly at window boundary
 		System::set_block_number(10 + WindowSize::get() as u64);
@@ -289,7 +289,7 @@ fn prepare_updates_storage() {
 
 		validate_and_prepare(1, 1000);
 
-		let (bytes, window_start) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, window_start) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 1000);
 		// window_start stays at 0 (default) because 5 - 0 < window_size
 		assert_eq!(window_start, 0);
@@ -305,7 +305,7 @@ fn prepare_accumulates_bytes_in_same_window() {
 		System::set_block_number(10);
 		validate_and_prepare(1, 2000);
 
-		let (bytes, window_start) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, window_start) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 3000);
 		assert_eq!(window_start, 0);
 	});
@@ -321,7 +321,7 @@ fn prepare_resets_window_when_expired() {
 		System::set_block_number(5 + WindowSize::get() as u64);
 		validate_and_prepare(1, 100);
 
-		let (bytes, window_start) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, window_start) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 100);
 		assert_eq!(window_start, 5 + WindowSize::get() as u64);
 	});
@@ -331,12 +331,12 @@ fn prepare_resets_window_when_expired() {
 fn prepare_does_not_reset_window_before_expiry() {
 	new_test_ext().execute_with(|| {
 		// Set known initial state
-		AccountUsage::<Test>::insert(&1u64, (5000u64, 10u64));
+		AccountUsage::<Test>::insert(1u64, (5000u64, 10u64));
 
 		System::set_block_number(10 + WindowSize::get() as u64 - 1);
 		validate_and_prepare(1, 100);
 
-		let (bytes, window_start) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, window_start) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 5100);
 		assert_eq!(window_start, 10);
 	});
@@ -366,7 +366,7 @@ fn prepare_skips_update_for_unsigned_tx() {
 		assert_ok!(CheckThrottle::<Test>::new().prepare(val, &origin, &call, &info, 5000));
 
 		// No storage update for unsigned
-		assert_eq!(AccountUsage::<Test>::get(&1u64), (0, 0));
+		assert_eq!(AccountUsage::<Test>::get(1u64), (0, 0));
 	});
 }
 
@@ -396,8 +396,8 @@ fn multiple_accounts_track_usage_independently() {
 		validate_and_prepare(1, 3000);
 		validate_and_prepare(2, 7000);
 
-		let (bytes1, _) = AccountUsage::<Test>::get(&1u64);
-		let (bytes2, _) = AccountUsage::<Test>::get(&2u64);
+		let (bytes1, _) = AccountUsage::<Test>::get(1u64);
+		let (bytes2, _) = AccountUsage::<Test>::get(2u64);
 		assert_eq!(bytes1, 3000);
 		assert_eq!(bytes2, 7000);
 	});
@@ -448,7 +448,7 @@ fn saturating_add_prevents_overflow() {
 		System::set_block_number(1);
 
 		// Set bytes_used near u64::MAX — validate would reject, so call prepare directly
-		AccountUsage::<Test>::insert(&1u64, (u64::MAX - 10, 1u64));
+		AccountUsage::<Test>::insert(1u64, (u64::MAX - 10, 1u64));
 
 		let call = RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
 		let info = frame_support::dispatch::DispatchInfo::default();
@@ -456,7 +456,7 @@ fn saturating_add_prevents_overflow() {
 
 		assert_ok!(CheckThrottle::<Test>::new().prepare(Some(1u64), &origin, &call, &info, 100));
 
-		let (bytes, _) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, _) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, u64::MAX);
 	});
 }
@@ -468,7 +468,7 @@ fn block_number_zero_works() {
 		assert!(validate_signed(1, 1000).is_ok());
 		validate_and_prepare(1, 1000);
 
-		let (bytes, window_start) = AccountUsage::<Test>::get(&1u64);
+		let (bytes, window_start) = AccountUsage::<Test>::get(1u64);
 		assert_eq!(bytes, 1000);
 		assert_eq!(window_start, 0);
 	});
