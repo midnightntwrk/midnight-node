@@ -7643,6 +7643,7 @@ dependencies = [
  "pallet-sidechain-rpc",
  "pallet-system-parameters",
  "pallet-system-parameters-rpc",
+ "pallet-throttle",
  "parity-scale-codec",
  "partner-chains-cli",
  "partner-chains-db-sync-data-sources",
