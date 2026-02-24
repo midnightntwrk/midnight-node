@@ -115,6 +115,15 @@ const STRICT_TX_VALIDATION_CACHE_CAPACITY: u64 = 600;
 #[cfg(feature = "std")]
 const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
 
+/// Time-to-live for soft validation cache entries.
+/// Unlike TTI, TTL evicts entries unconditionally after this duration regardless of access.
+/// This is critical for relay nodes (non-block-producers) where soft cache entries are never
+/// invalidated by block authoring — without a TTL, revalidation keeps accessing entries and
+/// resetting the TTI timer, so invalid transactions persist in the mempool indefinitely.
+/// Set to 60s (~10 blocks at 6s/block) to balance eviction latency against revalidation cost.
+#[cfg(feature = "std")]
+const SOFT_TX_VALIDATION_CACHE_TTL: Duration = Duration::from_secs(60);
+
 #[cfg(feature = "std")]
 lazy_static! {
 	/// Strict cache: stores VerifiedTransaction for reuse in validate_guaranteed_execution.
@@ -138,6 +147,7 @@ lazy_static! {
 		Cache::builder()
 			.max_capacity(SOFT_TX_VALIDATION_CACHE_CAPACITY)
 			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.time_to_live(SOFT_TX_VALIDATION_CACHE_TTL)
 			.build();
 }
 
@@ -191,10 +201,7 @@ where
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
 		let now = std::time::Instant::now();
-		default_storage::<D>().with_backend(|backend| {
-			backend.flush_all_changes_to_db();
-			backend.gc();
-		});
+		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		let elapsed = now.elapsed().as_secs_f64();
 
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -208,9 +215,25 @@ where
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
+		let start_tx_processing_time = Instant::now();
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Initializing API (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let api = api::new();
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  API ready (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let ledger = Self::get_ledger(&api, state_key)?;
 
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Post block update start (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let mut ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
@@ -218,11 +241,26 @@ where
 			);
 			LedgerApiError::NoLedgerState
 		})?;
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Post block update done (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 
 		// Only update state after no errors
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Persisting ledger (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		ledger.persist();
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Ledger persisted (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		Ok(state_root)
 	}
@@ -246,7 +284,17 @@ where
 		let start_tx_processing_time = Instant::now();
 		let tx_size = tx_serialized.len();
 
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Starting tx processing (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let api = api::new();
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Deserializing tx (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
 		let tx_hash = tx.hash();
 		log::info!(
@@ -255,21 +303,45 @@ where
 			hex::encode(tx_hash)
 		);
 		let ledger = Self::get_ledger(&api, state_key)?;
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Ledger loaded (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
 
 		// Use cached VerifiedTransaction if available
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 		let verified_tx = Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
-
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Building tx context (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		// Apply the verified transaction
 		let tx_ctx = ledger.get_transaction_context(block_context.clone())?;
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Tx context ready (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let (mut new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Ledger applied (stage={applied_stage:?}, elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
 
 		let is_syncing =
 			externalities.extension::<SyncStatusExt>().is_some_and(|ext| ext.is_syncing());
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Building unshielded UTXOs (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		let mut utxos = tx.unshielded_utxos();
 
 		let failed_segments =
@@ -280,9 +352,20 @@ where
 			} else {
 				None
 			};
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Unshielded UTXOs ready (failed_segments={}, elapsed_ms={})",
+			failed_segments.as_ref().map(|segments: &Vec<u16>| segments.len()).unwrap_or(0),
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		let operations =
 			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Ops built (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		let (utxo_outputs, utxo_inputs) =
 			utxos.check_utxos_response_integrity(initial_utxos_size, &new_ledger)?;
@@ -295,6 +378,14 @@ where
 			(utxo_outputs, utxo_inputs)
 		};
 
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  UTXO integrity ok (created={}, spent={}, elapsed_ms={})",
+			utxo_outputs.len(),
+			utxo_inputs.len(),
+			start_tx_processing_time.elapsed().as_millis()
+		);
+
 		let mut event = TransactionAppliedStateRoot {
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
@@ -306,26 +397,61 @@ where
 			unshielded_utxos_created: utxo_outputs,
 			unshielded_utxos_spent: utxo_inputs,
 		};
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Event built (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		for op in operations {
 			match op {
 				TransactionOperation::Call { address, .. } => {
 					event.call_addresses.push(api.tagged_serialize(&address)?);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: Call (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
 				},
 				TransactionOperation::Deploy { address } => {
 					event.deploy_addresses.push(api.tagged_serialize(&address)?);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: Deploy (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
 				},
 				TransactionOperation::Maintain { address } => {
 					event.maintain_addresses.push(api.tagged_serialize(&address)?);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: Maintain (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
 				},
 				TransactionOperation::ClaimRewards { value, .. } => {
 					event.claim_rewards.push(value);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: ClaimRewards (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
 				},
 			}
 		}
 
 		// Only update state after no errors
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Persisting ledger (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 		new_ledger.persist();
+		log::trace!(
+			target: LOG_TARGET,
+			"⏱️  Ledger persisted (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -336,6 +462,11 @@ where
 			metrics.observe_txs_processing_time(elapsed_time, tx_type);
 			metrics.observe_txs_size(tx_size as f64, tx_type);
 		}
+		log::trace!(
+			target: LOG_TARGET,
+			"✅ Tx applied (elapsed_ms={})",
+			start_tx_processing_time.elapsed().as_millis()
+		);
 
 		Ok(event)
 	}
@@ -603,8 +734,12 @@ where
 			tx.0.cost(&ledger.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
 
+		log::trace!(target: LOG_TARGET, "⏱️  Estimated cost: {cost:?}");
+
 		let limits = ledger.state.parameters.limits.block_limits;
 		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
+
+		log::trace!(target: LOG_TARGET, "⏱️  Normalized cost: {normalized:?}");
 
 		let gas_cost = scale_normalized_cost(&normalized, max_weight);
 

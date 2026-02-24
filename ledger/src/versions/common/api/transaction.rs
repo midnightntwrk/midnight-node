@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, HashMap};
+use std::num::TryFromIntError;
 
 use super::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
@@ -338,7 +339,13 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 
 							let utxo_outputs = intent.guaranteed_outputs();
 							let outputs_info =
-								Self::utxos_info_from_output(utxo_outputs, intent_hash);
+								match Self::utxos_info_from_output(utxo_outputs, intent_hash) {
+									Ok(info) => info,
+									Err(e) => {
+										log::error!(target: LOG_TARGET, "Output index exceeds u32::MAX in guaranteed phase: {e}");
+										return UnshieldedUtxos::default();
+									},
+								};
 
 							let utxo_inputs = intent.guaranteed_inputs();
 							let inputs_info = Self::utxos_info_from_inputs(utxo_inputs);
@@ -355,7 +362,14 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 						let intent_hash = parent.intent_hash(segment_id).0.0;
 
 						let utxo_outputs = intent.fallible_outputs();
-						let outputs_info = Self::utxos_info_from_output(utxo_outputs, intent_hash);
+						let outputs_info =
+							match Self::utxos_info_from_output(utxo_outputs, intent_hash) {
+								Ok(info) => info,
+								Err(e) => {
+									log::error!(target: LOG_TARGET, "Output index exceeds u32::MAX in fallible phase: {e}");
+									return UnshieldedUtxos::default();
+								},
+							};
 
 						let utxo_inputs = intent.fallible_inputs();
 						let inputs_info = Self::utxos_info_from_inputs(utxo_inputs);
@@ -378,16 +392,16 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 	pub(crate) fn utxos_info_from_output(
 		outputs: Vec<UtxoOutput>,
 		intent_hash: [u8; PERSISTENT_HASH_BYTES],
-	) -> Vec<UtxoInfo> {
+	) -> Result<Vec<UtxoInfo>, TryFromIntError> {
 		outputs
 			.into_iter()
 			.enumerate()
 			.map(|(output_no, output)| {
 				let utxo_output_info =
-					UtxoOutputInfo { output, intent_hash, output_no: output_no as u32 };
-				UtxoInfo::from(utxo_output_info)
+					UtxoOutputInfo { output, intent_hash, output_no: u32::try_from(output_no)? };
+				Ok(UtxoInfo::from(utxo_output_info))
 			})
-			.collect()
+			.collect::<Result<Vec<_>, _>>()
 	}
 
 	pub(crate) fn utxos_info_from_inputs(inputs: Vec<UtxoSpend>) -> Vec<UtxoInfo> {
@@ -509,6 +523,78 @@ mod tests {
 
 		assert!(fee.unwrap() > 0);
 		assert!(parameters.c_to_m_bridge_min_amount > 0);
+	}
+
+	fn make_utxo_output(value: u128, owner_byte: u8, type_byte: u8) -> UtxoOutput {
+		UtxoOutput {
+			value,
+			owner: UserAddress(HashOutput([owner_byte; PERSISTENT_HASH_BYTES])),
+			type_: UnshieldedTokenType(HashOutput([type_byte; PERSISTENT_HASH_BYTES])),
+		}
+	}
+
+	#[test]
+	fn utxos_info_from_output_empty_vec() {
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			vec![],
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		assert_eq!(result.unwrap(), vec![]);
+	}
+
+	#[test]
+	fn utxos_info_from_output_single_output() {
+		let output = make_utxo_output(100, 0x01, 0x02);
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			vec![output],
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 1);
+		assert_eq!(infos[0].output_no, 0);
+	}
+
+	#[test]
+	fn utxos_info_from_output_sequential_indices() {
+		let outputs = vec![
+			make_utxo_output(10, 0, 0),
+			make_utxo_output(20, 0, 0),
+			make_utxo_output(30, 0, 0),
+		];
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			outputs,
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 3);
+		for (i, info) in infos.iter().enumerate() {
+			assert_eq!(info.output_no, u32::try_from(i).unwrap());
+		}
+	}
+
+	#[test]
+	fn utxos_info_from_output_field_propagation() {
+		let owner_bytes = [0xAA; PERSISTENT_HASH_BYTES];
+		let type_bytes = [0xBB; PERSISTENT_HASH_BYTES];
+		let intent_hash = [0xCC; PERSISTENT_HASH_BYTES];
+		let value = 42u128;
+
+		let output = UtxoOutput {
+			value,
+			owner: UserAddress(HashOutput(owner_bytes)),
+			type_: UnshieldedTokenType(HashOutput(type_bytes)),
+		};
+		let result =
+			Transaction::<Signature, DefaultDB>::utxos_info_from_output(vec![output], intent_hash);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 1);
+
+		let info = &infos[0];
+		assert_eq!(info.address, owner_bytes);
+		assert_eq!(info.token_type, type_bytes);
+		assert_eq!(info.intent_hash, intent_hash);
+		assert_eq!(info.value, value);
+		assert_eq!(info.output_no, 0);
 	}
 }
 // grcov-excl-stop

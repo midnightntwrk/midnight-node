@@ -87,6 +87,10 @@ pub struct Source {
 	/// Number of threads to use when fetching transactions from a live network
 	#[arg(long, conflicts_with = "src_files", default_value = "20", global = true)]
 	pub fetch_concurrency: usize,
+	/// Number of threads to use for compute operations when fetching from a live network.
+	/// Defaults to number of CPU cores if not specified.
+	#[arg(long, conflicts_with = "src_files", global = true)]
+	pub fetch_compute_concurrency: Option<usize>,
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
@@ -230,6 +234,7 @@ impl GetTxs for GetTxsFromFile {
 pub struct GetTxsFromUrl {
 	pub rpc_url: String,
 	pub num_fetch_workers: usize,
+	pub num_compute_workers: usize,
 	pub dust_warp: bool,
 	pub fetch_only_cache: bool,
 	pub fetch_cache_config: FetchCacheConfig,
@@ -239,6 +244,7 @@ impl GetTxsFromUrl {
 	pub fn new(
 		rpc_url: &str,
 		num_fetch_workers: usize,
+		num_compute_workers: usize,
 		dust_warp: bool,
 		fetch_only_cache: bool,
 		fetch_cache_config: FetchCacheConfig,
@@ -246,6 +252,7 @@ impl GetTxsFromUrl {
 		Self {
 			rpc_url: rpc_url.to_string(),
 			num_fetch_workers,
+			num_compute_workers,
 			dust_warp,
 			fetch_only_cache,
 			fetch_cache_config,
@@ -263,6 +270,7 @@ impl GetTxs for GetTxsFromUrl {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::InMemory::default(),
 				)
@@ -272,6 +280,7 @@ impl GetTxs for GetTxsFromUrl {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
 				)
@@ -281,6 +290,7 @@ impl GetTxs for GetTxsFromUrl {
 				fetch_all(
 					&self.rpc_url,
 					self.num_fetch_workers,
+					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
 				)

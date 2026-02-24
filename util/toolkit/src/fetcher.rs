@@ -95,6 +95,7 @@ pub async fn read_blocks_from_cache(
 pub async fn fetch_all(
 	url: &str,
 	num_workers: usize,
+	num_compute_workers: usize,
 	fetch_only_cache: bool,
 	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
@@ -111,7 +112,7 @@ pub async fn fetch_all(
 
 		Ok(blocks)
 	} else {
-		fetch_from_rpc(url, chain_id, num_workers, fetch_storage).await
+		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage).await
 	}
 }
 
@@ -119,6 +120,7 @@ pub async fn fetch_from_rpc(
 	url: &str,
 	chain_id: H256,
 	num_workers: usize,
+	num_compute_workers: usize,
 	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
@@ -139,15 +141,14 @@ pub async fn fetch_from_rpc(
 		BLOCKS_PER_JOB
 	};
 
-	let num_cpu_workers = num_cpus::get();
-
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
-	let (fetch_to_compute_tx, fetch_to_compute_rx) = async_channel::bounded(num_cpu_workers * 2);
+	let (fetch_to_compute_tx, fetch_to_compute_rx) =
+		async_channel::bounded(num_compute_workers * 2);
 	// We use a separate unbounded channel here because compute workers produce recursive tasks
 	let (compute_to_compute_tx, compute_to_compute_rx) = async_channel::unbounded();
-	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_cpu_workers * 2);
+	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_compute_workers * 2);
 
 	// Push jobs into queue
 	{
@@ -201,10 +202,10 @@ pub async fn fetch_from_rpc(
 		});
 	}
 
-	log::info!("spawning {num_cpu_workers} compute workers");
+	log::info!("spawning {num_compute_workers} compute workers");
 
 	// Spawn compute workers
-	for _ in 0..num_cpus::get() {
+	for _ in 0..num_compute_workers {
 		let fetch_to_compute_rx = fetch_to_compute_rx.clone();
 		let compute_to_compute_rx = compute_to_compute_rx.clone();
 		let compute_to_compute_tx = compute_to_compute_tx.clone();
