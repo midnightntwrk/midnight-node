@@ -37,9 +37,15 @@ use sp_runtime::{
 #[scale_info(skip_type_params(T))]
 pub struct CheckThrottle<T: Config>(PhantomData<T>);
 
+impl<T: Config> Default for CheckThrottle<T> {
+	fn default() -> Self {
+		Self(PhantomData)
+	}
+}
+
 impl<T: Config> CheckThrottle<T> {
 	pub fn new() -> Self {
-		Self(PhantomData)
+		Self::default()
 	}
 }
 

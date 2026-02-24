@@ -853,7 +853,7 @@ parameter_types! {
 	/// Maximum bytes a single account can submit within a throttle window (10 MB).
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
 	/// Number of blocks that define a throttle window (1 day at 6s/block).
-	pub const WindowSize: u32 = 1 * DAYS;
+	pub const WindowSize: u32 = DAYS;
 }
 
 impl pallet_throttle::Config for Runtime {
