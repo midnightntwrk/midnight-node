@@ -294,6 +294,11 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		let Transaction::Standard(stx) = tx else {
 			return;
 		};
+
+		if spends.is_empty() && self.dust_registrations.is_empty() {
+			return;
+		}
+
 		let segment_id = Segment::Fallible.into();
 		let mut intent = match stx.intents.get(&segment_id) {
 			Some(intent) => (*intent).clone(),
