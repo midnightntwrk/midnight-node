@@ -23,6 +23,7 @@ pub mod extensions;
 pub mod genesis;
 pub mod inherent_data;
 pub mod main_chain_follower;
+pub mod memory_monitor;
 pub mod metrics_push;
 pub mod partner_chains;
 pub mod payload;
