@@ -298,9 +298,6 @@ impl GetTxs for GetTxsFromUrl {
 			},
 		};
 
-		let client = MidnightNodeClient::new(&self.rpc_url, None).await?;
-		let network_id = client.get_network_id().await?;
-
-		Ok(SourceTransactions::from_blocks(blocks, &network_id, self.dust_warp))
+		Ok(SourceTransactions::from_blocks(blocks, self.dust_warp))
 	}
 }

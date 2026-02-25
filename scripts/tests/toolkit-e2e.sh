@@ -77,7 +77,7 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
-    --dest-file "/out/$deploy_filename" --to-bytes \
+    --dest-file "/out/$deploy_filename" \
     contract-simple deploy \
     --rng-seed "$RNG_SEED" \
     -s ws://midnight-node-tx:9944

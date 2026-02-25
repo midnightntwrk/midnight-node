@@ -106,11 +106,7 @@ impl SourceTransactions {
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
-	pub fn from_blocks(
-		blocks: impl IntoIterator<Item = RawBlockData>,
-		network_id: &str,
-		dust_warp: bool,
-	) -> Self {
+	pub fn from_blocks(blocks: impl IntoIterator<Item = RawBlockData>, dust_warp: bool) -> Self {
 		let mut blocks: Vec<_> = blocks.into_iter().collect();
 		if dust_warp {
 			let now_secs = SystemTime::now()
@@ -124,7 +120,21 @@ impl SourceTransactions {
 			));
 		}
 
-		Self { blocks, network_id: network_id.to_string() }
+		let Some(block) = blocks.first() else {
+			panic!("block list is empty");
+		};
+
+		let network_id_res = block
+			.transactions
+			.iter()
+			.filter_map(|tx| fork::network_id_and_ledger_version_from_tx_bytes(tx.as_bytes()).ok())
+			.next();
+
+		let Some((network_id, _)) = network_id_res else {
+			panic!("first block has no transactions that include a newtork id");
+		};
+
+		Self { blocks, network_id }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -133,7 +143,6 @@ impl SourceTransactions {
 		dust_warp: bool,
 	) -> Self {
 		let mut blocks = Vec::new();
-		let mut network_id: Option<String> = None;
 		let mut ledger_version = LedgerVersion::default();
 		for batch in batches {
 			let context =
@@ -142,12 +151,15 @@ impl SourceTransactions {
 			let transactions: Vec<_> =
 				batch.iter().map(|t| RawTransaction::Midnight(t.tx.clone())).collect();
 
-			if network_id.is_none() && !transactions.is_empty() {
-				let (new_network_id, new_ledger_version) =
-					fork::network_id_and_ledger_version_from_tx_bytes(transactions[0].as_bytes());
-				network_id = Some(new_network_id);
+			if let Some((_, new_ledger_version)) = transactions
+				.iter()
+				.filter_map(|tx| {
+					fork::network_id_and_ledger_version_from_tx_bytes(tx.as_bytes()).ok()
+				})
+				.next()
+			{
 				ledger_version = new_ledger_version;
-			}
+			};
 
 			let block = RawBlockData::new_from_timestamp(
 				context.tblock.to_secs(),
@@ -165,14 +177,9 @@ impl SourceTransactions {
 			if i > 1 {
 				blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 			}
-			blocks[i].ledger_version = ledger_version;
 		}
 
-		Self::from_blocks(
-			blocks,
-			&network_id.expect("no transactions found, can't derive network id"),
-			dust_warp,
-		)
+		Self::from_blocks(blocks, dust_warp)
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -185,10 +192,11 @@ impl SourceTransactions {
 		let mut transactions = Vec::new();
 		let mut network_id: Option<String> = None;
 		let mut ledger_version: LedgerVersion = LedgerVersion::default();
+		// TODO: Fix for system transactions, remove unwrap
 		for tx in txs {
 			if network_id.is_none() {
 				let (new_network_id, new_ledger_version) =
-					fork::network_id_and_ledger_version_from_tx_bytes(&tx.tx);
+					fork::network_id_and_ledger_version_from_tx_bytes(&tx.tx).unwrap();
 				network_id = Some(new_network_id);
 				ledger_version = new_ledger_version;
 			}
