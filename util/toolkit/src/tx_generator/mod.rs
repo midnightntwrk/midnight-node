@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::Path;
 use thiserror::Error;
 
 use crate::serde_def::{BuiltTransactions, SourceTransactions};
@@ -71,11 +70,8 @@ impl TxGenerator {
 				println!("Dry-run: Source transactions from file(s): {:?}", &src_files);
 				return Ok(Box::new(()));
 			}
-			let path = Path::new(&src_files[0]);
-			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
 			let source: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
 				src_files.clone(),
-				extension.to_string(),
 				src.dust_warp,
 				src.ignore_block_context,
 			));

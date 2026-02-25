@@ -158,19 +158,13 @@ impl GetTxs for () {
 
 pub struct GetTxsFromFile {
 	files: Vec<String>,
-	extension: String,
 	dust_warp: bool,
 	ignore_block_context: bool,
 }
 
 impl GetTxsFromFile {
-	pub fn new(
-		files: Vec<String>,
-		extension: String,
-		dust_warp: bool,
-		ignore_block_context: bool,
-	) -> Self {
-		Self { files, extension, dust_warp, ignore_block_context }
+	pub fn new(files: Vec<String>, dust_warp: bool, ignore_block_context: bool) -> Self {
+		Self { files, dust_warp, ignore_block_context }
 	}
 
 	pub fn load_single(filename: &str) -> Result<SerializedTx, std::io::Error> {
