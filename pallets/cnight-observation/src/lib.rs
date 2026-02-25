@@ -152,6 +152,10 @@ pub mod pallet {
 		LedgerApiError(LedgerApiError),
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
+		/// Next Cardano position does not strictly advance beyond current position
+		CardanoPositionRegression,
+		/// Next Cardano position jumps forward beyond the allowed block window
+		CardanoPositionExcessiveJump,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
