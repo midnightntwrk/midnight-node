@@ -60,7 +60,7 @@ use {
 		db::{DB, ParityDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt, SyncStatusExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -339,8 +339,6 @@ where
 
 		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
 
-		let is_syncing =
-			externalities.extension::<SyncStatusExt>().is_some_and(|ext| ext.is_syncing());
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building unshielded UTXOs (elapsed_ms={})",
@@ -377,7 +375,7 @@ where
 		let input_segments = utxos.inputs.len();
 
 		let (mut utxo_outputs, mut utxo_inputs) =
-			utxos.check_utxos_response_integrity(initial_utxos_size, &ledger)?;
+			utxos.check_utxos_response_integrity(initial_utxos_size, &new_ledger)?;
 
 		// Apply ordering override for old blocks produced with HashMap ordering.
 		// Only reorder lists that span multiple segments.
