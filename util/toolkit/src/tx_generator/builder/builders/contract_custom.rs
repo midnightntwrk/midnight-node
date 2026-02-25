@@ -1,17 +1,20 @@
 use crate::{
 	builder::{
-		BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt, CustomContractArgs, DefaultDB,
-		DeserializedTransactionsWithContext, IntentCustom, OfferInfo, ProofProvider, ProofType,
-		SignatureType, TransactionWithContext, Wallet, WalletSeed,
+		BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildTxs, BuildTxsExt,
+		CustomContractArgs, DefaultDB, DeserializedTransactionsWithContext, IntentCustom,
+		OfferInfo, ProofProvider, ProofType, SignatureType, TransactionWithContext, Wallet,
+		WalletSeed,
 	},
 	serde_def::SourceTransactions,
-	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
+	toolkit_js::{
+		EncodedInputInfo, EncodedOutputInfo, EncodedTransientInfo, EncodedZswapLocalState,
+	},
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::{
-	BuildUtxoOutput, BuildUtxoSpend, ClaimedUnshieldedSpendsKey, ContractAction, IntentInfo,
-	ProofPreimageMarker, PublicAddress, ShieldedWallet, StdRng, TokenType, UnshieldedOfferInfo,
-	UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, WalletAddress,
+	BuildUtxoOutput, BuildUtxoSpend, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction,
+	IntentInfo, ProofPreimageMarker, PublicAddress, ShieldedWallet, StdRng, TokenType,
+	UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, WalletAddress,
 };
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
@@ -22,6 +25,8 @@ pub enum CustomContractBuilderError {
 	FailedReadingZswapStateFile(std::io::Error),
 	#[error("failed to parse zswap state")]
 	FailedParsingZswapState(serde_json::Error),
+	#[error("failed to deserialize zswap state")]
+	FailedDeserializingZswapState(String),
 	#[error("failed to prove tx")]
 	FailedProvingTx(Box<dyn std::error::Error + Send + Sync>),
 	#[error("failed to read intent file")]
@@ -192,14 +197,17 @@ impl BuildTxs for CustomContractBuilder {
 			Box::new(IntentInfo {
 				guaranteed_unshielded_offer: unshielded_offer_info,
 				fallible_unshielded_offer: None,
-				actions: vec![Box::new(contract_intent)],
+				actions: vec![Box::new(contract_intent.clone())],
 			}),
 		);
 
 		tx_info.set_intents(intents);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+		let mut inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+
+		//   - Transient
+		let mut transients_info: Vec<Box<dyn BuildTransient<DefaultDB>>> = vec![];
 
 		//   - Output
 		let shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = self
@@ -207,23 +215,66 @@ impl BuildTxs for CustomContractBuilder {
 			.iter()
 			.filter_map(|addr| addr.try_into().ok())
 			.collect();
+
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = Vec::new();
+		let mut encoded_output_infos: HashMap<CoinInfo, Box<EncodedOutputInfo>> = HashMap::new();
+
 		if let Some(zswap_state) = zswap_state {
+			dbg!(&zswap_state.inputs);
 			for encoded_output in zswap_state.outputs.into_iter() {
+				dbg!(&encoded_output);
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
-				outputs_info.push(Box::new(EncodedOutputInfo::new(
-					encoded_output,
-					0,
-					&shielded_wallets,
-				)));
+				let coin_info = CoinInfo::from(&encoded_output);
+				let encoded_output_info =
+					EncodedOutputInfo::new(encoded_output, 1, &shielded_wallets);
+				encoded_output_infos.insert(coin_info, Box::new(encoded_output_info));
+			}
+
+			if !zswap_state.inputs.is_empty() {
+				let contract_address = contract_intent
+					.find_contract_address()
+					.expect("Contract address should be set");
+				let chain_zswap_state = context.with_ledger_state(|state| (*state.zswap).clone());
+				for encoded_input in zswap_state.inputs.into_iter() {
+					dbg!(&encoded_input);
+					let coin_info = CoinInfo::from(&encoded_input);
+
+					if let Some(encoded_output_info) = encoded_output_infos.get(&coin_info) {
+						let transient = EncodedTransientInfo {
+							encoded_qualified_info: encoded_input,
+							segment: 0,
+							encoded_output_info: encoded_output_info.clone(),
+						};
+						transients_info.push(Box::new(transient));
+						encoded_output_infos.remove(&coin_info);
+					} else {
+						let input = EncodedInputInfo {
+							encoded_qualified_info: encoded_input,
+							segment: 0,
+							contract_address: contract_address.clone(),
+							chain_zswap_state: chain_zswap_state.clone(),
+						};
+						inputs_info.push(Box::new(input));
+					}
+				}
+			}
+
+			for encoded_output_info in encoded_output_infos.values() {
+				outputs_info.push(encoded_output_info.clone());
 			}
 		}
 
+		// let inputs_len = inputs_info.len();
+		// let outputs_len = outputs_info.len();
 		let offer_info =
-			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };
+			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: transients_info };
 
+		// if inputs_len > 0 || outputs_len > 0 {
+		// 	tx_info.set_fallible_offers(HashMap::from([(1, offer_info)]));
+		// } else {
 		tx_info.set_guaranteed_offer(offer_info);
+		// }
 
 		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(false);

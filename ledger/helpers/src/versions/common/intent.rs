@@ -12,10 +12,10 @@
 // limitations under the License.
 
 use super::{
-	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,
-	DustResolver, FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial, Resolver,
-	Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	Array, BuildContractAction, ContractAction, ContractAddress, ContractEffects, DB,
+	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
+	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -106,6 +106,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 	}
 }
 
+#[derive(Clone)]
 pub struct IntentCustom<D: DB + Clone> {
 	pub intent: IntentOf<D>,
 	pub resolver: &'static Resolver,
@@ -157,6 +158,17 @@ impl<D: DB + Clone> IntentCustom<D> {
 			}
 		}
 		(guaranteed_effects, fallible_effects)
+	}
+
+	pub fn find_contract_address(&self) -> Option<ContractAddress> {
+		for action in self.intent.actions.iter() {
+			match *action {
+				ContractAction::Call(ref c) => return Some(c.address),
+				ContractAction::Maintain(ref c) => return Some(c.address),
+				_ => continue,
+			}
+		}
+		None
 	}
 
 	pub fn get_resolver(artifact_dirs: &[String]) -> Result<Resolver, std::io::Error> {
