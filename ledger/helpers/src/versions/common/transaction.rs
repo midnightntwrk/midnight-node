@@ -158,7 +158,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.as_mut()
 			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
 
-		let fallible_offer: HashMap<u16, Offer<ProofPreimage, D>> = self
+		let fallible_offer = self
 			.fallible_offers
 			.iter_mut()
 			.map(|(segment_id, offer_info)| {

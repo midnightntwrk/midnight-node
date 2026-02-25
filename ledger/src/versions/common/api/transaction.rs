@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 
 use super::{
@@ -131,7 +131,7 @@ pub struct UnshieldedUtxos {
 impl UnshieldedUtxos {
 	pub fn remove_failed_segments<D: DB>(
 		&mut self,
-		segments: &HashMap<SegmentId, Result<(), TransactionInvalid<D>>>,
+		segments: &BTreeMap<SegmentId, Result<(), TransactionInvalid<D>>>,
 	) {
 		segments.iter().for_each(|(segment_id, maybe_tx_invalid)| {
 			// Remove the failing segments from `outputs` and `inputs`
