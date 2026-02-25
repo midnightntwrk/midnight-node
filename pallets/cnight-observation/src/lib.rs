@@ -452,8 +452,6 @@ pub mod pallet {
 					.concat(),
 			);
 
-			UtxoOwners::<T>::insert(nonce, dust_public_key.clone());
-
 			let event = LedgerApi::construct_cnight_generates_dust_event(
 				data.value,
 				&dust_public_key.0,
@@ -463,7 +461,10 @@ pub mod pallet {
 			);
 
 			match event {
-				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
+				Ok(event_bytes) => {
+					UtxoOwners::<T>::insert(nonce, dust_public_key.clone());
+					Some(CNightGeneratesDustEventSerialized(event_bytes))
+				},
 				Err(e) => {
 					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
 					None
@@ -480,7 +481,7 @@ pub mod pallet {
 					.concat(),
 			);
 
-			let Some(dust_public_key) = UtxoOwners::<T>::get(nonce) else {
+			let Some(dust_public_key) = UtxoOwners::<T>::take(nonce) else {
 				log::warn!(
 					"No create event for UTXO: {}#{}",
 					hex::encode(data.utxo_tx_hash.0),

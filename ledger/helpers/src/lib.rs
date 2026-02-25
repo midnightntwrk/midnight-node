@@ -18,8 +18,9 @@ pub use utils::find_dependency_version;
 #[path = "versions"]
 pub mod hard_fork_test {
 	pub use {
-		base_crypto, coin_structure_hf as coin_structure, ledger_storage_hf as ledger_storage,
-		midnight_serialize, mn_ledger_hf as mn_ledger, onchain_runtime_hf as onchain_runtime,
+		base_crypto_hf as base_crypto, coin_structure_hf as coin_structure,
+		ledger_storage_hf as ledger_storage, midnight_serialize_hf as midnight_serialize,
+		mn_ledger_hf as mn_ledger, onchain_runtime_hf as onchain_runtime,
 		transient_crypto_hf as transient_crypto, zkir_hf as zkir, zswap_hf as zswap,
 	};
 
@@ -52,10 +53,9 @@ pub mod ledger_7 {
 #[path = "versions"]
 pub mod ledger_8 {
 	pub use {
-		base_crypto, coin_structure_ledger_8 as coin_structure,
-		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_8 as mn_ledger,
-		onchain_runtime_ledger_8 as onchain_runtime, transient_crypto_ledger_8 as transient_crypto,
-		zkir_ledger_8 as zkir, zswap_ledger_8 as zswap,
+		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
+		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
+		zkir, zswap_ledger_8 as zswap,
 	};
 
 	#[allow(clippy::duplicate_mod)]

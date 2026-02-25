@@ -60,8 +60,10 @@ async function runEphemeralEnvironment(
   switch(dbsyncMode) {
   case "public":
     console.log("Skipping port-forward: DB marked as publicly reachable");
+    break;
   case "rds-proxy":
     console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
+    break;
   default:
     await connectToPostgres(namespace);
   }
