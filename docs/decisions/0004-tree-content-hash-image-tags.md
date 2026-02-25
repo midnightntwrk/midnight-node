@@ -27,8 +27,7 @@ New tag format: `{VERSION}-{12-char-tree-hash}-{ARCH}`
 | Component | Change |
 | --------- | ------ |
 | `season-action` | New `hash_type` input (`commit`/`tree`), defaults to `commit` for backward compatibility |
-| `Earthfile` | Image targets accept `CONTENT_HASH` ARG instead of `EARTHLY_GIT_SHORT_HASH` |
-| `Earthfile` | New `build-images` LOCALLY target as recommended local entry point |
+| `Earthfile` | Image targets compute `CONTENT_HASH` LET instead of `EARTHLY_GIT_SHORT_HASH` |
 | `main.yml` | Computes tree hash, checks if images exist before building, `force_rebuild` input to override |
 
 ### Skip logic

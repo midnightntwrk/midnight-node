@@ -9,6 +9,11 @@ on:
         description: "The branch to build and deploy"
         required: false
         default: ""
+      force_rebuild:
+        description: "Force rebuild even if images already exist"
+        required: false
+        type: boolean
+        default: false
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -74,6 +79,7 @@ jobs:
           image_name: midnight-node
           cargo_toml_path: node/Cargo.toml
           changes_archive_dir: .changes_archive
+          hash_type: tree
 
       - name: Install just
         uses: taiki-e/install-action@cfdb446e391c69574ebc316dfb7d7849ec12b940 #v2.68.8
@@ -89,16 +95,30 @@ jobs:
       - name: Run build
         id: export
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
-          # We don't use --ci as we want artifacts to be saved
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
+          IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
 
-          # Pass IMAGE_TAG to next step (must match definition in Earthfile):
-          export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+          if [ "${{ inputs.force_rebuild }}" != "true" ]; then
+            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
+            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
+          fi
+
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+              echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
+            . ./.envrc && earthly +extract-node-artifacts \
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
+              --NATIVEARCH=amd64
+          el
+            # We don't use --ci as we want artifacts to be saved
+            . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
+            . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
+          fi
+
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       - name: Sign container images
@@ -142,7 +162,6 @@ jobs:
           fi
 
           VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
-          IMAGE_TAG_RELEASE="$VERSION"
           RELEASE_TITLE="[Unreleased]"
 
           if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
@@ -210,23 +229,41 @@ jobs:
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Run Node and toolkit builds
+        id: export
         run: |
           mkdir -p $HOME/.cargo
           echo "[net]" >> $HOME/.cargo/config
           echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
 
-          # We don't pass --ci to earthly here as we want the artifacts saved
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +toolkit-image
+          CONTENT_HASH=$(git rev-parse HEAD^{tree} | cut -c1-12)
+          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
+          IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          NODE_EXISTS=false
+          TOOLKIT_EXISTS=false
+          if [ "${{ inputs.force_rebuild }}" != "true" ]; then
+            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" > /dev/null 2>&1 && echo true || echo false)
+            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" > /dev/null 2>&1 && echo true || echo false)
+          fi
+
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+            echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
+            . ./.envrc && earthly +extract-node-artifacts \
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" \
+              --NATIVEARCH=arm64
+          el
+            . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
+            . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
+          fi
 
       - name: Sign container images
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
           git fetch origin "$GITHUB_REF" --depth=1
           git checkout FETCH_HEAD -- ".github/scripts/sign-image.sh"
           source .github/scripts/sign-image.sh
-
-          # Calculate IMAGE_TAG (must match definition in Earthfile)
-          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
 
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
           sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
@@ -289,9 +326,9 @@ jobs:
       - name: Build indexer images
         id: build_indexer
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
@@ -641,7 +678,7 @@ jobs:
             echo "result=notok" >> "$GITHUB_OUTPUT"
           else
             echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
-            echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
             echo "result=ok" >> "$GITHUB_OUTPUT"
           fi
 
