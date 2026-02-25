@@ -7,4 +7,4 @@ Replace Cosign keyless signing with GitHub's `actions/attest-build-provenance` a
 Re-enable SBOM attestation (previously disabled due to Rekor rejecting payloads).
 Add build provenance attestation for release binary assets.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/786
