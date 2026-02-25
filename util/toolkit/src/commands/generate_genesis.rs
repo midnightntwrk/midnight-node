@@ -159,9 +159,12 @@ pub async fn execute(
 	let genesis_tx_path = dir.join(&block_filename);
 
 	serialize_and_write(&genesis.state, &genesis_state_path)?;
-	serialize_and_write(&genesis.txs, &genesis_tx_path)?;
 
-	println!("Number of genesis txs: {}", genesis.txs.len());
+	let json_bytes = serde_json::to_vec(&genesis.txs)?;
+	std::fs::write(&genesis_tx_path, json_bytes)?;
+	println!("Written to {}", genesis_tx_path.display());
+
+	println!("Number of genesis txs: {}", genesis.txs.batches[0].len());
 
 	Ok(genesis)
 }
