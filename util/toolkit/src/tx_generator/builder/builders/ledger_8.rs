@@ -49,7 +49,9 @@ pub mod inner {
 pub use inner::*;
 
 use crate::serde_def::SerializedTx;
-use midnight_node_ledger_helpers::ledger_8::{DefaultDB, ProofMarker, Signature, TransactionWithContext};
+use midnight_node_ledger_helpers::ledger_8::{
+	DefaultDB, ProofMarker, Signature, TransactionWithContext,
+};
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,

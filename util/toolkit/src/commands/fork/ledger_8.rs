@@ -18,12 +18,12 @@
 pub mod inner {
 	pub use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
 
-	pub mod serde_convert;
 	pub mod contract_address;
 	pub mod contract_state;
 	pub mod dust_balance;
 	pub mod generate_intent;
 	pub mod get_tx_from_context;
+	pub mod serde_convert;
 	pub mod show_transaction;
 	pub mod show_wallet;
 }

@@ -9,8 +9,10 @@ pub fn utxo_to_ser(utxo: Utxo) -> UtxoSer {
 	let intent_hash = utxo.intent_hash.0.0.encode_hex();
 	let output_number = utxo.output_no;
 	let id = format!("{intent_hash}#{output_number}");
-	let initial_nonce =
-		InitialNonce(persistent_commit(&utxo.output_no, utxo.intent_hash.0)).0.0.encode_hex();
+	let initial_nonce = InitialNonce(persistent_commit(&utxo.output_no, utxo.intent_hash.0))
+		.0
+		.0
+		.encode_hex();
 	UtxoSer {
 		id,
 		initial_nonce,

@@ -104,8 +104,7 @@ async fn run_cli(args: &[&str]) {
 	run_command(cli.command).await.expect("CLI command failed");
 }
 
-const RNG_SEED: &str =
-	"0000000000000000000000000000000000000000000000000000000000000037";
+const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
 
 #[tokio::test]
 async fn toolkit_e2e() {
@@ -115,10 +114,7 @@ async fn toolkit_e2e() {
 	run_cli(&["version"]).await;
 
 	// 2. generate-txs batches
-	run_cli(&[
-		"generate-txs", "batches", "-n", "1", "-b", "1", "-s", url, "-d", url,
-	])
-	.await;
+	run_cli(&["generate-txs", "batches", "-n", "1", "-b", "1", "-s", url, "-d", url]).await;
 
 	// 3. Contract deploy + address + send + maintenance + call(store) + call(check)
 	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
@@ -157,14 +153,7 @@ async fn toolkit_e2e() {
 	};
 
 	// 3c. Send the deploy tx
-	run_cli(&[
-		"generate-txs",
-		&format!("--src-file={deploy_file_str}"),
-		"send",
-		"-d",
-		url,
-	])
-	.await;
+	run_cli(&["generate-txs", &format!("--src-file={deploy_file_str}"), "send", "-d", url]).await;
 
 	// 3d. Contract maintenance
 	run_cli(&[

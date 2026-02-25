@@ -5,9 +5,8 @@ use hex::ToHex;
 pub fn extract_contract_address(
 	tx_bytes: &[u8],
 ) -> Result<ContractAddressBoth, ContractAddressError> {
-	let mn_tx: FinalizedTransaction<DefaultDB> =
-		mn_ledger_serialize::tagged_deserialize(tx_bytes)
-			.map_err(ContractAddressError::LedgerSerializeError)?;
+	let mn_tx: FinalizedTransaction<DefaultDB> = mn_ledger_serialize::tagged_deserialize(tx_bytes)
+		.map_err(ContractAddressError::LedgerSerializeError)?;
 
 	let (_, deploy) = mn_tx.deploys().next().ok_or(ContractAddressError::NoContractDeployFound)?;
 

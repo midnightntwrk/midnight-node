@@ -43,9 +43,7 @@ pub fn convert_wallet_seed(ws: midnight_node_ledger_helpers::WalletSeed) -> Wall
 	WalletSeed::try_from(ws.as_bytes()).expect("wallet seed conversion between versions")
 }
 
-pub fn convert_coin_public_key(
-	cpk: midnight_node_ledger_helpers::CoinPublicKey,
-) -> CoinPublicKey {
+pub fn convert_coin_public_key(cpk: midnight_node_ledger_helpers::CoinPublicKey) -> CoinPublicKey {
 	CoinPublicKey(HashOutput(cpk.0.0))
 }
 

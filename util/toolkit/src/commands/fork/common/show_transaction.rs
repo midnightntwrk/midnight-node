@@ -1,6 +1,4 @@
-use super::ledger_helpers_local::{
-	self, DefaultDB, PureGeneratorPedersen, deserialize,
-};
+use super::ledger_helpers_local::{self, DefaultDB, PureGeneratorPedersen, deserialize};
 
 type Signature = ledger_helpers_local::Signature;
 type ProofMarker = ledger_helpers_local::ProofMarker;

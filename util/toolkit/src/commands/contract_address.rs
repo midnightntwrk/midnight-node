@@ -71,11 +71,7 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
 	}
 
-	if args.tagged {
-		Ok(both.tagged().to_string())
-	} else {
-		Ok(both.untagged().to_string())
-	}
+	if args.tagged { Ok(both.tagged().to_string()) } else { Ok(both.untagged().to_string()) }
 }
 
 #[cfg(test)]

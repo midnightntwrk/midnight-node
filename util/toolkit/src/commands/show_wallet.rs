@@ -66,9 +66,7 @@ pub async fn execute(
 			LedgerVersion::Ledger8 => {
 				let ctx = fork_ctx.into_ledger8().unwrap();
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx,
-					seed,
-					args.debug,
+					&ctx, seed, args.debug,
 				);
 				fork_wallet_result_v8(result)
 			},
@@ -77,9 +75,7 @@ pub async fn execute(
 				let seed_v7 =
 					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed);
 				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
-					&ctx,
-					seed_v7,
-					args.debug,
+					&ctx, seed_v7, args.debug,
 				);
 				fork_wallet_result_v7(result)
 			},
@@ -95,10 +91,9 @@ pub async fn execute(
 		Ok(match fork_ctx.version() {
 			LedgerVersion::Ledger8 => {
 				let ctx = fork_ctx.into_ledger8().unwrap();
-				let result =
-					crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
-						&ctx, address,
-					);
+				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
+					&ctx, address,
+				);
 				fork_wallet_result_v8(result)
 			},
 			LedgerVersion::Ledger7 => {
@@ -107,10 +102,9 @@ pub async fn execute(
 					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
 						&address,
 					);
-				let result =
-					crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
-						&ctx, addr_v7,
-					);
+				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
+					&ctx, addr_v7,
+				);
 				fork_wallet_result_v7(result)
 			},
 		})

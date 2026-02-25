@@ -28,15 +28,11 @@ pub fn execute(
 	// Try ledger_8 first, fall back to ledger_7
 	crate::commands::fork::ledger_8::get_tx_from_context::extract_tx_from_context(&tx_bytes)
 		.or_else(|_| {
-			crate::commands::fork::ledger_7::get_tx_from_context::extract_tx_from_context(
-				&tx_bytes,
-			)
+			crate::commands::fork::ledger_7::get_tx_from_context::extract_tx_from_context(&tx_bytes)
 		})
 }
 
-fn read_hex_file(
-	src_file: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+fn read_hex_file(src_file: &str) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
 	let file_content = std::fs::read(src_file)?;
 	let tx_hex = String::from_utf8_lossy(&file_content);
 	// Some IDEs auto-add an extra empty line at the end of the file

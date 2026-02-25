@@ -32,7 +32,7 @@ pub fn dust_balance(
 				.unwrap_or(0);
 			let gen_info_pair = GenerationInfoPair {
 				dust_output: dust_output_ser.clone(),
-				generation_info: gen_info.as_ref().map(|g| dust_generation_info_to_ser(g.clone())),
+				generation_info: gen_info.as_ref().map(|g| dust_generation_info_to_ser(*g)),
 			};
 			generation_infos.push(gen_info_pair);
 

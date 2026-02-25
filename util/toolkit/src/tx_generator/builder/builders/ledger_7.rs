@@ -22,8 +22,8 @@ pub mod inner {
 	mod build_txs_ext;
 	mod claim_rewards;
 	mod contract_call;
-	mod tx_serialization;
 	pub mod transactions;
+	mod tx_serialization;
 	pub mod type_convert;
 	// contract_custom excluded: EncodedOutputInfo does not implement ledger_7 BuildOutput
 	mod contract_deploy;
@@ -48,7 +48,9 @@ pub mod inner {
 pub use inner::*;
 
 use crate::serde_def::SerializedTx;
-use midnight_node_ledger_helpers::ledger_7::{DefaultDB, ProofMarker, Signature, TransactionWithContext};
+use midnight_node_ledger_helpers::ledger_7::{
+	DefaultDB, ProofMarker, Signature, TransactionWithContext,
+};
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,

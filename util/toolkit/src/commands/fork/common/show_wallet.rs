@@ -19,11 +19,8 @@ pub fn show_wallet_from_seed(
 				let debug_str = format!("{wallet:#?}");
 				ShowWalletResult::Debug(debug_str, utxo_sers)
 			} else {
-				let utxos = wallet
-					.unshielded_utxos(ledger_state)
-					.into_iter()
-					.map(utxo_to_ser)
-					.collect();
+				let utxos =
+					wallet.unshielded_utxos(ledger_state).into_iter().map(utxo_to_ser).collect();
 				let coins = wallet
 					.shielded
 					.state
@@ -45,9 +42,7 @@ pub fn show_wallet_from_seed(
 					.dust
 					.dust_local_state
 					.as_ref()
-					.map_or(vec![], |s| {
-						s.utxos().map(qualified_dust_output_to_ser).collect()
-					});
+					.map_or(vec![], |s| s.utxos().map(qualified_dust_output_to_ser).collect());
 				ShowWalletResult::Json(WalletInfoJson { coins, dust_utxos, utxos })
 			}
 		})
@@ -59,11 +54,7 @@ pub fn show_wallet_from_address(
 	address: ledger_helpers_local::WalletAddress,
 ) -> ShowWalletResult {
 	let utxos = context.utxos(address).into_iter().map(utxo_to_ser).collect();
-	ShowWalletResult::Json(WalletInfoJson {
-		coins: HashMap::new(),
-		utxos,
-		dust_utxos: Vec::new(),
-	})
+	ShowWalletResult::Json(WalletInfoJson { coins: HashMap::new(), utxos, dust_utxos: Vec::new() })
 }
 
 pub enum ShowWalletResult {
