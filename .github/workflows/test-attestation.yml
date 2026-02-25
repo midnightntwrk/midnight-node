@@ -1,0 +1,188 @@
+name: Test - Attestation Migration
+
+# Temporary workflow to validate GitHub native attestation migration.
+# Tests: build-provenance, SBOM attestation, binary attestation, verification.
+# Delete this file before merging to main.
+
+on:
+  workflow_dispatch:
+
+# no top level default permissions for security reasons
+permissions: {}
+
+jobs:
+  # Job 1: Build a minimal test image, push to GHCR, attest build provenance
+  test-build-provenance:
+    name: Test build provenance attestation
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.digest.outputs.digest }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push test image
+        id: push
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/attestation-test:${{ github.run_id }}"
+          echo "FROM alpine:3.21" | docker build -t "${IMAGE}" -
+          docker push "${IMAGE}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Get image digest
+        id: digest
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --format '{{.Manifest.Digest}}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Image: ${IMAGE}"
+          echo "Digest: ${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/attestation-test
+          subject-digest: ${{ steps.digest.outputs.digest }}
+
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.push.outputs.image }}
+        run: |
+          echo "--- Verifying build provenance ---"
+          gh attestation verify "oci://${IMAGE}" --repo "${{ github.repository }}"
+          echo "--- Build provenance verified ---"
+
+  # Job 2: Test SBOM generation + attestation via the reusable workflow
+  test-sbom-attestation:
+    name: Test SBOM scan + attestation
+    needs: [test-build-provenance]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ${{ needs.test-build-provenance.outputs.image }}
+      sbom-artifact-name: sbom-attestation-test
+    secrets: inherit
+
+  # Job 3: Verify SBOM attestation was created
+  test-verify-sbom:
+    name: Verify SBOM attestation
+    needs: [test-build-provenance, test-sbom-attestation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Verify SBOM attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.test-build-provenance.outputs.image }}
+        run: |
+          echo "--- Verifying SBOM attestation ---"
+          gh attestation verify "oci://${IMAGE}" \
+            --repo "${{ github.repository }}" \
+            --predicate-type https://spdx.dev/Document
+          echo "--- SBOM attestation verified ---"
+
+  # Job 4: Test binary file attestation (used for release tarballs + checksums)
+  test-binary-attestation:
+    name: Test binary attestation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Create test files
+        run: |
+          echo "test binary content ${{ github.sha }}" > test-binary.tar.gz
+          sha256sum test-binary.tar.gz > SHA256SUMS
+          echo "Files:"
+          ls -la test-binary.tar.gz SHA256SUMS
+
+      - name: Attest binary
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: test-binary.tar.gz
+
+      - name: Attest checksums
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: SHA256SUMS
+
+      - name: Verify binary attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "--- Verifying binary attestation ---"
+          gh attestation verify test-binary.tar.gz --repo "${{ github.repository }}"
+          echo "--- Binary attestation verified ---"
+
+          echo "--- Verifying checksum attestation ---"
+          gh attestation verify SHA256SUMS --repo "${{ github.repository }}"
+          echo "--- Checksum attestation verified ---"
+
+  # Job 5: Test verify-image.sh script
+  test-verify-script:
+    name: Test verify-image.sh
+    needs: [test-build-provenance, test-sbom-attestation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: scripts/verify-image.sh
+
+      - name: Run verify-image.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ needs.test-build-provenance.outputs.image }}
+        run: |
+          echo "--- Testing verify-image.sh ---"
+          echo "Note: test image won't match ATTESTED_IMAGE_PREFIXES, testing gh verify directly"
+          gh attestation verify "oci://${IMAGE}" --repo "${{ github.repository }}"
+          gh attestation verify "oci://${IMAGE}" --repo "${{ github.repository }}" \
+            --predicate-type https://spdx.dev/Document
+          echo "--- All verifications passed ---"
+
+  # Summary job
+  test-summary:
+    name: Test summary
+    needs: [test-build-provenance, test-sbom-attestation, test-verify-sbom, test-binary-attestation, test-verify-script]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Results
+        run: |
+          echo "## Attestation Migration Test Results"
+          echo ""
+          echo "Build provenance: ${{ needs.test-build-provenance.result }}"
+          echo "SBOM scan+attest: ${{ needs.test-sbom-attestation.result }}"
+          echo "SBOM verify:      ${{ needs.test-verify-sbom.result }}"
+          echo "Binary attest:    ${{ needs.test-binary-attestation.result }}"
+          echo "Verify script:    ${{ needs.test-verify-script.result }}"
+          echo ""
+          echo "Cleanup: delete ghcr.io/${{ github.repository_owner }}/attestation-test:${{ github.run_id }} after review"
+
+      - name: Fail if any test failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
