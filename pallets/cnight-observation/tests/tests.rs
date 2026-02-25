@@ -1261,3 +1261,165 @@ fn duplicate_inherent_protection_works() {
 		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
 	});
 }
+
+#[test]
+fn position_regression_lower_block_number_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(5, 0) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+#[test]
+fn position_regression_equal_position_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(10, 5) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+#[test]
+fn position_regression_same_block_lower_tx_index_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(10, 4) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+#[test]
+fn position_same_block_higher_tx_index_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent = create_inherent(vec![], test_position(10, 6));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_forward_jump_within_window_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent = create_inherent(vec![], test_position(510, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_excessive_jump_exceeding_window_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let call = Call::process_tokens {
+			utxos: vec![],
+			next_cardano_position: test_position(10 + INITIAL_CARDANO_BLOCK_WINDOW_SIZE + 1, 0),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionExcessiveJump
+		);
+	});
+}
+
+#[test]
+fn position_normal_sequential_advancement_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent = create_inherent(vec![], test_position(11, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_advancement_from_default_zero_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(1, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_jump_exactly_at_window_boundary_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent =
+			create_inherent(vec![], test_position(10 + INITIAL_CARDANO_BLOCK_WINDOW_SIZE, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
