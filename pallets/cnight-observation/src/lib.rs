@@ -537,6 +537,14 @@ pub mod pallet {
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
+			let prev = NextCardanoPosition::<T>::get();
+			ensure!(next_cardano_position > prev, Error::<T>::CardanoPositionRegression);
+			let window = CardanoBlockWindowSize::<T>::get();
+			ensure!(
+				next_cardano_position.block_number.saturating_sub(prev.block_number) <= window,
+				Error::<T>::CardanoPositionExcessiveJump
+			);
+
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 
 			for utxo in utxos {
