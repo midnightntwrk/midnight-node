@@ -18,26 +18,13 @@
 pub mod inner {
 	pub use midnight_node_ledger_helpers::ledger_7 as ledger_helpers_local;
 
-	pub mod builders;
-	pub mod commands;
-	pub mod transactions;
-
-	use crate::serde_def::SerializedTx;
-	use ledger_helpers_local::{DefaultDB, ProofMarker, Signature, TransactionWithContext};
-	use transactions::from_serde_tx;
-
-	pub fn serialize_tx(
-		tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
-	) -> SerializedTx {
-		let context = midnight_node_ledger_helpers::ledger_8::BlockContext {
-			tblock: tx.block_context.tblock,
-			tblock_err: tx.block_context.tblock_err,
-			parent_block_hash: tx.block_context.parent_block_hash,
-			last_block_time: tx.block_context.tblock,
-		};
-		let raw_tx = from_serde_tx(&tx.tx);
-		let tx_hash = tx.tx.transaction_hash().0.0;
-		SerializedTx { tx: raw_tx, context, tx_hash }
-	}
+	pub mod serde_convert;
+	pub mod contract_address;
+	pub mod contract_state;
+	pub mod dust_balance;
+	pub mod generate_intent;
+	pub mod get_tx_from_context;
+	pub mod show_transaction;
+	pub mod show_wallet;
 }
 pub use inner::*;

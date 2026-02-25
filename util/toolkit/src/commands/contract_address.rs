@@ -58,11 +58,11 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 	};
 
 	// Try ledger_8 first, fall back to ledger_7
-	let both = crate::fork::ledger_8::commands::contract_address::extract_contract_address(
+	let both = crate::commands::fork::ledger_8::contract_address::extract_contract_address(
 		tx_bytes.as_slice(),
 	)
 	.or_else(|_| {
-		crate::fork::ledger_7::commands::contract_address::extract_contract_address(
+		crate::commands::fork::ledger_7::contract_address::extract_contract_address(
 			tx_bytes.as_slice(),
 		)
 	})?;

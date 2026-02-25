@@ -17,7 +17,7 @@
 //! When compiled through `ledger_7.rs`, these convert through raw bytes/strings.
 
 use super::ledger_helpers_local::{
-	ContractAddress, HashOutput, ShieldedTokenType, UnshieldedTokenType, WalletSeed,
+	CoinPublicKey, ContractAddress, HashOutput, ShieldedTokenType, UnshieldedTokenType, WalletSeed,
 };
 use std::str::FromStr;
 
@@ -41,6 +41,12 @@ pub fn convert_contract_address(
 
 pub fn convert_wallet_seed(ws: midnight_node_ledger_helpers::WalletSeed) -> WalletSeed {
 	WalletSeed::try_from(ws.as_bytes()).expect("wallet seed conversion between versions")
+}
+
+pub fn convert_coin_public_key(
+	cpk: midnight_node_ledger_helpers::CoinPublicKey,
+) -> CoinPublicKey {
+	CoinPublicKey(HashOutput(cpk.0.0))
 }
 
 pub fn convert_wallet_address(

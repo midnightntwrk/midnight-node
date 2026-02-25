@@ -40,7 +40,7 @@ pub async fn execute(
 	let serialized_state = match fork_ctx.version() {
 		LedgerVersion::Ledger8 => {
 			let ctx = fork_ctx.into_ledger8().unwrap();
-			crate::fork::ledger_8::commands::contract_state::get_contract_state(
+			crate::commands::fork::ledger_8::contract_state::get_contract_state(
 				&ctx,
 				args.contract_address,
 			)?
@@ -48,10 +48,10 @@ pub async fn execute(
 		LedgerVersion::Ledger7 => {
 			let ctx = fork_ctx.into_ledger7().unwrap();
 			let addr =
-				crate::fork::ledger_7::builders::type_convert::convert_contract_address(
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_contract_address(
 					args.contract_address,
 				);
-			crate::fork::ledger_7::commands::contract_state::get_contract_state(&ctx, addr)?
+			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)?
 		},
 	};
 

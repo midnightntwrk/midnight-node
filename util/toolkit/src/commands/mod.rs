@@ -30,4 +30,5 @@ pub mod show_viewing_key;
 pub mod show_wallet;
 pub mod update_ledger_parameters;
 
+pub mod fork;
 pub mod generate_intent;

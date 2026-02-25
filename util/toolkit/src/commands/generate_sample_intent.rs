@@ -111,7 +111,7 @@ async fn execute_with_builders_v7(
 	prover: Arc<dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<midnight_node_ledger_helpers::ledger_7::DefaultDB>>,
 	dest_dir: &str,
 ) {
-	use crate::fork::ledger_7::builders::{
+	use crate::tx_generator::builder::builders::ledger_7::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
 	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) =

@@ -109,7 +109,7 @@ pub async fn fetch_zswap_state(
 	Ok(match fork_ctx.version() {
 		LedgerVersion::Ledger8 => {
 			let ctx = fork_ctx.into_ledger8().unwrap();
-			crate::fork::ledger_8::commands::generate_intent::fetch_zswap_state_from_context(
+			crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
 				&ctx,
 				wallet_seed,
 				coin_public,
@@ -118,10 +118,10 @@ pub async fn fetch_zswap_state(
 		LedgerVersion::Ledger7 => {
 			let ctx = fork_ctx.into_ledger7().unwrap();
 			let seed_v7 =
-				crate::fork::ledger_7::builders::type_convert::convert_wallet_seed(wallet_seed);
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(wallet_seed);
 			let cpk_v7 =
-				crate::fork::ledger_7::builders::type_convert::convert_coin_public_key(coin_public);
-			crate::fork::ledger_7::commands::generate_intent::fetch_zswap_state_from_context(
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_coin_public_key(coin_public);
+			crate::commands::fork::ledger_7::generate_intent::fetch_zswap_state_from_context(
 				&ctx, seed_v7, cpk_v7,
 			)
 		},

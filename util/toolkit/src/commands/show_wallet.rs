@@ -65,7 +65,7 @@ pub async fn execute(
 		Ok(match fork_ctx.version() {
 			LedgerVersion::Ledger8 => {
 				let ctx = fork_ctx.into_ledger8().unwrap();
-				let result = crate::fork::ledger_8::commands::show_wallet::show_wallet_from_seed(
+				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
 					&ctx,
 					seed,
 					args.debug,
@@ -75,8 +75,8 @@ pub async fn execute(
 			LedgerVersion::Ledger7 => {
 				let ctx = fork_ctx.into_ledger7().unwrap();
 				let seed_v7 =
-					crate::fork::ledger_7::builders::type_convert::convert_wallet_seed(seed);
-				let result = crate::fork::ledger_7::commands::show_wallet::show_wallet_from_seed(
+					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed);
+				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
 					&ctx,
 					seed_v7,
 					args.debug,
@@ -96,7 +96,7 @@ pub async fn execute(
 			LedgerVersion::Ledger8 => {
 				let ctx = fork_ctx.into_ledger8().unwrap();
 				let result =
-					crate::fork::ledger_8::commands::show_wallet::show_wallet_from_address(
+					crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
 						&ctx, address,
 					);
 				fork_wallet_result_v8(result)
@@ -104,11 +104,11 @@ pub async fn execute(
 			LedgerVersion::Ledger7 => {
 				let ctx = fork_ctx.into_ledger7().unwrap();
 				let addr_v7 =
-					crate::fork::ledger_7::builders::type_convert::convert_wallet_address(
+					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
 						&address,
 					);
 				let result =
-					crate::fork::ledger_7::commands::show_wallet::show_wallet_from_address(
+					crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
 						&ctx, addr_v7,
 					);
 				fork_wallet_result_v7(result)
@@ -118,9 +118,9 @@ pub async fn execute(
 }
 
 fn fork_wallet_result_v8(
-	result: crate::fork::ledger_8::commands::show_wallet::ShowWalletResult,
+	result: crate::commands::fork::ledger_8::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
-	use crate::fork::ledger_8::commands::show_wallet::ShowWalletResult as R;
+	use crate::commands::fork::ledger_8::show_wallet::ShowWalletResult as R;
 	match result {
 		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
 		R::Json(j) => ShowWalletResult::Json(j),
@@ -128,9 +128,9 @@ fn fork_wallet_result_v8(
 }
 
 fn fork_wallet_result_v7(
-	result: crate::fork::ledger_7::commands::show_wallet::ShowWalletResult,
+	result: crate::commands::fork::ledger_7::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
-	use crate::fork::ledger_7::commands::show_wallet::ShowWalletResult as R;
+	use crate::commands::fork::ledger_7::show_wallet::ShowWalletResult as R;
 	match result {
 		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
 		R::Json(j) => ShowWalletResult::Json(j),

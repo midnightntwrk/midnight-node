@@ -44,9 +44,9 @@ fn deserialize_tx(
 	with_context: bool,
 ) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
 	// Try ledger_8 first (most common), fall back to ledger_7
-	crate::fork::ledger_8::commands::show_transaction::show_transaction(tx_bytes, with_context)
+	crate::commands::fork::ledger_8::show_transaction::show_transaction(tx_bytes, with_context)
 		.or_else(|_| {
-			crate::fork::ledger_7::commands::show_transaction::show_transaction(
+			crate::commands::fork::ledger_7::show_transaction::show_transaction(
 				tx_bytes,
 				with_context,
 			)

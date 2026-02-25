@@ -26,9 +26,9 @@ pub fn execute(
 	};
 
 	// Try ledger_8 first, fall back to ledger_7
-	crate::fork::ledger_8::commands::get_tx_from_context::extract_tx_from_context(&tx_bytes)
+	crate::commands::fork::ledger_8::get_tx_from_context::extract_tx_from_context(&tx_bytes)
 		.or_else(|_| {
-			crate::fork::ledger_7::commands::get_tx_from_context::extract_tx_from_context(
+			crate::commands::fork::ledger_7::get_tx_from_context::extract_tx_from_context(
 				&tx_bytes,
 			)
 		})

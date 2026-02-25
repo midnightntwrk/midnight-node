@@ -57,13 +57,13 @@ pub async fn execute(
 	let json = match fork_ctx.version() {
 		LedgerVersion::Ledger8 => {
 			let ctx = fork_ctx.into_ledger8().unwrap();
-			crate::fork::ledger_8::commands::dust_balance::dust_balance(&ctx, args.seed)?
+			crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed)?
 		},
 		LedgerVersion::Ledger7 => {
 			let ctx = fork_ctx.into_ledger7().unwrap();
 			let seed_v7 =
-				crate::fork::ledger_7::builders::type_convert::convert_wallet_seed(args.seed);
-			crate::fork::ledger_7::commands::dust_balance::dust_balance(&ctx, seed_v7)?
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(args.seed);
+			crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)?
 		},
 	};
 
