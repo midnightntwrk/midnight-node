@@ -18,7 +18,7 @@ use crate::{
 	t_token,
 };
 use midnight_node_ledger_helpers::{Transaction as MNLedgerTransaction, *};
-use std::collections::HashMap;
+
 use thiserror::Error;
 
 // Re-export ICS types from the primitives crate
@@ -331,7 +331,7 @@ impl GenesisGenerator {
 	) -> Result<()> {
 		// Generate Shielded Offer
 		let guaranteed_shielded_offer = Self::shielded_offer(&wallets, network, &funding, rng);
-		let fallible_coins = HashMap::new();
+		let fallible_coins = HashMapStorage::new();
 
 		// Generate Unshielded Offer
 		let guaranteed_unshielded_offer = Self::unshielded_offer(&wallets, network, funding);
@@ -370,7 +370,7 @@ impl GenesisGenerator {
 		proof_server: Option<String>,
 		intents: IntentsMap,
 		guaranteed_shielded_offer: Option<ShieldedOffer>,
-		fallible_coins: HashMap<u16, ShieldedOffer>,
+		fallible_coins: HashMapStorage<u16, ShieldedOffer, DefaultDB>,
 		rng: StdRng,
 	) -> Transaction {
 		let spin = Spin::new("proving genesis transaction...");
@@ -627,7 +627,7 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 mod test {
 	use super::*;
 	use midnight_primitives_ics_observation::PolicyId;
-	use std::str::FromStr;
+	use std::{collections::HashMap, str::FromStr};
 
 	#[tokio::test]
 	async fn test_genesis_with_ics_config() {
