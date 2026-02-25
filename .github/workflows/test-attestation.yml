@@ -1,7 +1,8 @@
 name: Test - Attestation Migration
 
 # Temporary workflow to validate GitHub native attestation migration.
-# Tests: build-provenance, SBOM attestation, binary attestation, verification.
+# Tests: binary attestation, build-provenance, SBOM attestation, verification scripts.
+# Binary tests run first; image tests are gated on binary tests passing.
 # Delete this file before merging to main.
 
 on:
@@ -14,9 +15,88 @@ on:
 permissions: {}
 
 jobs:
-  # Job 1: Build a minimal test image, push to GHCR, attest build provenance
+  # Job 1: Test binary file attestation (used for release tarballs + checksums)
+  test-binary-attestation:
+    name: Test binary attestation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Create test files
+        run: |
+          echo "test binary content ${{ github.sha }}" > test-binary.tar.gz
+          sha256sum test-binary.tar.gz > SHA256SUMS
+          echo "Files:"
+          ls -la test-binary.tar.gz SHA256SUMS
+
+      - name: Attest binary
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: test-binary.tar.gz
+
+      - name: Attest checksums
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: SHA256SUMS
+
+      - name: Verify binary attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "--- Verifying binary attestation ---"
+          gh attestation verify test-binary.tar.gz --repo "${{ github.repository }}"
+          echo "--- Binary attestation verified ---"
+
+          echo "--- Verifying checksum attestation ---"
+          gh attestation verify SHA256SUMS --repo "${{ github.repository }}"
+          echo "--- Checksum attestation verified ---"
+
+      - name: Upload test binary for verify-binary.sh test
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: test-binary-files
+          path: |
+            test-binary.tar.gz
+            SHA256SUMS
+          retention-days: 1
+
+  # Job 2: Test verify-binary.sh script
+  test-verify-binary-script:
+    name: Test verify-binary.sh
+    needs: [test-binary-attestation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: scripts/verify-binary.sh
+
+      - name: Download test binary
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v4
+        with:
+          name: test-binary-files
+
+      - name: Run verify-binary.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          chmod +x scripts/verify-binary.sh
+          echo "--- Testing verify-binary.sh (provenance only) ---"
+          ./scripts/verify-binary.sh test-binary.tar.gz
+          echo "--- Provenance verification passed ---"
+
+          echo "--- Testing verify-binary.sh --checksum ---"
+          ./scripts/verify-binary.sh --checksum test-binary.tar.gz
+          echo "--- All verifications passed ---"
+
+  # Job 3: Build a minimal test image, push to GHCR, attest build provenance
+  # Gated on binary tests passing to avoid wasting resources if fundamentals fail.
   test-build-provenance:
     name: Test build provenance attestation
+    needs: [test-verify-binary-script]
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.push.outputs.image }}
@@ -67,7 +147,7 @@ jobs:
           gh attestation verify "oci://${IMAGE}" --repo "${{ github.repository }}"
           echo "--- Build provenance verified ---"
 
-  # Job 2: Test SBOM generation + attestation via the reusable workflow
+  # Job 4: Test SBOM generation + attestation via the reusable workflow
   test-sbom-attestation:
     name: Test SBOM scan + attestation
     needs: [test-build-provenance]
@@ -82,7 +162,7 @@ jobs:
       sbom-artifact-name: sbom-attestation-test
     secrets: inherit
 
-  # Job 3: Verify SBOM attestation was created
+  # Job 5: Verify SBOM attestation was created
   test-verify-sbom:
     name: Verify SBOM attestation
     needs: [test-build-provenance, test-sbom-attestation]
@@ -102,45 +182,7 @@ jobs:
             --predicate-type https://spdx.dev/Document
           echo "--- SBOM attestation verified ---"
 
-  # Job 4: Test binary file attestation (used for release tarballs + checksums)
-  test-binary-attestation:
-    name: Test binary attestation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    steps:
-      - name: Create test files
-        run: |
-          echo "test binary content ${{ github.sha }}" > test-binary.tar.gz
-          sha256sum test-binary.tar.gz > SHA256SUMS
-          echo "Files:"
-          ls -la test-binary.tar.gz SHA256SUMS
-
-      - name: Attest binary
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-path: test-binary.tar.gz
-
-      - name: Attest checksums
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-path: SHA256SUMS
-
-      - name: Verify binary attestation
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "--- Verifying binary attestation ---"
-          gh attestation verify test-binary.tar.gz --repo "${{ github.repository }}"
-          echo "--- Binary attestation verified ---"
-
-          echo "--- Verifying checksum attestation ---"
-          gh attestation verify SHA256SUMS --repo "${{ github.repository }}"
-          echo "--- Checksum attestation verified ---"
-
-  # Job 5: Test verify-image.sh script
+  # Job 6: Test verify-image.sh script
   test-verify-script:
     name: Test verify-image.sh
     needs: [test-build-provenance, test-sbom-attestation]
@@ -168,7 +210,7 @@ jobs:
   # Summary job
   test-summary:
     name: Test summary
-    needs: [test-build-provenance, test-sbom-attestation, test-verify-sbom, test-binary-attestation, test-verify-script]
+    needs: [test-binary-attestation, test-verify-binary-script, test-build-provenance, test-sbom-attestation, test-verify-sbom, test-verify-script]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -178,11 +220,12 @@ jobs:
         run: |
           echo "## Attestation Migration Test Results"
           echo ""
+          echo "Binary attest:    ${{ needs.test-binary-attestation.result }}"
+          echo "Verify binary:    ${{ needs.test-verify-binary-script.result }}"
           echo "Build provenance: ${{ needs.test-build-provenance.result }}"
           echo "SBOM scan+attest: ${{ needs.test-sbom-attestation.result }}"
           echo "SBOM verify:      ${{ needs.test-verify-sbom.result }}"
-          echo "Binary attest:    ${{ needs.test-binary-attestation.result }}"
-          echo "Verify script:    ${{ needs.test-verify-script.result }}"
+          echo "Verify image:     ${{ needs.test-verify-script.result }}"
           echo ""
           echo "Cleanup: delete ghcr.io/${{ github.repository_owner }}/attestation-test:${{ github.run_id }} after review"
 
