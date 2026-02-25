@@ -5,6 +5,9 @@ name: Test - Attestation Migration
 # Delete this file before merging to main.
 
 on:
+  push:
+    branches: ["SRE-1910/github-native-attestations"]
+    paths: [".github/workflows/test-attestation.yml"]
   workflow_dispatch:
 
 # no top level default permissions for security reasons
