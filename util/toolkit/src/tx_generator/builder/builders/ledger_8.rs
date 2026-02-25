@@ -48,14 +48,35 @@ pub mod inner {
 pub use inner::*;
 
 use crate::serde_def::SerializedTx;
-use midnight_node_ledger_helpers::ledger_8::{
-	DefaultDB, ProofMarker, Signature, TransactionWithContext,
+use midnight_node_ledger_helpers::{
+	fork::raw_block_data::RawTransaction,
+	ledger_8::{DefaultDB, ProofMarker, Signature, TransactionWithContext},
 };
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTx {
-	let tx_bytes = tx.tx.serialize_inner().expect("failed to serialize transaction");
+	let raw_tx = from_serde_tx(&tx.tx);
 	let tx_hash = tx.tx.transaction_hash().0.0;
-	SerializedTx { tx: tx_bytes, context: tx.block_context.clone(), tx_hash }
+	SerializedTx { tx: raw_tx, context: tx.block_context.clone(), tx_hash }
+}
+
+use inner::ledger_helpers_local::*;
+
+// TODO: Move to toolkit version-common
+fn from_serde_tx<S, P>(tx: &SerdeTransaction<S, P, DefaultDB>) -> RawTransaction
+where
+	S: SignatureKind<DefaultDB>,
+	P: ProofKind<DefaultDB> + Send + Sync + 'static,
+	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
+	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
+{
+	match tx {
+		SerdeTransaction::Midnight(transaction) => {
+			RawTransaction::Midnight(serialize(transaction).expect("failed to serialize tx"))
+		},
+		SerdeTransaction::System(system_transaction) => {
+			RawTransaction::System(serialize(system_transaction).expect("failed to serialize tx"))
+		},
+	}
 }

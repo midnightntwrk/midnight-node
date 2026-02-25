@@ -13,7 +13,6 @@
 
 use crate::{
 	cli_parsers as cli,
-	client::MidnightNodeClient,
 	fetcher::{fetch_all, fetch_storage},
 	serde_def::{BuiltTransactions, SerializedTx},
 };

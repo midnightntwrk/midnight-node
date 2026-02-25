@@ -25,7 +25,7 @@ use std::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializedTx {
 	/// Serialized `Transaction` — the payload for `send_mn_transaction`.
-	pub tx: Vec<u8>,
+	pub tx: RawTransaction,
 	/// Serialized `BlockContext`
 	pub context: BlockContext,
 	/// Transaction hash for logging.
@@ -39,23 +39,6 @@ pub struct BuiltTransactions {
 }
 
 impl BuiltTransactions {
-	/// Convert typed `DeserializedTransactionsWithContext<S, P>` into `BuiltTransactions`
-	/// by serializing each transaction via `serialize_inner()` and extracting its hash.
-	pub fn from_typed<S, P>(typed: DeserializedTransactionsWithContext<S, P>) -> Self
-	where
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB> + Send + Sync + 'static,
-		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		let batches = typed
-			.batches
-			.iter()
-			.map(|batch| batch.txs.iter().map(|twc| SerializedTx::from_serde_tx(&twc.tx)).collect())
-			.collect();
-		Self { batches }
-	}
-
 	pub fn get_context(batch: &[SerializedTx]) -> Result<BlockContext, String> {
 		let mut context: Option<BlockContext> = None;
 		for tx in batch {
@@ -72,20 +55,6 @@ impl BuiltTransactions {
 		}
 
 		context.ok_or("batch is empty, block context not found".to_string())
-	}
-}
-
-impl SerializedTx {
-	fn from_serde_tx<S, P>(tx: &SerdeTransaction<S, P, DefaultDB>) -> Self
-	where
-		S: SignatureKind<DefaultDB>,
-		P: ProofKind<DefaultDB> + Send + Sync + 'static,
-		<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-		Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-	{
-		let tx_bytes = tx.serialize_inner().expect("failed to serialize transaction");
-		let tx_hash = tx.transaction_hash().0.0;
-		Self { tx: tx_bytes, context: BlockContext::default(), tx_hash }
 	}
 }
 
@@ -148,8 +117,7 @@ impl SourceTransactions {
 			let context =
 				BuiltTransactions::get_context(&batch).expect("failed to get context for batch");
 			// block.transactions = '
-			let transactions: Vec<_> =
-				batch.iter().map(|t| RawTransaction::Midnight(t.tx.clone())).collect();
+			let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
 
 			if let Some((_, new_ledger_version)) = transactions
 				.iter()
@@ -192,31 +160,21 @@ impl SourceTransactions {
 		let mut transactions = Vec::new();
 		let mut network_id: Option<String> = None;
 		let mut ledger_version: LedgerVersion = LedgerVersion::default();
-		// TODO: Fix for system transactions, remove unwrap
 		for tx in txs {
-			if network_id.is_none() {
+			if network_id.is_none()
+				&& let SerializedTx { tx: RawTransaction::Midnight(ref tx), .. } = tx
+			{
 				let (new_network_id, new_ledger_version) =
-					fork::network_id_and_ledger_version_from_tx_bytes(&tx.tx).unwrap();
+					fork::network_id_and_ledger_version_from_tx_bytes(tx).unwrap();
 				network_id = Some(new_network_id);
 				ledger_version = new_ledger_version;
 			}
-			transactions.push(RawTransaction::Midnight(tx.tx));
+			transactions.push(tx.tx);
 		}
 		let block = RawBlockData::new_from_timestamp(now_secs, ledger_version, transactions);
 
 		let network_id = network_id.expect("no transactions found, can't derive network id");
 		Self { blocks: vec![block], network_id }
-	}
-}
-
-/// Convert a typed SerdeTransaction to a RawTransaction by re-serializing the inner type.
-fn serde_tx_to_raw(
-	serde_tx: &SerdeTransaction<Signature, ProofMarker, DefaultDB>,
-) -> RawTransaction {
-	let bytes = serde_tx.serialize_inner().expect("failed to serialize transaction");
-	match serde_tx {
-		SerdeTransaction::Midnight(_) => RawTransaction::Midnight(bytes),
-		SerdeTransaction::System(_) => RawTransaction::System(bytes),
 	}
 }
 

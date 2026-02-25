@@ -1,12 +1,11 @@
-use crate::{ProofType, SignatureType, tx_generator::source::GetTxsFromFile};
+use crate::tx_generator::source::GetTxsFromFile;
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{
-	DefaultDB, FinalizedTransaction, TransactionWithContext, mn_ledger_serialize, serialize,
-	serialize_untagged,
+	DefaultDB, FinalizedTransaction, fork::raw_block_data::RawTransaction, mn_ledger_serialize,
+	serialize, serialize_untagged,
 };
 use serde::Serialize;
-use std::fs;
 
 #[derive(Args, Clone)]
 pub struct ContractAddressArgs {
@@ -21,6 +20,18 @@ pub struct ContractAddressArgs {
 	src_file: String,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ContractAddressError {
+	#[error("failed to load tx")]
+	TransactionLoadError(std::io::Error),
+	#[error("ledger de/ser failed")]
+	LedgerSerializeError(std::io::Error),
+	#[error("transaction type is a System Transaction")]
+	TransactionIsSystemTransaction,
+	#[error("no contract deploy found in transaction")]
+	NoContractDeployFound,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractAddressBoth {
@@ -28,18 +39,27 @@ pub struct ContractAddressBoth {
 	untagged: String,
 }
 
-pub fn execute(
-	args: ContractAddressArgs,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-	let tx = GetTxsFromFile::load_single(&args.src_file)?;
-	let mn_tx: FinalizedTransaction<DefaultDB> =
-		mn_ledger_serialize::tagged_deserialize(tx.tx.as_slice())?;
+pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError> {
+	let tx = GetTxsFromFile::load_single(&args.src_file)
+		.map_err(ContractAddressError::TransactionLoadError)?;
 
-	let (_, deploy) = mn_tx.deploys().next().ok_or("no ContractDeploy found in the transaction")?;
+	let RawTransaction::Midnight(tx) = tx.tx else {
+		return Err(ContractAddressError::TransactionIsSystemTransaction);
+	};
+
+	let mn_tx: FinalizedTransaction<DefaultDB> =
+		mn_ledger_serialize::tagged_deserialize(tx.as_slice())
+			.map_err(ContractAddressError::LedgerSerializeError)?;
+
+	let (_, deploy) = mn_tx.deploys().next().ok_or(ContractAddressError::NoContractDeployFound)?;
 
 	let both = ContractAddressBoth {
-		tagged: serialize(&deploy.address())?.encode_hex(),
-		untagged: serialize_untagged(&deploy.address())?.encode_hex(),
+		tagged: serialize(&deploy.address())
+			.map_err(ContractAddressError::LedgerSerializeError)?
+			.encode_hex(),
+		untagged: serialize_untagged(&deploy.address())
+			.map_err(ContractAddressError::LedgerSerializeError)?
+			.encode_hex(),
 	};
 
 	if args.untagged {

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::*;
+use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use std::{
 	sync::{
@@ -171,15 +171,29 @@ impl Sender {
 		let midnight_tx_hash = TransactionHash(HashOutput(tx.tx_hash));
 		log::debug!(url = client.url; "send_tx_no_wait: computed hash");
 
-		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.tx.clone());
-		log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
+		let unsigned_extrinsic = match &tx.tx {
+			RawTransaction::Midnight(tx) => {
+				let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.clone());
+				log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
+				client
+					.client
+					.api
+					.tx()
+					.create_unsigned(&mn_tx)
+					.expect("failed to create unsigned extrinsic")
+			},
+			RawTransaction::System(tx) => {
+				let mn_tx = mn_meta::tx().midnight_system().send_mn_system_transaction(tx.clone());
+				log::debug!(url = client.url; "send_tx_no_wait: created mn_system_tx");
+				client
+					.client
+					.api
+					.tx()
+					.create_unsigned(&mn_tx)
+					.expect("failed to create unsigned extrinsic")
+			},
+		};
 
-		let unsigned_extrinsic = client
-			.client
-			.api
-			.tx()
-			.create_unsigned(&mn_tx)
-			.expect("failed to create unsigned extrinsic");
 		log::debug!(url = client.url; "send_tx_no_wait: created unsigned extrinsic");
 
 		log::info!(
