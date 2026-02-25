@@ -1,23 +1,14 @@
 use std::collections::HashMap;
 
 use crate::source::Source;
-use crate::tx_generator::builder::build_fork_aware_context;
-use crate::{
-	DB, DefaultDB, HRP_CREDENTIAL_SHIELDED, TxGenerator, Utxo, Wallet, WalletAddress, WalletSeed,
-};
+use crate::tx_generator::builder::build_fork_aware_context_raw;
+use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress, WalletSeed};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
-use hex::ToHex;
-use midnight_node_ledger_helpers::serialize_untagged;
-
-#[derive(Debug)]
-pub struct WalletInfo<D: DB + Clone> {
-	pub wallet: Wallet<D>,
-	pub utxos: Vec<Utxo>,
-}
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -27,8 +18,8 @@ pub struct WalletInfoJson {
 }
 
 #[derive(Debug)]
-pub enum ShowWalletResult<D: DB + Clone> {
-	Debug(WalletInfo<D>),
+pub enum ShowWalletResult {
+	Debug(String, Vec<UtxoSer>),
 	Json(WalletInfoJson),
 	DryRun(()),
 }
@@ -54,7 +45,7 @@ pub struct ShowWalletArgs {
 
 pub async fn execute(
 	args: ShowWalletArgs,
-) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
@@ -69,56 +60,85 @@ pub async fn execute(
 	let source_blocks = src.get_txs().await?;
 
 	if let Some(seed) = args.seed {
-		let context = build_fork_aware_context(&source_blocks, &[seed])?;
+		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[seed]);
 
-		Ok(context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
-				if args.debug {
-					let utxos = wallet.unshielded_utxos(ledger_state);
-					ShowWalletResult::Debug(WalletInfo { wallet: wallet.clone(), utxos })
-				} else {
-					let utxos = wallet
-						.unshielded_utxos(ledger_state)
-						.into_iter()
-						.map(|u| u.into())
-						.collect();
-					let coins = wallet
-						.shielded
-						.state
-						.coins
-						.iter()
-						.map(|(k, v)| (serialize_untagged(&k).unwrap().encode_hex(), (*v).into()))
-						.collect();
-					let dust_utxos = wallet
-						.dust
-						.dust_local_state
-						.as_ref()
-						.map_or(vec![], |s| s.utxos().map(|s| s.into()).collect());
-					ShowWalletResult::Json(WalletInfoJson { coins, dust_utxos, utxos })
-				}
-			})
-		}))
+		Ok(match fork_ctx.version() {
+			LedgerVersion::Ledger8 => {
+				let ctx = fork_ctx.into_ledger8().unwrap();
+				let result = crate::fork::ledger_8::commands::show_wallet::show_wallet_from_seed(
+					&ctx,
+					seed,
+					args.debug,
+				);
+				fork_wallet_result_v8(result)
+			},
+			LedgerVersion::Ledger7 => {
+				let ctx = fork_ctx.into_ledger7().unwrap();
+				let seed_v7 =
+					crate::fork::ledger_7::builders::type_convert::convert_wallet_seed(seed);
+				let result = crate::fork::ledger_7::commands::show_wallet::show_wallet_from_seed(
+					&ctx,
+					seed_v7,
+					args.debug,
+				);
+				fork_wallet_result_v7(result)
+			},
+		})
 	} else {
 		let address = args.address.expect("parsing error; address not given");
 		if address.human_readable_part().contains(HRP_CREDENTIAL_SHIELDED) {
 			return Err("unavailable information - secret key needed".into());
 		}
 
-		let context = build_fork_aware_context(&source_blocks, &[])?;
+		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[]);
 
-		let utxos = context.utxos(address).into_iter().map(|u| u.into()).collect();
-		Ok(ShowWalletResult::Json(WalletInfoJson {
-			coins: Default::default(),
-			utxos,
-			dust_utxos: Default::default(),
-		}))
+		Ok(match fork_ctx.version() {
+			LedgerVersion::Ledger8 => {
+				let ctx = fork_ctx.into_ledger8().unwrap();
+				let result =
+					crate::fork::ledger_8::commands::show_wallet::show_wallet_from_address(
+						&ctx, address,
+					);
+				fork_wallet_result_v8(result)
+			},
+			LedgerVersion::Ledger7 => {
+				let ctx = fork_ctx.into_ledger7().unwrap();
+				let addr_v7 =
+					crate::fork::ledger_7::builders::type_convert::convert_wallet_address(
+						&address,
+					);
+				let result =
+					crate::fork::ledger_7::commands::show_wallet::show_wallet_from_address(
+						&ctx, addr_v7,
+					);
+				fork_wallet_result_v7(result)
+			},
+		})
+	}
+}
+
+fn fork_wallet_result_v8(
+	result: crate::fork::ledger_8::commands::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::fork::ledger_8::commands::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
+	}
+}
+
+fn fork_wallet_result_v7(
+	result: crate::fork::ledger_7::commands::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::fork::ledger_7::commands::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	//use std::str::FromStr;
-
 	use super::*;
 	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
@@ -147,7 +167,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_from_address(
 		(addr, src_files): (&str, Vec<String>),
-	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 		let args = ShowWalletArgs {
 			source: Source {
 				src_url: None,
@@ -196,7 +216,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_from_seed(
 		(seed, src_files): (&str, Vec<String>),
-	) -> Result<ShowWalletResult<DefaultDB>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = ShowWalletArgs {
 			source: Source {

@@ -1,10 +1,12 @@
 use crate::toolkit_js;
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
-use crate::tx_generator::builder::build_fork_aware_context;
+use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, DefaultDB, WalletSeed, WalletState, fork::raw_block_data::LedgerVersion,
+};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -102,11 +104,28 @@ pub async fn fetch_zswap_state(
 	}
 
 	let received_tx = source.get_txs().await?;
-	let context = build_fork_aware_context(&received_tx, &[wallet_seed])?;
-	let wallet = context.wallet_from_seed(wallet_seed);
-	let zswap_local_state = wallet.shielded.state;
+	let fork_ctx = build_fork_aware_context_raw(&received_tx, &[wallet_seed]);
 
-	Ok(EncodedZswapLocalState::from_zswap_state(zswap_local_state, coin_public))
+	Ok(match fork_ctx.version() {
+		LedgerVersion::Ledger8 => {
+			let ctx = fork_ctx.into_ledger8().unwrap();
+			crate::fork::ledger_8::commands::generate_intent::fetch_zswap_state_from_context(
+				&ctx,
+				wallet_seed,
+				coin_public,
+			)
+		},
+		LedgerVersion::Ledger7 => {
+			let ctx = fork_ctx.into_ledger7().unwrap();
+			let seed_v7 =
+				crate::fork::ledger_7::builders::type_convert::convert_wallet_seed(wallet_seed);
+			let cpk_v7 =
+				crate::fork::ledger_7::builders::type_convert::convert_coin_public_key(coin_public);
+			crate::fork::ledger_7::commands::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v7, cpk_v7,
+			)
+		},
+	})
 }
 
 #[derive(Debug, thiserror::Error)]

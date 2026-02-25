@@ -16,6 +16,7 @@ pub mod cli_parsers;
 pub mod client;
 pub mod commands;
 pub mod fetcher;
+pub mod fork;
 pub mod genesis_generator;
 pub mod progress;
 pub mod remote_prover;

@@ -1,6 +1,4 @@
-use crate::{ProofType, SignatureType};
 use clap::Args;
-use midnight_node_ledger_helpers::{DefaultDB, TransactionWithContext, deserialize};
 
 #[derive(Args)]
 pub struct GetTxFromContextArgs {
@@ -21,39 +19,30 @@ pub struct GetTxFromContextArgs {
 pub fn execute(
 	args: &GetTxFromContextArgs,
 ) -> Result<(Vec<u8>, u64), Box<dyn std::error::Error + Send + Sync>> {
-	let deserialized_tx_with_context: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
-		if !args.from_bytes {
-			deserialize_from_bytes(&args.src_file)?
-		} else {
-			let bytes = std::fs::read(&args.src_file)?;
-			deserialize(bytes.as_slice())?
-		};
+	let tx_bytes = if !args.from_bytes {
+		read_hex_file(&args.src_file)?
+	} else {
+		std::fs::read(&args.src_file)?
+	};
 
-	let tx = deserialized_tx_with_context.tx;
-	let serialized_tx = tx.serialize_inner()?;
-	let timestamp = deserialized_tx_with_context.block_context.tblock.to_secs();
-
-	Ok((serialized_tx, timestamp))
+	// Try ledger_8 first, fall back to ledger_7
+	crate::fork::ledger_8::commands::get_tx_from_context::extract_tx_from_context(&tx_bytes)
+		.or_else(|_| {
+			crate::fork::ledger_7::commands::get_tx_from_context::extract_tx_from_context(
+				&tx_bytes,
+			)
+		})
 }
 
-fn deserialize_from_bytes(
+fn read_hex_file(
 	src_file: &str,
-) -> Result<
-	TransactionWithContext<SignatureType, ProofType, DefaultDB>,
-	Box<dyn std::error::Error + Send + Sync>,
-> {
-	// Read single tx from file
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
 	let file_content = std::fs::read(src_file)?;
 	let tx_hex = String::from_utf8_lossy(&file_content);
 	// Some IDEs auto-add an extra empty line at the end of the file
 	let sanitized_hex_tx: String = tx_hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-
-	let tx_with_context = hex::decode(&sanitized_hex_tx)?;
-	let bytes = tx_with_context.as_slice();
-
-	let value = deserialize(bytes)?;
-
-	Ok(value)
+	let bytes = hex::decode(&sanitized_hex_tx)?;
+	Ok(bytes)
 }
 
 #[cfg(test)]

@@ -1,10 +1,6 @@
 use crate::tx_generator::source::GetTxsFromFile;
 use clap::Args;
-use hex::ToHex;
-use midnight_node_ledger_helpers::{
-	DefaultDB, FinalizedTransaction, fork::raw_block_data::RawTransaction, mn_ledger_serialize,
-	serialize, serialize_untagged,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use serde::Serialize;
 
 #[derive(Args, Clone)]
@@ -39,34 +35,47 @@ pub struct ContractAddressBoth {
 	untagged: String,
 }
 
+impl ContractAddressBoth {
+	pub fn new(tagged: String, untagged: String) -> Self {
+		Self { tagged, untagged }
+	}
+
+	pub fn tagged(&self) -> &str {
+		&self.tagged
+	}
+
+	pub fn untagged(&self) -> &str {
+		&self.untagged
+	}
+}
+
 pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError> {
 	let tx = GetTxsFromFile::load_single(&args.src_file)
 		.map_err(ContractAddressError::TransactionLoadError)?;
 
-	let RawTransaction::Midnight(tx) = tx.tx else {
+	let RawTransaction::Midnight(tx_bytes) = tx.tx else {
 		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
 
-	let mn_tx: FinalizedTransaction<DefaultDB> =
-		mn_ledger_serialize::tagged_deserialize(tx.as_slice())
-			.map_err(ContractAddressError::LedgerSerializeError)?;
-
-	let (_, deploy) = mn_tx.deploys().next().ok_or(ContractAddressError::NoContractDeployFound)?;
-
-	let both = ContractAddressBoth {
-		tagged: serialize(&deploy.address())
-			.map_err(ContractAddressError::LedgerSerializeError)?
-			.encode_hex(),
-		untagged: serialize_untagged(&deploy.address())
-			.map_err(ContractAddressError::LedgerSerializeError)?
-			.encode_hex(),
-	};
+	// Try ledger_8 first, fall back to ledger_7
+	let both = crate::fork::ledger_8::commands::contract_address::extract_contract_address(
+		tx_bytes.as_slice(),
+	)
+	.or_else(|_| {
+		crate::fork::ledger_7::commands::contract_address::extract_contract_address(
+			tx_bytes.as_slice(),
+		)
+	})?;
 
 	if args.untagged {
 		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
 	}
 
-	if args.tagged { Ok(both.tagged) } else { Ok(both.untagged) }
+	if args.tagged {
+		Ok(both.tagged().to_string())
+	} else {
+		Ok(both.untagged().to_string())
+	}
 }
 
 #[cfg(test)]

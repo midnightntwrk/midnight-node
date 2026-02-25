@@ -129,9 +129,9 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		Commands::ShowWallet(args) => {
 			let result = show_wallet::execute(args).await?;
 			match result {
-				ShowWalletResult::Debug(result) => {
-					println!("{:#?}", result.wallet);
-					println!("Unshielded UTXOs: {:#?}", result.utxos)
+				ShowWalletResult::Debug(wallet_debug, utxos) => {
+					println!("{}", wallet_debug);
+					println!("Unshielded UTXOs: {:#?}", utxos)
 				},
 				ShowWalletResult::Json(json) => {
 					println!("{}", serde_json::to_string_pretty(&json)?);

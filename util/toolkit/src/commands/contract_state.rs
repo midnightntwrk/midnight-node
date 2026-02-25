@@ -1,8 +1,8 @@
 use super::super::tx_generator::{TxGenerator, source::Source};
 use crate::cli_parsers as cli;
-use crate::tx_generator::builder::build_fork_aware_context;
+use crate::tx_generator::builder::build_fork_aware_context_raw;
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, serialize};
+use midnight_node_ledger_helpers::{ContractAddress, fork::raw_block_data::LedgerVersion};
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -35,13 +35,25 @@ pub async fn execute(
 
 	let blocks = source.get_txs().await?;
 
-	let context = build_fork_aware_context(&blocks, &[])?;
+	let fork_ctx = build_fork_aware_context_raw(&blocks, &[]);
 
-	let state = context
-		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))
-		.expect("contract state for address does not exist");
-
-	let serialized_state = serialize(&state)?;
+	let serialized_state = match fork_ctx.version() {
+		LedgerVersion::Ledger8 => {
+			let ctx = fork_ctx.into_ledger8().unwrap();
+			crate::fork::ledger_8::commands::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)?
+		},
+		LedgerVersion::Ledger7 => {
+			let ctx = fork_ctx.into_ledger7().unwrap();
+			let addr =
+				crate::fork::ledger_7::builders::type_convert::convert_contract_address(
+					args.contract_address,
+				);
+			crate::fork::ledger_7::commands::contract_state::get_contract_state(&ctx, addr)?
+		},
+	};
 
 	let full_path = Path::new(&args.dest_file);
 	if let Some(directory) = full_path.parent() {

@@ -1,37 +1,20 @@
 use std::fmt;
 
-use crate::{
-	DefaultDB, ProofType, SignatureType, Transaction, TransactionWithContext, deserialize,
-};
 use clap::Args;
-use midnight_node_ledger_helpers::PureGeneratorPedersen;
 
 type InnerReturnType = Result<ShowTransactionResult, Box<dyn std::error::Error + Send + Sync>>;
 
-pub enum TransactionInfo {
-	Transaction(Transaction<SignatureType, ProofType, PureGeneratorPedersen, DefaultDB>),
-	TransactionWithContext(TransactionWithContext<SignatureType, ProofType, DefaultDB>),
-}
 pub struct ShowTransactionResult {
-	transaction: TransactionInfo,
+	display: String,
 	size: usize,
 }
 
 impl fmt::Display for ShowTransactionResult {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		writeln!(f)?;
-		writeln!(f, "Tx {}", self.transaction)?;
+		writeln!(f, "Tx {}", self.display)?;
 		writeln!(f)?;
 		write!(f, "Size {:?}", self.size)
-	}
-}
-
-impl fmt::Display for TransactionInfo {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			TransactionInfo::Transaction(tx) => write!(f, "{:#?}", tx),
-			TransactionInfo::TransactionWithContext(tx_ctx) => write!(f, "{:#?}", tx_ctx),
-		}
 	}
 }
 
@@ -56,38 +39,38 @@ pub fn execute(args: ShowTransactionArgs) -> InnerReturnType {
 	}
 }
 
+fn deserialize_tx(
+	tx_bytes: &[u8],
+	with_context: bool,
+) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
+	// Try ledger_8 first (most common), fall back to ledger_7
+	crate::fork::ledger_8::commands::show_transaction::show_transaction(tx_bytes, with_context)
+		.or_else(|_| {
+			crate::fork::ledger_7::commands::show_transaction::show_transaction(
+				tx_bytes,
+				with_context,
+			)
+		})
+}
+
 fn tx_from_bytes(src_file: String, with_context: bool) -> InnerReturnType {
 	let tx_bytes = std::fs::read(&src_file)?;
-	Ok(ShowTransactionResult {
-		transaction: if with_context {
-			TransactionInfo::TransactionWithContext(deserialize(tx_bytes.as_slice())?)
-		} else {
-			TransactionInfo::Transaction(deserialize(tx_bytes.as_slice())?)
-		},
-		size: tx_bytes.len(),
-	})
+	let (display, size) = deserialize_tx(&tx_bytes, with_context)?;
+	Ok(ShowTransactionResult { display, size })
 }
 
 fn tx_from_hex(src_file: String, with_context: bool) -> InnerReturnType {
 	let file_content = std::fs::read(&src_file)?;
 	// Some IDEs auto-add an extra empty line at the end of the file
 	let tx_hex = String::from_utf8(file_content)?.trim().to_string();
-
 	let tx_bytes = hex::decode(&tx_hex)?;
-
-	Ok(ShowTransactionResult {
-		transaction: if with_context {
-			TransactionInfo::TransactionWithContext(deserialize(tx_bytes.as_slice())?)
-		} else {
-			TransactionInfo::Transaction(deserialize(tx_bytes.as_slice())?)
-		},
-		size: tx_bytes.len(),
-	})
+	let (display, size) = deserialize_tx(&tx_bytes, with_context)?;
+	Ok(ShowTransactionResult { display, size })
 }
 
 #[cfg(test)]
 mod test {
-	use super::{InnerReturnType, TransactionInfo, tx_from_bytes};
+	use super::{InnerReturnType, tx_from_bytes};
 	use test_case::test_case;
 
 	#[test_case(
@@ -107,13 +90,7 @@ mod test {
 		F: Fn(String, bool) -> InnerReturnType,
 	{
 		let result = func(src_file.to_string(), with_context).expect("should be ok");
-
-		match result.transaction {
-			TransactionInfo::Transaction(_) if with_context => assert!(false),
-			TransactionInfo::Transaction(_) if !with_context => assert!(true),
-			TransactionInfo::TransactionWithContext(_) if with_context => assert!(true),
-			TransactionInfo::TransactionWithContext(_) if !with_context => assert!(false),
-			_ => assert!(false),
-		}
+		assert!(result.size > 0);
+		assert!(!result.display.is_empty());
 	}
 }
