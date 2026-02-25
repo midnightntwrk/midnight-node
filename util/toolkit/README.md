@@ -41,9 +41,9 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
 | Execute calls via governance (root-call)                             | ✅       |
-| DUST registration command                                            | 🚧       |
+| Support for Ledger forks                                             | ✅       |
+| DUST registration command                                            | ✅       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
-| Support for Ledger forks                                             | ⏳       |
 | Fallible Contracts                                                   | ⏳       |
 | Composable Contracts                                                 | ⏳       |
 
@@ -81,7 +81,7 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
   - `--src-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
 
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
-  - `--dest-file <file_path>` (use `--to-bytes` to specify whether to save in JSON or bytes)
+  - `--dest-file <file_path>`
   - `--dest-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
     - Supports multiple urls:
       - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
@@ -182,7 +182,6 @@ Dry-run: local prover (no proof server)
 $ midnight-node-toolkit generate-txs --dry-run
 >   --src-file res/genesis/genesis_tx_undeployed.mn
 >   --dest-file deploy.mn
->   --to-bytes
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"]
@@ -196,7 +195,6 @@ Dry-run: local prover (no proof server)
 ```console
 $ midnight-node-toolkit generate-txs --dry-run
 >   --dest-file deploy.mn
->   --to-bytes
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
@@ -316,7 +314,6 @@ Dry-run: generate deploy intent: DeployArgs[..]
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "/out/deploy.bin"
 >   --compiled-contract-dir contract/counter/out
->   --to-bytes
 >   --dest-file "/out/deploy_tx.mn"
 ...
 ```
@@ -334,7 +331,6 @@ $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "out/mint_intent.bin"
 >   --intent-file "out/recieveAndSend_intent.bin"
 >   --compiled-contract-dir ../toolkit-js/test/minter_contract/out
->   --to-bytes
 >   --dest-file "/out/mint_tx.mn"
 ...
 ```
@@ -453,7 +449,6 @@ midnight-node-toolkit \
     generate-txs \
     --src-files "res/genesis/genesis_block_undeployed.mn" \
     --dest-file "register.mn" \
-    --to-bytes \
     register-dust-address \
     --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
     --funding-seed "0000000000000000000000000000000000000000000000000000000000000001" \
