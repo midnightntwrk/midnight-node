@@ -104,9 +104,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (amd64)
@@ -233,9 +233,9 @@ jobs:
           # Calculate IMAGE_TAG (must match definition in Earthfile)
           IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
 
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (arm64)
@@ -501,9 +501,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node multi-arch manifest (GHCR)
@@ -555,9 +555,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node commit-tagged image (GHCR midnightntwrk)
@@ -649,19 +649,19 @@ jobs:
         id: dockerhub-digests
         run: |
           # Arch-specific digests
-          NODE_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-amd64" --format '{{.Manifest.Digest}}')
+          NODE_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node-amd64=${NODE_AMD64}" >> "$GITHUB_OUTPUT"
-          NODE_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-arm64" --format '{{.Manifest.Digest}}')
+          NODE_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node-arm64=${NODE_ARM64}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-amd64" --format '{{.Manifest.Digest}}')
+          TOOLKIT_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit-amd64=${TOOLKIT_AMD64}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-arm64" --format '{{.Manifest.Digest}}')
+          TOOLKIT_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit-arm64=${TOOLKIT_ARM64}" >> "$GITHUB_OUTPUT"
 
           # Multi-arch manifest digests
-          NODE_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main" --format '{{.Manifest.Digest}}')
+          NODE_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node-multi=${NODE_MULTI}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main" --format '{{.Manifest.Digest}}')
+          TOOLKIT_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit-multi=${TOOLKIT_MULTI}" >> "$GITHUB_OUTPUT"
 
       - name: Attest Docker Hub node image (amd64)
@@ -710,9 +710,9 @@ jobs:
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         id: midnightntwrk-latest-digests
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:latest-main" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node `latest-main` image (GHCR midnightntwrk)

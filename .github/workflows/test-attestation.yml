@@ -47,7 +47,7 @@ jobs:
         env:
           IMAGE: ${{ steps.push.outputs.image }}
         run: |
-          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Image: ${IMAGE}"
           echo "Digest: ${DIGEST}"

@@ -103,9 +103,9 @@ jobs:
             exit 1
           fi
 
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (GHCR)
@@ -140,9 +140,9 @@ jobs:
       - name: Get GHCR midnightntwrk release image digests
         id: midnightntwrk-digests
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (GHCR midnightntwrk)
@@ -201,9 +201,9 @@ jobs:
             exit 1
           fi
 
-          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --format '{{.Manifest.Digest}}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (Docker Hub)

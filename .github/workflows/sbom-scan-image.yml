@@ -114,7 +114,7 @@ jobs:
         env:
           IMAGE: ${{ inputs.image }}
         run: |
-          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
           # Extract subject name (registry/repo without tag or digest)
@@ -142,7 +142,7 @@ jobs:
         env:
           MULTIARCH_IMAGE: ${{ inputs.multi-arch-image }}
         run: |
-          DIGEST=$(docker buildx imagetools inspect "${MULTIARCH_IMAGE}" --format '{{.Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "${MULTIARCH_IMAGE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
           SUBJECT="${MULTIARCH_IMAGE%%:*}"
