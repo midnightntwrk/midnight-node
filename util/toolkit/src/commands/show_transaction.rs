@@ -41,30 +41,17 @@ pub fn exec_inner(
 		.or_else(|_| crate::commands::fork::ledger_7::show_transaction::show_transactions(&txs))
 }
 
-// TODO: Re-enable this test
-// #[cfg(test)]
-// mod test {
-// 	use super::InnerReturnType;
-// 	use test_case::test_case;
-//
-// 	#[test_case(
-// 		"../../res/test-tx-deserialize/serialized_tx_no_context.mn",
-// 		false,
-// 		tx_from_bytes;
-// 		"transaction no context"
-// 	)]
-// 	#[test_case(
-// 		"../../res/test-tx-deserialize/serialized_tx_with_context.mn",
-// 		true,
-// 		tx_from_bytes;
-// 		"transaction with context"
-// 	)]
-// 	fn test_show_transaction_funcs<F>(src_file: &str, with_context: bool, func: F)
-// 	where
-// 		F: Fn(String, bool) -> InnerReturnType,
-// 	{
-// 		let result = func(src_file.to_string(), with_context).expect("should be ok");
-// 		assert!(result.size > 0);
-// 		assert!(!result.display.is_empty());
-// 	}
-// }
+#[cfg(test)]
+mod test {
+	use crate::commands::show_transaction::ShowTransactionArgs;
+
+	#[test]
+	fn test_show_transaction_funcs() {
+		let result = super::execute(ShowTransactionArgs {
+			src_file: "../../res/test-tx-deserialize/serialized_tx_with_context.mn".to_string(),
+		})
+		.unwrap();
+		assert!(result.size > 0);
+		assert!(!result.display.is_empty());
+	}
+}
