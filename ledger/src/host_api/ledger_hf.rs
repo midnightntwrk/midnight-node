@@ -19,7 +19,7 @@ use sp_runtime_interface::runtime_interface;
 type Database = ledger_storage_hf::db::ParityDb;
 
 #[cfg(feature = "std")]
-type Signature = base_crypto::signatures::Signature;
+type Signature = base_crypto_hf::signatures::Signature;
 
 #[runtime_interface]
 pub trait LedgerBridgeHf {
