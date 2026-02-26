@@ -23,6 +23,7 @@
 //!
 //! On non-Linux platforms, monitoring is not supported and the service is not spawned.
 
+use clap::Args;
 use sp_core::traits::SpawnEssentialNamed;
 use std::time::Duration;
 
@@ -38,13 +39,15 @@ pub enum Error {
 }
 
 /// Parameters for memory monitoring.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Args)]
 pub struct MemoryMonitorParams {
 	/// Required available memory in MiB.
 	/// If available memory drops below this threshold, the node will be gracefully terminated.
 	/// If `0`, monitoring is disabled.
+	#[arg(long, default_value_t = 0)]
 	pub memory_threshold: u64,
 	/// How often available memory is polled, in seconds.
+	#[arg(long, default_value_t = 1)]
 	pub memory_polling_period: u32,
 }
 
@@ -87,13 +90,20 @@ impl MemoryMonitorService {
 		params: MemoryMonitorParams,
 		spawner: &impl SpawnEssentialNamed,
 	) -> Result<(), Error> {
-		if params.memory_threshold == 0 || params.memory_polling_period == 0 {
+		if params.memory_threshold == 0 {
 			log::info!(
 				target: LOG_TARGET,
+				"MemoryMonitorService: memory monitoring disabled (threshold=0)",
+			);
+			return Ok(());
+		}
+
+		if params.memory_polling_period == 0 {
+			log::warn!(
+				target: LOG_TARGET,
 				"MemoryMonitorService: memory monitoring disabled \
-				 (threshold={}, polling_period={})",
+				 (threshold={} but polling_period=0)",
 				params.memory_threshold,
-				params.memory_polling_period,
 			);
 			return Ok(());
 		}
@@ -123,6 +133,8 @@ impl MemoryMonitorService {
 				polling_period: Duration::from_secs(params.memory_polling_period.into()),
 				source,
 			};
+
+			service.check_available_memory()?;
 
 			spawner.spawn_essential("memory-monitor", None, Box::pin(service.run()));
 			Ok(())
@@ -183,10 +195,11 @@ impl MemoryMonitorService {
 		// cgroup v2: memory.max must exist and contain a numeric (non-"max") limit
 		if let Ok(max_str) = std::fs::read_to_string("/sys/fs/cgroup/memory.max") {
 			let trimmed = max_str.trim();
-			if trimmed != "max" && trimmed.parse::<u64>().is_ok() {
-				if std::fs::metadata("/sys/fs/cgroup/memory.current").is_ok() {
-					return MemorySource::CgroupV2;
-				}
+			if trimmed != "max"
+				&& trimmed.parse::<u64>().is_ok()
+				&& std::fs::metadata("/sys/fs/cgroup/memory.current").is_ok()
+			{
+				return MemorySource::CgroupV2;
 			}
 		}
 
@@ -195,12 +208,27 @@ impl MemoryMonitorService {
 			std::fs::read_to_string("/sys/fs/cgroup/memory/memory.limit_in_bytes")
 		{
 			if let Ok(limit) = limit_str.trim().parse::<u64>() {
-				if limit <= (1u64 << 62) {
-					if std::fs::metadata("/sys/fs/cgroup/memory/memory.usage_in_bytes").is_ok() {
-						return MemorySource::CgroupV1;
-					}
+				if limit <= (1u64 << 62)
+					&& std::fs::metadata("/sys/fs/cgroup/memory/memory.usage_in_bytes").is_ok()
+				{
+					return MemorySource::CgroupV1;
 				}
 			}
+		}
+
+		if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
+			if contents.lines().any(|l| l.starts_with("MemAvailable:")) {
+				return MemorySource::ProcMeminfo;
+			}
+			log::warn!(
+				target: LOG_TARGET,
+				"MemoryMonitorService: /proc/meminfo exists but MemAvailable field not found",
+			);
+		} else {
+			log::warn!(
+				target: LOG_TARGET,
+				"MemoryMonitorService: /proc/meminfo not readable, memory monitoring may not function",
+			);
 		}
 
 		MemorySource::ProcMeminfo
