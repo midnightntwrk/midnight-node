@@ -1,4 +1,4 @@
-#node
+#runtime
 # Fix motion cleanup and member ordering in governance pallets
 
 Ensure motions are removed from storage on close even when dispatch
