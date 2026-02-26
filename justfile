@@ -34,8 +34,12 @@ toolkit-mint-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @echo "✅ Toolkit Mint E2E test completed successfully."
 
 toolkit-tokens-minter-e2e NODE_IMAGE TOOLKIT_IMAGE:
-  @scripts/tests/toolkit-mint-multi-tokens-e2e2.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @scripts/tests/toolkit-tokens-minter-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Tokens Minter E2E test completed successfully."
+
+toolkit-local-tokens-minter-e2e:
+  @scripts/tests/toolkit-local-tokens-minter-e2e.sh
+  @echo "✅ Toolkit Local Tokens Minter E2E test completed successfully."
 
 toolkit-multi-dest-e2e TOOLKIT_IMAGE:
   @scripts/tests/toolkit-multi-dest-e2e.sh {{TOOLKIT_IMAGE}}

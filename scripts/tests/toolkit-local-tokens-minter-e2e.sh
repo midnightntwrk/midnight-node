@@ -37,7 +37,7 @@ initial_private_state_filename="initial_state.json"
 deploy_intent_filename="deploy.bin"
 deploy_tx_filename="deploy.mn"
 
-#mkdir -p $outdir
+mkdir -p $outdir
 
 coin_public=$(
     $toolkit_bin \
