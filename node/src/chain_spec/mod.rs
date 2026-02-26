@@ -15,7 +15,7 @@ use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, Seriali
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
 
-use midnight_node_ledger_helpers::{BlockContext, serialize};
+use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
@@ -128,17 +128,13 @@ pub fn get_chainspec_extrinsics(
 
 	for tx in txs {
 		match tx.tx {
-			RawTransaction::Midnight(transaction) => {
-				let serialized_tx =
-					serialize(&transaction).expect("failed to serialize transaction");
+			RawTransaction::Midnight(midnight_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::Midnight(
-					MidnightCall::send_mn_transaction { midnight_tx: serialized_tx },
+					MidnightCall::send_mn_transaction { midnight_tx },
 				));
 				extrinsics.push(hex::encode(extrinsic.encode()));
 			},
-			RawTransaction::System(system_transaction) => {
-				let midnight_system_tx =
-					serialize(&system_transaction).expect("failed to serialize system transaction");
+			RawTransaction::System(midnight_system_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::MidnightSystem(
 					MidnightSystemCall::send_mn_system_transaction { midnight_system_tx },
 				));
