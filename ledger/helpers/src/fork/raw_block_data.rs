@@ -29,9 +29,9 @@ pub enum LedgerVersion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RawTransaction {
 	/// Raw bytes from `send_mn_transaction` extrinsic
-	Midnight(Vec<u8>),
+	Midnight(#[serde(with = "hex")] Vec<u8>),
 	/// Raw bytes from system transaction events / extrinsics
-	System(Vec<u8>),
+	System(#[serde(with = "hex")] Vec<u8>),
 }
 
 impl RawTransaction {
@@ -143,6 +143,7 @@ pub struct SerializedTx {
 	/// Serialized `BlockContext`
 	pub context: BlockContext,
 	/// Transaction hash for logging.
+	#[serde(with = "hex")]
 	pub tx_hash: [u8; 32],
 }
 
