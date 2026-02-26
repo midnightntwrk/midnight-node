@@ -90,9 +90,8 @@ mod benchmarks {
 		assert_eq!(NextCardanoPosition::<T>::get().block_number, 2);
 	}
 
-	impl_benchmark_test_suite!(
-		Pallet,
-		pallet_cnight_observation_mock::mock_with_capture::new_test_ext(),
-		pallet_cnight_observation_mock::mock_with_capture::Test
-	);
+	// Benchmark smoke tests run via the runtime crate (not the pallet crate),
+	// because the external mock crate cannot propagate the `runtime-benchmarks`
+	// feature without a circular dependency. Use:
+	//   cargo test -p midnight-node-runtime --features runtime-benchmarks
 }

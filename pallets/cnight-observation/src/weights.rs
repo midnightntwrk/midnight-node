@@ -14,7 +14,7 @@
 //! Weights for `pallet_cnight_observation`
 //!
 //! THIS FILE IS A PLACEHOLDER. Run benchmarks to generate production weights:
-//! ```
+//! ```text
 //! ./target/release/midnight-node benchmark pallet \
 //!     --runtime ./target/release/wbuild/midnight-node-runtime/midnight_node_runtime.wasm \
 //!     --genesis-builder=spec \
