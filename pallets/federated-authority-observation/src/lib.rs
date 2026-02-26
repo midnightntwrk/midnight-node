@@ -204,7 +204,7 @@ pub mod pallet {
 			InherentExecutedThisBlock::<T>::put(true);
 
 			// Sort pairs by AccountId before unzipping to preserve the association
-			// between AccountId and MainchainMember (Issue L)
+			// between AccountId and MainchainMember
 			let mut council_pairs: Vec<_> = council_authorities.clone().into_inner();
 			council_pairs.sort_by(|a, b| a.0.cmp(&b.0));
 			let (council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
