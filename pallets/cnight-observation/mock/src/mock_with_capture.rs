@@ -155,6 +155,7 @@ impl MidnightSystemTransactionExecutor for MidnightSystemTx {
 
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystemTx;
+	type WeightInfo = ();
 }
 
 impl mock_pallet::Config for Test {}
