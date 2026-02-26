@@ -350,7 +350,7 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
-                --dest-file out/serialized_tx_with_context.mn \
+                --dest-file out/serialized_tx.mn \
                 single-tx \
                 --unshielded-amount 500 \
                 --rng-seed "$RNG_SEED" \
