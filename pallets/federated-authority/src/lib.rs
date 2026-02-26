@@ -279,12 +279,14 @@ pub mod pallet {
 			let has_ended = Self::has_ended(&motion);
 
 			if Self::is_motion_approved(total_approvals) {
-				// Dispatch motion
-				Self::motion_dispatch(motion_hash)?;
-				// Get dispatch weight
+				// Get dispatch weight before removal
 				let dispatch_weight = Self::get_dispatch_weight(motion_hash)?;
-				// Remove after dispatch
+				// Dispatch motion - capture result but always remove
+				let dispatch_result = Self::motion_dispatch(motion_hash);
+				// Remove unconditionally to prevent permanently stuck motions
 				Self::motion_remove(motion_hash);
+				// Propagate dispatch error after cleanup
+				dispatch_result?;
 
 				// Return actual weight for approved motion
 				Ok(PostDispatchInfo {
