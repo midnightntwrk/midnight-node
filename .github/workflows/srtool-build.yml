@@ -1,9 +1,5 @@
 name: srtool Build (Deterministic WASM)
 
-permissions:
-  contents: write
-  id-token: write  # Required for keyless signing with Cosign
-
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +29,9 @@ jobs:
     name: Build deterministic WASM
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write    # Required for gh release upload
+      id-token: write    # Required for keyless signing with Cosign
     env:
       FORCE_COLOR: 1
     steps:
@@ -84,10 +83,11 @@ jobs:
         if: inputs.release-tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
           cd artifacts/srtool
-          echo "Uploading srtool artifacts to release: ${{ inputs.release-tag }}"
-          gh release upload --clobber --repo "$GITHUB_REPOSITORY" "${{ inputs.release-tag }}" \
+          echo "Uploading srtool artifacts to release: $RELEASE_TAG"
+          gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             midnight_node_runtime.wasm \
             midnight_node_runtime.wasm.bundle \
             midnight_node_runtime.compact.wasm \
