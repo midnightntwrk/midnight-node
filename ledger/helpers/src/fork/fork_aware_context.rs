@@ -64,7 +64,7 @@ where
 					.iter()
 					.map(|s| {
 						crate::ledger_7::WalletSeed::try_from(s.as_bytes())
-							.expect("wallet seed conversion failed")
+							.expect("ledger seed format should be backwards compatible")
 					})
 					.collect();
 				Self::Ledger7(crate::ledger_7::context::LedgerContext::new_from_wallet_seeds(
