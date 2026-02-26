@@ -865,6 +865,7 @@ impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type WeightInfo = ();
 }
 
 impl pallet_partner_chains_bridge::Config for Runtime {
@@ -1027,6 +1028,7 @@ mod benches {
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 		[pallet_system_parameters, SystemParameters]
+		[pallet_cnight_observation, CNightObservation]
 	);
 }
 
