@@ -31,7 +31,7 @@ use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
-use std::{borrow::Borrow, collections::HashMap};
+use std::{borrow::Borrow, collections::BTreeMap};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
@@ -45,7 +45,7 @@ use super::{
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
 	AllApplied,
-	PartialSuccess(HashMap<u16, Result<(), TransactionInvalid<D>>>),
+	PartialSuccess(BTreeMap<u16, Result<(), TransactionInvalid<D>>>),
 }
 
 #[derive(Debug, Storable)]
@@ -154,7 +154,7 @@ impl<D: DB> Ledger<D> {
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
 					segments
 				);
-				Ok((new_sp, AppliedStage::PartialSuccess(segments)))
+				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
 			},
 			TransactionResult::Failure(reason) => {
 				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
