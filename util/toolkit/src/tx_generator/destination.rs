@@ -14,10 +14,8 @@
 use async_trait::async_trait;
 use std::{fs::File, io::Write, sync::Arc};
 
-use crate::{
-	sender::{SendBatchError, Sender},
-	serde_def::{BuiltTransactions, SerializedTx},
-};
+use crate::sender::{SendBatchError, Sender};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
 
 pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
 
@@ -48,7 +46,7 @@ impl SendTxsToFile {
 
 	fn save_multiple(
 		&self,
-		txs: &BuiltTransactions,
+		txs: &SerializedTxBatches,
 		filename: &str,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let mut file = File::create(filename)?;
@@ -83,7 +81,7 @@ impl SendTxsToUrl {
 pub trait SendTxs: Send + Sync {
 	async fn send_txs(
 		&self,
-		txs: &BuiltTransactions,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
@@ -91,7 +89,7 @@ pub trait SendTxs: Send + Sync {
 impl SendTxs for () {
 	async fn send_txs(
 		&self,
-		_txs: &BuiltTransactions,
+		_txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		Ok(())
 	}
@@ -101,7 +99,7 @@ impl SendTxs for () {
 impl SendTxs for SendTxsToFile {
 	async fn send_txs(
 		&self,
-		txs: &BuiltTransactions,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		// If txs.len() == 1, save SerializedTx
 		if let [batch] = txs.batches.as_slice()
@@ -119,7 +117,7 @@ impl SendTxs for SendTxsToFile {
 impl SendTxs for SendTxsToUrl {
 	async fn send_txs(
 		&self,
-		txs: &BuiltTransactions,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		if self.rate <= 0.0 {
 			return Err("rate must be greater than 0".into());

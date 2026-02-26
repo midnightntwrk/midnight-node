@@ -250,21 +250,6 @@ pub fn token_type_decode(input: &str) -> TokenType {
 	TokenType::Shielded(ShieldedTokenType(HashOutput(tt_bytes)))
 }
 
-#[cfg(feature = "can-panic")]
-pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext) {
-	let tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB> =
-		deserialize(bytes)
-			.unwrap_or_else(|err| panic!("Can't deserialize `TransactionWithContext: {err}"));
-	let SerdeTransaction::Midnight(tx) = tx_with_context.tx else {
-		panic!("expected test to run against midnight transaction");
-	};
-	let block_context = tx_with_context.block_context;
-	let serialized_tx =
-		serialize(&tx).unwrap_or_else(|err| panic!("Can't serialize `Transaction`: {err}"));
-
-	(serialized_tx, block_context)
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;

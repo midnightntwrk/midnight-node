@@ -47,7 +47,7 @@ pub mod inner {
 }
 pub use inner::*;
 
-use crate::serde_def::SerializedTx;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 use midnight_node_ledger_helpers::ledger_7::{
 	DefaultDB, ProofMarker, Signature, TransactionWithContext,
 };

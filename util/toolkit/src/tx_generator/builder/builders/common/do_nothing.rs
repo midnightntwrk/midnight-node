@@ -19,10 +19,8 @@ use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use std::convert::Infallible;
 
-use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
-	tx_generator::builder::BuildTxs,
-};
+use crate::{serde_def::SourceTransactions, tx_generator::builder::BuildTxs};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct DoNothingBuilder;
 
@@ -39,7 +37,7 @@ impl BuildTxs for DoNothingBuilder {
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		// Deserialize all raw blocks into typed transactions
 		let mut all_txs: Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>> =
 			Vec::new();

@@ -2,7 +2,8 @@ use std::fmt;
 
 use clap::Args;
 
-use crate::{serde_def::BuiltTransactions, tx_generator::source::GetTxsFromFile};
+use crate::tx_generator::source::GetTxsFromFile;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct ShowTransactionResult {
 	display: String,
@@ -34,7 +35,7 @@ pub fn execute(
 }
 
 pub fn exec_inner(
-	txs: &BuiltTransactions,
+	txs: &SerializedTxBatches,
 ) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
 	// Try ledger_8 first (most common), fall back to ledger_7
 	crate::commands::fork::ledger_8::show_transaction::show_transactions(&txs)

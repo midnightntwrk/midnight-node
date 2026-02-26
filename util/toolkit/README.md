@@ -186,7 +186,6 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"]
 Dry-run: Destination file: "deploy.mn"
-Dry-run: Destination file-format: bytes
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
 
@@ -199,7 +198,6 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
 Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
 Dry-run: Destination file: "deploy.mn"
-Dry-run: Destination file-format: bytes
 Dry-run: Builder type: ContractSimple(Deploy[..]
 Dry-run: local prover (no proof server)
 
@@ -501,28 +499,11 @@ The `ledger-parameters-config.json` file should contain a JSON representation of
 ---
 
 ### Show Transaction
-Show deserialized result of a single transaction. Two options:
-- Tx saved as hex string
-- Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
+Show the structure of a saved transaction. Works with files containing multiple txs
 ```console
 $ midnight-node-toolkit show-transaction
->   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
+>   --src-file ../../res/test-tx-deserialize/serialized_tx.mn
 
-Tx StandardTransaction {
-...
-```
-
----
-
-### Show Transaction With Context
-Show deserialized result of a single transaction with its context. Two options:
-- Tx saved as hex string
-- Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
-```console
-$ midnight-node-toolkit show-transaction --with-context
->   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
-
-Tx TransactionWithContext {
 ...
 ```
 

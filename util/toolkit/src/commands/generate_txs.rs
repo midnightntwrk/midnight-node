@@ -1,10 +1,11 @@
 use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::{
 		TxGenerator, TxGeneratorError, builder::Builder, destination::Destination, source::Source,
 	},
 };
 use clap::Args;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -58,7 +59,7 @@ pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
 async fn generate_txs(
 	generator: &TxGenerator,
 	received_txs: SourceTransactions,
-) -> Result<BuiltTransactions, GenerateTxsError> {
+) -> Result<SerializedTxBatches, GenerateTxsError> {
 	generator
 		.build_txs(&received_txs)
 		.await
@@ -67,7 +68,7 @@ async fn generate_txs(
 
 async fn send_txs(
 	generator: &TxGenerator,
-	generated_txs: BuiltTransactions,
+	generated_txs: SerializedTxBatches,
 ) -> Result<(), GenerateTxsError> {
 	generator
 		.send_txs(&generated_txs)
@@ -200,7 +201,7 @@ mod tests {
 		"contract-call-call-tx"
 	)]
 	#[tokio::test]
-	async fn test_generation(args: GenerateTxsArgs) -> Result<BuiltTransactions, GenerateTxsError> {
+	async fn test_generation(args: GenerateTxsArgs) -> Result<SerializedTxBatches, GenerateTxsError> {
 		let generator = TxGenerator::new(
 			args.source,
 			args.destination,

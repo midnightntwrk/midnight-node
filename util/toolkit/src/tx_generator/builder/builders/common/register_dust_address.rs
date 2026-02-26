@@ -10,9 +10,10 @@ use async_trait::async_trait;
 
 use crate::{
 	progress::Spin,
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, RegisterDustAddressArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct RegisterDustAddressBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
@@ -50,7 +51,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building register dust address transaction...");
 
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);

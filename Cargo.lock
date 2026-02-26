@@ -7809,6 +7809,7 @@ dependencies = [
  "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-ledger-8.0.0-rc.4)",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "subxt 0.44.0",
  "subxt-signer 0.44.0",
  "thiserror 1.0.69",

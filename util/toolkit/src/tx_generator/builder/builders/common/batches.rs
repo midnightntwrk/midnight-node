@@ -21,11 +21,8 @@ use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinError};
 
-use crate::{
-	Progress, Spin,
-	serde_def::{BuiltTransactions, SourceTransactions},
-	tx_generator::builder::BatchesArgs,
-};
+use crate::{Progress, Spin, serde_def::SourceTransactions, tx_generator::builder::BatchesArgs};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 use crate::tx_generator::builder::BuildTxs;
 
@@ -226,7 +223,7 @@ impl BuildTxs for BatchesBuilder {
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let context_arc = self.context.clone();
 		let prover_arc = self.prover.clone();
 

@@ -24,9 +24,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use super::build_txs_ext::BuildTxsExt;
 use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, ContractMaintenanceArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct ContractMaintenanceBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
@@ -213,7 +214,7 @@ impl BuildTxs for ContractMaintenanceBuilder {
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
 

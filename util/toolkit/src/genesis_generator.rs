@@ -15,9 +15,9 @@ use crate::{
 	SeedableRng, Spin, StdRng,
 	cli_parsers::{self as cli},
 	remote_prover::RemoteProofServer,
-	serde_def::{BuiltTransactions, SerializedTx},
 	t_token,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
 use midnight_node_ledger_helpers::{
 	Transaction as MNLedgerTransaction, fork::raw_block_data::RawTransaction, *,
 };
@@ -102,7 +102,7 @@ pub struct FundingArgs {
 
 pub struct GenesisGenerator {
 	pub state: LedgerState<DefaultDB>,
-	pub txs: BuiltTransactions,
+	pub txs: SerializedTxBatches,
 	fullness: SyntheticCost,
 }
 
@@ -151,7 +151,7 @@ impl GenesisGenerator {
 		.map_err(SystemTransactionError::from)?;
 		let mut me = Self {
 			state,
-			txs: BuiltTransactions { batches: vec![vec![]] },
+			txs: SerializedTxBatches { batches: vec![vec![]] },
 			fullness: SyntheticCost::ZERO,
 		};
 		me.init(

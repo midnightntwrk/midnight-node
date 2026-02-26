@@ -23,8 +23,9 @@ use std::{path::PathBuf, sync::Arc};
 use crate::{
 	cli_parsers as cli,
 	fetcher::{fetch_storage::WalletStateCaching, wallet_state_cache},
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use subxt::utils::H256;
 
 pub mod builders;
@@ -387,7 +388,7 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		self.builder
 			.build_txs_from(received_tx)
 			.await
@@ -600,7 +601,7 @@ pub trait BuildTxs {
 	async fn build_txs_from(
 		&self,
 		received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error>;
+	) -> Result<SerializedTxBatches, Self::Error>;
 }
 
 /// Build context with optional wallet state caching.

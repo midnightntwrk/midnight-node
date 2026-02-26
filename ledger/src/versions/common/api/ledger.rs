@@ -234,9 +234,7 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::super::{
-		CRATE_NAME, helpers_local::extract_info_from_tx_with_context,
-	};
+	use super::super::super::super::{CRATE_NAME, helpers_local::extract_tx_with_context};
 	use super::super::Api;
 	use super::*;
 	use base_crypto_local::signatures::Signature;
@@ -308,7 +306,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "Test fixtures need regeneration after ledger 6.2 update - requires midnight-js update"]
 	fn should_apply_transaction() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
@@ -316,12 +313,11 @@ mod tests {
 		}
 		let api = Api::new();
 		let mut ledger = prepare_ledger();
-		let (serialized_tx, block_context) = extract_info_from_tx_with_context(DEPLOY_TX);
+		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
 		assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
 	}
 
 	#[test]
-	#[ignore = "Test fixtures need regeneration after ledger 6.2 update - requires midnight-js update"]
 	fn should_get_contract_state() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
@@ -330,11 +326,11 @@ mod tests {
 		let api = Api::new();
 		let mut ledger = prepare_ledger();
 
-		let (deploy_tx, deploy_tx_block_context) = extract_info_from_tx_with_context(DEPLOY_TX);
-		let (store_tx, store_tx_block_context) = extract_info_from_tx_with_context(STORE_TX);
-		let (check_tx, check_tx_block_context) = extract_info_from_tx_with_context(CHECK_TX);
+		let (deploy_tx, deploy_tx_block_context) = extract_tx_with_context(DEPLOY_TX);
+		let (store_tx, store_tx_block_context) = extract_tx_with_context(STORE_TX);
+		let (check_tx, check_tx_block_context) = extract_tx_with_context(CHECK_TX);
 		let (maintenance_tx, maintenance_tx_block_context) =
-			extract_info_from_tx_with_context(MAINTENANCE_TX);
+			extract_tx_with_context(MAINTENANCE_TX);
 
 		assert_apply_transaction(&api, &mut ledger, &deploy_tx, &deploy_tx_block_context.into());
 		assert_apply_transaction(&api, &mut ledger, &store_tx, &store_tx_block_context.into());

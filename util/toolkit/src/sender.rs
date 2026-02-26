@@ -30,8 +30,8 @@ use thiserror::Error;
 use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
 	hash_to_str,
-	serde_def::SerializedTx,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 
 #[derive(Debug, Error)]
 #[error("{failed_count} transaction(s) failed during send")]

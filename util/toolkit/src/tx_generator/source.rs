@@ -14,10 +14,10 @@
 use crate::{
 	cli_parsers as cli,
 	fetcher::{fetch_all, fetch_storage},
-	serde_def::{BuiltTransactions, SerializedTx},
 };
 use async_trait::async_trait;
 use clap::Args;
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
 use std::{fs::File, str::FromStr};
 use thiserror::Error;
 
@@ -173,14 +173,14 @@ impl GetTxsFromFile {
 		Ok(tx)
 	}
 
-	pub fn load_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+	pub fn load_multiple(filename: &str) -> Result<SerializedTxBatches, std::io::Error> {
 		let file = File::open(filename)?;
 		Ok(serde_json::from_reader(file)?)
 	}
 
-	pub fn load_single_or_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+	pub fn load_single_or_multiple(filename: &str) -> Result<SerializedTxBatches, std::io::Error> {
 		if let Ok(loaded) = Self::load_single(filename) {
-			return Ok(BuiltTransactions { batches: vec![vec![loaded]] });
+			return Ok(SerializedTxBatches { batches: vec![vec![loaded]] });
 		};
 		log::debug!("failed to load {} as single tx, loading as multiple...", filename);
 		return Self::load_multiple(filename);
@@ -200,7 +200,7 @@ impl GetTxsFromFile {
 			}
 		} else {
 			// Load from multiple files
-			let res: Result<Vec<BuiltTransactions>, _> =
+			let res: Result<Vec<SerializedTxBatches>, _> =
 				self.files.iter().map(|f| Self::load_single_or_multiple(f)).collect();
 			let batches: Vec<Vec<SerializedTx>> =
 				res?.into_iter().flat_map(|b| b.batches).collect();

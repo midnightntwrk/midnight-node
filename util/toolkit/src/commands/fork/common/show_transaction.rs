@@ -2,7 +2,7 @@ use std::io::Write as _;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 
-use crate::serde_def::{BuiltTransactions, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
 
 use super::ledger_helpers_local::{
 	self, DefaultDB, PureGeneratorPedersen, SystemTransaction, deserialize,
@@ -14,7 +14,7 @@ type Transaction =
 	ledger_helpers_local::Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
 
 pub fn show_transactions(
-	built_txs: &BuiltTransactions,
+	built_txs: &SerializedTxBatches,
 ) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
 	let mut displays = Vec::new();
 	let mut total_size = 0;

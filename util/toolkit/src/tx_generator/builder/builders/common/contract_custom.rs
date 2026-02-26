@@ -7,11 +7,12 @@ use super::ledger_helpers_local::{
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
 };
 use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
 	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
 use async_trait::async_trait;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
@@ -138,7 +139,7 @@ impl BuildTxs for CustomContractBuilder {
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		println!("Building Txs for CustomContract");
 
 		// - LedgerContext and TransactionInfo

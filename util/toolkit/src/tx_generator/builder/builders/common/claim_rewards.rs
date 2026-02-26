@@ -20,9 +20,10 @@ use super::ledger_helpers_local::{
 };
 
 use crate::{
-	serde_def::{BuiltTransactions, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, ClaimRewardsArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct ClaimRewardsBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
@@ -55,7 +56,7 @@ impl BuildTxs for ClaimRewardsBuilder {
 	async fn build_txs_from(
 		&self,
 		_received_tx: SourceTransactions,
-	) -> Result<BuiltTransactions, Self::Error> {
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let context_arc = self.context.clone();
 
 		// - Calculate the funding `WalletSeed` (can be more than one)

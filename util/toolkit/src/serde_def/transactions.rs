@@ -12,60 +12,13 @@
 // limitations under the License.
 
 use midnight_node_ledger_helpers::fork::raw_block_data::{
-	LedgerVersion, RawBlockData, RawTransaction,
+	LedgerVersion, RawBlockData, RawTransaction, SerializedTxBatches, SerializedTx,
 };
 use midnight_node_ledger_helpers::*;
-use serde::{Deserialize, Serialize};
 use std::{
 	fmt::Debug,
 	time::{SystemTime, UNIX_EPOCH},
 };
-
-/// A single serialized transaction ready for sending or file output.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SerializedTx {
-	/// Serialized `Transaction` — the payload for `send_mn_transaction`.
-	pub tx: RawTransaction,
-	/// Serialized `BlockContext`
-	pub context: BlockContext,
-	/// Transaction hash for logging.
-	pub tx_hash: [u8; 32],
-}
-
-impl SerializedTx {
-	pub fn tx_byte_len(&self) -> usize {
-		match &self.tx {
-			RawTransaction::Midnight(tx) => tx.len(),
-			RawTransaction::System(tx) => tx.len(),
-		}
-	}
-}
-
-/// Output of a builder — serialized transactions ready for sending.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BuiltTransactions {
-	pub batches: Vec<Vec<SerializedTx>>,
-}
-
-impl BuiltTransactions {
-	pub fn get_context(batch: &[SerializedTx]) -> Result<BlockContext, String> {
-		let mut context: Option<BlockContext> = None;
-		for tx in batch {
-			if let Some(ref context) = context {
-				if context.tblock != tx.context.tblock {
-					return Err(format!(
-						"Internal error: Txs in the same batch have mismatched context: {context:?} != {:?}",
-						tx.context
-					));
-				}
-			} else {
-				context = Some(tx.context.clone());
-			}
-		}
-
-		context.ok_or("batch is empty, block context not found".to_string())
-	}
-}
 
 /// Source transactions loaded from either the network or files.
 ///
@@ -124,7 +77,7 @@ impl SourceTransactions {
 		let mut ledger_version = LedgerVersion::default();
 		for batch in batches {
 			let context =
-				BuiltTransactions::get_context(&batch).expect("failed to get context for batch");
+				SerializedTxBatches::get_context(&batch).expect("failed to get context for batch");
 			// block.transactions = '
 			let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
 

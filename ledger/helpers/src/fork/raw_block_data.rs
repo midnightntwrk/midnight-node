@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ledger_8::BlockContext;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -131,5 +132,51 @@ impl RawBlockData {
 	/// Get the ledger version for this block.
 	pub fn ledger_version(&self) -> LedgerVersion {
 		self.ledger_version
+	}
+}
+
+/// A single serialized transaction ready for sending or file output.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializedTx {
+	/// Serialized `Transaction` — the payload for `send_mn_transaction`.
+	pub tx: RawTransaction,
+	/// Serialized `BlockContext`
+	pub context: BlockContext,
+	/// Transaction hash for logging.
+	pub tx_hash: [u8; 32],
+}
+
+impl SerializedTx {
+	pub fn tx_byte_len(&self) -> usize {
+		match &self.tx {
+			RawTransaction::Midnight(tx) => tx.len(),
+			RawTransaction::System(tx) => tx.len(),
+		}
+	}
+}
+
+/// Output of a builder — serialized transactions ready for sending.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializedTxBatches {
+	pub batches: Vec<Vec<SerializedTx>>,
+}
+
+impl SerializedTxBatches {
+	pub fn get_context(batch: &[SerializedTx]) -> Result<BlockContext, String> {
+		let mut context: Option<BlockContext> = None;
+		for tx in batch {
+			if let Some(ref context) = context {
+				if context.tblock != tx.context.tblock {
+					return Err(format!(
+						"Internal error: Txs in the same batch have mismatched context: {context:?} != {:?}",
+						tx.context
+					));
+				}
+			} else {
+				context = Some(tx.context.clone());
+			}
+		}
+
+		context.ok_or("batch is empty, block context not found".to_string())
 	}
 }

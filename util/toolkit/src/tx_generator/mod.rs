@@ -13,7 +13,8 @@
 
 use thiserror::Error;
 
-use crate::serde_def::{BuiltTransactions, SourceTransactions};
+use crate::serde_def::SourceTransactions;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub mod builder;
 pub mod destination;
@@ -146,7 +147,7 @@ impl TxGenerator {
 
 	pub async fn send_txs(
 		&self,
-		txs: &BuiltTransactions,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
@@ -170,7 +171,7 @@ impl TxGenerator {
 	pub async fn build_txs(
 		&self,
 		received_txs: &SourceTransactions,
-	) -> Result<BuiltTransactions, DynamicError> {
+	) -> Result<SerializedTxBatches, DynamicError> {
 		let seeds = self.builder_config.relevant_wallet_seeds();
 		let fork_ctx = if seeds.is_empty() {
 			None
