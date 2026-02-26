@@ -104,7 +104,7 @@ impl SourceTransactions {
 
 		for i in 0..blocks.len() {
 			// Set last_block_time for all blocks apart from genesis
-			if i > 1 {
+			if i >= 1 {
 				blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 			}
 		}
