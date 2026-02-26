@@ -99,7 +99,7 @@ impl SourceTransactions {
 		}
 
 		// Sort the blocks + set last block time
-		blocks.sort();
+		blocks.sort_by_key(|b| b.tblock_secs);
 
 		for i in 0..blocks.len() {
 			// Set last_block_time for all blocks apart from genesis

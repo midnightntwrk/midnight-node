@@ -15,7 +15,6 @@
 
 use crate::ledger_8::BlockContext;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 
 /// Which ledger version a block was produced under.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +25,7 @@ pub enum LedgerVersion {
 }
 
 /// A transaction stored as raw bytes, before version-specific deserialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RawTransaction {
 	/// Raw bytes from `send_mn_transaction` extrinsic
 	Midnight(#[serde(with = "hex")] Vec<u8>),
@@ -51,7 +50,7 @@ impl RawTransaction {
 ///
 /// The `spec_version` field stores the raw runtime spec version number.
 /// Use `LedgerVersion::from_spec_version()` to convert at point of use.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawBlockData {
 	pub hash: [u8; 32],
 	pub parent_hash: [u8; 32],
@@ -71,26 +70,6 @@ pub struct RawBlockData {
 	/// Genesis state bytes (only present for block 0)
 	pub state: Option<Vec<u8>>,
 }
-
-impl PartialOrd for RawBlockData {
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-		Some(self.cmp(other))
-	}
-}
-
-impl Ord for RawBlockData {
-	fn cmp(&self, other: &Self) -> Ordering {
-		self.tblock_secs.cmp(&other.tblock_secs)
-	}
-}
-
-impl PartialEq for RawBlockData {
-	fn eq(&self, other: &Self) -> bool {
-		self.tblock_secs == other.tblock_secs
-	}
-}
-
-impl Eq for RawBlockData {}
 
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
