@@ -78,7 +78,6 @@ impl SourceTransactions {
 		for batch in batches {
 			let context =
 				SerializedTxBatches::get_context(&batch).expect("failed to get context for batch");
-			// block.transactions = '
 			let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
 
 			if let Some((_, new_ledger_version)) = transactions
