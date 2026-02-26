@@ -173,12 +173,12 @@ impl GetTxsFromFile {
 		Ok(tx)
 	}
 
-	fn load_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+	pub fn load_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
 		let file = File::open(filename)?;
 		Ok(serde_json::from_reader(file)?)
 	}
 
-	fn load_single_or_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
+	pub fn load_single_or_multiple(filename: &str) -> Result<BuiltTransactions, std::io::Error> {
 		if let Ok(loaded) = Self::load_single(filename) {
 			return Ok(BuiltTransactions { batches: vec![vec![loaded]] });
 		};

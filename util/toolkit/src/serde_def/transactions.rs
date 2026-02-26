@@ -32,6 +32,15 @@ pub struct SerializedTx {
 	pub tx_hash: [u8; 32],
 }
 
+impl SerializedTx {
+	pub fn tx_byte_len(&self) -> usize {
+		match &self.tx {
+			RawTransaction::Midnight(tx) => tx.len(),
+			RawTransaction::System(tx) => tx.len(),
+		}
+	}
+}
+
 /// Output of a builder — serialized transactions ready for sending.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuiltTransactions {
