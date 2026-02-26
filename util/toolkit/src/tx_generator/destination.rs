@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use std::{fs::File, io::Write, sync::Arc};
 
 use crate::sender::{SendBatchError, Sender};
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 
 pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
 

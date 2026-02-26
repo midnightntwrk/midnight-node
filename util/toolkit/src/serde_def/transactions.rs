@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use midnight_node_ledger_helpers::fork::raw_block_data::{
-	LedgerVersion, RawBlockData, RawTransaction, SerializedTxBatches, SerializedTx,
+	LedgerVersion, RawBlockData, RawTransaction, SerializedTx, SerializedTxBatches,
 };
 use midnight_node_ledger_helpers::*;
 use std::{

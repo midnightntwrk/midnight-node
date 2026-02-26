@@ -2,7 +2,7 @@ use std::io::Write as _;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 
 use super::ledger_helpers_local::{
 	self, DefaultDB, PureGeneratorPedersen, SystemTransaction, deserialize,

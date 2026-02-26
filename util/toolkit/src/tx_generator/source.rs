@@ -17,7 +17,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use clap::Args;
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 use std::{fs::File, str::FromStr};
 use thiserror::Error;
 

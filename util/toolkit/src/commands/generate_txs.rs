@@ -201,7 +201,9 @@ mod tests {
 		"contract-call-call-tx"
 	)]
 	#[tokio::test]
-	async fn test_generation(args: GenerateTxsArgs) -> Result<SerializedTxBatches, GenerateTxsError> {
+	async fn test_generation(
+		args: GenerateTxsArgs,
+	) -> Result<SerializedTxBatches, GenerateTxsError> {
 		let generator = TxGenerator::new(
 			args.source,
 			args.destination,

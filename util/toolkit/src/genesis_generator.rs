@@ -17,7 +17,7 @@ use crate::{
 	remote_prover::RemoteProofServer,
 	t_token,
 };
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTxBatches, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 use midnight_node_ledger_helpers::{
 	Transaction as MNLedgerTransaction, fork::raw_block_data::RawTransaction, *,
 };
