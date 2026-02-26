@@ -206,14 +206,11 @@ impl MemoryMonitorService {
 		// cgroup v1: limit_in_bytes must exist and not be an absurdly large value
 		if let Ok(limit_str) =
 			std::fs::read_to_string("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+			&& let Ok(limit) = limit_str.trim().parse::<u64>()
+			&& limit <= (1u64 << 62)
+			&& std::fs::metadata("/sys/fs/cgroup/memory/memory.usage_in_bytes").is_ok()
 		{
-			if let Ok(limit) = limit_str.trim().parse::<u64>() {
-				if limit <= (1u64 << 62)
-					&& std::fs::metadata("/sys/fs/cgroup/memory/memory.usage_in_bytes").is_ok()
-				{
-					return MemorySource::CgroupV1;
-				}
-			}
+			return MemorySource::CgroupV1;
 		}
 
 		if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
