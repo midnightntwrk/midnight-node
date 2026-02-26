@@ -2,24 +2,18 @@ name: SBOM Generation and Vulnerability Scan
 
 # This workflow generates SBOMs (Software Bill of Materials) using Syft,
 # scans for vulnerabilities using Grype, and attests the SBOM to the image
-# using Cosign keyless signing.
+# using GitHub native attestations.
 #
-# To verify signatures and attestations locally:
+# To verify attestations locally:
 #
-#   # Verify image signature
-#   cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
-#     --certificate-identity-regexp '.*' \
-#     --certificate-oidc-issuer-regexp '.*'
+#   # Verify build provenance
+#   gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+#     --repo midnightntwrk/midnight-node
 #
 #   # Verify SBOM attestation
-#   cosign verify-attestation --type spdxjson \
-#     ghcr.io/midnight-ntwrk/midnight-node:TAG \
-#     --certificate-identity-regexp '.*' \
-#     --certificate-oidc-issuer-regexp '.*'
-#
-#   # Download and view the SBOM
-#   cosign download attestation ghcr.io/midnight-ntwrk/midnight-node:TAG | \
-#     jq -r '.payload' | base64 -d | jq '.predicate'
+#   gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+#     --repo midnightntwrk/midnight-node \
+#     --predicate-type https://spdx.dev/Document
 
 on:
   workflow_call:
@@ -45,7 +39,7 @@ on:
         default: false
         type: boolean
       multi-arch-image:
-        description: 'Multi-arch image to also attest SBOM against (e.g., registry/name:tag). Enables cosign verify-attestation on multi-arch tags.'
+        description: 'Multi-arch image to also attest SBOM against (e.g., registry/name:tag). Enables gh attestation verify on multi-arch tags.'
         default: ''
         type: string
 
@@ -57,8 +51,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write      # For attestation
-      id-token: write      # Required for keyless signing (OIDC)
+      packages: write
+      id-token: write
+      attestations: write  # Required for GitHub native attestations
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -66,10 +61,6 @@ jobs:
           sparse-checkout: |
             .github/scripts
             .grype.yaml
-
-      - name: Install Cosign
-        if: ${{ !inputs.skip-attestation }}
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Install Syft
         id: syft
@@ -117,21 +108,58 @@ jobs:
           source .github/scripts/sbom-scan.sh
           scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json" "${PLATFORM}"
 
-      - name: Attest SBOM
+      - name: Get image digest
         if: ${{ !inputs.skip-attestation }}
+        id: image-digest
         env:
           IMAGE: ${{ inputs.image }}
         run: |
-          source .github/scripts/sbom-scan.sh
-          attest_sbom_with_retry "${IMAGE}" "sbom.spdx.json"
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
-      - name: Attest SBOM to multi-arch manifest
+          # Extract subject name (registry/repo without tag or digest)
+          SUBJECT="${IMAGE%%:*}"
+          SUBJECT="${SUBJECT%%@*}"
+
+          # Normalize Docker Hub short names to index.docker.io prefix
+          REGISTRY="${SUBJECT%%/*}"
+          if [[ "${REGISTRY}" != *.* ]]; then
+            SUBJECT="index.docker.io/${SUBJECT}"
+          fi
+          echo "subject-name=${SUBJECT}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest SBOM
+        if: ${{ !inputs.skip-attestation }}
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.image-digest.outputs.subject-name }}
+          subject-digest: ${{ steps.image-digest.outputs.digest }}
+          sbom-path: sbom.spdx.json
+
+      - name: Get multi-arch image digest
         if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
+        id: multiarch-digest
         env:
           MULTIARCH_IMAGE: ${{ inputs.multi-arch-image }}
         run: |
-          source .github/scripts/sbom-scan.sh
-          attest_sbom_to_multiarch "${MULTIARCH_IMAGE}" "sbom.spdx.json"
+          DIGEST=$(docker buildx imagetools inspect "${MULTIARCH_IMAGE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+          SUBJECT="${MULTIARCH_IMAGE%%:*}"
+          SUBJECT="${SUBJECT%%@*}"
+          REGISTRY="${SUBJECT%%/*}"
+          if [[ "${REGISTRY}" != *.* ]]; then
+            SUBJECT="index.docker.io/${SUBJECT}"
+          fi
+          echo "subject-name=${SUBJECT}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest SBOM to multi-arch manifest
+        if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.multiarch-digest.outputs.subject-name }}
+          subject-digest: ${{ steps.multiarch-digest.outputs.digest }}
+          sbom-path: sbom.spdx.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

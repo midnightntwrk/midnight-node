@@ -2,15 +2,17 @@
 
 Before deploying a Midnight node, verify that the image you pulled was built by Midnight's official CI/CD pipeline and has not been tampered with.
 
-## Install Cosign
+## Install GitHub CLI
 
 ```bash
 # macOS
-brew install cosign
+brew install gh
 
-# Linux
-curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o cosign
-chmod +x cosign && sudo mv cosign /usr/local/bin/
+# Linux (Debian/Ubuntu)
+sudo apt install gh
+
+# Linux (Fedora)
+sudo dnf install gh
 ```
 
 ## Verify an Image
@@ -18,25 +20,23 @@ chmod +x cosign && sudo mv cosign /usr/local/bin/
 ### Using the verification script
 
 ```bash
-# Verify signature
+# Verify build provenance
 ./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:TAG
 
-# Verify signature + SBOM attestation
+# Verify build provenance + SBOM attestation
 ./scripts/verify-image.sh --sbom ghcr.io/midnight-ntwrk/midnight-node:TAG
 ```
 
-### Using cosign directly
+### Using gh directly
 
 ```bash
-cosign verify \
-  --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  ghcr.io/midnight-ntwrk/midnight-node:TAG
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+    --owner midnightntwrk
 ```
 
 > **Note:** The GitHub org is `midnightntwrk` (no hyphen). Images are published to both `ghcr.io/midnight-ntwrk` (legacy) and `ghcr.io/midnightntwrk` (preferred).
 
-## Signed Images
+## Attested Images
 
 | Image | Registry |
 |-------|----------|
@@ -51,19 +51,18 @@ cosign verify \
 
 - The image was built in the `midnightntwrk/midnight-node` GitHub repository
 - The build ran on GitHub Actions (not a third-party environment)
-- The image has not been modified since it was signed
+- The image has not been modified since it was built
 
 ## Troubleshooting
 
 | Error | Meaning | Action |
 |-------|---------|--------|
-| `no matching signatures` | Image is unsigned or not found | Check the image reference is correct and from a signed repository |
-| `certificate identity mismatch` | Image was not built by Midnight CI | Verify you are using an official Midnight image |
-| `OIDC issuer mismatch` | Image was not built on GitHub Actions | Use official images from the repositories listed above |
-| `SBOM attestation not found` | No SBOM attached | Older images may predate SBOM support; verify the signature only |
+| `no attestations found` | Image is unattested or not found | Check the image reference is correct and from an attested repository |
+| `verification failed` | Attestation doesn't match image | Verify you are using an official Midnight image |
+| `SBOM attestation not found` | No SBOM attached | Older images may predate SBOM support; verify the build provenance only |
 
 ## Best Practices
 
 - **Always verify before deploying to production.** Run verification as part of your deployment process.
 - **Pin image versions.** Use specific tags (e.g., `:1.2.3`) or digests (`@sha256:...`) rather than `:latest`.
-- **Automate verification.** If running Kubernetes, consider an admission controller like [Kyverno](https://kyverno.io/) or [Sigstore Policy Controller](https://docs.sigstore.dev/policy-controller/overview/) to enforce verification at deploy time.
+- **Automate verification.** If running Kubernetes, consider an admission controller like [Kyverno](https://kyverno.io/) to enforce verification at deploy time.
