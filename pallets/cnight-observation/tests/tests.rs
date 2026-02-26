@@ -17,9 +17,9 @@ use frame_support::{
 use frame_system::RawOrigin;
 use midnight_node_ledger::latest::types::BlockContext;
 use midnight_node_ledger_helpers::{
-	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DefaultDB, DustPublicKey,
-	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
-	deserialize_untagged, fork::raw_block_data::SerializedTxBatches, serialize_untagged,
+	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DustPublicKey, DustSecretKey,
+	SystemTransaction, deserialize, deserialize_untagged,
+	fork::raw_block_data::SerializedTxBatches, serialize_untagged,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
