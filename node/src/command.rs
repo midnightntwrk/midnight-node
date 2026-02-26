@@ -301,6 +301,7 @@ fn genesis_state_from_chain_spec(
 }
 
 /// Compares two genesis blobs by blake2_256 hash; returns an error on mismatch.
+#[allow(dead_code)]
 fn verify_genesis_consistency(
 	chain_spec_genesis: &[u8],
 	compiled_genesis: &[u8],
