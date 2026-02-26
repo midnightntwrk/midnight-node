@@ -8,6 +8,7 @@ Send unshielded tokens to three destination addresses:
 
 ```console
 $ midnight-node-toolkit generate-txs single-tx \
+>   --fetch-cache inmemory \
 >   --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
 >   --unshielded-amount 10 \
 >   --destination-address mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r \

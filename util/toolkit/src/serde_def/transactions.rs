@@ -62,7 +62,7 @@ impl SourceTransactions {
 			.next();
 
 		let Some((network_id, _)) = network_id_res else {
-			panic!("first block has no transactions that include a newtork id");
+			panic!("first block has no transactions that include a network id");
 		};
 
 		Self { blocks, network_id }
