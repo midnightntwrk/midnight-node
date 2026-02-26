@@ -189,8 +189,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
-		println!("pre-proof tx: {tx:#?}");
-		println!("tx balance pre-fees: {:#?}", tx.balance(None));
 
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
@@ -198,9 +196,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		};
 
 		let tx = self.pay_fees(tx, now, ttl).await?;
-		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
-		println!("post-proof tx: {tx:#?}");
-		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 		Ok(tx)
 	}
 
