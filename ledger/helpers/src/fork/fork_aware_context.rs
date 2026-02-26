@@ -119,6 +119,19 @@ where
 		}
 	}
 
+	/// Dispatch on the ledger version, passing the inner context to the
+	/// appropriate closure.
+	pub fn dispatch<T>(
+		self,
+		f7: impl FnOnce(crate::ledger_7::context::LedgerContext<D>) -> T,
+		f8: impl FnOnce(crate::ledger_8::context::LedgerContext<D>) -> T,
+	) -> T {
+		match self {
+			Self::Ledger7(ctx) => f7(ctx),
+			Self::Ledger8(ctx) => f8(ctx),
+		}
+	}
+
 	/// Extract the inner Ledger7 context, consuming self.
 	///
 	/// Returns `None` if the context has already forked to Ledger8.

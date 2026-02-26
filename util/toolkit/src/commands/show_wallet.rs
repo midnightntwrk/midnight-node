@@ -8,7 +8,6 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -62,16 +61,8 @@ pub async fn execute(
 	if let Some(seed) = args.seed {
 		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[seed]);
 
-		Ok(match fork_ctx.version() {
-			LedgerVersion::Ledger8 => {
-				let ctx = fork_ctx.into_ledger8().unwrap();
-				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx, seed, args.debug,
-				);
-				fork_wallet_result_v8(result)
-			},
-			LedgerVersion::Ledger7 => {
-				let ctx = fork_ctx.into_ledger7().unwrap();
+		Ok(fork_ctx.dispatch(
+			|ctx| {
 				let seed_v7 =
 					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed);
 				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
@@ -79,7 +70,13 @@ pub async fn execute(
 				);
 				fork_wallet_result_v7(result)
 			},
-		})
+			|ctx| {
+				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
+					&ctx, seed, args.debug,
+				);
+				fork_wallet_result_v8(result)
+			},
+		))
 	} else {
 		let address = args.address.expect("parsing error; address not given");
 		if address.human_readable_part().contains(HRP_CREDENTIAL_SHIELDED) {
@@ -88,26 +85,25 @@ pub async fn execute(
 
 		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[]);
 
-		Ok(match fork_ctx.version() {
-			LedgerVersion::Ledger8 => {
-				let ctx = fork_ctx.into_ledger8().unwrap();
-				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
-					&ctx, address,
-				);
-				fork_wallet_result_v8(result)
-			},
-			LedgerVersion::Ledger7 => {
-				let ctx = fork_ctx.into_ledger7().unwrap();
+		let address_clone = address.clone();
+		Ok(fork_ctx.dispatch(
+			|ctx| {
 				let addr_v7 =
 					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
-						&address,
+						&address_clone,
 					);
 				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
 					&ctx, addr_v7,
 				);
 				fork_wallet_result_v7(result)
 			},
-		})
+			|ctx| {
+				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
+					&ctx, address,
+				);
+				fork_wallet_result_v8(result)
+			},
+		))
 	}
 }
 

@@ -450,24 +450,25 @@ impl Builder {
 		_dry_run: bool,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		match fork_ctx {
-			Some(ctx) => match ctx.version() {
-				LedgerVersion::Ledger8 => {
-					let context =
-						ctx.into_ledger8().ok_or(BuilderConstructionError::VersionMismatch)?;
-					let prover = Self::make_prover(prover_config);
-					Ok(self.to_builder_v8(Arc::new(context), prover))
-				},
-				LedgerVersion::Ledger7 => {
-					if matches!(prover_config, ProverConfig::Remote(_)) {
-						return Err(BuilderConstructionError::RemoteProverNotSupportedForLedger7);
-					}
-					let context =
-						ctx.into_ledger7().ok_or(BuilderConstructionError::VersionMismatch)?;
-					let prover: Arc<
-						dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
-					> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
-					self.to_builder_v7(Arc::new(context), prover)
-				},
+			Some(ctx) => {
+				let self_clone = self.clone();
+				ctx.dispatch(
+					|context| {
+						if matches!(prover_config, ProverConfig::Remote(_)) {
+							return Err(
+								BuilderConstructionError::RemoteProverNotSupportedForLedger7,
+							);
+						}
+						let prover: Arc<
+							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
+						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
+						self_clone.to_builder_v7(Arc::new(context), prover)
+					},
+					|context| {
+						let prover = Self::make_prover(prover_config);
+						Ok(self.to_builder_v8(Arc::new(context), prover))
+					},
+				)
 			},
 			None => {
 				// Pass-through builders (Send, Migrate) don't need context

@@ -7,7 +7,6 @@ use crate::{
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
@@ -54,19 +53,16 @@ pub async fn execute(
 
 	let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[args.seed]);
 
-	let json =
-		match fork_ctx.version() {
-			LedgerVersion::Ledger8 => {
-				let ctx = fork_ctx.into_ledger8().unwrap();
-				crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed)?
-			},
-			LedgerVersion::Ledger7 => {
-				let ctx = fork_ctx.into_ledger7().unwrap();
-				let seed_v7 =
-				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(args.seed);
-				crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)?
-			},
-		};
+	let json = fork_ctx.dispatch(
+		|ctx| {
+			let seed_v7 =
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
+					args.seed,
+				);
+			crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)
+		},
+		|ctx| crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed),
+	)?;
 
 	Ok(DustBalanceResult::Json(json))
 }

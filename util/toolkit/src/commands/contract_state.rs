@@ -2,7 +2,7 @@ use super::super::tx_generator::{TxGenerator, source::Source};
 use crate::cli_parsers as cli;
 use crate::tx_generator::builder::build_fork_aware_context_raw;
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, fork::raw_block_data::LedgerVersion};
+use midnight_node_ledger_helpers::ContractAddress;
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -37,23 +37,21 @@ pub async fn execute(
 
 	let fork_ctx = build_fork_aware_context_raw(&blocks, &[]);
 
-	let serialized_state = match fork_ctx.version() {
-		LedgerVersion::Ledger8 => {
-			let ctx = fork_ctx.into_ledger8().unwrap();
-			crate::commands::fork::ledger_8::contract_state::get_contract_state(
-				&ctx,
-				args.contract_address,
-			)?
-		},
-		LedgerVersion::Ledger7 => {
-			let ctx = fork_ctx.into_ledger7().unwrap();
+	let serialized_state = fork_ctx.dispatch(
+		|ctx| {
 			let addr =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_contract_address(
 					args.contract_address,
 				);
-			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)?
+			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)
 		},
-	};
+		|ctx| {
+			crate::commands::fork::ledger_8::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+	)?;
 
 	let full_path = Path::new(&args.dest_file);
 	if let Some(directory) = full_path.parent() {
