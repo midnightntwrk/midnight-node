@@ -1,5 +1,5 @@
-use crate::fork::raw_block_data::RawTransaction;
-use crate::fork::raw_block_data::SerializedTx;
+#[cfg(feature = "can-panic")]
+use crate::fork::raw_block_data::{RawTransaction, SerializedTx};
 
 #[cfg(feature = "can-panic")]
 pub fn extract_tx_with_context_ledger_hf(

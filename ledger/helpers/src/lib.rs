@@ -18,6 +18,7 @@ pub mod extract_tx_with_context;
 
 #[path = "versions"]
 pub mod hard_fork_test {
+	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_hf as extract_tx_with_context;
 	pub use {
 		base_crypto_hf as base_crypto, coin_structure_hf as coin_structure,
@@ -38,6 +39,7 @@ pub mod hard_fork_test {
 
 #[path = "versions"]
 pub mod ledger_7 {
+	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
@@ -55,6 +57,7 @@ pub mod ledger_7 {
 
 #[path = "versions"]
 pub mod ledger_8 {
+	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
@@ -74,7 +77,6 @@ pub mod ledger_8 {
 
 pub use ledger_8 as latest;
 
-#[cfg(feature = "can-panic")]
 pub mod fork;
 
 #[cfg(hardfork_test)]
