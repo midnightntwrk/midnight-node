@@ -442,7 +442,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 }
 
-#[derive(Default)]
 pub struct RewardsInfo {
 	pub owner: WalletSeed,
 	pub value: u128,
@@ -463,7 +462,12 @@ impl<D: DB + Clone> FromContext<D> for ClaimMintInfo<D> {
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
 
-		Self { context, coin: RewardsInfo::default(), rng, prover }
+		Self {
+			context,
+			coin: RewardsInfo { owner: WalletSeed::Short([0; 16]), value: 0 },
+			rng,
+			prover,
+		}
 	}
 }
 
