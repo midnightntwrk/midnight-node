@@ -220,9 +220,7 @@ impl BuildTxs for CustomContractBuilder {
 		let mut encoded_output_infos: HashMap<CoinInfo, Box<EncodedOutputInfo>> = HashMap::new();
 
 		if let Some(zswap_state) = zswap_state {
-			dbg!(&zswap_state.inputs);
 			for encoded_output in zswap_state.outputs.into_iter() {
-				dbg!(&encoded_output);
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
 				let coin_info = CoinInfo::from(&encoded_output);
@@ -237,7 +235,6 @@ impl BuildTxs for CustomContractBuilder {
 					.expect("Contract address should be set");
 				let chain_zswap_state = context.with_ledger_state(|state| (*state.zswap).clone());
 				for encoded_input in zswap_state.inputs.into_iter() {
-					dbg!(&encoded_input);
 					let coin_info = CoinInfo::from(&encoded_input);
 
 					if let Some(encoded_output_info) = encoded_output_infos.get(&coin_info) {
@@ -265,16 +262,10 @@ impl BuildTxs for CustomContractBuilder {
 			}
 		}
 
-		// let inputs_len = inputs_info.len();
-		// let outputs_len = outputs_info.len();
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: transients_info };
 
-		// if inputs_len > 0 || outputs_len > 0 {
-		// 	tx_info.set_fallible_offers(HashMap::from([(1, offer_info)]));
-		// } else {
 		tx_info.set_guaranteed_offer(offer_info);
-		// }
 
 		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(false);
