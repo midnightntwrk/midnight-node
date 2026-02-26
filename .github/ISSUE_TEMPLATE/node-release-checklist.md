@@ -42,13 +42,13 @@ assignees: ''
 # Rollout checklist
 
  - [ ] Re-tag without `-rc` suffix: [retag release](https://github.com/input-output-hk/midnight-substrate-prototype/actions/workflows/release-image.yml)
- - [ ] Verify GHCR image signature: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:<tag>`
+ - [ ] Verify GHCR image attestation: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:<tag>`
  - [ ] Verify SBOM attestation: `./scripts/verify-image.sh --sbom ghcr.io/midnight-ntwrk/midnight-node:<tag>`
  - [ ] Release to one node - [example patch](https://github.com/midnight-ntwrk/midnight-gitops/pull/1071)
  - [ ] Release to 1/3 of nodes - [example patch](https://github.com/midnight-ntwrk/midnight-gitops/pull/1072)
  - [ ] Release to all nodes (update image tag everywhere, remove kustomisation patch)
  - [ ] Release image to dockerhub: https://github.com/midnight-ntwrk/artifacts/actions/workflows/push-docker-images.yml
- - [ ] Verify Docker Hub image signature: `./scripts/verify-image.sh midnightntwrk/midnight-node:<tag>`
+ - [ ] Verify Docker Hub image attestation: `./scripts/verify-image.sh midnightntwrk/midnight-node:<tag>`
  - [ ] PR raised for updating https://github.com/midnight-ntwrk/midnight-node-docker ?
  - [ ] [Github Release](https://github.com/input-output-hk/midnight-substrate-prototype/releases) upgraded from 'pre-release' to 'released' status?
  - [ ] Announced on discord validators chat?
@@ -57,9 +57,9 @@ assignees: ''
 
 # Post-release checklist
 
- - [ ] Verified image signatures for node: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:<tag>`
- - [ ] Verified image signatures for toolkit: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag>`
- - [ ] Verified binary signatures work: `./scripts/verify-binary.sh midnight-node-node-<tag>-linux-amd64.tar.gz`
+ - [ ] Verified image attestations for node: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:<tag>`
+ - [ ] Verified image attestations for toolkit: `./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag>`
+ - [ ] Verified binary attestations: `./scripts/verify-binary.sh midnight-node-node-<tag>-linux-amd64.tar.gz`
  - [ ] All code on release branch backported to `main`?
  - [ ] Metadata file in main matches the release
    - (e.g. `git checkout node-0.18.0-rc.7 metadata/static/midnight_metadata_0.18.0.scale`)
