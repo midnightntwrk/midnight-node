@@ -64,17 +64,7 @@ impl RuntimeVersion {
 	}
 
 	pub fn latest_version() -> Self {
-		let mut current_latest: Option<RuntimeVersion> = None;
-		for v in RuntimeVersion::iter() {
-			if let Some(ref latest) = current_latest {
-				if v > *latest {
-					current_latest = Some(v);
-				}
-			} else {
-				current_latest = Some(v);
-			}
-		}
-		return current_latest.unwrap();
+		RuntimeVersion::iter().max().unwrap()
 	}
 }
 
