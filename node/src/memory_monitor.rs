@@ -256,36 +256,31 @@ impl MemoryMonitorService {
 			.trim()
 			.parse()
 			.map_err(|e| {
-				std::io::Error::new(
-					std::io::ErrorKind::InvalidData,
-					format!("memory.current: {e}"),
-				)
+				std::io::Error::new(std::io::ErrorKind::InvalidData, format!("memory.current: {e}"))
 			})?;
 		Ok(max.saturating_sub(current) / 1024 / 1024)
 	}
 
 	#[cfg(target_os = "linux")]
 	fn cgroup_v1_available_mib() -> Result<u64, Error> {
-		let limit: u64 =
-			std::fs::read_to_string("/sys/fs/cgroup/memory/memory.limit_in_bytes")?
-				.trim()
-				.parse()
-				.map_err(|e| {
-					std::io::Error::new(
-						std::io::ErrorKind::InvalidData,
-						format!("memory.limit_in_bytes: {e}"),
-					)
-				})?;
-		let usage: u64 =
-			std::fs::read_to_string("/sys/fs/cgroup/memory/memory.usage_in_bytes")?
-				.trim()
-				.parse()
-				.map_err(|e| {
-					std::io::Error::new(
-						std::io::ErrorKind::InvalidData,
-						format!("memory.usage_in_bytes: {e}"),
-					)
-				})?;
+		let limit: u64 = std::fs::read_to_string("/sys/fs/cgroup/memory/memory.limit_in_bytes")?
+			.trim()
+			.parse()
+			.map_err(|e| {
+				std::io::Error::new(
+					std::io::ErrorKind::InvalidData,
+					format!("memory.limit_in_bytes: {e}"),
+				)
+			})?;
+		let usage: u64 = std::fs::read_to_string("/sys/fs/cgroup/memory/memory.usage_in_bytes")?
+			.trim()
+			.parse()
+			.map_err(|e| {
+				std::io::Error::new(
+					std::io::ErrorKind::InvalidData,
+					format!("memory.usage_in_bytes: {e}"),
+				)
+			})?;
 		Ok(limit.saturating_sub(usage) / 1024 / 1024)
 	}
 
@@ -328,11 +323,8 @@ mod tests {
 		let source = MemoryMonitorService::detect_source();
 		log::info!("detected memory source: {:?}", source);
 
-		let service = MemoryMonitorService {
-			threshold: 0,
-			polling_period: Duration::from_secs(1),
-			source,
-		};
+		let service =
+			MemoryMonitorService { threshold: 0, polling_period: Duration::from_secs(1), source };
 		let mib = service.read_available_mib();
 		assert!(mib.is_ok(), "should be able to read memory on Linux: {mib:?}");
 		assert!(mib.unwrap() > 0, "available memory should be > 0");

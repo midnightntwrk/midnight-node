@@ -34,8 +34,7 @@ use crate::chain_spec::{ChainSpecInitError, chain_config};
 
 use self::{
 	chain_spec_cfg::ChainSpecCfg, error::CfgError, memory_monitor_cfg::MemoryMonitorCfg,
-	meta_cfg::MetaCfg, midnight_cfg::MidnightCfg,
-	shell_words_environment::ShellWordsEnvironment,
+	meta_cfg::MetaCfg, midnight_cfg::MidnightCfg, shell_words_environment::ShellWordsEnvironment,
 	storage_monitor_params_cfg::StorageMonitorParamsCfg, substrate_cfg::SubstrateCfg,
 };
 
@@ -434,11 +433,7 @@ impl Cfg {
 		Self::render_header(&mut buf, "MidnightCfg")?;
 		Self::render_fields(&mut buf, show_secrets, &MidnightCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "MemoryMonitorCfg")?;
-		Self::render_fields(
-			&mut buf,
-			show_secrets,
-			&MemoryMonitorCfg::help(Some(&all_config))?,
-		)?;
+		Self::render_fields(&mut buf, show_secrets, &MemoryMonitorCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "StorageMonitorParamsCfg")?;
 		Self::render_fields(
 			&mut buf,
