@@ -6,7 +6,6 @@ use crate::commands::{
 	generate_intent::{self, GenerateIntentArgs},
 	generate_sample_intent::{self, GenerateSampleIntentArgs},
 	generate_txs::{self, GenerateTxsArgs},
-	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
 	root_call::{self, RootCallArgs},
 	send_intent::{self, SendIntentArgs},
@@ -77,8 +76,6 @@ pub enum Commands {
 	ContractAddress(ContractAddressArgs),
 	/// Show and save a Contract state
 	ContractState(ContractStateArgs),
-	/// Extract `Transaction` from `TransactionWithContext`
-	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
@@ -187,12 +184,6 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ContractState(args) => contract_state::execute(args).await,
-		Commands::GetTxFromContext(args) => {
-			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
-			std::fs::write(args.dest_file, serialized_tx)?;
-			println!("{}", timestamp);
-			Ok(())
-		},
 		Commands::RandomAddress(args) => {
 			let address = random_address::execute(args);
 			println!("{}", address);

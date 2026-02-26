@@ -48,7 +48,7 @@ mod test {
 	#[test]
 	fn test_show_transaction_funcs() {
 		let result = super::execute(ShowTransactionArgs {
-			src_file: "../../res/test-tx-deserialize/serialized_tx_with_context.mn".to_string(),
+			src_file: "../../res/test-tx-deserialize/serialized_tx.mn".to_string(),
 		})
 		.unwrap();
 		assert!(result.size > 0);

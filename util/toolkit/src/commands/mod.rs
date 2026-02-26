@@ -17,7 +17,6 @@ pub mod dust_balance;
 pub mod generate_genesis;
 pub mod generate_sample_intent;
 pub mod generate_txs;
-pub mod get_tx_from_context;
 pub mod random_address;
 pub mod root_call;
 pub mod send_intent;
