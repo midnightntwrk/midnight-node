@@ -16,11 +16,7 @@
 //! Uses the lightweight `mock_with_capture` runtime (no LedgerApi dependency).
 //! Covers: PM-19778 TC-01, TC-02, TC-06b.
 
-use frame_support::{
-	assert_noop, assert_ok,
-	dispatch::Pays,
-	sp_runtime::traits::Dispatchable,
-};
+use frame_support::{assert_noop, assert_ok, dispatch::Pays, sp_runtime::traits::Dispatchable};
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
 	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
@@ -87,10 +83,7 @@ fn test_process_tokens_rejects_too_many_utxos() {
 		let bound = 1u32 * UTXO_PER_TX_OVERESTIMATE; // 64
 		let utxos = generate_registration_utxos(bound + 1);
 
-		let call = Call::<Test>::process_tokens {
-			utxos,
-			next_cardano_position: next_position(),
-		};
+		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
@@ -116,10 +109,7 @@ fn test_process_tokens_accepts_max_utxos() {
 		let bound = 1u32 * UTXO_PER_TX_OVERESTIMATE; // 64
 		let utxos = generate_registration_utxos(bound);
 
-		let call = Call::<Test>::process_tokens {
-			utxos,
-			next_cardano_position: next_position(),
-		};
+		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
 
@@ -139,10 +129,7 @@ fn test_process_tokens_returns_actual_weight() {
 		let n = 5u32;
 		let utxos = generate_registration_utxos(n);
 
-		let call = Call::<Test>::process_tokens {
-			utxos,
-			next_cardano_position: next_position(),
-		};
+		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		let result = RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into());
 		let post_info = result.expect("dispatch should succeed");
@@ -154,9 +141,6 @@ fn test_process_tokens_returns_actual_weight() {
 			Some(expected_weight),
 			"actual_weight should reflect WeightInfo::process_tokens(N)"
 		);
-		assert_eq!(
-			post_info.pays_fee, Pays::No,
-			"inherent extrinsic should not charge fees"
-		);
+		assert_eq!(post_info.pays_fee, Pays::No, "inherent extrinsic should not charge fees");
 	});
 }
