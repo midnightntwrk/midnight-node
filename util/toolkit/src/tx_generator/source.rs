@@ -227,8 +227,18 @@ where
 			}
 			Ok(SourceTransactions::from_txs_with_context(txs, self.dust_warp))
 		} else {
+			/// Maximum file size for transaction files (64 MB)
+			const MAX_TX_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
 			let mut txs = vec![];
 			for file in &self.files {
+				let metadata = std::fs::metadata(file)?;
+				if metadata.len() > MAX_TX_FILE_SIZE {
+					return Err(Box::new(std::io::Error::new(
+						std::io::ErrorKind::InvalidData,
+						format!("transaction file {:?} exceeds maximum size of {} bytes", file, MAX_TX_FILE_SIZE),
+					)));
+				}
 				let bytes = std::fs::read(file)?;
 				// files can either be one TransactionWithContext or many of them
 				let mut file_txs = mn_ledger_serialize::tagged_deserialize(bytes.as_slice())
