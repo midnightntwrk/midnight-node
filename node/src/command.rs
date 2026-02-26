@@ -280,6 +280,7 @@ fn get_res_preset_dir() -> std::path::PathBuf {
 	std::path::PathBuf::from("res").join(get_cfg_preset())
 }
 
+/// Extracts and hex-decodes the `genesis_state` value from chain spec properties.
 fn genesis_state_from_properties(
 	properties: &serde_json::Map<String, serde_json::Value>,
 ) -> sc_cli::Result<Vec<u8>> {
@@ -292,12 +293,14 @@ fn genesis_state_from_properties(
 		.map_err(|e| sc_cli::Error::Input(format!("invalid hex in 'genesis_state': {e}")))
 }
 
+/// Returns the genesis state from a chain spec's properties.
 fn genesis_state_from_chain_spec(
 	chain_spec: &dyn sc_service::ChainSpec,
 ) -> sc_cli::Result<Vec<u8>> {
 	genesis_state_from_properties(&chain_spec.properties())
 }
 
+/// Compares two genesis blobs by blake2_256 hash; returns an error on mismatch.
 fn verify_genesis_consistency(
 	chain_spec_genesis: &[u8],
 	compiled_genesis: &[u8],
@@ -314,6 +317,17 @@ fn verify_genesis_consistency(
 	Ok(())
 }
 
+/// Builds a `StorageInit` from the chain spec's genesis state.
+fn storage_init_from_chain_spec(
+	config: &sc_service::Configuration,
+	cache_size: usize,
+) -> sc_cli::Result<StorageInit> {
+	Ok(StorageInit {
+		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
+		cache_size,
+	})
+}
+
 fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 
@@ -323,11 +337,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let cache_size = cfg.midnight_cfg.storage_cache_size;
 			let make_dependencies = |config: sc_service::Configuration| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)
-						.map_err(|e| e.to_string())?,
-					cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cache_size).map_err(|e| e.to_string())?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						midnight_cfg,
@@ -352,10 +363,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-					cache_size: cfg.midnight_cfg.storage_cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -370,10 +379,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-					cache_size: cfg.midnight_cfg.storage_cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -388,10 +395,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportState(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-					cache_size: cfg.midnight_cfg.storage_cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -406,10 +411,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ImportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-					cache_size: cfg.midnight_cfg.storage_cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -428,10 +431,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::Revert(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = StorageInit {
-					genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-					cache_size: cfg.midnight_cfg.storage_cache_size,
-				};
+				let storage_config =
+					storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -468,10 +469,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(config.chain_spec))
 					},
 					BenchmarkCmd::Block(cmd) => {
-						let storage_config = StorageInit {
-							genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-							cache_size: cfg.midnight_cfg.storage_cache_size,
-						};
+						let storage_config =
+							storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
@@ -494,10 +493,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 					#[cfg(feature = "runtime-benchmarks")]
 					BenchmarkCmd::Storage(cmd) => {
-						let storage_config = StorageInit {
-							genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-							cache_size: cfg.midnight_cfg.storage_cache_size,
-						};
+						let storage_config =
+							storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
@@ -516,10 +513,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
-						let storage_config = StorageInit {
-							genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-							cache_size: cfg.midnight_cfg.storage_cache_size,
-						};
+						let storage_config =
+							storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
@@ -544,10 +539,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Extrinsic(cmd) => {
-						let storage_config = StorageInit {
-							genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
-							cache_size: cfg.midnight_cfg.storage_cache_size,
-						};
+						let storage_config =
+							storage_init_from_chain_spec(&config, cfg.midnight_cfg.storage_cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
