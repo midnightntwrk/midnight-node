@@ -16,6 +16,14 @@
 
 # Generate SBOM with Syft, scan with Grype, and attest SBOM with Cosign.
 #
+# Attestation strategy:
+#   - Release builds: attest with tlog-upload=true for full supply-chain assurance
+#     via the Sigstore transparency log (Rekor).
+#   - Non-release builds (CI, main merges): skip attestation entirely
+#     (skip-attestation=true in the workflow). SBOM generation and vulnerability
+#     scanning still run. This avoids Rekor connectivity failures in cosign v3's
+#     bundle signing path, where --tlog-upload=false alone is insufficient.
+#
 # Usage:
 #   source .github/scripts/sbom-scan.sh
 #   generate_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
@@ -25,6 +33,25 @@
 # Note: We intentionally don't use `set -euo pipefail` at the top level because
 # this script is designed to be sourced. Those settings would affect the caller's
 # shell and cause it to exit on any error. Each function handles errors explicitly.
+
+# Build cosign verify-attestation arguments for a given tlog-upload setting.
+# When tlog was not uploaded, verification must skip the tlog check.
+_build_verify_args() {
+  local tlog_upload="$1"
+  local -n _out=$2
+  _out=(--type spdxjson --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*')
+  if [ "${tlog_upload}" != "true" ]; then
+    _out+=(--insecure-ignore-tlog=true)
+  fi
+}
+
+# Normalize a tlog-upload value to lowercase "true" or "false".
+# GitHub Actions passes boolean inputs as the strings "true"/"false", but
+# workflow_call boundaries can introduce case variations.
+_normalize_bool() {
+  local val="${1,,}"  # bash lowercase
+  if [ "${val}" = "true" ]; then echo "true"; else echo "false"; fi
+}
 
 generate_sbom_with_retry() {
   local IMAGE="$1"
@@ -118,17 +145,16 @@ scan_image_with_retry() {
 attest_sbom_with_retry() {
   local IMAGE="$1"
   local SBOM_FILE="$2"
-  local TLOG_UPLOAD="${3:-true}"
+  local TLOG_UPLOAD
+  TLOG_UPLOAD="$(_normalize_bool "${3:-true}")"
   local MAX_ATTEMPTS=3
   local DELAY=10
 
   command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
   command -v jq >/dev/null 2>&1 || { echo "::error::jq not found"; return 1; }
 
-  # Extract base image (without tag) for attestation
   local BASE_IMAGE="${IMAGE%%:*}"
 
-  # Get the digest from the manifest
   local DIGEST_JSON
   if ! DIGEST_JSON=$(docker manifest inspect "${IMAGE}" --verbose 2>&1); then
     echo "::error::Failed to inspect manifest for ${IMAGE}: ${DIGEST_JSON}"
@@ -158,12 +184,9 @@ attest_sbom_with_retry() {
       "${BASE_IMAGE}@${DIGEST}"; then
       echo "Successfully attested SBOM for ${IMAGE}"
 
-      # Verify the attestation was applied correctly
       echo "Verifying SBOM attestation..."
-      local verify_args=(--type spdxjson --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*')
-      if [ "${TLOG_UPLOAD}" != "true" ]; then
-        verify_args+=(--insecure-ignore-tlog=true)
-      fi
+      local verify_args
+      _build_verify_args "${TLOG_UPLOAD}" verify_args
       if cosign verify-attestation "${verify_args[@]}" \
         "${BASE_IMAGE}@${DIGEST}" > /dev/null 2>&1; then
         echo "SBOM attestation verified successfully"
@@ -187,13 +210,13 @@ attest_sbom_with_retry() {
 attest_sbom_to_multiarch() {
   local MULTIARCH_IMAGE="$1"
   local SBOM_FILE="$2"
-  local TLOG_UPLOAD="${3:-true}"
+  local TLOG_UPLOAD
+  TLOG_UPLOAD="$(_normalize_bool "${3:-true}")"
   local MAX_ATTEMPTS=3
   local DELAY=10
 
   command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
 
-  # Compute manifest list digest (same pattern as sign-image.sh)
   local BASE_IMAGE="${MULTIARCH_IMAGE%%:*}"
   local MANIFEST_LIST_DIGEST
   MANIFEST_LIST_DIGEST="sha256:$(docker buildx imagetools inspect --raw "${MULTIARCH_IMAGE}" | sha256sum | awk '{print $1}')"
@@ -208,12 +231,9 @@ attest_sbom_to_multiarch() {
       "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"; then
       echo "Successfully attested SBOM to multi-arch manifest"
 
-      # Verify the attestation was applied correctly
       echo "Verifying multi-arch SBOM attestation..."
-      local verify_args=(--type spdxjson --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*')
-      if [ "${TLOG_UPLOAD}" != "true" ]; then
-        verify_args+=(--insecure-ignore-tlog=true)
-      fi
+      local verify_args
+      _build_verify_args "${TLOG_UPLOAD}" verify_args
       if cosign verify-attestation "${verify_args[@]}" \
         "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}" > /dev/null 2>&1; then
         echo "Multi-arch SBOM attestation verified successfully"
