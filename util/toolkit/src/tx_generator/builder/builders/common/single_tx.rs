@@ -165,7 +165,9 @@ impl SingleTxBuilder {
 		output_wallets: Vec<ShieldedWallet<DefaultDB>>,
 		amount: u128,
 	) -> OfferInfo<DefaultDB> {
-		let total_required = amount * output_wallets.len() as u128;
+		let total_required = amount
+			.checked_mul(output_wallets.len() as u128)
+			.expect("shielded amount overflow");
 
 		let input_info = InputInfo {
 			origin: funding_seed,
@@ -192,7 +194,9 @@ impl SingleTxBuilder {
 
 		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
 		let input_amount = input_info.min_match_coin(&funding_wallet.shielded.state).value;
-		let remaining_coins = input_amount - total_required;
+		let remaining_coins = input_amount
+			.checked_sub(total_required)
+			.expect("insufficient shielded input for total required amount");
 
 		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
 		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
@@ -213,7 +217,9 @@ impl SingleTxBuilder {
 		output_wallets: Vec<UnshieldedWallet>,
 		amount_to_send_per_output: u128,
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
-		let total_required = amount_to_send_per_output * output_wallets.len() as u128;
+		let total_required = amount_to_send_per_output
+			.checked_mul(output_wallets.len() as u128)
+			.expect("unshielded amount overflow");
 
 		let utxo_spend_info = UtxoSpendInfo {
 			value: total_required,
@@ -242,7 +248,9 @@ impl SingleTxBuilder {
 			.collect();
 
 		let input_amount = min_match_utxo.value;
-		let remaining_nights = input_amount - total_required;
+		let remaining_nights = input_amount
+			.checked_sub(total_required)
+			.expect("insufficient unshielded input for total required amount");
 
 		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
 		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {

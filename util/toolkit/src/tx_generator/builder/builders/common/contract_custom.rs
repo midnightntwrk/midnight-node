@@ -120,7 +120,23 @@ impl CustomContractBuilder {
 	fn read_zswap_file(
 		&self,
 	) -> Result<Option<EncodedZswapLocalState>, CustomContractBuilderError> {
+		/// Maximum file size for zswap state files (64 MB)
+		const MAX_ZSWAP_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
 		if let Some(file_path) = &self.zswap_state_file {
+			let metadata = std::fs::metadata(file_path)
+				.map_err(CustomContractBuilderError::FailedReadingZswapStateFile)?;
+			if metadata.len() > MAX_ZSWAP_FILE_SIZE {
+				return Err(CustomContractBuilderError::FailedReadingZswapStateFile(
+					std::io::Error::new(
+						std::io::ErrorKind::InvalidData,
+						format!(
+							"zswap state file exceeds maximum size of {} bytes",
+							MAX_ZSWAP_FILE_SIZE
+						),
+					),
+				));
+			}
 			let bytes = std::fs::read(file_path)
 				.map_err(CustomContractBuilderError::FailedReadingZswapStateFile)?;
 			let zswap_state = serde_json::from_slice(&bytes)
