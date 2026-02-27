@@ -231,14 +231,14 @@ jobs:
       - name: Run Node and toolkit builds
         id: export
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME/.cargo"
+          echo "[net]" >> "$HOME/.cargo/config"
+          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
 
           CONTENT_HASH=$(git rev-parse HEAD^{tree} | cut -c1-12)
           VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
-          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           NODE_EXISTS=false
           TOOLKIT_EXISTS=false
@@ -376,15 +376,15 @@ jobs:
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           INDEXER_IMAGE_TAG="via-node-${MAIN_COMMIT}"
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
 
