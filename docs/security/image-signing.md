@@ -36,7 +36,6 @@ GitHub's attestation API enforces a hard 16MB predicate size limit ([actions/att
 - **Relationships stripped**: `jq -c 'del(.relationships)'` removes inter-package dependency edges and minifies JSON (~19MB to ~12MB)
 
 The **full unmodified SBOM** is uploaded as a build artifact for detailed analysis. The **attested SBOM** retains all package identifiers, versions, licenses, and checksums — only relationship edges and JSON whitespace are removed.
->>>>>>> main
 
 ### Vulnerability Scanning
 
