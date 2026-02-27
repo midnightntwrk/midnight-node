@@ -1,6 +1,6 @@
-# Image Signature and SBOM Verification Guide
+# Image Attestation and SBOM Verification Guide
 
-This guide explains how to verify container image signatures and SBOMs for Midnight images.
+This guide explains how to verify container image attestations and SBOMs for Midnight images.
 
 **Quick Start:** Use the included verification script for simple verification:
 ```bash
@@ -12,17 +12,17 @@ For manual verification or advanced use cases, continue reading.
 
 ## Prerequisites
 
-Install [Cosign](https://github.com/sigstore/cosign):
+Install the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 # macOS
-brew install cosign
+brew install gh
 
-# Linux (via Go)
-go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+# Linux (Debian/Ubuntu)
+sudo apt install gh
 
-# Or download from releases
-# https://github.com/sigstore/cosign/releases
+# Linux (Fedora)
+sudo dnf install gh
 ```
 
 For SBOM inspection, you'll also need [jq](https://stedolan.github.io/jq/):
@@ -35,70 +35,54 @@ brew install jq
 apt-get install jq
 ```
 
-## Verifying Image Signatures
+## Verifying Image Attestations
 
-### Basic Signature Verification
+### Basic Attestation Verification
 
-Verify that an image was signed by Midnight's CI/CD pipeline:
+Verify that an image was built by Midnight's CI/CD pipeline:
 
 ```bash
 # GHCR
-cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
-  --certificate-identity-regexp '.*' \
-  --certificate-oidc-issuer-regexp '.*'
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+    --owner midnightntwrk
 
 # Docker Hub
-cosign verify midnightntwrk/midnight-node:TAG \
-  --certificate-identity-regexp '.*' \
-  --certificate-oidc-issuer-regexp '.*'
+gh attestation verify oci://midnightntwrk/midnight-node:TAG \
+    --owner midnightntwrk
 ```
 
-Replace `TAG` with the specific version (e.g., `v1.0.0`, `latest`).
-
-### Strict Verification (Recommended for Production)
-
-For production deployments, verify the exact OIDC issuer and identity:
-
-```bash
-cosign verify ghcr.io/midnight-ntwrk/midnight-node:TAG \
-  --certificate-identity-regexp 'https://github.com/midnightntwrk/midnight-node/.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
-```
-
-This ensures the image was signed by a GitHub Actions workflow in the `midnightntwrk/midnight-node` repository.
+Replace `TAG` with the specific version (e.g., `1.0.0`, `latest-main`).
 
 ### Example Output
 
 Successful verification:
 
 ```
-Verification for ghcr.io/midnight-ntwrk/midnight-node:v1.0.0 --
-The following checks were performed on each of these signatures:
-  - The cosign claims were validated
-  - Existence of the claims in the transparency log was verified offline
-  - The code-signing certificate was verified using trusted certificate authority certificates
+Loaded digest sha256:abc123... for oci://ghcr.io/midnight-ntwrk/midnight-node:1.0.0
+Loaded 1 attestation from GitHub API
+✓ Verification succeeded!
 
-[{"critical":{"identity":{"docker-reference":"ghcr.io/midnight-ntwrk/midnight-node"},...}]
+sha256:abc123... was attested by a trusted GitHub Actions workflow
 ```
 
-Failed verification (unsigned image):
+Failed verification (unattested image):
 
 ```
-Error: no matching signatures:
-no signatures found
+✗ Loading attestations from GitHub API failed
+
+no attestations found for subject
 ```
 
 ## Verifying SBOM Attestations
 
 ### Basic SBOM Verification
 
-Verify that an SBOM attestation exists and is properly signed:
+Verify that an SBOM attestation exists:
 
 ```bash
-cosign verify-attestation --type spdxjson \
-  ghcr.io/midnight-ntwrk/midnight-node:TAG \
-  --certificate-identity-regexp '.*' \
-  --certificate-oidc-issuer-regexp '.*'
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+    --owner midnightntwrk \
+    --predicate-type https://spdx.dev/Document
 ```
 
 ### Downloading the SBOM
@@ -106,11 +90,14 @@ cosign verify-attestation --type spdxjson \
 Extract and view the SBOM content:
 
 ```bash
-# Download and decode the SBOM
-cosign download attestation ghcr.io/midnight-ntwrk/midnight-node:TAG | \
-  jq -r '.payload' | base64 -d | jq '.predicate' > sbom.spdx.json
+# Download the SBOM attestation
+gh attestation download oci://ghcr.io/midnight-ntwrk/midnight-node:TAG \
+    --owner midnightntwrk \
+    --predicate-type https://spdx.dev/Document \
+    -d /tmp/sbom
 
-# View the SBOM
+# Decode and view the SBOM
+cat /tmp/sbom/*.jsonl | jq '.dsseEnvelope.payload' | base64 -d | jq '.predicate' > sbom.spdx.json
 cat sbom.spdx.json
 ```
 
@@ -134,10 +121,9 @@ For multi-architecture images, you can verify specific platform variants:
 # Get the manifest list
 docker manifest inspect ghcr.io/midnight-ntwrk/midnight-node:TAG
 
-# Verify a specific architecture digest
-cosign verify ghcr.io/midnight-ntwrk/midnight-node@sha256:DIGEST \
-  --certificate-identity-regexp '.*' \
-  --certificate-oidc-issuer-regexp '.*'
+# Verify a specific architecture by digest
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node@sha256:DIGEST \
+    --owner midnightntwrk
 ```
 
 ## All Published Images
@@ -149,43 +135,32 @@ Verify any of these images using the commands above:
 | Midnight Node | `ghcr.io/midnight-ntwrk/midnight-node` | `midnightntwrk/midnight-node` |
 | Midnight Toolkit | `ghcr.io/midnight-ntwrk/midnight-node-toolkit` | `midnightntwrk/midnight-node-toolkit` |
 
-> **Note:** The GitHub org is `midnightntwrk` (no hyphen), while GHCR uses `midnight-ntwrk` (with hyphen). Keep this in mind when constructing image references or certificate identity patterns.
+> **Note:** The GitHub org is `midnightntwrk` (no hyphen), while GHCR uses `midnight-ntwrk` (with hyphen). Keep this in mind when constructing image references.
 
 ## Troubleshooting
 
-### "no signatures found"
+### "no attestations found"
 
-The image may not be signed. This can occur if:
+The image may not be attested. This can occur if:
 
-- The image predates the signing implementation
-- The image is from a fork PR (signatures are skipped)
-- There was a signing failure during the build
+- The image predates the attestation implementation
+- The image is from a fork PR (attestations are skipped)
+- There was an attestation failure during the build
 
-### "certificate identity mismatch"
+### "verification failed"
 
-The signing identity doesn't match your expected pattern. Check:
+The attestation doesn't match the image. Check:
 
 - The image is from the official Midnight repository
-- You're using the correct identity pattern
+- You're using the correct `--owner` value (`midnightntwrk`)
 
-### "transparency log lookup failed"
+### Network or API errors
 
-Network issue connecting to Rekor. Verify:
+If you get errors connecting to GitHub's attestation API:
 
-- Internet connectivity
-- Rekor service status: https://status.sigstore.dev/
-
-### Offline Verification
-
-For air-gapped environments, you can download the Rekor bundle for offline verification:
-
-```bash
-# Download signature with bundle
-cosign download signature ghcr.io/midnight-ntwrk/midnight-node:TAG > sig.json
-
-# Verify offline
-cosign verify --offline --bundle sig.json ghcr.io/midnight-ntwrk/midnight-node:TAG
-```
+- Check internet connectivity
+- Check GitHub status: https://www.githubstatus.com/
+- Ensure `gh` is authenticated: `gh auth status`
 
 ## Related Documentation
 

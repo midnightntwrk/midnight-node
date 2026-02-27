@@ -11,21 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::*;
-use std::{path::Path, sync::Arc};
 use thiserror::Error;
 
-use crate::{
-	ProofType, SignatureType,
-	remote_prover::RemoteProofServer,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
-};
+use crate::serde_def::SourceTransactions;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{BuildTxs, Builder, DynamicError};
+use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_raw};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError};
 
@@ -44,26 +39,15 @@ pub struct DestinationError {
 	source: subxt::Error,
 }
 
-pub struct TxGenerator<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-where
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
-	pub source: Box<dyn GetTxs<S, P>>,
-	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
-	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
-	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
+pub struct TxGenerator {
+	pub source: Box<dyn GetTxs>,
+	pub destinations: Vec<Box<dyn SendTxs>>,
+	pub builder_config: Builder,
+	pub prover_config: ProverConfig,
+	pub dry_run: bool,
 }
 
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static + std::fmt::Debug,
-> TxGenerator<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl TxGenerator {
 	pub async fn new(
 		src: Source,
 		dest: Destination,
@@ -73,23 +57,22 @@ where
 	) -> Result<Self, TxGeneratorError> {
 		let source = Self::source(src, dry_run).await?;
 		let destinations = Self::destinations(dest, dry_run).await?;
-		let builder = builder.to_builder(dry_run);
-		let prover = Self::prover(proof_server, dry_run);
+		if dry_run {
+			println!("Dry-run: Builder type: {:?}", &builder);
+		}
+		let prover_config = Self::prover_config(proof_server, dry_run);
 
-		Ok(Self { source, destinations, builder, prover })
+		Ok(Self { source, destinations, builder_config: builder, prover_config, dry_run })
 	}
 
-	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
+	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
 		if let Some(ref src_files) = src.src_files {
 			if dry_run {
 				println!("Dry-run: Source transactions from file(s): {:?}", &src_files);
 				return Ok(Box::new(()));
 			}
-			let path = Path::new(&src_files[0]);
-			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromFile::new(
+			let source: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
 				src_files.clone(),
-				extension.to_string(),
 				src.dust_warp,
 				src.ignore_block_context,
 			));
@@ -99,7 +82,7 @@ where
 				println!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(
+			let source: Box<dyn GetTxs> = Box::new(GetTxsFromUrl::new(
 				&url,
 				src.fetch_concurrency,
 				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),
@@ -116,19 +99,13 @@ where
 	async fn destinations(
 		dest: Destination,
 		dry_run: bool,
-	) -> Result<Vec<Box<dyn SendTxs<S, P>>>, DestinationError> {
+	) -> Result<Vec<Box<dyn SendTxs>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
 			if dry_run {
 				println!("Dry-run: Destination file: {:?}", &dest_file);
-				if dest.to_bytes {
-					println!("Dry-run: Destination file-format: bytes");
-				} else {
-					println!("Dry-run: Destination file-format: json");
-				}
 				return Ok(vec![Box::new(())]);
 			}
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
+			let destination: Box<dyn SendTxs> = Box::new(SendTxsToFile::new(dest_file.clone()));
 
 			return Ok(vec![destination]);
 		}
@@ -140,43 +117,37 @@ where
 			println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
 
-		let destination: Box<dyn SendTxs<S, P>> = Box::new(SendTxsToUrl::<S, P>::new(
-			dest.dest_urls.clone(),
-			dest.rate,
-			dest.no_watch_progress,
-		));
+		let destination: Box<dyn SendTxs> =
+			Box::new(SendTxsToUrl::new(dest.dest_urls.clone(), dest.rate, dest.no_watch_progress));
 
 		dests.push(destination);
 
 		Ok(dests)
 	}
 
-	pub fn prover(
-		proof_server: Option<String>,
-		dry_run: bool,
-	) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn prover_config(proof_server: Option<String>, dry_run: bool) -> ProverConfig {
 		if let Some(url) = proof_server {
 			if dry_run {
-				println!("Dry-run: remove prover: {url}");
+				println!("Dry-run: remote prover: {url}");
 			}
-			Arc::new(RemoteProofServer::new(url))
+			ProverConfig::Remote(url)
 		} else {
 			if dry_run {
 				println!("Dry-run: local prover (no proof server)");
 			}
-			Arc::new(LocalProofServer::new())
+			ProverConfig::Local
 		}
 	}
 
 	pub async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		self.source.get_txs().await
 	}
 
 	pub async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
@@ -199,8 +170,21 @@ where
 
 	pub async fn build_txs(
 		&self,
-		received_txs: &SourceTransactions<SignatureType, ProofType>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, DynamicError> {
-		self.builder.build_txs_from(received_txs.clone(), self.prover.clone()).await
+		received_txs: &SourceTransactions,
+	) -> Result<SerializedTxBatches, DynamicError> {
+		let seeds = self.builder_config.relevant_wallet_seeds();
+		let fork_ctx = if seeds.is_empty() {
+			None
+		} else {
+			Some(build_fork_aware_context_raw(received_txs, &seeds))
+		};
+
+		let builder = self.builder_config.clone().to_versioned_builder(
+			fork_ctx,
+			&self.prover_config,
+			self.dry_run,
+		)?;
+
+		builder.build_txs_from(received_txs.clone()).await
 	}
 }

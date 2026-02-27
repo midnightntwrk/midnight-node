@@ -17,9 +17,9 @@ use frame_support::{
 use frame_system::RawOrigin;
 use midnight_node_ledger::latest::types::BlockContext;
 use midnight_node_ledger_helpers::{
-	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DefaultDB, DustPublicKey,
-	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
-	deserialize_untagged, serialize_untagged,
+	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DustPublicKey, DustSecretKey,
+	SystemTransaction, deserialize, deserialize_untagged,
+	fork::raw_block_data::SerializedTxBatches, serialize_untagged,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
@@ -139,10 +139,10 @@ fn init_ledger_state() {
 }
 
 pub fn get_block_context(genesis_block: &[u8]) -> BlockContext {
-	let tx_with_context: Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>> =
-		deserialize(genesis_block)
-			.unwrap_or_else(|err| panic!("Can't deserialize genesis block: {err}"));
-	tx_with_context[0].block_context.clone().into()
+	let genesis_block: SerializedTxBatches =
+		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
+	let first_tx = genesis_block.batches.iter().flatten().next().unwrap();
+	first_tx.context.clone().into()
 }
 
 fn any_event<F: Fn(&RuntimeEvent) -> bool>(f: F) -> bool {

@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Verify Midnight container image signatures and attestations
+# Verify Midnight container image attestations using GitHub artifact attestations.
 #
 # This script verifies that a container image was legitimately built by
-# Midnight's CI/CD pipeline using Sigstore keyless signing.
+# Midnight's CI/CD pipeline using GitHub's native attestation system.
 #
 # Usage:
 #   ./scripts/verify-image.sh ghcr.io/midnight-ntwrk/midnight-node:1.0.0
@@ -25,13 +25,10 @@
 
 set -euo pipefail
 
-# Certificate identity pattern for Midnight CI workflows
-# Note: GitHub org is "midnightntwrk" (no hyphen), while GHCR uses "midnight-ntwrk"
-CERT_IDENTITY_REGEXP="https://github.com/midnightntwrk/midnight-node/.github/workflows/.*"
-OIDC_ISSUER="https://token.actions.githubusercontent.com"
+OWNER="midnightntwrk"
 
-# Known signed image prefixes
-SIGNED_IMAGE_PREFIXES=(
+# Known attested image prefixes
+ATTESTED_IMAGE_PREFIXES=(
     "ghcr.io/midnight-ntwrk/midnight-node"
     "ghcr.io/midnight-ntwrk/midnight-node-toolkit"
     "ghcr.io/midnightntwrk/midnight-node"
@@ -39,7 +36,6 @@ SIGNED_IMAGE_PREFIXES=(
     "midnightntwrk/midnight-node"
     "midnightntwrk/midnight-node-toolkit"
 )
-
 
 # Colors for output (disabled in quiet mode)
 RED='\033[0;31m'
@@ -49,7 +45,7 @@ NC='\033[0m' # No Color
 
 usage() {
     cat <<EOF
-Verify Midnight container image signatures and attestations.
+Verify Midnight container image attestations.
 
 Usage:
     $(basename "$0") [OPTIONS] IMAGE
@@ -90,25 +86,25 @@ log_warning() {
     log "${YELLOW}!${NC} $1"
 }
 
-check_cosign() {
-    if ! command -v cosign &> /dev/null; then
-        log_error "cosign is not installed"
+check_gh() {
+    if ! command -v gh &> /dev/null; then
+        log_error "gh CLI is not installed"
         log ""
-        log "Install cosign from: https://docs.sigstore.dev/cosign/system_config/installation/"
+        log "Install the GitHub CLI from: https://cli.github.com/"
         log ""
         log "Quick install options:"
-        log "  brew install cosign                    # macOS"
-        log "  go install github.com/sigstore/cosign/v2/cmd/cosign@latest  # Go"
-        log "  curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o cosign && chmod +x cosign  # Linux"
+        log "  brew install gh                        # macOS"
+        log "  sudo apt install gh                    # Debian/Ubuntu"
+        log "  sudo dnf install gh                    # Fedora"
         exit 1
     fi
 }
 
-check_image_is_signed() {
+check_image_is_attested() {
     local image="$1"
     local is_known=false
 
-    for prefix in "${SIGNED_IMAGE_PREFIXES[@]}"; do
+    for prefix in "${ATTESTED_IMAGE_PREFIXES[@]}"; do
         if [[ "$image" == "$prefix"* ]]; then
             is_known=true
             break
@@ -116,9 +112,9 @@ check_image_is_signed() {
     done
 
     if [[ "$is_known" != "true" ]]; then
-        log_warning "Image '$image' is not a known Midnight signed image"
-        log_warning "Known signed images:"
-        for prefix in "${SIGNED_IMAGE_PREFIXES[@]}"; do
+        log_warning "Image '$image' is not a known Midnight attested image"
+        log_warning "Known attested images:"
+        for prefix in "${ATTESTED_IMAGE_PREFIXES[@]}"; do
             log "  - ${prefix}:*"
         done
         log ""
@@ -127,51 +123,31 @@ check_image_is_signed() {
     fi
 }
 
-verify_signature() {
+verify_provenance() {
     local image="$1"
 
-    log "Verifying signature for: $image"
+    log "Verifying build provenance for: $image"
     log ""
 
-    local cosign_output
-    local cosign_exit_code=0
+    local gh_output
+    local gh_exit_code=0
 
-    cosign_output=$(cosign verify \
-        --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
-        --certificate-oidc-issuer "$OIDC_ISSUER" \
-        "$image" 2>&1) || cosign_exit_code=$?
+    gh_output=$(gh attestation verify "oci://${image}" \
+        --owner "$OWNER" 2>&1) || gh_exit_code=$?
 
-    if [[ $cosign_exit_code -eq 0 ]]; then
-        log_success "Signature verification passed"
+    if [[ $gh_exit_code -eq 0 ]]; then
+        log_success "Build provenance verification passed"
         if [[ "$QUIET" != "true" ]]; then
             log ""
-            log "Certificate details:"
-            echo "$cosign_output" | head -20
+            log "Attestation details:"
+            echo "$gh_output" | head -20
         fi
         return 0
     else
-        log_error "Signature verification failed"
+        log_error "Build provenance verification failed"
         log ""
-
-        # Provide helpful error messages
-        if echo "$cosign_output" | grep -q "no matching signatures"; then
-            log "Possible causes:"
-            log "  - Image may not be signed (pre-signing release or third-party image)"
-            log "  - Image reference may be incorrect"
-            log "  - Registry may be unreachable"
-        elif echo "$cosign_output" | grep -q "certificate identity"; then
-            log "Certificate identity mismatch:"
-            log "  - Image was not built by Midnight's CI/CD pipeline"
-            log "  - Expected identity pattern: $CERT_IDENTITY_REGEXP"
-        elif echo "$cosign_output" | grep -q "issuer"; then
-            log "OIDC issuer mismatch:"
-            log "  - Image was not built on GitHub Actions"
-            log "  - Expected issuer: $OIDC_ISSUER"
-        else
-            log "Error output:"
-            echo "$cosign_output"
-        fi
-
+        log "Error output:"
+        echo "$gh_output"
         return 1
     fi
 }
@@ -183,31 +159,21 @@ verify_sbom_attestation() {
     log "Verifying SBOM attestation for: $image"
     log ""
 
-    local cosign_output
-    local cosign_exit_code=0
+    local gh_output
+    local gh_exit_code=0
 
-    cosign_output=$(cosign verify-attestation \
-        --type spdxjson \
-        --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
-        --certificate-oidc-issuer "$OIDC_ISSUER" \
-        "$image" 2>&1) || cosign_exit_code=$?
+    gh_output=$(gh attestation verify "oci://${image}" \
+        --owner "$OWNER" \
+        --predicate-type https://spdx.dev/Document 2>&1) || gh_exit_code=$?
 
-    if [[ $cosign_exit_code -eq 0 ]]; then
+    if [[ $gh_exit_code -eq 0 ]]; then
         log_success "SBOM attestation verification passed"
         return 0
     else
         log_error "SBOM attestation verification failed"
         log ""
-
-        if echo "$cosign_output" | grep -q "no matching attestations"; then
-            log "Possible causes:"
-            log "  - Image may not have an SBOM attestation attached"
-            log "  - SBOM generation may have been skipped for this build"
-        else
-            log "Error output:"
-            echo "$cosign_output"
-        fi
-
+        log "Error output:"
+        echo "$gh_output"
         return 1
     fi
 }
@@ -260,13 +226,13 @@ main() {
     export QUIET
 
     # Check prerequisites
-    check_cosign
+    check_gh
 
-    # Warn if not a known signed image
-    check_image_is_signed "$IMAGE"
+    # Warn if not a known attested image
+    check_image_is_attested "$IMAGE"
 
-    # Verify signature
-    if ! verify_signature "$IMAGE"; then
+    # Verify build provenance
+    if ! verify_provenance "$IMAGE"; then
         exit 1
     fi
 

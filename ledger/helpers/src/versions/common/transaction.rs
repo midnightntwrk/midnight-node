@@ -158,7 +158,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.as_mut()
 			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
 
-		let fallible_offer: HashMap<u16, Offer<ProofPreimage, D>> = self
+		let fallible_offer = self
 			.fallible_offers
 			.iter_mut()
 			.map(|(segment_id, offer_info)| {
@@ -294,6 +294,11 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		let Transaction::Standard(stx) = tx else {
 			return;
 		};
+
+		if spends.is_empty() && self.dust_registrations.is_empty() {
+			return;
+		}
+
 		let segment_id = Segment::Fallible.into();
 		let mut intent = match stx.intents.get(&segment_id) {
 			Some(intent) => (*intent).clone(),
