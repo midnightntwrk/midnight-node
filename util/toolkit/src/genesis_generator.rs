@@ -12,12 +12,15 @@
 // limitations under the License.
 
 use crate::{
-	ProofType, SeedableRng, SignatureType, Spin, StdRng,
+	SeedableRng, Spin, StdRng,
 	cli_parsers::{self as cli},
 	remote_prover::RemoteProofServer,
 	t_token,
 };
-use midnight_node_ledger_helpers::{Transaction as MNLedgerTransaction, *};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
+use midnight_node_ledger_helpers::{
+	Transaction as MNLedgerTransaction, fork::raw_block_data::RawTransaction, *,
+};
 
 use thiserror::Error;
 
@@ -52,6 +55,8 @@ pub enum GenesisGeneratorError<D: DB> {
 	FeeCalculationError(#[from] FeeCalculationError),
 	#[error("Failure applying block: {0:?}")]
 	BlockLimitExceeded(#[from] BlockLimitExceeded),
+	#[error("Error serializing transaction: {0}")]
+	SerializationError(#[from] std::io::Error),
 	#[error("Missing verifying key for wallet")]
 	MissingVerifyingKey,
 }
@@ -97,7 +102,7 @@ pub struct FundingArgs {
 
 pub struct GenesisGenerator {
 	pub state: LedgerState<DefaultDB>,
-	pub txs: Vec<TransactionWithContext<SignatureType, ProofType, DefaultDB>>,
+	pub txs: SerializedTxBatches,
 	fullness: SyntheticCost,
 }
 
@@ -144,7 +149,11 @@ impl GenesisGenerator {
 			treasury,
 		)
 		.map_err(SystemTransactionError::from)?;
-		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
+		let mut me = Self {
+			state,
+			txs: SerializedTxBatches { batches: vec![vec![]] },
+			fullness: SyntheticCost::ZERO,
+		};
 		me.init(
 			seed,
 			network_id,
@@ -581,9 +590,12 @@ impl GenesisGenerator {
 		match result {
 			TransactionResult::Success(_) => {
 				self.state = state;
-				self.txs.push(TransactionWithContext {
-					tx: SerdeTransaction::Midnight(tx),
-					block_context: tx_context.block_context,
+				let tx_hash = tx.transaction_hash().0.0;
+				let raw_tx = RawTransaction::Midnight(serialize(&tx)?);
+				self.txs.batches[0].push(SerializedTx {
+					tx: raw_tx,
+					context: block_context.clone(),
+					tx_hash,
 				});
 				Ok(())
 			},
@@ -602,9 +614,12 @@ impl GenesisGenerator {
 		self.fullness = self.fullness + tx.cost(&self.state.parameters);
 		let (state, _) = self.state.apply_system_tx(&tx, block_context.tblock)?;
 		self.state = state;
-		self.txs.push(TransactionWithContext {
-			tx: SerdeTransaction::System(tx),
-			block_context: block_context.clone(),
+		let tx_hash = tx.transaction_hash().0.0;
+		let raw_tx = RawTransaction::System(serialize(&tx)?);
+		self.txs.batches[0].push(SerializedTx {
+			tx: raw_tx,
+			context: block_context.clone(),
+			tx_hash,
 		});
 		Ok(())
 	}
