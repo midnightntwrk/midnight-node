@@ -1,0 +1,98 @@
+name: srtool Build (Deterministic WASM)
+permissions: {}
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag, or commit SHA)"
+        required: true
+        default: "main"
+      release-tag:
+        description: "GitHub release tag to attach artifacts to (leave empty for workflow artifacts only)"
+        required: false
+        default: ""
+
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to build"
+        required: true
+        type: string
+      release-tag:
+        description: "GitHub release tag to attach artifacts to"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  srtool-build:
+    name: Build deterministic WASM
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write    # Required for gh release upload
+      id-token: write    # Required for keyless signing with Cosign
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Run srtool build
+        run: |
+          . ./.envrc && earthly +srtool-build
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: srtool-wasm-${{ github.sha }}
+          path: artifacts/srtool/
+          retention-days: 90
+
+      - name: Install Cosign
+        if: inputs.release-tag != ''
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Generate checksums and sign
+        if: inputs.release-tag != ''
+        run: |
+          cd artifacts/srtool
+          sha256sum midnight_node_runtime.wasm >> SHA256SUMS-srtool
+          sha256sum midnight_node_runtime.compact.wasm >> SHA256SUMS-srtool
+          sha256sum midnight_node_runtime.compact.compressed.wasm >> SHA256SUMS-srtool
+          sha256sum srtool-digest.json >> SHA256SUMS-srtool
+
+          echo "Generated checksums:"
+          cat SHA256SUMS-srtool
+
+          source $GITHUB_WORKSPACE/.github/scripts/sign-binary.sh
+          sign_blob_with_retry midnight_node_runtime.wasm
+          sign_blob_with_retry midnight_node_runtime.compact.wasm
+          sign_blob_with_retry midnight_node_runtime.compact.compressed.wasm
+
+      - name: Upload to GitHub release
+        if: inputs.release-tag != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          cd artifacts/srtool
+          echo "Uploading srtool artifacts to release: $RELEASE_TAG"
+          gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
+            midnight_node_runtime.wasm \
+            midnight_node_runtime.wasm.bundle \
+            midnight_node_runtime.compact.wasm \
+            midnight_node_runtime.compact.wasm.bundle \
+            midnight_node_runtime.compact.compressed.wasm \
+            midnight_node_runtime.compact.compressed.wasm.bundle \
+            srtool-digest.json \
+            SHA256SUMS-srtool
