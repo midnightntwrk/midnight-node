@@ -25,6 +25,16 @@ pub struct EncodedShieldedCoinInfo {
 	value: u128,
 }
 
+impl EncodedShieldedCoinInfo {
+	pub(crate) fn new(
+		nonce: [u8; PERSISTENT_HASH_BYTES],
+		color: [u8; PERSISTENT_HASH_BYTES],
+		value: u128,
+	) -> Self {
+		Self { nonce, color, value }
+	}
+}
+
 impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 	fn build(
 		&self,
@@ -107,6 +117,12 @@ pub struct EncodedOutput {
 	recipient: EncodedRecipient,
 }
 
+impl EncodedOutput {
+	pub(crate) fn new(coin_info: EncodedShieldedCoinInfo, recipient: EncodedRecipient) -> Self {
+		Self { coin_info, recipient }
+	}
+}
+
 /// Either a coin public key if the recipient is a user, or a contract address
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EncodedRecipient {
@@ -115,6 +131,16 @@ pub struct EncodedRecipient {
 	left: EncodedCoinPublic,
 	#[serde(with = "bytes")]
 	right: EncodedContractAddress,
+}
+
+impl EncodedRecipient {
+	pub(crate) fn user(coin_public: EncodedCoinPublic) -> Self {
+		Self {
+			is_left: true,
+			left: coin_public,
+			right: EncodedContractAddress(ContractAddress::default()),
+		}
+	}
 }
 
 impl From<EncodedRecipient> for Recipient {
@@ -150,7 +176,13 @@ impl TryFrom<Vec<u8>> for EncodedContractAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct EncodedCoinPublic(CoinPublicKey);
+pub struct EncodedCoinPublic(pub(crate) CoinPublicKey);
+
+impl EncodedCoinPublic {
+	pub(crate) fn from_raw_bytes(bytes: [u8; PERSISTENT_HASH_BYTES]) -> Self {
+		Self(CoinPublicKey(HashOutput(bytes)))
+	}
+}
 
 impl From<&EncodedCoinPublic> for Vec<u8> {
 	fn from(value: &EncodedCoinPublic) -> Self {

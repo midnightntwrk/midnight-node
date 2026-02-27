@@ -1,17 +1,17 @@
-# Image Signing Operational Runbook
+# Image Attestation Operational Runbook
 
-This runbook covers operational procedures for the image signing and SBOM infrastructure.
+This runbook covers operational procedures for the image attestation and SBOM infrastructure.
 
-## Normal Signing Flow
+## Normal Attestation Flow
 
 During a normal release, the following occurs automatically:
 
 1. **Build**: Multi-architecture images are built for `linux/amd64` and `linux/arm64`
 2. **Push**: Images are pushed to GHCR and Docker Hub
-3. **Sign**: Each image digest is signed with Cosign keyless signing
+3. **Attest**: Build provenance attestation is created via `actions/attest-build-provenance`
 4. **SBOM**: Syft generates an SPDX-JSON SBOM
 5. **Scan**: Grype scans for vulnerabilities (fails on critical)
-6. **Attest**: The SBOM is attached as a signed attestation
+6. **SBOM Attest**: The SBOM is attested to the image via `actions/attest-sbom`
 
 All steps must succeed for the release to complete.
 
@@ -19,58 +19,54 @@ All steps must succeed for the release to complete.
 
 ### GitHub Actions
 
-Monitor the CI/CD pipeline for signing and scanning jobs:
+Monitor the CI/CD pipeline for attestation and scanning jobs:
 
 - [Main workflow](https://github.com/midnightntwrk/midnight-node/actions/workflows/main.yml)
 - [Release workflow](https://github.com/midnightntwrk/midnight-node/actions/workflows/release-image.yml)
 
-Look for these job names:
+Look for these steps in the publish jobs:
 
-- `sign-node-image` / `sign-toolkit-image`
-- `sbom-scan-node` / `sbom-scan-toolkit`
+- `Attest build provenance`
+- `Attest SBOM` / `sbom-scan`
 
-### Sigstore Status
+### GitHub Attestation API
 
-Check Sigstore service health for signing issues:
+Verify attestations are being created:
 
-- Status page: https://status.sigstore.dev/
-- Fulcio (certificate authority)
-- Rekor (transparency log)
+```bash
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:TAG --owner midnightntwrk
+```
 
 ## Troubleshooting
 
-### Signing Failures
+### Attestation Failures
 
 #### Symptoms
 
-- `sign-image` job fails
-- Error: "error signing"
-- Error: "OIDC token exchange failed"
+- `Attest build provenance` step fails
+- Error: "Error: Unauthorized" or "Error: Resource not accessible by integration"
 
 #### Investigation
 
-1. Check Sigstore status at https://status.sigstore.dev/
-2. Review workflow logs for specific error messages
-3. Verify the workflow has `id-token: write` permission
+1. Review workflow logs for specific error messages
+2. Verify the workflow has `id-token: write` and `attestations: write` permissions
+3. Check GitHub status at https://www.githubstatus.com/
 
 #### Resolution
 
-**Transient failure (Sigstore outage):**
+**Permission issue:**
 
-Re-run the failed job. The signing script has built-in retry logic with exponential backoff (3 attempts, 10s/20s delays).
-
-**OIDC token failure:**
-
-```
-Error: Error message: Unable to get ACTIONS_ID_TOKEN_REQUEST_URL env variable
-```
-
-Ensure the workflow has the required permission:
+Ensure the workflow job has the required permissions:
 
 ```yaml
 permissions:
   id-token: write
+  attestations: write
 ```
+
+**Transient failure (GitHub outage):**
+
+Re-run the failed job. Check GitHub status at https://www.githubstatus.com/.
 
 **Registry authentication failure:**
 
@@ -163,21 +159,21 @@ ignore:
 #### Symptoms
 
 - `sbom-scan` job fails during "Attest SBOM" step
-- Error: "error attesting"
+- Error: "Error: Unauthorized"
 
 #### Investigation
 
 1. Verify the image digest is correct
-2. Check that signing succeeded (attestation uses the same mechanism)
-3. Review Sigstore status
+2. Check that the job has `attestations: write` permission
+3. Check GitHub status
 
 #### Resolution
 
-Same as signing failures - attestation uses Cosign keyless signing under the hood.
+Same as attestation failures — ensure `id-token: write` and `attestations: write` permissions are set.
 
 **Fork PR:**
 
-Attestation is automatically skipped for fork PRs (they don't have OIDC tokens). This is expected behavior.
+Attestation is automatically skipped for fork PRs (they don't have the required permissions). This is expected behavior.
 
 ## Managing CVE Ignores
 
@@ -201,12 +197,12 @@ When a fix becomes available: update the package, remove the ignore entry, close
 3. Create hotfix release or document mitigation steps
 4. Push fixed images through normal pipeline
 
-### Sigstore Outage
+### GitHub Attestation Service Outage
 
-Check status at https://status.sigstore.dev/. The signing script has retry logic. If extended, images can be built without signatures and re-signed later.
+Check status at https://www.githubstatus.com/. If attestation steps fail due to a GitHub outage, the build will fail — images cannot be published without attestations. Wait for the outage to resolve and re-run the workflow.
 
 ## Related Documentation
 
 - [Image Signing Overview](image-signing.md) - Architecture and implementation
-- [Verification Guide](verification-guide.md) - How to verify signatures
+- [Verification Guide](verification-guide.md) - How to verify attestations
 - [Release Checklist](../operations/release-checklist.md) - Release procedures

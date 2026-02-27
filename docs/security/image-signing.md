@@ -1,20 +1,21 @@
-# Container Image Signing and SBOM Generation
+# Container Image Attestation and SBOM Generation
 
 Node images published by Midnight are:
 
-1. **Signed** using [Cosign](https://github.com/sigstore/cosign) keyless signing
+1. **Attested** using [GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) (build provenance)
 2. **Accompanied by an SBOM** (Software Bill of Materials) in SPDX-JSON format
 3. **Scanned for vulnerabilities** using [Grype](https://github.com/anchore/grype)
 
 ## Architecture
 
-### Keyless Signing with OIDC
+### GitHub Native Attestations
 
-Cosign's keyless signing eliminates long-lived signing keys. Instead, signing uses OpenID Connect (OIDC) identity from GitHub Actions:
+GitHub artifact attestations use Sigstore under the hood but are fully managed by GitHub — no external Fulcio CA or Rekor transparency log dependencies. The attestation flow:
 
-1. Request OIDC token from GitHub
-2. Exchange token with Sigstore Fulcio CA for short-lived certificate
-3. Sign image digest and upload signature to Rekor transparency log
+1. GitHub Actions generates an OIDC token identifying the workflow
+2. `actions/attest-build-provenance` creates a SLSA build provenance attestation
+3. The attestation is stored in GitHub's attestation API, linked to the image digest
+4. Consumers verify with `gh attestation verify`, which checks the attestation against GitHub's API
 
 ### SBOM Generation
 
@@ -23,7 +24,7 @@ SBOMs are generated using [Syft](https://github.com/anchore/syft) in SPDX-JSON f
 1. **Scan**: Syft analyzes the container image layers
 2. **Extract**: Package information is extracted from package managers (apt, npm, cargo, etc.)
 3. **Generate**: An SPDX-JSON document is created listing all components
-4. **Attest**: The SBOM is attached to the image as a signed attestation
+4. **Attest**: The SBOM is attached to the image as an attestation using `actions/attest-sbom`
 
 ### Vulnerability Scanning
 
@@ -38,7 +39,7 @@ SBOMs are generated using [Syft](https://github.com/anchore/syft) in SPDX-JSON f
 
 ## Published Images
 
-The following images are signed and include SBOM attestations:
+The following images are attested and include SBOM attestations:
 
 | Image | Registry | Description |
 |-------|----------|-------------|
@@ -54,7 +55,7 @@ All images are published as multi-architecture manifests supporting:
 - `linux/amd64` (x86_64)
 - `linux/arm64` (aarch64)
 
-Both architecture variants are individually signed, and the manifest list itself is also signed.
+Both architecture variants are individually attested, and the manifest list itself is also attested.
 
 ## CI/CD Integration
 
@@ -62,15 +63,13 @@ Both architecture variants are individually signed, and the manifest list itself
 
 | Workflow | Purpose |
 |----------|---------|
-| `.github/workflows/sign-image.yml` | Reusable workflow for image signing |
 | `.github/workflows/sbom-scan-image.yml` | Reusable workflow for SBOM generation, scanning, and attestation |
 
 ### Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `.github/scripts/sign-image.sh` | Image signing with retry logic and multi-arch support |
-| `.github/scripts/sbom-scan.sh` | SBOM generation, vulnerability scanning, and attestation |
+| `.github/scripts/sbom-scan.sh` | SBOM generation and vulnerability scanning with retry logic |
 
 ### Release Gates
 
@@ -78,12 +77,12 @@ Images must pass these checks before release:
 
 1. **Build**: Image builds successfully for all architectures
 2. **Vulnerability Scan**: No critical vulnerabilities detected
-3. **Signing**: Image is signed successfully
+3. **Attestation**: Build provenance attestation is created
 4. **SBOM Attestation**: SBOM is generated and attested to the image
 
 ### Fork PR Handling
 
-For pull requests from forks, SBOM attestation is skipped because fork PRs don't have access to the OIDC token required for keyless signing. The vulnerability scan still runs to provide feedback.
+For pull requests from forks, SBOM attestation is skipped because fork PRs don't have access to the OIDC token required for attestation. The vulnerability scan still runs to provide feedback.
 
 ## Vulnerability Ignore Configuration
 
@@ -109,5 +108,5 @@ See [Signing Runbook](signing-runbook.md) for procedures on managing CVE ignores
 
 ## Next Steps
 
-- [Verification Guide](verification-guide.md) - How to verify image signatures and SBOMs
-- [Signing Runbook](signing-runbook.md) - Operational procedures for signing
+- [Verification Guide](verification-guide.md) - How to verify image attestations and SBOMs
+- [Signing Runbook](signing-runbook.md) - Operational procedures

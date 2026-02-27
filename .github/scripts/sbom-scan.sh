@@ -14,13 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Generate SBOM with Syft, scan with Grype, and attest SBOM with Cosign.
+# Generate SBOM with Syft and scan with Grype.
 #
 # Usage:
 #   source .github/scripts/sbom-scan.sh
 #   generate_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
+#   trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
 #   scan_image_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "high" "scan-results.json"
-#   attest_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
 
 # Note: We intentionally don't use `set -euo pipefail` at the top level because
 # this script is designed to be sourced. Those settings would affect the caller's
@@ -44,7 +44,7 @@ generate_sbom_with_retry() {
   fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if syft "${platform_args[@]}" "${IMAGE}" -o spdx-json="${OUTPUT_FILE}"; then
+    if syft "${platform_args[@]}" "${IMAGE}" --select-catalogers '-file' -o spdx-json="${OUTPUT_FILE}"; then
       echo "Successfully generated SBOM for ${IMAGE}"
       return 0
     fi
@@ -57,6 +57,29 @@ generate_sbom_with_retry() {
 
   echo "::error::Failed to generate SBOM for ${IMAGE} after $MAX_ATTEMPTS attempts"
   return 1
+}
+
+trim_sbom_for_attestation() {
+  local INPUT_FILE="$1"
+  local OUTPUT_FILE="$2"
+
+  command -v jq >/dev/null 2>&1 || { echo "::error::jq not found"; return 1; }
+
+  # Strip SPDX relationships to reduce size below the 16MB actions/attest-sbom limit.
+  # The full SBOM (with relationships) is preserved separately as a build artifact.
+  if ! jq -c 'del(.relationships)' "$INPUT_FILE" > "$OUTPUT_FILE"; then
+    echo "::error::Failed to trim SBOM"
+    return 1
+  fi
+
+  local original_size trimmed_size
+  original_size=$(wc -c < "$INPUT_FILE")
+  trimmed_size=$(wc -c < "$OUTPUT_FILE")
+  echo "Trimmed SBOM for attestation: ${original_size} -> ${trimmed_size} bytes (removed relationships)"
+
+  if [ "$trimmed_size" -gt 16777216 ]; then
+    echo "::warning::Trimmed SBOM (${trimmed_size} bytes) still exceeds 16MB limit"
+  fi
 }
 
 scan_image_with_retry() {
@@ -112,116 +135,5 @@ scan_image_with_retry() {
   done
 
   echo "::error::Failed to scan ${IMAGE} after $MAX_ATTEMPTS attempts"
-  return 1
-}
-
-attest_sbom_with_retry() {
-  local IMAGE="$1"
-  local SBOM_FILE="$2"
-  local MAX_ATTEMPTS=3
-  local DELAY=10
-
-  command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
-  command -v jq >/dev/null 2>&1 || { echo "::error::jq not found"; return 1; }
-
-  # Extract base image (without tag) for attestation
-  local BASE_IMAGE="${IMAGE%%:*}"
-
-  # Get the digest from the manifest
-  local DIGEST_JSON
-  if ! DIGEST_JSON=$(docker manifest inspect "${IMAGE}" --verbose 2>&1); then
-    echo "::error::Failed to inspect manifest for ${IMAGE}: ${DIGEST_JSON}"
-    return 1
-  fi
-
-  local DIGEST
-  if echo "$DIGEST_JSON" | jq -e 'type == "array"' > /dev/null 2>&1; then
-    DIGEST=$(echo "$DIGEST_JSON" | jq -r '.[0].Descriptor.digest')
-  else
-    DIGEST=$(echo "$DIGEST_JSON" | jq -r '.Descriptor.digest')
-  fi
-
-  if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
-    echo "::error::Failed to extract digest from manifest for ${IMAGE}"
-    echo "::error::Manifest JSON: ${DIGEST_JSON}"
-    return 1
-  fi
-
-  echo "Attesting SBOM for ${IMAGE} (${DIGEST})"
-
-  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if cosign attest --yes \
-      --predicate "${SBOM_FILE}" \
-      --type spdxjson \
-      "${BASE_IMAGE}@${DIGEST}"; then
-      echo "Successfully attested SBOM for ${IMAGE}"
-
-      # Verify the attestation was applied correctly
-      echo "Verifying SBOM attestation..."
-      if cosign verify-attestation --type spdxjson \
-        --certificate-identity-regexp '.*' \
-        --certificate-oidc-issuer-regexp '.*' \
-        "${BASE_IMAGE}@${DIGEST}" > /dev/null 2>&1; then
-        echo "SBOM attestation verified successfully"
-      else
-        echo "::warning::SBOM attestation verification failed - attestation may not be retrievable"
-      fi
-
-      return 0
-    fi
-    if [ $attempt -lt $MAX_ATTEMPTS ]; then
-      echo "SBOM attestation failed, retrying in ${DELAY}s..."
-      sleep $DELAY
-      DELAY=$((DELAY * 2))
-    fi
-  done
-
-  echo "::error::Failed to attest SBOM for ${IMAGE} after $MAX_ATTEMPTS attempts"
-  return 1
-}
-
-attest_sbom_to_multiarch() {
-  local MULTIARCH_IMAGE="$1"
-  local SBOM_FILE="$2"
-  local MAX_ATTEMPTS=3
-  local DELAY=10
-
-  command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
-
-  # Compute manifest list digest (same pattern as sign-image.sh)
-  local BASE_IMAGE="${MULTIARCH_IMAGE%%:*}"
-  local MANIFEST_LIST_DIGEST
-  MANIFEST_LIST_DIGEST="sha256:$(docker buildx imagetools inspect --raw "${MULTIARCH_IMAGE}" | sha256sum | awk '{print $1}')"
-
-  echo "Attesting SBOM to multi-arch manifest: ${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"
-
-  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if cosign attest --yes \
-      --predicate "${SBOM_FILE}" \
-      --type spdxjson \
-      "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"; then
-      echo "Successfully attested SBOM to multi-arch manifest"
-
-      # Verify the attestation was applied correctly
-      echo "Verifying multi-arch SBOM attestation..."
-      if cosign verify-attestation --type spdxjson \
-        --certificate-identity-regexp '.*' \
-        --certificate-oidc-issuer-regexp '.*' \
-        "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}" > /dev/null 2>&1; then
-        echo "Multi-arch SBOM attestation verified successfully"
-      else
-        echo "::warning::Multi-arch SBOM attestation verification failed - attestation may not be retrievable"
-      fi
-
-      return 0
-    fi
-    if [ $attempt -lt $MAX_ATTEMPTS ]; then
-      echo "Multi-arch SBOM attestation failed, retrying in ${DELAY}s..."
-      sleep $DELAY
-      DELAY=$((DELAY * 2))
-    fi
-  done
-
-  echo "::error::Failed to attest SBOM to multi-arch manifest after $MAX_ATTEMPTS attempts"
   return 1
 }

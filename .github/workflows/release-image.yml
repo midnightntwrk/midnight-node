@@ -4,7 +4,8 @@ permissions:
   contents: write
   pull-requests: write
   packages: write
-  id-token: write  # Required for keyless signing with Cosign
+  id-token: write
+  attestations: write  # Required for GitHub native attestations
 
 on:
   workflow_dispatch:
@@ -57,9 +58,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-
       - name: Checkout Season action repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
@@ -97,24 +95,30 @@ jobs:
           season-retag
           SEASON_IMAGE_NAME=midnight-node-toolkit season-retag
 
-      - name: Checkout node repository (for signing script)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          path: ./.tmp-node-scripts
-          sparse-checkout: .github/scripts
-
-      - name: Sign release images (GHCR)
+      - name: Get GHCR release image digests
+        id: ghcr-digests
         run: |
           if [ -z "${SEASON_IMAGE_TAG_RELEASE:-}" ]; then
             echo "::error::SEASON_IMAGE_TAG_RELEASE is not set"
             exit 1
           fi
 
-          source ./.tmp-node-scripts/.github/scripts/sign-image.sh
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
-          # Sign multi-arch manifests (signs all platform digests)
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
-          sign_with_retry "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
+      - name: Attest node release image (GHCR)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ghcr.io/midnight-ntwrk/midnight-node
+          subject-digest: ${{ steps.ghcr-digests.outputs.node }}
+
+      - name: Attest toolkit release image (GHCR)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
+          subject-digest: ${{ steps.ghcr-digests.outputs.toolkit }}
 
       - name: Create release images (GHCR midnightntwrk)
         run: |
@@ -133,11 +137,25 @@ jobs:
               "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
           done
 
-      - name: Sign release images (GHCR midnightntwrk)
+      - name: Get GHCR midnightntwrk release image digests
+        id: midnightntwrk-digests
         run: |
-          source ./.tmp-node-scripts/.github/scripts/sign-image.sh
-          sign_with_retry "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
-          sign_with_retry "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest node release image (GHCR midnightntwrk)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ghcr.io/midnightntwrk/midnight-node
+          subject-digest: ${{ steps.midnightntwrk-digests.outputs.node }}
+
+      - name: Attest toolkit release image (GHCR midnightntwrk)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
+          subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
 
       - name: Retag and push release images (Docker Hub)
         run: |
@@ -175,18 +193,30 @@ jobs:
           docker manifest push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}
           docker manifest push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}
 
-      - name: Sign release images (Docker Hub)
+      - name: Get Docker Hub release image digests
+        id: dockerhub-digests
         run: |
           if [ -z "${SEASON_IMAGE_TAG_RELEASE:-}" ]; then
             echo "::error::SEASON_IMAGE_TAG_RELEASE is not set"
             exit 1
           fi
 
-          source ./.tmp-node-scripts/.github/scripts/sign-image.sh
+          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
-          # Sign multi-arch manifests (signs all platform digests)
-          sign_with_retry "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
-          sign_with_retry "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
+      - name: Attest node release image (Docker Hub)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: index.docker.io/midnightntwrk/midnight-node
+          subject-digest: ${{ steps.dockerhub-digests.outputs.node }}
+
+      - name: Attest toolkit release image (Docker Hub)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
+          subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit }}
 
       - name: Export release tag
         id: export_tag
@@ -281,17 +311,8 @@ jobs:
       matrix:
         platform: [amd64, arm64]
     steps:
-      - name: Checkout (for signing script)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          sparse-checkout: .github/scripts
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  #v3.7.0
-
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -346,12 +367,15 @@ jobs:
           echo "Generated checksums:"
           cat SHA256SUMS-${{ matrix.platform }}
 
-      - name: Sign binary archives
-        run: |
-          source .github/scripts/sign-binary.sh
+      - name: Attest node release binary
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.extract.outputs.node_release }}
 
-          sign_blob_with_retry "${{ steps.extract.outputs.node_release }}"
-          sign_blob_with_retry "${{ steps.extract.outputs.toolkit_release }}"
+      - name: Attest toolkit release binary
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.extract.outputs.toolkit_release }}
 
       - name: Upload release assets
         env:
@@ -363,8 +387,8 @@ jobs:
 
           echo "Uploading assets to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            "$NODE_FILE" "${NODE_FILE}.bundle" \
-            "$TOOLKIT_FILE" "${TOOLKIT_FILE}.bundle" \
+            "$NODE_FILE" \
+            "$TOOLKIT_FILE" \
             "SHA256SUMS-${{ matrix.platform }}"
 
   finalize-checksums:
@@ -372,14 +396,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.inputs.release-type != 'Don''t create a release.'
     steps:
-      - name: Checkout (for signing script)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          sparse-checkout: .github/scripts
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-
       - name: Download and combine checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -400,20 +416,19 @@ jobs:
             gh release delete-asset "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "$f" --yes
           done
 
-      - name: Sign checksums file
-        run: |
-          source .github/scripts/sign-binary.sh
-          sign_blob_with_retry SHA256SUMS
+      - name: Attest checksums file
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: SHA256SUMS
 
       - name: Upload final checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: node-${{ needs.prepare-release.outputs.release_tag }}
         run: |
-          echo "Uploading signed checksums to release: $RELEASE_TAG"
+          echo "Uploading checksums to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            SHA256SUMS \
-            SHA256SUMS.bundle
+            SHA256SUMS
 
   sbom-scan-ghcr-node:
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})

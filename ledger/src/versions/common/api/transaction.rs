@@ -152,20 +152,6 @@ impl UnshieldedUtxos {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
-	pub fn outputs_shuffled(&self) -> Vec<UtxoInfo> {
-		use rand::seq::SliceRandom;
-		let mut segments: Vec<_> = self.outputs.values().collect();
-		segments.shuffle(&mut rand::thread_rng());
-		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
-	}
-
-	pub fn inputs_shuffled(&self) -> Vec<UtxoInfo> {
-		use rand::seq::SliceRandom;
-		let mut segments: Vec<_> = self.inputs.values().collect();
-		segments.shuffle(&mut rand::thread_rng());
-		segments.into_iter().flat_map(|utxos| utxos.iter()).cloned().collect()
-	}
-
 	/// Checks the integrity of UTXO events against the final Ledger state.
 	///
 	/// This function verifies that:
@@ -421,7 +407,7 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::super::super::{
-		super::{CRATE_NAME, helpers_local::extract_info_from_tx_with_context},
+		super::{CRATE_NAME, helpers_local::extract_tx_with_context},
 		BlockContext, api,
 	};
 	use super::*;
@@ -448,7 +434,7 @@ mod tests {
 		api: &api::Api,
 		bytes: &[u8],
 	) -> (api::Transaction<Signature, DefaultDB>, BlockContext) {
-		let (tx, block_context) = extract_info_from_tx_with_context(bytes);
+		let (tx, block_context) = extract_tx_with_context(bytes);
 		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(&tx);
 		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
 
