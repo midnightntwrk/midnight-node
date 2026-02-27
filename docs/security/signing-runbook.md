@@ -174,8 +174,6 @@ Same as attestation failures — ensure `id-token: write` and `attestations: wri
 **Fork PR:**
 
 Attestation is automatically skipped for fork PRs (they don't have the required permissions). This is expected behavior.
-<<<<<<< fix/PM-19901-guards-next-cardano-position
-=======
 
 ### SBOM Size Limit Exceeded
 
