@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use frame_support::{
-	assert_noop, assert_ok, inherent::InherentData, pallet_prelude::*,
+	assert_noop, assert_ok,
+	inherent::InherentData,
+	pallet_prelude::*,
 	sp_runtime::traits::{BlakeTwo256, Dispatchable, Hash},
 	traits::Hooks,
 };
@@ -1268,8 +1270,7 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
 		let cardano_addr = cardano_reward_address(b"cardano1");
-		let invalid_dust_key =
-			DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+		let invalid_dust_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
 
 		let create_utxo_tx_hash = tx_hash(1, 3);
 		let create_utxo_tx_index: u16 = 0;
