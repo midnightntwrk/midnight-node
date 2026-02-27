@@ -67,7 +67,7 @@ trim_sbom_for_attestation() {
 
   # Strip SPDX relationships to reduce size below the 16MB actions/attest-sbom limit.
   # The full SBOM (with relationships) is preserved separately as a build artifact.
-  if ! jq 'del(.relationships)' "$INPUT_FILE" > "$OUTPUT_FILE"; then
+  if ! jq -c 'del(.relationships)' "$INPUT_FILE" > "$OUTPUT_FILE"; then
     echo "::error::Failed to trim SBOM"
     return 1
   fi
