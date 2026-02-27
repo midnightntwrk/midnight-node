@@ -239,7 +239,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let tx_context = self.tx_context(block_context.clone());
+		let mut ledger_state_guard =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let tx_context = TransactionContext {
+			ref_state: (**ledger_state_guard).clone(),
+			block_context: block_context.clone(),
+			whitelist: None,
+		};
 
 		let strictness: WellFormedStrictness =
 			if block_context.parent_block_hash == Default::default() {
@@ -302,8 +308,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			wallet.update_state_from_offers(&offers);
 		}
 
-		*self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state") =
-			Sp::new(new_ledger_state);
+		*ledger_state_guard = Sp::new(new_ledger_state);
 		(events, cost)
 	}
 
