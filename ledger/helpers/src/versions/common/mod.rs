@@ -122,6 +122,8 @@ mod input;
 #[cfg(feature = "can-panic")]
 mod intent;
 #[cfg(feature = "can-panic")]
+mod network_id;
+#[cfg(feature = "can-panic")]
 mod offer;
 #[cfg(feature = "can-panic")]
 mod output;
@@ -145,8 +147,8 @@ pub mod types;
 // Re-exports with can-panic feature
 #[cfg(feature = "can-panic")]
 pub use {
-	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
-	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+	context::*, contract::*, input::*, intent::*, network_id::*, offer::*, output::*, proving::*,
+	transaction::*, transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
 };
 
 // Re-exports without can-panic feature
@@ -246,21 +248,6 @@ pub fn token_type_decode(input: &str) -> TokenType {
 	let tt_bytes: [u8; 32] = bytes.try_into().expect("Token size should be 32 bytes");
 
 	TokenType::Shielded(ShieldedTokenType(HashOutput(tt_bytes)))
-}
-
-#[cfg(feature = "can-panic")]
-pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext) {
-	let tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB> =
-		deserialize(bytes)
-			.unwrap_or_else(|err| panic!("Can't deserialize `TransactionWithContext: {err}"));
-	let SerdeTransaction::Midnight(tx) = tx_with_context.tx else {
-		panic!("expected test to run against midnight transaction");
-	};
-	let block_context = tx_with_context.block_context;
-	let serialized_tx =
-		serialize(&tx).unwrap_or_else(|err| panic!("Can't serialize `Transaction`: {err}"));
-
-	(serialized_tx, block_context)
 }
 
 #[cfg(test)]

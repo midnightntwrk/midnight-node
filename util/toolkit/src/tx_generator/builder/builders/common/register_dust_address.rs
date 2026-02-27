@@ -1,21 +1,23 @@
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
 	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 	WalletAddress,
 };
+use async_trait::async_trait;
 
 use crate::{
-	ProofType, SignatureType,
 	progress::Spin,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, RegisterDustAddressArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct RegisterDustAddressBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
 	funding_seed: String,
@@ -23,12 +25,21 @@ pub struct RegisterDustAddressBuilder {
 }
 
 impl RegisterDustAddressBuilder {
-	pub fn new(args: RegisterDustAddressArgs) -> Self {
+	pub fn new(
+		args: RegisterDustAddressArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
 		Self {
+			context,
+			prover,
 			seed: args.wallet_seed,
 			rng_seed: args.rng_seed,
 			funding_seed: args.funding_seed,
-			destination_dust: args.destination_dust,
+			destination_dust: args
+				.destination_dust
+				.as_ref()
+				.map(super::type_convert::convert_wallet_address),
 		}
 	}
 }
@@ -39,32 +50,18 @@ impl BuildTxs for RegisterDustAddressBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building register dust address transaction...");
 
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 
-		let network_id = received_tx.network();
-		let context: LedgerContext<DefaultDB> =
-			LedgerContext::new_from_wallet_seeds(network_id.to_string(), &[seed, funding_seed]);
-
-		for block in &received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context.clone(),
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context = Arc::new(context);
+		let context = self.context.clone();
 
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),
-			prover_arc.clone(),
+			self.prover.clone(),
 			self.rng_seed,
 		);
 
@@ -148,6 +145,6 @@ impl BuildTxs for RegisterDustAddressBuilder {
 
 		spin.finish("generated tx.");
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }

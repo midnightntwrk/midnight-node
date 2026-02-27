@@ -1,7 +1,8 @@
 use super::super::tx_generator::{TxGenerator, source::Source};
-use crate::{ProofType, SignatureType, cli_parsers as cli};
+use crate::cli_parsers as cli;
+use crate::tx_generator::builder::build_fork_aware_context_raw;
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, LedgerContext, serialize};
+use midnight_node_ledger_helpers::ContractAddress;
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -22,7 +23,7 @@ pub struct ContractStateArgs {
 pub async fn execute(
 	args: ContractStateArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run)
+	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
 
@@ -33,23 +34,24 @@ pub async fn execute(
 	}
 
 	let blocks = source.get_txs().await?;
-	let network_id = blocks.network();
 
-	let context = LedgerContext::new(network_id);
-	for block in blocks.blocks {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
-	}
+	let fork_ctx = build_fork_aware_context_raw(&blocks, &[]);
 
-	let state = context
-		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))
-		.expect("contract state for address does not exist");
-
-	let serialized_state = serialize(&state)?;
+	let serialized_state = fork_ctx.dispatch(
+		|ctx| {
+			let addr =
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_contract_address(
+					args.contract_address,
+				);
+			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_8::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+	)?;
 
 	let full_path = Path::new(&args.dest_file);
 	if let Some(directory) = full_path.parent() {
