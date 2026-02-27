@@ -35,7 +35,6 @@ pub enum WalletSeed {
 	Long([u8; 64]),
 }
 
-
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum WalletSeedError {
 	#[error("{0}")]
