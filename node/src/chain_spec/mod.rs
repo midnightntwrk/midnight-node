@@ -11,14 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
+use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, SerializedTxBatches};
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
 
-use midnight_node_ledger_helpers::{
-	BlockContext, DefaultDB, ProofMarker, Signature as LedgerSignature, TransactionWithContext,
-	serialize,
-};
+use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
@@ -121,8 +118,9 @@ pub fn get_chainspec_extrinsics(
 	genesis_block: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
 ) -> Vec<String> {
-	let txs: Vec<TransactionWithContext<LedgerSignature, ProofMarker, DefaultDB>> =
-		tagged_deserialize(&mut &genesis_block[..]).expect("Failed deserializing genesis block");
+	let genesis_block: SerializedTxBatches =
+		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
+	let txs: Vec<_> = genesis_block.batches.into_iter().flatten().collect();
 
 	let mut extrinsics: Vec<String> = Vec::with_capacity(txs.len());
 
@@ -130,17 +128,13 @@ pub fn get_chainspec_extrinsics(
 
 	for tx in txs {
 		match tx.tx {
-			midnight_node_ledger_helpers::SerdeTransaction::Midnight(transaction) => {
-				let serialized_tx =
-					serialize(&transaction).expect("failed to serialize transaction");
+			RawTransaction::Midnight(midnight_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::Midnight(
-					MidnightCall::send_mn_transaction { midnight_tx: serialized_tx },
+					MidnightCall::send_mn_transaction { midnight_tx },
 				));
 				extrinsics.push(hex::encode(extrinsic.encode()));
 			},
-			midnight_node_ledger_helpers::SerdeTransaction::System(system_transaction) => {
-				let midnight_system_tx =
-					serialize(&system_transaction).expect("failed to serialize system transaction");
+			RawTransaction::System(midnight_system_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::MidnightSystem(
 					MidnightSystemCall::send_mn_system_transaction { midnight_system_tx },
 				));
@@ -148,11 +142,11 @@ pub fn get_chainspec_extrinsics(
 			},
 		}
 		if let Some(ref block_context) = block_context {
-			if block_context.tblock != tx.block_context.tblock {
+			if block_context.tblock != tx.context.tblock {
 				panic!("Transactions in genesis block contain differing block contexts");
 			}
 		} else {
-			block_context = Some(tx.block_context);
+			block_context = Some(tx.context);
 		}
 	}
 

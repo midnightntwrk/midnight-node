@@ -11,26 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
-	BuildIntent, ContractAddress, ContractMaintenanceAuthority,
-	ContractOperationVersionedVerifierKey, EntryPointBuf, SigningKey, UnshieldedWallet,
-	VerifierKey, VerifyingKey, WalletSeed, deserialize, serialize_untagged,
+use super::ledger_helpers_local::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractAddress,
+	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
+	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo, LedgerContext,
+	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
+	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
+	serialize_untagged,
 };
+use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
 
+use super::build_txs_ext::BuildTxsExt;
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildOutput, BuildTxs, ContractMaintenanceAuthorityInfo,
-		DefaultDB, DeserializedTransactionsWithContext, IntentInfo, MaintenanceUpdateInfo,
-		OfferInfo, ProofProvider, ProofType, SignatureType, TransactionWithContext, UpdateInfo,
-		Wallet,
-	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxsExt, ContractMaintenanceArgs},
+	tx_generator::builder::{BuildTxs, ContractMaintenanceArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct ContractMaintenanceBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	current_committee: Vec<SigningKey>,
 	new_committee: Vec<SigningKey>,
 	upsert_entrypoints: Vec<PathBuf>,
@@ -43,18 +44,17 @@ pub struct ContractMaintenanceBuilder {
 }
 
 impl ContractMaintenanceBuilder {
-	pub fn new(args: ContractMaintenanceArgs) -> Self {
-		let ContractMaintenanceArgs {
-			funding_seed,
-			authority_seeds: commitee_seeds,
-			new_authority_seeds: new_commitee_seeds,
-			contract_address,
-			threshold,
-			upsert_entrypoints,
-			remove_entrypoints,
-			counter,
-			rng_seed,
-		} = args;
+	pub fn new(
+		args: ContractMaintenanceArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		use super::type_convert::{convert_contract_address, convert_wallet_seed};
+
+		let commitee_seeds: Vec<WalletSeed> =
+			args.authority_seeds.iter().map(|s| convert_wallet_seed(*s)).collect();
+		let new_commitee_seeds: Vec<WalletSeed> =
+			args.new_authority_seeds.iter().map(|s| convert_wallet_seed(*s)).collect();
 
 		let current_committee = commitee_seeds
 			.iter()
@@ -67,15 +67,17 @@ impl ContractMaintenanceBuilder {
 			.collect();
 
 		Self {
+			context,
+			prover,
 			current_committee,
 			new_committee,
-			upsert_entrypoints,
-			remove_entrypoints,
-			threshold,
-			counter,
-			funding_seed,
-			contract_address,
-			rng_seed,
+			upsert_entrypoints: args.upsert_entrypoints,
+			remove_entrypoints: args.remove_entrypoints,
+			threshold: args.threshold,
+			counter: args.counter,
+			funding_seed: args.funding_seed,
+			contract_address: convert_contract_address(args.contract_address),
+			rng_seed: args.rng_seed,
 		}
 	}
 }
@@ -87,6 +89,14 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -203,11 +213,10 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		// - LedgerContext and TransactionInfo
-		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info();
 
 		let contract_state = context.with_ledger_state(|ref_state| {
 			Ok(ref_state
@@ -309,6 +318,6 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }

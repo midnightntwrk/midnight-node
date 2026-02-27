@@ -11,21 +11,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
+use super::ledger_helpers_local::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
+	IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
+	TransactionWithContext, UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
+};
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt,
-		ContractDeployInfo, DefaultDB, DeserializedTransactionsWithContext, IntentInfo,
-		IntentToFile, MerkleTreeContract, OfferInfo, ProofProvider, ProofType, SignatureType,
-		TransactionWithContext, VerifyingKey, Wallet, WalletSeed,
-	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{ContractDeployArgs, CreateIntentInfo},
+	tx_generator::builder::{BuildTxs, ContractDeployArgs},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::UnshieldedWallet;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	committee: Vec<VerifyingKey>,
 	committee_threshold: u32,
@@ -33,13 +35,20 @@ pub struct ContractDeployBuilder {
 }
 
 impl ContractDeployBuilder {
-	pub fn new(args: ContractDeployArgs) -> Self {
-		let ContractDeployArgs {
-			funding_seed,
-			authority_seeds: mut committee_seeds,
-			authority_threshold: committee_threshold,
-			rng_seed,
-		} = args;
+	pub fn new(
+		args: ContractDeployArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		let funding_seed = args.funding_seed;
+		let rng_seed = args.rng_seed;
+		let committee_threshold = args.authority_threshold;
+
+		let mut committee_seeds: Vec<WalletSeed> = args
+			.authority_seeds
+			.iter()
+			.map(|s| super::type_convert::convert_wallet_seed(*s))
+			.collect();
 
 		// Set the funding seed as the committee if none is passed
 		if committee_seeds.is_empty() {
@@ -53,7 +62,7 @@ impl ContractDeployBuilder {
 
 		let committee_threshold = committee_threshold.unwrap_or_else(|| committee.len() as u32);
 
-		Self { funding_seed, committee, committee_threshold, rng_seed }
+		Self { context, prover, funding_seed, committee, committee_threshold, rng_seed }
 	}
 }
 
@@ -67,6 +76,14 @@ impl BuildTxsExt for ContractDeployBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -100,11 +117,10 @@ impl BuildTxs for ContractDeployBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info();
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -132,6 +148,6 @@ impl BuildTxs for ContractDeployBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
