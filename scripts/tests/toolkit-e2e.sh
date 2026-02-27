@@ -43,7 +43,6 @@ docker run -d --rm \
   --name midnight-node-tx \
   --network toolkit-e2e-net \
   -e CFG_PRESET=dev \
-  -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
 
 tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'txgene2e')
@@ -77,7 +76,7 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -d ws://midnight-node-tx:9944
 
 docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
-    --dest-file "/out/$deploy_filename" --to-bytes \
+    --dest-file "/out/$deploy_filename" \
     contract-simple deploy \
     --rng-seed "$RNG_SEED" \
     -s ws://midnight-node-tx:9944

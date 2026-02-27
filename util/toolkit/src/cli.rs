@@ -6,7 +6,6 @@ use crate::commands::{
 	generate_intent::{self, GenerateIntentArgs},
 	generate_sample_intent::{self, GenerateSampleIntentArgs},
 	generate_txs::{self, GenerateTxsArgs},
-	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
 	root_call::{self, RootCallArgs},
 	send_intent::{self, SendIntentArgs},
@@ -22,7 +21,6 @@ use crate::commands::{
 };
 use crate::utils;
 use crate::{
-	ProofMarker, Signature,
 	serde_def::SourceTransactions,
 	tx_generator::source::{GetTxs, GetTxsFromUrl, Source},
 };
@@ -78,8 +76,6 @@ pub enum Commands {
 	ContractAddress(ContractAddressArgs),
 	/// Show and save a Contract state
 	ContractState(ContractStateArgs),
-	/// Extract `Transaction` from `TransactionWithContext`
-	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
@@ -130,9 +126,9 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		Commands::ShowWallet(args) => {
 			let result = show_wallet::execute(args).await?;
 			match result {
-				ShowWalletResult::Debug(result) => {
-					println!("{:#?}", result.wallet);
-					println!("Unshielded UTXOs: {:#?}", result.utxos)
+				ShowWalletResult::Debug(wallet_debug, utxos) => {
+					println!("{}", wallet_debug);
+					println!("Unshielded UTXOs: {:#?}", utxos)
 				},
 				ShowWalletResult::Json(json) => {
 					println!("{}", serde_json::to_string_pretty(&json)?);
@@ -188,12 +184,6 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ContractState(args) => contract_state::execute(args).await,
-		Commands::GetTxFromContext(args) => {
-			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
-			std::fs::write(args.dest_file, serialized_tx)?;
-			println!("{}", timestamp);
-			Ok(())
-		},
 		Commands::RandomAddress(args) => {
 			let address = random_address::execute(args);
 			println!("{}", address);
@@ -243,7 +233,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				panic!("error: fetch command doesn't work with '--src-files'");
 			}
 			let start = std::time::Instant::now();
-			let txs: SourceTransactions<Signature, ProofMarker> = GetTxsFromUrl::new(
+			let txs: SourceTransactions = GetTxsFromUrl::new(
 				&src.src_url.unwrap(),
 				src.fetch_concurrency,
 				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),

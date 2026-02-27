@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::*;
+use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use std::{
-	marker::PhantomData,
 	sync::{
 		Arc,
 		atomic::{self, AtomicUsize},
@@ -32,6 +31,7 @@ use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
 	hash_to_str,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 
 #[derive(Debug, Error)]
 #[error("{failed_count} transaction(s) failed during send")]
@@ -87,23 +87,13 @@ struct Progress {
 	tx_progress: TxProgress<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
 }
 
-pub struct Sender<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static> {
+pub struct Sender {
 	clients: Vec<ClientHandle>,
 	counter: AtomicUsize,
 	watch_progress: bool,
-	_marker: PhantomData<(P, S)>,
 }
 
-impl<
-	S: SignatureKind<DefaultDB> + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> Sender<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PureGeneratorPedersen, DefaultDB>: Tagged,
-{
+impl Sender {
 	pub async fn new(urls: &[String], no_watch_progress: bool) -> Result<Self, ClientError> {
 		let clients: Result<Vec<ClientHandle>, ClientError> =
 			futures::future::try_join_all(urls.iter().map(|url| async move {
@@ -122,7 +112,6 @@ where
 			clients: clients?,
 			counter: AtomicUsize::new(0),
 			watch_progress: !no_watch_progress,
-			_marker: Default::default(),
 		})
 	}
 
@@ -131,7 +120,7 @@ where
 		self.clients[i % self.clients.len()].clone()
 	}
 
-	pub async fn send_tx(&self, tx: &SerdeTransaction<S, P, DefaultDB>) -> Result<(), SenderError> {
+	pub async fn send_tx(&self, tx: &SerializedTx) -> Result<(), SenderError> {
 		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
 		if self.watch_progress {
 			self.send_and_log(&tx_hash_string, tx_progress).await?;
@@ -139,11 +128,7 @@ where
 		Ok(())
 	}
 
-	pub async fn send_worker(
-		self: Arc<Self>,
-		rate: f32,
-		txs: Vec<TransactionWithContext<S, P, DefaultDB>>,
-	) -> usize {
+	pub async fn send_worker(self: Arc<Self>, rate: f32, txs: Vec<SerializedTx>) -> usize {
 		log::debug!("send_worker: starting with {} txs", txs.len());
 		let failed_count = Arc::new(AtomicUsize::new(0));
 		let mut pending_finalized = vec![];
@@ -152,7 +137,7 @@ where
 			let failed_count = failed_count.clone();
 			let task = tokio::spawn(async move {
 				log::debug!("send_worker: spawned task for tx {} starting", i);
-				let result = arc_self.send_tx(&tx.tx).await;
+				let result = arc_self.send_tx(&tx).await;
 				if let Err(e) = result {
 					log::error!("Failed to send tx {}: {}", i, e);
 					failed_count.fetch_add(1, atomic::Ordering::SeqCst);
@@ -178,26 +163,37 @@ where
 
 	async fn send_tx_no_wait(
 		&self,
-		tx: &SerdeTransaction<S, P, DefaultDB>,
+		tx: &SerializedTx,
 	) -> Result<(TxHashes, Progress), SenderError> {
 		let client = self.get_client();
 		log::debug!(url = client.url; "send_tx_no_wait: got client");
 
-		let midnight_tx_hash = tx.transaction_hash();
+		let midnight_tx_hash = TransactionHash(HashOutput(tx.tx_hash));
 		log::debug!(url = client.url; "send_tx_no_wait: computed hash");
 
-		let tx_serialize = tx.serialize_inner().expect("failed to serialize transaction");
-		log::debug!(url = client.url; "send_tx_no_wait: serialized tx");
+		let unsigned_extrinsic = match &tx.tx {
+			RawTransaction::Midnight(tx) => {
+				let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.clone());
+				log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
+				client
+					.client
+					.api
+					.tx()
+					.create_unsigned(&mn_tx)
+					.expect("failed to create unsigned extrinsic")
+			},
+			RawTransaction::System(tx) => {
+				let mn_tx = mn_meta::tx().midnight_system().send_mn_system_transaction(tx.clone());
+				log::debug!(url = client.url; "send_tx_no_wait: created mn_system_tx");
+				client
+					.client
+					.api
+					.tx()
+					.create_unsigned(&mn_tx)
+					.expect("failed to create unsigned extrinsic")
+			},
+		};
 
-		let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_serialize.clone());
-		log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
-
-		let unsigned_extrinsic = client
-			.client
-			.api
-			.tx()
-			.create_unsigned(&mn_tx)
-			.expect("failed to create unsigned extrinsic");
 		log::debug!(url = client.url; "send_tx_no_wait: created unsigned extrinsic");
 
 		log::info!(

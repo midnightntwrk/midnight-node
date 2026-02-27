@@ -19,7 +19,7 @@ pub mod wallet_state_cache;
 
 use std::time::Duration;
 
-use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
 use tokio::task::JoinSet;
 
@@ -27,7 +27,7 @@ use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
 	fetcher::{
 		compute_task::{ComputeError, ComputeTask},
-		fetch_storage::{BlockData, FetchStorage},
+		fetch_storage::FetchStorage,
 		fetch_task::{FetchTask, FetchTaskError},
 	},
 };
@@ -69,14 +69,10 @@ enum TaskResult {
 	ComputeWorker,
 }
 
-pub async fn read_blocks_from_cache<
-	S: SignatureKind<D> + Tagged,
-	P: ProofKind<D> + core::fmt::Debug,
-	D: DB + Clone,
->(
+pub async fn read_blocks_from_cache(
 	chain_id: H256,
-	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
-) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+) -> Result<Vec<RawBlockData>, FetchError> {
 	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
 	let mut blocks: Vec<_> = fetch_storage
@@ -90,23 +86,19 @@ pub async fn read_blocks_from_cache<
 	// Set last_block_time for all blocks
 	// windows_mut() iterator does not exist - so we're indexing here
 	for i in 1..blocks.len() {
-		blocks[i].context.last_block_time = blocks[i - 1].context.tblock;
+		blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 	}
 
 	Ok(blocks)
 }
 
-pub async fn fetch_all<
-	S: SignatureKind<D> + Tagged,
-	P: ProofKind<D> + core::fmt::Debug,
-	D: DB + Clone,
->(
+pub async fn fetch_all(
 	url: &str,
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_only_cache: bool,
-	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
-) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+) -> Result<Vec<RawBlockData>, FetchError> {
 	let client = MidnightNodeClient::new(&url, None).await?;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 	if fetch_only_cache {
@@ -124,17 +116,13 @@ pub async fn fetch_all<
 	}
 }
 
-pub async fn fetch_from_rpc<
-	S: SignatureKind<D> + Tagged,
-	P: ProofKind<D> + core::fmt::Debug,
-	D: DB + Clone,
->(
+pub async fn fetch_from_rpc(
 	url: &str,
 	chain_id: H256,
 	num_workers: usize,
 	num_compute_workers: usize,
-	fetch_storage: impl FetchStorage<S, P, D> + Clone + Send + Sync + 'static,
-) -> Result<Vec<BlockData<S, P, D>>, FetchError> {
+	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(
 			"Error: 'MN_SYNC_CACHE' is defined - please use 'MN_FETCH_CACHE' instead. See `--help` for more info."
