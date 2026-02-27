@@ -100,7 +100,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     send-intent \
     --intent-file "$outdir/$deploy_intent_filename" \
     --compiled-contract-dir $compiled_contract \
-    --to-bytes --dest-file "$outdir/$deploy_tx_filename"
+    --dest-file "$outdir/$deploy_tx_filename"
 
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
