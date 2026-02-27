@@ -12,20 +12,17 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::*;
-use std::{fs::File, io::Write, marker::PhantomData, sync::Arc};
+use std::{fs::File, io::Write, sync::Arc};
 
-use crate::{
-	sender::{SendBatchError, Sender},
-	serde_def::{DeserializedTransactionsWithContext, SerializedTransactionsWithContext},
-};
+use crate::sender::{SendBatchError, Sender};
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 
 pub const DEFAULT_DEST_URL: &'static str = "ws://127.0.0.1:9944";
 
 #[derive(clap::Args)]
 pub struct Destination {
 	/// RPC URL(s) of node instance(s) used to send generated transactions. Can set multiple.
-	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()], global = true)]
+	#[arg(long = "dest-url", short = 'd', conflicts_with = "dest_file", default_values_t = [DEFAULT_DEST_URL.to_string()], env = "MN_DEST_URL", global = true)]
 	pub dest_urls: Vec<String>,
 	/// The rate at which to send txs (per second)
 	#[arg(long, short, default_value = "1", conflicts_with = "dest_file", global = true)]
@@ -33,147 +30,106 @@ pub struct Destination {
 	/// Output filename to write generated transaction.
 	#[arg(long, conflicts_with = "dest_urls", global = true)]
 	pub dest_file: Option<String>,
-	/// Save generated tx file as bytes rather than JSON.
-	#[arg(long, default_value = "false", conflicts_with = "dest_urls", global = true)]
-	pub to_bytes: bool,
 	/// Do not wait for finalization when sending transactions. May cause errors when sending batches.
 	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
 	pub no_watch_progress: bool,
 }
 
-pub struct SendTxsToFile<S, P> {
+pub struct SendTxsToFile {
 	file: String,
-	to_bytes: bool,
-	_marker_p: PhantomData<P>,
-	_marker_s: PhantomData<S>,
 }
 
-impl<S: SignatureKind<DefaultDB> + Tagged, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-	SendTxsToFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
-	pub fn new(file: String, to_bytes: bool) -> Self {
-		Self { file, to_bytes, _marker_p: PhantomData, _marker_s: PhantomData }
+impl SendTxsToFile {
+	pub fn new(file: String) -> Self {
+		Self { file }
 	}
 
-	fn save_json_file(
+	fn save_multiple(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 		filename: &str,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let mut file = File::create(filename)?;
-		let generated_tx = SerializedTransactionsWithContext::new(txs)?;
-		file.write_all(&serde_json::to_vec(&generated_tx)?)?;
+		file.write_all(&serde_json::to_vec(txs)?)?;
+		Ok(())
+	}
+
+	fn save_single(
+		&self,
+		tx: &SerializedTx,
+		filename: &str,
+	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		let mut file = File::create(filename)?;
+		file.write_all(&serde_json::to_vec(tx)?)?;
 		Ok(())
 	}
 }
 
-pub struct SendTxsToUrl<
-	S: SignatureKind<DefaultDB>,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> {
+pub struct SendTxsToUrl {
 	urls: Vec<String>,
 	rate: f32,
 	no_watch_progress: bool,
-	_marker: PhantomData<(S, P)>,
 }
 
-impl<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-	SendTxsToUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send,
-{
+impl SendTxsToUrl {
 	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
-		Self { urls, rate, no_watch_progress, _marker: Default::default() }
+		Self { urls, rate, no_watch_progress }
 	}
 }
 
 #[async_trait]
-pub trait SendTxs<
-	S: SignatureKind<DefaultDB> + Tagged + Send + 'static,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> where
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+pub trait SendTxs: Send + Sync {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + 'static,
-	P: ProofKind<DefaultDB> + Send + 'static,
-> SendTxs<S, P> for ()
-{
+impl SendTxs for () {
 	async fn send_txs(
 		&self,
-		_txs: &DeserializedTransactionsWithContext<S, P>,
+		_txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		Ok(())
 	}
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> SendTxs<S, P> for SendTxsToFile<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl SendTxs for SendTxsToFile {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		if !self.to_bytes {
-			self.save_json_file(&txs, &self.file)?;
-		} else if txs.batches.is_empty() {
-			std::fs::write(&self.file, serialize(&txs.initial_tx)?)?;
+		// If txs.len() == 1, save SerializedTx
+		if let [batch] = txs.batches.as_slice()
+			&& let [tx] = batch.as_slice()
+		{
+			self.save_single(tx, &self.file)?;
 		} else {
-			std::fs::write(&self.file, serialize(&txs.clone().flat())?)?;
+			self.save_multiple(txs, &self.file)?;
 		}
 		Ok(())
 	}
 }
 
 #[async_trait]
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static,
-> SendTxs<S, P> for SendTxsToUrl<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl SendTxs for SendTxsToUrl {
 	async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		if self.rate <= 0.0 {
 			return Err("rate must be greater than 0".into());
 		}
 
-		let sender = Arc::new(Sender::<S, P>::new(&self.urls, self.no_watch_progress).await?);
-
-		log::info!("Sending initial tx...");
-		sender.send_tx(&txs.initial_tx.tx).await?;
+		let sender = Arc::new(Sender::new(&self.urls, self.no_watch_progress).await?);
 
 		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {
 			log::info!("Sending batch {}...", i);
 			let sender = sender.clone();
-			let failed = sender.send_worker(self.rate, batch.txs.clone()).await;
+			let failed = sender.send_worker(self.rate, batch.clone()).await;
 			total_failed += failed;
 		}
 

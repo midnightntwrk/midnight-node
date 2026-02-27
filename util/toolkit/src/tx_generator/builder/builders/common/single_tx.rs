@@ -13,25 +13,27 @@
 
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
 	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
 	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo,
 	WalletAddress, WalletSeed,
 };
+use async_trait::async_trait;
 
 use crate::{
-	ProofType, SignatureType,
 	progress::Spin,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, SingleTxArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 const MAX_GUARANTEED_OUTPUTS: usize = 2;
 
 pub struct SingleTxBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	shielded_amount: Option<u128>,
 	shielded_token_type: ShieldedTokenType,
 	unshielded_amount: Option<u128>,
@@ -43,26 +45,27 @@ pub struct SingleTxBuilder {
 }
 
 impl SingleTxBuilder {
-	pub fn new(args: SingleTxArgs) -> Self {
-		let SingleTxArgs {
-			shielded_amount,
-			shielded_token_type,
-			unshielded_amount,
-			unshielded_token_type,
-			source_seed,
-			funding_seed,
-			destination_address,
-			rng_seed,
-		} = args;
+	pub fn new(
+		args: SingleTxArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		use super::type_convert::*;
 		Self {
-			shielded_amount,
-			shielded_token_type,
-			unshielded_amount,
-			unshielded_token_type,
-			source_seed,
-			funding_seed,
-			destination_address,
-			rng_seed,
+			context,
+			prover,
+			shielded_amount: args.shielded_amount,
+			shielded_token_type: convert_shielded_token_type(args.shielded_token_type),
+			unshielded_amount: args.unshielded_amount,
+			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
+			source_seed: convert_wallet_seed(args.source_seed),
+			funding_seed: args.funding_seed.map(convert_wallet_seed),
+			destination_address: args
+				.destination_address
+				.iter()
+				.map(convert_wallet_address)
+				.collect(),
+			rng_seed: args.rng_seed,
 		}
 	}
 
@@ -72,34 +75,20 @@ impl SingleTxBuilder {
 #[async_trait]
 impl BuildTxs for SingleTxBuilder {
 	type Error = Infallible;
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("generating single tx...");
 
-		let mut wallet_seeds = vec![self.source_seed];
-		wallet_seeds.extend(self.funding_seed.iter());
+		let context = self.context.clone();
 		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
-
-		let network_id = received_tx.network();
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &wallet_seeds);
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context = Arc::new(context);
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),
-			prover_arc.clone(),
+			self.prover.clone(),
 			self.rng_seed,
 		);
 
@@ -164,7 +153,7 @@ impl BuildTxs for SingleTxBuilder {
 
 		spin.finish("generated tx.");
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: Vec::new() })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
 

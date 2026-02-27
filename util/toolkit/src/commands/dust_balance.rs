@@ -1,15 +1,12 @@
-use std::{
-	collections::HashMap,
-	time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::HashMap;
 
-use crate::{LedgerContext, ProofType, SignatureType, TxGenerator, WalletSeed, source::Source};
+use crate::tx_generator::builder::build_fork_aware_context_raw;
+use crate::{TxGenerator, WalletSeed, source::Source};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::{DustOutput, Timestamp};
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
@@ -45,7 +42,7 @@ pub enum DustBalanceResult {
 pub async fn execute(
 	args: DustBalanceArgs,
 ) -> Result<DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
-	let src = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run).await?;
+	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
 		println!("Dry-run: fetching wallet for seed {:?}", args.seed);
@@ -53,57 +50,21 @@ pub async fn execute(
 	}
 
 	let source_blocks = src.get_txs().await?;
-	let network_id = source_blocks.network().to_string();
 
-	let context = LedgerContext::new_from_wallet_seeds(network_id, &[args.seed]);
+	let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[args.seed]);
 
-	for block in source_blocks.blocks {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
-	}
-
-	context.with_wallet_from_seed(args.seed, |wallet| {
-		let dust_state = wallet.dust.dust_local_state.as_ref().unwrap();
-
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards")
-			.as_secs();
-		let timestamp = Timestamp::from_secs(now);
-		let total = dust_state.wallet_balance(timestamp);
-
-		let mut capacity = 0u128;
-
-		let mut generation_infos = Vec::new();
-		let mut source = HashMap::new();
-		for dust_output in dust_state.utxos() {
-			let dust_output_ser: QualifiedDustOutputSer = dust_output.into();
-			let gen_info = dust_state.generation_info(&dust_output);
-			capacity += gen_info
-				.as_ref()
-				.map(|g| g.value * dust_state.params.night_dust_ratio as u128)
-				.unwrap_or(0);
-			let gen_info_pair = GenerationInfoPair {
-				dust_output: dust_output_ser.clone(),
-				generation_info: gen_info.map(|g| g.into()),
-			};
-			generation_infos.push(gen_info_pair);
-
-			if let Some(gen_info) = gen_info {
-				let balance = DustOutput::from(dust_output).updated_value(
-					&gen_info,
-					timestamp,
-					&dust_state.params,
+	let json = fork_ctx.dispatch(
+		|ctx| {
+			let seed_v7 =
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
+					args.seed,
 				);
-				source.insert(dust_output_ser.nonce, balance);
-			}
-		}
-		Ok(DustBalanceResult::Json(DustBalanceJson { generation_infos, source, total, capacity }))
-	})
+			crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)
+		},
+		|ctx| crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed),
+	)?;
+
+	Ok(DustBalanceResult::Json(json))
 }
 
 #[cfg(test)]
