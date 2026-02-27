@@ -108,6 +108,12 @@ jobs:
           source .github/scripts/sbom-scan.sh
           scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json" "${PLATFORM}"
 
+      - name: Trim SBOM for attestation
+        if: ${{ !inputs.skip-attestation }}
+        run: |
+          source .github/scripts/sbom-scan.sh
+          trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
+
       - name: Get image digest
         if: ${{ !inputs.skip-attestation }}
         id: image-digest
@@ -134,7 +140,7 @@ jobs:
         with:
           subject-name: ${{ steps.image-digest.outputs.subject-name }}
           subject-digest: ${{ steps.image-digest.outputs.digest }}
-          sbom-path: sbom.spdx.json
+          sbom-path: sbom-attestation.spdx.json
 
       - name: Get multi-arch image digest
         if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
@@ -159,7 +165,7 @@ jobs:
         with:
           subject-name: ${{ steps.multiarch-digest.outputs.subject-name }}
           subject-digest: ${{ steps.multiarch-digest.outputs.digest }}
-          sbom-path: sbom.spdx.json
+          sbom-path: sbom-attestation.spdx.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

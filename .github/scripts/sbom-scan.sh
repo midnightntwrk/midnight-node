@@ -19,6 +19,7 @@
 # Usage:
 #   source .github/scripts/sbom-scan.sh
 #   generate_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
+#   trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
 #   scan_image_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "high" "scan-results.json"
 
 # Note: We intentionally don't use `set -euo pipefail` at the top level because
@@ -43,7 +44,7 @@ generate_sbom_with_retry() {
   fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if syft "${platform_args[@]}" "${IMAGE}" -o spdx-json="${OUTPUT_FILE}"; then
+    if syft "${platform_args[@]}" "${IMAGE}" --select-catalogers '-file' -o spdx-json="${OUTPUT_FILE}"; then
       echo "Successfully generated SBOM for ${IMAGE}"
       return 0
     fi
@@ -56,6 +57,29 @@ generate_sbom_with_retry() {
 
   echo "::error::Failed to generate SBOM for ${IMAGE} after $MAX_ATTEMPTS attempts"
   return 1
+}
+
+trim_sbom_for_attestation() {
+  local INPUT_FILE="$1"
+  local OUTPUT_FILE="$2"
+
+  command -v jq >/dev/null 2>&1 || { echo "::error::jq not found"; return 1; }
+
+  # Strip SPDX relationships to reduce size below the 16MB actions/attest-sbom limit.
+  # The full SBOM (with relationships) is preserved separately as a build artifact.
+  if ! jq -c 'del(.relationships)' "$INPUT_FILE" > "$OUTPUT_FILE"; then
+    echo "::error::Failed to trim SBOM"
+    return 1
+  fi
+
+  local original_size trimmed_size
+  original_size=$(wc -c < "$INPUT_FILE")
+  trimmed_size=$(wc -c < "$OUTPUT_FILE")
+  echo "Trimmed SBOM for attestation: ${original_size} -> ${trimmed_size} bytes (removed relationships)"
+
+  if [ "$trimmed_size" -gt 16777216 ]; then
+    echo "::warning::Trimmed SBOM (${trimmed_size} bytes) still exceeds 16MB limit"
+  fi
 }
 
 scan_image_with_retry() {
