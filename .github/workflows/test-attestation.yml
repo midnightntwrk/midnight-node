@@ -30,10 +30,13 @@ jobs:
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
 
+      - name: Pull image
+        run: docker pull ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64
+
       - name: Generate SBOM (default - with file cataloger)
         run: |
           echo "=== SBOM with file cataloger (default) ==="
-          syft ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
+          syft docker:ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
             -o spdx-json=sbom-with-files.json
           ls -lh sbom-with-files.json
           echo "Size in bytes: $(wc -c < sbom-with-files.json)"
@@ -43,7 +46,7 @@ jobs:
       - name: Generate SBOM (without file cataloger)
         run: |
           echo "=== SBOM without file cataloger ==="
-          syft ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
+          syft docker:ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
             --select-catalogers '-file' \
             -o spdx-json=sbom-no-files.json
           ls -lh sbom-no-files.json
