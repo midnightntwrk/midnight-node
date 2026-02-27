@@ -1,7 +1,7 @@
-name: Test - SBOM Size Investigation
+name: Test - SBOM Trim and Attest
 
-# Temporary workflow to measure SBOM size for midnight-node images.
-# Checks whether the image SBOM exceeds the 16MB actions/attest-sbom limit.
+# Temporary workflow to verify that trimmed SBOMs fit under the 16MB
+# actions/attest-sbom limit and that attestation succeeds end-to-end.
 # Delete this file before merging to main.
 
 on:
@@ -13,13 +13,21 @@ on:
 permissions: {}
 
 jobs:
-  measure-sbom-size:
-    name: Measure SBOM size
+  test-trim-and-attest:
+    name: Test SBOM trim + attestation
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          sparse-checkout: |
+            .github/scripts
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -33,42 +41,50 @@ jobs:
       - name: Pull image
         run: docker pull ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64
 
-      - name: Generate SBOM (default - with file cataloger)
+      - name: Generate SBOM
         run: |
-          echo "=== SBOM with file cataloger (default) ==="
-          syft docker:ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
-            -o spdx-json=sbom-with-files.json
-          ls -lh sbom-with-files.json
-          echo "Size in bytes: $(wc -c < sbom-with-files.json)"
-          echo "Package count: $(jq '[.packages[] | select(.SPDXID != "SPDXRef-DOCUMENT")] | length' sbom-with-files.json)"
-          echo "File count: $(jq '[.files // []] | flatten | length' sbom-with-files.json)"
-
-      - name: Generate SBOM (without file cataloger)
-        run: |
-          echo "=== SBOM without file cataloger ==="
           syft docker:ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 \
             --select-catalogers '-file' \
-            -o spdx-json=sbom-no-files.json
-          ls -lh sbom-no-files.json
-          echo "Size in bytes: $(wc -c < sbom-no-files.json)"
-          echo "Package count: $(jq '[.packages[] | select(.SPDXID != "SPDXRef-DOCUMENT")] | length' sbom-no-files.json)"
-          echo "File count: $(jq '[.files // []] | flatten | length' sbom-no-files.json)"
+            -o spdx-json=sbom.spdx.json
+          echo "Full SBOM size: $(wc -c < sbom.spdx.json) bytes"
 
-      - name: Generate SBOM (minified JSON)
+      - name: Trim SBOM for attestation
         run: |
-          echo "=== SBOM without file cataloger + minified ==="
-          jq -c '.' sbom-no-files.json > sbom-minified.json
-          ls -lh sbom-minified.json
-          echo "Size in bytes: $(wc -c < sbom-minified.json)"
+          source .github/scripts/sbom-scan.sh
+          trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
+
+          # Fail if trimmed SBOM still exceeds 16MB
+          TRIMMED_SIZE=$(wc -c < sbom-attestation.spdx.json)
+          if [ "$TRIMMED_SIZE" -gt 16777216 ]; then
+            echo "::error::Trimmed SBOM (${TRIMMED_SIZE} bytes) exceeds 16MB limit"
+            exit 1
+          fi
+          echo "Trimmed SBOM is under 16MB limit - attestation should succeed"
+
+      - name: Get image digest
+        id: image-digest
+        run: |
+          DIGEST=$(docker buildx imagetools inspect ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64 --raw | sha256sum | awk '{print "sha256:"$1}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "subject-name=ghcr.io/midnight-ntwrk/midnight-node" >> "$GITHUB_OUTPUT"
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.image-digest.outputs.subject-name }}
+          subject-digest: ${{ steps.image-digest.outputs.digest }}
+          sbom-path: sbom-attestation.spdx.json
 
       - name: Summary
         run: |
-          echo "## SBOM Size Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "## SBOM Trim + Attest Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Variant | Size | Packages | Files |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---------|------|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Default (with files) | $(ls -lh sbom-with-files.json | awk '{print $5}') | $(jq '[.packages[] | select(.SPDXID != "SPDXRef-DOCUMENT")] | length' sbom-with-files.json) | $(jq '[.files // []] | flatten | length' sbom-with-files.json) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Without file cataloger | $(ls -lh sbom-no-files.json | awk '{print $5}') | $(jq '[.packages[] | select(.SPDXID != "SPDXRef-DOCUMENT")] | length' sbom-no-files.json) | $(jq '[.files // []] | flatten | length' sbom-no-files.json) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Minified JSON | $(ls -lh sbom-minified.json | awk '{print $5}') | - | - |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Variant | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Full SBOM (no files) | $(wc -c < sbom.spdx.json) bytes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trimmed (no relationships) | $(wc -c < sbom-attestation.spdx.json) bytes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Relationships removed | $(jq '[.relationships // []] | flatten | length' sbom.spdx.json) entries |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "16MB limit = 16,777,216 bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Attestation: **passed**" >> "$GITHUB_STEP_SUMMARY"
