@@ -121,6 +121,12 @@ jobs:
           source .github/scripts/sbom-scan.sh
           scan_image_with_retry "${IMAGE}" "${SEVERITY_CUTOFF}" "grype-results.json" "${PLATFORM}"
 
+      - name: Trim SBOM for attestation
+        if: ${{ !inputs.skip-attestation }}
+        run: |
+          source .github/scripts/sbom-scan.sh
+          trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
+
       - name: Attest SBOM
         if: ${{ !inputs.skip-attestation }}
         env:
@@ -128,7 +134,7 @@ jobs:
           TLOG_UPLOAD: ${{ inputs.tlog-upload }}
         run: |
           source .github/scripts/sbom-scan.sh
-          attest_sbom_with_retry "${IMAGE}" "sbom.spdx.json" "${TLOG_UPLOAD}"
+          attest_sbom_with_retry "${IMAGE}" "sbom-attestation.spdx.json" "${TLOG_UPLOAD}"
 
       - name: Attest SBOM to multi-arch manifest
         if: ${{ !inputs.skip-attestation && inputs.multi-arch-image != '' }}
@@ -137,7 +143,7 @@ jobs:
           TLOG_UPLOAD: ${{ inputs.tlog-upload }}
         run: |
           source .github/scripts/sbom-scan.sh
-          attest_sbom_to_multiarch "${MULTIARCH_IMAGE}" "sbom.spdx.json" "${TLOG_UPLOAD}"
+          attest_sbom_to_multiarch "${MULTIARCH_IMAGE}" "sbom-attestation.spdx.json" "${TLOG_UPLOAD}"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
