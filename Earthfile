@@ -1036,7 +1036,7 @@ build-fork:
     RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
         /artifacts-$NATIVEARCH/test
 
-    RUN rm -Rf /target/release/build/midnight-node-runtime-*
+    RUN rm -Rf /target/release/build/midnight-node-runtime-* /target/release/wbuild/midnight-node-runtime
     # Rollback build
     RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
     RUN mv /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
