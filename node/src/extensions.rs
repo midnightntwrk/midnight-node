@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_primitives_ledger::{LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt};
+use midnight_primitives_ledger::{
+	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt,
+};
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sp_externalities::Extensions;
 use sp_runtime::traits::{Block as BlockT, NumberFor};

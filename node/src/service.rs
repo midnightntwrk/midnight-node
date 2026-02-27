@@ -460,12 +460,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
-	let new_partial_components = new_partial(
-		&config,
-		epoch_config.clone(),
-		data_sources.clone(),
-		storage_config,
-	)?;
+	let new_partial_components =
+		new_partial(&config, epoch_config.clone(), data_sources.clone(), storage_config)?;
 
 	let sc_service::PartialComponents {
 		client,
