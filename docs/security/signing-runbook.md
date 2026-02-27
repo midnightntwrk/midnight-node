@@ -189,7 +189,6 @@ Attestation is automatically skipped for fork PRs (they don't have the required 
 
 ### SBOM Size Limit Exceeded
 
-@@ -195,6 +197,7 @@ The `trim_sbom_for_attestation` function in `.github/scripts/sbom-scan.sh` strip
 2. Consider stripping additional optional SPDX fields (e.g., `annotations`, `externalDocumentRefs`)
 3. Review whether the base image can be slimmed down to reduce package count
 4. Track upstream progress on increasing the limit: [actions/attest-sbom#168](https://github.com/actions/attest-sbom/issues/168)
