@@ -1,5 +1,5 @@
 name: srtool Build (Deterministic WASM)
-
+permissions: {}
 on:
   workflow_dispatch:
     inputs:
