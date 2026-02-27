@@ -13,19 +13,19 @@
 
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
+use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
 	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
 };
+use async_trait::async_trait;
 
 use crate::{
-	ProofType, SignatureType,
 	progress::Spin,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 /// Builder for generating DUST address deregistration transactions.
 ///
@@ -38,15 +38,26 @@ use crate::{
 /// - Cleaning up test registrations
 /// - Revoking access before rotating wallet keys
 pub struct DeregisterDustAddressBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
 	funding_seed: String,
 }
 
 impl DeregisterDustAddressBuilder {
-	/// Creates a new builder from CLI arguments.
-	pub fn new(args: DeregisterDustAddressArgs) -> Self {
-		Self { seed: args.wallet_seed, rng_seed: args.rng_seed, funding_seed: args.funding_seed }
+	pub fn new(
+		args: DeregisterDustAddressArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		Self {
+			context,
+			prover,
+			seed: args.wallet_seed,
+			rng_seed: args.rng_seed,
+			funding_seed: args.funding_seed,
+		}
 	}
 }
 
@@ -56,32 +67,18 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building deregister dust address transaction...");
 
 		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
 
-		let network_id = received_tx.network();
-		let context: LedgerContext<DefaultDB> =
-			LedgerContext::new_from_wallet_seeds(network_id.to_string(), &[seed, funding_seed]);
-
-		for block in &received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context = Arc::new(context);
+		let context = self.context.clone();
 
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
 			context.clone(),
-			prover_arc.clone(),
+			self.prover.clone(),
 			self.rng_seed,
 		);
 
@@ -158,6 +155,6 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 
 		spin.finish("generated tx.");
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
