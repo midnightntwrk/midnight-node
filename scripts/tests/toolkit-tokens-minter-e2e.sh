@@ -164,6 +164,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --input-private-state "$outdir/$initial_private_state_filename" \
     --contract-address $contract_address \
     --output-intent "$outdir/$mint_shielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_1.mn" \
     --output-private-state "$outdir/temp_shielded_private_state.json" \
     --output-zswap-state "$outdir/$mint_shielded_zswap_filename" \
     mintShieldedToSelfTest \
@@ -177,10 +178,11 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c "$config_file" \
     --coin-public "$coin_public" \
-    --input-onchain-state "$outdir/$state_filename" \
-    --input-private-state "$outdir/$initial_private_state_filename" \
+    --input-onchain-state "$outdir/onchain_state_1.mn" \
+    --input-private-state "$outdir/temp_shielded_private_state.json" \
     --contract-address $contract_address \
     --output-intent "$outdir/$mint_unshielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_2.mn" \
     --output-private-state "$outdir/temp_unshielded_private_state.json" \
     --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
     mintUnshieldedToSelfTest \
@@ -194,11 +196,11 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$TOOLKIT_IMAGE" \
     generate-intent circuit -c "$config_file" \
     --coin-public "$coin_public" \
-    --input-onchain-state "$outdir/$state_filename" \
-    --input-private-state "$outdir/$initial_private_state_filename" \
+    --input-onchain-state "$outdir/onchain_state_2.mn" \
+    --input-private-state "$outdir/temp_unshielded_private_state.json" \
     --contract-address $contract_address \
     --output-intent "$outdir/$send_unshielded_intent_filename" \
-    --output-private-state "$outdir/temp_unshielded_private_state.json" \
+    --output-private-state "$outdir/temp_send_private_state.json" \
     --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
     sendUnshieldedToUser \
     "$token_type" \
