@@ -74,13 +74,14 @@ fn next_position() -> CardanoPosition {
 
 /// PM-19778 TC-01: process_tokens rejects UTXO count exceeding capacity bound.
 ///
-/// With CardanoTxCapacityPerBlock=1, the bound is 1*64=64. Submitting 65 UTXOs
+/// With CardanoTxCapacityPerBlock=2, the bound is 2*64=128. Submitting 129 UTXOs
 /// must fail with TooManyUtxos and leave no state modifications.
 #[test]
 fn test_process_tokens_rejects_too_many_utxos() {
 	new_test_ext().execute_with(|| {
-		CardanoTxCapacityPerBlock::<Test>::put(1);
-		let bound = 1u32 * UTXO_PER_TX_OVERESTIMATE; // 64
+		let capacity = 2u32;
+		CardanoTxCapacityPerBlock::<Test>::put(capacity);
+		let bound = capacity * UTXO_PER_TX_OVERESTIMATE;
 		let utxos = generate_registration_utxos(bound + 1);
 
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
@@ -101,12 +102,13 @@ fn test_process_tokens_rejects_too_many_utxos() {
 
 /// PM-19778 TC-02: process_tokens accepts UTXO count at exactly the capacity bound.
 ///
-/// With CardanoTxCapacityPerBlock=1, submitting exactly 64 UTXOs must succeed.
+/// With CardanoTxCapacityPerBlock=2, submitting exactly 128 UTXOs must succeed.
 #[test]
 fn test_process_tokens_accepts_max_utxos() {
 	new_test_ext().execute_with(|| {
-		CardanoTxCapacityPerBlock::<Test>::put(1);
-		let bound = 1u32 * UTXO_PER_TX_OVERESTIMATE; // 64
+		let capacity = 2u32;
+		CardanoTxCapacityPerBlock::<Test>::put(capacity);
+		let bound = capacity * UTXO_PER_TX_OVERESTIMATE;
 		let utxos = generate_registration_utxos(bound);
 
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
