@@ -12,7 +12,8 @@
 // limitations under the License.
 use frame_support::{
 	assert_noop, assert_ok, inherent::InherentData, pallet_prelude::*,
-	sp_runtime::traits::Dispatchable, traits::Hooks,
+	sp_runtime::traits::{BlakeTwo256, Dispatchable, Hash},
+	traits::Hooks,
 };
 use frame_system::RawOrigin;
 use midnight_node_ledger::latest::types::BlockContext;
@@ -1259,5 +1260,67 @@ fn duplicate_inherent_protection_works() {
 		let inherent_data2 = create_inherent(utxos2, test_position(5, 0));
 		let call3 = CNightObservation::create_inherent(&inherent_data2).unwrap();
 		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let cardano_addr = cardano_reward_address(b"cardano1");
+		let invalid_dust_key =
+			DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+
+		let create_utxo_tx_hash = tx_hash(1, 3);
+		let create_utxo_tx_index: u16 = 0;
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: cardano_addr,
+					dust_public_key: invalid_dust_key,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 0, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: cardano_addr,
+					utxo_tx_hash: create_utxo_tx_hash,
+					utxo_tx_index: create_utxo_tx_index,
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		let nonce = BlakeTwo256::hash(
+			&[
+				b"asset_create".as_slice(),
+				&create_utxo_tx_hash.0[..],
+				&create_utxo_tx_index.to_be_bytes()[..],
+			]
+			.concat(),
+		);
+
+		assert!(
+			UtxoOwners::<Test>::get(nonce).is_none(),
+			"UtxoOwners should not contain an entry when event construction fails"
+		);
+
+		let system_tx_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			matches!(
+				record.event,
+				mock::RuntimeEvent::MidnightSystem(
+					pallet_midnight_system::Event::SystemTransactionApplied(_)
+				)
+			)
+		});
+		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
 	});
 }
