@@ -144,19 +144,19 @@ pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
 
 // FIXME: these should almost certainly be Cfg in MidnightCfg, so users can tweak as needed
 const CANDIDATES_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const SIDECHAIN_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const MC_HASH_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const CNIGHT_OBSERVATION_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 10 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const BRIDGE_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 const ICS_POOL_CFG: DbPoolCfg =
-	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
+	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 20 };
 
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,

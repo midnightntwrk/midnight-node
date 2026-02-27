@@ -124,46 +124,42 @@ where
 		)
 		.await?;
 
-		let ariadne_data_provider = AriadneIDP::new(
-			client.as_ref(),
-			sc_slot_config,
-			mc_epoch_config,
-			parent_hash,
-			*slot,
-			authority_selection_data_source.as_ref(),
-			mc_hash.mc_epoch(),
-		)
-		.await?;
-		/*
-		#[cfg(feature = "experimental")]
-		let block_beneficiary_provider = BlockBeneficiaryInherentProvider::<BeneficiaryId>::from_env(
-			"SIDECHAIN_BLOCK_BENEFICIARY",
-		)?;
-		 */
-
-		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
-			client.clone(),
-			cnight_observation_data_source.as_ref(),
-			parent_hash,
-			mc_hash.mc_hash(),
-		)
-		.await?;
-
-		let federated_authority = FederatedAuthorityInherentDataProvider::new(
-			client.clone(),
-			federated_authority_observation_data_source.as_ref(),
-			parent_hash,
-			&mc_hash.mc_hash(),
-		)
-		.await?;
-
-		let bridge = TokenBridgeInherentDataProvider::new(
-			client.as_ref(),
-			parent_hash,
-			mc_hash.mc_hash(),
-			bridge_data_source.as_ref(),
-		)
-		.await?;
+		// Parallelize the 4 independent Postgres queries that only depend on mc_hash
+		let mc_hash_val = mc_hash.mc_hash();
+		let mc_epoch_val = mc_hash.mc_epoch();
+		let (ariadne_result, cnight_result, federated_result, bridge_result) = futures::join!(
+			AriadneIDP::new(
+				client.as_ref(),
+				sc_slot_config,
+				mc_epoch_config,
+				parent_hash,
+				*slot,
+				authority_selection_data_source.as_ref(),
+				mc_epoch_val,
+			),
+			MidnightCNightObservationInherentDataProvider::new(
+				client.clone(),
+				cnight_observation_data_source.as_ref(),
+				parent_hash,
+				mc_hash_val.clone(),
+			),
+			FederatedAuthorityInherentDataProvider::new(
+				client.clone(),
+				federated_authority_observation_data_source.as_ref(),
+				parent_hash,
+				&mc_hash_val,
+			),
+			TokenBridgeInherentDataProvider::new(
+				client.as_ref(),
+				parent_hash,
+				mc_hash_val.clone(),
+				bridge_data_source.as_ref(),
+			),
+		);
+		let ariadne_data_provider = ariadne_result?;
+		let cnight_observation = cnight_result?;
+		let federated_authority = federated_result?;
+		let bridge = bridge_result?;
 
 		Ok((
 			slot,
@@ -242,16 +238,43 @@ where
 		));
 		let parent_header = client.expect_header(parent_hash)?;
 		let parent_slot = slot_from_predigest(&parent_header)?;
-		let mc_state_reference = McHashIDP::new_verification(
-			parent_header,
-			parent_slot,
-			verified_block_slot,
-			mc_hash.clone(),
-			config.slot_duration(),
-			mc_hash_data_source.as_ref(),
-		)
-		.await?;
+		// Parallelize mc_state_reference with cnight/federated/bridge (they don't need it).
+		// Only ariadne needs mc_state_reference.epoch, so it runs after.
+		let mc_hash_for_bridge = mc_hash.clone();
+		let (mc_ref_result, cnight_result, federated_result, bridge_result) = futures::join!(
+			McHashIDP::new_verification(
+				parent_header,
+				parent_slot,
+				verified_block_slot,
+				mc_hash.clone(),
+				config.slot_duration(),
+				mc_hash_data_source.as_ref(),
+			),
+			MidnightCNightObservationInherentDataProvider::new(
+				client.clone(),
+				cnight_observation_data_source.as_ref(),
+				parent_hash,
+				mc_hash.clone(),
+			),
+			FederatedAuthorityInherentDataProvider::new(
+				client.clone(),
+				federated_authority_observation_data_source.as_ref(),
+				parent_hash,
+				&mc_hash,
+			),
+			TokenBridgeInherentDataProvider::new(
+				client.as_ref(),
+				parent_hash,
+				mc_hash_for_bridge,
+				bridge_data_source.as_ref(),
+			),
+		);
+		let mc_state_reference = mc_ref_result?;
+		let cnight_observation = cnight_result?;
+		let federated_authority = federated_result?;
+		let bridge = bridge_result?;
 
+		// Ariadne needs mc_state_reference.epoch, so it must run after
 		let ariadne_data_provider = AriadneIDP::new(
 			client.as_ref(),
 			sc_slot_config,
@@ -260,30 +283,6 @@ where
 			verified_block_slot,
 			authority_selection_data_source.as_ref(),
 			mc_state_reference.epoch,
-		)
-		.await?;
-
-		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
-			client.clone(),
-			cnight_observation_data_source.as_ref(),
-			parent_hash,
-			mc_hash.clone(),
-		)
-		.await?;
-
-		let federated_authority = FederatedAuthorityInherentDataProvider::new(
-			client.clone(),
-			federated_authority_observation_data_source.as_ref(),
-			parent_hash,
-			&mc_hash,
-		)
-		.await?;
-
-		let bridge = TokenBridgeInherentDataProvider::new(
-			client.as_ref(),
-			parent_hash,
-			mc_hash,
-			bridge_data_source.as_ref(),
 		)
 		.await?;
 

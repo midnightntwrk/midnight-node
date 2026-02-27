@@ -290,6 +290,7 @@ Chain specifications are located in `/res/` directory.
 | Remote write | `PROMETHEUS_PUSH_ENDPOINT=https://thanos:9091/api/v1/receive` | - | Push metrics via Prometheus Remote Write (Thanos, Cortex, Mimir) |
 | Push interval | `PROMETHEUS_PUSH_INTERVAL_SECS=15` | - | Seconds between metric pushes (default: 15) |
 | Push job name | `PROMETHEUS_PUSH_JOB_NAME=midnight-node` | - | Job label for pushed metrics (default: midnight-node) |
+| Adaptive sync | `BUCKEL_UP=true` | - | Skip inherent checks while catching up, full verification once synced (default: false) |
 
 **Start single-node local network** for development:
 

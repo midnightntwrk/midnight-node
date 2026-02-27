@@ -100,6 +100,10 @@ pub struct MidnightCfg {
 	/// Job name label to include with pushed metrics.
 	/// Default: "midnight-node"
 	pub prometheus_push_job_name: Option<String>,
+
+	/// Enable adaptive sync (skip inherent checks for old blocks while the node is catching up)
+	#[serde(default)]
+	pub buckel_up: bool,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
