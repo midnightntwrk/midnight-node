@@ -24,9 +24,7 @@ SBOMs are generated using [Syft](https://github.com/anchore/syft) in SPDX-JSON f
 1. **Scan**: Syft analyzes the container image layers (file cataloger disabled to reduce size)
 2. **Extract**: Package information is extracted from package managers (apt, npm, cargo, etc.)
 3. **Generate**: An SPDX-JSON document is created listing all components
-<<<<<<< fix/PM-19901-guards-next-cardano-position
 4. **Attest**: The SBOM is attached to the image as an attestation using `actions/attest-sbom`
-=======
 4. **Trim**: SPDX relationships are stripped and JSON is minified to fit under the 16MB `actions/attest-sbom` predicate limit (full SBOM preserved as build artifact)
 5. **Attest**: The trimmed SBOM is attached to the image as an attestation using `actions/attest-sbom`
 
@@ -83,11 +81,7 @@ Both architecture variants are individually attested, and the manifest list itse
 
 | Script | Purpose |
 |--------|---------|
-<<<<<<< fix/PM-19901-guards-next-cardano-position
-| `.github/scripts/sbom-scan.sh` | SBOM generation and vulnerability scanning with retry logic |
-=======
 | `.github/scripts/sbom-scan.sh` | SBOM generation, trimming for attestation, and vulnerability scanning with retry logic |
->>>>>>> main
 
 ### Release Gates
 

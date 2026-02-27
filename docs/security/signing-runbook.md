@@ -189,15 +189,12 @@ Attestation is automatically skipped for fork PRs (they don't have the required 
 1. Check the "Trim SBOM for attestation" step output for size details
 2. If the trimmed SBOM exceeds 16MB, the image has grown significantly in package count
 
-#### Resolution
+### SBOM Size Limit Exceeded
 
-The `trim_sbom_for_attestation` function in `.github/scripts/sbom-scan.sh` strips SPDX relationships and minifies JSON before attestation. If the trimmed SBOM still exceeds 16MB:
-
-1. Check whether new catalogers were enabled in Syft (the file cataloger should remain disabled via `--select-catalogers '-file'`)
+@@ -195,6 +197,7 @@ The `trim_sbom_for_attestation` function in `.github/scripts/sbom-scan.sh` strip
 2. Consider stripping additional optional SPDX fields (e.g., `annotations`, `externalDocumentRefs`)
 3. Review whether the base image can be slimmed down to reduce package count
 4. Track upstream progress on increasing the limit: [actions/attest-sbom#168](https://github.com/actions/attest-sbom/issues/168)
->>>>>>> main
 
 ## Managing CVE Ignores
 
