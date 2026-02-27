@@ -33,9 +33,9 @@ on:
         description: "Force release if it already exists?"
         required: true
         default: false
-      client-only:
+      node-only:
         type: boolean
-        description: "Client-only release (skip srtool runtime WASM build)?"
+        description: "Node-only release (skip srtool runtime WASM build)?"
         required: false
         default: false
 
@@ -401,7 +401,7 @@ jobs:
   srtool-build:
     name: srtool Build
     needs: [finalize-release]
-    if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.client-only != 'true'
+    if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.node-only != 'true'
     uses: ./.github/workflows/srtool-build.yml
     with:
       ref: ${{ inputs.ref }}

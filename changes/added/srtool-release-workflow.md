@@ -5,7 +5,7 @@ New `srtool Build` GitHub Actions workflow that builds deterministic runtime WAS
 
 Artifacts attached to releases: `midnight_node_runtime.wasm`, `.compact.wasm`, `.compact.compressed.wasm`, `srtool-digest.json`, checksums, and Cosign signatures.
 
-A new `client-only` option on the `Create Release` workflow skips the srtool build for client-only releases that don't include runtime changes.
+A new `node-only` option on the `Create Release` workflow skips the srtool build for node-only releases that don't include runtime changes.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/795
 JIRA: https://shielded.atlassian.net/browse/PM-22075
