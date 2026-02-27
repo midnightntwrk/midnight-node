@@ -11,22 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_primitives_ledger::{
-	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt, SyncStatusExt,
-};
+use midnight_primitives_ledger::{LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt};
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sp_externalities::Extensions;
 use sp_runtime::traits::{Block as BlockT, NumberFor};
 use std::{
 	marker::PhantomData,
-	sync::{Arc, Mutex, atomic::AtomicBool},
+	sync::{Arc, Mutex},
 };
 
 /// Extensions factory
 pub struct ExtensionsFactory<Block> {
 	ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
 	ledger_storage: LedgerStorage,
-	is_syncing: Arc<AtomicBool>,
 	_marker: PhantomData<Block>,
 }
 
@@ -34,9 +31,8 @@ impl<Block> ExtensionsFactory<Block> {
 	pub fn new(
 		ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
 		ledger_storage: LedgerStorage,
-		is_syncing: Arc<AtomicBool>,
 	) -> Self {
-		Self { ledger_metrics, ledger_storage, is_syncing, _marker: Default::default() }
+		Self { ledger_metrics, ledger_storage, _marker: Default::default() }
 	}
 }
 
@@ -53,7 +49,6 @@ where
 
 		exts.register(LedgerMetricsExt::new(self.ledger_metrics.clone()));
 		exts.register(LedgerStorageExt::new(self.ledger_storage.clone()));
-		exts.register(SyncStatusExt::new(self.is_syncing.clone()));
 
 		exts
 	}
