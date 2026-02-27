@@ -285,7 +285,6 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
@@ -296,7 +295,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_2_store_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
@@ -307,7 +305,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_3_check_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
@@ -319,7 +316,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_3_check_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${NETWORK}.mn) \
@@ -336,7 +332,7 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/zswap_undeployed.mn \
-                --to-bytes batches \
+                batches \
                 -n 1 \
                 -b 1 \
                 --rng-seed "$RNG_SEED" \
@@ -354,18 +350,12 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
-                --dest-file out/serialized_tx_with_context.mn \
-                --to-bytes \
+                --dest-file out/serialized_tx.mn \
                 single-tx \
                 --unshielded-amount 500 \
                 --rng-seed "$RNG_SEED" \
                 --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
                 --destination-address $(cat out/dest_addr.mn) \
-            && /midnight-node-toolkit get-tx-from-context \
-                --network $NETWORK \
-                --src-file out/serialized_tx_with_context.mn \
-                --dest-file out/serialized_tx_no_context.mn \
-                --from-bytes \
             && cp out/serialized_* /res/test-tx-deserialize \
         ; fi
 
@@ -390,7 +380,6 @@ rebuild-genesis-state:
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
-                --to-bytes \
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
@@ -421,7 +410,6 @@ rebuild-genesis-state:
                 --intent-file /res/test-data/contract/mint/deploy.bin \
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
-                --to-bytes \
                 --dest-file /res/test-data/contract/mint/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/mint/deploy_tx.mn \
