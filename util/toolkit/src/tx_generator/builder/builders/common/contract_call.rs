@@ -11,23 +11,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
+use super::ledger_helpers_local::{
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, CallInfo, ContractAddress,
+	DefaultDB, IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
+	TransactionWithContext, Wallet, WalletSeed,
+};
 use crate::{
-	builder::{
-		BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuildTxs, BuildTxsExt, CallInfo,
-		DefaultDB, DeserializedTransactionsWithContext, IntentInfo, IntentToFile,
-		MerkleTreeContract, OfferInfo, ProofProvider, ProofType, SignatureType,
-		TransactionWithContext, Wallet, WalletSeed,
-	},
 	serde_def::SourceTransactions,
-	tx_generator::builder::{ContractCallArgs, CreateIntentInfo},
+	tx_generator::builder::{BuildTxs, ContractCallArgs},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::ContractAddress;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 const CONTRACT_INPUT: u32 = 12;
 
 pub struct ContractCallBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	call_key: &'static str,
 	funding_seed: String,
 	contract_address: ContractAddress,
@@ -35,13 +37,19 @@ pub struct ContractCallBuilder {
 }
 
 impl ContractCallBuilder {
-	pub fn new(args: ContractCallArgs) -> Self {
+	pub fn new(
+		args: ContractCallArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
 		let call_key: &'static str = Box::leak(args.call_key.into_boxed_str());
 
 		Self {
+			context,
+			prover,
 			call_key,
 			funding_seed: args.funding_seed,
-			contract_address: args.contract_address,
+			contract_address: super::type_convert::convert_contract_address(args.contract_address),
 			rng_seed: args.rng_seed,
 		}
 	}
@@ -57,6 +65,14 @@ impl BuildTxsExt for ContractCallBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -92,11 +108,10 @@ impl BuildTxs for ContractCallBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		// - LedgerContext and TransactionInfo
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (_, mut tx_info) = self.context_and_tx_info();
 
 		// - Intents
 		let intent_info = self.create_intent_info();
@@ -124,6 +139,6 @@ impl BuildTxs for ContractCallBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
