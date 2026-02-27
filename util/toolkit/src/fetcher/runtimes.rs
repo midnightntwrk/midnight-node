@@ -10,6 +10,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+use strum::{EnumIter, IntoEnumIterator as _};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RuntimeVersionError {
@@ -19,7 +20,7 @@ pub enum RuntimeVersionError {
 	UnsupportedBlockVersion(u32),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum RuntimeVersion {
 	V0_17_0,
 	V0_17_1,
@@ -44,6 +45,26 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_022_000 => Ok(Self::V0_22_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
+	}
+}
+
+impl RuntimeVersion {
+	/// Convert back to the raw spec version number.
+	pub fn to_spec_version(self) -> u32 {
+		match self {
+			Self::V0_17_0 => 000_017_000,
+			Self::V0_17_1 => 000_017_001,
+			Self::V0_18_0 => 000_018_000,
+			Self::V0_18_1 => 000_018_001,
+			Self::V0_19_0 => 000_019_000,
+			Self::V0_20_0 => 000_020_000,
+			Self::V0_21_0 => 000_021_000,
+			Self::V0_22_0 => 000_022_000,
+		}
+	}
+
+	pub fn latest_version() -> Self {
+		RuntimeVersion::iter().max().unwrap()
 	}
 }
 

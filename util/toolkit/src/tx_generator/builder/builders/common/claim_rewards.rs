@@ -14,59 +14,60 @@
 use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
-use crate::{
-	builder::{
-		BuildTxs, ClaimMintInfo, DefaultDB, DeserializedTransactionsWithContext, FromContext,
-		LedgerContext, ProofProvider, ProofType, RewardsInfo, SignatureType,
-		TransactionWithContext, Wallet,
-	},
-	serde_def::SourceTransactions,
-	tx_generator::builder::ClaimRewardsArgs,
+use super::ledger_helpers_local::{
+	ClaimMintInfo, DefaultDB, FromContext, LedgerContext, ProofProvider, RewardsInfo,
+	TransactionWithContext, Wallet,
 };
 
+use crate::{
+	serde_def::SourceTransactions,
+	tx_generator::builder::{BuildTxs, ClaimRewardsArgs},
+};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+
 pub struct ClaimRewardsBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	amount: u128,
 }
 
 impl ClaimRewardsBuilder {
-	pub fn new(args: ClaimRewardsArgs) -> Self {
-		Self { funding_seed: args.funding_seed, rng_seed: args.rng_seed, amount: args.amount }
+	pub fn new(
+		args: ClaimRewardsArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		Self {
+			context,
+			prover,
+			funding_seed: args.funding_seed,
+			rng_seed: args.rng_seed,
+			amount: args.amount,
+		}
 	}
 }
 
 #[async_trait]
 impl BuildTxs for ClaimRewardsBuilder {
 	type Error = Infallible;
+
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
+		let context_arc = self.context.clone();
+
 		// - Calculate the funding `WalletSeed` (can be more than one)
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
-		let inputs_wallet_seeds = vec![funding_seed];
-
-		// initialize `LedgerContext` with the wallets
-		let network_id = received_tx.network();
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &inputs_wallet_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context_arc = Arc::new(context);
 
 		// - Transaction info
-		let mut tx_info =
-			ClaimMintInfo::new_from_context(context_arc.clone(), prover_arc.clone(), self.rng_seed);
+		let mut tx_info = ClaimMintInfo::new_from_context(
+			context_arc.clone(),
+			self.prover.clone(),
+			self.rng_seed,
+		);
 
 		// - Mint
 		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };
@@ -81,6 +82,6 @@ impl BuildTxs for ClaimRewardsBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }
