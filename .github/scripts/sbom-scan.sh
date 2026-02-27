@@ -43,7 +43,7 @@ generate_sbom_with_retry() {
   fi
 
   for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
-    if syft "${platform_args[@]}" "${IMAGE}" -o spdx-json="${OUTPUT_FILE}"; then
+    if syft "${platform_args[@]}" "${IMAGE}" --select-catalogers '-file' -o spdx-json="${OUTPUT_FILE}"; then
       echo "Successfully generated SBOM for ${IMAGE}"
       return 0
     fi

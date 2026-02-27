@@ -1,0 +1,29 @@
+name: Test - SBOM Attestation Size Fix
+
+# Temporary workflow to validate that --select-catalogers '-file' fixes the
+# "predicate file exceeds maximum allowed size: 16777216 bytes" error.
+# Tests against a real midnight-node image that previously failed.
+# Delete this file before merging to main.
+
+on:
+  push:
+    branches: ["SRE-1910/github-native-attestations"]
+    paths: [".github/workflows/test-attestation.yml", ".github/scripts/sbom-scan.sh"]
+  workflow_dispatch:
+
+# no top level default permissions for security reasons
+permissions: {}
+
+jobs:
+  test-sbom-attestation:
+    name: Test SBOM scan + attestation (Node)
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/sbom-scan-image.yml
+    with:
+      image: ghcr.io/midnight-ntwrk/midnight-node:0.22.0-dev-f26060e9-amd64
+      sbom-artifact-name: sbom-size-fix-test
+    secrets: inherit
