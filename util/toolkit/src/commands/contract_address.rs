@@ -1,11 +1,7 @@
-use crate::{ProofType, SignatureType};
+use crate::tx_generator::source::GetTxsFromFile;
 use clap::Args;
-use hex::ToHex;
-use midnight_node_ledger_helpers::{
-	DefaultDB, TransactionWithContext, mn_ledger_serialize, serialize, serialize_untagged,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use serde::Serialize;
-use std::fs;
 
 #[derive(Args, Clone)]
 pub struct ContractAddressArgs {
@@ -20,6 +16,18 @@ pub struct ContractAddressArgs {
 	src_file: String,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ContractAddressError {
+	#[error("failed to load tx")]
+	TransactionLoadError(std::io::Error),
+	#[error("ledger de/ser failed")]
+	LedgerSerializeError(std::io::Error),
+	#[error("transaction type is a System Transaction")]
+	TransactionIsSystemTransaction,
+	#[error("no contract deploy found in transaction")]
+	NoContractDeployFound,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContractAddressBoth {
@@ -27,31 +35,43 @@ pub struct ContractAddressBoth {
 	untagged: String,
 }
 
-pub fn execute(
-	args: ContractAddressArgs,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-	let bytes = fs::read(&args.src_file)?;
-	let tx_with_context: TransactionWithContext<SignatureType, ProofType, DefaultDB> =
-		mn_ledger_serialize::tagged_deserialize(bytes.as_slice())?;
+impl ContractAddressBoth {
+	pub fn new(tagged: String, untagged: String) -> Self {
+		Self { tagged, untagged }
+	}
 
-	let (_, deploy) = tx_with_context
-		.tx
-		.as_midnight()
-		.ok_or("not called with a standard midnight transaction")?
-		.deploys()
-		.next()
-		.ok_or("no ContractDeploy found in the transaction")?;
+	pub fn tagged(&self) -> &str {
+		&self.tagged
+	}
 
-	let both = ContractAddressBoth {
-		tagged: serialize(&deploy.address())?.encode_hex(),
-		untagged: serialize_untagged(&deploy.address())?.encode_hex(),
+	pub fn untagged(&self) -> &str {
+		&self.untagged
+	}
+}
+
+pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError> {
+	let tx = GetTxsFromFile::load_single(&args.src_file)
+		.map_err(ContractAddressError::TransactionLoadError)?;
+
+	let RawTransaction::Midnight(tx_bytes) = tx.tx else {
+		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
+
+	// Try ledger_8 first, fall back to ledger_7
+	let both = crate::commands::fork::ledger_8::contract_address::extract_contract_address(
+		tx_bytes.as_slice(),
+	)
+	.or_else(|_| {
+		crate::commands::fork::ledger_7::contract_address::extract_contract_address(
+			tx_bytes.as_slice(),
+		)
+	})?;
 
 	if args.untagged {
 		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
 	}
 
-	if args.tagged { Ok(both.tagged) } else { Ok(both.untagged) }
+	if args.tagged { Ok(both.tagged().to_string()) } else { Ok(both.untagged().to_string()) }
 }
 
 #[cfg(test)]
