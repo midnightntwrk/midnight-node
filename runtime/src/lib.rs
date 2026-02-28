@@ -865,7 +865,7 @@ impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
-	type WeightInfo = ();
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Runtime>;
 }
 
 impl pallet_partner_chains_bridge::Config for Runtime {

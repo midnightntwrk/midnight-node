@@ -546,7 +546,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((T::WeightInfo::process_tokens(MAX_UTXO_COUNT), DispatchClass::Mandatory))]
+		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
 			utxos: Vec<ObservedUtxo>,
@@ -555,7 +555,7 @@ pub mod pallet {
 			ensure_none(origin)?;
 			let utxo_count = utxos.len() as u32;
 			ensure!(
-				utxo_count <= CardanoTxCapacityPerBlock::<T>::get() * UTXO_PER_TX_OVERESTIMATE,
+				utxo_count <= CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE),
 				Error::<T>::TooManyUtxos
 			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
