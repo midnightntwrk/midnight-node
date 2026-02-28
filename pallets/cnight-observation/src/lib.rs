@@ -152,6 +152,8 @@ pub mod pallet {
 		LedgerApiError(LedgerApiError),
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
+		/// Next Cardano position does not advance beyond current position
+		CardanoPositionRegression,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -532,6 +534,16 @@ pub mod pallet {
 			ensure_none(origin)?;
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
+
+			let prev = NextCardanoPosition::<T>::get();
+			ensure!(next_cardano_position >= prev, Error::<T>::CardanoPositionRegression);
+			let jump = next_cardano_position.block_number.saturating_sub(prev.block_number);
+			let window = CardanoBlockWindowSize::<T>::get();
+			if jump > window {
+				log::warn!(
+					"CardanoPosition jump ({jump}) exceeds CardanoBlockWindowSize ({window}); allowing but flagging"
+				);
+			}
 
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 

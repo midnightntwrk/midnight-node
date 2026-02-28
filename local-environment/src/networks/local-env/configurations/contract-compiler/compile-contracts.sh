@@ -138,8 +138,9 @@ echo "=== Contracts Deployment ==="
 bun cli deploy -p kupmios
 bun cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
 
-bun cli register-gov-auth -p kupmios
-bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
+# TODO: uncomment when --use-build flag is added in contracts repo
+# bun cli register-gov-auth -p kupmios --use-build
+# bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
 
 echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
@@ -160,7 +161,7 @@ echo ""
 # Export all contract data for midnight-setup
 echo "=== Contracts Data Exporter ==="
 echo "Saving contracts data for chain initialization (midnight-setup) and manual testing"
-bun cli info --format json > $CONTRACTS_DIR/contracts-info.json
+bun cli info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
 cp $PLUTUS_JSON $AIKEN_TOML ${CONTRACTS_DIR}/contract_blueprint.ts ${CONTRACTS_DIR}/contract_blueprint_default.ts $CONTRACTS_DIR/contracts-info.json $OUTPUT_DIR
 echo "Contract files in ${OUTPUT_DIR}:"
 ls $OUTPUT_DIR
