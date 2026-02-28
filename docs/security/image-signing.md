@@ -21,10 +21,21 @@ GitHub artifact attestations use Sigstore under the hood but are fully managed b
 
 SBOMs are generated using [Syft](https://github.com/anchore/syft) in SPDX-JSON format:
 
-1. **Scan**: Syft analyzes the container image layers
+1. **Scan**: Syft analyzes the container image layers (file cataloger disabled to reduce size)
 2. **Extract**: Package information is extracted from package managers (apt, npm, cargo, etc.)
 3. **Generate**: An SPDX-JSON document is created listing all components
 4. **Attest**: The SBOM is attached to the image as an attestation using `actions/attest-sbom`
+4. **Trim**: SPDX relationships are stripped and JSON is minified to fit under the 16MB `actions/attest-sbom` predicate limit (full SBOM preserved as build artifact)
+5. **Attest**: The trimmed SBOM is attached to the image as an attestation using `actions/attest-sbom`
+
+#### SBOM Size Constraints
+
+GitHub's attestation API enforces a hard 16MB predicate size limit ([actions/attest-sbom#168](https://github.com/actions/attest-sbom/issues/168)). The midnight-node image contains ~2,000 packages, producing SBOMs that exceed this limit. To fit:
+
+- **File cataloger disabled**: `--select-catalogers '-file'` excludes filesystem entries (~22MB to ~19MB)
+- **Relationships stripped**: `jq -c 'del(.relationships)'` removes inter-package dependency edges and minifies JSON (~19MB to ~12MB)
+
+The **full unmodified SBOM** is uploaded as a build artifact for detailed analysis. The **attested SBOM** retains all package identifiers, versions, licenses, and checksums — only relationship edges and JSON whitespace are removed.
 
 ### Vulnerability Scanning
 
@@ -69,7 +80,7 @@ Both architecture variants are individually attested, and the manifest list itse
 
 | Script | Purpose |
 |--------|---------|
-| `.github/scripts/sbom-scan.sh` | SBOM generation and vulnerability scanning with retry logic |
+| `.github/scripts/sbom-scan.sh` | SBOM generation, trimming for attestation, and vulnerability scanning with retry logic |
 
 ### Release Gates
 
