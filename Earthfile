@@ -543,6 +543,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
+    BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
