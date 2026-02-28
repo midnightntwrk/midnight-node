@@ -239,7 +239,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let tx_context = self.tx_context(block_context.clone());
+		let mut ledger_state_guard =
+			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let tx_context = TransactionContext {
+			ref_state: (**ledger_state_guard).clone(),
+			block_context: block_context.clone(),
+			whitelist: None,
+		};
 
 		let strictness: WellFormedStrictness =
 			if block_context.parent_block_hash == Default::default() {
@@ -302,8 +308,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			wallet.update_state_from_offers(&offers);
 		}
 
-		*self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state") =
-			Sp::new(new_ledger_state);
+		*ledger_state_guard = Sp::new(new_ledger_state);
 		(events, cost)
 	}
 
@@ -429,5 +434,60 @@ impl<D: DB + Clone> LedgerContext<D> {
 			block_context,
 			whitelist: None,
 		})
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::sync::{
+		Arc,
+		atomic::{AtomicU64, Ordering},
+	};
+
+	type TestDB = storage::DefaultDB;
+
+	/// Validates that `with_ledger_state` serializes concurrent read-modify-write
+	/// operations on the `ledger_state` mutex — the same mutex that `update_from_tx`
+	/// now holds for its full RMW cycle.
+	///
+	/// The test uses a non-atomic load/yield/store pattern on an external counter
+	/// inside the lock scope. Without mutex serialization, `yield_now()` would widen
+	/// the race window and cause lost updates (threads reading stale values before
+	/// other threads' writes are visible).
+	///
+	/// Covers: PR767-TC-02 (no lost updates), PR767-TC-03 (no deadlock — test completes).
+	#[test]
+	fn concurrent_rmw_via_with_ledger_state_prevents_lost_updates() {
+		let ctx: Arc<LedgerContext<TestDB>> = Arc::new(LedgerContext::new("test-net"));
+		let counter = Arc::new(AtomicU64::new(0));
+		let n_threads = 8u64;
+		let iterations = 100u64;
+
+		let handles: Vec<_> = (0..n_threads)
+			.map(|_| {
+				let ctx: Arc<LedgerContext<TestDB>> = Arc::clone(&ctx);
+				let counter = Arc::clone(&counter);
+				std::thread::spawn(move || {
+					for _ in 0..iterations {
+						ctx.with_ledger_state(|_state| {
+							let current = counter.load(Ordering::Relaxed);
+							std::thread::yield_now();
+							counter.store(current + 1, Ordering::Relaxed);
+						});
+					}
+				})
+			})
+			.collect();
+
+		for h in handles {
+			h.join().expect("thread panicked");
+		}
+
+		assert_eq!(
+			counter.load(Ordering::SeqCst),
+			n_threads * iterations,
+			"Lost updates detected: ledger_state mutex did not serialize concurrent RMW"
+		);
 	}
 }
