@@ -1299,14 +1299,14 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 			.expect("Expected to create inherent call");
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
-		
+
 		// Verify registration succeeded — proves handle_create reached event construction,
-        // not the early "No valid dust registration" bail-out
-        assert_eq!(
-          Mappings::<Test>::get(cardano_addr).len(),
-          1,
-          "Registration must succeed so handle_create reaches event construction"
-  );
+		// not the early "No valid dust registration" bail-out
+		assert_eq!(
+			Mappings::<Test>::get(cardano_addr).len(),
+			1,
+			"Registration must succeed so handle_create reaches event construction"
+		);
 
 		let nonce = BlakeTwo256::hash(
 			&[
