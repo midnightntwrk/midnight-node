@@ -484,6 +484,7 @@ rebuild-genesis-state-perfnet:
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-perfnet
     BUILD +rebuild-genesis-state-govnet
     BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
