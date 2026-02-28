@@ -263,7 +263,7 @@ impl BuildTxs for CustomContractBuilder {
 						let input = EncodedInputInfo {
 							encoded_qualified_info: encoded_input,
 							segment: 0,
-							contract_address: contract_address.clone(),
+							contract_address,
 							chain_zswap_state: chain_zswap_state.clone(),
 						};
 						inputs_info.push(Box::new(input));
