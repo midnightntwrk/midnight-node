@@ -41,7 +41,9 @@ use sp_runtime::{
 pub mod pallet {
 	use super::*;
 	use crate::weights::WeightInfo;
-	use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, storage::with_storage_layer};
+	use frame_support::{
+		dispatch::GetDispatchInfo, pallet_prelude::*, storage::with_storage_layer,
+	};
 	use frame_system::pallet_prelude::*;
 
 	/// The in-code storage version.
@@ -291,10 +293,7 @@ pub mod pallet {
 				});
 				// Event and removal live outside the dispatch layer so they
 				// persist regardless of the dispatch outcome.
-				Self::deposit_event(Event::MotionDispatched {
-					motion_hash,
-					motion_result,
-				});
+				Self::deposit_event(Event::MotionDispatched { motion_hash, motion_result });
 				Self::motion_remove(motion_hash);
 				// Propagate dispatch error after cleanup
 				motion_result?;
