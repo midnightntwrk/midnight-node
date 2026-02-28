@@ -28,7 +28,6 @@ use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
-use sc_consensus_aura::SyncOracle;
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
@@ -53,10 +52,7 @@ use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
 	path::Path,
-	sync::{
-		Arc, Mutex,
-		atomic::{AtomicBool, Ordering},
-	},
+	sync::{Arc, Mutex},
 	time::Duration,
 };
 use time_source::SystemTimeSource;
@@ -265,7 +261,6 @@ pub fn new_partial(
 	epoch_config: MainchainEpochConfig,
 	data_sources: DataSources,
 	storage_config: StorageInit,
-	is_syncing: Arc<AtomicBool>,
 ) -> Result<MidnightService, ServiceError> {
 	let _mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 
@@ -364,7 +359,6 @@ pub fn new_partial(
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
 			Arc::new(Mutex::new(ledger_metrics)),
 			ledger_storage,
-			is_syncing,
 		));
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
@@ -466,16 +460,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
-	// Start assuming we are syncing; a background task will update this once
-	// sync_service reports that major sync is complete.
-	let is_syncing = Arc::new(AtomicBool::new(true));
-	let new_partial_components = new_partial(
-		&config,
-		epoch_config.clone(),
-		data_sources.clone(),
-		storage_config,
-		is_syncing.clone(),
-	)?;
+	let new_partial_components =
+		new_partial(&config, epoch_config.clone(), data_sources.clone(), storage_config)?;
 
 	let sc_service::PartialComponents {
 		client,
@@ -558,25 +544,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			block_relay: None,
 			metrics,
 		})?;
-
-	// Spawn a background task that monitors whether the node is performing a major sync.
-	// Once major sync completes, set is_syncing to false so the ledger switches to
-	// deterministic (BTreeMap) UTXO ordering for new blocks.
-	{
-		let sync_service = sync_service.clone();
-		let is_syncing = is_syncing.clone();
-		task_manager.spawn_handle().spawn("sync-status-monitor", None, async move {
-			loop {
-				tokio::time::sleep(Duration::from_secs(1)).await;
-				let syncing = sync_service.is_major_syncing();
-				is_syncing.store(syncing, Ordering::Relaxed);
-				if !syncing {
-					log::info!(target: "midnight", "Major sync complete, switching to deterministic UTXO ordering");
-					break;
-				}
-			}
-		});
-	}
 
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();
