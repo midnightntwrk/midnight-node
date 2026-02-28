@@ -445,7 +445,7 @@ impl Builder {
 	/// - None (pass-through builders) → defaults to ledger_8
 	pub fn to_versioned_builder(
 		self,
-		fork_ctx: Option<ForkAwareLedgerContext<DefaultDB>>,
+		fork_ctx: Option<ForkAwareLedgerContext>,
 		prover_config: &ProverConfig,
 		_dry_run: bool,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
@@ -460,7 +460,9 @@ impl Builder {
 							);
 						}
 						let prover: Arc<
-							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
+							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+									midnight_node_ledger_helpers::ledger_7::DefaultDB,
+								>,
 						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
 						self_clone.to_builder_v7(Arc::new(context), prover)
 					},
@@ -534,8 +536,16 @@ impl Builder {
 
 	fn to_builder_v7(
 		self,
-		context: Arc<midnight_node_ledger_helpers::ledger_7::context::LedgerContext<DefaultDB>>,
-		prover: Arc<dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>>,
+		context: Arc<
+			midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+				midnight_node_ledger_helpers::ledger_7::DefaultDB,
+			>,
+		>,
+		prover: Arc<
+			dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+					midnight_node_ledger_helpers::ledger_7::DefaultDB,
+				>,
+		>,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
@@ -782,7 +792,7 @@ pub struct ContextNotLedger8Error(pub LedgerVersion);
 pub fn build_fork_aware_context_raw(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> ForkAwareLedgerContext<DefaultDB> {
+) -> ForkAwareLedgerContext {
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks

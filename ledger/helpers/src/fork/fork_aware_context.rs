@@ -15,28 +15,16 @@
 
 use crate::fork::fork_7_to_8::fork_context_7_to_8;
 use crate::fork::raw_block_data::{LedgerVersion, RawBlockData, RawTransaction};
-use crate::ledger_7::DB;
 
-pub enum ForkAwareLedgerContext<D: DB + Clone> {
-	Ledger7(crate::ledger_7::context::LedgerContext<D>),
-	Ledger8(crate::ledger_8::context::LedgerContext<D>),
+type Db7 = crate::ledger_7::DefaultDB;
+type Db8 = crate::ledger_8::DefaultDB;
+
+pub enum ForkAwareLedgerContext {
+	Ledger7(crate::ledger_7::context::LedgerContext<Db7>),
+	Ledger8(crate::ledger_8::context::LedgerContext<Db8>),
 }
 
-impl<D: DB + Clone> ForkAwareLedgerContext<D>
-where
-	crate::ledger_7::Transaction<
-		crate::ledger_7::Signature,
-		crate::ledger_7::ProofMarker,
-		crate::ledger_7::PureGeneratorPedersen,
-		D,
-	>: crate::ledger_7::Tagged,
-	crate::ledger_8::Transaction<
-		crate::ledger_8::Signature,
-		crate::ledger_8::ProofMarker,
-		crate::ledger_8::PureGeneratorPedersen,
-		D,
-	>: crate::ledger_8::Tagged,
-{
+impl ForkAwareLedgerContext {
 	/// Create a new context at the given ledger version.
 	pub fn new(version: LedgerVersion, network_id: impl Into<String>) -> Self {
 		let network_id = network_id.into();
@@ -123,8 +111,8 @@ where
 	/// appropriate closure.
 	pub fn dispatch<T>(
 		self,
-		f7: impl FnOnce(crate::ledger_7::context::LedgerContext<D>) -> T,
-		f8: impl FnOnce(crate::ledger_8::context::LedgerContext<D>) -> T,
+		f7: impl FnOnce(crate::ledger_7::context::LedgerContext<Db7>) -> T,
+		f8: impl FnOnce(crate::ledger_8::context::LedgerContext<Db8>) -> T,
 	) -> T {
 		match self {
 			Self::Ledger7(ctx) => f7(ctx),
@@ -135,7 +123,7 @@ where
 	/// Extract the inner Ledger7 context, consuming self.
 	///
 	/// Returns `None` if the context has already forked to Ledger8.
-	pub fn into_ledger7(self) -> Option<crate::ledger_7::context::LedgerContext<D>> {
+	pub fn into_ledger7(self) -> Option<crate::ledger_7::context::LedgerContext<Db7>> {
 		match self {
 			Self::Ledger7(ctx) => Some(ctx),
 			Self::Ledger8(_) => None,
@@ -145,7 +133,7 @@ where
 	/// Extract the inner Ledger8 context, consuming self.
 	///
 	/// Returns `None` if the context is still at Ledger7.
-	pub fn into_ledger8(self) -> Option<crate::ledger_8::context::LedgerContext<D>> {
+	pub fn into_ledger8(self) -> Option<crate::ledger_8::context::LedgerContext<Db8>> {
 		match self {
 			Self::Ledger8(ctx) => Some(ctx),
 			Self::Ledger7(_) => None,
@@ -154,36 +142,25 @@ where
 }
 
 /// Deserialize raw transactions and update a Ledger7 context.
-fn update_context_7<D: DB + Clone>(
-	ctx: &crate::ledger_7::context::LedgerContext<D>,
-	block: &RawBlockData,
-) where
-	crate::ledger_7::Transaction<
-		crate::ledger_7::Signature,
-		crate::ledger_7::ProofMarker,
-		crate::ledger_7::PureGeneratorPedersen,
-		D,
-	>: crate::ledger_7::Tagged,
-{
+fn update_context_7(ctx: &crate::ledger_7::context::LedgerContext<Db7>, block: &RawBlockData) {
 	use crate::ledger_7::{
 		HashOutput, SerdeTransaction, SystemTransaction, Timestamp,
 		midnight_serialize::tagged_deserialize,
 	};
 
-	type MnTx7<D> = crate::ledger_7::Transaction<
+	type MnTx7 = crate::ledger_7::Transaction<
 		crate::ledger_7::Signature,
 		crate::ledger_7::ProofMarker,
 		crate::ledger_7::PureGeneratorPedersen,
-		D,
+		Db7,
 	>;
-	type SerdeTx7<D> =
-		SerdeTransaction<crate::ledger_7::Signature, crate::ledger_7::ProofMarker, D>;
+	type SerdeTx7 = SerdeTransaction<crate::ledger_7::Signature, crate::ledger_7::ProofMarker, Db7>;
 
-	let mut transactions: Vec<SerdeTx7<D>> = Vec::new();
+	let mut transactions: Vec<SerdeTx7> = Vec::new();
 	for raw_tx in &block.transactions {
 		match raw_tx {
 			RawTransaction::Midnight(bytes) => {
-				let tx: MnTx7<D> = tagged_deserialize(&mut bytes.as_slice())
+				let tx: MnTx7 = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 7 midnight transaction");
 				transactions.push(SerdeTx7::Midnight(tx));
 			},
@@ -210,36 +187,25 @@ fn update_context_7<D: DB + Clone>(
 }
 
 /// Deserialize raw transactions and update a Ledger8 context.
-fn update_context_8<D: DB + Clone>(
-	ctx: &crate::ledger_8::context::LedgerContext<D>,
-	block: &RawBlockData,
-) where
-	crate::ledger_8::Transaction<
-		crate::ledger_8::Signature,
-		crate::ledger_8::ProofMarker,
-		crate::ledger_8::PureGeneratorPedersen,
-		D,
-	>: crate::ledger_8::Tagged,
-{
+fn update_context_8(ctx: &crate::ledger_8::context::LedgerContext<Db8>, block: &RawBlockData) {
 	use crate::ledger_8::{
 		HashOutput, SerdeTransaction, SystemTransaction, Timestamp,
 		midnight_serialize::tagged_deserialize,
 	};
 
-	type MnTx8<D> = crate::ledger_8::Transaction<
+	type MnTx8 = crate::ledger_8::Transaction<
 		crate::ledger_8::Signature,
 		crate::ledger_8::ProofMarker,
 		crate::ledger_8::PureGeneratorPedersen,
-		D,
+		Db8,
 	>;
-	type SerdeTx8<D> =
-		SerdeTransaction<crate::ledger_8::Signature, crate::ledger_8::ProofMarker, D>;
+	type SerdeTx8 = SerdeTransaction<crate::ledger_8::Signature, crate::ledger_8::ProofMarker, Db8>;
 
-	let mut transactions: Vec<SerdeTx8<D>> = Vec::new();
+	let mut transactions: Vec<SerdeTx8> = Vec::new();
 	for raw_tx in &block.transactions {
 		match raw_tx {
 			RawTransaction::Midnight(bytes) => {
-				let tx: MnTx8<D> = tagged_deserialize(&mut bytes.as_slice())
+				let tx: MnTx8 = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 8 midnight transaction");
 				transactions.push(SerdeTx8::Midnight(tx));
 			},
