@@ -15,13 +15,13 @@ use std::{any::type_name, cmp::Ordering, path::Path, sync::Arc};
 
 use async_trait::async_trait;
 use core::fmt::Debug;
-use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
 use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
 use tokio::sync::RwLock;
 
-use super::{BlockData, FetchStorage, WalletStateCache, WalletStateCaching};
+use super::{FetchStorage, WalletStateCache, WalletStateCaching};
 use crate::fetcher::wallet_state_cache::{WalletCacheKey, compress, decompress};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,14 +35,14 @@ pub struct BlockKey {
 /// Data is serialized as BSON. Uses `RwLock` for concurrent read access.
 /// Wallet state is compressed with zstd for efficient storage.
 #[derive(Clone)]
-pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
+pub struct RedbBackend {
 	pub db: Arc<RwLock<Database>>,
-	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<S, P, D>>>,
+	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<RawBlockData>>,
 	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
 	pub wallet_state_table: TableDefinition<'static, Serde<WalletCacheKey>, &'static [u8]>,
 }
 
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
+impl RedbBackend {
 	/// Creates or opens a database at the given path. Will fail if open in another process.
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		let p = path.as_ref();
@@ -54,7 +54,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbB
 			db: Arc::new(RwLock::new(
 				Database::create(path).expect("failed to create database - is it already open?"),
 			)),
-			block_data_table: TableDefinition::new("block_data"),
+			block_data_table: TableDefinition::new("raw_block_data_v1"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
 			wallet_state_table: TableDefinition::new("wallet_state"),
 		}
@@ -62,14 +62,8 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbB
 }
 
 #[async_trait]
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> FetchStorage<S, P, D>
-	for RedbBackend<S, P, D>
-{
-	async fn get_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-	) -> Option<BlockData<S, P, D>> {
+impl FetchStorage for RedbBackend {
+	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else { return None };
 		table
@@ -81,7 +75,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<S, P, D>>> {
+	) -> Vec<Option<RawBlockData>> {
 		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else {
 			return std::iter::repeat_n(None, range.count()).collect();
@@ -97,12 +91,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 			.collect()
 	}
 
-	async fn insert_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-		block: BlockData<S, P, D>,
-	) {
+	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: RawBlockData) {
 		// Can only open the table as writable from one thread
 		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
@@ -118,7 +107,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
+		range: impl Iterator<Item = (u64, RawBlockData)> + Send,
 	) {
 		// Can only open the table as writable from one thread
 		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
@@ -241,9 +230,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 	}
 
 	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		// For efficiency, we could store block_height separately, but for now
-		// we just load the full cache and extract the height
-		<Self as FetchStorage<S, P, D>>::get_wallet_state(self, chain_id, wallet_id)
+		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id)
 			.await
 			.map(|c| c.block_height)
 	}
@@ -270,23 +257,21 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 
 // Implement WalletStateCaching for RedbBackend (delegates to FetchStorage impl)
 #[async_trait]
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> WalletStateCaching
-	for RedbBackend<S, P, D>
-{
+impl WalletStateCaching for RedbBackend {
 	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
-		<Self as FetchStorage<S, P, D>>::get_wallet_state(self, chain_id, wallet_id).await
+		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id).await
 	}
 
 	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
-		<Self as FetchStorage<S, P, D>>::set_wallet_state(self, chain_id, wallet_id, cache).await
+		<Self as FetchStorage>::set_wallet_state(self, chain_id, wallet_id, cache).await
 	}
 
 	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		<Self as FetchStorage<S, P, D>>::get_cached_block_height(self, chain_id, wallet_id).await
+		<Self as FetchStorage>::get_cached_block_height(self, chain_id, wallet_id).await
 	}
 
 	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
-		<Self as FetchStorage<S, P, D>>::delete_wallet_state(self, chain_id, wallet_id).await
+		<Self as FetchStorage>::delete_wallet_state(self, chain_id, wallet_id).await
 	}
 }
 
@@ -345,11 +330,7 @@ where
 mod tests {
 	use super::*;
 	use crate::fetcher::wallet_state_cache::{SerializableBlockContext, WalletSnapshot};
-	use crate::{ProofType, SignatureType};
-	use midnight_node_ledger_helpers::DefaultDB;
 	use tempfile::tempdir;
-
-	type TestRedbBackend = RedbBackend<SignatureType, ProofType, DefaultDB>;
 
 	fn create_test_cache(block_height: u64) -> WalletStateCache {
 		WalletStateCache {
@@ -377,7 +358,7 @@ mod tests {
 	async fn test_redb_wallet_state_roundtrip() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let wallet_id = H256::from([2u8; 32]);
@@ -407,7 +388,7 @@ mod tests {
 	async fn test_redb_wallet_state_get_cached_height() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let wallet_id = H256::from([2u8; 32]);
@@ -433,7 +414,7 @@ mod tests {
 	async fn test_redb_wallet_state_delete() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let wallet_id = H256::from([2u8; 32]);
@@ -462,7 +443,7 @@ mod tests {
 	async fn test_redb_wallet_state_update() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let wallet_id = H256::from([2u8; 32]);
@@ -488,7 +469,7 @@ mod tests {
 	async fn test_redb_wallet_state_multiple_wallets() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let wallet_id_1 = H256::from([2u8; 32]);
@@ -532,7 +513,7 @@ mod tests {
 	async fn test_redb_concurrent_access() {
 		let dir = tempdir().unwrap();
 		let db_path = dir.path().join("test.db");
-		let backend: TestRedbBackend = RedbBackend::new(&db_path);
+		let backend = RedbBackend::new(&db_path);
 
 		let chain_id = H256::from([1u8; 32]);
 		let num_wallets = 10;

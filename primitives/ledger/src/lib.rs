@@ -17,10 +17,7 @@ use prometheus_endpoint::{
 };
 use std::{
 	path::PathBuf,
-	sync::{
-		Arc, Mutex,
-		atomic::{AtomicBool, Ordering},
-	},
+	sync::{Arc, Mutex},
 };
 
 const LOG_TARGET: &str = "ledger::primitives";
@@ -297,23 +294,5 @@ sp_externalities::decl_extension! {
 impl LedgerStorageExt {
 	pub fn new(storage: LedgerStorage) -> Self {
 		LedgerStorageExt(storage)
-	}
-}
-
-sp_externalities::decl_extension! {
-	/// Extension that indicates whether the node is currently performing a major sync.
-	/// When syncing, historical blocks must use HashMap ordering for UTXO iteration
-	/// to match the original state roots. When not syncing, BTreeMap ordering is used
-	/// for deterministic iteration.
-	pub struct SyncStatusExt(Arc<AtomicBool>);
-}
-
-impl SyncStatusExt {
-	pub fn new(is_syncing: Arc<AtomicBool>) -> Self {
-		SyncStatusExt(is_syncing)
-	}
-
-	pub fn is_syncing(&self) -> bool {
-		self.0.load(Ordering::Relaxed)
 	}
 }
