@@ -35,12 +35,6 @@ pub enum WalletSeed {
 	Long([u8; 64]),
 }
 
-impl Default for WalletSeed {
-	fn default() -> Self {
-		Self::Medium([0; 32])
-	}
-}
-
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum WalletSeedError {
 	#[error("{0}")]
