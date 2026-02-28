@@ -1,0 +1,17 @@
+{
+    "bootnodes": [
+      "/dns/localhost/tcp/30333/p2p/12D3KooWHJ7NUPEGCMFoAG56yKG2kNK5eDNuZX6kMX6J7G9f9tir"
+    ],
+    "chain_parameters": {
+      "genesis_utxo": "46cf713fcba7b4c4597978d94c4f4a13f5db2b6dfeda8a03e48b761b54106bf7#1"
+    },
+    "cardano": {
+        "security_parameter": 432,
+        "active_slots_coeff": 0.05,
+        "first_epoch_number": 0,
+        "first_slot_number": 0,
+        "epoch_duration_millis": 86400000,
+        "first_epoch_timestamp_millis": 1666656000000,
+        "slot_duration_millis": 1000
+    }
+  }
