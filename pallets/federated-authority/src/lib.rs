@@ -34,14 +34,16 @@ use frame_support::{
 	dispatch::{Pays, PostDispatchInfo},
 };
 use sp_runtime::{
-	DispatchError, DispatchErrorWithPostInfo, Saturating,
+	DispatchErrorWithPostInfo, Saturating,
 	traits::{Dispatchable, Hash},
 };
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
 	use crate::weights::WeightInfo;
-	use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*};
+	use frame_support::{
+		dispatch::GetDispatchInfo, pallet_prelude::*, storage::with_storage_layer,
+	};
 	use frame_system::pallet_prelude::*;
 
 	/// The in-code storage version.
@@ -279,12 +281,22 @@ pub mod pallet {
 			let has_ended = Self::has_ended(&motion);
 
 			if Self::is_motion_approved(total_approvals) {
-				// Dispatch motion
-				Self::motion_dispatch(motion_hash)?;
-				// Get dispatch weight
-				let dispatch_weight = Self::get_dispatch_weight(motion_hash)?;
-				// Remove after dispatch
+				let dispatch_weight = motion.call.get_dispatch_info().call_weight;
+				// Isolate the dispatch in its own storage layer so a failed
+				// dispatch rolls back only its own state mutations.
+				let motion_result = with_storage_layer(|| {
+					motion
+						.call
+						.dispatch(frame_system::RawOrigin::Root.into())
+						.map(|_| ())
+						.map_err(|e| e.error)
+				});
+				// Event and removal live outside the dispatch layer so they
+				// persist regardless of the dispatch outcome.
+				Self::deposit_event(Event::MotionDispatched { motion_hash, motion_result });
 				Self::motion_remove(motion_hash);
+				// Propagate dispatch error after cleanup
+				motion_result?;
 
 				// Return actual weight for approved motion
 				Ok(PostDispatchInfo {
@@ -321,14 +333,6 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
-		fn motion_dispatch(motion_hash: T::Hash) -> DispatchResult {
-			let motion = Motions::<T>::get(motion_hash).ok_or(Error::<T>::MotionNotFound)?;
-			let res = motion.call.dispatch(frame_system::RawOrigin::Root.into());
-			let motion_result = res.map(|_| ()).map_err(|e| e.error);
-			Self::deposit_event(Event::MotionDispatched { motion_hash, motion_result });
-			motion_result
-		}
-
 		fn motion_remove(motion_hash: T::Hash) {
 			Motions::<T>::remove(motion_hash);
 			Self::deposit_event(Event::MotionRemoved { motion_hash });
@@ -348,11 +352,6 @@ pub mod pallet {
 		/// Returns `true` if the motion has finished (expired).
 		fn has_ended(motion: &MotionInfo<T>) -> bool {
 			Self::block_number() >= motion.ends_block
-		}
-
-		fn get_dispatch_weight(motion_hash: T::Hash) -> Result<Weight, DispatchError> {
-			let motion = Motions::<T>::get(motion_hash).ok_or(Error::<T>::MotionNotFound)?;
-			Ok(motion.call.get_dispatch_info().call_weight)
 		}
 
 		#[cfg(feature = "runtime-benchmarks")]

@@ -203,12 +203,19 @@ pub mod pallet {
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
-			let (mut council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
-				council_authorities.clone().into_iter().unzip();
-			let (mut technical_committee_members, technical_committee_mainchain_members): (
+			// Sort pairs by AccountId before unzipping to preserve the association
+			// between AccountId and MainchainMember
+			let mut council_pairs: Vec<_> = council_authorities.clone().into_inner();
+			council_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+			let (council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
+				council_pairs.into_iter().unzip();
+
+			let mut tc_pairs: Vec<_> = technical_committee_authorities.clone().into_inner();
+			tc_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+			let (technical_committee_members, technical_committee_mainchain_members): (
 				Vec<_>,
 				Vec<_>,
-			) = technical_committee_authorities.clone().into_iter().unzip();
+			) = tc_pairs.into_iter().unzip();
 
 			let council_members_len = council_members.len() as u32;
 			let technical_committee_members_len = technical_committee_members.len() as u32;
@@ -276,8 +283,8 @@ pub mod pallet {
 			// ========== STATE CHANGE PHASE ==========
 			// All validations passed, now apply state changes
 
-			council_members.sort();
-			technical_committee_members.sort();
+			// council_members and technical_committee_members are already sorted
+			// from the pre-unzip sort above
 
 			let mut actual_weight = Weight::zero();
 
