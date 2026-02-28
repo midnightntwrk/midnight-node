@@ -1,21 +1,21 @@
+use super::build_txs_ext::BuildTxsExt;
+use super::ledger_helpers_local::{
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
+	ClaimedUnshieldedSpendsKey, ContractAction, DefaultDB, IntentCustom, IntentInfo, LedgerContext,
+	OfferInfo, ProofPreimageMarker, ProofProvider, PublicAddress, ShieldedWallet, StdRng,
+	TokenType, TransactionWithContext, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
+};
 use crate::{
-	builder::{
-		BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildTxs, BuildTxsExt,
-		CustomContractArgs, DefaultDB, DeserializedTransactionsWithContext, IntentCustom,
-		OfferInfo, ProofProvider, ProofType, SignatureType, TransactionWithContext, Wallet,
-		WalletSeed,
-	},
 	serde_def::SourceTransactions,
 	toolkit_js::{
 		EncodedInputInfo, EncodedOutputInfo, EncodedTransientInfo, EncodedZswapLocalState,
 	},
+	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
-	BuildUtxoOutput, BuildUtxoSpend, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction,
-	IntentInfo, ProofPreimageMarker, PublicAddress, ShieldedWallet, StdRng, TokenType,
-	UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, WalletAddress,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use midnight_node_ledger_helpers::{BuildTransient, CoinInfo};
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
@@ -38,6 +38,8 @@ pub enum CustomContractBuilderError {
 }
 
 pub struct CustomContractBuilder {
+	context: Arc<LedgerContext<DefaultDB>>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	artifact_dirs: Vec<String>,
@@ -48,7 +50,11 @@ pub struct CustomContractBuilder {
 }
 
 impl CustomContractBuilder {
-	pub fn new(args: CustomContractArgs) -> Self {
+	pub fn new(
+		args: CustomContractArgs,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
 		let CustomContractArgs {
 			funding_seed,
 			rng_seed,
@@ -59,6 +65,8 @@ impl CustomContractBuilder {
 			shielded_destinations,
 		} = args;
 		Self {
+			context,
+			prover,
 			funding_seed,
 			rng_seed,
 			artifact_dirs: compiled_contract_dirs,
@@ -77,6 +85,14 @@ impl BuildTxsExt for CustomContractBuilder {
 
 	fn rng_seed(&self) -> Option<[u8; 32]> {
 		self.rng_seed
+	}
+
+	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+		&self.context
+	}
+
+	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>> {
+		&self.prover
 	}
 }
 
@@ -127,18 +143,16 @@ impl BuildTxs for CustomContractBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
 		println!("Building Txs for CustomContract");
+
 		// - LedgerContext and TransactionInfo
-		let (context, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+		let (context, mut tx_info) = self.context_and_tx_info();
 
 		let funding_utxos = context.with_ledger_state(|state| {
 			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
 		});
-		dbg!(&funding_utxos);
-		dbg!(&self.utxo_inputs);
 
 		let mut input_utxos = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
 		for input_utxo in &self.utxo_inputs {
@@ -281,6 +295,6 @@ impl BuildTxs for CustomContractBuilder {
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
-		Ok(DeserializedTransactionsWithContext { initial_tx: tx_with_context, batches: vec![] })
+		Ok(super::tx_serialization::build_single(tx_with_context))
 	}
 }

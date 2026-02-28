@@ -14,19 +14,13 @@
 mod common;
 
 use common::test_image;
-use midnight_node_ledger_helpers::DefaultDB;
-use midnight_node_toolkit::{
-	ProofType, SignatureType,
-	fetcher::{
-		fetch_storage::{WalletStateCaching, postgres_backend::PostgresBackend},
-		wallet_state_cache::{SerializableBlockContext, WalletSnapshot, WalletStateCache},
-	},
+use midnight_node_toolkit::fetcher::{
+	fetch_storage::{WalletStateCaching, postgres_backend::PostgresBackend},
+	wallet_state_cache::{SerializableBlockContext, WalletSnapshot, WalletStateCache},
 };
 use subxt::utils::H256;
 use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tokio::sync::OnceCell;
-
-type TestPostgresBackend = PostgresBackend<SignatureType, ProofType, DefaultDB>;
 
 struct SharedPostgres {
 	_container: testcontainers::ContainerAsync<GenericImage>,
@@ -85,7 +79,7 @@ fn create_test_cache(block_height: u64, wallet_id: H256) -> WalletStateCache {
 
 #[tokio::test]
 async fn test_postgres_wallet_state_roundtrip() {
-	let backend: TestPostgresBackend = PostgresBackend::new(postgres_url().await).await;
+	let backend = PostgresBackend::new(postgres_url().await).await;
 
 	let chain_id = H256::from([100u8; 32]);
 	let wallet_id = H256::from([2u8; 32]);
@@ -116,7 +110,7 @@ async fn test_postgres_wallet_state_roundtrip() {
 
 #[tokio::test]
 async fn test_postgres_evict_stale_entries() {
-	let backend: TestPostgresBackend = PostgresBackend::new(postgres_url().await).await;
+	let backend = PostgresBackend::new(postgres_url().await).await;
 
 	let chain_id = H256::from([101u8; 32]);
 	let wallet_id = H256::from([2u8; 32]);

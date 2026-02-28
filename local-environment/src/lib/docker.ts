@@ -53,7 +53,7 @@ export function stopDockerCompose(options: DockerComposeOptions) {
 }
 
 export function runDockerCompose(options: DockerComposeOptions) {
-  const args = ["-f", options.composeFile, "up"];
+  const args = ["-f", options.composeFile, "up", "--build"];
   if (options.detach) {
     args.push("--detach");
   }

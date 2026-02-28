@@ -12,24 +12,20 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{
-	BatchesBuilder, ClaimRewardsBuilder, ContractCallBuilder, ContractDeployBuilder,
-	ContractMaintenanceBuilder, CustomContractBuilder, DoNothingBuilder, ReplaceInitialTxBuilder,
-	single_tx::SingleTxBuilder,
-};
+use builders::{DoNothingBuilder, ReplaceInitialTxBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
+use midnight_node_ledger_helpers::fork::{
+	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
+};
 use midnight_node_ledger_helpers::*;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-	ProofType, SignatureType, cli_parsers as cli,
+	cli_parsers as cli,
 	fetcher::{fetch_storage::WalletStateCaching, wallet_state_cache},
-	serde_def::{
-		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
-		SourceTransactions,
-	},
-	tx_generator::builder::builders::{DeregisterDustAddressBuilder, RegisterDustAddressBuilder},
+	serde_def::SourceTransactions,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use subxt::utils::H256;
 
 pub mod builders;
@@ -323,6 +319,32 @@ pub enum Builder {
 	Migrate,
 }
 
+/// Configuration for how proofs should be generated.
+#[derive(Clone, Debug)]
+pub enum ProverConfig {
+	Local,
+	Remote(String),
+}
+
+/// Error when constructing a versioned builder.
+#[derive(Debug, thiserror::Error)]
+pub enum BuilderConstructionError {
+	#[error("remote prover is not supported for ledger 7")]
+	RemoteProverNotSupportedForLedger7,
+	#[error("{0} builder is not supported for ledger 7")]
+	NotSupportedForLedger7(&'static str),
+	#[error("chain has not reached any known ledger version")]
+	NoContext,
+	#[error("internal error: version mismatch in fork context")]
+	VersionMismatch,
+}
+
+impl From<BuilderConstructionError> for DynamicError {
+	fn from(e: BuilderConstructionError) -> Self {
+		Self { error: Box::new(e) }
+	}
+}
+
 pub struct DynamicTransactionBuilder<T: BuildTxs + Send + Sync> {
 	builder: T,
 }
@@ -353,47 +375,220 @@ impl std::fmt::Display for DynamicError {
 	}
 }
 
+impl From<ContextNotLedger8Error> for DynamicError {
+	fn from(e: ContextNotLedger8Error) -> Self {
+		Self { error: Box::new(e) }
+	}
+}
+
 #[async_trait]
 impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	type Error = DynamicError;
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let x = self.builder.build_txs_from(received_tx, prover_arc).await;
-
-		x.map_err(|e| DynamicError { error: Box::new(e) })
+		received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
+		self.builder
+			.build_txs_from(received_tx)
+			.await
+			.map_err(|e| DynamicError { error: Box::new(e) })
 	}
 }
 
 impl Builder {
-	pub fn to_builder(self, dry_run: bool) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	/// Extract wallet seeds needed by this builder configuration, without constructing
+	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
+	pub fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+		match self {
+			Builder::Batches(args) => {
+				compute_batches_seeds(&args.funding_seed, args.num_txs_per_batch, args.num_batches)
+			},
+			Builder::ContractSimple(call) => {
+				let seed_str = match call {
+					ContractCall::Deploy(args) => &args.funding_seed,
+					ContractCall::Call(args) => &args.funding_seed,
+					ContractCall::Maintenance(args) => &args.funding_seed,
+				};
+				vec![Wallet::<DefaultDB>::wallet_seed_decode(seed_str)]
+			},
+			Builder::ContractCustom(args) => {
+				vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)]
+			},
+			Builder::ClaimRewards(args) => {
+				vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)]
+			},
+			Builder::SingleTx(args) => {
+				let mut seeds = vec![args.source_seed];
+				seeds.extend(args.funding_seed.iter());
+				seeds
+			},
+			Builder::RegisterDustAddress(args) => {
+				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
+				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
+				vec![seed, funding_seed]
+			},
+			Builder::DeregisterDustAddress(args) => {
+				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
+				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
+				vec![seed, funding_seed]
+			},
+			Builder::Send | Builder::Migrate => vec![],
+		}
+	}
+
+	/// Construct a versioned builder for the appropriate ledger version.
+	///
+	/// Dispatches on `fork_ctx.version()`:
+	/// - Ledger8 → builds with ledger_8 types
+	/// - Ledger7 → builds with ledger_7 types (errors if remote prover requested)
+	/// - None (pass-through builders) → defaults to ledger_8
+	pub fn to_versioned_builder(
+		self,
+		fork_ctx: Option<ForkAwareLedgerContext<DefaultDB>>,
+		prover_config: &ProverConfig,
+		_dry_run: bool,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		match fork_ctx {
+			Some(ctx) => {
+				let self_clone = self.clone();
+				ctx.dispatch(
+					|context| {
+						if matches!(prover_config, ProverConfig::Remote(_)) {
+							return Err(
+								BuilderConstructionError::RemoteProverNotSupportedForLedger7,
+							);
+						}
+						let prover: Arc<
+							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
+						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
+						self_clone.to_builder_v7(Arc::new(context), prover)
+					},
+					|context| {
+						let prover = Self::make_prover(prover_config);
+						Ok(self.to_builder_v8(Arc::new(context), prover))
+					},
+				)
+			},
+			None => {
+				// Pass-through builders (Send, Migrate) don't need context
+				Ok(self.to_builder_passthrough())
+			},
+		}
+	}
+
+	fn make_prover(config: &ProverConfig) -> Arc<dyn ProofProvider<DefaultDB>> {
+		match config {
+			ProverConfig::Local => Arc::new(LocalProofServer::new()),
+			ProverConfig::Remote(url) => {
+				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
+			},
+		}
+	}
+
+	fn to_builder_v8(
+		self,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Box<dyn BuildTxs<Error = DynamicError>> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
-		if dry_run {
-			println!("Dry-run: Builder type: {:?}", &self);
+		use builders::ledger_8 as v8;
+
+		match self {
+			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v8::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v8::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v8::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(args) => {
+				constr(v8::CustomContractBuilder::new(args, context, prover))
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v8::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v8::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v8::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(v8::DoNothingBuilder::new()),
+			Builder::Migrate => constr(v8::ReplaceInitialTxBuilder::new()),
+		}
+	}
+
+	fn to_builder_v7(
+		self,
+		context: Arc<midnight_node_ledger_helpers::ledger_7::context::LedgerContext<DefaultDB>>,
+		prover: Arc<dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>>,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
+		}
+
+		use builders::ledger_7 as v7;
+
+		Ok(match self {
+			Builder::Batches(args) => constr(v7::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v7::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v7::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v7::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(_) => {
+				return Err(BuilderConstructionError::NotSupportedForLedger7("contract-custom"));
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v7::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v7::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v7::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(DoNothingBuilder::new()),
+			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
+		})
+	}
+
+	fn to_builder_passthrough(self) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
 		}
 
 		match self {
-			Builder::Batches(args) => constr(BatchesBuilder::new(args)),
-			Builder::ContractSimple(call) => match call {
-				ContractCall::Deploy(args) => constr(ContractDeployBuilder::new(args)),
-				ContractCall::Call(args) => constr(ContractCallBuilder::new(args)),
-				ContractCall::Maintenance(args) => constr(ContractMaintenanceBuilder::new(args)),
-			},
-			Builder::ContractCustom(args) => constr(CustomContractBuilder::new(args)),
-			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
-			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
-			Builder::RegisterDustAddress(args) => constr(RegisterDustAddressBuilder::new(args)),
-			Builder::DeregisterDustAddress(args) => constr(DeregisterDustAddressBuilder::new(args)),
 			Builder::Send => constr(DoNothingBuilder::new()),
 			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
+			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
 }
@@ -401,55 +596,13 @@ impl Builder {
 #[async_trait]
 pub trait BuildTxs {
 	type Error: std::error::Error + Send + Sync + 'static;
+
+	/// Build transactions from source data.
+	/// Context and prover are stored in the builder itself.
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
-}
-
-/// An extension to help build transactions
-pub trait BuildTxsExt {
-	fn funding_seed(&self) -> WalletSeed;
-
-	fn rng_seed(&self) -> Option<[u8; 32]>;
-
-	/// Returns a tuple of an Arc<LedgerContext> and the StandardTransactionInfo
-	fn context_and_tx_info(
-		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>) {
-		// - Calculate the funding `WalletSeed` (can be more than one)
-		let input_wallets_seeds = vec![self.funding_seed()];
-
-		// Get the network id from the initial TX
-		let network_id = received_tx.network();
-
-		// initialize `LedgerContext` with the wallets
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &input_wallets_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(
-				&block.transactions,
-				&block.context,
-				block.state_root.as_ref(),
-				block.state.as_ref(),
-			);
-		}
-
-		let context_arc = Arc::new(context);
-
-		// - Transaction info
-		let tx_info = StandardTrasactionInfo::new_from_context(
-			context_arc.clone(),
-			prover_arc.clone(),
-			self.rng_seed(),
-		);
-
-		(context_arc, tx_info)
-	}
+		received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error>;
 }
 
 /// Build context with optional wallet state caching.
@@ -474,44 +627,80 @@ pub trait BuildTxsExt {
 /// how many blocks were skipped due to cache (0 if no cache hit).
 pub async fn build_context_with_cache<C: WalletStateCaching>(
 	wallet_seeds: Vec<WalletSeed>,
-	received_tx: SourceTransactions<SignatureType, ProofType>,
+	received_tx: SourceTransactions,
 	prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
 	rng_seed: Option<[u8; 32]>,
 	chain_id: H256,
 	cache_storage: Option<&C>,
-) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64) {
-	let network_id = received_tx.network().to_string();
+) -> Result<
+	(Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64),
+	ContextNotLedger8Error,
+> {
 	let total_blocks = received_tx.blocks.len() as u64;
+	let network_id = &received_tx.network_id;
 
 	// Compute wallet ID for cache lookup
-	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
+	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, network_id);
 
 	// Try to restore from cache if storage is provided
-	let (context, start_block) = if let Some(storage) = cache_storage {
+	let (mut fork_ctx, start_block) = if let Some(storage) = cache_storage {
 		if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
 			match wallet_state_cache::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
 				Ok((ctx, height)) => {
 					log::info!("Restored wallet state from cache at block {}", height);
-					(ctx, height + 1)
+					(ForkAwareLedgerContext::Ledger8(ctx), height + 1)
 				},
 				Err(e) => {
 					log::warn!("Failed to restore from cache: {}, starting fresh", e);
-					let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-					(ctx, 0u64)
+					let initial_version = received_tx
+						.blocks
+						.first()
+						.map(|b| b.ledger_version())
+						.unwrap_or(LedgerVersion::Ledger8);
+					(
+						ForkAwareLedgerContext::new_from_wallet_seeds(
+							initial_version,
+							network_id,
+							&wallet_seeds,
+						),
+						0u64,
+					)
 				},
 			}
 		} else {
-			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-			(ctx, 0u64)
+			let initial_version = received_tx
+				.blocks
+				.first()
+				.map(|b| b.ledger_version())
+				.unwrap_or(LedgerVersion::Ledger8);
+			(
+				ForkAwareLedgerContext::new_from_wallet_seeds(
+					initial_version,
+					network_id,
+					&wallet_seeds,
+				),
+				0u64,
+			)
 		}
 	} else {
-		let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-		(ctx, 0u64)
+		let initial_version = received_tx
+			.blocks
+			.first()
+			.map(|b| b.ledger_version())
+			.unwrap_or(LedgerVersion::Ledger8);
+		(
+			ForkAwareLedgerContext::new_from_wallet_seeds(
+				initial_version,
+				network_id,
+				&wallet_seeds,
+			),
+			0u64,
+		)
 	};
 
 	// Replay only blocks since start_block
 	let blocks_to_replay: Vec<_> =
-		received_tx.blocks.into_iter().filter(|b| b.number >= start_block).collect();
+		received_tx.blocks.iter().filter(|b| b.number >= start_block).collect();
 
 	let blocks_replayed = blocks_to_replay.len() as u64;
 
@@ -525,13 +714,11 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 	}
 
 	for block in blocks_to_replay {
-		context.update_from_block(
-			&block.transactions,
-			&block.context,
-			block.state_root.as_ref(),
-			block.state.as_ref(),
-		);
+		fork_ctx = fork_ctx.update_from_block(block);
 	}
+
+	let final_version = fork_ctx.version();
+	let context = fork_ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))?;
 
 	// Save updated cache if storage is provided and blocks were replayed
 	if let Some(storage) = cache_storage {
@@ -546,7 +733,7 @@ pub async fn build_context_with_cache<C: WalletStateCaching>(
 		StandardTrasactionInfo::new_from_context(context_arc.clone(), prover_arc.clone(), rng_seed);
 
 	let blocks_cached = total_blocks.saturating_sub(blocks_replayed);
-	(context_arc, tx_info, blocks_cached)
+	Ok((context_arc, tx_info, blocks_cached))
 }
 
 /// Compute a wallet identity from seeds.
@@ -586,30 +773,41 @@ async fn save_context_to_cache<C: WalletStateCaching>(
 	log::info!("Saved wallet state cache at block {}", block_height);
 }
 
-/// Create Intent Info
-pub trait CreateIntentInfo {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
+#[derive(Debug, thiserror::Error)]
+#[error("chain has not reached ledger 8 (final version: {0:?})")]
+pub struct ContextNotLedger8Error(pub LedgerVersion);
+
+/// Build a fork-aware context from source transactions, returning the raw
+/// `ForkAwareLedgerContext` without extracting a specific version.
+pub fn build_fork_aware_context_raw(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+) -> ForkAwareLedgerContext<DefaultDB> {
+	let network_id = &received_tx.network_id;
+	let initial_version = received_tx
+		.blocks
+		.first()
+		.map(|b| b.ledger_version())
+		.unwrap_or(LedgerVersion::Ledger8);
+
+	let mut ctx =
+		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
+	for block in &received_tx.blocks {
+		ctx = ctx.update_from_block(block);
+	}
+
+	ctx
 }
 
-/// A trait to save a Contract (serialized`Intent` Structure) into a file
-#[async_trait]
-pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
-	async fn generate_intent_file(
-		&mut self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-		// the directory where to save the file
-		dir: &str,
-		// partial name of the file
-		partial_name: &str,
-	) {
-		println!("Generate intent file...");
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
-
-		let intent_info = self.create_intent_info();
-
-		tx_info.add_intent(1, intent_info);
-
-		tx_info.save_intents_to_file(dir, partial_name).await;
-	}
+/// Build a fork-aware context from source transactions, returning a ledger 8 context.
+///
+/// This handles chains that may have forked from ledger 7 to ledger 8 by using
+/// `ForkAwareLedgerContext` to process blocks across version boundaries.
+pub fn build_fork_aware_context(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger8Error> {
+	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
+	let final_version = ctx.version();
+	ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))
 }

@@ -1,6 +1,6 @@
 # Container Image Verification
 
-Midnight container images are cryptographically signed using [Sigstore](https://www.sigstore.dev/) keyless signing. This allows operators and SPOs to verify that images were legitimately built by Midnight's CI/CD pipeline.
+Midnight container images are attested using [GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations). This allows operators and SPOs to verify that images were legitimately built by Midnight's CI/CD pipeline.
 
 ## Quick Start
 
@@ -12,42 +12,40 @@ Verify an image with a single command:
 
 ## Prerequisites
 
-Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/):
+Install the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 # macOS
-brew install cosign
+brew install gh
 
-# Linux (download binary)
-curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o cosign
-chmod +x cosign
-sudo mv cosign /usr/local/bin/
+# Linux (Debian/Ubuntu)
+sudo apt install gh
 
-# Go
-go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+# Linux (Fedora)
+sudo dnf install gh
 ```
 
 ## What Gets Verified
 
-### Image Signatures
+### Build Provenance
 
-Every Midnight container image is signed during the CI/CD build process using GitHub Actions' OIDC identity. The signature proves:
+Every Midnight container image has a build provenance attestation created during CI/CD using `actions/attest-build-provenance`. The attestation proves:
 
 - The image was built by the `midnightntwrk/midnight-node` GitHub repository
 - The build ran on GitHub Actions infrastructure
-- The image contents have not been tampered with since signing
+- The image contents have not been tampered with since building
 
 ### SBOM Attestations
 
-Images also include signed Software Bill of Materials (SBOM) attestations in SPDX format. These provide:
+Images also include SBOM (Software Bill of Materials) attestations in SPDX format, created using `actions/attest-sbom`. These provide:
 
 - Complete list of packages and dependencies in the image
 - License information for included software
 - Cryptographic proof the SBOM was generated during the official build
 
-## Signed Images
+## Attested Images
 
-The following images are signed:
+The following images have attestations:
 
 | Image | Registry |
 |-------|----------|
@@ -58,11 +56,11 @@ The following images are signed:
 | `midnight-node-toolkit` | `ghcr.io/midnightntwrk/midnight-node-toolkit` |
 | `midnight-node-toolkit` | `midnightntwrk/midnight-node-toolkit` (Docker Hub) |
 
-**Note:** Indexer images are not currently signed.
+**Note:** Indexer images are not currently attested.
 
 ## Usage Examples
 
-### Basic Signature Verification
+### Basic Attestation Verification
 
 ```bash
 # Verify GHCR image
@@ -78,7 +76,7 @@ The following images are signed:
 ### SBOM Verification
 
 ```bash
-# Verify both signature and SBOM attestation
+# Verify both build provenance and SBOM attestation
 ./scripts/verify-image.sh --sbom ghcr.io/midnight-ntwrk/midnight-node:1.0.0
 ```
 
@@ -96,73 +94,56 @@ fi
 
 ## Manual Verification
 
-For advanced users who want to run cosign directly:
+For advanced users who want to run `gh` directly:
 
-### Verify Signature
+### Verify Build Provenance
 
 ```bash
-cosign verify \
-    --certificate-identity-regexp "https://github.com/midnightntwrk/midnight-node/.github/workflows/.*" \
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    ghcr.io/midnight-ntwrk/midnight-node:1.0.0
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:1.0.0 \
+    --owner midnightntwrk
 ```
 
 ### Verify SBOM Attestation
 
 ```bash
-cosign verify-attestation \
-    --type spdxjson \
-    --certificate-identity-regexp "https://github.com/midnightntwrk/midnight-node/.github/workflows/.*" \
-    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    ghcr.io/midnight-ntwrk/midnight-node:1.0.0
+gh attestation verify oci://ghcr.io/midnight-ntwrk/midnight-node:1.0.0 \
+    --owner midnightntwrk \
+    --predicate-type https://spdx.dev/Document
 ```
 
 ### Download and Inspect SBOM
 
 ```bash
-# Download the SBOM
-cosign download attestation \
+# Download the SBOM attestation
+gh attestation download oci://ghcr.io/midnight-ntwrk/midnight-node:1.0.0 \
+    --owner midnightntwrk \
     --predicate-type https://spdx.dev/Document \
-    ghcr.io/midnight-ntwrk/midnight-node:1.0.0 | jq -r '.payload' | base64 -d | jq '.predicate'
+    -d /tmp/sbom
+
+# Inspect the SBOM content
+cat /tmp/sbom/*.jsonl | jq '.dsseEnvelope.payload' | base64 -d | jq '.predicate'
 ```
 
 ## Troubleshooting
 
-### "no matching signatures"
+### "no attestations found"
 
-**Cause:** The image doesn't have a signature or the signature can't be found.
+**Cause:** The image doesn't have an attestation or the attestation can't be found.
 
 **Solutions:**
 - Verify the image reference is correct (check tag/digest)
-- Ensure the image is from a signed repository (see list above)
-- Check if the image predates signature implementation
-- Verify network connectivity to the registry
-
-### "certificate identity mismatch"
-
-**Cause:** The image was not built by Midnight's official CI/CD.
-
-**Solutions:**
-- Verify you're using an official Midnight image
-- Check if the image was built from a fork or unofficial source
-- Contact the Midnight team if you believe this is an error
-
-### "OIDC issuer mismatch"
-
-**Cause:** The image was not built on GitHub Actions.
-
-**Solutions:**
-- This likely indicates a non-official build
-- Use official images from the signed repositories listed above
+- Ensure the image is from an attested repository (see list above)
+- Check if the image predates attestation implementation
+- Verify network connectivity to GitHub
 
 ### "SBOM attestation not found"
 
 **Cause:** The image doesn't have an SBOM attestation attached.
 
 **Solutions:**
-- SBOM attestations were added after signatures; older images may not have them
+- SBOM attestations were re-enabled after the migration to GitHub native attestations; older images may not have them
 - The image may be from a workflow that doesn't generate SBOMs
-- Try verifying just the signature without the `--sbom` flag
+- Try verifying just the build provenance without the `--sbom` flag
 
 ## Security Considerations
 
