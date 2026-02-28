@@ -555,7 +555,9 @@ pub mod pallet {
 			ensure_none(origin)?;
 			let utxo_count = utxos.len() as u32;
 			ensure!(
-				utxo_count <= CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE),
+				utxo_count
+					<= CardanoTxCapacityPerBlock::<T>::get()
+						.saturating_mul(UTXO_PER_TX_OVERESTIMATE),
 				Error::<T>::TooManyUtxos
 			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
