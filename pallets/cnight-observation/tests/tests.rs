@@ -1326,6 +1326,57 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 	});
 }
 
+#[test]
+fn asset_spend_without_create_should_not_emit_destroy_event() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address,
+					dust_public_key: dust_public_key.clone(),
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 1, 0, None),
+				data: ObservedUtxoData::AssetSpend(SpendData {
+					value: 100,
+					owner: cardano_reward_address,
+					utxo_tx_hash: tx_hash(99, 99),
+					utxo_tx_index: 0,
+					spending_tx_hash: tx_hash(2, 1),
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		let destroy_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			if let mock::RuntimeEvent::MidnightSystem(
+				pallet_midnight_system::Event::SystemTransactionApplied(e),
+			) = &record.event
+			{
+				let events = extract_events(&e.serialized_system_transaction);
+				events.iter().any(|ev| ev.action == CNightGeneratesDustActionType::Destroy)
+			} else {
+				false
+			}
+		});
+
+		assert!(
+			!destroy_found,
+			"No Destroy event should be emitted for a UTXO that was never created"
+		);
+	});
+}
+
 /// Dispatches `process_tokens` with empty UTXOs to set `NextCardanoPosition`,
 /// then advances the block so a subsequent dispatch can test the guards.
 fn establish_position(block_number: u32, tx_index_in_block: u32) {
