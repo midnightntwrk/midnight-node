@@ -397,7 +397,7 @@ jobs:
         with:
           registry: ghcr.io
           username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Free disk space
         run: scripts/free-disk-space.sh
