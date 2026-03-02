@@ -1,0 +1,83 @@
+{
+  "bootnodes": [
+    "/dns/devnet/tcp/30333/p2p/12D3KooWFPYL9JXmBJUafWq8vJSi3JL8qZmXFXBvowVnaAZjKtgF"
+  ],
+  "chain_parameters": {
+    "genesis_utxo": "006dbc7f240fcfe201e152db52b5795dcaba6169130e2ad0579252c942fc2d0a#1"
+  },
+  "initial_governance": {
+    "authorities": [
+      "0x2fbddf6456c21871a4eba1b2e684f59e4a14a5413de5d0243ef8d0e7"
+    ],
+    "threshold": 1
+  },
+  "cardano": {
+    "security_parameter": 432,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 86400000,
+    "first_epoch_timestamp_millis": 1666656000000,
+    "slot_duration_millis": 1000
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wpt0trqkvwee47622438p6xl0a5x6qulqmu9kyl683w577gutw3us",
+    "d_parameter_policy_id": "0x8c7f19a3fa47e3162c2843bcb7f01892d196de6803754371c56592f6",
+    "permissioned_candidates_policy_id": "0x374c61a1afb4dff75157d97c5bde2cdc1454a959f9f75cb9bcfebd75",
+    "bridge": {
+      "illiquid_circulation_supply_validator_address": "addr_test1wrzr267rxr2sh9pt5ay67vsjjl4ld5tacsny23wtvlcdw5suqkzl5",
+      "asset": {
+        "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+        "asset_name": "0x"
+      }
+    },
+    "governed_map": {
+      "validator_address": "addr_test1wqesmttd3g76ufswgez5lkfnzt5atyadc8aefm3x67jas9cdv35qh",
+      "policy_id": "0x5202348de8bfb5add66a442350f736d7ba0bee77dd904e8bb4a1090e"
+    }
+  },
+  "initial_permissioned_candidates": [
+    {
+      "sidechain_pub_key": "0x021379eda3040927a065c109add953937499033ef182f6e1be1356a6255df81390",
+      "aura_pub_key": "0x44b5778072ec8e1717843fc058a38673d5c4b6562e31d5a405e779e8684c8e1a",
+      "grandpa_pub_key": "0x6543a1252c15bb1dbac48b204aa7c7f9a85ee82d4afb64ab154cf342d5913021",
+      "beefy_pub_key": "0x021379eda3040927a065c109add953937499033ef182f6e1be1356a6255df81390"
+    },
+    {
+      "sidechain_pub_key": "0x0291495ce6e29bc1228d494df034601b3b63aa3f5802c941c7151c664f552e8baa",
+      "aura_pub_key": "0xea0fc8b5cb17c4502ad4b6543382e6fa90463935f80c26d4eafb2c7d023e5f20",
+      "grandpa_pub_key": "0xc3be159a5c2ccb92e3d38a9c333398d692321ddc1d97dfa02c9b0544ca1b99af",
+      "beefy_pub_key": "0x0291495ce6e29bc1228d494df034601b3b63aa3f5802c941c7151c664f552e8baa"
+    },
+    {
+      "sidechain_pub_key": "0x025ef5ac750d2723f422918e4cf7fc0cde5abd395f1d8b57075d730fd5aaaf10f9",
+      "aura_pub_key": "0x0ce3711721d215e808550beba5b48393c710e2bf7fcc9dbac4e735cbfc29ed18",
+      "grandpa_pub_key": "0x4136a378d103eee7eacac84e8b6495abb3a451effc6a520d314ac6a1bf548b48",
+      "beefy_pub_key": "0x025ef5ac750d2723f422918e4cf7fc0cde5abd395f1d8b57075d730fd5aaaf10f9"
+    },
+    {
+      "sidechain_pub_key": "0x0201a588e54798a8df04ce5d8550b7bc927c3ed2ceb1ca8664b49a8c489ac1e57a",
+      "aura_pub_key": "0x86ec9df00fb8db920dff3f6d3db5f6eb6363b4fbc4276e5023da650566da9815",
+      "grandpa_pub_key": "0x3bbb70ff0cc947159427da1d0aff6251f30a56a44e82d91d65411bca41da94d5",
+      "beefy_pub_key": "0x0201a588e54798a8df04ce5d8550b7bc927c3ed2ceb1ca8664b49a8c489ac1e57a"
+    },
+    {
+      "sidechain_pub_key": "0x0302e39816696d9dfcfc8ff33ad8d4a8c8ef5cfeb66e0a7bc86de2019f586ce056",
+      "aura_pub_key": "0x506c329910d82aeaf9cd86f3da489942ac4e8402f8c735603901d56fccc3960d",
+      "grandpa_pub_key": "0xb898345b29308a654eb5bc907587b275e7de94e1d8de3f478a5025f4bf3103ec",
+      "beefy_pub_key": "0x0302e39816696d9dfcfc8ff33ad8d4a8c8ef5cfeb66e0a7bc86de2019f586ce056"
+    },
+    {
+      "sidechain_pub_key": "0x031aac7ea0aef8ea54208db89fe1a719e438a2b1f8b3c2e09673830ecb4a1e6a53",
+      "aura_pub_key": "0x9268e54d5159f7b63407b8de2c9fab5145350244339ebfba36177cee940b557a",
+      "grandpa_pub_key": "0x2c5875ea6b9684312df393c98031a874f446c7fe85550603770d8862b0e18ddd",
+      "beefy_pub_key": "0x031aac7ea0aef8ea54208db89fe1a719e438a2b1f8b3c2e09673830ecb4a1e6a53"
+    },
+    {
+      "sidechain_pub_key": "0x03491696d4c9c04e6985c8c5eb5e5e3cecb59e5f701745f3fccf86c61af2b4d6db",
+      "aura_pub_key": "0x789c5d689157aee1ddeae364c46394a5cab67c03a44d012a42531a3983042062",
+      "grandpa_pub_key": "0x824067f58bbc5e8aba177b84ee407223599261bb11759e110c125947f8a4b836",
+      "beefy_pub_key": "0x03491696d4c9c04e6985c8c5eb5e5e3cecb59e5f701745f3fccf86c61af2b4d6db"
+    }
+  ]
+}
