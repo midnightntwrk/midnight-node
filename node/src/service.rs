@@ -456,6 +456,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	epoch_config: MainchainEpochConfig,
 	data_sources: DataSources,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
+	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
 ) -> Result<TaskManager, ServiceError> {
@@ -809,6 +810,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		)
 		.map_err(|e| ServiceError::Application(e.into()))?;
 	}
+
+	crate::memory_monitor::MemoryMonitorService::try_spawn(
+		memory_monitor_params,
+		&task_manager.spawn_essential_handle(),
+	)
+	.map_err(|e| ServiceError::Application(e.into()))?;
 
 	// Spawn Prometheus metrics push task if configured
 	if let Some(mut push_config) = metrics_push_config {

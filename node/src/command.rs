@@ -262,6 +262,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			epoch_config,
 			data_sources,
 			cfg.storage_monitor_params_cfg.into(),
+			cfg.memory_monitor_cfg.into(),
 			storage_config,
 			metrics_push_config,
 		)
