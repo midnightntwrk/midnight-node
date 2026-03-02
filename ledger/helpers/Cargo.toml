@@ -18,9 +18,14 @@ zswap = { workspace = true }
 zkir = { workspace = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving", "test-utilities"] }
+base-crypto-ledger-8 = { workspace = true }
+coin-structure-ledger-8 = { workspace = true }
 onchain-runtime-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
+midnight-serialize-ledger-8 = { workspace = true }
+transient-crypto-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
+zkir-ledger-8 = { workspace = true }
 
 mn-ledger-hf = { workspace = true, features = ["proving", "test-utilities"] }
 base-crypto-hf = { workspace = true }

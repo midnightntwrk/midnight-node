@@ -475,10 +475,16 @@ rebuild-genesis-state-mainnet:
         --NETWORK=mainnet \
         --FUND_FAUCET_WALLETS=false
 
+# rebuild-genesis-state-perfnet rebuilds the genesis ledger state for perfnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-perfnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=perfnet
+
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-perfnet
     BUILD +rebuild-genesis-state-govnet
     BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
@@ -537,6 +543,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
+    BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
