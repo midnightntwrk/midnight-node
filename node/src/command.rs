@@ -33,7 +33,6 @@ use crate::{
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -281,19 +280,48 @@ fn get_res_preset_dir() -> std::path::PathBuf {
 	std::path::PathBuf::from("res").join(get_cfg_preset())
 }
 
+/// Extracts and hex-decodes the `genesis_state` value from chain spec properties.
+fn genesis_state_from_properties(
+	properties: &serde_json::Map<String, serde_json::Value>,
+) -> sc_cli::Result<Vec<u8>> {
+	let hex_str = properties
+		.get("genesis_state")
+		.ok_or_else(|| sc_cli::Error::Input("chain spec missing 'genesis_state' property".into()))?
+		.as_str()
+		.ok_or_else(|| sc_cli::Error::Input("'genesis_state' property is not a string".into()))?;
+	hex::decode(hex_str)
+		.map_err(|e| sc_cli::Error::Input(format!("invalid hex in 'genesis_state': {e}")))
+}
+
+/// Returns the genesis state from a chain spec's properties.
+fn genesis_state_from_chain_spec(
+	chain_spec: &dyn sc_service::ChainSpec,
+) -> sc_cli::Result<Vec<u8>> {
+	genesis_state_from_properties(&chain_spec.properties())
+}
+
+/// Builds a `StorageInit` from the chain spec's genesis state.
+fn storage_init_from_chain_spec(
+	config: &sc_service::Configuration,
+	cache_size: usize,
+) -> sc_cli::Result<StorageInit> {
+	Ok(StorageInit {
+		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
+		cache_size,
+	})
+}
+
 fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
-
-	let storage_config = StorageInit {
-		genesis_state: midnight_node_res::networks::UndeployedNetwork.genesis_state().to_vec(),
-		cache_size: cfg.midnight_cfg.storage_cache_size,
-	};
+	let cache_size = cfg.midnight_cfg.storage_cache_size;
 
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
+				let storage_config =
+					storage_init_from_chain_spec(&config, cache_size).map_err(|e| e.to_string())?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						midnight_cfg,
@@ -318,6 +346,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -332,6 +361,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -346,6 +376,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportState(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -360,6 +391,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ImportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -378,6 +410,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::Revert(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -414,13 +447,14 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(config.chain_spec))
 					},
 					BenchmarkCmd::Block(cmd) => {
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
                                 None,
                             ),
                         )?;
-						// ensure that we keep the task manager alive
 						let partial = service::new_partial(
                             &config,
                             epoch_config,
@@ -437,14 +471,14 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 					#[cfg(feature = "runtime-benchmarks")]
 					BenchmarkCmd::Storage(cmd) => {
-						// ensure that we keep the task manager alive
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
                                 None,
                             ),
                         )?;
-						// ensure that we keep the task manager alive
 						let partial = service::new_partial(
                             &config,
                             epoch_config,
@@ -457,13 +491,14 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
                                 None,
                             ),
                         )?;
-						// ensure that we keep the task manager alive
 						let partial = service::new_partial(
                             &config,
                             epoch_config,
@@ -482,7 +517,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Extrinsic(cmd) => {
-						// ensure that we keep the task manager alive
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size)?;
                         let data_sources = config.tokio_handle.block_on(
                             crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
                                 cfg.midnight_cfg.clone(),
@@ -1308,6 +1344,23 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 mod tests {
 	use super::*;
 
+	/// Compares two genesis blobs by blake2_256 hash; returns an error on mismatch.
+	fn verify_genesis_consistency(
+		chain_spec_genesis: &[u8],
+		compiled_genesis: &[u8],
+	) -> sc_cli::Result<()> {
+		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		if spec_hash != compiled_hash {
+			return Err(sc_cli::Error::Input(format!(
+				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",
+				hex::encode(spec_hash),
+				hex::encode(compiled_hash),
+			)));
+		}
+		Ok(())
+	}
+
 	fn make_properties(
 		entries: Vec<(&str, serde_json::Value)>,
 	) -> serde_json::Map<String, serde_json::Value> {
@@ -1356,5 +1409,20 @@ mod tests {
 		let err = decode_genesis_state(&props).unwrap_err();
 		let msg = err.to_string();
 		assert!(msg.contains("invalid hex"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn verify_genesis_consistency_matching() {
+		let data = vec![0x01, 0x02, 0x03];
+		assert!(verify_genesis_consistency(&data, &data).is_ok());
+	}
+
+	#[test]
+	fn verify_genesis_consistency_mismatch() {
+		let a = vec![0x01, 0x02];
+		let b = vec![0x03, 0x04];
+		let err = verify_genesis_consistency(&a, &b).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("mismatch"), "expected 'mismatch' in error: {msg}",);
 	}
 }
