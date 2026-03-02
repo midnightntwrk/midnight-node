@@ -25,6 +25,11 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
+            const association = context.payload.comment.author_association;
+            if (!['MEMBER', 'OWNER'].includes(association)) {
+              core.setFailed(`User ${context.actor} is not an org member or owner (association: ${association})`);
+              return;
+            }
             const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -60,6 +65,10 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+            if (pr.data.head.repo === null || pr.data.head.repo.fork) {
+              core.setFailed('Bot commands are not allowed on fork PRs for security reasons');
+              return;
+            }
             core.setOutput('ref', pr.data.head.ref);
             core.setOutput('sha', pr.data.head.sha);
             core.setOutput('number', prNumber);

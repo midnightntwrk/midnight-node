@@ -152,8 +152,9 @@ node-image-minimal:
 
 # Grabs metadata.scale file from the latest node
 get-metadata:
-    FROM +subxt
-    DO github.com/EarthBuild/lib+INSTALL_DIND
+    ARG NATIVEARCH
+    FROM +prep-no-copy
+
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
     WITH DOCKER --load localhost/node-minimal:latest=+node-image-minimal
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node-minimal:latest & \
@@ -165,8 +166,8 @@ get-metadata:
 
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
-    FROM +subxt
-    DO github.com/EarthBuild/lib+INSTALL_DIND
+    ARG NATIVEARCH
+    FROM +prep-no-copy
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
@@ -655,6 +656,7 @@ node-ci-image-single-platform:
     # Install build dependencies
     RUN microdnf -y update && \
         microdnf -y install \
+        ca-certificates \
         gcc \
         gcc-c++ \
         make \
@@ -669,6 +671,8 @@ node-ci-image-single-platform:
         git \
         tar \
         gzip \
+        xz \
+        unzip \
         jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
@@ -697,6 +701,27 @@ node-ci-image-single-platform:
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
     RUN cargo install --locked cargo-shear --version 1.9.1
     RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
+    # subxt-cli for generating runtime metadata - keep version in sync with Cargo.toml
+    RUN cargo binstall --no-confirm subxt-cli@0.44.0
+
+    # Docker-in-Docker for targets that spin up containers (metadata generation, etc.)
+    # Note: EarthBuild/lib+INSTALL_DIND doesn't support AL2023 (no yum), so install directly.
+    RUN microdnf -y install docker && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -713,16 +738,12 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
+    # If you need to alter the CI image, here is where you can build it locally rather than
+    # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
     FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
 
-    # Used to add repository for nodejs
-    RUN microdnf -y update && \
-        microdnf -y install ca-certificates && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
     RUN cargo --version
-    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
@@ -743,20 +764,7 @@ prep:
 # Prepares Node Toolkit (JS) in time for testing
 # Always uses linux/amd64 platform because compactc doesn't release for arm64
 toolkit-js-prep:
-    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-
-    # Install dependencies for Node.js and toolkit-js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz unzip && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 x64 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Always use x64 since this target is always built for linux/amd64 platform
-    ARG NODE_VERSION=22.13.1
-    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        node --version && npm --version && \
-        npm install -g npm@11.11.0 && npm --version
+    FROM --platform=linux/amd64 +node-ci-image-single-platform
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -785,9 +793,6 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN cargo install cargo-shear --version 1.6.6 --locked
-
-    # shear
     RUN cargo shear
 
 # check-rust runs cargo fmt and clippy.
@@ -841,8 +846,8 @@ check-rust:
 check-metadata:
     ARG NODE_IMAGE
     #=ghcr.io/midnight-ntwrk/midnight-node:latest
-    FROM +subxt
-    DO github.com/EarthBuild/lib+INSTALL_DIND
+    ARG NATIVEARCH
+    FROM +prep-no-copy
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
     WITH DOCKER --pull ${NODE_IMAGE}
@@ -923,24 +928,6 @@ build-test-toolkit:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
-
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=22.13.1
-    ARG TARGETARCH
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        node --version && npm --version
 
     # Test
     RUN mkdir /test-artifacts-toolkit
