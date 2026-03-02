@@ -21,7 +21,7 @@ use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{process::Command, time::Duration};
 use testcontainers::{
 	GenericImage, ImageExt,
-	core::{ContainerPort, Mount, WaitFor},
+	core::{ContainerPort, WaitFor},
 	runners::AsyncRunner,
 };
 
@@ -54,8 +54,6 @@ async fn hardfork_single_tx() {
 	let chainspec_json = generate_chainspec(&old_name, &old_tag);
 
 	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
-	let chainspec_path = tempdir.path().join("chainspec.json");
-	std::fs::write(&chainspec_path, &chainspec_json).expect("failed to write chainspec");
 
 	// 2. Start new node with fork-from chain-spec
 	let (name, tag) = test_image("midnight-node");
@@ -65,10 +63,7 @@ async fn hardfork_single_tx() {
 		.with_exposed_port(ContainerPort::Tcp(9944))
 		.with_env_var("CFG_PRESET", "dev")
 		.with_env_var("CHAIN", "/chainspec/chainspec.json")
-		.with_mount(Mount::bind_mount(
-			chainspec_path.to_str().unwrap(),
-			"/chainspec/chainspec.json",
-		))
+		.with_copy_to("/chainspec/chainspec.json", chainspec_json.into_bytes())
 		.start()
 		.await
 		.expect("failed to start midnight-node container");

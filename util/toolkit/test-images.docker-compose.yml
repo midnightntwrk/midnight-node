@@ -1,3 +1,4 @@
+# kics-scan disable=610e266e-6c12-4bca-9925-1ed0cd29742b,698ed579-b239-4f8f-a388-baa4bcb13ef8,ce76b7d0-9e77-464d-b86f-c5c48e03e22d
 # This file should NOT be run directly. It exists solely so that Dependabot
 # can detect and update the pinned image dependencies used by tests.
 services:
