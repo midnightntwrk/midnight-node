@@ -33,14 +33,15 @@ use serde_valid::Validate as _;
 use crate::chain_spec::{ChainSpecInitError, chain_config};
 
 use self::{
-	chain_spec_cfg::ChainSpecCfg, error::CfgError, meta_cfg::MetaCfg, midnight_cfg::MidnightCfg,
-	shell_words_environment::ShellWordsEnvironment,
+	chain_spec_cfg::ChainSpecCfg, error::CfgError, memory_monitor_cfg::MemoryMonitorCfg,
+	meta_cfg::MetaCfg, midnight_cfg::MidnightCfg, shell_words_environment::ShellWordsEnvironment,
 	storage_monitor_params_cfg::StorageMonitorParamsCfg, substrate_cfg::SubstrateCfg,
 };
 
 type CfgSourcesMap = BTreeMap<&'static str, config::Config>;
 
 pub mod chain_spec_cfg;
+pub mod memory_monitor_cfg;
 pub mod meta_cfg;
 pub mod midnight_cfg;
 pub mod storage_monitor_params_cfg;
@@ -61,6 +62,8 @@ pub struct Cfg {
 	pub meta_cfg: MetaCfg,
 	/// Configuration specific to Midnight
 	pub midnight_cfg: MidnightCfg,
+	/// Memory monitor configuration for OOM prevention
+	pub memory_monitor_cfg: MemoryMonitorCfg,
 	/// A duplicate of `StorageMonitorParams`, instantiated using environment variables
 	/// For the `StorageMonitorParams` implementation, see:
 	/// polkadot-sdk/substrate/client/storage-monitor/src/lib.rs
@@ -288,6 +291,7 @@ impl Cfg {
 	/// Create a new instance from a custom config without running validation
 	pub fn new_no_validation_from_config(config: config::Config) -> Result<Self, ConfigError> {
 		let chain_spec_cfg: ChainSpecCfg = config.clone().try_deserialize()?;
+		let memory_monitor_cfg: MemoryMonitorCfg = config.clone().try_deserialize()?;
 		let meta_cfg: MetaCfg = config.clone().try_deserialize()?;
 		let midnight_cfg: MidnightCfg = config.clone().try_deserialize()?;
 		let storage_monitor_params_cfg: StorageMonitorParamsCfg =
@@ -296,11 +300,12 @@ impl Cfg {
 
 		let cfg = Self {
 			config,
+			chain_spec_cfg,
+			memory_monitor_cfg,
 			meta_cfg,
 			midnight_cfg,
-			substrate_cfg,
 			storage_monitor_params_cfg,
-			chain_spec_cfg,
+			substrate_cfg,
 		};
 
 		Ok(cfg)
@@ -316,6 +321,9 @@ impl Cfg {
 	/// For high-level validation between configuration fields.
 	fn validate(&self) -> Result<(), CfgError> {
 		self.chain_spec_cfg
+			.validate()
+			.map_err(|e| ConfigError::Message(e.to_string()))?;
+		self.memory_monitor_cfg
 			.validate()
 			.map_err(|e| ConfigError::Message(e.to_string()))?;
 		self.meta_cfg.validate().map_err(|e| ConfigError::Message(e.to_string()))?;
@@ -424,6 +432,8 @@ impl Cfg {
 		Self::render_fields(&mut buf, show_secrets, &MetaCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "MidnightCfg")?;
 		Self::render_fields(&mut buf, show_secrets, &MidnightCfg::help(Some(&all_config))?)?;
+		Self::render_header(&mut buf, "MemoryMonitorCfg")?;
+		Self::render_fields(&mut buf, show_secrets, &MemoryMonitorCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "StorageMonitorParamsCfg")?;
 		Self::render_fields(
 			&mut buf,
@@ -566,6 +576,7 @@ mod tests {
 		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
 		let cfg_keys = [
 			get_keys(ChainSpecCfg::default()).unwrap(),
+			get_keys(MemoryMonitorCfg::default()).unwrap(),
 			get_keys(MetaCfg::default()).unwrap(),
 			get_keys(MidnightCfg::default()).unwrap(),
 			get_keys(StorageMonitorParamsCfg::default()).unwrap(),
