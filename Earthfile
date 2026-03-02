@@ -974,15 +974,29 @@ test-toolkit:
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
     END
 
-    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-        # Use --network=host so testcontainers postgres is accessible via localhost
-        RUN docker run \
-            --network=host \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
-            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-            $EXTRA_DOCKER_ENV \
-            test-toolkit:latest
+    # Pre-pull NODE_IMAGE into the DinD daemon so testcontainers can find it.
+    # When not provided, testcontainers pulls the default from the public registry.
+    IF [ -n "$NODE_IMAGE" ]
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $NODE_IMAGE
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest
+        END
+    ELSE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                test-toolkit:latest
+        END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
