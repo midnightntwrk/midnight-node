@@ -75,7 +75,7 @@ coin_public=$(
       show-address \
       --network undeployed \
       --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-      --coin-public
+      --coin-public-tagged
 )
 
 echo "Generate deploy intent"

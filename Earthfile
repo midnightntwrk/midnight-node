@@ -367,7 +367,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
+                    --coin-public-tagged \
                 ) \
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \
@@ -398,7 +398,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
+                    --coin-public-tagged \
                 ) \
                 -c /toolkit-js/mint/mint.config.ts \
                 --output-intent /res/test-data/contract/mint/deploy.bin \
