@@ -161,10 +161,25 @@ mod tests {
 	}
 
 	#[test]
+	fn safe_read_to_string_succeeds_for_empty_file() {
+		let f = tempfile::NamedTempFile::new().unwrap();
+		let result = safe_read_to_string(f.path().to_str().unwrap(), MAX_GENESIS_FILE_SIZE);
+		assert_eq!(result.unwrap(), "");
+	}
+
+	#[test]
 	fn safe_read_succeeds_at_exact_size_limit() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
 		f.write_all(&vec![0u8; 100]).unwrap();
 		let result = safe_read(f.path().to_str().unwrap(), 100);
+		assert_eq!(result.unwrap().len(), 100);
+	}
+
+	#[test]
+	fn safe_read_to_string_succeeds_at_exact_size_limit() {
+		let mut f = tempfile::NamedTempFile::new().unwrap();
+		f.write_all(&vec![b'x'; 100]).unwrap();
+		let result = safe_read_to_string(f.path().to_str().unwrap(), 100);
 		assert_eq!(result.unwrap().len(), 100);
 	}
 
