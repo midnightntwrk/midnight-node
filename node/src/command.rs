@@ -346,8 +346,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -362,8 +361,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -378,8 +376,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportState(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -394,8 +391,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ImportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
@@ -414,8 +410,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::Revert(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
 				let data_sources = config.tokio_handle.block_on(
 					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
 						cfg.midnight_cfg.clone(),
