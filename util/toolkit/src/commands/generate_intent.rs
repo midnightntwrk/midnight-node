@@ -4,7 +4,11 @@ use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, DefaultDB, WalletSeed, WalletState, deserialize,
+};
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use subxt::{OnlineClient, SubstrateConfig};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -15,18 +19,13 @@ pub enum JsCommand {
 }
 
 #[derive(Args, Debug)]
-pub struct SourceWallet {
+pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source: Option<Source>,
+	source: Source,
+
 	/// Seed for the source wallet zswap state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	wallet_seed: Option<WalletSeed>,
-}
-
-#[derive(Args, Debug)]
-pub struct CircuitCommandArgs {
-	#[command(flatten)]
-	source_wallet: SourceWallet,
 
 	#[command(flatten)]
 	toolkit_js: toolkit_js::ToolkitJs,
@@ -132,6 +131,8 @@ pub async fn fetch_zswap_state(
 pub enum GenerateIntentError {
 	#[error("missing transaction source")]
 	MissingSource,
+	#[error("missing source url")]
+	MissingSourceUrl,
 	#[error("failed to create temporary dir for toolkit-js file interop")]
 	FailedToCreateTempDir(std::io::Error),
 }
@@ -157,8 +158,10 @@ pub async fn execute(
 				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
 				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
-			let input_zswap_state = if let Some(wallet_seed) = args.source_wallet.wallet_seed {
-				let Some(source) = args.source_wallet.source else {
+
+			let input_zswap_state = if let Some(wallet_seed) = args.wallet_seed {
+				dbg!("!!!>>>> JSCommand::Circuit");
+				let Some(source) = args.source else {
 					println!("wallet_seed is present, but source is missing!");
 					return Err(GenerateIntentError::MissingSource.into());
 				};
@@ -183,8 +186,23 @@ pub async fn execute(
 			if args.dry_run {
 				return Ok(());
 			}
-			let command =
-				toolkit_js::Command::Circuit { args: args.circuit_call, input_zswap_state };
+
+			let Some(rpc_url) = args.source.src_url else {
+				println!("src_url in the source is note presented");
+				return Err(GenerateIntentError::MissingSourceUrl.into());
+			};
+			let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
+			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
+			let response = api.runtime_api().at_latest().await?.call(call).await?;
+			let bytes = response.expect("Unable to retrieve ledger parameters from RPC server");
+			let ledger_parameters = deserialize(&mut &bytes[..])
+				.expect("Unable to deserialize ledger parameters from RPC server");
+
+			let command = toolkit_js::Command::Circuit {
+				args: args.circuit_call,
+				input_zswap_state,
+				ledger_parameters,
+			};
 			args.toolkit_js.execute(command)?;
 		},
 		JsCommand::MaintainContract(args) => {

@@ -6,7 +6,8 @@ use clap::{
 };
 use hex::ToHex;
 use midnight_node_ledger_helpers::{
-	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
+	CoinPublicKey, ContractAddress, LedgerParameters, UnshieldedWallet, WalletSeed, serialize,
+	serialize_untagged,
 };
 pub(crate) mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
@@ -49,7 +50,11 @@ impl From<PathBuf> for RelativePath {
 
 pub enum Command {
 	Deploy(DeployArgs),
-	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Circuit {
+		args: CircuitArgs,
+		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: LedgerParameters,
+	},
 	Maintain(MaintainCommand),
 }
 
@@ -201,8 +206,8 @@ impl ToolkitJs {
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
-			Command::Circuit { args, input_zswap_state } => {
-				self.execute_ciruit(args, input_zswap_state)
+			Command::Circuit { args, input_zswap_state, ledger_parameters } => {
+				self.execute_ciruit(args, input_zswap_state, ledger_parameters)
 			},
 			Command::Maintain(command) => self.execute_maintain(command),
 		}
@@ -255,6 +260,7 @@ impl ToolkitJs {
 		&self,
 		args: CircuitArgs,
 		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: LedgerParameters,
 	) -> Result<(), ToolkitJsError> {
 		let contract_address_str = hex::encode(args.contract_address.0.0);
 		println!("Executing circuit command");
@@ -265,6 +271,9 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let ledger_parameters = hex::encode(
+			serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
+		);
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
@@ -283,6 +292,8 @@ impl ToolkitJs {
 			&output_private_state,
 			"--output-zswap",
 			&output_zswap_state,
+			"--ledger-parameters",
+			&ledger_parameters,
 		];
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
