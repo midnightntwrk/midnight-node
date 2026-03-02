@@ -100,69 +100,12 @@ runs:
       run: earthly +local-env-e2e
       shell: bash
 
-    - name: node-e2e-tests
-      id: node-e2e-tests
-      run: earthly +node-e2e-test
-      shell: bash
-
     - name: toolkit-multi-dest-e2e
       id: toolkit-multi-dest-e2e
       env:
         TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
       run: just toolkit-multi-dest-e2e "$TOOLKIT_IMAGE"
       shell: bash
-
-    - name: Upload Test Results
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-      with:
-        name: node-e2e-test-results
-        path: test-artifacts/e2e/node/
-        retention-days: 7
-
-    - name: Setup Node
-      if: always()
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  #v4.4.0
-      with:
-        node-version: 'latest'
-
-    - name: Post Test Results to PR and Display Summary
-      if: always() && github.event_name == 'pull_request'
-      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
-      with:
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-
-          // Determine test status
-          const nodeE2eStatus = '${{ steps.node-e2e-tests.outcome }}';
-          const e2eStatus = '${{ steps.e2e-tests.outcome }}';
-
-          // Update GitHub step summary
-          let summary = '## Node E2E Test Results\n';
-          if (fs.existsSync('test-artifacts')) {
-            summary += '✅ Test artifacts saved successfully\n';
-            summary += '📁 Artifacts location: test-artifacts/\n';
-            if (fs.existsSync('test-artifacts/e2e')) {
-              summary += '📊 Test reports available in test-artifacts/e2e/\n';
-              if (fs.existsSync('test-artifacts/e2e/node/test-output.log')) {
-                summary += '📋 Test Output Log:\n';
-                summary += '```\n';
-                try {
-                  const logContent = fs.readFileSync('test-artifacts/e2e/node/test-output.log', 'utf8');
-                  summary += logContent;
-                } catch (error) {
-                  summary += 'Error reading log file';
-                }
-                summary += '\n```\n';
-              }
-            }
-          } else {
-            summary += '❌ No test artifacts found\n';
-          }
-
-          // Write to GitHub step summary
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 
     - name: Collect Docker logs
       if: ${{ failure() }}

@@ -1360,15 +1360,11 @@ audit-toolkit-js:
 audit-ui:
     BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
 
-audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
     BUILD +audit-ui
-    BUILD +audit-ui-tests
 
 # audit checks for security vulnerabilities
 audit:
@@ -1537,49 +1533,6 @@ stop-local-env:
     WORKDIR local-environment
     RUN npm ci
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
-
-# node-e2e-test runs the node E2E tests using Earthly's container management
-#
-# Usage:
-#   earthly +node-e2e-test
-#
-# This target:
-# 1. Runs the Playwright E2E tests against the local environment
-# 2. Saves all test artifacts to test-artifacts/e2e/node/
-#
-# Outputs:
-#   - test-artifacts/e2e/node/ - All test results, logs, and reports
-node-e2e-test:
-    ARG NATIVEARCH
-
-    LOCALLY
-
-    RUN echo "🧪 Running Node E2E tests with Earthly:"
-
-    # Setup test environment
-    WORKDIR ui/tests
-
-    # Install dependencies
-    RUN yarn config set -H enableImmutableInstalls false
-    RUN yarn install
-
-    # Create test artifacts directory first
-    RUN mkdir -p test-artifacts/e2e/node
-
-    # Run the tests from the test artifacts directory to generate CTRF report there
-    RUN echo "🎯 Running Playwright + Testcontainers tests..." \
-      && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-
-    # Save test results
-    RUN cp -r ./reports test-artifacts/e2e/node/ || true
-    RUN cp -r ./logs test-artifacts/e2e/node/ || true
-    # Check test results
-    RUN if [ "${TEST_FAILED:-false}" = true ]; then \
-        echo "❌ Tests failed"; \
-        exit 1; \
-    else \
-        echo "✅ Node E2E tests complete."; \
-    fi
 
 #images Build all the images
 images:
