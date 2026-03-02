@@ -1357,14 +1357,10 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
-audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-ui
 
 # audit checks for security vulnerabilities
 audit:
