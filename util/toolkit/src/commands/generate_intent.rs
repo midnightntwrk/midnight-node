@@ -183,7 +183,7 @@ pub async fn execute(
 			}
 
 			let Some(rpc_url) = args.source.src_url else {
-				println!("src_url in the source is note presented");
+				eprintln!("missing required --src-url argument");
 				return Err(GenerateIntentError::MissingSourceUrl.into());
 			};
 			let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
