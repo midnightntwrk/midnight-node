@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) 2025-2026 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -849,6 +849,18 @@ impl pallet_system_parameters::Config for Runtime {
 	type WeightInfo = ();
 }
 
+parameter_types! {
+	/// Maximum bytes a single account can submit within a throttle window (10 MB).
+	pub const MaxBytes: u64 = 10 * 1024 * 1024;
+	/// Number of blocks that define a throttle window (1 day at 6s/block).
+	pub const WindowSize: u32 = DAYS;
+}
+
+impl pallet_throttle::Config for Runtime {
+	type MaxBytes = MaxBytes;
+	type WindowSize = WindowSize;
+}
+
 pub struct MidnightTokenTransferHandler;
 
 parameter_types! {
@@ -865,6 +877,7 @@ impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Runtime>;
 }
 
 impl pallet_partner_chains_bridge::Config for Runtime {
@@ -976,6 +989,10 @@ mod runtime {
 	// System Parameters
 	#[runtime::pallet_index(50)]
 	pub type SystemParameters = pallet_system_parameters::Pallet<Runtime>;
+
+	// Throttling
+	#[runtime::pallet_index(51)]
+	pub type Throttle = pallet_throttle::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
@@ -994,6 +1011,7 @@ pub type SignedExtra = (
 	frame_system::CheckNonce<Runtime>,
 	frame_system::CheckWeight<Runtime>,
 	CheckCallFilter,
+	pallet_throttle::CheckThrottle<Runtime>,
 );
 
 /// Unchecked extrinsic type as expected by this runtime.
@@ -1027,6 +1045,7 @@ mod benches {
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 		[pallet_system_parameters, SystemParameters]
+		[pallet_cnight_observation, CNightObservation]
 	);
 }
 

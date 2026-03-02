@@ -360,18 +360,66 @@ $ midnight-node-toolkit generate-intent circuit
 >   --input-private-state ./test-data/contract/counter/initial_state.json
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
+>   --output-onchain-state out/onchain_state.mn
 >   --output-private-state out/ps_state.json
 >   --output-zswap-state out/zswap_state.json
+>   --output-result out/result.json
 >   increment
 Executing generate-intent
 Executing circuit command
-Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "--output-oc", "[CWD]/out/onchain_state.mn", "--output-result", "[CWD]/out/result.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 toolkit-js> []
 written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```
 
 To send it, see "Generate and send a tx from an intent" above
+
+- Generate batched circuit call intents (multiple calls in one transaction)
+
+When batching multiple circuit calls into a single transaction, each call's output state must be chained as the next call's input. Without chaining, subsequent calls would operate on stale state and the transaction would fail.
+
+```ignore-compact-0.27
+# Call 1: first circuit call — outputs on-chain and private state for chaining
+$ midnight-node-toolkit generate-intent circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./contract_state.mn
+>   --input-private-state ./initial_state.json
+>   --contract-address <CONTRACT_ADDRESS>
+>   --output-intent out/intent_1.bin
+>   --output-onchain-state out/onchain_state_1.mn
+>   --output-private-state out/private_state_1.json
+>   --output-zswap-state out/zswap_1.json
+>   increment
+```
+```ignore-compact-0.27
+# Call 2: uses call 1's outputs as inputs
+$ midnight-node-toolkit generate-intent circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state out/onchain_state_1.mn
+>   --input-private-state out/private_state_1.json
+>   --contract-address <CONTRACT_ADDRESS>
+>   --output-intent out/intent_2.bin
+>   --output-onchain-state out/onchain_state_2.mn
+>   --output-private-state out/private_state_2.json
+>   --output-zswap-state out/zswap_2.json
+>   increment
+```
+```ignore-compact-0.27
+# Combine both intents into a single transaction
+$ midnight-node-toolkit send-intent
+>   --intent-file out/intent_1.bin
+>   --intent-file out/intent_2.bin
+>   --compiled-contract-dir contract/counter/out
+```
+
+The key state files to chain between calls:
+- `--output-onchain-state` from call N becomes `--input-onchain-state` for call N+1
+- `--output-private-state` from call N becomes `--input-private-state` for call N+1
 
 - Generate a contract maintenance intent
 ```ignore-compact-0.27
