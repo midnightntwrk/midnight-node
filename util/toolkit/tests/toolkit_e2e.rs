@@ -21,7 +21,7 @@ use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	commands::contract_address,
 };
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 use testcontainers::{
 	GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
@@ -101,6 +101,21 @@ async fn run_cli(args: &[&str]) {
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
+
+fn ledger_test_artifacts_ready() -> bool {
+	let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+		eprintln!("Skipping contract e2e tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set");
+		return false;
+	};
+	if !Path::new(&path).exists() {
+		eprintln!(
+			"Skipping contract e2e tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+			path
+		);
+		return false;
+	}
+	true
+}
 
 #[tokio::test]
 async fn generate_batches() {
@@ -214,6 +229,10 @@ async fn register_dust_address() {
 
 #[tokio::test]
 async fn contract_ops() {
+	if !ledger_test_artifacts_ready() {
+		return;
+	}
+
 	let url = node_ws_url().await;
 
 	// 3. Contract deploy + address + send + maintenance + call(store) + call(check)

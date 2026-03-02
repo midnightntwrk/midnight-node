@@ -140,6 +140,7 @@ async fn execute_with_builders_v7(
 mod test {
 	use std::fs;
 	use std::fs::remove_file;
+	use std::path::Path;
 
 	use crate::cli_parsers::hex_str_decode;
 	use crate::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
@@ -147,8 +148,27 @@ mod test {
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
+	fn ledger_test_artifacts_ready() -> bool {
+		let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+			eprintln!("Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set");
+			return false;
+		};
+		if !Path::new(&path).exists() {
+			eprintln!(
+				"Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+				path
+			);
+			return false;
+		}
+		true
+	}
+
 	#[tokio::test]
 	async fn test_generate_sample_intent() {
+		if !ledger_test_artifacts_ready() {
+			return;
+		}
+
 		let rng_seed = "0000000000000000000000000000000000000000000000000000000000000037";
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 
