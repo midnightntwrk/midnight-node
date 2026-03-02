@@ -80,7 +80,7 @@ impl TryFrom<SubstrateCfg> for RunCmd {
 				super::validated_file::MAX_GENESIS_FILE_SIZE,
 			)
 			.map(|s| s.trim().to_string())
-			.map_err(|e| sc_cli::Error::Input(e))?;
+			.map_err(sc_cli::Error::Input)?;
 			run_cmd.network_params.node_key_params.node_key = Some(node_key);
 		}
 		if run_cmd.shared_params.chain.is_none() && value.chain.is_some() {

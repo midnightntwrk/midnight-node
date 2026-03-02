@@ -47,7 +47,7 @@ impl CfgPreset {
 					&self.0,
 					super::validated_file::MAX_GENESIS_FILE_SIZE,
 				)
-				.map_err(|e| ConfigError::Message(e))
+				.map_err(ConfigError::Message)
 			},
 			Ok,
 		)?;
