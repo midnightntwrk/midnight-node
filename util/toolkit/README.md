@@ -92,7 +92,6 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 - **`Builder`**: Specifies how transactions are built. There are six builder subcommands:
   - `send`: Pass-through mode for sending transactions from a JSON file (`DoNothingBuilder`)
   - `single-tx`: Send a single transaction funded by a single wallet to N destination wallets (supports shielded and unshielded) (`SingleTxBuilder`)
-  - `migrate`: Migrates transactions between chains (`ReplaceInitialTxBuilder`)
   - `batches`: Generates ZSwap & Unshielded Utxos transaction batches (`BatcherBuilder`)
   - `claim-mint`: Builds claim mint transactions (`ClaimMintBuilder`)
   - `contract-simple deploy`: Builds contract deployment transactions (`ContractDeployBuilder`)
