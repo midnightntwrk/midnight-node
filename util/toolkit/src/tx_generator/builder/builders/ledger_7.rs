@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) 2025-2026 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -55,12 +55,8 @@ use midnight_node_ledger_helpers::ledger_7::{
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTx {
-	let context = midnight_node_ledger_helpers::ledger_8::BlockContext {
-		tblock: tx.block_context.tblock,
-		tblock_err: tx.block_context.tblock_err,
-		parent_block_hash: tx.block_context.parent_block_hash,
-		last_block_time: tx.block_context.tblock,
-	};
+	let context =
+		midnight_node_ledger_helpers::fork::fork_7_to_8::block_context_7_to_8(&tx.block_context);
 	let raw_tx = transactions::from_serde_tx(&tx.tx);
 	let tx_hash = tx.tx.transaction_hash().0.0;
 	SerializedTx { tx: raw_tx, context, tx_hash }
