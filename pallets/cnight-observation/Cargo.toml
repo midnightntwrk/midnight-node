@@ -21,6 +21,7 @@ hex.workspace = true
 derive-new.workspace= true
 serde = { workspace = true}
 serde_valid = { workspace = true, optional = true }
+frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
@@ -47,7 +48,13 @@ std = [
     "midnight-primitives-cnight-observation/std",
     "pallet-cnight-observation-mock/std",
     "derive-new/std",
-    "serde_valid"
+    "serde_valid",
+    "frame-benchmarking?/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
 ]
 
 [package.metadata.cargo-shear]

@@ -21,7 +21,10 @@
 extern crate alloc;
 
 use derive_new::new;
-use frame_support::pallet_prelude::*;
+use frame_support::{
+	dispatch::{Pays, PostDispatchInfo},
+	pallet_prelude::*,
+};
 use frame_system::pallet_prelude::*;
 use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIER, InherentError};
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
@@ -30,6 +33,11 @@ use serde::{Deserialize, Serialize};
 use sidechain_domain::McBlockHash;
 
 pub mod config;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod weights;
 
 /// Cardano-based Midnight System Transaction (CMST)  Header
 ///
@@ -58,6 +66,14 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
+/// Overestimate factor for UTXOs per Cardano transaction.
+/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
+/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
+pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+
+/// Upper bound on UTXO count per block, used for worst-case weight declaration.
+pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER_TX_OVERESTIMATE;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
@@ -78,6 +94,7 @@ pub mod pallet {
 	};
 
 	use crate::config::CNightGenesis;
+	use crate::weights::WeightInfo;
 
 	use super::*;
 
@@ -132,6 +149,8 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> {
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		/// Weight information for extrinsics in this pallet.
+		type WeightInfo: crate::weights::WeightInfo;
 	}
 
 	#[pallet::event]
@@ -154,6 +173,8 @@ pub mod pallet {
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
 		CardanoPositionRegression,
+		/// UTXO count exceeds `CardanoTxCapacityPerBlock * UTXO_PER_TX_OVERESTIMATE`
+		TooManyUtxos,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -525,13 +546,20 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((0, DispatchClass::Mandatory))]
+		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
 			utxos: Vec<ObservedUtxo>,
 			next_cardano_position: CardanoPosition,
-		) -> DispatchResult {
+		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
+			let utxo_count = utxos.len() as u32;
+			ensure!(
+				utxo_count
+					<= CardanoTxCapacityPerBlock::<T>::get()
+						.saturating_mul(UTXO_PER_TX_OVERESTIMATE),
+				Error::<T>::TooManyUtxos
+			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
@@ -606,7 +634,10 @@ pub mod pallet {
 					log::error!("Fatal: failed to construct ledger system transaction");
 				}
 			}
-			Ok(())
+			Ok(PostDispatchInfo {
+				actual_weight: Some(T::WeightInfo::process_tokens(utxo_count)),
+				pays_fee: Pays::No,
+			})
 		}
 
 		/// Changes the mainchain address for the mapping validator contract

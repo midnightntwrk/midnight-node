@@ -148,6 +148,7 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type WeightInfo = ();
 }
 
 impl mock_pallet::Config for Test {}

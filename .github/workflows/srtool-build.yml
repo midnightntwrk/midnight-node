@@ -30,8 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write    # Required for gh release upload
-      id-token: write    # Required for keyless signing with Cosign
+      contents: write       # Required for gh release upload
+      id-token: write       # Required for GitHub native attestations
+      attestations: write   # Required for GitHub native attestations
     env:
       FORCE_COLOR: 1
     steps:
@@ -58,11 +59,7 @@ jobs:
           path: artifacts/srtool/
           retention-days: 90
 
-      - name: Install Cosign
-        if: inputs.release-tag != ''
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-
-      - name: Generate checksums and sign
+      - name: Generate checksums
         if: inputs.release-tag != ''
         run: |
           cd artifacts/srtool
@@ -74,10 +71,23 @@ jobs:
           echo "Generated checksums:"
           cat SHA256SUMS-srtool
 
-          source $GITHUB_WORKSPACE/.github/scripts/sign-binary.sh
-          sign_blob_with_retry midnight_node_runtime.wasm
-          sign_blob_with_retry midnight_node_runtime.compact.wasm
-          sign_blob_with_retry midnight_node_runtime.compact.compressed.wasm
+      - name: Attest runtime WASM
+        if: inputs.release-tag != ''
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: artifacts/srtool/midnight_node_runtime.wasm
+
+      - name: Attest compact runtime WASM
+        if: inputs.release-tag != ''
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: artifacts/srtool/midnight_node_runtime.compact.wasm
+
+      - name: Attest compressed runtime WASM
+        if: inputs.release-tag != ''
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: artifacts/srtool/midnight_node_runtime.compact.compressed.wasm
 
       - name: Upload to GitHub release
         if: inputs.release-tag != ''
@@ -89,10 +99,7 @@ jobs:
           echo "Uploading srtool artifacts to release: $RELEASE_TAG"
           gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             midnight_node_runtime.wasm \
-            midnight_node_runtime.wasm.bundle \
             midnight_node_runtime.compact.wasm \
-            midnight_node_runtime.compact.wasm.bundle \
             midnight_node_runtime.compact.compressed.wasm \
-            midnight_node_runtime.compact.compressed.wasm.bundle \
             srtool-digest.json \
             SHA256SUMS-srtool
