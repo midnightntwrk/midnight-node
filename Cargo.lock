@@ -10317,6 +10317,7 @@ name = "pallet-cnight-observation"
 version = "1.4.0"
 dependencies = [
  "derive-new",
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "hex",
