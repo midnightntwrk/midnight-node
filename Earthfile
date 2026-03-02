@@ -740,8 +740,8 @@ prep-no-copy:
     ARG NATIVEARCH
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    # FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
+    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
 
     RUN cargo --version
 
