@@ -162,9 +162,9 @@ impl<D: DB + Clone> IntentCustom<D> {
 
 	pub fn find_contract_address(&self) -> Option<ContractAddress> {
 		self.intent.actions.iter().find_map(|action| match action {
-          ContractAction::Call(c) | ContractAction::Maintain(c) => Some(c.address),
-        _ => None,
-        })
+			ContractAction::Call(c) | ContractAction::Maintain(c) => Some(c.address),
+			_ => None,
+		})
 	}
 
 	pub fn get_resolver(artifact_dirs: &[String]) -> Result<Resolver, std::io::Error> {
