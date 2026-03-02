@@ -160,14 +160,9 @@ pub async fn execute(
 			}
 
 			let input_zswap_state = if let Some(wallet_seed) = args.wallet_seed {
-				dbg!("!!!>>>> JSCommand::Circuit");
-				let Some(source) = args.source else {
-					println!("wallet_seed is present, but source is missing!");
-					return Err(GenerateIntentError::MissingSource.into());
-				};
 				println!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
-					source,
+					args.source.clone(),
 					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
