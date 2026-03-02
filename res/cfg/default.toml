@@ -28,6 +28,11 @@ mc__first_slot_number = 0
 mc__slot_duration_millis = 1000
 allow_non_ssl = false
 
+# Memory Monitor Defaults (MiB)
+# Set memory_threshold > 0 to enable. On Linux, checks cgroup limits then /proc/meminfo.
+memory_threshold = 0
+memory_polling_period = 1
+
 # Storage Monitor Defaults
 threshold = 512
 polling_period = 5
