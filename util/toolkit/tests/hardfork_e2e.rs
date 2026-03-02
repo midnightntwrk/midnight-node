@@ -59,6 +59,7 @@ async fn hardfork_single_tx() {
 
 	// 2. Start new node with fork-from chain-spec
 	let (name, tag) = test_image("midnight-node");
+	let node_image = format!("{name}:{tag}");
 	let container = GenericImage::new(name, tag)
 		.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 		.with_exposed_port(ContainerPort::Tcp(9944))
@@ -101,9 +102,44 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 4. TODO: runtime upgrade
-	//    Once the toolkit has a `runtime-upgrade` command, invoke it here
-	//    to apply the new runtime wasm to the running chain.
+	// 4. Runtime upgrade: extract WASM from new node image and apply it
+	let wasm_output = Command::new("docker")
+		.args([
+			"run",
+			"--rm",
+			"--entrypoint",
+			"cat",
+			&node_image,
+			"/artifacts-amd64/midnight_node_runtime.compact.compressed.wasm",
+		])
+		.output()
+		.expect("docker run cat wasm failed");
+	assert!(
+		wasm_output.status.success(),
+		"failed to extract wasm: {}",
+		String::from_utf8_lossy(&wasm_output.stderr)
+	);
+	let wasm_path = tempdir.path().join("runtime.wasm");
+	std::fs::write(&wasm_path, &wasm_output.stdout).expect("write wasm");
+
+	run_cli(&[
+		"runtime-upgrade",
+		"--wasm-file",
+		wasm_path.to_str().unwrap(),
+		"-c",
+		"//Dave",
+		"-c",
+		"//Eve",
+		"-t",
+		"//Alice",
+		"-t",
+		"//Bob",
+		"--rpc-url",
+		&url,
+		"--signer-key",
+		"//Alice",
+	])
+	.await;
 
 	// 5. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
 	run_cli(&[

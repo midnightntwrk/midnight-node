@@ -8,6 +8,7 @@ use crate::commands::{
 	generate_txs::{self, GenerateTxsArgs},
 	random_address::{self, RandomAddressArgs},
 	root_call::{self, RootCallArgs},
+	runtime_upgrade::{self, RuntimeUpgradeArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::ShowAddress,
 	show_address::{self, ShowAddressArgs},
@@ -80,6 +81,8 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Perform a runtime upgrade through federated governance
+	RuntimeUpgrade(RuntimeUpgradeArgs),
 	/// Execute a call through governance with Root origin
 	///
 	/// This command allows executing arbitrary runtime calls through the federated authority
@@ -222,6 +225,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::RuntimeUpgrade(args) => {
+			runtime_upgrade::execute(args).await?;
 			Ok(())
 		},
 		Commands::RootCall(args) => {
