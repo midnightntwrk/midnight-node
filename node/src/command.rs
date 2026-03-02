@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) 2025-2026 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -119,6 +119,33 @@ fn get_cfg(validate: bool) -> sc_cli::Result<Cfg> {
 	Ok(cfg)
 }
 
+const MAX_GENESIS_STATE_BYTES: usize = 256 * 1024 * 1024; // 256 MiB
+
+fn decode_genesis_state(
+	properties: &serde_json::Map<String, serde_json::Value>,
+) -> sc_cli::Result<Vec<u8>> {
+	let genesis_value = properties.get("genesis_state").ok_or_else(|| {
+		sc_cli::Error::Input("chain spec properties missing required 'genesis_state' key".into())
+	})?;
+
+	let genesis_state_hex = genesis_value
+		.as_str()
+		.ok_or_else(|| sc_cli::Error::Input("'genesis_state' property must be a string".into()))?;
+
+	let genesis_state = hex::decode(genesis_state_hex)
+		.map_err(|e| sc_cli::Error::Input(format!("'genesis_state' contains invalid hex: {e}")))?;
+
+	if genesis_state.len() > MAX_GENESIS_STATE_BYTES {
+		return Err(sc_cli::Error::Input(format!(
+			"genesis state size ({} bytes) exceeds maximum allowed ({} bytes)",
+			genesis_state.len(),
+			MAX_GENESIS_STATE_BYTES,
+		)));
+	}
+
+	Ok(genesis_state)
+}
+
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	let run_cmd: RunCmd = cfg.substrate_cfg.clone().try_into()?;
 	if cfg.midnight_cfg.wipe_chain_state
@@ -138,8 +165,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	let config_dir = base_path.config_dir(chain_spec.id());
 
 	let properties = chain_spec.properties();
-	let genesis_state_hex = properties.get("genesis_state").unwrap().as_str().unwrap();
-	let genesis_state = hex::decode(genesis_state_hex).unwrap();
+	let genesis_state = decode_genesis_state(&properties)?;
 	let storage_config =
 		StorageInit { genesis_state, cache_size: cfg.midnight_cfg.storage_cache_size };
 
@@ -274,13 +300,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let PartialComponents { client, task_manager, other, .. } = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					storage_config,
-					Default::default(),
-				)?;
+				let PartialComponents { client, task_manager, other, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
@@ -304,13 +325,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 				)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						storage_config,
-						Default::default(),
-					)?;
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -323,13 +338,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let PartialComponents { client, task_manager, .. } = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					storage_config,
-					Default::default(),
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
 		},
@@ -342,13 +352,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let PartialComponents { client, task_manager, .. } = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					storage_config,
-					Default::default(),
-				)?;
+				let PartialComponents { client, task_manager, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
 		},
@@ -362,13 +367,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 				)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(
-						&config,
-						epoch_config,
-						data_sources,
-						storage_config,
-						Default::default(),
-					)?;
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -385,13 +384,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						None,
 					),
 				)?;
-				let PartialComponents { client, task_manager, backend, .. } = service::new_partial(
-					&config,
-					epoch_config,
-					data_sources,
-					storage_config,
-					Default::default(),
-				)?;
+				let PartialComponents { client, task_manager, backend, .. } =
+					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
@@ -432,7 +426,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 
 						cmd.run(partial.client)
@@ -457,7 +450,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
@@ -477,7 +469,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
 
@@ -503,7 +494,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
                             epoch_config,
                             data_sources,
                             storage_config,
-                            Default::default(),
                         )?;
 						// Register the *Remark* and *TKA* builders.
 						let ext_factory = ExtrinsicFactory(vec![
@@ -1311,5 +1301,60 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				}
 			})
 		},
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn make_properties(
+		entries: Vec<(&str, serde_json::Value)>,
+	) -> serde_json::Map<String, serde_json::Value> {
+		entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+	}
+
+	#[test]
+	fn decode_genesis_state_valid_hex() {
+		let data = vec![0xde, 0xad, 0xbe, 0xef];
+		let props =
+			make_properties(vec![("genesis_state", serde_json::Value::String(hex::encode(&data)))]);
+		let result = decode_genesis_state(&props).expect("should decode valid hex");
+		assert_eq!(result, data);
+	}
+
+	#[test]
+	fn decode_genesis_state_empty_hex() {
+		let props =
+			make_properties(vec![("genesis_state", serde_json::Value::String(String::new()))]);
+		let result = decode_genesis_state(&props).expect("should decode empty hex");
+		assert!(result.is_empty());
+	}
+
+	#[test]
+	fn decode_genesis_state_missing_key() {
+		let props = make_properties(vec![]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("missing required 'genesis_state' key"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn decode_genesis_state_non_string_value() {
+		let props = make_properties(vec![("genesis_state", serde_json::json!(12345))]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("must be a string"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn decode_genesis_state_invalid_hex() {
+		let props = make_properties(vec![(
+			"genesis_state",
+			serde_json::Value::String("not_valid_hex!".into()),
+		)]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("invalid hex"), "unexpected error: {msg}",);
 	}
 }

@@ -92,6 +92,7 @@ pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-system-parameters = { workspace = true, default-features = true }
 pallet-system-parameters-rpc = { workspace = true, default-features = true }
+pallet-throttle = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 

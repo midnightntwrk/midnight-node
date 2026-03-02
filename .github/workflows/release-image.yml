@@ -33,6 +33,11 @@ on:
         description: "Force release if it already exists?"
         required: true
         default: false
+      node-only:
+        type: boolean
+        description: "Node-only release (skip srtool runtime WASM build)?"
+        required: false
+        default: false
 
 jobs:
   prepare-release:
@@ -231,6 +236,8 @@ jobs:
     name: Create release
     runs-on: ubuntu-latest
     needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
+    outputs:
+      release_tag: ${{ steps.export-tags.outputs.release_tag }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -391,8 +398,18 @@ jobs:
             "$TOOLKIT_FILE" \
             "SHA256SUMS-${{ matrix.platform }}"
 
+  srtool-build:
+    name: srtool Build
+    needs: [finalize-release]
+    if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.node-only != 'true'
+    uses: ./.github/workflows/srtool-build.yml
+    with:
+      ref: ${{ inputs.ref }}
+      release-tag: node-${{ needs.finalize-release.outputs.release_tag }}
+    secrets: inherit
+
   finalize-checksums:
-    needs: [prepare-release, create-release-assets]
+    needs: [prepare-release, create-release-assets, srtool-build]
     runs-on: ubuntu-latest
     if: github.event.inputs.release-type != 'Don''t create a release.'
     steps:

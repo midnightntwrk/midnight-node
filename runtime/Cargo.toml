@@ -79,6 +79,7 @@ midnight-node-ledger.workspace = true
 pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-system-parameters.workspace = true
+pallet-throttle.workspace = true
 pallet-version.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
@@ -118,6 +119,7 @@ std = [
     "pallet-grandpa/std",
     "pallet-midnight/std",
     "pallet-system-parameters/std",
+    "pallet-throttle/std",
     "pallet-mmr/std",
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
@@ -207,6 +209,7 @@ try-runtime = [
     "pallet-migrations/try-runtime",
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",
+    "pallet-throttle/try-runtime",
 ]
 experimental = []
 

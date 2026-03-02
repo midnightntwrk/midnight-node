@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) 2025-2026 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -33,12 +33,6 @@ pub enum WalletSeed {
 	Short([u8; 16]),
 	Medium([u8; 32]),
 	Long([u8; 64]),
-}
-
-impl Default for WalletSeed {
-	fn default() -> Self {
-		Self::Medium([0; 32])
-	}
 }
 
 #[derive(Clone, Debug, thiserror::Error)]

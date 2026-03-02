@@ -475,10 +475,16 @@ rebuild-genesis-state-mainnet:
         --NETWORK=mainnet \
         --FUND_FAUCET_WALLETS=false
 
+# rebuild-genesis-state-perfnet rebuilds the genesis ledger state for perfnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-perfnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=perfnet
+
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-perfnet
     BUILD +rebuild-genesis-state-govnet
     BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
@@ -537,6 +543,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
+    BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
@@ -749,7 +756,7 @@ toolkit-js-prep:
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
         node --version && npm --version && \
-        npm install -g npm@11.8.0 && npm --version
+        npm install -g npm@11.11.0 && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -1216,7 +1223,7 @@ toolkit-image:
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
         node --version && npm --version && \
-        npm install -g npm@11.8.0 && npm --version
+        npm install -g npm@11.11.0 && npm --version
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
@@ -1298,6 +1305,7 @@ audit-npm:
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
         node --version && npm --version
 
     COPY ${DIRECTORY} ${DIRECTORY}
@@ -1328,6 +1336,7 @@ audit-yarn:
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
         node --version && npm --version
 
     # Install and enable corepack for yarn support

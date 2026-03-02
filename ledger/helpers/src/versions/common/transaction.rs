@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) 2025-2026 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -14,13 +14,12 @@
 use rand::Rng as _;
 
 use super::{
-	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, Duration, DustActions,
-	DustPublicKey, DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer,
-	OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker,
-	ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment,
-	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
-	Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness,
-	serialize,
+	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, DustActions, DustPublicKey,
+	DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer, OfferInfo, Pedersen,
+	PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker, ProofPreimage,
+	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
+	Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng, Storable,
+	Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -147,10 +146,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.context.latest_block_context().tblock;
-		// (10 min) max_ttl/6 - enough to produce 6 txs for a chain that starts
-		// with the `Timestamp` of the first tx to be sent
-		let delay = Duration::from_secs(600);
-
+		let delay = self.context.with_ledger_state(|ls| ls.parameters.global_ttl);
 		let ttl = now + delay;
 
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
@@ -189,18 +185,12 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
-		println!("pre-proof tx: {tx:#?}");
-		println!("tx balance pre-fees: {:#?}", tx.balance(None));
-
 		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
 		if self.funding_seeds.is_empty() {
 			return self.prove_tx(tx).await;
 		};
 
 		let tx = self.pay_fees(tx, now, ttl).await?;
-		let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
-		println!("post-proof tx: {tx:#?}");
-		println!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 		Ok(tx)
 	}
 
@@ -386,7 +376,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		fs::create_dir_all(parent_dir).expect("failed to create directory");
 
 		let now = self.context.latest_block_context().tblock;
-		let ttl = now + Duration::from_secs(600);
+		let ttl = now + self.context.with_ledger_state(|ls| ls.parameters.global_ttl);
 
 		for (segment_id, intent_info) in self.intents.iter_mut() {
 			let intent =
@@ -442,7 +432,6 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	}
 }
 
-#[derive(Default)]
 pub struct RewardsInfo {
 	pub owner: WalletSeed,
 	pub value: u128,
@@ -463,7 +452,12 @@ impl<D: DB + Clone> FromContext<D> for ClaimMintInfo<D> {
 	) -> Self {
 		let rng = Self::rng(maybe_rng_seed);
 
-		Self { context, coin: RewardsInfo::default(), rng, prover }
+		Self {
+			context,
+			coin: RewardsInfo { owner: WalletSeed::Short([0; 16]), value: 0 },
+			rng,
+			prover,
+		}
 	}
 }
 
