@@ -46,6 +46,7 @@ pub mod meta_cfg;
 pub mod midnight_cfg;
 pub mod storage_monitor_params_cfg;
 pub mod substrate_cfg;
+pub mod validated_file;
 mod validation_utils;
 
 pub mod error;
