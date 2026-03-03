@@ -143,6 +143,7 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
 				dust_address: None,
+				allow_fee_payment: 0,
 			});
 		});
 
