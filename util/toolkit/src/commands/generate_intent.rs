@@ -6,6 +6,7 @@ use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState, serialize};
+use std::io::Write;
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -167,7 +168,7 @@ pub async fn execute(
 					return Ok(());
 				}
 				let temp_dir =
-					tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
+					tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -188,15 +189,14 @@ pub async fn execute(
 			let ledger_parameters = client.get_ledger_parameters().await?;
 
 			let temp_dir =
-				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
+				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
 			let (mut encoded_parameters_file, encoded_parameters_path) =
 				tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
-			serde_json::to_writer(
-				&mut encoded_parameters_file,
-				&hex::encode(
-					serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
-				),
-			)?;
+			encoded_parameters_file
+				.write_all(
+					&serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
+				)
+				.expect("failed to write file");
 			let ledger_parameters_path = RelativePath(encoded_parameters_path);
 
 			let command = toolkit_js::Command::Circuit {
