@@ -57,6 +57,8 @@ jobs:
 
       # Run Earthly build with platform-specific flags
       - name: Run Earthly build for linux/${{ matrix.platform }}
+        env:
+          RUST_VERSION: ${{ github.event.inputs.rust_version }}
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
@@ -67,7 +69,7 @@ jobs:
           # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
           . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
-          export VERSION="${{ github.event.inputs.rust_version }}"
+          export VERSION="$RUST_VERSION"
           docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
 
           echo "Tag and push ${VERSION} images"
@@ -91,8 +93,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Create multiplatform image (Docker Hub)
+        env:
+          RUST_VERSION: ${{ github.event.inputs.rust_version }}
         run: |
-          export VERSION="${{ github.event.inputs.rust_version }}"
+          export VERSION="$RUST_VERSION"
 
           docker buildx imagetools create \
             -t midnightntwrk/midnight-node-ci:${VERSION} \

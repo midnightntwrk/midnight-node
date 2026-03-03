@@ -48,6 +48,8 @@ jobs:
 
       # Run Earthly build with platform-specific flags
       - name: Run Earthly build for ${{ matrix.platform }}
+        env:
+          GH_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
@@ -55,4 +57,4 @@ jobs:
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Run Earthly platform-specific image builds
-          . ./.envrc && earthly --secret GH_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" --ci --platform=linux/amd64 --push +contract-precompile-image
+          . ./.envrc && earthly --secret GH_TOKEN="$GH_TOKEN" --ci --platform=linux/amd64 --push +contract-precompile-image
