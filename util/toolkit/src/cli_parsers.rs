@@ -67,11 +67,11 @@ pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, c
 }
 
 pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {
-	hex_ledger_decode(input)
+	hex_ledger_untagged_decode(input)
 }
 
 pub fn contract_address_decode(input: &str) -> Result<ContractAddress, clap::error::Error> {
-	hex_ledger_decode(input)
+	hex_ledger_untagged_decode(input)
 }
 
 pub fn hex_ledger_untagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
