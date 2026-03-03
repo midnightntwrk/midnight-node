@@ -41,6 +41,7 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 | Shielded + Unshielded tokens sending between contract calls          | ✅       |
 | Contract Maintenance - updating authority + verifier keys            | ✅       |
 | Execute calls via governance (root-call)                             | ✅       |
+| Runtime upgrade via governance                                       | ✅       |
 | Support for Ledger forks                                             | ✅       |
 | DUST registration command                                            | ✅       |
 | Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
@@ -619,6 +620,31 @@ The command will:
 6. Have TC members vote on the proposal
 7. Close the TC proposal
 8. Close the federated motion to execute the call with Root origin
+
+### Runtime Upgrade
+Perform a runtime upgrade through the federated authority governance mechanism. This reads a WASM runtime file, authorizes the upgrade via governance (Council + Technical Committee), and then applies it.
+
+```bash
+midnight-node-toolkit runtime-upgrade \
+    --wasm-file /path/to/midnight_node_runtime.compact.compressed.wasm \
+    -c <COUNCIL_KEY_1> -c <COUNCIL_KEY_2> \
+    -t <TC_KEY_1> -t <TC_KEY_2> \
+    --rpc-url ws://localhost:9944 \
+    --signer-key //Alice
+```
+
+Parameters:
+- `--wasm-file`: Path to the runtime WASM file
+- `-c`: Council member private keys (32-byte sr25519 seeds or `//Name` dev keys). At least 2 required.
+- `-t`: Technical Committee member private keys. At least 2 required.
+- `--rpc-url`: RPC URL of the node (defaults to `ws://localhost:9944`, can also be set via `RPC_URL` env var)
+- `--signer-key`: Signer key for the apply step, any funded account (defaults to `//Alice`)
+
+The command will:
+1. Compute the blake2-256 hash of the WASM code
+2. Build a `System::authorize_upgrade` call and execute it through governance (same flow as `root-call`)
+3. Submit `System::apply_authorized_upgrade` with the full WASM code
+4. Verify the `System::CodeUpdated` event to confirm the upgrade succeeded
 
 ---
 
