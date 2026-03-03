@@ -5,7 +5,7 @@ use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
+use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState, serialize};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -138,8 +138,6 @@ pub async fn execute(
 	args: GenerateIntentArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	println!("Executing generate-intent");
-	let temp_dir = tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
-
 	match args.js_command {
 		JsCommand::Deploy(args) => {
 			if args.dry_run {
@@ -168,6 +166,8 @@ pub async fn execute(
 				if args.dry_run {
 					return Ok(());
 				}
+				let temp_dir =
+					tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -187,10 +187,22 @@ pub async fn execute(
 			let client = MidnightNodeClient::new_without_timeout(&rpc_url).await?;
 			let ledger_parameters = client.get_ledger_parameters().await?;
 
+			let temp_dir =
+				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
+			let (mut encoded_parameters_file, encoded_parameters_path) =
+				tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
+			serde_json::to_writer(
+				&mut encoded_parameters_file,
+				&hex::encode(
+					serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
+				),
+			)?;
+			let ledger_parameters_path = RelativePath(encoded_parameters_path);
+
 			let command = toolkit_js::Command::Circuit {
 				args: args.circuit_call,
 				input_zswap_state,
-				ledger_parameters,
+				ledger_parameters: ledger_parameters_path,
 			};
 			args.toolkit_js.execute(command)?;
 		},
