@@ -87,17 +87,18 @@ jobs:
       - name: Run build
         id: export
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # We don't use --ci as we want artifacts to be saved
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
 
           # Pass IMAGE_TAG to next step (must match definition in Earthfile):
-          export IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
-          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+          export IMAGE_TAG
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Get image digests
         id: digests
@@ -151,8 +152,6 @@ jobs:
             exit 0
           fi
 
-          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
-          IMAGE_TAG_RELEASE="$VERSION"
           RELEASE_TITLE="[Unreleased]"
 
           if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
@@ -219,13 +218,13 @@ jobs:
 
       - name: Run Node and toolkit builds
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # We don't pass --ci to earthly here as we want the artifacts saved
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }} -P --ci --push +toolkit-image
+          . ./.envrc && earthly --secret "GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -308,9 +307,9 @@ jobs:
       - name: Build indexer images
         id: build_indexer
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # Force AMD64 architecture for all builds
           export DOCKER_DEFAULT_PLATFORM=linux/amd64
@@ -319,11 +318,11 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls
-          cd indexer
+          cd indexer || exit 1
           ls
           . .envrc
 
@@ -346,29 +345,27 @@ jobs:
           # Retag images with main repo's commit hash (not submodule's)
           echo "🏷️ Retagging images with main repo commit hash..."
 
-          # Get commit hashes before changing directories
-          cd ..  # Go back to main repo directory
-          MAIN_COMMIT=$(git rev-parse --short=8 HEAD)
+          # Get commit hashes
+          MAIN_COMMIT=$(git -C .. rev-parse --short=8 HEAD)
           echo "Main repo commit: $MAIN_COMMIT"
 
-          cd indexer
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
           echo "Submodule commit: $SUBMODULE_COMMIT"
 
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           INDEXER_IMAGE_TAG="via-node-${MAIN_COMMIT}"
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
-          echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           echo "✅ Images retagged and pushed successfully!"
 
@@ -483,18 +480,18 @@ jobs:
           echo "Creating manifests for node/toolkit with tags: $IMAGE_TAG"
 
           # Multi-arch node image
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG} \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
 
           # Toolkit manifests
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG} \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
           # Push node manifests
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
 
       - name: Get multi-arch manifest digests (GHCR)
         id: ghcr-digests
@@ -577,16 +574,16 @@ jobs:
         run: |
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:latest-main \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node:latest-main" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:latest-main
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node:latest-main"
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest-main"
 
       - name: Create `latest-main` images (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
@@ -614,16 +611,16 @@ jobs:
           export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
           echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
-          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
           echo "Tagging each image with 'latest-main'"
-          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node:latest-main-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node:latest-main-arm64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 midnightntwrk/midnight-node-toolkit:latest-main-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64 midnightntwrk/midnight-node-toolkit:latest-main-arm64
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node:latest-main-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node:latest-main-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node-toolkit:latest-main-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node-toolkit:latest-main-arm64"
 
           echo "Push 'latest-main' images to Docker Hub"
           docker push midnightntwrk/midnight-node:latest-main-amd64
@@ -733,11 +730,11 @@ jobs:
         id: indexer-check
         if: (github.event.inputs.branch || github.ref_name) == 'main'
         run: |
-          pushd indexer
+          pushd indexer || exit 1
           # Get the upstream branch name for the submodule commit
           git fetch --unshallow
           INDEXER_BRANCH=$(git branch -r --contains HEAD | grep "origin/main" || true)
-          popd
+          popd || exit 1
 
           if [ -z "$INDEXER_BRANCH" ]; then
             echo "❌ Indexer submodule is not tracking origin/main."
@@ -745,7 +742,7 @@ jobs:
             echo "result=notok" >> "$GITHUB_OUTPUT"
           else
             echo "✅ Indexer submodule is on main. Pushing NODE_DEV_01 images."
-            echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "INDEXER_IMAGE_TAG=${INDEXER_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
             echo "result=ok" >> "$GITHUB_OUTPUT"
           fi
 
@@ -756,30 +753,30 @@ jobs:
           export INDEXER_IMAGE_TAG="${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}"
           export NODE_DEV_01_TAG="${IMAGE_TAG}-node-dev-01"
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG} \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
 
-          docker manifest create ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG} \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64 \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64
+          docker manifest create "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" \
+            "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}
-          docker manifest push ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node:${NODE_DEV_01_TAG}"
+          docker manifest push "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${NODE_DEV_01_TAG}"
 
           # Pull, re-tag, and push indexer images
 
-          docker pull ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}
-          docker pull ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}
-          docker pull ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}
+          docker pull "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker pull "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker pull "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG} ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}" "ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}"
 
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${NODE_DEV_01_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${NODE_DEV_01_TAG}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${NODE_DEV_01_TAG}"
 
   sbom-scan-midnightntwrk-node-amd64:
     name: SBOM/Scan Node midnightntwrk (amd64)

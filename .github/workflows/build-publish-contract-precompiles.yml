@@ -65,16 +65,16 @@ jobs:
 
           # Run Earthly platform-specific image builds
           # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
-          . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
+          . ./.envrc && earthly --ci --platform="linux/${{ matrix.platform }}" --push +node-ci-image-single-platform
 
           export VERSION="${{ github.event.inputs.rust_version }}"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          docker pull "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
           echo "Tag and push ${VERSION} images"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }} midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}" "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
           echo "Push ${VERSION} images to Docker Hub"
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          docker push "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
   publish_to_dockerhub:
     # needed so forks can run ci jobs
@@ -95,6 +95,6 @@ jobs:
           export VERSION="${{ github.event.inputs.rust_version }}"
 
           docker buildx imagetools create \
-            -t midnightntwrk/midnight-node-ci:${VERSION} \
-            midnightntwrk/midnight-node-ci:${VERSION}-amd64 \
-            midnightntwrk/midnight-node-ci:${VERSION}-arm64
+            -t "midnightntwrk/midnight-node-ci:${VERSION}" \
+            "midnightntwrk/midnight-node-ci:${VERSION}-amd64" \
+            "midnightntwrk/midnight-node-ci:${VERSION}-arm64"

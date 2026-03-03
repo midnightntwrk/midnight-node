@@ -47,7 +47,7 @@ jobs:
 
       - name: Get current commit SHA
         id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -58,9 +58,9 @@ jobs:
 
       - name: Run build
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly -P --ci --push +images
 
@@ -69,8 +69,8 @@ jobs:
         run: |
           short_hash=$(git rev-parse --short=8 HEAD)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> $GITHUB_OUTPUT
-          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
+          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -145,9 +145,9 @@ jobs:
 
       - name: Run build
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly -P --ci --push +images
 
@@ -187,7 +187,7 @@ jobs:
 
       - name: Get current commit SHA
         id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -222,9 +222,9 @@ jobs:
 
       - name: Check Deps
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly +check-deps
 
@@ -253,13 +253,13 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Get current commit SHA
         id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -278,11 +278,14 @@ jobs:
 
       - name: Check Genesis Rebuild
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --build-arg TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +rebuild-genesis
+          . ./.envrc && earthly \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            +rebuild-genesis
 
   hardfork-e2e:
     name: Hardfork E2E
@@ -296,9 +299,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: hardfork-e2e
@@ -316,9 +319,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
@@ -382,7 +385,7 @@ jobs:
       - name: Run toolkit tests
         run: |
           . ./.envrc && earthly -P --strict \
-            --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }} \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +test-toolkit
 
   toolkit-e2e:
@@ -395,9 +398,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-e2e
@@ -415,9 +418,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-update-ledger-parameters-e2e
@@ -435,9 +438,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-maintenance-e2e
@@ -455,9 +458,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
@@ -475,9 +478,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-tokens-minter-e2e
@@ -507,13 +510,15 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Run metadata check
         run: |
-          . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
+          . ./.envrc && earthly --ci -P \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            +check-metadata
 
   toolkit-contracts-e2e:
     name: Toolkit Contracts E2E
@@ -525,9 +530,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-contracts-e2e
@@ -545,9 +550,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: startup-dev-e2e
@@ -564,9 +569,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: genesis-wallets-undeployed-e2e
@@ -616,7 +621,7 @@ jobs:
 
           pwd
           ls
-          cd indexer
+          cd indexer || exit 1
           ls
           . .envrc
 
@@ -639,26 +644,24 @@ jobs:
           # Retag images with main repo's commit hash (not submodule's)
           echo "🏷️ Retagging images with main repo commit hash..."
 
-          # Get commit hashes before changing directories
-          cd ..  # Go back to main repo directory
-          MAIN_COMMIT=$(git rev-parse --short=8 HEAD)
+          # Get commit hashes
+          MAIN_COMMIT=$(git -C .. rev-parse --short=8 HEAD)
           echo "Main repo commit: $MAIN_COMMIT"
 
-          cd indexer
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
           echo "Submodule commit: $SUBMODULE_COMMIT"
 
           # Retag all indexer images
           echo "🏷️ Retagging images..."
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
 
           echo "✅ Images retagged and pushed successfully!"
 
@@ -667,9 +670,11 @@ jobs:
         run: |
           # Use main repo's commit hash (not submodule's)
           short_hash=$(git rev-parse --short=8 HEAD)
-          echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}" >> "$GITHUB_OUTPUT"
-          echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
-          echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
+          {
+            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}"
+            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}"
+            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
 
@@ -689,7 +694,7 @@ jobs:
         run: |
           . ./.envrc
           git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
-          cd indexer
+          cd indexer || exit 1
           just feature=standalone test
 
   local-environment-tests:
@@ -728,7 +733,7 @@ jobs:
 
           # Tag for node and toolkit images
           node_tag="${version}-${short_hash}-amd64"
-          echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
+          echo "node_tag=$node_tag" >> "$GITHUB_OUTPUT"
 
           echo "Get Version and git commit"
           echo "short_hash: $short_hash"

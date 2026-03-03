@@ -137,16 +137,16 @@ jobs:
         env:
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc
 
           # Split networks and run earthly for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK=$network
+            earthly -P +rebuild-chainspec --NETWORK="$network"
           done
 
       - name: Commit and push changes
