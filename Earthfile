@@ -288,7 +288,7 @@ rebuild-genesis-state:
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
-            && /midnight-node-toolkit contract-address --tagged \
+            && /midnight-node-toolkit contract-address \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 | tr -d '\n' > out/contract_address_${NETWORK}.mn \
             && /midnight-node-toolkit generate-txs \
@@ -368,7 +368,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public-tagged \
+                    --coin-public \
                 ) \
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \
@@ -382,7 +382,7 @@ rebuild-genesis-state:
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address --tagged \
+            && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
@@ -399,7 +399,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public-tagged \
+                    --coin-public \
                 ) \
                 -c /toolkit-js/mint/mint.config.ts \
                 --output-intent /res/test-data/contract/mint/deploy.bin \
@@ -412,7 +412,7 @@ rebuild-genesis-state:
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
                 --dest-file /res/test-data/contract/mint/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address --tagged \
+            && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/mint/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
             && /midnight-node-toolkit contract-state \
