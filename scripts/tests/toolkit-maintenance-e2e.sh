@@ -66,7 +66,7 @@ coin_public=$(
     show-address \
     --network undeployed \
     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    --coin-public
+    --coin-public-tagged
 )
 
 echo ""
@@ -110,7 +110,7 @@ contract_address=$(
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    contract-address \
+    contract-address --tagged \
     --src-file /out/$deploy_tx_filename
 )
 

@@ -28,7 +28,6 @@ pub mod inner {
 	mod deregister_dust_address;
 	mod do_nothing;
 	mod register_dust_address;
-	mod replace_initial_tx;
 	pub mod single_tx;
 	pub mod transactions;
 	mod tx_serialization;
@@ -44,7 +43,6 @@ pub mod inner {
 	pub use deregister_dust_address::*;
 	pub use do_nothing::*;
 	pub use register_dust_address::*;
-	pub use replace_initial_tx::*;
 }
 pub use inner::*;
 

@@ -78,11 +78,11 @@ async fn send_txs(
 
 #[cfg(test)]
 mod tests {
-	use std::str::FromStr;
+	use std::{path::Path, str::FromStr};
 
 	use super::*;
 	use crate::{
-		cli_parsers::contract_address_decode,
+		cli_parsers::hex_ledger_untagged_decode,
 		t_token,
 		tx_generator::{
 			builder::{
@@ -192,7 +192,7 @@ mod tests {
 	    ContractCall::Call(ContractCallArgs {
 					funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 					call_key:"store".to_string(),
-					contract_address: contract_address_decode(include_str!("../../../../res/test-contract/contract_address_undeployed.mn")).unwrap(),
+					contract_address: hex_ledger_untagged_decode(include_str!("../../../../res/test-contract/contract_address_undeployed.mn")).unwrap(),
 					rng_seed: None,
 					fee: 1_300_000,
 					})
@@ -204,6 +204,23 @@ mod tests {
 	async fn test_generation(
 		args: GenerateTxsArgs,
 	) -> Result<SerializedTxBatches, GenerateTxsError> {
+		let is_contract_builder = matches!(args.builder, Builder::ContractSimple(_));
+		if is_contract_builder {
+			let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+				eprintln!(
+					"Skipping contract tx generation tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set"
+				);
+				return Ok(SerializedTxBatches { batches: vec![] });
+			};
+			if !Path::new(&path).exists() {
+				eprintln!(
+					"Skipping contract tx generation tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+					path
+				);
+				return Ok(SerializedTxBatches { batches: vec![] });
+			}
+		}
+
 		let generator = TxGenerator::new(
 			args.source,
 			args.destination,

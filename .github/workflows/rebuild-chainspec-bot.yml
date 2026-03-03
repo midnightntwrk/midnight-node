@@ -28,6 +28,11 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
+            const association = context.payload.comment.author_association;
+            if (!['MEMBER', 'OWNER'].includes(association)) {
+              core.setFailed(`User ${context.actor} is not an org member or owner (association: ${association})`);
+              return;
+            }
             const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -56,14 +61,35 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
+            const ALLOWED_NETWORKS = ['dev', 'devnet', 'govnet', 'perfnet'];
             const comment = context.payload.comment.body;
             const match = comment.match(/\/bot rebuild-chainspec\s+(.+)/);
             if (!match) {
               core.setFailed('No networks specified. Usage: /bot rebuild-chainspec <network1> <network2> ...');
               return;
             }
-            const networks = match[1].trim();
-            core.setOutput('networks', networks);
+            const networks = match[1].trim().split(/\s+/);
+            const invalid = networks.filter(n => !ALLOWED_NETWORKS.includes(n));
+            if (invalid.length > 0) {
+              core.setFailed(`Unknown network(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_NETWORKS.join(', ')}`);
+              return;
+            }
+            core.setOutput('networks', networks.join(' '));
+
+      - name: Validate networks (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        id: validate_networks
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          NETWORKS_INPUT: ${{ github.event.inputs.networks }}
+        with:
+          script: |
+            const ALLOWED_NETWORKS = ['dev', 'devnet', 'govnet', 'perfnet'];
+            const networks = process.env.NETWORKS_INPUT.trim().split(/\s+/);
+            const invalid = networks.filter(n => !ALLOWED_NETWORKS.includes(n));
+            if (invalid.length > 0) {
+              core.setFailed(`Unknown network(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_NETWORKS.join(', ')}`);
+            }
 
       - name: Get PR branch
         id: pr
@@ -78,6 +104,10 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+            if (pr.data.head.repo === null || pr.data.head.repo.fork) {
+              core.setFailed('Bot commands are not allowed on fork PRs for security reasons');
+              return;
+            }
             core.setOutput('ref', pr.data.head.ref);
             core.setOutput('sha', pr.data.head.sha);
             core.setOutput('number', prNumber);

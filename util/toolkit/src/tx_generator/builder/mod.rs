@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{DoNothingBuilder, ReplaceInitialTxBuilder, compute_batches_seeds};
+use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
@@ -316,7 +316,6 @@ pub enum Builder {
 	DeregisterDustAddress(DeregisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
-	Migrate,
 }
 
 /// Configuration for how proofs should be generated.
@@ -433,7 +432,7 @@ impl Builder {
 				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
 				vec![seed, funding_seed]
 			},
-			Builder::Send | Builder::Migrate => vec![],
+			Builder::Send => vec![],
 		}
 	}
 
@@ -473,7 +472,7 @@ impl Builder {
 				)
 			},
 			None => {
-				// Pass-through builders (Send, Migrate) don't need context
+				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
 			},
 		}
@@ -530,7 +529,6 @@ impl Builder {
 				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
-			Builder::Migrate => constr(v8::ReplaceInitialTxBuilder::new()),
 		}
 	}
 
@@ -584,7 +582,6 @@ impl Builder {
 				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		})
 	}
 
@@ -597,7 +594,6 @@ impl Builder {
 
 		match self {
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}

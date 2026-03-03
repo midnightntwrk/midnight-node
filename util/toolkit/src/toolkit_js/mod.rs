@@ -58,8 +58,8 @@ pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
-	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	/// Hex-encoded tagged ledger-serialized address of the contract
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
@@ -126,8 +126,8 @@ pub struct SharedMaintainArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
-	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	/// Hex-encoded tagged ledger-serialized address of the contract
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]

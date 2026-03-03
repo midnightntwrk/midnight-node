@@ -11,7 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utxo};
+use crate::{
+	FederatedAuthorityObservationDataSource,
+	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
+};
 use cardano_serialization_lib::PlutusData;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
@@ -30,7 +33,7 @@ pub struct FederatedAuthorityObservationDataSourceImpl {
 	cache_size: u16,
 }
 
-#[async_trait::async_trait]
+observed_async_trait!(
 impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
 	async fn get_federated_authority_data(
 		&self,
@@ -118,6 +121,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		})
 	}
 }
+);
 
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
