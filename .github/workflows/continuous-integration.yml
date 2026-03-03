@@ -73,14 +73,14 @@ jobs:
           echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Test artifacts (amd64)
@@ -152,14 +152,14 @@ jobs:
           . ./.envrc && earthly -P --ci --push +images
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Test artifacts (arm64)
@@ -324,29 +324,6 @@ jobs:
       #   with:
       #     just-command: ledger-rollback-e2e
       #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-      - name: 💤 Dummy step to bypass real test
-        run: echo "Skipping test — dummy command"
-
-  node-e2e:
-    name: Node E2E
-    needs: run
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      # - name: Get Version and git commit
-      #   id: meta
-      #   run: |
-      #     echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-      #     version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-      #     echo "version=$version" >> $GITHUB_OUTPUT
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: node-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
       #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - name: 💤 Dummy step to bypass real test
@@ -768,7 +745,6 @@ jobs:
     # needs:
     #   - hardfork-e2e
     #   - ledger-rollback-e2e
-    #   - node-e2e
     #   - tx-generator-e2e
     #   - startup-dev-e2e
     #   - genesis-undeployed-e2e

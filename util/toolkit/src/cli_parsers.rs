@@ -63,11 +63,7 @@ pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
 }
 
 pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, clap::error::Error> {
-	if let Ok(addr) = hex_ledger_tagged_decode::<T>(input) {
-		Ok(addr)
-	} else {
-		hex_ledger_untagged_decode::<T>(input)
-	}
+	hex_ledger_tagged_decode::<T>(input)
 }
 
 pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {

@@ -288,7 +288,7 @@ rebuild-genesis-state:
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
-            && /midnight-node-toolkit contract-address \
+            && /midnight-node-toolkit contract-address --tagged \
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 | tr -d '\n' > out/contract_address_${NETWORK}.mn \
             && /midnight-node-toolkit generate-txs \
@@ -368,7 +368,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
+                    --coin-public-tagged \
                 ) \
                 -c /toolkit-js/test/contract/contract.config.ts \
                 --output-intent /res/test-data/contract/counter/deploy.bin \
@@ -382,7 +382,7 @@ rebuild-genesis-state:
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address \
+            && /midnight-node-toolkit contract-address --tagged \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/counter/contract_address.mn \
             && /midnight-node-toolkit contract-state \
@@ -399,7 +399,7 @@ rebuild-genesis-state:
                     show-address \
                     --network $NETWORK \
                     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-                    --coin-public \
+                    --coin-public-tagged \
                 ) \
                 -c /toolkit-js/mint/mint.config.ts \
                 --output-intent /res/test-data/contract/mint/deploy.bin \
@@ -412,7 +412,7 @@ rebuild-genesis-state:
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
                 --dest-file /res/test-data/contract/mint/deploy_tx.mn \
-            && /midnight-node-toolkit contract-address \
+            && /midnight-node-toolkit contract-address --tagged \
                 --src-file /res/test-data/contract/mint/deploy_tx.mn \
                 | tr -d '\n' > /res/test-data/contract/mint/contract_address.mn \
             && /midnight-node-toolkit contract-state \
@@ -1344,18 +1344,10 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
-audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
-
-audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-ui
-    BUILD +audit-ui-tests
 
 # audit checks for security vulnerabilities
 audit:
@@ -1524,49 +1516,6 @@ stop-local-env:
     WORKDIR local-environment
     RUN npm ci
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
-
-# node-e2e-test runs the node E2E tests using Earthly's container management
-#
-# Usage:
-#   earthly +node-e2e-test
-#
-# This target:
-# 1. Runs the Playwright E2E tests against the local environment
-# 2. Saves all test artifacts to test-artifacts/e2e/node/
-#
-# Outputs:
-#   - test-artifacts/e2e/node/ - All test results, logs, and reports
-node-e2e-test:
-    ARG NATIVEARCH
-
-    LOCALLY
-
-    RUN echo "🧪 Running Node E2E tests with Earthly:"
-
-    # Setup test environment
-    WORKDIR ui/tests
-
-    # Install dependencies
-    RUN yarn config set -H enableImmutableInstalls false
-    RUN yarn install
-
-    # Create test artifacts directory first
-    RUN mkdir -p test-artifacts/e2e/node
-
-    # Run the tests from the test artifacts directory to generate CTRF report there
-    RUN echo "🎯 Running Playwright + Testcontainers tests..." \
-      && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-
-    # Save test results
-    RUN cp -r ./reports test-artifacts/e2e/node/ || true
-    RUN cp -r ./logs test-artifacts/e2e/node/ || true
-    # Check test results
-    RUN if [ "${TEST_FAILED:-false}" = true ]; then \
-        echo "❌ Tests failed"; \
-        exit 1; \
-    else \
-        echo "✅ Node E2E tests complete."; \
-    fi
 
 #images Build all the images
 images:

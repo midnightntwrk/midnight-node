@@ -219,12 +219,18 @@ pub async fn execute(
 /// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
-	use midnight_node_ledger_helpers::{Serializable, SigningKey};
+	use midnight_node_ledger_helpers::{
+		CoinPublicKey, ContractAddress, Serializable, SigningKey, serialize,
+	};
+	use std::path::PathBuf;
 
 	use crate::cli::{Cli, run_command};
 	use clap::Parser;
 
 	use std::fs;
+
+	const COIN_PUBLIC_UNTAGGED: &str =
+		"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98";
 
 	fn to_hex<S: Serializable>(value: &S) -> String {
 		let mut bytes = vec![];
@@ -232,8 +238,44 @@ mod test {
 		hex::encode(&bytes)
 	}
 
+	fn coin_public_tagged_hex() -> String {
+		let coin_public =
+			crate::cli_parsers::hex_ledger_untagged_decode::<CoinPublicKey>(COIN_PUBLIC_UNTAGGED)
+				.expect("valid untagged coin-public test fixture");
+		let tagged = serialize(&coin_public).expect("coin-public should serialize");
+		hex::encode(tagged)
+	}
+
+	fn contract_address_tagged_hex(untagged_hex: &str) -> String {
+		let contract_address =
+			crate::cli_parsers::hex_ledger_untagged_decode::<ContractAddress>(untagged_hex)
+				.expect("valid untagged contract-address test fixture");
+		let tagged = serialize(&contract_address).expect("contract-address should serialize");
+		hex::encode(tagged)
+	}
+
+	fn toolkit_js_prerequisites_ready() -> bool {
+		let toolkit_js_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../toolkit-js");
+		let required_paths = [
+			toolkit_js_dir.join("dist/bin.js"),
+			toolkit_js_dir.join("test/contract/managed/counter"),
+			toolkit_js_dir.join("node_modules/@tsconfig/node24/tsconfig.json"),
+		];
+
+		if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
+			eprintln!("Skipping generate-intent toolkit-js tests: missing {}", missing.display());
+			return false;
+		}
+
+		true
+	}
+
 	#[tokio::test]
 	async fn test_generate_deploy() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -242,13 +284,14 @@ mod test {
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
 		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
+		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"deploy",
 			"--coin-public",
-			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			&coin_public,
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -271,6 +314,10 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_circuit_call() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -280,12 +327,13 @@ mod test {
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
 		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
 		let output_result = out_dir.path().join("output.json").to_string_lossy().to_string();
+		let coin_public = coin_public_tagged_hex();
 
-		let contract_address_hex =
+		let contract_address_hex = contract_address_tagged_hex(
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim()
-				.to_string();
+				.trim(),
+		);
 
 		let args = vec![
 			"midnight-node-toolkit",
@@ -300,7 +348,7 @@ mod test {
 			//			"--wallet-seed",
 			//			"0000000000000000000000000000000000000000000000000000000000000001",
 			"--coin-public",
-			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			&coin_public,
 			"--input-onchain-state",
 			"./test-data/contract/counter/contract_state.mn",
 			"--input-private-state",
@@ -329,6 +377,10 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_maintain_contract() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -336,21 +388,22 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex =
+		let contract_address_hex = contract_address_tagged_hex(
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim()
-				.to_string();
+				.trim(),
+		);
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
+		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"maintain-contract",
 			"--coin-public",
-			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			&coin_public,
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -374,6 +427,10 @@ mod test {
 	#[tokio::test]
 	#[ignore = "test failing intermittently - reason unknown"]
 	async fn test_generate_maintain_circuit() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -381,14 +438,15 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex =
+		let contract_address_hex = contract_address_tagged_hex(
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim()
-				.to_string();
+				.trim(),
+		);
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
+		let coin_public = coin_public_tagged_hex();
 
 		let verifier_path = "./test-data/contract/counter/keys/increment.verifier";
 
@@ -397,7 +455,7 @@ mod test {
 			"generate-intent",
 			"maintain-circuit",
 			"--coin-public",
-			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			&coin_public,
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -421,6 +479,10 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_maintain_remove_circuit() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -428,21 +490,22 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex =
+		let contract_address_hex = contract_address_tagged_hex(
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim()
-				.to_string();
+				.trim(),
+		);
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
+		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"maintain-circuit",
 			"--coin-public",
-			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
+			&coin_public,
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
