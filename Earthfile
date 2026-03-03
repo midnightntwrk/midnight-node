@@ -948,16 +948,43 @@ build-test-toolkit:
 
 test-toolkit:
     ARG NATIVEARCH
+    ARG NODE_IMAGE
+    ARG FORK_FROM_NODE_IMAGE
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
-    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-        # Use --network=host so testcontainers postgres is accessible via localhost
-        RUN docker run \
-            --network=host \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
-            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-            test-toolkit:latest
+
+    LET EXTRA_DOCKER_ENV=""
+    IF [ -n "$NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="-e NODE_IMAGE=$NODE_IMAGE"
+    END
+    IF [ -n "$FORK_FROM_NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+
+    # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
+    # pre-pull private GHCR images via Earthly's buildkit (which has auth).
+    # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    IF [ -n "$NODE_IMAGE" ]
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $NODE_IMAGE
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest
+        END
+    ELSE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                test-toolkit:latest
+        END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 

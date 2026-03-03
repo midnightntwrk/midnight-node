@@ -355,6 +355,7 @@ jobs:
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     name: Test Toolkit
+    needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
@@ -368,12 +369,21 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - name: Free disk space
         run: scripts/free-disk-space.sh
 
       - name: Run toolkit tests
         run: |
-          . ./.envrc && earthly -P --strict +test-toolkit
+          . ./.envrc && earthly -P --strict \
+            --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }} \
+            +test-toolkit
 
   toolkit-e2e:
     name: Toolkit E2E
