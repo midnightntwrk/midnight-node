@@ -28,17 +28,11 @@ artifacts-amd64/
 test-artifacts/
 scan_reports/
 
-ui/tests/.yarn
-ui/tests/logs
-ui/tests/reports
 # code coverage
 *.profraw
 
 # test logs, reports and cache
-ui/tests/reports/
-ui/tests/logs/
 nohup.out
-ui/tests/.yarn/*
 test-results.json
 chains/**
 ledger_storage/**

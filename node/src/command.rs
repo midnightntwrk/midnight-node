@@ -224,14 +224,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 
 	runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
-
-		// TODO: Add metrics
-		let data_sources =
-			crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-				cfg.midnight_cfg.clone(),
-				None,
-			)
-			.await?;
+		let midnight_cfg = cfg.midnight_cfg.clone();
 
 		// Build Prometheus push config if endpoint is configured
 		log::debug!(
@@ -260,7 +253,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
-			data_sources,
+			midnight_cfg,
 			cfg.storage_monitor_params_cfg.into(),
 			cfg.memory_monitor_cfg.into(),
 			storage_config,
@@ -323,14 +316,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let make_dependencies = |config: sc_service::Configuration| {
 				let storage_config =
 					storage_init_from_chain_spec(&config, cache_size).map_err(|e| e.to_string())?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						midnight_cfg,
-						None,
-					),
-				)?;
 				let PartialComponents { client, task_manager, other, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
+					service::new_partial(&config, epoch_config, midnight_cfg, storage_config)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
@@ -348,14 +335,13 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
-				)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
+					service::new_partial(
+						&config,
+						epoch_config,
+						cfg.midnight_cfg.clone(),
+						storage_config,
+					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -363,14 +349,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let PartialComponents { client, task_manager, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
 				)?;
-				let PartialComponents { client, task_manager, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
 		},
@@ -378,14 +362,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let PartialComponents { client, task_manager, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
 				)?;
-				let PartialComponents { client, task_manager, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
 		},
@@ -393,14 +375,13 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
-				)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
+					service::new_partial(
+						&config,
+						epoch_config,
+						cfg.midnight_cfg.clone(),
+						storage_config,
+					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -412,14 +393,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let PartialComponents { client, task_manager, backend, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
 				)?;
-				let PartialComponents { client, task_manager, backend, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
@@ -442,26 +421,22 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 								"Runtime benchmarking wasn't enabled when building the node. \
 							You can enable it with `--features runtime-benchmarks`."
 									.into(),
-							)
+							);
 						}
 
-						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(config.chain_spec))
+						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(
+							config.chain_spec,
+						))
 					},
 					BenchmarkCmd::Block(cmd) => {
-						let storage_config =
-							storage_init_from_chain_spec(&config, cache_size)?;
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
+						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+						)?;
 
 						cmd.run(partial.client)
 					},
@@ -472,40 +447,28 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 					#[cfg(feature = "runtime-benchmarks")]
 					BenchmarkCmd::Storage(cmd) => {
-						let storage_config =
-							storage_init_from_chain_spec(&config, cache_size)?;
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
+						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+						)?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
 
 						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
-						let storage_config =
-							storage_init_from_chain_spec(&config, cache_size)?;
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
+						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+						)?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
 
 						cmd.run(
@@ -518,24 +481,18 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Extrinsic(cmd) => {
-						let storage_config =
-							storage_init_from_chain_spec(&config, cache_size)?;
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
+						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+						)?;
 						// Register the *Remark* and *TKA* builders.
-						let ext_factory = ExtrinsicFactory(vec![
-							Box::new(RemarkBuilder::new(partial.client.clone())),
-						]);
+						let ext_factory = ExtrinsicFactory(vec![Box::new(RemarkBuilder::new(
+							partial.client.clone(),
+						))]);
 
 						cmd.run(
 							partial.client,
@@ -544,8 +501,9 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&ext_factory,
 						)
 					},
-					BenchmarkCmd::Machine(cmd) =>
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone()),
+					BenchmarkCmd::Machine(cmd) => {
+						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())
+					},
 				}
 			})
 		},
