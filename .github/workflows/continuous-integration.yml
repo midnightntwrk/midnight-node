@@ -750,55 +750,55 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  ephemeral-environment-tests:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    # needs:
-    #   - hardfork-e2e
-    #   - ledger-rollback-e2e
-    #   - tx-generator-e2e
-    #   - startup-dev-e2e
-    #   - genesis-undeployed-e2e
-
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "Get Version and git commit"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Configure AWS credentials
-        id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
-        with:
-          role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
-          aws-region: eu-west-1
-          role-duration-seconds: 3600
-
-      - name: Pull Kubeconfig and Set Locally
-        run: |
-          aws eks update-kubeconfig \
-            --name k0-eks-platform-dev-eu-01 \
-            --region eu-west-1 \
-        shell: bash
-
-      # - name: Deploy and test ephemeral environment
-      #   uses: ./.github/actions/ephemeral-environment-tests
-      #   with:
-      #     sha: ${{ github.sha }}
-      #     image: ghcr.io/midnight-ntwrk/midnight-node:0.12.1
-      #     tag: ${{ github.ref_name }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
-      #     aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-      #     aws-region: ${{ secrets.AWS_REGION }}
-      #     aws-eks-cluster-name: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # ephemeral-environment-tests:
+  #   if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
+  #   # needs:
+  #   #   - hardfork-e2e
+  #   #   - ledger-rollback-e2e
+  #   #   - tx-generator-e2e
+  #   #   - startup-dev-e2e
+  #   #   - genesis-undeployed-e2e
+  #
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  #
+  #     - name: Get Version and git commit
+  #       id: meta
+  #       run: |
+  #         echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+  #         version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+  #         echo "Get Version and git commit"
+  #         echo "version=$version" >> "$GITHUB_OUTPUT"
+  #
+  #     - name: Configure AWS credentials
+  #       id: aws-credentials
+  #       uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
+  #       with:
+  #         role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
+  #         aws-region: eu-west-1
+  #         role-duration-seconds: 3600
+  #
+  #     - name: Pull Kubeconfig and Set Locally
+  #       run: |
+  #         aws eks update-kubeconfig \
+  #           --name k0-eks-platform-dev-eu-01 \
+  #           --region eu-west-1 \
+  #       shell: bash
+  #
+  #     # - name: Deploy and test ephemeral environment
+  #     #   uses: ./.github/actions/ephemeral-environment-tests
+  #     #   with:
+  #     #     sha: ${{ github.sha }}
+  #     #     image: ghcr.io/midnight-ntwrk/midnight-node:0.12.1
+  #     #     tag: ${{ github.ref_name }}
+  #     #     ghcr-password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
+  #     #     aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+  #     #     aws-region: ${{ secrets.AWS_REGION }}
+  #     #     aws-eks-cluster-name: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
+  #     #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #     #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
