@@ -47,7 +47,7 @@ jobs:
         env:
           RUST_BACKTRACE: "1"
         run: |
-          cargo test --test e2e_tests cnight --no-default-features --features ${{ steps.vars.outputs.env }} -- --no-capture
+          cargo test --test e2e_tests cnight --no-default-features --features "${{ steps.vars.outputs.env }}" -- --no-capture
 
       - name: Notify Slack
         if: always()
