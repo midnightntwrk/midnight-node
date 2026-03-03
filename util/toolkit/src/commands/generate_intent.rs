@@ -1,14 +1,11 @@
+use crate::client::MidnightNodeClient;
 use crate::toolkit_js;
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
 use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{
-	CoinPublicKey, DefaultDB, WalletSeed, WalletState, deserialize,
-};
-use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use subxt::{OnlineClient, SubstrateConfig};
+use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -186,12 +183,9 @@ pub async fn execute(
 				eprintln!("missing required --src-url argument");
 				return Err(GenerateIntentError::MissingSourceUrl.into());
 			};
-			let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
-			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
-			let response = api.runtime_api().at_latest().await?.call(call).await?;
-			let bytes = response.expect("Unable to retrieve ledger parameters from RPC server");
-			let ledger_parameters = deserialize(&mut &bytes[..])
-				.expect("Unable to deserialize ledger parameters from RPC server");
+
+			let client = MidnightNodeClient::new_without_timeout(&rpc_url).await?;
+			let ledger_parameters = client.get_ledger_parameters().await?;
 
 			let command = toolkit_js::Command::Circuit {
 				args: args.circuit_call,
