@@ -260,9 +260,9 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		..base
 	};
 
-	println!("Ledger params loaded: {:#?}", parameters);
+	log::info!("Ledger params loaded: {:#?}", parameters);
 
-	println!("Executing ledger parameters update via federated authority.");
+	log::info!("Executing ledger parameters update via federated authority.");
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());

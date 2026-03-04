@@ -25,7 +25,7 @@ pub struct GenerateSampleIntentArgs {
 }
 
 pub async fn execute(args: GenerateSampleIntentArgs) {
-	println!("Generate a contract and save to file");
+	log::info!("Generate a contract and save to file");
 
 	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
@@ -33,8 +33,8 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let prover_config = TxGenerator::prover_config(args.proof_server, args.dry_run);
 
 	if args.dry_run {
-		println!("Dry-run: generate intent for contract call {:?}", args.contract_call);
-		println!("Dry-run: write files to directory {:?}", args.dest_dir);
+		log::info!("Dry-run: generate intent for contract call {:?}", args.contract_call);
+		log::info!("Dry-run: write files to directory {:?}", args.dest_dir);
 		return ();
 	}
 
