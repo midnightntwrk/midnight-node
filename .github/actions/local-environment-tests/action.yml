@@ -61,7 +61,7 @@ runs:
       run: |
         echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
         git clone --depth 1 "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git" "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
-        CONTRACTS_PATH="$(realpath ${GITHUB_WORKSPACE}/../midnight-reserve-contracts)"
+        CONTRACTS_PATH="$(realpath "${GITHUB_WORKSPACE}/../midnight-reserve-contracts")"
         echo "✓ Cloned to ${CONTRACTS_PATH}"
         echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${CONTRACTS_PATH}" >> $GITHUB_ENV
       shell: bash
@@ -111,7 +111,7 @@ runs:
       if: ${{ failure() }}
       run: |
         mkdir -p local-environment-logs-initial
-        docker ps -a --format '{{.Names}}' | while read line; do
+        docker ps -a --format '{{.Names}}' | while read -r line; do
           echo "======= Collecting logs for container $line ======="
           docker logs "$line" 2>&1 | tee "local-environment-logs-initial/$line.log" || true
         done

@@ -221,7 +221,7 @@ $ midnight-node-toolkit generate-intent deploy
 >    --output-intent out/intent.bin \
 >    --output-private-state out/private_state.json \
 >    --output-zswap-state out/zswap.json \
->    --coin-public 6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76325d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
 >    0
 Executing generate-intent
 Executing deploy command
@@ -243,7 +243,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --upsert-entrypoint ../toolkit-js/contract/managed/counter/keys/increment.verifier \
 >   --upsert-entrypoint ../toolkit-js/contract/managed/counter/keys/increment2.verifier \
 >   --authority-seed 1000000000000000000000000000000000000000000000000000000000000001 \
->   --contract-address 6d69646e696768743a636f6e74726163742d616464726573735b76325d3a3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 Rest of examples similar to Generate Deploy Contract
@@ -258,7 +258,7 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple call
 >   --call-key store
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
->   --contract-address 6d69646e696768743a636f6e74726163742d616464726573735b76325d3a3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 - Query fom chain, generate, and save as a serialized intent file:
@@ -267,7 +267,7 @@ $ midnight-node-toolkit generate-sample-intent --dry-run
 >   --dest-dir "artifacts/intents"
 >   call
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
->   --contract-address 6d69646e696768743a636f6e74726163742d616464726573735b76325d3a3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
+>   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 ...
 ```
 Rest of examples similar to Generate Deploy Contract
@@ -297,7 +297,7 @@ compactc counter.compact toolkit-js/contract/out # Compile your contract - compi
 $ midnight-node-toolkit generate-intent deploy --dry-run
 >    -c toolkit-js/contract/contract.config.ts
 >    --toolkit-js-path ../toolkit-js/
->    --coin-public 6d69646e696768743a7a737761702d636f696e2d7075626c69632d6b65795b76325d3aaa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
 >    --output-intent "/out/deploy.bin"
 >    --output-private-state "/out/initial_private_state.json"
 >    --output-zswap-state "/out/out.json"

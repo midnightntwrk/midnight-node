@@ -263,7 +263,6 @@ async fn contract_ops() {
 			"contract-address",
 			"--src-file",
 			&deploy_file_str,
-			"--tagged",
 		]);
 		match cli.command {
 			Commands::ContractAddress(args) => {
