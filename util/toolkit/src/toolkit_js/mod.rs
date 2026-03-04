@@ -367,8 +367,8 @@ impl ToolkitJs {
 
 	fn execute_js(&self, args: &[&str]) -> Result<(), ToolkitJsError> {
 		let cmd = PathBuf::from(&self.path).join(BUILD_DIST).to_string_lossy().to_string();
+		log::info!("Executing {cmd}...");
 		log::debug!("Executing {cmd} with arguments: {args:?}...");
-		println!("Executing {cmd}...");
 
 		let output = std::process::Command::new(cmd)
 			.current_dir(&self.path)
