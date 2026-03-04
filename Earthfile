@@ -581,9 +581,10 @@ node-ci-image-single-platform:
     COPY rust-toolchain.toml .
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
 
-    # Install rust with complete profile for profiler runtime support (needed for cargo llvm-cov)
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile complete
+    # Install rust with minimal profile + only the components we need
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
     ENV PATH="/root/.cargo/bin:${PATH}"
+    RUN rustup component add clippy rustfmt
 
     # Install build dependencies
     RUN microdnf -y update && \
@@ -620,20 +621,23 @@ node-ci-image-single-platform:
       && echo "[net]" >> .cargo/config.toml \
       && echo "git-fetch-with-cli = true" >> .cargo/config.toml
 
-    # Install cargo binstall:
-    # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
+    # Install cargo binstall from pre-built release binary
+    RUN ARCH=$(uname -m) && \
+        curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.6.9/cargo-binstall-${ARCH}-unknown-linux-gnu.tgz" -o binstall.tgz && \
+        tar -xzf binstall.tgz -C /root/.cargo/bin cargo-binstall && \
+        rm binstall.tgz
     RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
 
-    # subwasm can be used to diff between runtimes
+    # Install cargo tools from source in a single layer, then clean up build artifacts
     # renovate: datasource=github-releases packageName=chevdor/subwasm
     ARG SUBWASM_VERSION=0.21.3
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
-    RUN cargo install --locked cargo-shear --version 1.9.1
-    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
     # renovate: datasource=crate packageName=aiken
     ARG AIKEN_VERSION=1.1.19
-    RUN cargo install aiken --version $AIKEN_VERSION --locked
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION && \
+        cargo install --locked cargo-shear --version 1.9.1 && \
+        cargo install sqlx-cli --no-default-features --features rustls,postgres && \
+        cargo install aiken --version $AIKEN_VERSION --locked && \
+        rm -rf /root/.cargo/registry /root/.cargo/git
 
     # Install gh CLI (use uname -m for reliable arch detection)
     RUN ARCH=$(uname -m) && \
