@@ -168,35 +168,35 @@ jobs:
           export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
 
           echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
-          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64"
 
           echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
-          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
-          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Create multi-arch manifests for Docker Hub"
-          docker manifest create midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE} \
-            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
-            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker manifest create "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
-          docker manifest create midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE} \
-            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
-            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker manifest create "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push manifests to Docker Hub"
-          docker manifest push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}
-          docker manifest push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}
+          docker manifest push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
+          docker manifest push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
 
       - name: Get Docker Hub release image digests
         id: dockerhub-digests
@@ -226,8 +226,10 @@ jobs:
       - name: Export release tag
         id: export_tag
         run: |
-          echo "release_tag=${SEASON_IMAGE_TAG_RELEASE}" >> $GITHUB_OUTPUT
-          echo "commit_tag=${SEASON_IMAGE_TAG_COMMIT}" >> $GITHUB_OUTPUT
+          {
+            echo "release_tag=${SEASON_IMAGE_TAG_RELEASE}"
+            echo "commit_tag=${SEASON_IMAGE_TAG_COMMIT}"
+          } >> "$GITHUB_OUTPUT"
 
   # SBOM scan jobs run here (defined below) - they depend on prepare-release
   # and gate finalize-release
@@ -363,16 +365,20 @@ jobs:
           rm -rf midnight-node-toolkit
           echo "Created: $TOOLKIT_RELEASE"
 
-          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "node_release=$NODE_RELEASE" >> "$GITHUB_OUTPUT"
-          echo "toolkit_release=$TOOLKIT_RELEASE" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_tag=$RELEASE_TAG"
+            echo "node_release=$NODE_RELEASE"
+            echo "toolkit_release=$TOOLKIT_RELEASE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums
         run: |
-          sha256sum ${{ steps.extract.outputs.node_release }} >> SHA256SUMS-${{ matrix.platform }}
-          sha256sum ${{ steps.extract.outputs.toolkit_release }} >> SHA256SUMS-${{ matrix.platform }}
+          {
+            sha256sum "${{ steps.extract.outputs.node_release }}"
+            sha256sum "${{ steps.extract.outputs.toolkit_release }}"
+          } >> "SHA256SUMS-${{ matrix.platform }}"
           echo "Generated checksums:"
-          cat SHA256SUMS-${{ matrix.platform }}
+          cat "SHA256SUMS-${{ matrix.platform }}"
 
       - name: Attest node release binary
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0

@@ -35,7 +35,7 @@ pub struct SpecificAddressTypeArgs {
 	/// CoinPublic only
 	#[arg(long)]
 	coin_public: bool,
-	/// CoinPublic tagged only
+	/// CoinPublic untagged only
 	#[arg(long)]
 	coin_public_tagged: bool,
 	/// Unshielded User Address only (use for contract interations)

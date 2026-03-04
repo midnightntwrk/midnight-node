@@ -81,7 +81,7 @@ coin_public=$(
     show-address \
     --network undeployed \
     --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-    --coin-public-tagged
+    --coin-public
 )
 
 echo "Generate deploy intent"
@@ -125,7 +125,7 @@ contract_address=$(
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
-    contract-address --tagged \
+    contract-address \
     --src-file /out/$deploy_tx_filename
 )
 
