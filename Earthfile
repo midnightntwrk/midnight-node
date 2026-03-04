@@ -674,6 +674,7 @@ node-ci-image-single-platform:
     RUN [ -s /simple-merkle-tree/keys/store.prover ]
     RUN [ -s /simple-merkle-tree/keys/store.verifier ]
 
+    SAVE ARTIFACT /compactc-bin
     SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
     # SAVE IMAGE under the rust version and compactc version.
@@ -1231,6 +1232,10 @@ toolkit-image:
         rm node.tar.xz && \
         node --version && npm --version && \
         npm install -g npm@11.11.0 && npm --version
+
+    # Copy compactc from CI image so run-compactc can find it
+    COPY +node-ci-image-single-platform/compactc-bin /compactc-bin
+    ENV COMPACT_HOME=/compactc-bin
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
