@@ -84,6 +84,11 @@ jobs:
           path: test-artifacts-amd64/
 
   sbom-scan-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
@@ -94,6 +99,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
