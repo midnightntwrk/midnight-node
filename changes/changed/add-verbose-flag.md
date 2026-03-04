@@ -1,9 +1,9 @@
 #toolkit
-# Add --verbose flag to toolkit CLI
+# Add --verbose and --quiet flags to toolkit CLI
 
-Added a `--verbose` / `-v` global flag to the toolkit CLI that sets the log level
-to debug. Default log level is now info. Per-batch fetch log messages have been
-demoted from info to debug level, reducing noise while keeping high-level progress
-visible.
+Added `--verbose` / `-v` (debug level) and `--quiet` / `-q` (warn level) global
+flags to the toolkit CLI. Default log level is info. Per-batch fetch log messages
+have been demoted from info to debug level, reducing noise while keeping high-level
+progress visible.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/859
