@@ -7,3 +7,4 @@ have been demoted from info to debug level, reducing noise while keeping high-le
 progress visible.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/859
+Ticket: https://shielded.atlassian.net/browse/PM-22220
