@@ -118,7 +118,10 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let result = safe_read(dir.path().to_str().unwrap(), MAX_GENESIS_FILE_SIZE);
 		let err = result.unwrap_err();
-		assert!(err.contains("not a regular file"), "expected 'not a regular file' in error: {err}");
+		assert!(
+			err.contains("not a regular file"),
+			"expected 'not a regular file' in error: {err}"
+		);
 	}
 
 	#[test]
@@ -126,7 +129,10 @@ mod tests {
 		let dir = tempfile::tempdir().unwrap();
 		let result = safe_read_to_string(dir.path().to_str().unwrap(), MAX_GENESIS_FILE_SIZE);
 		let err = result.unwrap_err();
-		assert!(err.contains("not a regular file"), "expected 'not a regular file' in error: {err}");
+		assert!(
+			err.contains("not a regular file"),
+			"expected 'not a regular file' in error: {err}"
+		);
 	}
 
 	#[test]
@@ -201,20 +207,14 @@ mod tests {
 	fn error_message_includes_file_path() {
 		let result = safe_read("/some/specific/path.json", MAX_GENESIS_FILE_SIZE);
 		let err = result.unwrap_err();
-		assert!(
-			err.contains("/some/specific/path.json"),
-			"expected path in error: {err}"
-		);
+		assert!(err.contains("/some/specific/path.json"), "expected path in error: {err}");
 	}
 
 	#[test]
 	fn error_message_includes_rejection_reason() {
 		let dir = tempfile::tempdir().unwrap();
 		let err = safe_read(dir.path().to_str().unwrap(), MAX_GENESIS_FILE_SIZE).unwrap_err();
-		assert!(
-			err.contains("not a regular file"),
-			"expected rejection reason in error: {err}"
-		);
+		assert!(err.contains("not a regular file"), "expected rejection reason in error: {err}");
 
 		let mut f = tempfile::NamedTempFile::new().unwrap();
 		f.write_all(&vec![0u8; 200]).unwrap();
