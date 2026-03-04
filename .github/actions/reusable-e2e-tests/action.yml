@@ -37,16 +37,16 @@ runs:
 
         case "${{ inputs.just-command }}" in
           indexer-api-e2e)
-            just ${{ inputs.just-command }}
+            just "${{ inputs.just-command }}"
             ;;
           startup-dev-e2e | startup-qanet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
           toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-multi-dest-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
             ;;
           *)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
             ;;
         esac
       shell: bash

@@ -56,7 +56,7 @@ pub enum FetchError {
 	FetchTaskError(#[from] FetchTaskError),
 	#[error("compute task error")]
 	ComputeTaskError(#[from] ComputeError),
-	#[error("worker thread panicced")]
+	#[error("worker thread panicked")]
 	WorkerPanic(String),
 	#[error("no fetch workers could connect to the node")]
 	NoWorkersConnected,

@@ -30,6 +30,7 @@ use crate::{
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 const MAX_GUARANTEED_OUTPUTS: usize = 2;
+const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
 
 pub struct SingleTxBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
@@ -221,18 +222,20 @@ impl SingleTxBuilder {
 			.checked_mul(output_wallets.len() as u128)
 			.expect("unshielded amount overflow");
 
-		let utxo_spend_info = UtxoSpendInfo {
-			value: total_required,
-			owner: source_seed,
-			token_type: self.unshielded_token_type,
-			intent_hash: None,
-			output_number: None,
-		};
+		let (inputs_info, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
+			context.clone(),
+			source_seed,
+			total_required,
+			self.unshielded_token_type,
+		);
 
-		let funding_wallet = context.clone().wallet_from_seed(source_seed);
-		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);
-
-		let input_info: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(utxo_spend_info);
+		let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
+			.into_iter()
+			.map(|input| {
+				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+				input
+			})
+			.collect();
 
 		// Outputs info
 		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
@@ -247,11 +250,6 @@ impl SingleTxBuilder {
 			})
 			.collect();
 
-		let input_amount = min_match_utxo.value;
-		let remaining_nights = input_amount
-			.checked_sub(total_required)
-			.expect("insufficient unshielded input for total required amount");
-
 		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
 		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 			value: remaining_nights,
@@ -263,11 +261,10 @@ impl SingleTxBuilder {
 			outputs_info.push(output_info_refund);
 		}
 
-		let outputs_len = outputs_info.len();
-		let unshielded_offer =
-			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
+		let inputs_outputs_len = inputs_info.len() + outputs_info.len();
+		let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };
 
-		let intent_info = if outputs_len > MAX_GUARANTEED_OUTPUTS {
+		let intent_info = if inputs_outputs_len > MAX_GUARANTEED_INPUTS_OUTPUTS {
 			IntentInfo {
 				guaranteed_unshielded_offer: None,
 				fallible_unshielded_offer: Some(unshielded_offer),
