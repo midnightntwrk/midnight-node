@@ -12,10 +12,10 @@
 // limitations under the License.
 
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, DefaultDB, FromContext, InputInfo,
-	IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment, SerdeTransaction,
-	ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo,
-	UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, FromContext,
+	InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
+	SerdeTransaction, ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext,
+	UnshieldedOfferInfo, UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
@@ -146,18 +146,20 @@ impl BatchesBuilder {
 		output_wallets: Vec<WalletSeed>,
 		amount_to_send_per_output: u128,
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
-		let utxo_spend_info = UtxoSpendInfo {
-			value: self.initial_unshielded_intent_value,
-			owner: funding_seed,
-			token_type: self.unshielded_token_type,
-			intent_hash: None,
-			output_number: None,
-		};
+		let (inputs, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
+			context,
+			funding_seed,
+			self.initial_unshielded_intent_value,
+			self.unshielded_token_type,
+		);
 
-		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
-		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);
-
-		let input_info = Box::new(utxo_spend_info);
+		let inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
+			.into_iter()
+			.map(|input| {
+				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+				input
+			})
+			.collect();
 
 		// Outputs info
 		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
@@ -172,10 +174,6 @@ impl BatchesBuilder {
 			})
 			.collect();
 
-		let already_spent = min_match_utxo.value;
-		let remaining_nights =
-			already_spent - (amount_to_send_per_output * output_wallets.len() as u128);
-
 		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
 		let output_info_refund = Box::new(UtxoOutputInfo {
 			value: remaining_nights,
@@ -188,7 +186,7 @@ impl BatchesBuilder {
 		}
 
 		let guaranteed_unshielded_offer_info =
-			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
+			UnshieldedOfferInfo { inputs, outputs: outputs_info };
 
 		let intent_info = IntentInfo {
 			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer_info),
