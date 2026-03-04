@@ -203,7 +203,7 @@ pub async fn execute(
 						return Err(GenerateIntentError::MissingSourceUrl.into());
 					};
 
-					let client = MidnightNodeClient::new_without_timeout(&rpc_url).await?;
+					let client = MidnightNodeClient::new(&rpc_url, None).await?;
 					client.get_ledger_parameters().await?
 				};
 

@@ -94,9 +94,7 @@ pub async fn execute(
 	args: ShowLedgerParametersArgs,
 ) -> Result<LedgerParametersResult, LedgerParametersError> {
 	let base = if let Some(rpc_url) = args.read_from_rpc_url {
-		let client = MidnightNodeClient::new_without_timeout(&rpc_url)
-			.await
-			.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
+		let client = MidnightNodeClient::new(&rpc_url, None).await?;
 		let parameters = client.get_ledger_parameters().await?;
 		parameters
 	} else {
