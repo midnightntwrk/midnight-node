@@ -161,9 +161,9 @@ impl<D: DB + Clone> IntentCustom<D> {
 	}
 
 	pub fn find_contract_address(&self) -> Option<ContractAddress> {
-		self.intent.actions.iter().find_map(|action| match &**action {
-			ContractAction::Call(c) => Some(c.address),
-			ContractAction::Maintain(c) => Some(c.address),
+		self.intent.actions.iter().find_map(|action| match *action {
+			ContractAction::Call(ref c) => Some(c.address),
+			ContractAction::Maintain(ref c) => Some(c.address),
 			_ => None,
 		})
 	}
