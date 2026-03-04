@@ -612,7 +612,7 @@ node-ci-image-single-platform:
         # crossbuild-essential-amd64 \
         # libc6-amd64-cross
 
-    RUN rustup target add wasm32v1-none aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
+    RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
 
     RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
