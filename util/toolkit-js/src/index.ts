@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,33 +11,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Effect, Layer, Logger, LogLevel } from 'effect';
-import { Command, CliConfig } from '@effect/cli';
-import { NodeContext, NodeRuntime } from "@effect/platform-node";
-import { ConfigCompiler, deployCommand, circuitCommand, maintainCommand } from '@midnight-ntwrk/compact-js-command/effect';
-import Package from '@midnight-ntwrk/node-toolkit/package.json' with { type: 'json'};
+import {Effect, Layer, Logger, LogLevel} from 'effect';
+import {Command, CliConfig} from '@effect/cli';
+import {NodeContext, NodeRuntime} from "@effect/platform-node";
+import {
+    ConfigCompiler,
+    deployCommand,
+    circuitCommand,
+    maintainCommand
+} from '@midnight-ntwrk/compact-js-command/effect';
+import Package from '@midnight-ntwrk/node-toolkit/package.json' with {type: 'json'};
 
 const cli = Command.run(
-  Command.make('midnight-node-toolkit-js').pipe(
-    Command.withDescription('Provides utilities to execute Compact compiled contracts from the command line.'),
-    Command.withSubcommands([
-      deployCommand,
-      circuitCommand,
-      maintainCommand
-    ])
-  ),
-  {
-    name: 'Midnight Node Toolkit',
-    version: `v${Package.version}`,
-    executable: 'midnight-node-toolkit-js'
-  }
+    Command.make('midnight-node-toolkit-js').pipe(
+        Command.withDescription('Provides utilities to execute Compact compiled contracts from the command line.'),
+        Command.withSubcommands([
+            deployCommand,
+            circuitCommand,
+            maintainCommand
+        ])
+    ),
+    {
+        name: 'Midnight Node Toolkit',
+        version: `v${Package.version}`,
+        executable: 'midnight-node-toolkit-js'
+    }
 );
 
 cli(process.argv).pipe(
-  Logger.withMinimumLogLevel(LogLevel.None),
-  Effect.provide(Layer.mergeAll(
-    ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer)),
-    CliConfig.layer({ showBuiltIns: false })
-  )),
-  NodeRuntime.runMain({ disableErrorReporting: true })
+    Logger.withMinimumLogLevel(LogLevel.None),
+    Effect.provide(Layer.mergeAll(
+        ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer)),
+        CliConfig.layer({showBuiltIns: false})
+    )),
+    NodeRuntime.runMain({disableErrorReporting: false})
 );

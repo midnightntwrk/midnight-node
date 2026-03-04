@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ pub mod inner {
 	mod deregister_dust_address;
 	mod do_nothing;
 	mod register_dust_address;
-	mod replace_initial_tx;
 	pub mod single_tx;
 	pub mod transactions;
 	mod tx_serialization;
@@ -44,7 +43,6 @@ pub mod inner {
 	pub use deregister_dust_address::*;
 	pub use do_nothing::*;
 	pub use register_dust_address::*;
-	pub use replace_initial_tx::*;
 }
 pub use inner::*;
 

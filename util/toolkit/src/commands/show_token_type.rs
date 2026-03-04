@@ -6,7 +6,7 @@ use serde::Serialize;
 #[derive(Args, Clone)]
 pub struct ShowTokenTypeArgs {
 	/// Address of contract
-	#[arg(long, value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	#[arg(long, value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Pre-image of coin token type (Domain Separator)
 	#[arg(long, value_parser = cli::hex_ledger_untagged_decode::<HashOutput>)]

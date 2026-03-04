@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ impl InputInfo<WalletSeed> {
 			.first()
 			.unwrap_or_else(|| {
 				panic!(
-					"There are no fundings of Token {:?} and amount >= {:?} to spend by Wallet {:?}",
+					"There is no single UTXO with {:?} and amount >= {:?} to spend by {:?}",
 					self.token_type, self.value, wallet
 				)
 			})
@@ -89,5 +89,3 @@ impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
 		})
 	}
 }
-
-// TODO: impl BuildOutput for OutputInfo<ContractAddress>

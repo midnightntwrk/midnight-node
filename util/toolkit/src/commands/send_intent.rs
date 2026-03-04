@@ -48,11 +48,34 @@ mod test {
 	use crate::tx_generator::source::FetchCacheConfig;
 	use clap::Parser;
 	use std::fs;
+	use std::path::Path;
 	use tempfile::tempdir;
 
 	use super::{CustomContractArgs, Destination, SendIntentArgs, Source, execute};
+
+	fn ledger_test_artifacts_ready() -> bool {
+		let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+			eprintln!(
+				"Skipping send-intent contract tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set"
+			);
+			return false;
+		};
+		if !Path::new(&path).exists() {
+			eprintln!(
+				"Skipping send-intent contract tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+				path
+			);
+			return false;
+		}
+		true
+	}
+
 	#[tokio::test]
 	async fn test_send_intent() {
+		if !ledger_test_artifacts_ready() {
+			return;
+		}
+
 		let rng_seed = "0000000000000000000000000000000000000000000000000000000000000037";
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 		let compiled_contract_dir = "../../static/contracts/simple-merkle-tree";

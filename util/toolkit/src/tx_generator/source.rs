@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -68,9 +68,9 @@ impl FromStr for FetchCacheConfig {
 	}
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Clone, Debug)]
 pub struct Source {
-	/// Load input transactions/blocks from node instance using an RPC URL
+	/// Load input transactions/blocks from the node instance using an RPC URL
 	#[arg(
 		long,
 		short = 's',

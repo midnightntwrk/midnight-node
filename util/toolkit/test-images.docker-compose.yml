@@ -1,5 +1,22 @@
+# kics-scan disable=610e266e-6c12-4bca-9925-1ed0cd29742b,698ed579-b239-4f8f-a388-baa4bcb13ef8,ce76b7d0-9e77-464d-b86f-c5c48e03e22d
+# This file should NOT be run directly. It exists solely so that Dependabot
+# can detect and update the pinned image dependencies used by tests.
 services:
+  guard:
+    image: busybox
+    command: "false"
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:15@sha256:5f07e69ced9ee30ec814cd12c555694276bb1d520e971205f39a833362748a3c}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
   midnight-node:
     image: ${NODE_IMAGE:-midnightntwrk/midnight-node:latest-main}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
+  midnight-node-fork-from:
+    image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:0.21.0}
+    depends_on:
+      guard:
+        condition: service_completed_successfully

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ use crate::{
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 const MAX_GUARANTEED_OUTPUTS: usize = 2;
+const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
 
 pub struct SingleTxBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
@@ -165,7 +166,9 @@ impl SingleTxBuilder {
 		output_wallets: Vec<ShieldedWallet<DefaultDB>>,
 		amount: u128,
 	) -> OfferInfo<DefaultDB> {
-		let total_required = amount * output_wallets.len() as u128;
+		let total_required = amount
+			.checked_mul(output_wallets.len() as u128)
+			.expect("shielded amount overflow");
 
 		let input_info = InputInfo {
 			origin: funding_seed,
@@ -192,7 +195,9 @@ impl SingleTxBuilder {
 
 		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
 		let input_amount = input_info.min_match_coin(&funding_wallet.shielded.state).value;
-		let remaining_coins = input_amount - total_required;
+		let remaining_coins = input_amount
+			.checked_sub(total_required)
+			.expect("insufficient shielded input for total required amount");
 
 		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
 		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
@@ -213,20 +218,24 @@ impl SingleTxBuilder {
 		output_wallets: Vec<UnshieldedWallet>,
 		amount_to_send_per_output: u128,
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
-		let total_required = amount_to_send_per_output * output_wallets.len() as u128;
+		let total_required = amount_to_send_per_output
+			.checked_mul(output_wallets.len() as u128)
+			.expect("unshielded amount overflow");
 
-		let utxo_spend_info = UtxoSpendInfo {
-			value: total_required,
-			owner: source_seed,
-			token_type: self.unshielded_token_type,
-			intent_hash: None,
-			output_number: None,
-		};
+		let (inputs_info, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
+			context.clone(),
+			source_seed,
+			total_required,
+			self.unshielded_token_type,
+		);
 
-		let funding_wallet = context.clone().wallet_from_seed(source_seed);
-		let min_match_utxo = utxo_spend_info.min_match_utxo(context, &funding_wallet);
-
-		let input_info: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(utxo_spend_info);
+		let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
+			.into_iter()
+			.map(|input| {
+				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+				input
+			})
+			.collect();
 
 		// Outputs info
 		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
@@ -241,9 +250,6 @@ impl SingleTxBuilder {
 			})
 			.collect();
 
-		let input_amount = min_match_utxo.value;
-		let remaining_nights = input_amount - total_required;
-
 		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
 		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 			value: remaining_nights,
@@ -255,11 +261,10 @@ impl SingleTxBuilder {
 			outputs_info.push(output_info_refund);
 		}
 
-		let outputs_len = outputs_info.len();
-		let unshielded_offer =
-			UnshieldedOfferInfo { inputs: vec![input_info], outputs: outputs_info };
+		let inputs_outputs_len = inputs_info.len() + outputs_info.len();
+		let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };
 
-		let intent_info = if outputs_len > MAX_GUARANTEED_OUTPUTS {
+		let intent_info = if inputs_outputs_len > MAX_GUARANTEED_INPUTS_OUTPUTS {
 			IntentInfo {
 				guaranteed_unshielded_offer: None,
 				fallible_unshielded_offer: Some(unshielded_offer),

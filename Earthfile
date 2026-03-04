@@ -152,9 +152,8 @@ node-image-minimal:
 
 # Grabs metadata.scale file from the latest node
 get-metadata:
-    ARG NATIVEARCH
-    FROM +prep-no-copy
-
+    FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
     WITH DOCKER --load localhost/node-minimal:latest=+node-image-minimal
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 localhost/node-minimal:latest & \
@@ -166,8 +165,8 @@ get-metadata:
 
 # rebuild-metadata gets the metadata file and adds it to the metadata crate
 rebuild-metadata:
-    ARG NATIVEARCH
-    FROM +prep-no-copy
+    FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
     LET NODE_VERSION = "$(cat node_version)"
@@ -221,6 +220,15 @@ rebuild-genesis-state:
     FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
+
+    # Compile simple-merkle-tree contract from source using compactc from toolkit-js
+    IF [ "$GENERATE_TEST_TXS" = "true" ]
+        COPY ledger/test-data/simple-merkle-tree.compact /tmp/simple-merkle-tree.compact
+        WORKDIR /toolkit-js
+        RUN npx run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
+        WORKDIR /
+    END
+
     # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
@@ -433,6 +441,7 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
     SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
+    SAVE ARTIFACT --if-exists /test-static/simple-merkle-tree/* AS LOCAL static/contracts/simple-merkle-tree/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -572,70 +581,6 @@ ci:
     BUILD +audit
     BUILD +test
 
-# Precompiled midnight contracts for use in testing and for the toolkit.
-contract-precompile-image:
-    # The results of this image is platform independent so we don't need to build for all platforms.
-    BUILD +contract-precompile-image-single-platform
-
-contract-precompile-image-single-platform:
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-    # Install unzip and wget
-    RUN microdnf -y install unzip wget tar gzip && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-    # Install gh CLI
-    RUN wget -q https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz && \
-        tar -xzf gh_2.62.0_linux_amd64.tar.gz && \
-        mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ && \
-        rm -rf gh_2.62.0_linux_amd64*
-
-    # Fetch CompactC x86_64
-    COPY COMPACTC_VERSION .
-    RUN --secret GH_TOKEN set -e && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        RELEASE_TAG="compactc-v${VERSION}" && \
-        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
-        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
-            echo "Successfully downloaded from release"; \
-        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
-            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
-            echo "Available releases with binaries:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        else \
-            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
-            echo "Available releases:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        fi
-    RUN unzip compactc*.zip
-
-    COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
-    # Keys should not have 0 size (but will have if we ran out of memory):
-    RUN [ -s /simple-merkle-tree/keys/check.prover ]
-    RUN [ -s /simple-merkle-tree/keys/check.verifier ]
-    RUN [ -s /simple-merkle-tree/keys/store.prover ]
-    RUN [ -s /simple-merkle-tree/keys/store.verifier ]
-
-    ENV PATH=$PATH:/bin
-    ENTRYPOINT [ "/bin/sh" ]
-
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    ENV IMAGE_TAG=$IMAGE_TAG
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LABEL org.opencontainers.image.title=node-test-contract-precompiles
-    LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
-    SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
-
-use-contract-precompile-image:
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-#    FROM +contract-precompile-image
-    COPY COMPACTC_VERSION .
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
-    SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
-
 # a common setup of the build environment (not designed to be called directly)
 node-ci-image:
     BUILD --platform=linux/arm64 +node-ci-image-single-platform
@@ -656,7 +601,6 @@ node-ci-image-single-platform:
     # Install build dependencies
     RUN microdnf -y update && \
         microdnf -y install \
-        ca-certificates \
         gcc \
         gcc-c++ \
         make \
@@ -671,8 +615,6 @@ node-ci-image-single-platform:
         git \
         tar \
         gzip \
-        xz \
-        unzip \
         jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
@@ -701,27 +643,6 @@ node-ci-image-single-platform:
     RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
     RUN cargo install --locked cargo-shear --version 1.9.1
     RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
-    # subxt-cli for generating runtime metadata - keep version in sync with Cargo.toml
-    RUN cargo binstall --no-confirm subxt-cli@0.44.0
-
-    # Docker-in-Docker for targets that spin up containers (metadata generation, etc.)
-    # Note: EarthBuild/lib+INSTALL_DIND doesn't support AL2023 (no yum), so install directly.
-    RUN microdnf -y install docker && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
-    ARG TARGETARCH
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        node --version && npm --version
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -738,12 +659,16 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     ARG NATIVEARCH
-    # If you need to alter the CI image, here is where you can build it locally rather than
-    # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
     FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
 
+    # Used to add repository for nodejs
+    RUN microdnf -y update && \
+        microdnf -y install ca-certificates && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
     RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
@@ -764,7 +689,20 @@ prep:
 # Prepares Node Toolkit (JS) in time for testing
 # Always uses linux/amd64 platform because compactc doesn't release for arm64
 toolkit-js-prep:
-    FROM --platform=linux/amd64 +node-ci-image-single-platform
+    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    # Install dependencies for Node.js and toolkit-js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz unzip && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 x64 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Always use x64 since this target is always built for linux/amd64 platform
+    ARG NODE_VERSION=22.13.1
+    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version && \
+        npm install -g npm@11.11.0 && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -793,6 +731,9 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
+    RUN cargo install cargo-shear --version 1.6.6 --locked
+
+    # shear
     RUN cargo shear
 
 # check-rust runs cargo fmt and clippy.
@@ -846,8 +787,8 @@ check-rust:
 check-metadata:
     ARG NODE_IMAGE
     #=ghcr.io/midnight-ntwrk/midnight-node:latest
-    ARG NATIVEARCH
-    FROM +prep-no-copy
+    FROM +subxt
+    DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
     WITH DOCKER --pull ${NODE_IMAGE}
@@ -929,6 +870,24 @@ build-test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
+    ARG NODE_VERSION=22.13.1
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
     # Test
     RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
@@ -948,16 +907,43 @@ build-test-toolkit:
 
 test-toolkit:
     ARG NATIVEARCH
+    ARG NODE_IMAGE
+    ARG FORK_FROM_NODE_IMAGE
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
-    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-        # Use --network=host so testcontainers postgres is accessible via localhost
-        RUN docker run \
-            --network=host \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
-            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-            test-toolkit:latest
+
+    LET EXTRA_DOCKER_ENV=""
+    IF [ -n "$NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="-e NODE_IMAGE=$NODE_IMAGE"
+    END
+    IF [ -n "$FORK_FROM_NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+
+    # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
+    # pre-pull private GHCR images via Earthly's buildkit (which has auth).
+    # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    IF [ -n "$NODE_IMAGE" ]
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $NODE_IMAGE
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest
+        END
+    ELSE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                test-toolkit:latest
+        END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
@@ -1344,18 +1330,10 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
-audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
-
-audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-ui
-    BUILD +audit-ui-tests
 
 # audit checks for security vulnerabilities
 audit:
@@ -1524,49 +1502,6 @@ stop-local-env:
     WORKDIR local-environment
     RUN npm ci
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
-
-# node-e2e-test runs the node E2E tests using Earthly's container management
-#
-# Usage:
-#   earthly +node-e2e-test
-#
-# This target:
-# 1. Runs the Playwright E2E tests against the local environment
-# 2. Saves all test artifacts to test-artifacts/e2e/node/
-#
-# Outputs:
-#   - test-artifacts/e2e/node/ - All test results, logs, and reports
-node-e2e-test:
-    ARG NATIVEARCH
-
-    LOCALLY
-
-    RUN echo "🧪 Running Node E2E tests with Earthly:"
-
-    # Setup test environment
-    WORKDIR ui/tests
-
-    # Install dependencies
-    RUN yarn config set -H enableImmutableInstalls false
-    RUN yarn install
-
-    # Create test artifacts directory first
-    RUN mkdir -p test-artifacts/e2e/node
-
-    # Run the tests from the test artifacts directory to generate CTRF report there
-    RUN echo "🎯 Running Playwright + Testcontainers tests..." \
-      && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-
-    # Save test results
-    RUN cp -r ./reports test-artifacts/e2e/node/ || true
-    RUN cp -r ./logs test-artifacts/e2e/node/ || true
-    # Check test results
-    RUN if [ "${TEST_FAILED:-false}" = true ]; then \
-        echo "❌ Tests failed"; \
-        exit 1; \
-    else \
-        echo "✅ Node E2E tests complete."; \
-    fi
 
 #images Build all the images
 images:
