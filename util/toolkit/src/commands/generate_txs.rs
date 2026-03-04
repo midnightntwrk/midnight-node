@@ -82,7 +82,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		cli_parsers::hex_ledger_untagged_decode,
+		cli_parsers::contract_address_decode,
 		t_token,
 		tx_generator::{
 			builder::{
@@ -192,7 +192,7 @@ mod tests {
 	    ContractCall::Call(ContractCallArgs {
 					funding_seed:"0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 					call_key:"store".to_string(),
-					contract_address: hex_ledger_untagged_decode(include_str!("../../../../res/test-contract/contract_address_undeployed.mn")).unwrap(),
+					contract_address: contract_address_decode(include_str!("../../../../res/test-contract/contract_address_undeployed.mn")).unwrap(),
 					rng_seed: None,
 					fee: 1_300_000,
 					})

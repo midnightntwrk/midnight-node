@@ -62,11 +62,13 @@ jobs:
       - name: Generate checksums
         if: inputs.release-tag != ''
         run: |
-          cd artifacts/srtool
-          sha256sum midnight_node_runtime.wasm >> SHA256SUMS-srtool
-          sha256sum midnight_node_runtime.compact.wasm >> SHA256SUMS-srtool
-          sha256sum midnight_node_runtime.compact.compressed.wasm >> SHA256SUMS-srtool
-          sha256sum srtool-digest.json >> SHA256SUMS-srtool
+          cd artifacts/srtool || exit 1
+          {
+            sha256sum midnight_node_runtime.wasm
+            sha256sum midnight_node_runtime.compact.wasm
+            sha256sum midnight_node_runtime.compact.compressed.wasm
+            sha256sum srtool-digest.json
+          } >> SHA256SUMS-srtool
 
           echo "Generated checksums:"
           cat SHA256SUMS-srtool
@@ -95,7 +97,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.release-tag }}
         run: |
-          cd artifacts/srtool
+          cd artifacts/srtool || exit 1
           echo "Uploading srtool artifacts to release: $RELEASE_TAG"
           gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             midnight_node_runtime.wasm \

@@ -143,9 +143,7 @@ impl UnshieldedUtxos {
 	}
 
 	pub fn inputs(&self) -> Vec<UtxoInfo> {
-		// TODO: this rev() is only required to match preview.
-		// We could drop it before mainnet as a breaking change.
-		self.inputs.values().rev().flat_map(|utxos| utxos.iter()).cloned().collect()
+		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
