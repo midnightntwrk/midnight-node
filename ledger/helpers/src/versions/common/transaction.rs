@@ -194,8 +194,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			self.prove_tx(tx).await
 		} else {
 			let tx = self.pay_fees(tx, now, ttl).await?;
-			let fees =
-				self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+			let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
 			log::debug!("post-proof tx: {tx:#?}");
 			log::debug!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
 			Ok(tx)

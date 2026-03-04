@@ -253,7 +253,9 @@ impl ToolkitJs {
 		self.execute_js(&cmd_args)?;
 		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}
@@ -313,7 +315,9 @@ impl ToolkitJs {
 		self.execute_js(&cmd_args)?;
 		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}

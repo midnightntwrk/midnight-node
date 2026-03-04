@@ -54,10 +54,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				let cli = Cli::parse();
 
 				// Initialize the logger.
+				// Uses synchronous stdout - otherwise logs get lost
 				structured_logger::Builder::new()
-					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::stderr(),
-					))
+					.with_default_writer(structured_logger::json::new_writer(std::io::stderr()))
 					.init();
 
 				let log_level = if cli.verbose {

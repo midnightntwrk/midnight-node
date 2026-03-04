@@ -84,7 +84,10 @@ pub async fn execute(
 					Ok(wallet_seed)
 				})
 				.collect();
-		log::info!("Funding {} faucet wallets", parsed_seeds.as_ref().map(|s| s.len()).unwrap_or(0));
+		log::info!(
+			"Funding {} faucet wallets",
+			parsed_seeds.as_ref().map(|s| s.len()).unwrap_or(0)
+		);
 		Some(parsed_seeds?)
 	} else {
 		log::info!("No seeds file provided - skipping faucet wallet funding");
