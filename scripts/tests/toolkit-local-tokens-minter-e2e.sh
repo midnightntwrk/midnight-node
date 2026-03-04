@@ -63,7 +63,7 @@ echo "Generate deploy tx"
     send-intent \
     --intent-file "$outdir/$deploy_intent_filename" \
     --compiled-contract-dir $compiled_contract \
-    --to-bytes --dest-file "$outdir/$deploy_tx_filename"
+    --dest-file "$outdir/$deploy_tx_filename"
 
 echo "Send deploy tx"
 "$toolkit_bin" generate-txs --src-file $outdir/$deploy_tx_filename -r 1 send
