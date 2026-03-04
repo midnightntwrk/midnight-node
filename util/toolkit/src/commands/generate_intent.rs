@@ -5,7 +5,9 @@ use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState, serialize};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
+};
 use std::io::Write;
 
 #[derive(Subcommand)]
@@ -30,6 +32,10 @@ pub struct CircuitCommandArgs {
 
 	#[command(flatten)]
 	circuit_call: toolkit_js::CircuitArgs,
+
+	/// Custom serialized ledger parameters, otherwise the latest will be fetched.
+	#[arg(long)]
+	custom_ledger_parameters: Option<String>,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
@@ -133,6 +139,10 @@ pub enum GenerateIntentError {
 	MissingSourceUrl,
 	#[error("failed to create temporary dir for toolkit-js file interop")]
 	FailedToCreateTempDir(std::io::Error),
+	#[error("failed to decode ledger parameters: {0}")]
+	DecodeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to deserialize ledger parameters: {0}")]
+	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub async fn execute(
@@ -180,13 +190,22 @@ pub async fn execute(
 				return Ok(());
 			}
 
-			let Some(rpc_url) = args.source.src_url else {
-				eprintln!("missing required --src-url argument");
-				return Err(GenerateIntentError::MissingSourceUrl.into());
-			};
+			let ledger_parameters =
+				if let Some(serialized_parameters) = args.custom_ledger_parameters {
+					let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
+						.map_err(|e| GenerateIntentError::DecodeLedgerParameters(e.into()))?;
+					let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+						.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
+					parameters
+				} else {
+					let Some(rpc_url) = args.source.src_url else {
+						eprintln!("missing required --src-url argument");
+						return Err(GenerateIntentError::MissingSourceUrl.into());
+					};
 
-			let client = MidnightNodeClient::new_without_timeout(&rpc_url).await?;
-			let ledger_parameters = client.get_ledger_parameters().await?;
+					let client = MidnightNodeClient::new_without_timeout(&rpc_url).await?;
+					client.get_ledger_parameters().await?
+				};
 
 			let temp_dir =
 				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
@@ -238,7 +257,7 @@ pub async fn execute(
 /// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
-	use midnight_node_ledger_helpers::{Serializable, SigningKey};
+	use midnight_node_ledger_helpers::{INITIAL_PARAMETERS, Serializable, SigningKey, serialize};
 	use std::path::PathBuf;
 
 	use crate::cli::{Cli, run_command};
@@ -274,7 +293,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -315,7 +334,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -330,6 +349,7 @@ mod test {
 				.unwrap()
 				.trim()
 				.to_string();
+		let custom_ledger_parameters = hex::encode(serialize(&INITIAL_PARAMETERS).unwrap()); //to_hex(&INITIAL_PARAMETERS);
 
 		let args = vec![
 			"midnight-node-toolkit",
@@ -357,6 +377,8 @@ mod test {
 			&output_zswap_state,
 			"--output-result",
 			&output_result,
+			"--custom-ledger-parameters",
+			&custom_ledger_parameters,
 			"--contract-address",
 			&contract_address_hex,
 			"increment",
@@ -377,7 +399,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -477,7 +499,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
