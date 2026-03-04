@@ -901,8 +901,8 @@ build-test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
+    # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
+    RUN microdnf -y install tar gzip xz docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
