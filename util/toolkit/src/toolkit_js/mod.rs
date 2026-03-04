@@ -52,7 +52,11 @@ impl From<PathBuf> for RelativePath {
 
 pub enum Command {
 	Deploy(DeployArgs),
-	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Circuit {
+		args: CircuitArgs,
+		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
+	},
 	Maintain(MaintainCommand),
 }
 
@@ -62,7 +66,7 @@ pub struct CircuitArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
@@ -79,6 +83,9 @@ pub struct CircuitArgs {
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
+	/// The output file of the on-chain (public) state
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	output_onchain_state: Option<RelativePath>,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_private_state: RelativePath,
@@ -127,7 +134,7 @@ pub struct SharedMaintainArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
@@ -201,8 +208,8 @@ impl ToolkitJs {
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
-			Command::Circuit { args, input_zswap_state } => {
-				self.execute_ciruit(args, input_zswap_state)
+			Command::Circuit { args, input_zswap_state, ledger_parameters } => {
+				self.execute_circuit(args, input_zswap_state, ledger_parameters)
 			},
 			Command::Maintain(command) => self.execute_maintain(command),
 		}
@@ -251,10 +258,11 @@ impl ToolkitJs {
 		Ok(())
 	}
 
-	pub fn execute_ciruit(
+	pub fn execute_circuit(
 		&self,
 		args: CircuitArgs,
 		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
 	) -> Result<(), ToolkitJsError> {
 		let contract_address_str = hex::encode(args.contract_address.0.0);
 		println!("Executing circuit command");
@@ -265,6 +273,7 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let input_ledger_parameters = ledger_parameters.absolute();
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
@@ -283,10 +292,16 @@ impl ToolkitJs {
 			&output_private_state,
 			"--output-zswap",
 			&output_zswap_state,
+			"--input-ledger-params",
+			&input_ledger_parameters,
 		];
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
+		}
+		let output_onchain_state = args.output_onchain_state.map(|s| s.absolute());
+		if let Some(ref output_onchain_state) = output_onchain_state {
+			cmd_args.extend_from_slice(&["--output-oc", &output_onchain_state]);
 		}
 		let output_result = args.output_result.map(|s| s.absolute());
 		if let Some(ref output_result) = output_result {

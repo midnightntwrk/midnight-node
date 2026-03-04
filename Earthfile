@@ -475,10 +475,16 @@ rebuild-genesis-state-mainnet:
         --NETWORK=mainnet \
         --FUND_FAUCET_WALLETS=false
 
+# rebuild-genesis-state-perfnet rebuilds the genesis ledger state for perfnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-perfnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=perfnet
+
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-perfnet
     BUILD +rebuild-genesis-state-govnet
     BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
@@ -537,6 +543,7 @@ rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
     BUILD +rebuild-chainspec --NETWORK=govnet
     BUILD +rebuild-chainspec --NETWORK=qanet
+    BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
@@ -954,16 +961,43 @@ build-test-toolkit:
 
 test-toolkit:
     ARG NATIVEARCH
+    ARG NODE_IMAGE
+    ARG FORK_FROM_NODE_IMAGE
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
-    WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-        # Use --network=host so testcontainers postgres is accessible via localhost
-        RUN docker run \
-            --network=host \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
-            -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-            test-toolkit:latest
+
+    LET EXTRA_DOCKER_ENV=""
+    IF [ -n "$NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="-e NODE_IMAGE=$NODE_IMAGE"
+    END
+    IF [ -n "$FORK_FROM_NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+
+    # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
+    # pre-pull private GHCR images via Earthly's buildkit (which has auth).
+    # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    IF [ -n "$NODE_IMAGE" ]
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $NODE_IMAGE
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest
+        END
+    ELSE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+            RUN docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                test-toolkit:latest
+        END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
@@ -1350,18 +1384,10 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
-audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
-
-audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-ui
-    BUILD +audit-ui-tests
 
 # audit checks for security vulnerabilities
 audit:
@@ -1530,49 +1556,6 @@ stop-local-env:
     WORKDIR local-environment
     RUN npm ci
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
-
-# node-e2e-test runs the node E2E tests using Earthly's container management
-#
-# Usage:
-#   earthly +node-e2e-test
-#
-# This target:
-# 1. Runs the Playwright E2E tests against the local environment
-# 2. Saves all test artifacts to test-artifacts/e2e/node/
-#
-# Outputs:
-#   - test-artifacts/e2e/node/ - All test results, logs, and reports
-node-e2e-test:
-    ARG NATIVEARCH
-
-    LOCALLY
-
-    RUN echo "🧪 Running Node E2E tests with Earthly:"
-
-    # Setup test environment
-    WORKDIR ui/tests
-
-    # Install dependencies
-    RUN yarn config set -H enableImmutableInstalls false
-    RUN yarn install
-
-    # Create test artifacts directory first
-    RUN mkdir -p test-artifacts/e2e/node
-
-    # Run the tests from the test artifacts directory to generate CTRF report there
-    RUN echo "🎯 Running Playwright + Testcontainers tests..." \
-      && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-
-    # Save test results
-    RUN cp -r ./reports test-artifacts/e2e/node/ || true
-    RUN cp -r ./logs test-artifacts/e2e/node/ || true
-    # Check test results
-    RUN if [ "${TEST_FAILED:-false}" = true ]; then \
-        echo "❌ Tests failed"; \
-        exit 1; \
-    else \
-        echo "✅ Node E2E tests complete."; \
-    fi
 
 #images Build all the images
 images:

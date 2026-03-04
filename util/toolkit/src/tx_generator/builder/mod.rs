@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{DoNothingBuilder, ReplaceInitialTxBuilder, compute_batches_seeds};
+use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
@@ -316,7 +316,6 @@ pub enum Builder {
 	DeregisterDustAddress(DeregisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
-	Migrate,
 }
 
 /// Configuration for how proofs should be generated.
@@ -433,7 +432,7 @@ impl Builder {
 				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
 				vec![seed, funding_seed]
 			},
-			Builder::Send | Builder::Migrate => vec![],
+			Builder::Send => vec![],
 		}
 	}
 
@@ -445,7 +444,7 @@ impl Builder {
 	/// - None (pass-through builders) → defaults to ledger_8
 	pub fn to_versioned_builder(
 		self,
-		fork_ctx: Option<ForkAwareLedgerContext<DefaultDB>>,
+		fork_ctx: Option<ForkAwareLedgerContext>,
 		prover_config: &ProverConfig,
 		_dry_run: bool,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
@@ -460,7 +459,9 @@ impl Builder {
 							);
 						}
 						let prover: Arc<
-							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>,
+							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+									midnight_node_ledger_helpers::ledger_7::DefaultDB,
+								>,
 						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
 						self_clone.to_builder_v7(Arc::new(context), prover)
 					},
@@ -471,7 +472,7 @@ impl Builder {
 				)
 			},
 			None => {
-				// Pass-through builders (Send, Migrate) don't need context
+				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
 			},
 		}
@@ -528,14 +529,21 @@ impl Builder {
 				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
-			Builder::Migrate => constr(v8::ReplaceInitialTxBuilder::new()),
 		}
 	}
 
 	fn to_builder_v7(
 		self,
-		context: Arc<midnight_node_ledger_helpers::ledger_7::context::LedgerContext<DefaultDB>>,
-		prover: Arc<dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<DefaultDB>>,
+		context: Arc<
+			midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+				midnight_node_ledger_helpers::ledger_7::DefaultDB,
+			>,
+		>,
+		prover: Arc<
+			dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+					midnight_node_ledger_helpers::ledger_7::DefaultDB,
+				>,
+		>,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
@@ -574,7 +582,6 @@ impl Builder {
 				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		})
 	}
 
@@ -587,7 +594,6 @@ impl Builder {
 
 		match self {
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
@@ -782,7 +788,7 @@ pub struct ContextNotLedger8Error(pub LedgerVersion);
 pub fn build_fork_aware_context_raw(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> ForkAwareLedgerContext<DefaultDB> {
+) -> ForkAwareLedgerContext {
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks

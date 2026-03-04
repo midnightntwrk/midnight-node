@@ -368,6 +368,48 @@ Common Substrate flags for SREs:
 
 See `midnight-node --help` for all available options.
 
+## Memory Monitoring
+
+The node includes a memory monitor that periodically checks available system memory and triggers a graceful shutdown before the Linux OOM killer intervenes. This is particularly relevant during initial blockchain synchronization, which can consume significant memory.
+
+### Configuration
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `memory_threshold` | `u64` | `0` (disabled) | Minimum available memory in MiB. Node shuts down if available memory drops below this value. |
+| `memory_polling_period` | `u32` | `1` | How often to check available memory, in seconds. |
+
+Set via TOML config, environment variables, or CLI flags (`--memory-threshold`, `--memory-polling-period`):
+
+```toml
+# In preset or default.toml
+memory_threshold = 512
+memory_polling_period = 5
+```
+
+```sh
+# Via environment
+MEMORY_THRESHOLD=512 MEMORY_POLLING_PERIOD=5 ./midnight-node
+```
+
+### Memory source detection
+
+On Linux, the monitor detects the memory source once at startup:
+
+1. **cgroup v2** — `memory.max` and `memory.current` under `/sys/fs/cgroup/`. Used when running in Docker or Kubernetes with memory limits.
+2. **cgroup v1** — `memory.limit_in_bytes` and `memory.usage_in_bytes` under `/sys/fs/cgroup/memory/`. Used with older container runtimes.
+3. **`/proc/meminfo`** — `MemAvailable` field. Used on bare metal or when no cgroup memory limit is set.
+
+Unlimited cgroup limits (`memory.max = "max"` for v2, or `limit_in_bytes > 2^62` for v1) are detected and the monitor falls through to the next source.
+
+On non-Linux platforms, the memory monitor is not supported and logs a warning at startup.
+
+### Recommended thresholds
+
+The appropriate threshold depends on the deployment environment. A value of `512` MiB (matching the storage monitor's default) is a reasonable starting point. For nodes synchronizing large chains, consider a higher threshold (e.g., `1024`–`2048` MiB) to allow headroom for memory spikes during sync.
+
+A warning is logged when available memory drops below 2x the threshold, providing early notice before shutdown.
+
 ## Troubleshooting
 
 ### Diagnosing configuration issues
