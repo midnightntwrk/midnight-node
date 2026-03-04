@@ -53,3 +53,17 @@ export circuit receiveShieldedTest(coin: ShieldedCoinInfo): [] {
   assert(coin.value > 0, "Deposit amount must be positive");
   receiveShielded(disclose(coin));
 }
+
+/**
+ * Mint to contract and send immediately to user using sendImmediateShielded()
+ */
+export circuit mintAndSendImmediate(domainSep: Bytes<32>, mint_amount: Uint<64>, send_amount: Uint<64>, user_key: ZswapCoinPublicKey): ShieldedCoinInfo {
+    const coin = mintShieldedToken(
+        disclose(domainSep),
+        disclose(disclose(mint_amount)),
+        evolveNonce(0 as Uint<128>, disclose(domainSep)),
+        right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
+    );
+    sendImmediateShielded(coin, left<ZswapCoinPublicKey, ContractAddress>(disclose(user_key)), disclose(send_amount));
+    return coin;
+}
