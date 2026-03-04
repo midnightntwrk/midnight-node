@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
+use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use subxt::backend::legacy::rpc_methods::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
@@ -111,6 +112,15 @@ impl MidnightNodeClient {
 		let latest_block = self.api.blocks().at_latest().await?;
 		Ok(latest_block.number().into())
 	}
+
+	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {
+		let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
+		let response = self.api.runtime_api().at_latest().await?.call(call).await?;
+		let bytes = response.expect("Unable to retrieve ledger parameters from RPC server");
+		let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+			.map_err(|e| ClientError::DeserializeLedgerParameters(e.into()))?;
+		Ok(parameters)
+	}
 }
 
 #[derive(Error, Debug)]
@@ -125,4 +135,6 @@ pub enum ClientError {
 	BlockHashNotFound(u32),
 	#[error("chain not yet started - only genesis is finalized")]
 	OnlyGenesisFinalized,
+	#[error("Failed to deserialize ledger parameters: {0}")]
+	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }

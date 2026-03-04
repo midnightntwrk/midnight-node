@@ -47,6 +47,7 @@ pub trait FromContext<D: DB + Clone> {
 pub struct DustRegistrationBuilder {
 	pub signing_key: SigningKey,
 	pub dust_address: Option<DustPublicKey>,
+	pub allow_fee_payment: u128,
 }
 
 impl DustRegistrationBuilder {
@@ -67,7 +68,7 @@ impl DustRegistrationBuilder {
 		DustRegistration {
 			night_key,
 			dust_address: self.dust_address.map(|address| Sp::new(address)),
-			allow_fee_payment: 0,
+			allow_fee_payment: self.allow_fee_payment,
 			signature: Some(Sp::new(signature)),
 		}
 	}
@@ -185,13 +186,12 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
-		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
-		if self.funding_seeds.is_empty() {
-			return self.prove_tx(tx).await;
-		};
-
-		let tx = self.pay_fees(tx, now, ttl).await?;
-		Ok(tx)
+		// Pay the outstanding DUST balance, if we have a wallet seed or dust registrations
+		if self.funding_seeds.is_empty() && self.dust_registrations.is_empty() {
+			self.prove_tx(tx).await
+		} else {
+			Ok(self.pay_fees(tx, now, ttl).await?)
+		}
 	}
 
 	async fn pay_fees(

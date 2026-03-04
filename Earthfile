@@ -220,6 +220,15 @@ rebuild-genesis-state:
     FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
     USER root
     ENV RUST_BACKTRACE=1
+
+    # Compile simple-merkle-tree contract from source using compactc from toolkit-js
+    IF [ "$GENERATE_TEST_TXS" = "true" ]
+        COPY ledger/test-data/simple-merkle-tree.compact /tmp/simple-merkle-tree.compact
+        WORKDIR /toolkit-js
+        RUN npx run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
+        WORKDIR /
+    END
+
     # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
@@ -432,6 +441,7 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
     SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
+    SAVE ARTIFACT --if-exists /test-static/simple-merkle-tree/* AS LOCAL static/contracts/simple-merkle-tree/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
@@ -570,70 +580,6 @@ ci:
     BUILD +scan
     BUILD +audit
     BUILD +test
-
-# Precompiled midnight contracts for use in testing and for the toolkit.
-contract-precompile-image:
-    # The results of this image is platform independent so we don't need to build for all platforms.
-    BUILD +contract-precompile-image-single-platform
-
-contract-precompile-image-single-platform:
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-    # Install unzip and wget
-    RUN microdnf -y install unzip wget tar gzip && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-    # Install gh CLI
-    RUN wget -q https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz && \
-        tar -xzf gh_2.62.0_linux_amd64.tar.gz && \
-        mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ && \
-        rm -rf gh_2.62.0_linux_amd64*
-
-    # Fetch CompactC x86_64
-    COPY COMPACTC_VERSION .
-    RUN --secret GH_TOKEN set -e && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        RELEASE_TAG="compactc-v${VERSION}" && \
-        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
-        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
-            echo "Successfully downloaded from release"; \
-        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
-            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
-            echo "Available releases with binaries:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        else \
-            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
-            echo "Available releases:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        fi
-    RUN unzip compactc*.zip
-
-    COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
-    # Keys should not have 0 size (but will have if we ran out of memory):
-    RUN [ -s /simple-merkle-tree/keys/check.prover ]
-    RUN [ -s /simple-merkle-tree/keys/check.verifier ]
-    RUN [ -s /simple-merkle-tree/keys/store.prover ]
-    RUN [ -s /simple-merkle-tree/keys/store.verifier ]
-
-    ENV PATH=$PATH:/bin
-    ENTRYPOINT [ "/bin/sh" ]
-
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    ENV IMAGE_TAG=$IMAGE_TAG
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LABEL org.opencontainers.image.title=node-test-contract-precompiles
-    LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
-    SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
-
-use-contract-precompile-image:
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-#    FROM +contract-precompile-image
-    COPY COMPACTC_VERSION .
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
-    SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
 
 # a common setup of the build environment (not designed to be called directly)
 node-ci-image:

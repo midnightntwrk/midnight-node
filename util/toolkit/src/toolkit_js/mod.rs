@@ -49,7 +49,11 @@ impl From<PathBuf> for RelativePath {
 
 pub enum Command {
 	Deploy(DeployArgs),
-	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Circuit {
+		args: CircuitArgs,
+		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
+	},
 	Maintain(MaintainCommand),
 }
 
@@ -201,8 +205,8 @@ impl ToolkitJs {
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
-			Command::Circuit { args, input_zswap_state } => {
-				self.execute_ciruit(args, input_zswap_state)
+			Command::Circuit { args, input_zswap_state, ledger_parameters } => {
+				self.execute_circuit(args, input_zswap_state, ledger_parameters)
 			},
 			Command::Maintain(command) => self.execute_maintain(command),
 		}
@@ -251,10 +255,11 @@ impl ToolkitJs {
 		Ok(())
 	}
 
-	pub fn execute_ciruit(
+	pub fn execute_circuit(
 		&self,
 		args: CircuitArgs,
 		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
 	) -> Result<(), ToolkitJsError> {
 		let contract_address_str = hex::encode(args.contract_address.0.0);
 		println!("Executing circuit command");
@@ -265,6 +270,7 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let input_ledger_parameters = ledger_parameters.absolute();
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
@@ -283,6 +289,8 @@ impl ToolkitJs {
 			&output_private_state,
 			"--output-zswap",
 			&output_zswap_state,
+			"--input-ledger-params",
+			&input_ledger_parameters,
 		];
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
