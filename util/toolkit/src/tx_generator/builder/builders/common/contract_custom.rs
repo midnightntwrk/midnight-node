@@ -169,8 +169,6 @@ impl BuildTxs for CustomContractBuilder {
 		let funding_utxos = context.with_ledger_state(|state| {
 			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
 		});
-		log::debug!("funding_utxos: {funding_utxos:?}");
-		log::debug!("utxo_inputs: {:?}", &self.utxo_inputs);
 
 		let mut input_utxos = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
 		for input_utxo in &self.utxo_inputs {
