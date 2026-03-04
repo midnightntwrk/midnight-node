@@ -54,10 +54,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				let cli = Cli::parse();
 
 				// Initialize the logger.
-				// Uses synchronous stdout - otherwise logs get lost
-				structured_logger::Builder::new()
-					.with_default_writer(structured_logger::json::new_writer(std::io::stderr()))
-					.init();
+				let writer: Box<dyn structured_logger::Writer> = if cli.log_json {
+					structured_logger::json::new_writer(std::io::stderr())
+				} else {
+					midnight_node_toolkit::log_writer::new_writer(std::io::stderr())
+				};
+				structured_logger::Builder::new().with_default_writer(writer).init();
 
 				let log_level = if cli.verbose {
 					log::LevelFilter::Debug
