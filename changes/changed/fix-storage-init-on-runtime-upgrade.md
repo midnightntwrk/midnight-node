@@ -8,5 +8,5 @@ storage for the new ledger version is uninitialized.
 This change closes this window by always checking storage initialization on a
 runtime upgrade.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/870
 Fixes: https://shielded.atlassian.net/browse/PM-22228
