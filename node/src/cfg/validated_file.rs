@@ -138,7 +138,7 @@ mod tests {
 	#[test]
 	fn safe_read_rejects_oversized_file() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![0u8; 101]).unwrap();
+		f.write_all(&[0u8; 101]).unwrap();
 		let result = safe_read(f.path().to_str().unwrap(), 100);
 		let err = result.unwrap_err();
 		assert!(
@@ -150,7 +150,7 @@ mod tests {
 	#[test]
 	fn safe_read_to_string_rejects_oversized_file() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![b'a'; 101]).unwrap();
+		f.write_all(&[b'a'; 101]).unwrap();
 		let result = safe_read_to_string(f.path().to_str().unwrap(), 100);
 		let err = result.unwrap_err();
 		assert!(
@@ -176,7 +176,7 @@ mod tests {
 	#[test]
 	fn safe_read_succeeds_at_exact_size_limit() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![0u8; 100]).unwrap();
+		f.write_all(&[0u8; 100]).unwrap();
 		let result = safe_read(f.path().to_str().unwrap(), 100);
 		assert_eq!(result.unwrap().len(), 100);
 	}
@@ -184,7 +184,7 @@ mod tests {
 	#[test]
 	fn safe_read_to_string_succeeds_at_exact_size_limit() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![b'x'; 100]).unwrap();
+		f.write_all(&[b'x'; 100]).unwrap();
 		let result = safe_read_to_string(f.path().to_str().unwrap(), 100);
 		assert_eq!(result.unwrap().len(), 100);
 	}
@@ -192,7 +192,7 @@ mod tests {
 	#[test]
 	fn safe_read_rejects_at_size_limit_plus_one() {
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![0u8; 101]).unwrap();
+		f.write_all(&[0u8; 101]).unwrap();
 		let result = safe_read(f.path().to_str().unwrap(), 100);
 		assert!(result.is_err());
 	}
@@ -217,7 +217,7 @@ mod tests {
 		assert!(err.contains("not a regular file"), "expected rejection reason in error: {err}");
 
 		let mut f = tempfile::NamedTempFile::new().unwrap();
-		f.write_all(&vec![0u8; 200]).unwrap();
+		f.write_all(&[0u8; 200]).unwrap();
 		let err = safe_read(f.path().to_str().unwrap(), 100).unwrap_err();
 		assert!(
 			err.contains("exceeds maximum allowed size"),
