@@ -14,11 +14,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Check if node image tag was incremented
+        env:
+          GHCR_SECRET: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
           NODE_CRATE_VERSION=$(cat ./node/Cargo.toml | grep version | head -1 | awk -F'"' '{print $2}')
           export NODE_CRATE_VERSION
           echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> "$GITHUB_ENV"
-          GHCR_TOKEN=$(echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | base64)
+          GHCR_TOKEN=$(echo "$GHCR_SECRET" | base64)
           export GHCR_TOKEN
           TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
           export TAGS_RESPONSE

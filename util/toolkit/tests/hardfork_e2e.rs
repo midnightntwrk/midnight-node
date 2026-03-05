@@ -98,15 +98,11 @@ async fn hardfork_single_tx() {
 	.await;
 
 	// 4. Runtime upgrade: extract WASM from new node image and apply it
+	let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+	let wasm_path_in_image =
+		format!("/artifacts-{arch}/midnight_node_runtime.compact.compressed.wasm");
 	let wasm_output = Command::new("docker")
-		.args([
-			"run",
-			"--rm",
-			"--entrypoint",
-			"cat",
-			&node_image,
-			"/artifacts-amd64/midnight_node_runtime.compact.compressed.wasm",
-		])
+		.args(["run", "--rm", "--entrypoint", "cat", &node_image, &wasm_path_in_image])
 		.output()
 		.expect("docker run cat wasm failed");
 	assert!(
