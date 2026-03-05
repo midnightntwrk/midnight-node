@@ -22,21 +22,22 @@ pub mod inner {
 	mod build_txs_ext;
 	mod claim_rewards;
 	mod contract_call;
-	pub mod transactions;
-	mod tx_serialization;
-	pub mod type_convert;
-	// contract_custom excluded: EncodedOutputInfo does not implement ledger_7 BuildOutput
+	mod contract_custom;
 	mod contract_deploy;
 	mod contract_maintenance;
 	mod deregister_dust_address;
 	mod do_nothing;
 	mod register_dust_address;
 	pub mod single_tx;
+	pub mod transactions;
+	mod tx_serialization;
+	pub mod type_convert;
 
 	pub use batches::*;
 	pub use build_txs_ext::*;
 	pub use claim_rewards::*;
 	pub use contract_call::*;
+	pub use contract_custom::*;
 	pub use contract_deploy::*;
 	pub use contract_maintenance::*;
 	pub use deregister_dust_address::*;
