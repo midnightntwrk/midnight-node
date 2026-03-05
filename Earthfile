@@ -898,7 +898,6 @@ test-pallet-fixtures:
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
     ARG NATIVEARCH
     FROM +prep
