@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # This file is part of midnight-node.
-# Copyright (C) 2025-2026 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail

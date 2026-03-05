@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -143,9 +143,7 @@ impl UnshieldedUtxos {
 	}
 
 	pub fn inputs(&self) -> Vec<UtxoInfo> {
-		// TODO: this rev() is only required to match preview.
-		// We could drop it before mainnet as a breaking change.
-		self.inputs.values().rev().flat_map(|utxos| utxos.iter()).cloned().collect()
+		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
 	pub fn outputs(&self) -> Vec<UtxoInfo> {

@@ -104,7 +104,7 @@ runs:
           "
         else
           echo "Running tests locally"
-          cd e2e-tests
+          cd e2e-tests || exit 1
           source venv/bin/activate
           eval "$pytest_cmd"
         fi

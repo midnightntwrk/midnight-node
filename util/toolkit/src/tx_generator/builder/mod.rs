@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025-2026 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{DoNothingBuilder, ReplaceInitialTxBuilder, compute_batches_seeds};
+use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::ForkAwareLedgerContext, raw_block_data::LedgerVersion,
@@ -253,12 +253,9 @@ pub struct RegisterDustAddressArgs {
 	/// Seed for source wallet
 	#[arg(long)]
 	pub wallet_seed: String,
-	/// Seed for funding wallet
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs.
+	#[arg(long)]
+	pub funding_seed: Option<String>,
 	#[arg(
 		long,
 		value_parser = cli::wallet_address,
@@ -316,7 +313,6 @@ pub enum Builder {
 	DeregisterDustAddress(DeregisterDustAddressArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
-	Migrate,
 }
 
 /// Configuration for how proofs should be generated.
@@ -425,15 +421,18 @@ impl Builder {
 			},
 			Builder::RegisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
-				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
-				vec![seed, funding_seed]
+				if let Some(ref funding_seed) = args.funding_seed {
+					vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)]
+				} else {
+					vec![seed]
+				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
 				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
 				vec![seed, funding_seed]
 			},
-			Builder::Send | Builder::Migrate => vec![],
+			Builder::Send => vec![],
 		}
 	}
 
@@ -473,7 +472,7 @@ impl Builder {
 				)
 			},
 			None => {
-				// Pass-through builders (Send, Migrate) don't need context
+				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
 			},
 		}
@@ -530,7 +529,6 @@ impl Builder {
 				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
-			Builder::Migrate => constr(v8::ReplaceInitialTxBuilder::new()),
 		}
 	}
 
@@ -584,7 +582,6 @@ impl Builder {
 				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 		})
 	}
 
@@ -597,7 +594,6 @@ impl Builder {
 
 		match self {
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
 			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
