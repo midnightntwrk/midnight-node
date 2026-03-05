@@ -1,4 +1,4 @@
-#audit #runtime
+#audit #client
 # Reject unsupported system transaction types
 
 The `get_system_tx_type` function previously used a wildcard match arm that
