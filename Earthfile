@@ -189,24 +189,7 @@ rebuild-sqlx:
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
-    # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
-
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
-    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        node --version && npm --version
-
-    # renovate: datasource=npm packageName=aiken-lang/aiken
-    ENV aiken_version=1.1.19
-    RUN npm install -g @aiken-lang/aiken@${aiken_version}
+    FROM +prep-no-copy
     COPY tests/redemption-skeleton .
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
@@ -594,9 +577,14 @@ node-ci-image-single-platform:
     RUN microdnf -y install curl-minimal ca-certificates && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install rust with complete profile for profiler runtime support (needed for cargo llvm-cov)
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.93 --profile complete
+    # Read Rust version from rust-toolchain.toml (single source of truth)
+    COPY rust-toolchain.toml .
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+
+    # Install rust with minimal profile + only the components we need
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
     ENV PATH="/root/.cargo/bin:${PATH}"
+    RUN rustup component add clippy rustfmt
 
     # Install build dependencies
     RUN microdnf -y update && \
@@ -613,6 +601,7 @@ node-ci-image-single-platform:
         pkgconfig \
         openssh-clients \
         git \
+        patch \
         tar \
         gzip \
         jq && \
@@ -623,7 +612,7 @@ node-ci-image-single-platform:
         # crossbuild-essential-amd64 \
         # libc6-amd64-cross
 
-    RUN rustup target add wasm32v1-none aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
+    RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
 
     RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
@@ -632,25 +621,67 @@ node-ci-image-single-platform:
       && echo "[net]" >> .cargo/config.toml \
       && echo "git-fetch-with-cli = true" >> .cargo/config.toml
 
-    # Install cargo binstall:
-    # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
+    # Install cargo binstall from pre-built release binary
+    RUN ARCH=$(uname -m) && \
+        curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.6.9/cargo-binstall-${ARCH}-unknown-linux-gnu.tgz" -o binstall.tgz && \
+        tar -xzf binstall.tgz -C /root/.cargo/bin cargo-binstall && \
+        rm binstall.tgz
+    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
 
-    # subwasm can be used to diff between runtimes
+    # Install cargo tools from source in a single layer, then clean up build artifacts
     # renovate: datasource=github-releases packageName=chevdor/subwasm
     ARG SUBWASM_VERSION=0.21.3
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
-    RUN cargo install --locked cargo-shear --version 1.9.1
-    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
+    # renovate: datasource=crate packageName=aiken
+    ARG AIKEN_VERSION=1.1.19
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION && \
+        cargo install --locked cargo-shear --version 1.9.1 && \
+        cargo install sqlx-cli --no-default-features --features rustls,postgres && \
+        cargo install aiken --version $AIKEN_VERSION --locked && \
+        rm -rf /root/.cargo/registry /root/.cargo/git
+
+    # Install gh CLI (use uname -m for reliable arch detection)
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then GH_ARCH="arm64"; else GH_ARCH="amd64"; fi && \
+        curl -fsSL "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_${GH_ARCH}.tar.gz" -o gh.tar.gz && \
+        tar -xzf gh.tar.gz && \
+        mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
+        rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
+
+    # Download compactc compiler from public midnightntwrk/compact releases
+    COPY COMPACTC_VERSION .
+    RUN set -e && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
+        VERSION=$(cat COMPACTC_VERSION) && \
+        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
+        URL="https://github.com/midnightntwrk/compact/releases/download/compactc-v${VERSION}/${ASSET}" && \
+        mkdir -p /compactc-bin && \
+        echo "Downloading compactc: ${URL}" && \
+        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
+        unzip /tmp/compactc.zip -d /compactc-bin && \
+        chmod +x /compactc-bin/compactc && \
+        rm /tmp/compactc.zip
+    ENV COMPACT_HOME=/compactc-bin
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
 
-    # SAVE IMAGE under the rust version used.
+    COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
+    RUN $COMPACT_HOME/compactc simple-merkle-tree.compact simple-merkle-tree
+    # Keys should not have 0 size (but will have if we ran out of memory):
+    RUN [ -s /simple-merkle-tree/keys/check.prover ]
+    RUN [ -s /simple-merkle-tree/keys/check.verifier ]
+    RUN [ -s /simple-merkle-tree/keys/store.prover ]
+    RUN [ -s /simple-merkle-tree/keys/store.verifier ]
+
+    SAVE ARTIFACT /compactc-bin
+    SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
+
+    # SAVE IMAGE under the rust version and compactc version.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.93"
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    ARG COMPACTC_VER=$(cat COMPACTC_VERSION)
+    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VER}"
+    LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
     SAVE IMAGE --push \
@@ -658,9 +689,16 @@ node-ci-image-single-platform:
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
+    # Read versions from files (multi-FROM so we don't depend on env vars propagating)
+    FROM alpine:3.20
+    COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG COMPACTC_VER=$(cat COMPACTC_VERSION)
+    # If you need to alter the CI image, here is where you can build it locally rather than
+    # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:1.93-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VER}-$NATIVEARCH
 
     # Used to add repository for nodejs
     RUN microdnf -y update && \
@@ -687,22 +725,21 @@ prep:
     SAVE IMAGE --cache-hint
 
 # Prepares Node Toolkit (JS) in time for testing
-# Always uses linux/amd64 platform because compactc doesn't release for arm64
 toolkit-js-prep:
-    FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM +prep-no-copy
 
-    # Install dependencies for Node.js and toolkit-js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz unzip && \
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 x64 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Always use x64 since this target is always built for linux/amd64 platform
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     ARG NODE_VERSION=22.13.1
-    RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz && \
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version && \
-        npm install -g npm@11.11.0 && npm --version
+        node --version && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -712,7 +749,7 @@ toolkit-js-prep:
     WORKDIR /toolkit-js
     RUN npm ci
     RUN npm run build
-    # Run npm compact script (includes fetch-compactc + compile steps)
+    # Compile compact contracts (fetch-compactc skipped via COMPACT_HOME from CI image)
     RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
@@ -721,8 +758,7 @@ toolkit-js-prep:
 
 # toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    FROM --platform=linux/amd64 +toolkit-js-prep
+    FROM +toolkit-js-prep
     SAVE ARTIFACT /toolkit-js/node_modules AS LOCAL ./util/toolkit-js/node_modules
     SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
@@ -862,7 +898,6 @@ test-pallet-fixtures:
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-# NOTE: This target builds for native platform, but copies toolkit-js from amd64 build (compactc is amd64-only)
 build-test-toolkit:
     ARG NATIVEARCH
     FROM +prep
@@ -870,8 +905,8 @@ build-test-toolkit:
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE /target
 
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
+    # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
+    RUN microdnf -y install tar gzip xz docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
@@ -897,8 +932,7 @@ build-test-toolkit:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
     # Extract Node Toolkit (JS)
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
+    COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
     # Run Midnight Node Toolkit package tests only (requires toolkit-js)
     COPY scripts/test-toolkit.sh /test-toolkit.sh
@@ -1198,10 +1232,13 @@ toolkit-image:
         node --version && npm --version && \
         npm install -g npm@11.11.0 && npm --version
 
+    # Copy compactc from CI image so run-compactc can find it
+    COPY +node-ci-image-single-platform/compactc-bin /compactc-bin
+    ENV COMPACT_HOME=/compactc-bin
+
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
-        COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+        COPY +toolkit-js-prep/toolkit-js /toolkit-js
     ELSE
         RUN mkdir -p /toolkit-js
     END
