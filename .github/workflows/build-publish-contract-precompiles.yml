@@ -93,9 +93,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Create multiplatform image (Docker Hub)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          VERSION="${{ needs.build.outputs.version }}"
-
           docker buildx imagetools create \
             -t "midnightntwrk/midnight-node-ci:${VERSION}" \
             "midnightntwrk/midnight-node-ci:${VERSION}-amd64" \

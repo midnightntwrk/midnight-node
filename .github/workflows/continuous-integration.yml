@@ -633,6 +633,8 @@ jobs:
           tool: just
 
       - name: Build indexer images
+        env:
+          REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -645,7 +647,7 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls

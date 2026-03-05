@@ -86,6 +86,8 @@ jobs:
 
       - name: Run build
         id: export
+        env:
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
@@ -93,7 +95,7 @@ jobs:
 
           # We don't use --ci as we want artifacts to be saved
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --ci --push +toolkit-image
 
           # Pass IMAGE_TAG to next step (must match definition in Earthfile):
           IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
@@ -210,6 +212,8 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Run Node and toolkit builds
+        env:
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
@@ -217,7 +221,7 @@ jobs:
 
           # We don't pass --ci to earthly here as we want the artifacts saved
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret "GITHUB_TOKEN=${{ secrets.MIDNIGHTCI_PACKAGES_READ }}" -P --ci --push +toolkit-image
+          . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -299,6 +303,8 @@ jobs:
 
       - name: Build indexer images
         id: build_indexer
+        env:
+          REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
@@ -311,7 +317,7 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls
