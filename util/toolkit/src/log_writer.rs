@@ -23,11 +23,14 @@ use structured_logger::Writer;
 /// A Writer implementation that outputs human-readable colored log lines.
 ///
 /// Format: `LEVEL message key=value key=value ...`
-pub struct PrettyWriter<W: Write + Sync + Send + 'static>(Mutex<Box<W>>);
+pub struct PrettyWriter<W: Write + Sync + Send + 'static> {
+	writer: Mutex<Box<W>>,
+	verbose: bool,
+}
 
 impl<W: Write + Sync + Send + 'static> PrettyWriter<W> {
-	pub fn new(w: W) -> Self {
-		Self(Mutex::new(Box::new(w)))
+	pub fn new(w: W, verbose: bool) -> Self {
+		Self { writer: Mutex::new(Box::new(w)), verbose }
 	}
 }
 
@@ -47,6 +50,15 @@ impl<W: Write + Sync + Send + 'static> Writer for PrettyWriter<W> {
 		};
 
 		let mut buf = Vec::with_capacity(256);
+
+		if let Some(ts) = value
+			.get(&Key::from_str("timestamp"))
+			.and_then(|v| v.to_string().parse::<i64>().ok())
+		{
+			let iso = format_epoch_millis(ts);
+			write!(buf, "{} ", style(iso).dim())?;
+		}
+
 		write!(buf, "{styled_level}")?;
 
 		if let Some(msg) = &message {
@@ -59,14 +71,20 @@ impl<W: Write + Sync + Send + 'static> Writer for PrettyWriter<W> {
 		for (k, v) in value {
 			let key = k.as_str();
 			match key {
-				"level" | "message" | "target" | "timestamp" | "module" | "file" | "line" => {},
-				_ => write!(buf, " {key}{}", style(format!("={v}")).dim())?,
+				"level" | "message" => {},
+				"target" | "timestamp" | "module" | "file" | "line" if !self.verbose => {},
+				_ => write!(
+					buf,
+					" {}{}",
+					style(key).magenta().dim(),
+					style(format!("={v}")).red().dim()
+				)?,
 			}
 		}
 
 		buf.write_all(b"\n")?;
 
-		if let Ok(mut w) = self.0.lock() {
+		if let Ok(mut w) = self.writer.lock() {
 			w.as_mut().write_all(&buf)?;
 		}
 		Ok(())
@@ -74,6 +92,13 @@ impl<W: Write + Sync + Send + 'static> Writer for PrettyWriter<W> {
 }
 
 /// Creates a new `Box<dyn Writer>` with the PrettyWriter for a given std::io::Write instance.
-pub fn new_writer<W: Write + Sync + Send + 'static>(w: W) -> Box<dyn Writer> {
-	Box::new(PrettyWriter::new(w))
+pub fn new_writer<W: Write + Sync + Send + 'static>(w: W, verbose: bool) -> Box<dyn Writer> {
+	Box::new(PrettyWriter::new(w, verbose))
+}
+
+/// Formats a Unix epoch timestamp in milliseconds as an ISO 8601 string.
+fn format_epoch_millis(millis: i64) -> String {
+	chrono::DateTime::from_timestamp_millis(millis)
+		.map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+		.unwrap_or_else(|| millis.to_string())
 }

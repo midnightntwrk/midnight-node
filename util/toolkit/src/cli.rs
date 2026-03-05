@@ -100,11 +100,11 @@ pub enum Commands {
 #[command(about, long_about, verbatim_doc_comment)]
 pub struct Cli {
 	/// Enable verbose output (sets log level to debug)
-	#[arg(long, short = 'v', global = true, env = "MN_VERBOSE")]
+	#[arg(long, short = 'v', conflicts_with = "quiet", global = true, env = "MN_VERBOSE")]
 	pub verbose: bool,
 
 	/// Suppress info-level logs (only show warnings and errors)
-	#[arg(long, short = 'q', global = true, env = "MN_QUIET")]
+	#[arg(long, short = 'q', conflicts_with = "verbose", global = true, env = "MN_QUIET")]
 	pub quiet: bool,
 
 	/// Output logs in JSON format (for machine parsing)

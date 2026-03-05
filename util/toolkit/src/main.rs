@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				let writer: Box<dyn structured_logger::Writer> = if cli.log_json {
 					structured_logger::json::new_writer(std::io::stderr())
 				} else {
-					midnight_node_toolkit::log_writer::new_writer(std::io::stderr())
+					midnight_node_toolkit::log_writer::new_writer(std::io::stderr(), cli.verbose)
 				};
 				structured_logger::Builder::new().with_default_writer(writer).init();
 
