@@ -2,11 +2,6 @@ name: +contract-precompiles (Build ledger test static data contracts and CI imag
 
 on:
   workflow_dispatch:
-    inputs:
-      rust_version:
-        description: 'Rust version (e.g., 1.90, 1.92)'
-        required: true
-        type: string
   schedule:
     # Once a week
     - cron: "0 0 * * 0"
@@ -15,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    name: Precompile contracts (linux/${{ matrix.platform }})
+    name: Build CI image (linux/${{ matrix.platform }})
     strategy:
       matrix:
         # Define matrix with platform and corresponding GitHub-hosted runner
@@ -26,6 +21,8 @@ jobs:
             runner: ubuntu-latest-8-core-arm64 # Native ARM64 GitHub-hosted runner (public preview)
 
     runs-on: ${{ matrix.runner }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     env:
       FORCE_COLOR: 1
@@ -57,24 +54,26 @@ jobs:
 
       # Run Earthly build with platform-specific flags
       - name: Run Earthly build for linux/${{ matrix.platform }}
+        id: version
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # Run Earthly platform-specific image builds
-          # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
           . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
-          export VERSION="${{ github.event.inputs.rust_version }}"
-          docker pull ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+          COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+          VERSION="${RUST_VERSION}-${COMPACTC_VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          docker pull "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
           echo "Tag and push ${VERSION} images"
-          docker tag ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }} midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}" "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
           echo "Push ${VERSION} images to Docker Hub"
-          docker push midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}
+          docker push "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
   publish_to_dockerhub:
     # needed so forks can run ci jobs
@@ -91,10 +90,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Create multiplatform image (Docker Hub)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          export VERSION="${{ github.event.inputs.rust_version }}"
-
           docker buildx imagetools create \
-            -t midnightntwrk/midnight-node-ci:${VERSION} \
-            midnightntwrk/midnight-node-ci:${VERSION}-amd64 \
-            midnightntwrk/midnight-node-ci:${VERSION}-arm64
+            -t "midnightntwrk/midnight-node-ci:${VERSION}" \
+            "midnightntwrk/midnight-node-ci:${VERSION}-amd64" \
+            "midnightntwrk/midnight-node-ci:${VERSION}-arm64"

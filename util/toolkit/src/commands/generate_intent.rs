@@ -1,10 +1,14 @@
+use crate::client::MidnightNodeClient;
 use crate::toolkit_js;
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
 use crate::tx_generator::builder::build_fork_aware_context_raw;
 use crate::tx_generator::source::Source;
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{CoinPublicKey, DefaultDB, WalletSeed, WalletState};
+use midnight_node_ledger_helpers::{
+	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
+};
+use std::io::Write;
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -15,24 +19,23 @@ pub enum JsCommand {
 }
 
 #[derive(Args, Debug)]
-pub struct SourceWallet {
+pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source: Option<Source>,
+	source: Source,
+
 	/// Seed for the source wallet zswap state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	wallet_seed: Option<WalletSeed>,
-}
-
-#[derive(Args, Debug)]
-pub struct CircuitCommandArgs {
-	#[command(flatten)]
-	source_wallet: SourceWallet,
 
 	#[command(flatten)]
 	toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
 	circuit_call: toolkit_js::CircuitArgs,
+
+	/// Custom serialized ledger parameters, otherwise the latest will be fetched.
+	#[arg(long)]
+	custom_ledger_parameters: Option<String>,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
@@ -132,16 +135,20 @@ pub async fn fetch_zswap_state(
 pub enum GenerateIntentError {
 	#[error("missing transaction source")]
 	MissingSource,
+	#[error("missing source url")]
+	MissingSourceUrl,
 	#[error("failed to create temporary dir for toolkit-js file interop")]
 	FailedToCreateTempDir(std::io::Error),
+	#[error("failed to decode ledger parameters: {0}")]
+	DecodeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to deserialize ledger parameters: {0}")]
+	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub async fn execute(
 	args: GenerateIntentArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	println!("Executing generate-intent");
-	let temp_dir = tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
-
 	match args.js_command {
 		JsCommand::Deploy(args) => {
 			if args.dry_run {
@@ -157,14 +164,11 @@ pub async fn execute(
 				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
 				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
-			let input_zswap_state = if let Some(wallet_seed) = args.source_wallet.wallet_seed {
-				let Some(source) = args.source_wallet.source else {
-					println!("wallet_seed is present, but source is missing!");
-					return Err(GenerateIntentError::MissingSource.into());
-				};
+
+			let input_zswap_state = if let Some(wallet_seed) = args.wallet_seed {
 				println!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
-					source,
+					args.source.clone(),
 					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
@@ -173,6 +177,8 @@ pub async fn execute(
 				if args.dry_run {
 					return Ok(());
 				}
+				let temp_dir =
+					tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -183,8 +189,40 @@ pub async fn execute(
 			if args.dry_run {
 				return Ok(());
 			}
-			let command =
-				toolkit_js::Command::Circuit { args: args.circuit_call, input_zswap_state };
+
+			let ledger_parameters =
+				if let Some(serialized_parameters) = args.custom_ledger_parameters {
+					let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
+						.map_err(|e| GenerateIntentError::DecodeLedgerParameters(e.into()))?;
+					let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+						.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
+					parameters
+				} else {
+					let Some(rpc_url) = args.source.src_url else {
+						eprintln!("missing required --src-url argument");
+						return Err(GenerateIntentError::MissingSourceUrl.into());
+					};
+
+					let client = MidnightNodeClient::new(&rpc_url, None).await?;
+					client.get_ledger_parameters().await?
+				};
+
+			let temp_dir =
+				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
+			let (mut encoded_parameters_file, encoded_parameters_path) =
+				tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
+			encoded_parameters_file
+				.write_all(
+					&serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
+				)
+				.expect("failed to write file");
+			let ledger_parameters_path = RelativePath(encoded_parameters_path);
+
+			let command = toolkit_js::Command::Circuit {
+				args: args.circuit_call,
+				input_zswap_state,
+				ledger_parameters: ledger_parameters_path,
+			};
 			args.toolkit_js.execute(command)?;
 		},
 		JsCommand::MaintainContract(args) => {
@@ -219,9 +257,7 @@ pub async fn execute(
 /// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
-	use midnight_node_ledger_helpers::{
-		CoinPublicKey, ContractAddress, Serializable, SigningKey, serialize,
-	};
+	use midnight_node_ledger_helpers::{INITIAL_PARAMETERS, Serializable, SigningKey, serialize};
 	use std::path::PathBuf;
 
 	use crate::cli::{Cli, run_command};
@@ -229,29 +265,10 @@ mod test {
 
 	use std::fs;
 
-	const COIN_PUBLIC_UNTAGGED: &str =
-		"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98";
-
 	fn to_hex<S: Serializable>(value: &S) -> String {
 		let mut bytes = vec![];
 		value.serialize(&mut bytes).unwrap();
 		hex::encode(&bytes)
-	}
-
-	fn coin_public_tagged_hex() -> String {
-		let coin_public =
-			crate::cli_parsers::hex_ledger_untagged_decode::<CoinPublicKey>(COIN_PUBLIC_UNTAGGED)
-				.expect("valid untagged coin-public test fixture");
-		let tagged = serialize(&coin_public).expect("coin-public should serialize");
-		hex::encode(tagged)
-	}
-
-	fn contract_address_tagged_hex(untagged_hex: &str) -> String {
-		let contract_address =
-			crate::cli_parsers::hex_ledger_untagged_decode::<ContractAddress>(untagged_hex)
-				.expect("valid untagged contract-address test fixture");
-		let tagged = serialize(&contract_address).expect("contract-address should serialize");
-		hex::encode(tagged)
 	}
 
 	fn toolkit_js_prerequisites_ready() -> bool {
@@ -276,7 +293,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -284,14 +301,13 @@ mod test {
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
 		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
-		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"deploy",
 			"--coin-public",
-			&coin_public,
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -318,7 +334,7 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -327,13 +343,13 @@ mod test {
 		let output_private_state = out_dir.path().join("state.json").to_string_lossy().to_string();
 		let output_zswap_state = out_dir.path().join("zswap.json").to_string_lossy().to_string();
 		let output_result = out_dir.path().join("output.json").to_string_lossy().to_string();
-		let coin_public = coin_public_tagged_hex();
 
-		let contract_address_hex = contract_address_tagged_hex(
+		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim(),
-		);
+				.trim()
+				.to_string();
+		let custom_ledger_parameters = hex::encode(serialize(&INITIAL_PARAMETERS).unwrap()); //to_hex(&INITIAL_PARAMETERS);
 
 		let args = vec![
 			"midnight-node-toolkit",
@@ -348,7 +364,7 @@ mod test {
 			//			"--wallet-seed",
 			//			"0000000000000000000000000000000000000000000000000000000000000001",
 			"--coin-public",
-			&coin_public,
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--input-onchain-state",
 			"./test-data/contract/counter/contract_state.mn",
 			"--input-private-state",
@@ -361,6 +377,8 @@ mod test {
 			&output_zswap_state,
 			"--output-result",
 			&output_result,
+			"--custom-ledger-parameters",
+			&custom_ledger_parameters,
 			"--contract-address",
 			&contract_address_hex,
 			"increment",
@@ -381,29 +399,28 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex = contract_address_tagged_hex(
+		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim(),
-		);
+				.trim()
+				.to_string();
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
-		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"maintain-contract",
 			"--coin-public",
-			&coin_public,
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -438,15 +455,14 @@ mod test {
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex = contract_address_tagged_hex(
+		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim(),
-		);
+				.trim()
+				.to_string();
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
-		let coin_public = coin_public_tagged_hex();
 
 		let verifier_path = "./test-data/contract/counter/keys/increment.verifier";
 
@@ -455,7 +471,7 @@ mod test {
 			"generate-intent",
 			"maintain-circuit",
 			"--coin-public",
-			&coin_public,
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",
@@ -483,29 +499,28 @@ mod test {
 			return;
 		}
 
-		// as this is inside util/toolkit, current dir should move a few directories up
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
 
 		let output_intent = out_dir.path().join("intent.bin").to_string_lossy().to_string();
 
-		let contract_address_hex = contract_address_tagged_hex(
+		let contract_address_hex =
 			std::fs::read_to_string("./test-data/contract/counter/contract_address.mn")
 				.unwrap()
-				.trim(),
-		);
+				.trim()
+				.to_string();
 
 		let signing_key = SigningKey::sample(rand::thread_rng());
 		let signing_key_hex = to_hex(&signing_key);
-		let coin_public = coin_public_tagged_hex();
 
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-intent",
 			"maintain-circuit",
 			"--coin-public",
-			&coin_public,
+			"aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98",
 			"--toolkit-js-path",
 			&toolkit_js_path,
 			"--config",

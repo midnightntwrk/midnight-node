@@ -47,7 +47,7 @@ runs:
 
     - name: Deploy ephemeral environment
       run: |
-        cd local-env
+        cd local-env || exit 1
         npm install
         npm run run:qanet
       shell: bash
