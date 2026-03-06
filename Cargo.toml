@@ -11,6 +11,7 @@ members = [
     "pallets/midnight-system",
     "pallets/system-parameters",
     "pallets/system-parameters/rpc",
+    "pallets/throttle",
     "pallets/version",
     "primitives/beefy",
     "primitives/ics-observation",
@@ -64,35 +65,42 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 [workspace.dependencies]
 # Midnight dependencies
 # Ledger 7
-mn-ledger = { package = "midnight-ledger", version = "7.0.2" }
-ledger-storage = { package = "midnight-storage", version = "1.0.0", features = ["parity-db"] }
-coin-structure = { package = "midnight-coin-structure", version = "2.0.0" }
-onchain-runtime = { package = "midnight-onchain-runtime", version = "2.0.0" }
-base-crypto = { package = "midnight-base-crypto", version = "1.0.0" }
-transient-crypto = { package = "midnight-transient-crypto", version = "2.0.0" }
-zswap = { package = "midnight-zswap", version = "7.0.2" }
-zkir = { package = "midnight-zkir", version = "2.1.0" }
+mn-ledger = { version = "=7.0.3-rc.1", package = "midnight-ledger" }
+ledger-storage = { version = "=1.1.1", package = "midnight-storage", features = ["parity-db"] }
+coin-structure = { version = "^2.0.0", package = "midnight-coin-structure" }
+onchain-runtime = { version = "=2.0.1", package = "midnight-onchain-runtime" }
+base-crypto = { version = "^1.0.0", package = "midnight-base-crypto" }
+transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
+zswap = { version = "=7.0.3-rc.1", package = "midnight-zswap" }
+zkir = { version = "^2.1.0", package = "midnight-zkir" }
 
-# Ledger 8
-mn-ledger-8 = { package = "midnight-ledger", version = "=8.0.0-rc.4" }
-ledger-storage-ledger-8 = { package = "midnight-storage", version = "2.0.0", features = ["parity-db"] }
-onchain-runtime-ledger-8 = { package = "midnight-onchain-runtime", version = "=3.0.0-rc.1" }
-zswap-ledger-8 = { package = "midnight-zswap", version = "=8.0.0-rc.4" }
+# Ledger 8 - from storage-core-1.1.0-rc.1 tag (compatible with layout-v2)
+mn-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
+ledger-storage-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "storage-core-1.1.0-rc.1", features = ["parity-db"] }
+coin-structure-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "storage-core-1.1.0-rc.1" }
+onchain-runtime-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "storage-core-1.1.0-rc.1" }
+transient-crypto-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "storage-core-1.1.0-rc.1" }
+zswap-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "storage-core-1.1.0-rc.1" }
+zkir-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zkir", tag = "storage-core-1.1.0-rc.1" }
+
 
 # Hard-fork test dependencies
 
-mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-8.0.0-rc.4", features = ["parity-db"] }
-coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
-zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zkir", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
+mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-storage-core-1.1.0-rc.1", features = ["parity-db"] }
+coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zkir", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
+
+# Storage core v2 layout - patched to 1.1.0 via [patch.crates-io]
+midnight-storage-core = { version = "1.1.0", features = ["layout-v2"] }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
-midnight-serialize = "1.0.0"
-midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-8.0.0-rc.4" }
+midnight-serialize = { version = "=1.0.0", package = "midnight-serialize" }
+midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-storage-core-1.1.0-rc.1" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
@@ -107,6 +115,7 @@ pallet-cnight-observation = { path = "pallets/cnight-observation", default-featu
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
+pallet-throttle = { path = "pallets/throttle", default-features = false }
 pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
@@ -354,6 +363,12 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
+# Patch storage-core and its transitive deps to the same git tag as L8,
+# so crates.io and git instances share the same types.
+midnight-storage-core = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
+midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
+midnight-storage-macros = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["frame-storage-access-test-runtime"]

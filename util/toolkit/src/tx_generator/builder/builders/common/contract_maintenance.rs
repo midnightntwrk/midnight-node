@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -107,7 +107,7 @@ impl ContractMaintenanceBuilder {
 		entrypoints_to_remove: Vec<EntryPointBuf>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB>> {
-		println!("Create intent info for Maintenance");
+		log::info!("Create intent info for Maintenance");
 
 		let mut updates = vec![];
 

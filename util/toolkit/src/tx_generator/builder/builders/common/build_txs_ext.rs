@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ pub trait CreateIntentInfo {
 #[async_trait]
 pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(&mut self, dir: &str, partial_name: &str) {
-		println!("Generate intent file...");
+		log::info!("Generate intent file...");
 		let (_, mut tx_info) = self.context_and_tx_info();
 
 		let intent_info = self.create_intent_info();

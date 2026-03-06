@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ impl BuildTxsExt for ContractCallBuilder {
 
 impl CreateIntentInfo for ContractCallBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
-		println!("Create intent info for contract call");
+		log::info!("Create intent info for contract call");
 
 		// - Contract Calls
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> = Box::new(CallInfo {

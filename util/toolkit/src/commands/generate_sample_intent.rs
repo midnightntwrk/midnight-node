@@ -25,7 +25,7 @@ pub struct GenerateSampleIntentArgs {
 }
 
 pub async fn execute(args: GenerateSampleIntentArgs) {
-	println!("Generate a contract and save to file");
+	log::info!("Generate a contract and save to file");
 
 	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
@@ -33,8 +33,8 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let prover_config = TxGenerator::prover_config(args.proof_server, args.dry_run);
 
 	if args.dry_run {
-		println!("Dry-run: generate intent for contract call {:?}", args.contract_call);
-		println!("Dry-run: write files to directory {:?}", args.dest_dir);
+		log::info!("Dry-run: generate intent for contract call {:?}", args.contract_call);
+		log::info!("Dry-run: write files to directory {:?}", args.dest_dir);
 		return ();
 	}
 
@@ -140,6 +140,7 @@ async fn execute_with_builders_v7(
 mod test {
 	use std::fs;
 	use std::fs::remove_file;
+	use std::path::Path;
 
 	use crate::cli_parsers::hex_str_decode;
 	use crate::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
@@ -147,8 +148,27 @@ mod test {
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
+	fn ledger_test_artifacts_ready() -> bool {
+		let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+			eprintln!("Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set");
+			return false;
+		};
+		if !Path::new(&path).exists() {
+			eprintln!(
+				"Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+				path
+			);
+			return false;
+		}
+		true
+	}
+
 	#[tokio::test]
 	async fn test_generate_sample_intent() {
+		if !ledger_test_artifacts_ready() {
+			return;
+		}
+
 		let rng_seed = "0000000000000000000000000000000000000000000000000000000000000037";
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 

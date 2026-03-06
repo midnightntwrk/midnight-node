@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -143,6 +143,7 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
 				dust_address: None,
+				allow_fee_payment: 0,
 			});
 		});
 

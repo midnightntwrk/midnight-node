@@ -8,6 +8,7 @@ use crate::commands::{
 	generate_txs::{self, GenerateTxsArgs},
 	random_address::{self, RandomAddressArgs},
 	root_call::{self, RootCallArgs},
+	runtime_upgrade::{self, RuntimeUpgradeArgs},
 	send_intent::{self, SendIntentArgs},
 	show_address::ShowAddress,
 	show_address::{self, ShowAddressArgs},
@@ -80,6 +81,8 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Perform a runtime upgrade through federated governance
+	RuntimeUpgrade(RuntimeUpgradeArgs),
 	/// Execute a call through governance with Root origin
 	///
 	/// This command allows executing arbitrary runtime calls through the federated authority
@@ -96,6 +99,18 @@ pub enum Commands {
 #[derive(Parser)]
 #[command(about, long_about, verbatim_doc_comment)]
 pub struct Cli {
+	/// Enable verbose output (sets log level to debug)
+	#[arg(long, short = 'v', conflicts_with = "quiet", global = true, env = "MN_VERBOSE")]
+	pub verbose: bool,
+
+	/// Suppress info-level logs (only show warnings and errors)
+	#[arg(long, short = 'q', conflicts_with = "verbose", global = true, env = "MN_QUIET")]
+	pub quiet: bool,
+
+	/// Output logs in JSON format (for machine parsing)
+	#[arg(long, global = true, env = "MN_LOG_JSON")]
+	pub log_json: bool,
+
 	#[command(subcommand)]
 	pub command: Commands,
 }
@@ -222,6 +237,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 				DustBalanceResult::DryRun(()) => (),
 			}
 
+			Ok(())
+		},
+		Commands::RuntimeUpgrade(args) => {
+			runtime_upgrade::execute(args).await?;
 			Ok(())
 		},
 		Commands::RootCall(args) => {

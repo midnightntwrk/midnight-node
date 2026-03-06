@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -51,24 +51,34 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			.build()
 			.unwrap()
 			.block_on(async {
+				let cli = Cli::parse();
+
 				// Initialize the logger.
-				structured_logger::Builder::new()
-					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::stderr(),
-					))
-					.init();
+				let writer: Box<dyn structured_logger::Writer> = if cli.log_json {
+					structured_logger::json::new_writer(std::io::stderr())
+				} else {
+					midnight_node_toolkit::log_writer::new_writer(std::io::stderr(), cli.verbose)
+				};
+				structured_logger::Builder::new().with_default_writer(writer).init();
+
+				let log_level = if cli.verbose {
+					log::LevelFilter::Debug
+				} else if cli.quiet {
+					log::LevelFilter::Warn
+				} else {
+					log::LevelFilter::Info
+				};
+				log::set_max_level(log_level);
 
 				// Initialize tracing (used by ledger to emit warnings)
 				let subscriber =
 					tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).finish();
 				tracing::subscriber::set_global_default(subscriber)?;
 
-				let cli = Cli::parse();
-
 				let res = run_command(cli.command).await;
 
 				if let Err(ref e) = res {
-					println!("{e}");
+					eprintln!("{e}");
 				}
 
 				return res;

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -43,8 +43,11 @@ impl CfgPreset {
 	pub fn load_config(&self) -> Result<File<FileSourceString, FileFormat>, ConfigError> {
 		let config_str = get_config(&self.0).map_or_else(
 			|| {
-				std::fs::read_to_string(&self.0)
-					.map_err(|_| ConfigError::Message(format!("Failed to load config {}", self.0)))
+				super::validated_file::safe_read_to_string(
+					&self.0,
+					super::validated_file::MAX_GENESIS_FILE_SIZE,
+				)
+				.map_err(ConfigError::Message)
 			},
 			Ok,
 		)?;

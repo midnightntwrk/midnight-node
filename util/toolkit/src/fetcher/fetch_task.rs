@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ impl FetchTask {
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
-				log::info!("fetching blocks {min}..{max}");
+				log::debug!("fetching blocks {min}..{max}");
 				let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
 				let mut blocks = Vec::new();
 				for (i, b) in (min..max).into_iter().zip(cached_blocks.into_iter()) {
@@ -62,7 +62,7 @@ impl FetchTask {
 						blocks.push(block);
 					}
 				}
-				log::info!("fetching blocks {min}..{max}: complete");
+				log::debug!("fetching blocks {min}..{max}: complete");
 				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
 			},
 			FetchTask::NoOp => Ok(ComputeTask::NoOp),

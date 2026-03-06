@@ -13,11 +13,8 @@ on:
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
-permissions:
-  id-token: write
-  contents: write
-  packages: write
-  attestations: write
+# no top level default permissions for security reasons
+permissions: {}
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
@@ -58,9 +55,9 @@ jobs:
 
       - name: Run build
         run: |
-          mkdir -p "$HOME/.cargo"
-          echo "[net]" >> "$HOME/.cargo/config"
-          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly -P --push +images
 
@@ -73,37 +70,47 @@ jobs:
           echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Test artifacts (amd64)
           path: test-artifacts-amd64/
 
   sbom-scan-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
       sbom-artifact-name: sbom-midnight-node-ci
-      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ci
-      skip-attestation: ${{ github.event.pull_request.head.repo.fork || false }}
+      skip-attestation: true
     secrets: inherit
 
   run-arm64:
@@ -120,13 +127,6 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      # QEMU required on ARM64 runner for compactc (amd64-only binary)
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
-        with:
-          image: tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6 # latest
-          platforms: "amd64"
-
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
           version: v0.8.16
@@ -145,21 +145,21 @@ jobs:
 
       - name: Run build
         run: |
-          mkdir -p "$HOME/.cargo"
-          echo "[net]" >> "$HOME/.cargo/config"
-          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly -P --push +images
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: success() || failure()
         with:
           name: Test artifacts (arm64)
@@ -187,7 +187,7 @@ jobs:
 
       - name: Get current commit SHA
         id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -208,6 +208,8 @@ jobs:
           . ./.envrc && earthly --push +hardfork-test-upgrader-image
 
   check-unused-deps:
+    permissions:
+      contents: read
     name: Check Unused Dependencies
     runs-on: ubuntu-latest
     steps:
@@ -222,9 +224,9 @@ jobs:
 
       - name: Check Deps
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly +check-deps
 
@@ -253,13 +255,13 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Get current commit SHA
         id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -278,13 +280,18 @@ jobs:
 
       - name: Check Genesis Rebuild
         run: |
-          mkdir -p $HOME/.cargo
-          echo "[net]" >> $HOME/.cargo/config
-          echo "git-fetch-with-cli = true" >> $HOME/.cargo/config
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 --build-arg TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +rebuild-genesis
+          . ./.envrc && earthly \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            +rebuild-genesis
 
   hardfork-e2e:
+    permissions:
+      contents: read
     name: Hardfork E2E
     needs:
       - run
@@ -296,17 +303,19 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "version=$version" >> $GITHUB_OUTPUT
-      - uses: ./.github/actions/reusable-e2e-tests
-        with:
-          just-command: hardfork-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   with:
+      #     just-command: hardfork-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ledger-rollback-e2e:
+    permissions:
+      contents: read
     name: Ledger Rollback E2E
     needs: run
     runs-on: ubuntu-latest
@@ -316,9 +325,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
@@ -329,31 +338,10 @@ jobs:
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
 
-  node-e2e:
-    name: Node E2E
-    needs: run
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      # - name: Get Version and git commit
-      #   id: meta
-      #   run: |
-      #     echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
-      #     version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-      #     echo "version=$version" >> $GITHUB_OUTPUT
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: node-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-      - name: 💤 Dummy step to bypass real test
-        run: echo "Skipping test — dummy command"
-
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
+    permissions:
+      contents: read
     name: Test Pallet Fixtures
     runs-on: ubuntu-latest
     env:
@@ -377,7 +365,10 @@ jobs:
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
+    permissions:
+      contents: read
     name: Test Toolkit
+    needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
@@ -391,14 +382,25 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - name: Free disk space
         run: scripts/free-disk-space.sh
 
       - name: Run toolkit tests
         run: |
-          . ./.envrc && earthly -P --strict +test-toolkit
+          . ./.envrc && earthly -P --strict \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            +test-toolkit
 
   toolkit-e2e:
+    permissions:
+      contents: read
     name: Toolkit E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -408,9 +410,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-e2e
@@ -419,6 +421,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-update-ledger-parameters-e2e:
+    permissions:
+      contents: read
     name: Toolkit Update Ledger Parameters E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -428,9 +432,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-update-ledger-parameters-e2e
@@ -439,6 +443,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-maintenance-e2e:
+    permissions:
+      contents: read
     name: Toolkit Maintenance E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -448,9 +454,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-maintenance-e2e
@@ -459,6 +465,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-mint-e2e:
+    permissions:
+      contents: read
     name: Toolkit Mint E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -468,9 +476,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
@@ -479,6 +487,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-tokens-minter-e2e:
+    permissions:
+      contents: read
     name: Toolkit Unshielded Token E2E
     needs: [ run ]
     runs-on: ubuntu-latest
@@ -488,9 +498,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-tokens-minter-e2e
@@ -499,6 +509,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   metadata-check:
+    permissions:
+      contents: read
     name: Metadata Check
     needs: run
     runs-on: ubuntu-latest
@@ -520,15 +532,19 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Run metadata check
         run: |
-          . ./.envrc && earthly --ci -P --build-arg NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64 +check-metadata
+          . ./.envrc && earthly --ci -P \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            +check-metadata
 
   toolkit-contracts-e2e:
+    permissions:
+      contents: read
     name: Toolkit Contracts E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -538,9 +554,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-contracts-e2e
@@ -549,6 +565,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
+    permissions:
+      contents: read
     name: Startup E2E in dev mode
     needs: run
     runs-on: ubuntu-latest
@@ -558,9 +576,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: startup-dev-e2e
@@ -568,6 +586,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   genesis-undeployed-e2e:
+    permissions:
+      contents: read
     name: Genesis Wallets E2E for Undeployed network
     needs: run
     runs-on: ubuntu-latest
@@ -577,9 +597,9 @@ jobs:
       - name: Get Version and git commit
         id: meta
         run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> $GITHUB_OUTPUT
+          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: genesis-wallets-undeployed-e2e
@@ -613,6 +633,8 @@ jobs:
           tool: just
 
       - name: Build indexer images
+        env:
+          REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -625,11 +647,11 @@ jobs:
 
           # Login to Docker once at the start
           echo "🔐 Logging into Docker..."
-          echo "${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}" | docker login ghcr.io -u MidnightCI --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
 
           pwd
           ls
-          cd indexer
+          cd indexer || exit 1
           ls
           . .envrc
 
@@ -652,26 +674,24 @@ jobs:
           # Retag images with main repo's commit hash (not submodule's)
           echo "🏷️ Retagging images with main repo commit hash..."
 
-          # Get commit hashes before changing directories
-          cd ..  # Go back to main repo directory
-          MAIN_COMMIT=$(git rev-parse --short=8 HEAD)
+          # Get commit hashes
+          MAIN_COMMIT=$(git -C .. rev-parse --short=8 HEAD)
           echo "Main repo commit: $MAIN_COMMIT"
 
-          cd indexer
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
           echo "Submodule commit: $SUBMODULE_COMMIT"
 
           # Retag all indexer images
           echo "🏷️ Retagging images..."
-          docker tag ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
-          docker tag ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
-          docker tag ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT} ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
-          docker push ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}
-          docker push ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
 
           echo "✅ Images retagged and pushed successfully!"
 
@@ -680,9 +700,11 @@ jobs:
         run: |
           # Use main repo's commit hash (not submodule's)
           short_hash=$(git rev-parse --short=8 HEAD)
-          echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}" >> "$GITHUB_OUTPUT"
-          echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
-          echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}" >> "$GITHUB_OUTPUT"
+          {
+            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}"
+            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}"
+            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
 
@@ -702,7 +724,7 @@ jobs:
         run: |
           . ./.envrc
           git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
-          cd indexer
+          cd indexer || exit 1
           just feature=standalone test
 
   local-environment-tests:
@@ -741,7 +763,7 @@ jobs:
 
           # Tag for node and toolkit images
           node_tag="${version}-${short_hash}-amd64"
-          echo "node_tag=$node_tag" >> $GITHUB_OUTPUT
+          echo "node_tag=$node_tag" >> "$GITHUB_OUTPUT"
 
           echo "Get Version and git commit"
           echo "short_hash: $short_hash"
@@ -763,56 +785,55 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-  ephemeral-environment-tests:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    # needs:
-    #   - hardfork-e2e
-    #   - ledger-rollback-e2e
-    #   - node-e2e
-    #   - tx-generator-e2e
-    #   - startup-dev-e2e
-    #   - genesis-undeployed-e2e
-
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "Get Version and git commit"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Configure AWS credentials
-        id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
-        with:
-          role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
-          aws-region: eu-west-1
-          role-duration-seconds: 3600
-
-      - name: Pull Kubeconfig and Set Locally
-        run: |
-          aws eks update-kubeconfig \
-            --name k0-eks-platform-dev-eu-01 \
-            --region eu-west-1 \
-        shell: bash
-
-      # - name: Deploy and test ephemeral environment
-      #   uses: ./.github/actions/ephemeral-environment-tests
-      #   with:
-      #     sha: ${{ github.sha }}
-      #     image: ghcr.io/midnight-ntwrk/midnight-node:0.12.1
-      #     tag: ${{ github.ref_name }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
-      #     aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-      #     aws-region: ${{ secrets.AWS_REGION }}
-      #     aws-eks-cluster-name: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  # ephemeral-environment-tests:
+  #   if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
+  #   # needs:
+  #   #   - hardfork-e2e
+  #   #   - ledger-rollback-e2e
+  #   #   - tx-generator-e2e
+  #   #   - startup-dev-e2e
+  #   #   - genesis-undeployed-e2e
+  #
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  #
+  #     - name: Get Version and git commit
+  #       id: meta
+  #       run: |
+  #         echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+  #         version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+  #         echo "Get Version and git commit"
+  #         echo "version=$version" >> "$GITHUB_OUTPUT"
+  #
+  #     - name: Configure AWS credentials
+  #       id: aws-credentials
+  #       uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
+  #       with:
+  #         role-to-assume: arn:aws:iam::596662952274:role/MidnightGithubActionsAdminRole
+  #         aws-region: eu-west-1
+  #         role-duration-seconds: 3600
+  #
+  #     - name: Pull Kubeconfig and Set Locally
+  #       run: |
+  #         aws eks update-kubeconfig \
+  #           --name k0-eks-platform-dev-eu-01 \
+  #           --region eu-west-1 \
+  #       shell: bash
+  #
+  #     # - name: Deploy and test ephemeral environment
+  #     #   uses: ./.github/actions/ephemeral-environment-tests
+  #     #   with:
+  #     #     sha: ${{ github.sha }}
+  #     #     image: ghcr.io/midnight-ntwrk/midnight-node:0.12.1
+  #     #     tag: ${{ github.ref_name }}
+  #     #     ghcr-password: ${{ secrets.MIDNIGHTBOT_PACKAGES_WRITE }}
+  #     #     aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+  #     #     aws-region: ${{ secrets.AWS_REGION }}
+  #     #     aws-eks-cluster-name: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
+  #     #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #     #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

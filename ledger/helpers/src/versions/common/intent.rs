@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,10 +12,10 @@
 // limitations under the License.
 
 use super::{
-	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,
-	DustResolver, FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial, Resolver,
-	Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	Array, BuildContractAction, ContractAction, ContractAddress, ContractEffects, DB,
+	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
+	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -106,6 +106,7 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 	}
 }
 
+#[derive(Clone)]
 pub struct IntentCustom<D: DB + Clone> {
 	pub intent: IntentOf<D>,
 	pub resolver: &'static Resolver,
@@ -157,6 +158,14 @@ impl<D: DB + Clone> IntentCustom<D> {
 			}
 		}
 		(guaranteed_effects, fallible_effects)
+	}
+
+	pub fn find_contract_address(&self) -> Option<ContractAddress> {
+		self.intent.actions.iter().find_map(|action| match *action {
+			ContractAction::Call(ref c) => Some(c.address),
+			ContractAction::Maintain(ref c) => Some(c.address),
+			_ => None,
+		})
 	}
 
 	pub fn get_resolver(artifact_dirs: &[String]) -> Result<Resolver, std::io::Error> {

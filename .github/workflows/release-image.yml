@@ -1,11 +1,7 @@
 name: Create Release (Re-tag image and create Github release)
 
-permissions:
-  contents: write
-  pull-requests: write
-  packages: write
-  id-token: write
-  attestations: write  # Required for GitHub native attestations
+# no top level default permissions for security reasons
+permissions: {}
 
 on:
   workflow_dispatch:
@@ -41,6 +37,11 @@ on:
 
 jobs:
   prepare-release:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: Prepare release images
     runs-on: ubuntu-latest
     outputs:
@@ -168,35 +169,35 @@ jobs:
           export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
 
           echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
-          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64
-          docker pull ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64"
 
           echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
-          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker tag ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64 midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
-          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
-          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64
-          docker push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Create multi-arch manifests for Docker Hub"
-          docker manifest create midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE} \
-            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
-            midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker manifest create "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
-          docker manifest create midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE} \
-            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64 \
-            midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64
+          docker manifest create "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push manifests to Docker Hub"
-          docker manifest push midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}
-          docker manifest push midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}
+          docker manifest push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
+          docker manifest push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
 
       - name: Get Docker Hub release image digests
         id: dockerhub-digests
@@ -226,13 +227,18 @@ jobs:
       - name: Export release tag
         id: export_tag
         run: |
-          echo "release_tag=${SEASON_IMAGE_TAG_RELEASE}" >> $GITHUB_OUTPUT
-          echo "commit_tag=${SEASON_IMAGE_TAG_COMMIT}" >> $GITHUB_OUTPUT
+          {
+            echo "release_tag=${SEASON_IMAGE_TAG_RELEASE}"
+            echo "commit_tag=${SEASON_IMAGE_TAG_COMMIT}"
+          } >> "$GITHUB_OUTPUT"
 
   # SBOM scan jobs run here (defined below) - they depend on prepare-release
   # and gate finalize-release
 
   finalize-release:
+    permissions:
+      contents: write
+      pull-requests: write
     name: Create release
     runs-on: ubuntu-latest
     needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
@@ -311,6 +317,10 @@ jobs:
         run: season-create-pr
 
   create-release-assets:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     needs: [finalize-release, prepare-release]
     if: github.event.inputs.release-type != 'Don''t create a release.'
@@ -363,16 +373,20 @@ jobs:
           rm -rf midnight-node-toolkit
           echo "Created: $TOOLKIT_RELEASE"
 
-          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "node_release=$NODE_RELEASE" >> "$GITHUB_OUTPUT"
-          echo "toolkit_release=$TOOLKIT_RELEASE" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_tag=$RELEASE_TAG"
+            echo "node_release=$NODE_RELEASE"
+            echo "toolkit_release=$TOOLKIT_RELEASE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums
         run: |
-          sha256sum ${{ steps.extract.outputs.node_release }} >> SHA256SUMS-${{ matrix.platform }}
-          sha256sum ${{ steps.extract.outputs.toolkit_release }} >> SHA256SUMS-${{ matrix.platform }}
+          {
+            sha256sum "${{ steps.extract.outputs.node_release }}"
+            sha256sum "${{ steps.extract.outputs.toolkit_release }}"
+          } >> "SHA256SUMS-${{ matrix.platform }}"
           echo "Generated checksums:"
-          cat SHA256SUMS-${{ matrix.platform }}
+          cat "SHA256SUMS-${{ matrix.platform }}"
 
       - name: Attest node release binary
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
@@ -399,6 +413,10 @@ jobs:
             "SHA256SUMS-${{ matrix.platform }}"
 
   srtool-build:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     name: srtool Build
     needs: [finalize-release]
     if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.node-only != 'true'
@@ -409,6 +427,10 @@ jobs:
     secrets: inherit
 
   finalize-checksums:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     needs: [prepare-release, create-release-assets, srtool-build]
     runs-on: ubuntu-latest
     if: github.event.inputs.release-type != 'Don''t create a release.'
@@ -448,6 +470,11 @@ jobs:
             SHA256SUMS
 
   sbom-scan-ghcr-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -458,9 +485,15 @@ jobs:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-ghcr-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit GHCR (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -471,9 +504,15 @@ jobs:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-dockerhub-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node Docker Hub (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -483,9 +522,15 @@ jobs:
     with:
       image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-dockerhub-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit Docker Hub (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -495,9 +540,15 @@ jobs:
     with:
       image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node midnightntwrk (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -509,9 +560,15 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit midnightntwrk (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -523,4 +580,5 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
+      tlog-upload: true
     secrets: inherit

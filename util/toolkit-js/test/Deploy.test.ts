@@ -27,7 +27,8 @@ describe('Deploy Command', () => {
         'node', 'deploy.ts',
         '-c', COUNTER_CONFIG_FILEPATH,
         '-o', COUNTER_OUTPUT_FILEPATH,
-        '--output-ps', COUNTER_OUTPUT_PS_FILEPATH
+        '--output-ps', COUNTER_OUTPUT_PS_FILEPATH,
+        '0' // The contract constructor receives the initial value of the counter as an argument, so we pass '0' here.
       ]);
     }).pipe(
       Effect.provide(testLayer),

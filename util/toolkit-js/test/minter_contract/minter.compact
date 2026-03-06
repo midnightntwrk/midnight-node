@@ -1,5 +1,5 @@
 // This file is part of Compact.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -52,4 +52,18 @@ export circuit mintShieldedToUserTest(domainSep: Bytes<32>, amount: Uint<64>, us
 export circuit receiveShieldedTest(coin: ShieldedCoinInfo): [] {
   assert(coin.value > 0, "Deposit amount must be positive");
   receiveShielded(disclose(coin));
+}
+
+/**
+ * Mint to contract and send immediately to user using sendImmediateShielded()
+ */
+export circuit mintAndSendImmediate(domainSep: Bytes<32>, mint_amount: Uint<64>, send_amount: Uint<64>, user_key: ZswapCoinPublicKey): ShieldedCoinInfo {
+    const coin = mintShieldedToken(
+        disclose(domainSep),
+        disclose(disclose(mint_amount)),
+        evolveNonce(0 as Uint<128>, disclose(domainSep)),
+        right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
+    );
+    sendImmediateShielded(coin, left<ZswapCoinPublicKey, ContractAddress>(disclose(user_key)), disclose(send_amount));
+    return coin;
 }

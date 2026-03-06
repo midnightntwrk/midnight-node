@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -33,18 +33,20 @@ use serde_valid::Validate as _;
 use crate::chain_spec::{ChainSpecInitError, chain_config};
 
 use self::{
-	chain_spec_cfg::ChainSpecCfg, error::CfgError, meta_cfg::MetaCfg, midnight_cfg::MidnightCfg,
-	shell_words_environment::ShellWordsEnvironment,
+	chain_spec_cfg::ChainSpecCfg, error::CfgError, memory_monitor_cfg::MemoryMonitorCfg,
+	meta_cfg::MetaCfg, midnight_cfg::MidnightCfg, shell_words_environment::ShellWordsEnvironment,
 	storage_monitor_params_cfg::StorageMonitorParamsCfg, substrate_cfg::SubstrateCfg,
 };
 
 type CfgSourcesMap = BTreeMap<&'static str, config::Config>;
 
 pub mod chain_spec_cfg;
+pub mod memory_monitor_cfg;
 pub mod meta_cfg;
 pub mod midnight_cfg;
 pub mod storage_monitor_params_cfg;
 pub mod substrate_cfg;
+pub mod validated_file;
 mod validation_utils;
 
 pub mod error;
@@ -61,6 +63,8 @@ pub struct Cfg {
 	pub meta_cfg: MetaCfg,
 	/// Configuration specific to Midnight
 	pub midnight_cfg: MidnightCfg,
+	/// Memory monitor configuration for OOM prevention
+	pub memory_monitor_cfg: MemoryMonitorCfg,
 	/// A duplicate of `StorageMonitorParams`, instantiated using environment variables
 	/// For the `StorageMonitorParams` implementation, see:
 	/// polkadot-sdk/substrate/client/storage-monitor/src/lib.rs
@@ -101,40 +105,40 @@ impl SubstrateCli for Cfg {
 		let maybe_chain_spec = match id {
 			"" => {
 				// Midnight-specific pre-generated genesis values
-				let genesis_block = std::fs::read(
+				let genesis_block = validated_file::safe_read(
 					self.chain_spec_cfg
 						.chainspec_genesis_block
 						.as_ref()
 						.ok_or("chainspec_genesis_block not configured")?,
-				)
-				.map_err(|e| format!("failed to read genesis_block: {e}"))?;
-				let genesis_state = std::fs::read(
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
+				let genesis_state = validated_file::safe_read(
 					self.chain_spec_cfg
 						.chainspec_genesis_state
 						.as_ref()
 						.ok_or("chainspec_genesis_state not configured")?,
-				)
-				.map_err(|e| format!("failed to read genesis_state: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
-				let pc_chain_config_str = std::fs::read_to_string(
+				let pc_chain_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_pc_chain_config
 						.as_ref()
 						.ok_or("chainspec_pc_chain_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read pc chain config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
 				// Load permissioned candidates config
-				let permissioned_candidates_config_str = std::fs::read_to_string(
+				let permissioned_candidates_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_permissioned_candidates_config
 						.as_ref()
 						.ok_or("chainspec_permissioned_candidates_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read permissioned candidates config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let permissioned_candidates_config: PermissionedCandidatesConfig =
 					serde_json::from_str(&permissioned_candidates_config_str).map_err(|e| {
@@ -142,13 +146,13 @@ impl SubstrateCli for Cfg {
 					})?;
 
 				// Load registered candidates addresses
-				let registered_candidates_addresses_str = std::fs::read_to_string(
+				let registered_candidates_addresses_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_registered_candidates_addresses
 						.as_ref()
 						.ok_or("chainspec_registered_candidates_addresses not configured")?,
-				)
-				.map_err(|e| format!("failed to read registered candidates addresses: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let registered_candidates_addresses: RegisteredCandidatesAddresses =
 					serde_json::from_str(&registered_candidates_addresses_str).map_err(|e| {
@@ -158,13 +162,13 @@ impl SubstrateCli for Cfg {
 				let initial_authorities =
 					permissioned_candidates_config.initial_permissioned_candidates.clone();
 
-				let cnight_genesis_str = std::fs::read_to_string(
+				let cnight_genesis_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_cnight_genesis
 						.as_ref()
 						.ok_or("chainspec_cnight_genesis not configured")?,
-				)
-				.map_err(|e| format!("failed to read cnight-genesis: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
 					.map_err(|e| format!("failed to read cnight-genesis as json: {e}"))?;
@@ -179,49 +183,49 @@ impl SubstrateCli for Cfg {
 					.and_then(|v| v.get("genesis_utxo").and_then(|v| v.as_str()))
 					.ok_or("failed to find genesis_utxo in pc_chain_config".to_string())?;
 
-				let federated_authority_config_str = std::fs::read_to_string(
+				let federated_authority_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_federated_authority_config
 						.as_ref()
 						.ok_or("chainspec_federated_authority_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let federated_authority_config: FederatedAuthorityObservationConfig =
 					serde_json::from_str(&federated_authority_config_str).map_err(|e| {
 						format!("failed to parse FederatedAuthorityObservationConfig: {e}")
 					})?;
 
-				let system_parameters_config_str = std::fs::read_to_string(
+				let system_parameters_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_system_parameters_config
 						.as_ref()
 						.ok_or("chainspec_system_parameters_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read system_parameters_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let system_parameters_config: SystemParametersConfig =
 					serde_json::from_str(&system_parameters_config_str)
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
-				let ics_config_str = std::fs::read_to_string(
+				let ics_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_ics_config
 						.as_ref()
 						.ok_or("chainspec_ics_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read ics_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
 					.map_err(|e| format!("failed to parse IcsConfig: {e}"))?;
 
-				let reserve_config_str = std::fs::read_to_string(
+				let reserve_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_reserve_config
 						.as_ref()
 						.ok_or("chainspec_reserve_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read reserve_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
 					.map_err(|e| format!("failed to parse ReserveConfig: {e}"))?;
@@ -288,6 +292,7 @@ impl Cfg {
 	/// Create a new instance from a custom config without running validation
 	pub fn new_no_validation_from_config(config: config::Config) -> Result<Self, ConfigError> {
 		let chain_spec_cfg: ChainSpecCfg = config.clone().try_deserialize()?;
+		let memory_monitor_cfg: MemoryMonitorCfg = config.clone().try_deserialize()?;
 		let meta_cfg: MetaCfg = config.clone().try_deserialize()?;
 		let midnight_cfg: MidnightCfg = config.clone().try_deserialize()?;
 		let storage_monitor_params_cfg: StorageMonitorParamsCfg =
@@ -296,11 +301,12 @@ impl Cfg {
 
 		let cfg = Self {
 			config,
+			chain_spec_cfg,
+			memory_monitor_cfg,
 			meta_cfg,
 			midnight_cfg,
-			substrate_cfg,
 			storage_monitor_params_cfg,
-			chain_spec_cfg,
+			substrate_cfg,
 		};
 
 		Ok(cfg)
@@ -316,6 +322,9 @@ impl Cfg {
 	/// For high-level validation between configuration fields.
 	fn validate(&self) -> Result<(), CfgError> {
 		self.chain_spec_cfg
+			.validate()
+			.map_err(|e| ConfigError::Message(e.to_string()))?;
+		self.memory_monitor_cfg
 			.validate()
 			.map_err(|e| ConfigError::Message(e.to_string()))?;
 		self.meta_cfg.validate().map_err(|e| ConfigError::Message(e.to_string()))?;
@@ -424,6 +433,8 @@ impl Cfg {
 		Self::render_fields(&mut buf, show_secrets, &MetaCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "MidnightCfg")?;
 		Self::render_fields(&mut buf, show_secrets, &MidnightCfg::help(Some(&all_config))?)?;
+		Self::render_header(&mut buf, "MemoryMonitorCfg")?;
+		Self::render_fields(&mut buf, show_secrets, &MemoryMonitorCfg::help(Some(&all_config))?)?;
 		Self::render_header(&mut buf, "StorageMonitorParamsCfg")?;
 		Self::render_fields(
 			&mut buf,
@@ -566,6 +577,7 @@ mod tests {
 		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
 		let cfg_keys = [
 			get_keys(ChainSpecCfg::default()).unwrap(),
+			get_keys(MemoryMonitorCfg::default()).unwrap(),
 			get_keys(MetaCfg::default()).unwrap(),
 			get_keys(MidnightCfg::default()).unwrap(),
 			get_keys(StorageMonitorParamsCfg::default()).unwrap(),

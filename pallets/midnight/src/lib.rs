@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -344,7 +344,6 @@ pub mod pallet {
 			LedgerApi::flush_storage();
 		}
 
-		#[cfg(hardfork_test)]
 		fn on_runtime_upgrade() -> Weight {
 			// Ensure ledger storage is initialized for current runtime version.
 			// Storage initialization is also handled in on_initialize for rollback-safety.

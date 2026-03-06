@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ pub trait FromContext<D: DB + Clone> {
 pub struct DustRegistrationBuilder {
 	pub signing_key: SigningKey,
 	pub dust_address: Option<DustPublicKey>,
+	pub allow_fee_payment: u128,
 }
 
 impl DustRegistrationBuilder {
@@ -67,7 +68,7 @@ impl DustRegistrationBuilder {
 		DustRegistration {
 			night_key,
 			dust_address: self.dust_address.map(|address| Sp::new(address)),
-			allow_fee_payment: 0,
+			allow_fee_payment: self.allow_fee_payment,
 			signature: Some(Sp::new(signature)),
 		}
 	}
@@ -185,13 +186,19 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
-		// Pay the outstanding DUST balance, if we have a wallet seed to pay it
-		if self.funding_seeds.is_empty() {
-			return self.prove_tx(tx).await;
-		};
+		log::debug!("pre-proof tx: {tx:#?}");
+		log::debug!("tx balance pre-fees: {:#?}", tx.balance(None));
 
-		let tx = self.pay_fees(tx, now, ttl).await?;
-		Ok(tx)
+		// Pay the outstanding DUST balance, if we have a wallet seed or dust registrations
+		if self.funding_seeds.is_empty() && self.dust_registrations.is_empty() {
+			self.prove_tx(tx).await
+		} else {
+			let tx = self.pay_fees(tx, now, ttl).await?;
+			let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+			log::debug!("post-proof tx: {tx:#?}");
+			log::debug!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
+			Ok(tx)
+		}
 	}
 
 	async fn pay_fees(
