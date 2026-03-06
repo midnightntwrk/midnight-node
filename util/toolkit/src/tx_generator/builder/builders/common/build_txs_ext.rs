@@ -52,12 +52,8 @@ pub trait CreateIntentInfo {
 /// A trait to save a Contract (serialized`Intent` Structure) into a file.
 #[async_trait]
 pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
-	async fn generate_intent_file(
-		&mut self,
-		dir: &str,
-		partial_name: &str,
-	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-		println!("Generate intent file...");
+	async fn generate_intent_file(&mut self, dir: &str, partial_name: &str) {
+		log::info!("Generate intent file...");
 		let (_, mut tx_info) = self.context_and_tx_info();
 
 		let intent_info = self.create_intent_info();

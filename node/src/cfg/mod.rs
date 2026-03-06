@@ -46,6 +46,7 @@ pub mod meta_cfg;
 pub mod midnight_cfg;
 pub mod storage_monitor_params_cfg;
 pub mod substrate_cfg;
+pub mod validated_file;
 mod validation_utils;
 
 pub mod error;
@@ -104,40 +105,40 @@ impl SubstrateCli for Cfg {
 		let maybe_chain_spec = match id {
 			"" => {
 				// Midnight-specific pre-generated genesis values
-				let genesis_block = std::fs::read(
+				let genesis_block = validated_file::safe_read(
 					self.chain_spec_cfg
 						.chainspec_genesis_block
 						.as_ref()
 						.ok_or("chainspec_genesis_block not configured")?,
-				)
-				.map_err(|e| format!("failed to read genesis_block: {e}"))?;
-				let genesis_state = std::fs::read(
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
+				let genesis_state = validated_file::safe_read(
 					self.chain_spec_cfg
 						.chainspec_genesis_state
 						.as_ref()
 						.ok_or("chainspec_genesis_state not configured")?,
-				)
-				.map_err(|e| format!("failed to read genesis_state: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
-				let pc_chain_config_str = std::fs::read_to_string(
+				let pc_chain_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_pc_chain_config
 						.as_ref()
 						.ok_or("chainspec_pc_chain_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read pc chain config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
 					.map_err(|e| format!("failed to read pc_chain_config as json: {e}"))?;
 
 				// Load permissioned candidates config
-				let permissioned_candidates_config_str = std::fs::read_to_string(
+				let permissioned_candidates_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_permissioned_candidates_config
 						.as_ref()
 						.ok_or("chainspec_permissioned_candidates_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read permissioned candidates config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let permissioned_candidates_config: PermissionedCandidatesConfig =
 					serde_json::from_str(&permissioned_candidates_config_str).map_err(|e| {
@@ -145,13 +146,13 @@ impl SubstrateCli for Cfg {
 					})?;
 
 				// Load registered candidates addresses
-				let registered_candidates_addresses_str = std::fs::read_to_string(
+				let registered_candidates_addresses_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_registered_candidates_addresses
 						.as_ref()
 						.ok_or("chainspec_registered_candidates_addresses not configured")?,
-				)
-				.map_err(|e| format!("failed to read registered candidates addresses: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let registered_candidates_addresses: RegisteredCandidatesAddresses =
 					serde_json::from_str(&registered_candidates_addresses_str).map_err(|e| {
@@ -161,13 +162,13 @@ impl SubstrateCli for Cfg {
 				let initial_authorities =
 					permissioned_candidates_config.initial_permissioned_candidates.clone();
 
-				let cnight_genesis_str = std::fs::read_to_string(
+				let cnight_genesis_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_cnight_genesis
 						.as_ref()
 						.ok_or("chainspec_cnight_genesis not configured")?,
-				)
-				.map_err(|e| format!("failed to read cnight-genesis: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
 					.map_err(|e| format!("failed to read cnight-genesis as json: {e}"))?;
@@ -182,49 +183,49 @@ impl SubstrateCli for Cfg {
 					.and_then(|v| v.get("genesis_utxo").and_then(|v| v.as_str()))
 					.ok_or("failed to find genesis_utxo in pc_chain_config".to_string())?;
 
-				let federated_authority_config_str = std::fs::read_to_string(
+				let federated_authority_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_federated_authority_config
 						.as_ref()
 						.ok_or("chainspec_federated_authority_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read federated_authority: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let federated_authority_config: FederatedAuthorityObservationConfig =
 					serde_json::from_str(&federated_authority_config_str).map_err(|e| {
 						format!("failed to parse FederatedAuthorityObservationConfig: {e}")
 					})?;
 
-				let system_parameters_config_str = std::fs::read_to_string(
+				let system_parameters_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_system_parameters_config
 						.as_ref()
 						.ok_or("chainspec_system_parameters_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read system_parameters_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let system_parameters_config: SystemParametersConfig =
 					serde_json::from_str(&system_parameters_config_str)
 						.map_err(|e| format!("failed to parse SystemParametersConfig: {e}"))?;
 
-				let ics_config_str = std::fs::read_to_string(
+				let ics_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_ics_config
 						.as_ref()
 						.ok_or("chainspec_ics_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read ics_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
 					.map_err(|e| format!("failed to parse IcsConfig: {e}"))?;
 
-				let reserve_config_str = std::fs::read_to_string(
+				let reserve_config_str = validated_file::safe_read_to_string(
 					self.chain_spec_cfg
 						.chainspec_reserve_config
 						.as_ref()
 						.ok_or("chainspec_reserve_config not configured")?,
-				)
-				.map_err(|e| format!("failed to read reserve_config: {e}"))?;
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
 
 				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
 					.map_err(|e| format!("failed to parse ReserveConfig: {e}"))?;

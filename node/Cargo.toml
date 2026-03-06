@@ -146,6 +146,7 @@ tokio.workspace = true
 blake2b_simd = "1.0"
 
 [dev-dependencies]
+tempfile = "3"
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true

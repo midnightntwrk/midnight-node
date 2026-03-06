@@ -78,7 +78,7 @@ impl BuildTxsExt for ContractCallBuilder {
 
 impl CreateIntentInfo for ContractCallBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
-		println!("Create intent info for contract call");
+		log::info!("Create intent info for contract call");
 
 		// - Contract Calls
 		let call_contract: Box<dyn BuildContractAction<DefaultDB>> = Box::new(CallInfo {

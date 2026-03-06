@@ -49,9 +49,9 @@ pub async fn execute(
 
 	if args.dry_run {
 		if let Some(seed) = args.seed {
-			println!("Dry-run: fetching wallet for seed {:?}", seed);
+			log::info!("Dry-run: fetching wallet for seed {:?}", seed);
 		} else {
-			println!("Dry-run: fetching wallet for address {:?}", args.address.unwrap());
+			log::info!("Dry-run: fetching wallet for address {:?}", args.address.unwrap());
 		}
 		return Ok(ShowWalletResult::DryRun(()));
 	}

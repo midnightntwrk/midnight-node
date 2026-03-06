@@ -89,7 +89,7 @@ impl BuildTxsExt for ContractDeployBuilder {
 
 impl CreateIntentInfo for ContractDeployBuilder {
 	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
-		println!("Create intent info for contract deploy");
+		log::info!("Create intent info for contract deploy");
 		let deploy_contract: Box<dyn BuildContractAction<DefaultDB>> =
 			Box::new(ContractDeployInfo {
 				type_: MerkleTreeContract::new(),

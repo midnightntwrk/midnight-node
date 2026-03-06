@@ -186,11 +186,18 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
 
+		log::debug!("pre-proof tx: {tx:#?}");
+		log::debug!("tx balance pre-fees: {:#?}", tx.balance(None));
+
 		// Pay the outstanding DUST balance, if we have a wallet seed or dust registrations
 		if self.funding_seeds.is_empty() && self.dust_registrations.is_empty() {
 			self.prove_tx(tx).await
 		} else {
-			Ok(self.pay_fees(tx, now, ttl).await?)
+			let tx = self.pay_fees(tx, now, ttl).await?;
+			let fees = self.context.with_ledger_state(|s| tx.fees_with_margin(&s.parameters, 3))?;
+			log::debug!("post-proof tx: {tx:#?}");
+			log::debug!("tx-balance post-prove: {:#?}", tx.balance(Some(fees))?);
+			Ok(tx)
 		}
 	}
 
