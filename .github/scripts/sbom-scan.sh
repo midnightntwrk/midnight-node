@@ -14,17 +14,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Generate SBOM with Syft and scan with Grype.
+# Generate SBOM with Syft, scan with Grype, and attest SBOM with Cosign.
+#
+# Attestation strategy:
+#   - Release builds: attest with tlog-upload=true for full supply-chain assurance
+#     via the Sigstore transparency log (Rekor).
+#   - Non-release builds (CI, main merges): skip attestation entirely
+#     (skip-attestation=true in the workflow). SBOM generation and vulnerability
+#     scanning still run. This avoids Rekor connectivity failures in cosign v3's
+#     bundle signing path, where --tlog-upload=false alone is insufficient.
 #
 # Usage:
 #   source .github/scripts/sbom-scan.sh
 #   generate_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
 #   trim_sbom_for_attestation "sbom.spdx.json" "sbom-attestation.spdx.json"
 #   scan_image_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "high" "scan-results.json"
+#   attest_sbom_with_retry "ghcr.io/midnight-ntwrk/midnight-node:v1.0.0" "sbom.spdx.json"
 
 # Note: We intentionally don't use `set -euo pipefail` at the top level because
 # this script is designed to be sourced. Those settings would affect the caller's
 # shell and cause it to exit on any error. Each function handles errors explicitly.
+
+# Build cosign verify-attestation arguments for a given tlog-upload setting.
+# When tlog was not uploaded, verification must skip the tlog check.
+_build_verify_args() {
+  local tlog_upload="$1"
+  local -n _out=$2
+  _out=(--type spdxjson --certificate-identity-regexp '.*' --certificate-oidc-issuer-regexp '.*')
+  if [ "${tlog_upload}" != "true" ]; then
+    _out+=(--insecure-ignore-tlog=true)
+  fi
+}
+
+# Normalize a tlog-upload value to lowercase "true" or "false".
+# GitHub Actions passes boolean inputs as the strings "true"/"false", but
+# workflow_call boundaries can introduce case variations.
+_normalize_bool() {
+  local val="${1,,}"  # bash lowercase
+  if [ "${val}" = "true" ]; then echo "true"; else echo "false"; fi
+}
 
 generate_sbom_with_retry() {
   local IMAGE="$1"
@@ -135,5 +163,117 @@ scan_image_with_retry() {
   done
 
   echo "::error::Failed to scan ${IMAGE} after $MAX_ATTEMPTS attempts"
+  return 1
+}
+
+attest_sbom_with_retry() {
+  local IMAGE="$1"
+  local SBOM_FILE="$2"
+  local TLOG_UPLOAD
+  TLOG_UPLOAD="$(_normalize_bool "${3:-true}")"
+  local MAX_ATTEMPTS=3
+  local DELAY=10
+
+  command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
+  command -v jq >/dev/null 2>&1 || { echo "::error::jq not found"; return 1; }
+
+  local BASE_IMAGE="${IMAGE%%:*}"
+
+  local DIGEST_JSON
+  if ! DIGEST_JSON=$(docker manifest inspect "${IMAGE}" --verbose 2>&1); then
+    echo "::error::Failed to inspect manifest for ${IMAGE}: ${DIGEST_JSON}"
+    return 1
+  fi
+
+  local DIGEST
+  if echo "$DIGEST_JSON" | jq -e 'type == "array"' > /dev/null 2>&1; then
+    DIGEST=$(echo "$DIGEST_JSON" | jq -r '.[0].Descriptor.digest')
+  else
+    DIGEST=$(echo "$DIGEST_JSON" | jq -r '.Descriptor.digest')
+  fi
+
+  if [ -z "$DIGEST" ] || [ "$DIGEST" = "null" ]; then
+    echo "::error::Failed to extract digest from manifest for ${IMAGE}"
+    echo "::error::Manifest JSON: ${DIGEST_JSON}"
+    return 1
+  fi
+
+  echo "Attesting SBOM for ${IMAGE} (${DIGEST}) (tlog-upload=${TLOG_UPLOAD})"
+
+  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+    if cosign attest --yes \
+      --tlog-upload="${TLOG_UPLOAD}" \
+      --predicate "${SBOM_FILE}" \
+      --type spdxjson \
+      "${BASE_IMAGE}@${DIGEST}"; then
+      echo "Successfully attested SBOM for ${IMAGE}"
+
+      echo "Verifying SBOM attestation..."
+      local verify_args
+      _build_verify_args "${TLOG_UPLOAD}" verify_args
+      if cosign verify-attestation "${verify_args[@]}" \
+        "${BASE_IMAGE}@${DIGEST}" > /dev/null 2>&1; then
+        echo "SBOM attestation verified successfully"
+      else
+        echo "::warning::SBOM attestation verification failed - attestation may not be retrievable"
+      fi
+
+      return 0
+    fi
+    if [ $attempt -lt $MAX_ATTEMPTS ]; then
+      echo "SBOM attestation failed, retrying in ${DELAY}s..."
+      sleep $DELAY
+      DELAY=$((DELAY * 2))
+    fi
+  done
+
+  echo "::error::Failed to attest SBOM for ${IMAGE} after $MAX_ATTEMPTS attempts"
+  return 1
+}
+
+attest_sbom_to_multiarch() {
+  local MULTIARCH_IMAGE="$1"
+  local SBOM_FILE="$2"
+  local TLOG_UPLOAD
+  TLOG_UPLOAD="$(_normalize_bool "${3:-true}")"
+  local MAX_ATTEMPTS=3
+  local DELAY=10
+
+  command -v cosign >/dev/null 2>&1 || { echo "::error::cosign not found"; return 1; }
+
+  local BASE_IMAGE="${MULTIARCH_IMAGE%%:*}"
+  local MANIFEST_LIST_DIGEST
+  MANIFEST_LIST_DIGEST="sha256:$(docker buildx imagetools inspect --raw "${MULTIARCH_IMAGE}" | sha256sum | awk '{print $1}')"
+
+  echo "Attesting SBOM to multi-arch manifest: ${BASE_IMAGE}@${MANIFEST_LIST_DIGEST} (tlog-upload=${TLOG_UPLOAD})"
+
+  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+    if cosign attest --yes \
+      --tlog-upload="${TLOG_UPLOAD}" \
+      --predicate "${SBOM_FILE}" \
+      --type spdxjson \
+      "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}"; then
+      echo "Successfully attested SBOM to multi-arch manifest"
+
+      echo "Verifying multi-arch SBOM attestation..."
+      local verify_args
+      _build_verify_args "${TLOG_UPLOAD}" verify_args
+      if cosign verify-attestation "${verify_args[@]}" \
+        "${BASE_IMAGE}@${MANIFEST_LIST_DIGEST}" > /dev/null 2>&1; then
+        echo "Multi-arch SBOM attestation verified successfully"
+      else
+        echo "::warning::Multi-arch SBOM attestation verification failed - attestation may not be retrievable"
+      fi
+
+      return 0
+    fi
+    if [ $attempt -lt $MAX_ATTEMPTS ]; then
+      echo "Multi-arch SBOM attestation failed, retrying in ${DELAY}s..."
+      sleep $DELAY
+      DELAY=$((DELAY * 2))
+    fi
+  done
+
+  echo "::error::Failed to attest SBOM to multi-arch manifest after $MAX_ATTEMPTS attempts"
   return 1
 }

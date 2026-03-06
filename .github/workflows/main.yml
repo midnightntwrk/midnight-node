@@ -380,6 +380,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-amd64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-node-arm64:
@@ -394,6 +395,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-arm64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-toolkit-amd64:
@@ -408,6 +410,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-amd64
       sbom-artifact-name: sbom-midnight-node-toolkit-amd64
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-toolkit-arm64:
@@ -422,26 +425,8 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-toolkit-arm64
+      skip-attestation: true
     secrets: inherit
-
-#  sbom-scan-indexer-images:
-#    name: SBOM/Scan Indexer (${{ matrix.image }})
-#    needs: [build-indexer-images]
-#    permissions:
-#      contents: read
-#      packages: write
-#      id-token: write
-#    strategy:
-#      matrix:
-#        image:
-#          - indexer-api
-#          - chain-indexer
-#          - wallet-indexer
-#    uses: ./.github/workflows/sbom-scan-image.yml
-#    with:
-#      image: ghcr.io/midnight-ntwrk/${{ matrix.image }}:${{ needs.build-indexer-images.outputs.INDEXER_IMAGE_TAG }}
-#      sbom-artifact-name: sbom-${{ matrix.image }}
-#    secrets: inherit
 
   publish-multi-arch:
     name: Publish multi-arch image
@@ -791,6 +776,7 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node-arm64:
@@ -807,6 +793,7 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-amd64:
@@ -823,6 +810,7 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-arm64:
@@ -839,4 +827,5 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-attestation: true
     secrets: inherit
