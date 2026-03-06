@@ -8028,6 +8028,7 @@ dependencies = [
  "subxt-signer 0.44.0",
  "tempfile",
  "test-case",
+ "test-log",
  "testcontainers",
  "thiserror 1.0.69",
  "tokio",
