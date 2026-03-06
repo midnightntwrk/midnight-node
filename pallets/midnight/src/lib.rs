@@ -344,7 +344,6 @@ pub mod pallet {
 			LedgerApi::flush_storage();
 		}
 
-		#[cfg(hardfork_test)]
 		fn on_runtime_upgrade() -> Weight {
 			// Ensure ledger storage is initialized for current runtime version.
 			// Storage initialization is also handled in on_initialize for rollback-safety.

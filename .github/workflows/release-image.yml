@@ -464,6 +464,7 @@ jobs:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-ghcr-toolkit:
@@ -477,6 +478,7 @@ jobs:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-dockerhub-node:
@@ -489,6 +491,7 @@ jobs:
     with:
       image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-dockerhub-toolkit:
@@ -501,6 +504,7 @@ jobs:
     with:
       image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node:
@@ -515,6 +519,7 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
+      tlog-upload: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit:
@@ -529,4 +534,5 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
+      tlog-upload: true
     secrets: inherit
