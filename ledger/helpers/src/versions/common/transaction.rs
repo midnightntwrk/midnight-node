@@ -403,10 +403,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				for path in &saved_files {
 					let _ = fs::remove_file(path);
 				}
-				return Err(format!(
-					"failed to write intent file {complete_file_name}: {e}"
-				)
-				.into());
+				return Err(format!("failed to write intent file {complete_file_name}: {e}").into());
 			}
 
 			println!("Saved {complete_file_name}");
