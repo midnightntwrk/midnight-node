@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, Loader, ProofKind,
+	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader, ProofKind,
 	PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
 	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
 	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
@@ -20,6 +20,7 @@ use super::super::{
 use bip39::Mnemonic;
 use derive_where::derive_where;
 use std::str::FromStr;
+use rand::RngCore;
 use std::{
 	collections::HashMap,
 	marker::PhantomData,
@@ -358,7 +359,9 @@ where
 			let ttl = now + delay;
 			let timestamp = Timestamp::from_secs(ttl);
 
-			super::make_block_context(timestamp, Default::default(), timestamp)
+			let mut parent_hash_bytes = [0u8; 32];
+			rand::rngs::OsRng.fill_bytes(&mut parent_hash_bytes);
+			super::make_block_context(timestamp, HashOutput(parent_hash_bytes), timestamp)
 		});
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
