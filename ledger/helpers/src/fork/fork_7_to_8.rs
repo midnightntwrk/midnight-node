@@ -13,12 +13,13 @@ use crate::ledger_8::{
 };
 
 pub fn old_to_new_sp<T1, T2>(
-	t1: crate::ledger_7::Sp<T1, Db7>,
+	mut t1: crate::ledger_7::Sp<T1, Db7>,
 ) -> Result<crate::ledger_8::Sp<T2, Db8>, std::io::Error>
 where
 	T1: crate::ledger_7::Storable<Db7>,
 	T2: crate::ledger_8::Storable<Db8> + crate::ledger_8::Tagged,
 {
+	t1.persist();
 	let old_root = t1.as_typed_key().key;
 	// Both ArenaKey types are the same type (unified via midnight-storage-core patch).
 	let new_arena_key: crate::ledger_8::ArenaKey = old_root;
