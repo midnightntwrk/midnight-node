@@ -376,7 +376,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 	fn confirm_dust_spends(
 		&mut self,
 		spends: &[DustSpend<ProofPreimageMarker, D>],
-		updated_states: HashMap<WalletSeed, Sp<DustLocalState<D>, D>>,
+		mut updated_states: HashMap<WalletSeed, Sp<DustLocalState<D>, D>>,
 	) -> Result<()> {
 		let mut wallets = self
 			.context
@@ -384,8 +384,8 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.lock()
 			.map_err(|_| "wallet lock was poisoned".to_string())?;
 		for (seed, wallet) in wallets.iter_mut() {
-			if let Some(updated_state) = updated_states.get(seed) {
-				wallet.dust.mark_spent(spends, updated_state.clone());
+			if let Some(updated_state) = updated_states.remove(seed) {
+				wallet.dust.mark_spent(spends, updated_state);
 			}
 		}
 		Ok(())
