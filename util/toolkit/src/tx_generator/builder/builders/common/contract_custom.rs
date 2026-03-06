@@ -8,11 +8,14 @@ use super::ledger_helpers_local::{
 };
 use crate::{
 	serde_def::SourceTransactions,
-	toolkit_js::{EncodedOutputInfo, EncodedZswapLocalState},
+	toolkit_js::{
+		EncodedInputInfo, EncodedOutputInfo, EncodedTransientInfo, EncodedZswapLocalState,
+	},
 	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use midnight_node_ledger_helpers::{BuildTransient, CoinInfo};
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
@@ -22,6 +25,8 @@ pub enum CustomContractBuilderError {
 	FailedReadingZswapStateFile(std::io::Error),
 	#[error("failed to parse zswap state")]
 	FailedParsingZswapState(serde_json::Error),
+	#[error("failed to deserialize zswap state")]
+	FailedDeserializingZswapState(String),
 	#[error("failed to prove tx")]
 	FailedProvingTx(Box<dyn std::error::Error + Send + Sync>),
 	#[error("failed to read intent file")]
@@ -94,7 +99,7 @@ impl BuildTxsExt for CustomContractBuilder {
 impl CustomContractBuilder {
 	fn build_intent(&self) -> Result<IntentCustom<DefaultDB>, CustomContractBuilderError> {
 		let mut rng = self.rng_seed.map(StdRng::from_seed).unwrap_or(StdRng::from_entropy());
-		println!("Create intent info for contract custom");
+		log::info!("Create intent info for contract custom");
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
 		let boxed_resolver = Box::new(
@@ -113,7 +118,7 @@ impl CustomContractBuilder {
 		let custom_intent =
 			IntentCustom::new_from_actions(&mut rng, &actions[..], static_ref_resolver);
 
-		println!("custom_intent: {:?}", custom_intent.intent);
+		log::debug!("custom_intent: {:?}", custom_intent.intent);
 		Ok(custom_intent)
 	}
 
@@ -156,7 +161,7 @@ impl BuildTxs for CustomContractBuilder {
 		&self,
 		_received_tx: SourceTransactions,
 	) -> Result<SerializedTxBatches, Self::Error> {
-		println!("Building Txs for CustomContract");
+		log::info!("Building Txs for CustomContract");
 
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
@@ -222,14 +227,17 @@ impl BuildTxs for CustomContractBuilder {
 			Box::new(IntentInfo {
 				guaranteed_unshielded_offer: unshielded_offer_info,
 				fallible_unshielded_offer: None,
-				actions: vec![Box::new(contract_intent)],
+				actions: vec![Box::new(contract_intent.clone())],
 			}),
 		);
 
 		tx_info.set_intents(intents);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+		let mut inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+
+		//   - Transient
+		let mut transients_info: Vec<Box<dyn BuildTransient<DefaultDB>>> = vec![];
 
 		//   - Output
 		let shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = self
@@ -237,21 +245,55 @@ impl BuildTxs for CustomContractBuilder {
 			.iter()
 			.filter_map(|addr| addr.try_into().ok())
 			.collect();
+
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = Vec::new();
+		let mut encoded_output_infos: HashMap<CoinInfo, Box<EncodedOutputInfo>> = HashMap::new();
+
 		if let Some(zswap_state) = zswap_state {
 			for encoded_output in zswap_state.outputs.into_iter() {
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
-				outputs_info.push(Box::new(EncodedOutputInfo::new(
-					encoded_output,
-					0,
-					&shielded_wallets,
-				)));
+				let coin_info = CoinInfo::from(&encoded_output);
+				let encoded_output_info =
+					EncodedOutputInfo::new(encoded_output, 1, &shielded_wallets);
+				encoded_output_infos.insert(coin_info, Box::new(encoded_output_info));
+			}
+
+			if !zswap_state.inputs.is_empty() {
+				let contract_address = contract_intent
+					.find_contract_address()
+					.expect("Contract address should be set");
+				let chain_zswap_state = context.with_ledger_state(|state| (*state.zswap).clone());
+				for encoded_input in zswap_state.inputs.into_iter() {
+					let coin_info = CoinInfo::from(&encoded_input);
+
+					if let Some(encoded_output_info) = encoded_output_infos.get(&coin_info) {
+						let transient = EncodedTransientInfo {
+							encoded_qualified_info: encoded_input,
+							segment: 0,
+							encoded_output_info: encoded_output_info.clone(),
+						};
+						transients_info.push(Box::new(transient));
+						encoded_output_infos.remove(&coin_info);
+					} else {
+						let input = EncodedInputInfo {
+							encoded_qualified_info: encoded_input,
+							segment: 0,
+							contract_address,
+							chain_zswap_state: chain_zswap_state.clone(),
+						};
+						inputs_info.push(Box::new(input));
+					}
+				}
+			}
+
+			for encoded_output_info in encoded_output_infos.values() {
+				outputs_info.push(encoded_output_info.clone());
 			}
 		}
 
 		let offer_info =
-			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };
+			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: transients_info };
 
 		tx_info.set_guaranteed_offer(offer_info);
 

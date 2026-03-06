@@ -1,0 +1,12 @@
+chain = "res/guardnet/chain-spec.json"
+base_path = "node/chain"
+
+chainspec_name = "Midnight Guardnet"
+chainspec_id = "midnight_guardnet"
+chainspec_genesis_state = "res/genesis/genesis_state_guardnet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_guardnet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/guardnet/pc-chain-config.json"
+chainspec_cnight_genesis = "res/guardnet/cnight-genesis.json"
+chainspec_federated_authority_config = "res/guardnet/federated-authority-config.json"
+chainspec_system_parameters_config = "res/guardnet/system-parameters-config.json"

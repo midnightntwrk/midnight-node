@@ -53,7 +53,7 @@ pub trait CreateIntentInfo {
 #[async_trait]
 pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
 	async fn generate_intent_file(&mut self, dir: &str, partial_name: &str) {
-		println!("Generate intent file...");
+		log::info!("Generate intent file...");
 		let (_, mut tx_info) = self.context_and_tx_info();
 
 		let intent_info = self.create_intent_info();

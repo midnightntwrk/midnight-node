@@ -31,6 +31,7 @@ thiserror.workspace = true
 clap = { workspace = true, features = ["env", "derive"] }
 futures.workspace = true
 indicatif = "0.17.8"
+chrono = "0.4"
 console = "0.15.8"
 backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv"] }
