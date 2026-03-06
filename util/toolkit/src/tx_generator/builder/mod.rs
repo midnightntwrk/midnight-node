@@ -253,12 +253,9 @@ pub struct RegisterDustAddressArgs {
 	/// Seed for source wallet
 	#[arg(long)]
 	pub wallet_seed: String,
-	/// Seed for funding wallet
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs.
+	#[arg(long)]
+	pub funding_seed: Option<String>,
 	#[arg(
 		long,
 		value_parser = cli::wallet_address,
@@ -424,8 +421,11 @@ impl Builder {
 			},
 			Builder::RegisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
-				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
-				vec![seed, funding_seed]
+				if let Some(ref funding_seed) = args.funding_seed {
+					vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)]
+				} else {
+					vec![seed]
+				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);

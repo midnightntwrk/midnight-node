@@ -1,11 +1,10 @@
+use crate::client::{ClientError, MidnightNodeClient};
 use clap::Args;
 use midnight_node_ledger_helpers::base_crypto::time::Duration;
 use midnight_node_ledger_helpers::mn_ledger::structure::INITIAL_PARAMETERS;
 use midnight_node_ledger_helpers::{
 	DustParameters, FeePrices, FixedPoint, LedgerParameters, deserialize, serialize,
 };
-use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use subxt::{OnlineClient, SubstrateConfig};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,6 +17,8 @@ pub enum LedgerParametersError {
 	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 	#[error("failed to serialize ledger parameters: {0}")]
 	SerializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("node client error: {0}")]
+	NodeClientError(#[from] ClientError),
 }
 
 #[derive(Args, Clone, Debug, Default)]
@@ -93,12 +94,8 @@ pub async fn execute(
 	args: ShowLedgerParametersArgs,
 ) -> Result<LedgerParametersResult, LedgerParametersError> {
 	let base = if let Some(rpc_url) = args.read_from_rpc_url {
-		let api = OnlineClient::<SubstrateConfig>::from_insecure_url(rpc_url).await?;
-		let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
-		let response = api.runtime_api().at_latest().await?.call(call).await?;
-		let bytes = response.expect("not possible to retrieve ledger parameters from RPC server");
-		let parameters: LedgerParameters = deserialize(&mut &bytes[..])
-			.map_err(|e| LedgerParametersError::DeserializeLedgerParameters(e.into()))?;
+		let client = MidnightNodeClient::new(&rpc_url, None).await?;
+		let parameters = client.get_ledger_parameters().await?;
 		parameters
 	} else {
 		match args.base_parameters {
