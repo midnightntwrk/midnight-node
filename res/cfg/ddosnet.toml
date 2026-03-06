@@ -1,0 +1,12 @@
+chain = "res/ddosnet/chain-spec.json"
+base_path = "node/chain"
+
+chainspec_name = "Midnight Ddosnet"
+chainspec_id = "midnight_ddosnet"
+chainspec_genesis_state = "res/genesis/genesis_state_ddosnet.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_ddosnet.mn"
+chainspec_chain_type = "live"
+chainspec_pc_chain_config = "res/ddosnet/pc-chain-config.json"
+chainspec_cnight_genesis = "res/ddosnet/cnight-genesis.json"
+chainspec_federated_authority_config = "res/ddosnet/federated-authority-config.json"
+chainspec_system_parameters_config = "res/ddosnet/system-parameters-config.json"
