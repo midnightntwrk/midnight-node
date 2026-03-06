@@ -1,11 +1,7 @@
 name: Create Release (Re-tag image and create Github release)
 
-permissions:
-  contents: write
-  pull-requests: write
-  packages: write
-  id-token: write
-  attestations: write  # Required for GitHub native attestations
+# no top level default permissions for security reasons
+permissions: {}
 
 on:
   workflow_dispatch:
@@ -41,6 +37,11 @@ on:
 
 jobs:
   prepare-release:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: Prepare release images
     runs-on: ubuntu-latest
     outputs:
@@ -235,6 +236,9 @@ jobs:
   # and gate finalize-release
 
   finalize-release:
+    permissions:
+      contents: write
+      pull-requests: write
     name: Create release
     runs-on: ubuntu-latest
     needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
@@ -313,6 +317,10 @@ jobs:
         run: season-create-pr
 
   create-release-assets:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     needs: [finalize-release, prepare-release]
     if: github.event.inputs.release-type != 'Don''t create a release.'
@@ -405,6 +413,10 @@ jobs:
             "SHA256SUMS-${{ matrix.platform }}"
 
   srtool-build:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     name: srtool Build
     needs: [finalize-release]
     if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.node-only != 'true'
@@ -415,6 +427,10 @@ jobs:
     secrets: inherit
 
   finalize-checksums:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     needs: [prepare-release, create-release-assets, srtool-build]
     runs-on: ubuntu-latest
     if: github.event.inputs.release-type != 'Don''t create a release.'
@@ -454,6 +470,11 @@ jobs:
             SHA256SUMS
 
   sbom-scan-ghcr-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node GHCR (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -468,6 +489,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-ghcr-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit GHCR (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -482,6 +508,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-dockerhub-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node Docker Hub (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -495,6 +526,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-dockerhub-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit Docker Hub (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -508,6 +544,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-midnightntwrk-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node midnightntwrk (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:
@@ -523,6 +564,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit midnightntwrk (${{ matrix.arch }})
     needs: [prepare-release]
     strategy:

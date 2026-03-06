@@ -28,8 +28,8 @@ pub async fn execute(
 		.expect("failed to init tx source");
 
 	if args.dry_run {
-		println!("Dry-run: fetch contract state for address: {:?}", args.contract_address);
-		println!("Dry-run: write contract state to file: {:?}", args.dest_file);
+		log::info!("Dry-run: fetch contract state for address: {:?}", args.contract_address);
+		log::info!("Dry-run: write contract state to file: {:?}", args.dest_file);
 		return Ok(());
 	}
 

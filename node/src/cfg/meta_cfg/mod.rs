@@ -43,8 +43,11 @@ impl CfgPreset {
 	pub fn load_config(&self) -> Result<File<FileSourceString, FileFormat>, ConfigError> {
 		let config_str = get_config(&self.0).map_or_else(
 			|| {
-				std::fs::read_to_string(&self.0)
-					.map_err(|_| ConfigError::Message(format!("Failed to load config {}", self.0)))
+				super::validated_file::safe_read_to_string(
+					&self.0,
+					super::validated_file::MAX_GENESIS_FILE_SIZE,
+				)
+				.map_err(ConfigError::Message)
 			},
 			Ok,
 		)?;

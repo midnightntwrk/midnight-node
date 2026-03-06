@@ -96,8 +96,8 @@ pub async fn fetch_zswap_state(
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
-		println!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
-		println!("Dry-run: attributing to coin-public {:?}", coin_public);
+		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
+		log::info!("Dry-run: attributing to coin-public {:?}", coin_public);
 		return Ok(EncodedZswapLocalState::from_zswap_state(
 			WalletState::<DefaultDB>::default(),
 			coin_public,
@@ -148,12 +148,12 @@ pub enum GenerateIntentError {
 pub async fn execute(
 	args: GenerateIntentArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	println!("Executing generate-intent");
+	log::info!("Executing generate-intent");
 	match args.js_command {
 		JsCommand::Deploy(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate deploy intent: {:?}", &args.deploy);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate deploy intent: {:?}", &args.deploy);
 				return Ok(());
 			}
 			let command = toolkit_js::Command::Deploy(args.deploy);
@@ -161,12 +161,12 @@ pub async fn execute(
 		},
 		JsCommand::Circuit(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
 
 			let input_zswap_state = if let Some(wallet_seed) = args.wallet_seed {
-				println!("getting input zswap...");
+				log::info!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
 					args.source.clone(),
 					wallet_seed,
@@ -227,8 +227,8 @@ pub async fn execute(
 		},
 		JsCommand::MaintainContract(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate maintain contract intent: {:?}", &args.maintain);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate maintain contract intent: {:?}", &args.maintain);
 				return Ok(());
 			}
 			let command =
@@ -237,8 +237,8 @@ pub async fn execute(
 		},
 		JsCommand::MaintainCircuit(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate maintain circuit intent: {:?}", &args.maintain);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate maintain circuit intent: {:?}", &args.maintain);
 				return Ok(());
 			}
 			let command =

@@ -5,9 +5,15 @@ on:
   pull_request:
     branches: ["**"]
 
+# no top level default permissions for security reasons
+permissions: {}
+
 jobs:
   run:
     name: Check PR job
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository

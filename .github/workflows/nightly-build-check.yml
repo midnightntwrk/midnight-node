@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
 jobs:
   build_node:
     name: Build Node against latest

@@ -12,6 +12,10 @@ on:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
 
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
 jobs:
   actionlint:
     name: Lint workflows
