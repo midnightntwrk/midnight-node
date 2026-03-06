@@ -14,12 +14,13 @@
 use rand::Rng as _;
 
 use super::{
-	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, DustActions, DustPublicKey,
-	DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer, OfferInfo, Pedersen,
-	PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker, ProofPreimage,
-	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
-	Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng, Storable,
-	Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
+	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, DustActions,
+	DustLocalState, DustPublicKey, DustRegistration, DustSpend, HashMapStorage, Intent,
+	LedgerContext, Offer, OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness,
+	ProofKind, ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider,
+	PureGeneratorPedersen, SeedableRng, Segment, SegmentId, Serializable, Signature,
+	SignatureKind, SigningKey, Sp, SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType,
+	Transaction, WalletSeed, WellFormedStrictness, serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -210,7 +211,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		let mut missing_dust = 0;
 
 		for _ in 0..10 {
-			let spends = self.gather_dust_spends(missing_dust, now)?;
+			let (spends, updated_states) = self.gather_dust_spends(missing_dust, now)?;
 			let mut paid_tx = tx.clone();
 			self.apply_dust(&mut paid_tx, &spends, self.rng.clone().split(), now, ttl);
 
@@ -220,7 +221,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				if let Some(dust) = computed_missing_dust {
 					missing_dust += dust;
 				} else {
-					self.confirm_dust_spends(&spends)?;
+					self.confirm_dust_spends(&spends, updated_states)?;
 					return self.prove_tx(paid_tx).await;
 				}
 			} else {
@@ -229,7 +230,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				if let Some(dust) = computed_missing_dust {
 					missing_dust += dust;
 				} else {
-					self.confirm_dust_spends(&spends)?;
+					self.confirm_dust_spends(&spends, updated_states)?;
 					return Ok(proven_tx);
 				}
 			}
@@ -329,8 +330,12 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		&self,
 		required_amount: u128,
 		ctime: Timestamp,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>> {
+	) -> Result<(
+		Vec<DustSpend<ProofPreimageMarker, D>>,
+		HashMap<WalletSeed, Sp<DustLocalState<D>, D>>,
+	)> {
 		let mut spends = vec![];
+		let mut updated_states = HashMap::new();
 		let mut remaining = required_amount;
 		let state = self
 			.context
@@ -345,12 +350,14 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			.map_err(|_| "wallet lock was poisoned".to_string())?;
 		for seed in &self.funding_seeds {
 			if remaining == 0 {
-				return Ok(spends);
+				return Ok((spends, updated_states));
 			}
 			let wallet = wallets.get_mut(seed).ok_or("Unrecognized wallet seed")?;
-			let new_spends = wallet.dust.speculative_spend(remaining, ctime, params)?;
-			// We asked the wallet to spend `remaining` DUST,
-			// so the total amount spent will be <= `remaining`.
+			let (new_spends, updated_state) =
+				wallet.dust.speculative_spend(remaining, ctime, params)?;
+			if !new_spends.is_empty() {
+				updated_states.insert(*seed, updated_state);
+			}
 			for spend in new_spends {
 				remaining -= spend.v_fee;
 				spends.push(spend);
@@ -362,18 +369,24 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			)
 			.into())
 		} else {
-			Ok(spends)
+			Ok((spends, updated_states))
 		}
 	}
 
-	fn confirm_dust_spends(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) -> Result<()> {
+	fn confirm_dust_spends(
+		&mut self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
+		updated_states: HashMap<WalletSeed, Sp<DustLocalState<D>, D>>,
+	) -> Result<()> {
 		let mut wallets = self
 			.context
 			.wallets
 			.lock()
 			.map_err(|_| "wallet lock was poisoned".to_string())?;
-		for wallet in wallets.values_mut() {
-			wallet.dust.mark_spent(spends);
+		for (seed, wallet) in wallets.iter_mut() {
+			if let Some(updated_state) = updated_states.get(seed) {
+				wallet.dust.mark_spent(spends, updated_state.clone());
+			}
 		}
 		Ok(())
 	}
