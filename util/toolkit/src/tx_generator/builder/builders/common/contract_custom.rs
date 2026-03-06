@@ -99,7 +99,7 @@ impl BuildTxsExt for CustomContractBuilder {
 impl CustomContractBuilder {
 	fn build_intent(&self) -> Result<IntentCustom<DefaultDB>, CustomContractBuilderError> {
 		let mut rng = self.rng_seed.map(StdRng::from_seed).unwrap_or(StdRng::from_entropy());
-		println!("Create intent info for contract custom");
+		log::info!("Create intent info for contract custom");
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
 		let boxed_resolver = Box::new(
@@ -118,7 +118,7 @@ impl CustomContractBuilder {
 		let custom_intent =
 			IntentCustom::new_from_actions(&mut rng, &actions[..], static_ref_resolver);
 
-		println!("custom_intent: {:?}", custom_intent.intent);
+		log::debug!("custom_intent: {:?}", custom_intent.intent);
 		Ok(custom_intent)
 	}
 
@@ -161,7 +161,7 @@ impl BuildTxs for CustomContractBuilder {
 		&self,
 		_received_tx: SourceTransactions,
 	) -> Result<SerializedTxBatches, Self::Error> {
-		println!("Building Txs for CustomContract");
+		log::info!("Building Txs for CustomContract");
 
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();

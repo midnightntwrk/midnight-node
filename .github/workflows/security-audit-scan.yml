@@ -8,12 +8,17 @@ on:
       - "changes/**"
   push:
     branches: ["main"]
+# no top level default permissions for security reasons
+permissions: {}
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
   run:
     name: cargo audit job
+    permissions:
+      contents: read
+      security-events: write
     if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     env:

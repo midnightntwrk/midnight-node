@@ -72,7 +72,7 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 			value: self.encoded_output.coin_info.value,
 		};
 
-		println!("coin_info: {coin_info:?}");
+		log::debug!("coin_info: {coin_info:?}");
 		let recipient: Recipient = self.encoded_output.recipient.clone().into();
 
 		match recipient {
@@ -115,8 +115,8 @@ impl EncodedOutputInfo {
 			{
 				encryption_public_key = Some(wallet.enc_public_key);
 			} else {
-				println!(
-					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
+				log::warn!(
+					"missing encryption_public_key for zswap output {} - output will be invisible to indexer",
 					hex::encode(&encoded_output.coin_info.nonce)
 				);
 			}

@@ -5,6 +5,9 @@ on:
   schedule:
     # Once a week
     - cron: "0 0 * * 0"
+# no top level default permissions for security reasons
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
