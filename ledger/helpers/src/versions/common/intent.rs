@@ -124,10 +124,7 @@ impl<D: DB + Clone> IntentCustom<D> {
 		if metadata.len() > Self::MAX_INTENT_FILE_SIZE {
 			return Err(std::io::Error::new(
 				std::io::ErrorKind::InvalidData,
-				format!(
-					"intent file exceeds maximum size of {} bytes",
-					Self::MAX_INTENT_FILE_SIZE
-				),
+				format!("intent file exceeds maximum size of {} bytes", Self::MAX_INTENT_FILE_SIZE),
 			));
 		}
 		let bytes = std::fs::read(path)?;
