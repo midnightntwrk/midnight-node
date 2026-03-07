@@ -69,9 +69,10 @@ jobs:
 
       - name: Check for existing images
         id: check_images
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
         run: |
-          FORCE="${{ github.event.inputs.force_rebuild }}"
-          if [ "$FORCE" = "true" ]; then
+          if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -139,11 +140,6 @@ jobs:
 
   run-arm64:
     name: Build node and images (arm64)
-    # ARM64 gating: only for merge_group, workflow_dispatch, or PRs with ci:arm64 label
-    if: |
-      github.event_name == 'merge_group' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:arm64'))
     permissions:
       id-token: write
       contents: read
@@ -177,9 +173,10 @@ jobs:
 
       - name: Check for existing images
         id: check_images
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
         run: |
-          FORCE="${{ github.event.inputs.force_rebuild }}"
-          if [ "$FORCE" = "true" ]; then
+          if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -290,8 +287,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
-    outputs:
-      sha: ${{ steps.get_sha.outputs.sha }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -301,17 +296,6 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Get Version and content hash
-        id: meta
-        run: |
-          echo "content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Get current commit SHA
-        id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -335,8 +319,8 @@ jobs:
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.content_hash }}-amd64" \
-            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.content_hash }}-amd64" \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
 
   hardfork-e2e:

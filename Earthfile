@@ -199,8 +199,9 @@ rebuild-genesis-state:
     ARG GENERATE_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
-    # Only include toolkit-js when generating test transactions
-    FROM +toolkit-image --INCLUDE_TOOLKIT_JS=${GENERATE_TEST_TXS}
+    # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
+    ARG TOOLKIT_IMAGE=+toolkit-image
+    FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
 
