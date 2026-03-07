@@ -173,7 +173,6 @@ jobs:
             exit 0
           fi
 
-          VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
           RELEASE_TITLE="[Unreleased]"
 
           if gh release view "$RELEASE_TITLE" --json isDraft | grep false; then
@@ -240,7 +239,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          CONTENT_HASH=$(git rev-parse HEAD^{tree} | cut -c1-12)
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
