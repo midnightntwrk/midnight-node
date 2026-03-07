@@ -38,6 +38,7 @@ jobs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+      skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -282,6 +283,8 @@ jobs:
     permissions:
       contents: read
     name: Check Unused Dependencies
+    needs: [run]
+    if: needs.run.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f

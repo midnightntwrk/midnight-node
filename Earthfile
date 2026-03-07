@@ -855,6 +855,7 @@ test:
     # Test
     RUN mkdir /test-artifacts
     # Compile the tests to go as fast as possible on this machine:
+    ENV SKIP_WASM_BUILD=1
     ENV RUSTFLAGS="-C target-cpu=native"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
