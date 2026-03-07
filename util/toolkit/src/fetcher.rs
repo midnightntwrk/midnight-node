@@ -71,7 +71,7 @@ enum TaskResult {
 
 pub async fn read_blocks_from_cache(
 	chain_id: H256,
-	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
@@ -97,7 +97,7 @@ pub async fn fetch_all(
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_only_cache: bool,
-	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	let client = MidnightNodeClient::new(&url, None).await?;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
@@ -121,7 +121,7 @@ pub async fn fetch_from_rpc(
 	chain_id: H256,
 	num_workers: usize,
 	num_compute_workers: usize,
-	fetch_storage: impl FetchStorage + Clone + Send + Sync + 'static,
+	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(

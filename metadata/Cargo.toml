@@ -5,6 +5,10 @@ edition = "2024"
 build = "build.rs"
 license-file.workspace = true
 
+[features]
+default = []
+legacy-metadata = []
+
 [dependencies]
 subxt.workspace = true
 

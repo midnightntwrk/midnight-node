@@ -66,6 +66,14 @@ impl RuntimeVersion {
 	pub fn latest_version() -> Self {
 		RuntimeVersion::iter().max().unwrap()
 	}
+
+	/// Returns true if this version requires the legacy-metadata feature to process blocks.
+	pub fn requires_legacy_metadata(self) -> bool {
+		matches!(
+			self,
+			Self::V0_17_0 | Self::V0_17_1 | Self::V0_18_0 | Self::V0_18_1 | Self::V0_19_0
+		)
+	}
 }
 
 impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
@@ -142,30 +150,36 @@ macro_rules! impl_midnight_metadata {
 	};
 }
 
+// Legacy metadata versions (pre-0.20.0) — only compiled with `legacy-metadata` feature
+#[cfg(feature = "legacy-metadata")]
 impl_midnight_metadata!(
 	MidnightMetadata0_17_1,
 	mn_meta_0_17_1,
 	midnight_node_metadata::midnight_metadata_0_17_1
 );
 
+#[cfg(feature = "legacy-metadata")]
 impl_midnight_metadata!(
 	MidnightMetadata0_18_0,
 	mn_meta_0_18_0,
 	midnight_node_metadata::midnight_metadata_0_18_0
 );
 
+#[cfg(feature = "legacy-metadata")]
 impl_midnight_metadata!(
 	MidnightMetadata0_18_1,
 	mn_meta_0_18_1,
 	midnight_node_metadata::midnight_metadata_0_18_1
 );
 
+#[cfg(feature = "legacy-metadata")]
 impl_midnight_metadata!(
 	MidnightMetadata0_19_0,
 	mn_meta_0_19_0,
 	midnight_node_metadata::midnight_metadata_0_19_0
 );
 
+// Current metadata versions (0.20.0+) — always compiled
 impl_midnight_metadata!(
 	MidnightMetadata0_20_0,
 	mn_meta_0_20_0,
@@ -184,50 +198,58 @@ impl_midnight_metadata!(
 	midnight_node_metadata::midnight_metadata_0_22_0
 );
 
-// Manually implement 0.17.0
-use midnight_node_metadata::midnight_metadata_0_17_0 as mn_meta_0_17_0;
+// 0.17.0 has a different structure so it's implemented manually
+#[cfg(feature = "legacy-metadata")]
+mod legacy_0_17_0 {
+	use super::MidnightMetadata;
+	use midnight_node_metadata::midnight_metadata_0_17_0 as mn_meta_0_17_0;
 
-pub struct MidnightMetadata0_17_0;
+	pub struct MidnightMetadata0_17_0;
 
-impl MidnightMetadata for MidnightMetadata0_17_0 {
-	type Call = mn_meta_0_17_0::Call;
-	type SystemTransactionAppliedEvent =
-		mn_meta_0_17_0::midnight_system::events::SystemTransactionApplied;
+	impl MidnightMetadata for MidnightMetadata0_17_0 {
+		type Call = mn_meta_0_17_0::Call;
+		type SystemTransactionAppliedEvent =
+			mn_meta_0_17_0::midnight_system::events::SystemTransactionApplied;
 
-	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>> {
-		if let mn_meta_0_17_0::Call::Midnight(
-			mn_meta_0_17_0::midnight::Call::send_mn_transaction { midnight_tx },
-		) = call
-		{
-			Some(midnight_tx.clone())
-		} else {
-			None
+		fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>> {
+			if let mn_meta_0_17_0::Call::Midnight(
+				mn_meta_0_17_0::midnight::Call::send_mn_transaction { midnight_tx },
+			) = call
+			{
+				Some(midnight_tx.clone())
+			} else {
+				None
+			}
 		}
-	}
 
-	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
-		if let mn_meta_0_17_0::Call::MidnightSystem(
-			mn_meta_0_17_0::midnight_system::Call::send_mn_system_transaction {
-				midnight_system_tx,
-			},
-		) = call
-		{
-			Some(midnight_system_tx.clone())
-		} else {
-			None
+		fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>> {
+			if let mn_meta_0_17_0::Call::MidnightSystem(
+				mn_meta_0_17_0::midnight_system::Call::send_mn_system_transaction {
+					midnight_system_tx,
+				},
+			) = call
+			{
+				Some(midnight_system_tx.clone())
+			} else {
+				None
+			}
 		}
-	}
 
-	fn timestamp_set(call: &Self::Call) -> Option<u64> {
-		if let mn_meta_0_17_0::Call::Timestamp(mn_meta_0_17_0::timestamp::Call::set { now }) = call
-		{
-			Some(*now)
-		} else {
-			None
+		fn timestamp_set(call: &Self::Call) -> Option<u64> {
+			if let mn_meta_0_17_0::Call::Timestamp(mn_meta_0_17_0::timestamp::Call::set { now }) =
+				call
+			{
+				Some(*now)
+			} else {
+				None
+			}
 		}
-	}
 
-	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
-		event.0.serialized_system_transaction
+		fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
+			event.0.serialized_system_transaction
+		}
 	}
 }
+
+#[cfg(feature = "legacy-metadata")]
+pub use legacy_0_17_0::MidnightMetadata0_17_0;

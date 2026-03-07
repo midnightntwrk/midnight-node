@@ -11,9 +11,11 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+default = []
 hardfork-test = []
 hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+legacy-metadata = ["midnight-node-metadata/legacy-metadata"]
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
@@ -31,7 +33,6 @@ thiserror.workspace = true
 clap = { workspace = true, features = ["env", "derive"] }
 futures.workspace = true
 indicatif = "0.17.8"
-chrono = "0.4"
 console = "0.15.8"
 backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv"] }
@@ -45,7 +46,6 @@ parity-scale-codec = { workspace = true }
 sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
-num_cpus = "1.17.0"
 redb = "3.1.0"
 bson = { version = "3.1.0", features = ["serde"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
