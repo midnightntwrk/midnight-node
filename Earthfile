@@ -854,9 +854,9 @@ test:
 
     # Test
     RUN mkdir /test-artifacts
-    # Compile the tests to go as fast as possible on this machine:
+    # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
     ENV SKIP_WASM_BUILD=1
-    ENV RUSTFLAGS="-C target-cpu=native"
+    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -889,6 +889,7 @@ test-pallet-fixtures:
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
     ENV SKIP_WASM_BUILD=1
+    ENV RUSTFLAGS="-C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -930,7 +931,7 @@ build-test-toolkit:
     # Test
     RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native"
+    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1469,6 +1470,7 @@ local-env-e2e:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests local-environment scripts .
     WORKDIR tests/e2e
+    ENV RUSTFLAGS="-C debuginfo=1"
     RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
 
 # compares chain parameters with testnet-02
