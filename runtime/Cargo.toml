@@ -97,7 +97,6 @@ serde.workspace = true
 
 [build-dependencies]
 substrate-wasm-builder = { workspace = true, optional = true, default-features = true }
-frame-storage-access-test-runtime = { workspace = true, optional = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -153,7 +152,6 @@ std = [
     "sp-storage/std",
     "sp-genesis-builder/std",
     "substrate-wasm-builder",
-    "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
@@ -214,4 +212,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["serde", "frame-storage-access-test-runtime"]
+ignored = ["serde"]
