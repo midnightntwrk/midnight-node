@@ -899,15 +899,26 @@ test-pallet-fixtures:
     CACHE /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
-    # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
     ENV SKIP_WASM_BUILD=1
-    ENV RUSTFLAGS="-C debuginfo=1"
+    # Install nightly + cranelift for faster test compilation
+    RUN rustup toolchain install nightly --component rustc-codegen-cranelift-preview
+    # Patch uplc's IndexMap usage to compile on nightly (indexmap 1.x lost default hasher param)
+    RUN cargo +nightly fetch --locked && \
+        UPLC_SRC=$(find /root/.cargo/registry/src -path '*/uplc-*/src/optimize/shrinker.rs' | head -1) && \
+        sed -i 's/use indexmap::IndexMap;/use indexmap::IndexMap;\ntype IMap<K, V> = IndexMap<K, V, std::hash::RandomState>;/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap::new()/IndexMap::default()/g' "$UPLC_SRC" && \
+        sed -i 's/pub builtins_map: IndexMap<u8, ()>/pub builtins_map: IMap<u8, ()>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<CurriedName, (Scope, Term<Name>, usize)>/IMap<CurriedName, (Scope, Term<Name>, usize)>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Scope, Vec<(CurriedName, Term<Name>)>>/IMap<Scope, Vec<(CurriedName, Term<Name>)>>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Scope, bool>/IMap<Scope, bool>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Vec<usize>, ()>/IMap<Vec<usize>, ()>/' "$UPLC_SRC"
+    ENV RUSTFLAGS="-C debuginfo=1 -Z codegen-backend=cranelift"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests in debug mode (compiles much faster)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+    # Run pallet-midnight fixture tests
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo +nightly nextest r --profile ci --locked \
         -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
