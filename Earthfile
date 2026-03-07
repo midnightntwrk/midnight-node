@@ -856,7 +856,19 @@ test:
     RUN mkdir /test-artifacts
     # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
     ENV SKIP_WASM_BUILD=1
-    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
+    # Install nightly + cranelift for faster test compilation
+    RUN rustup toolchain install nightly --component rustc-codegen-cranelift-preview
+    # Patch uplc's IndexMap usage to compile on nightly (indexmap 1.x lost default hasher param)
+    RUN cargo +nightly fetch --locked && \
+        UPLC_SRC=$(find /root/.cargo/registry/src -path '*/uplc-*/src/optimize/shrinker.rs' | head -1) && \
+        sed -i 's/use indexmap::IndexMap;/use indexmap::IndexMap;\ntype IMap<K, V> = IndexMap<K, V, std::hash::RandomState>;/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap::new()/IndexMap::default()/g' "$UPLC_SRC" && \
+        sed -i 's/pub builtins_map: IndexMap<u8, ()>/pub builtins_map: IMap<u8, ()>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<CurriedName, (Scope, Term<Name>, usize)>/IMap<CurriedName, (Scope, Term<Name>, usize)>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Scope, Vec<(CurriedName, Term<Name>)>>/IMap<Scope, Vec<(CurriedName, Term<Name>)>>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Scope, bool>/IMap<Scope, bool>/' "$UPLC_SRC" && \
+        sed -i 's/IndexMap<Vec<usize>, ()>/IMap<Vec<usize>, ()>/' "$UPLC_SRC"
+    ENV RUSTFLAGS="-C debuginfo=1 -Z codegen-backend=cranelift"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -864,7 +876,7 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo +nightly nextest r --profile ci --workspace --locked \
         --exclude midnight-node-toolkit \
         -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
 
