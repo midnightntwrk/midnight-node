@@ -135,7 +135,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::GenerateGenesis(args) => {
 			let generator = generate_genesis::execute(args).await?;
-			println!("The tx: {:#?}", generator.txs);
+			log::debug!("The tx: {:#?}", generator.txs);
 			Ok(())
 		},
 		Commands::ShowWallet(args) => {
