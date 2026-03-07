@@ -184,7 +184,7 @@ cleanSwap() {
 # Display initial disk space stats
 echo "Initial disk space:"
 df -h /
-cleanPackages
+# cleanPackages
 cleanDocker
 cleanSwap
 removeUnusedFilesAndDirs
