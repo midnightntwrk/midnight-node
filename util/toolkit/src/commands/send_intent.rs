@@ -71,7 +71,10 @@ mod test {
 	}
 
 	#[tokio::test]
-	#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
+	#[cfg_attr(
+		target_arch = "aarch64",
+		ignore = "cranelift: crc32 intrinsic unsupported on aarch64"
+	)]
 	async fn test_send_intent() {
 		if !ledger_test_artifacts_ready() {
 			return;
