@@ -214,6 +214,7 @@ mod test {
 	}
 
 	#[tokio::test]
+	#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 	async fn test_generate_genesis() {
 		let path = temp_dir().join("undeployed-seeds.json");
 		let mut seed_map = std::collections::HashMap::new();

@@ -201,6 +201,7 @@ mod tests {
 		"contract-call-call-tx"
 	)]
 	#[tokio::test]
+	#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 	async fn test_generation(
 		args: GenerateTxsArgs,
 	) -> Result<SerializedTxBatches, GenerateTxsError> {
