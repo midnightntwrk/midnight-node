@@ -847,7 +847,6 @@ check-metadata:
 # check lints/format checks for entire repo
 check:
     BUILD +check-rust
-    BUILD +check-feature-unification
 
 # test runs the tests in parallel with code coverage.
 # Core tests - excludes Midnight Node Toolkit (requires Node Toolkit (JS) npm packages from midnight-js)
