@@ -352,7 +352,6 @@ fn sets_extra_transaction_size_weight() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 #[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
@@ -381,7 +380,6 @@ fn test_get_ledger_parameters() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 #[ignore = "Cannot update ZSWAP_TX because we have no test tokens in genesis"]
 fn test_send_zswap_tx() {
 	mock::new_test_ext().execute_with(|| {
@@ -395,7 +393,6 @@ fn test_send_zswap_tx() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 #[ignore = "Cannot update ZSWAP_TX because we have no test tokens in genesis"]
 fn test_get_zswap_state_root() {
 	mock::new_test_ext().execute_with(|| {

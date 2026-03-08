@@ -627,7 +627,7 @@ node-ci-image-single-platform:
         curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.6.9/cargo-binstall-${ARCH}-unknown-linux-gnu.tgz" -o binstall.tgz && \
         tar -xzf binstall.tgz -C /root/.cargo/bin cargo-binstall && \
         rm binstall.tgz
-    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable
+    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable cargo-hack
 
     # Install cargo tools from source in a single layer, then clean up build artifacts
     # renovate: datasource=github-releases packageName=chevdor/subwasm
@@ -811,16 +811,21 @@ check-rust:
     # ensure runtime benchmark feature enable to check they compile.
     RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
-    RUN status=0; \
-        for pkg in $(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[].name'); do \
-            echo "===> Checking $pkg"; \
-            if ! cargo check -p "$pkg"; then \
-                echo "Failed: $pkg"; \
-                status=1; \
-            fi; \
-        done; \
-        exit $status
+# check-feature-unification verifies each crate compiles without dev-deps,
+# catching issues where workspace feature unification masks missing dependencies.
+check-feature-unification:
+    FROM +check-rust-prepare
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    COPY --keep-ts --dir \
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+
+    ENV SKIP_WASM_BUILD=1
+    ENV CARGO_INCREMENTAL=0
+    RUN cargo binstall --no-confirm cargo-hack
+    RUN cargo hack check --workspace --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -842,6 +847,7 @@ check-metadata:
 # check lints/format checks for entire repo
 check:
     BUILD +check-rust
+    BUILD +check-feature-unification
 
 # test runs the tests in parallel with code coverage.
 # Core tests - excludes Midnight Node Toolkit (requires Node Toolkit (JS) npm packages from midnight-js)
