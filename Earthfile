@@ -802,11 +802,12 @@ check-rust:
 
     RUN cargo fmt --all -- --check
 
-    ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
 
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
+    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1  cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
+
+    ENV SKIP_WASM_BUILD=1
 
     RUN status=0; \
         for pkg in $(cargo metadata --no-deps --format-version 1 \
