@@ -14,6 +14,7 @@ use super::super::{
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
+#[tag = "dust-wallet"]
 pub struct DustWallet<D: DB> {
 	pub public_key: DustPublicKey,
 	secret_key: Option<Sp<DustSecretKey, D>>,
