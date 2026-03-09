@@ -33,15 +33,15 @@ runs:
 
         # If the workflow was triggered from a different branch, the workflow
         # file may differ from what's in HEAD — skip caching so we always run.
-        if [[ "${{ github.workflow_sha }}" != "${{ github.sha }}" ]]; then
+        if [[ "$WORKFLOW_SHA" != "$COMMIT_SHA" ]]; then
           echo "::notice::workflow_sha differs from sha — workflow may be overridden, skipping cache"
           echo "hit=false" >> "$GITHUB_OUTPUT"
           echo "key=no-cache-workflow-override" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        check="${{ inputs.check-name }}-${{ runner.arch }}"
-        [[ -n "${{ inputs.matrix-key }}" ]] && check="${check}-${{ inputs.matrix-key }}"
+        check="${CHECK_NAME}-${RUNNER_ARCH}"
+        [[ -n "$MATRIX_KEY" ]] && check="${check}-${MATRIX_KEY}"
         key="passed-${check}-${tree}"
 
         echo "key=${key}" >> "$GITHUB_OUTPUT"
@@ -54,3 +54,8 @@ runs:
                              || echo "hit=false" >> "$GITHUB_OUTPUT"
       env:
         GH_TOKEN: ${{ github.token }}
+        WORKFLOW_SHA: ${{ github.workflow_sha }}
+        COMMIT_SHA: ${{ github.sha }}
+        CHECK_NAME: ${{ inputs.check-name }}
+        MATRIX_KEY: ${{ inputs.matrix-key }}
+        RUNNER_ARCH: ${{ runner.arch }}

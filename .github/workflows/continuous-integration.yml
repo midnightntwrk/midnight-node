@@ -48,8 +48,6 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - name: Get current commit SHA
         id: get_sha
@@ -158,8 +156,6 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -218,15 +214,14 @@ jobs:
           path: test-artifacts-arm64/
 
   hardfork:
-    name: Build hardfork images
+    name: Hardfork E2E
     permissions:
       id-token: write
       contents: read
+    needs: [run]
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
-    outputs:
-      hardfork_image_tag: ${{ steps.image_tags.outputs.hardfork_image_tag }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -236,8 +231,6 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
@@ -285,6 +278,14 @@ jobs:
 
           . ./.envrc && earthly --push +hardfork-test-upgrader-image
 
+      # TODO: re-enable hardfork E2E tests
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   with:
+      #     just-command: hardfork-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.image_tags.outputs.hardfork_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
   check-unused-deps:
     permissions:
       contents: read
@@ -296,8 +297,6 @@ jobs:
     steps:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
@@ -337,8 +336,6 @@ jobs:
     steps:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
@@ -384,26 +381,6 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  hardfork-e2e:
-    permissions:
-      contents: read
-    name: Hardfork E2E
-    needs:
-      - run
-      - hardfork
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: hardfork-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-
   ledger-rollback-e2e:
     permissions:
       contents: read
@@ -413,15 +390,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: ledger-rollback-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # When re-enabled, this should be merged into the hardfork job (like hardfork-e2e was).
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
 
@@ -437,8 +407,6 @@ jobs:
     steps:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
@@ -477,8 +445,6 @@ jobs:
     steps:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
@@ -524,8 +490,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -550,8 +514,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -576,8 +538,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -602,8 +562,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -628,8 +586,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -654,8 +610,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -693,8 +647,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -719,8 +671,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -744,8 +694,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          fetch-depth: 0
       - id: guard
         uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
@@ -775,7 +723,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          fetch-depth: 0
           submodules: true
 
       - name: Login to GHCR
@@ -895,7 +842,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          fetch-depth: 0
           submodules: true
 
       - id: guard
