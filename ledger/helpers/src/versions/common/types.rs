@@ -342,6 +342,22 @@ where
 	pub block_context: BlockContext,
 }
 
+/// Generates a default `BlockContext` with the current timestamp and a random parent block hash.
+/// Used by the toolkit when no explicit block context is provided.
+pub(crate) fn default_block_context() -> BlockContext {
+	let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.expect("Time went backwards")
+		.as_secs();
+	let delay: u64 = 0;
+	let ttl = now + delay;
+	let timestamp = Timestamp::from_secs(ttl);
+
+	let mut parent_hash_bytes = [0u8; 32];
+	rand::rngs::OsRng.fill_bytes(&mut parent_hash_bytes);
+	super::make_block_context(timestamp, HashOutput(parent_hash_bytes), timestamp)
+}
+
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -350,19 +366,7 @@ where
 		tx: Transaction<S, P, PureGeneratorPedersen, D>,
 		block_context: Option<BlockContext>,
 	) -> Self {
-		let block_context = block_context.unwrap_or_else(|| {
-			let now = SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("Time went backwards")
-				.as_secs();
-			let delay: u64 = 0;
-			let ttl = now + delay;
-			let timestamp = Timestamp::from_secs(ttl);
-
-			let mut parent_hash_bytes = [0u8; 32];
-			rand::rngs::OsRng.fill_bytes(&mut parent_hash_bytes);
-			super::make_block_context(timestamp, HashOutput(parent_hash_bytes), timestamp)
-		});
+		let block_context = block_context.unwrap_or_else(default_block_context);
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
 	}
@@ -582,5 +586,25 @@ mod tests {
 			lazy_hex.parse::<WalletSeed>(),
 			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
 		));
+	}
+
+	#[test]
+	fn default_block_context_has_non_zero_parent_hash() {
+		let ctx = super::default_block_context();
+		let default_hash: super::HashOutput = Default::default();
+		assert_ne!(
+			ctx.parent_block_hash, default_hash,
+			"parent_block_hash should not be all zeros"
+		);
+	}
+
+	#[test]
+	fn default_block_context_produces_unique_parent_hashes() {
+		let ctx1 = super::default_block_context();
+		let ctx2 = super::default_block_context();
+		assert_ne!(
+			ctx1.parent_block_hash, ctx2.parent_block_hash,
+			"successive calls should produce different parent hashes"
+		);
 	}
 }
