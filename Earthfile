@@ -807,6 +807,7 @@ check-rust:
     ENV CARGO_INCREMENTAL=0
 
     # ensure runtime benchmark feature enable to check they compile.
+    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
     RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1  cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
 
     ENV SKIP_WASM_BUILD=1
