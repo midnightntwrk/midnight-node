@@ -160,7 +160,6 @@ fn advance_block_and_reset_events() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn asset_create_should_emit_valid_event_if_registered() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -219,7 +218,6 @@ fn asset_create_should_emit_valid_event_if_registered() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn asset_destroy_should_emit_valid_event_if_registered() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -288,7 +286,6 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn process_tokens_should_not_emit_valid_utxo_event_if_not_registered() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -325,7 +322,6 @@ fn process_tokens_should_not_emit_valid_utxo_event_if_not_registered() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn process_tokens_inherent_should_update_storage_correctly() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -373,7 +369,6 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn removing_duplicate_registration_results_in_valid_registration() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1226,7 +1221,6 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn duplicate_inherent_protection_works() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1272,7 +1266,6 @@ fn duplicate_inherent_protection_works() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1342,7 +1335,6 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn asset_spend_without_create_should_not_emit_destroy_event() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1403,7 +1395,6 @@ fn establish_position(block_number: u32, tx_index_in_block: u32) {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_regression_lower_block_number_is_rejected() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1419,7 +1410,6 @@ fn position_regression_lower_block_number_is_rejected() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_equal_position_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1432,7 +1422,6 @@ fn position_equal_position_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_regression_same_block_lower_tx_index_is_rejected() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1448,7 +1437,6 @@ fn position_regression_same_block_lower_tx_index_is_rejected() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_same_block_higher_tx_index_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1461,7 +1449,6 @@ fn position_same_block_higher_tx_index_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_forward_jump_within_window_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1474,7 +1461,6 @@ fn position_forward_jump_within_window_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_excessive_jump_exceeding_window_is_accepted_with_warning() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1488,7 +1474,6 @@ fn position_excessive_jump_exceeding_window_is_accepted_with_warning() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_normal_sequential_advancement_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1501,7 +1486,6 @@ fn position_normal_sequential_advancement_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_advancement_from_default_zero_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1513,7 +1497,6 @@ fn position_advancement_from_default_zero_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_jump_exactly_at_window_boundary_is_accepted() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1527,7 +1510,6 @@ fn position_jump_exactly_at_window_boundary_is_accepted() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_guard_works_with_utxos_present() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -1564,7 +1546,6 @@ fn position_guard_works_with_utxos_present() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn position_guards_hold_across_multiple_advances() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();

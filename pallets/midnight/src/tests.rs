@@ -56,7 +56,6 @@ fn process_block(block_number: u64, block_context: BlockContext) {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_send_mn_transaction() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
@@ -73,7 +72,6 @@ fn test_send_mn_transaction() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_send_mn_transaction_malformed_tx() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -92,7 +90,6 @@ fn test_send_mn_transaction_malformed_tx() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_send_mn_transaction_invalid_tx() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
@@ -111,7 +108,6 @@ fn test_send_mn_transaction_invalid_tx() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_get_contract_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx_deploy, block_context_deploy) =
@@ -144,7 +140,6 @@ fn test_get_contract_state() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_validation_works() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
@@ -161,7 +156,6 @@ fn test_validation_works() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_validation_fails() {
 	let call = MidnightCall::send_mn_transaction { midnight_tx: vec![1, 2, 3] };
 
@@ -182,7 +176,6 @@ fn test_validation_fails() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_accepts_valid_transaction() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
@@ -197,7 +190,6 @@ fn test_pre_dispatch_accepts_valid_transaction() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_rejects_contract_not_present() {
 	// STORE_TX requires a deployed contract, so without DEPLOY_TX it will fail
 	// This tests the DDoS mitigation: transactions that would fail the guaranteed
@@ -220,7 +212,6 @@ fn test_pre_dispatch_rejects_contract_not_present() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_rejects_malformed_transaction() {
 	let call = MidnightCall::send_mn_transaction { midnight_tx: vec![1, 2, 3] };
 
@@ -240,7 +231,6 @@ fn test_pre_dispatch_rejects_malformed_transaction() {
 /// PR367-TC-0003-02: ReplayProtection Rejection
 /// Verify that a replayed transaction is rejected at `pre_dispatch`.
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_rejects_replay_attack() {
 	mock::new_test_ext().execute_with(|| {
 		// Set up ledger state and deploy contract
@@ -274,7 +264,6 @@ fn test_pre_dispatch_rejects_replay_attack() {
 /// PR367-TC-0003-05: Validation Does Not Modify State
 /// Verify that `validate_guaranteed_execution` (via pre_dispatch) is read-only.
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_validation_does_not_modify_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
@@ -304,7 +293,6 @@ fn test_pre_dispatch_validation_does_not_modify_state() {
 
 /// PR367-TC-0003-05 (variant): Verify validation doesn't modify state even for failing validation
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 	mock::new_test_ext().execute_with(|| {
 		// STORE_TX will fail (no contract deployed) but should not modify state
@@ -368,7 +356,6 @@ fn test_get_mn_transaction_fee() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_get_ledger_parameters() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -414,7 +401,6 @@ fn test_get_zswap_state_root() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_get_ledger_state_root() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -427,7 +413,6 @@ fn test_get_ledger_state_root() {
 }
 
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -442,7 +427,6 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 #[cfg(feature = "experimental")]
 #[ignore = "TODO UNSHIELDED - fix when Claim Mint is properly handled for Unshielded"]
 #[test]
-#[cfg_attr(target_arch = "aarch64", ignore = "cranelift: crc32 intrinsic unsupported on aarch64")]
 fn test_send_claim_mint() {
 	/*
 	test commented out because it references block_rewards which no longer exist
