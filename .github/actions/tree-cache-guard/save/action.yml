@@ -1,0 +1,16 @@
+name: Tree Cache Guard Save
+
+inputs:
+  key:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: mkdir -p /tmp/ci-sentinel && touch /tmp/ci-sentinel/ok
+
+    - uses: actions/cache/save@v4
+      with:
+        key: ${{ inputs.key }}
+        path: /tmp/ci-sentinel

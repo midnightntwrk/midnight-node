@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
       pull-requests: write
       security-events: write
@@ -32,7 +32,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  #v6.0.2
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - name: Scan code
+        if: steps.guard.outputs.hit != 'true'
         uses: midnightntwrk/upload-sarif-github-action@9856edc26a43e2d0cc3b391888bce2295377bdd7
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

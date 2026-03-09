@@ -282,21 +282,27 @@ jobs:
   check-unused-deps:
     permissions:
       contents: read
+      actions: write
     name: Check Unused Dependencies
     needs: [run]
     if: needs.run.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
       - name: Check Deps
+        if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
@@ -304,27 +310,38 @@ jobs:
 
           . ./.envrc && earthly +check-deps
 
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
   rebuild-genesis:
     name: Check Genesis Rebuild
     needs: [ run ]
     permissions:
       id-token: write
       contents: read
+      actions: write
 
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
       - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
@@ -332,6 +349,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Generate dummy genesis seeds
+        if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p secrets
           for cfg in res/cfg/*.toml; do
@@ -340,6 +358,7 @@ jobs:
           done
 
       - name: Check Genesis Rebuild
+        if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
@@ -349,6 +368,11 @@ jobs:
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   hardfork-e2e:
     permissions:
@@ -391,47 +415,65 @@ jobs:
   test-pallet-fixtures:
     permissions:
       contents: read
+      actions: write
     name: Test Pallet Fixtures
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
       - name: Free disk space
+        if: steps.guard.outputs.hit != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run pallet fixture tests
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --strict +test-pallet-fixtures
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     permissions:
       contents: read
+      actions: write
     name: Test Toolkit
     needs: [run]
     runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
       - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
@@ -439,167 +481,248 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Free disk space
+        if: steps.guard.outputs.hit != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run toolkit tests
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly -P --strict \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +test-toolkit
 
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
   toolkit-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit E2E
     needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   toolkit-update-ledger-parameters-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit Update Ledger Parameters E2E
     needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-update-ledger-parameters-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   toolkit-maintenance-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit Maintenance E2E
     needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-maintenance-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   toolkit-mint-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit Mint E2E
     needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-mint-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   toolkit-tokens-minter-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit Unshielded Token E2E
     needs: [ run ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-tokens-minter-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   metadata-check:
     permissions:
       contents: read
+      actions: write
     name: Metadata Check
     needs: run
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Run metadata check
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --ci -P \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +check-metadata
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   toolkit-contracts-e2e:
     permissions:
       contents: read
+      actions: write
     name: Toolkit Contracts E2E
     needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-contracts-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   startup-dev-e2e:
     permissions:
       contents: read
+      actions: write
     name: Startup E2E in dev mode
     needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: startup-dev-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   genesis-undeployed-e2e:
     permissions:
       contents: read
+      actions: write
     name: Genesis Wallets E2E for Undeployed network
     needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
       - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
         with:
           just-command: genesis-wallets-undeployed-e2e
           node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   build-indexer-images:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
@@ -730,13 +853,18 @@ jobs:
       pull-requests: write
       packages: read
       contents: write
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - name: Deploy and test against local environment
+        if: steps.guard.outputs.hit != 'true'
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
@@ -749,6 +877,11 @@ jobs:
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   # ephemeral-environment-tests:
   #   if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'

@@ -1,0 +1,42 @@
+name: Tree Cache Guard
+description: Skip job if root tree hash has already passed this check
+
+inputs:
+  check-name:
+    required: false
+    default: ${{ github.job }}
+  matrix-key:
+    required: false
+    default: ''
+
+outputs:
+  hit:
+    value: ${{ steps.check.outputs.hit }}
+  tree:
+    value: ${{ steps.check.outputs.tree }}
+  key:
+    value: ${{ steps.check.outputs.key }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      run: |
+        tree=$(git rev-parse "HEAD^{tree}")
+        workflow_tree=$(git rev-parse "${{ github.workflow_sha }}:.")
+        check="${{ inputs.check-name }}-${{ runner.arch }}"
+        [[ -n "${{ inputs.matrix-key }}" ]] && check="${check}-${{ inputs.matrix-key }}"
+        key="passed-${check}-${tree}-wf${workflow_tree}"
+
+        echo "tree=${tree}"   >> "$GITHUB_OUTPUT"
+        echo "key=${key}"     >> "$GITHUB_OUTPUT"
+
+        result=$(gh cache list \
+          --repo "$GITHUB_REPOSITORY" \
+          --key  "${key}" \
+          --json id --jq 'length')
+        [[ $result -gt 0 ]] && echo "hit=true" >> "$GITHUB_OUTPUT" \
+                             || echo "hit=false" >> "$GITHUB_OUTPUT"
+      env:
+        GH_TOKEN: ${{ github.token }}
