@@ -708,6 +708,8 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
+    SAVE ARTIFACT /compactc-bin
+
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
@@ -1232,8 +1234,8 @@ toolkit-image:
         node --version && npm --version && \
         npm install -g npm@11.11.0 && npm --version
 
-    # Copy compactc from CI image so run-compactc can find it
-    COPY +node-ci-image-single-platform/compactc-bin /compactc-bin
+    # Copy compactc from pre-built CI image (via prep-no-copy)
+    COPY +prep-no-copy/compactc-bin /compactc-bin
     ENV COMPACT_HOME=/compactc-bin
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)

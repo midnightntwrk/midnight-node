@@ -75,12 +75,12 @@ impl TryFrom<SubstrateCfg> for RunCmd {
 			);
 		}
 		if let Some(filepath) = value.node_key_file {
-			let node_key =
-				std::fs::read_to_string(&filepath).map(|s| s.trim().to_string()).map_err(|e| {
-					sc_cli::Error::Input(format!(
-						"error when reading node key file at {filepath}. Error: {e}"
-					))
-				})?;
+			let node_key = super::validated_file::safe_read_to_string(
+				&filepath,
+				super::validated_file::MAX_GENESIS_FILE_SIZE,
+			)
+			.map(|s| s.trim().to_string())
+			.map_err(sc_cli::Error::Input)?;
 			run_cmd.network_params.node_key_params.node_key = Some(node_key);
 		}
 		if run_cmd.shared_params.chain.is_none() && value.chain.is_some() {

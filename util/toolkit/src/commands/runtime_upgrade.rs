@@ -42,11 +42,11 @@ pub struct RuntimeUpgradeArgs {
 	pub wasm_file: String,
 
 	/// Council member private keys (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required = true)]
 	pub council_members: Vec<String>,
 
 	/// Technical Committee member private keys (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required = true)]
 	pub technical_committee_members: Vec<String>,
 
 	/// RPC URL of the node
