@@ -168,7 +168,7 @@ pub async fn execute(
 			let input_zswap_state = if args.circuit_call.input_zswap_state.is_some() {
 				args.circuit_call.input_zswap_state.clone()
 			} else if let Some(wallet_seed) = args.wallet_seed {
-                log::info!("getting input zswap...");
+				log::info!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
 					args.source.clone(),
 					wallet_seed,
