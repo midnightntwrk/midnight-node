@@ -43,11 +43,17 @@ fn generate_chainspec(image: &str, tag: &str) -> String {
 async fn run_cli(args: &[&str]) {
 	let full_args: Vec<&str> =
 		std::iter::once("midnight-node-toolkit").chain(args.iter().copied()).collect();
+	eprintln!("[hardfork_e2e] running CLI: {full_args:?}");
 	let cli = Cli::parse_from(full_args);
-	run_command(cli.command).await.expect("CLI command failed");
+	if let Err(e) = run_command(cli.command).await {
+		eprintln!("[hardfork_e2e] CLI command failed: {e}");
+		eprintln!("[hardfork_e2e] error debug: {e:?}");
+		panic!("CLI command failed: {e}");
+	}
+	eprintln!("[hardfork_e2e] CLI command succeeded");
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn hardfork_single_tx() {
 	// 1. Generate chain-spec from fork-from node
 	let (old_name, old_tag) = test_image("midnight-node-fork-from");
