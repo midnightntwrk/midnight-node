@@ -57,23 +57,17 @@ runs:
       with:
         tool: just
 
-    - name: Clone midnight-reserve-contracts
-      run: |
-        echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
-        # Pin to a known-good commit to avoid breaking changes in the contracts repo.
-        # To update: set CONTRACTS_REF to the new commit SHA from midnight-reserve-contracts main.
-        CONTRACTS_REF="b4aa876c040263ce94c65fbcfcff7f3213ffd29f"
-        git init "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
-        cd "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
-        git remote add origin "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git"
-        git fetch --depth 1 origin "$CONTRACTS_REF"
-        git checkout FETCH_HEAD
-        CONTRACTS_PATH="$(realpath "${GITHUB_WORKSPACE}/../midnight-reserve-contracts")"
-        echo "✓ Cloned to ${CONTRACTS_PATH} at ${CONTRACTS_REF}"
-        echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${CONTRACTS_PATH}" >> $GITHUB_ENV
+    - name: Checkout midnight-reserve-contracts
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      with:
+        repository: midnightntwrk/midnight-reserve-contracts
+        ref: b4aa876c040263ce94c65fbcfcff7f3213ffd29f
+        token: ${{ inputs.ghcr-password }}
+        path: midnight-reserve-contracts
+
+    - name: Set contracts path
+      run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
       shell: bash
-      env:
-        GHCR_PASSWORD: ${{ inputs.ghcr-password }}
 
     - name: Deploy local environment
       run: |
