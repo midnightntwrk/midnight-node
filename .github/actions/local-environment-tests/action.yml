@@ -60,9 +60,16 @@ runs:
     - name: Clone midnight-reserve-contracts
       run: |
         echo "📦 Cloning midnight-reserve-contracts for governance contract compilation..."
-        git clone --depth 1 "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git" "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
+        # Pin to a known-good commit to avoid breaking changes in the contracts repo.
+        # To update: set CONTRACTS_REF to the new commit SHA from midnight-reserve-contracts main.
+        CONTRACTS_REF="b4aa876c040263ce94c65fbcfcff7f3213ffd29f"
+        git init "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
+        cd "${GITHUB_WORKSPACE}/../midnight-reserve-contracts"
+        git remote add origin "https://x-access-token:${GHCR_PASSWORD}@github.com/midnightntwrk/midnight-reserve-contracts.git"
+        git fetch --depth 1 origin "$CONTRACTS_REF"
+        git checkout FETCH_HEAD
         CONTRACTS_PATH="$(realpath "${GITHUB_WORKSPACE}/../midnight-reserve-contracts")"
-        echo "✓ Cloned to ${CONTRACTS_PATH}"
+        echo "✓ Cloned to ${CONTRACTS_PATH} at ${CONTRACTS_REF}"
         echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${CONTRACTS_PATH}" >> $GITHUB_ENV
       shell: bash
       env:
