@@ -3,18 +3,23 @@ description: Skip job if root tree hash has already passed this check
 
 inputs:
   check-name:
+    description: Identifier for this check (defaults to job name)
     required: false
     default: ${{ github.job }}
   matrix-key:
+    description: Extra key suffix for matrix jobs
     required: false
     default: ''
 
 outputs:
   hit:
+    description: Whether the cache was hit (true/false)
     value: ${{ steps.check.outputs.hit }}
   tree:
+    description: Root tree hash of HEAD
     value: ${{ steps.check.outputs.tree }}
   key:
+    description: Cache key used for lookup and save
     value: ${{ steps.check.outputs.key }}
 
 runs:
