@@ -80,6 +80,9 @@ pub struct CircuitArgs {
 	/// Input file containing the private circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	input_private_state: RelativePath,
+	/// A file path of where the generated 'ZswapLocalState' is stored.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub input_zswap_state: Option<RelativePath>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,

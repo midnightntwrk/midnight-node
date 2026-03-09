@@ -27,10 +27,11 @@ call_private_state_filename="call_state.json"
 mint_shielded_intent_filename="mint_shielded.bin"
 mint_unshielded_intent_filename="mint_unshielded.bin"
 send_unshielded_intent_filename="send_unshielded.bin"
-mint_send_shielded_intent_filename="mint_send_shielded.bin"
+mint_and_send_shielded_intent_filename="mint_and_send_shielded.bin"
 mint_tx_filename="mint_tx.mn"
 mint_shielded_zswap_filename="mint_zswap_shielded.json"
 mint_unshielded_zswap_filename="mint_zswap_unshielded.json"
+mint_and_send_shielded_zswap_filename="mint_and_send_zswap_unshielded.json"
 
 initial_private_state_filename="initial_state.json"
 
@@ -105,48 +106,8 @@ shielded_destination=$(
       --seed 0000000000000000000000000000000000000000000000000000000000000001 \
       --shielded
 )
-#
-#echo ""
-#echo "##### Generate mint shielded intent"
-#echo ""
-#
-#"$toolkit_bin" \
-#    generate-intent circuit -c "$config_file" \
-#    --toolkit-js-path "$PWD/util/toolkit-js" \
-#    --coin-public "$coin_public" \
-#    --input-onchain-state "$outdir/$state_filename" \
-#    --input-private-state "$outdir/$initial_private_state_filename" \
-#    --contract-address $contract_address \
-#    --output-intent "$outdir/$mint_shielded_intent_filename" \
-#    --output-private-state "$outdir/temp_shielded_private_state.json" \
-#    --output-zswap-state "$outdir/$mint_shielded_zswap_filename" \
-#    mintShieldedToUserTest \
-#    "$domain_sep" \
-#    1000 \
-#    "{ bytes: '$coin_public' }"
-#
-#echo ""
-#echo "##### Generate mint unshielded intent"
-#echo ""
-#
-#"$toolkit_bin" \
-#    generate-intent circuit -c "$config_file" \
-#    --toolkit-js-path "$PWD/util/toolkit-js" \
-#    --coin-public "$coin_public" \
-#    --input-onchain-state "$outdir/$state_filename" \
-#    --input-private-state "$outdir/$initial_private_state_filename" \
-#    --contract-address $contract_address \
-#    --output-intent "$outdir/$mint_unshielded_intent_filename" \
-#    --output-private-state "$outdir/temp_unshielded_private_state.json" \
-#    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
-#    mintUnshieldedToSelfTest \
-#    "$domain_sep" \
-#    1000
 
-echo ""
-echo "##### Generate mintAndSendImmediate intent"
-echo ""
-
+echo "Generate intent to mint shielded token"
 "$toolkit_bin" \
     generate-intent circuit -c "$config_file" \
     --toolkit-js-path "$PWD/util/toolkit-js" \
@@ -154,46 +115,80 @@ echo ""
     --input-onchain-state "$outdir/$state_filename" \
     --input-private-state "$outdir/$initial_private_state_filename" \
     --contract-address $contract_address \
-    --output-intent "$outdir/$mint_send_shielded_intent_filename" \
-    --output-private-state "$outdir/temp_mint_send_private_state.json" \
+    --output-intent "$outdir/$mint_shielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_1.mn" \
+    --output-private-state "$outdir/temp_shielded_private_state.json" \
     --output-zswap-state "$outdir/$mint_shielded_zswap_filename" \
+    mintShieldedToSelfTest \
+    "$domain_sep" \
+    1000
+#    mintShieldedToUserTest \
+#    "$domain_sep" \
+#    1000 \
+#    "{ bytes: '$coin_public' }"
+
+echo "Generate intent to mint unshielded token"
+"$toolkit_bin" \
+    generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$PWD/util/toolkit-js" \
+    --coin-public "$coin_public" \
+    --input-onchain-state "$outdir/onchain_state_1.mn" \
+    --input-private-state "$outdir/temp_shielded_private_state.json" \
+    --contract-address $contract_address \
+    --output-intent "$outdir/$mint_unshielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_2.mn" \
+    --output-private-state "$outdir/temp_unshielded_private_state.json" \
+    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
+    mintUnshieldedToSelfTest \
+    "$domain_sep" \
+    1000
+
+echo "Generate intent for the mintAndSendImmediate() circuit call"
+"$toolkit_bin" \
+    generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$PWD/util/toolkit-js" \
+    --coin-public "$coin_public" \
+    --input-onchain-state "$outdir/onchain_state_2.mn" \
+    --input-private-state "$outdir/$initial_private_state_filename" \
+    --input-zswap-state "$outdir/$mint_shielded_zswap_filename" \
+    --contract-address $contract_address \
+    --output-intent "$outdir/$mint_and_send_shielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_3.mn" \
+    --output-private-state "$outdir/temp_mint_send_private_state.json" \
+    --output-zswap-state "$outdir/$mint_and_send_shielded_zswap_filename" \
     mintAndSendImmediate \
     "$domain_sep" \
     2000 \
     1000 \
     "{ bytes: '$coin_public' }"
 
-#echo ""
-#echo "##### Generate send unshielded intent"
-#echo ""
-#
-#"$toolkit_bin" \
-#    generate-intent circuit -c "$config_file" \
-#    --toolkit-js-path "$PWD/util/toolkit-js" \
-#    --coin-public "$coin_public" \
-#    --input-onchain-state "$outdir/$state_filename" \
-#    --input-private-state "$outdir/$initial_private_state_filename" \
-#    --contract-address $contract_address \
-#    --output-intent "$outdir/$send_unshielded_intent_filename" \
-#    --output-private-state "$outdir/temp_unshielded_private_state.json" \
-#    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
-#    sendUnshieldedToUser \
-#    "$token_type" \
-#    "$user_address" \
-#    1000
+echo "Generate intent to send unshielded token"
+"$toolkit_bin" \
+    generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$PWD/util/toolkit-js" \
+    --coin-public "$coin_public" \
+    --input-onchain-state "$outdir/onchain_state_3.mn" \
+    --input-private-state "$outdir/temp_unshielded_private_state.json" \
+    --input-zswap-state "$outdir/$mint_and_send_shielded_zswap_filename" \
+    --contract-address $contract_address \
+    --output-intent "$outdir/$send_unshielded_intent_filename" \
+    --output-private-state "$outdir/temp_send_private_state.json" \
+    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
+    sendUnshieldedToUser \
+    "$token_type" \
+    "$user_address" \
+    1000
 
-echo ""
-echo "##### Generate and send created txs"
-echo ""
+echo "Send created txs"
 "$toolkit_bin" \
     send-intent \
-    --intent-file "$outdir/$mint_send_shielded_intent_filename" \
+    --intent-file "$outdir/$mint_shielded_intent_filename" \
+    --intent-file "$outdir/$mint_unshielded_intent_filename" \
+    --intent-file "$outdir/$mint_and_send_shielded_intent_filename" \
+    --intent-file "$outdir/$send_unshielded_intent_filename" \
     --compiled-contract-dir "$compiled_contract" \
-    --zswap-state-file "$outdir/$mint_shielded_zswap_filename" \
-    --shielded-destination "$shielded_destination"
-#    --intent-file "$outdir/$mint_unshielded_intent_filename" \
-#    --intent-file "$outdir/$send_unshielded_intent_filename" \
-#    --intent-file "$outdir/$mint_shielded_intent_filename" \
+    --shielded-destination "$shielded_destination" \
+    --zswap-state-file "$outdir/$mint_unshielded_zswap_filename"
 
 show_wallet_output=$(
   "$toolkit_bin" \
