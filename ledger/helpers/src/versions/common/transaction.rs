@@ -34,6 +34,7 @@ pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
 type DustSpendStates<D> = HashMap<WalletSeed, Sp<DustLocalState<D>, D>>;
+type GatheredDustSpends<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendStates<D>);
 
 pub trait FromContext<D: DB + Clone> {
 	fn new_from_context(
@@ -332,7 +333,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		&self,
 		required_amount: u128,
 		ctime: Timestamp,
-	) -> Result<(Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendStates<D>)> {
+	) -> Result<GatheredDustSpends<D>> {
 		let mut spends = vec![];
 		let mut updated_states = HashMap::new();
 		let mut remaining = required_amount;
