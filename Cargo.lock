@@ -7296,7 +7296,7 @@ dependencies = [
  "midnight-serialize 1.0.0-hard-fork-test",
  "pastey",
  "rand 0.8.5",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -7328,7 +7328,7 @@ dependencies = [
  "midnight-serialize 1.0.0",
  "pastey",
  "rand 0.8.5",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -7517,7 +7517,7 @@ dependencies = [
  "midnight-zswap 7.0.3-rc.1",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -7551,7 +7551,7 @@ dependencies = [
  "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=hard-fork-test-storage-core-1.1.0-rc.1)",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -7585,7 +7585,7 @@ dependencies = [
  "midnight-zswap 8.0.0-rc.4 (git+https://github.com/midnightntwrk/midnight-ledger?tag=storage-core-1.1.0-rc.1)",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "sha2 0.10.9",
  "tokio",
@@ -7673,7 +7673,7 @@ dependencies = [
  "partner-chains-mock-data-sources",
  "partner-chains-node-commands",
  "prost 0.13.5",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "sc-basic-authorship",
  "sc-chain-spec",
  "sc-cli",
@@ -12820,13 +12820,14 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.22"
+version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.11",
@@ -19840,7 +19841,7 @@ dependencies = [
  "pallas-primitives 0.31.0",
  "pallas-traverse 0.31.0",
  "rand_os",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "serde-wasm-bindgen 0.6.5",
  "serde_json",
@@ -19914,7 +19915,7 @@ dependencies = [
  "futures",
  "hex",
  "maestro-rust-sdk",
- "reqwest 0.12.22",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "uplc",
