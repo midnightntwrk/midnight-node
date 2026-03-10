@@ -29,8 +29,17 @@ use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
 
+/// Midnight core RPC API.
+///
+/// Provides methods for querying contract state, ledger state roots, and version
+/// information from the Midnight privacy ledger.
 #[rpc(client, server)]
 pub trait MidnightApi<BlockHash> {
+	/// Returns the state of a deployed contract.
+	///
+	/// The contract is identified by its hex-encoded address. The returned state is
+	/// also hex-encoded. Queries run against the best block unless `at` specifies
+	/// a historical block hash.
 	#[method(name = "midnight_contractState")]
 	fn get_state(
 		&self,
@@ -38,15 +47,28 @@ pub trait MidnightApi<BlockHash> {
 		at: Option<BlockHash>,
 	) -> Result<String, StateRpcError>;
 
+	/// Returns the Merkle root of the zswap (shielded transaction) state tree.
+	///
+	/// The root is returned as raw bytes. If `at` is `None`, the best block is used.
 	#[method(name = "midnight_zswapStateRoot")]
 	fn get_zswap_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
 
+	/// Returns the Merkle root of the overall ledger state.
+	///
+	/// The root is returned as raw bytes. If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerStateRoot")]
 	fn get_ledger_state_root(&self, at: Option<BlockHash>) -> Result<Vec<u8>, StateRpcError>;
 
+	/// Returns the RPC API version(s) supported by this node.
+	///
+	/// The returned array currently contains a single element (`[2]`).
+	/// This is the RPC protocol version, distinct from the runtime API version.
 	#[method(name = "midnight_apiVersions")]
 	fn get_supported_api_versions(&self) -> RpcResult<Vec<u32>>;
 
+	/// Returns the ledger implementation version string.
+	///
+	/// If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
 }
