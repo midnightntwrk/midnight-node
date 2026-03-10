@@ -224,17 +224,16 @@ impl BuildTxs for CustomContractBuilder {
 			Ok(outputs)
 		};
 
-		if !guaranteed_effects.is_empty() || !input_utxos.is_empty() {
-			guaranteed_unshielded_offer_info = Some(UnshieldedOfferInfo {
-				inputs: input_utxos,
-				outputs: find_outputs(guaranteed_effects)?,
-			});
+		let guaranteed_outputs = find_outputs(guaranteed_effects)?;
+		if !guaranteed_outputs.is_empty() || !input_utxos.is_empty() {
+			guaranteed_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: input_utxos, outputs: guaranteed_outputs });
 		}
-		if !fallible_effects.is_empty() {
-			fallible_unshielded_offer_info = Some(UnshieldedOfferInfo {
-				inputs: vec![],
-				outputs: find_outputs(fallible_effects)?,
-			});
+
+		let fallible_outputs = find_outputs(fallible_effects)?;
+		if !fallible_outputs.is_empty() {
+			fallible_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: vec![], outputs: fallible_outputs });
 		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
