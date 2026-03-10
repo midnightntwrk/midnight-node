@@ -700,10 +700,7 @@ prep-no-copy:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
     FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VER}-$NATIVEARCH
 
-    # Used to add repository for nodejs
-    RUN microdnf -y update && \
-        microdnf -y install ca-certificates && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    # ca-certificates and curl-minimal already present in the CI base image
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
@@ -1215,9 +1212,8 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    # Install dependencies for Node.js and update vulnerable system packages
-    RUN microdnf -y install tar gzip xz && \
-        microdnf -y update libxml2 python3-pip python3-pip-wheel python3-setuptools && \
+    # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
