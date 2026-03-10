@@ -113,10 +113,10 @@ pub fn build_openrpc_document(custom_methods: &[&str]) -> Value {
 	let mut methods: Vec<Value> = Vec::new();
 
 	for &name in CUSTOM_METHOD_NAMES {
-		if custom_methods.contains(&name) {
-			if let Some(entry) = build_custom_method(name) {
-				methods.push(entry);
-			}
+		if custom_methods.contains(&name)
+			&& let Some(entry) = build_custom_method(name)
+		{
+			methods.push(entry);
 		}
 	}
 
@@ -1014,5 +1014,87 @@ mod tests {
 		std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
 		std::fs::write(&out_path, json).unwrap();
 		eprintln!("Wrote {}", out_path.display());
+	}
+
+	/// Integration test: connects to a running node, calls both `rpc_methods`
+	/// and `rpc.discover`, and verifies that every method reported by the node
+	/// appears in the OpenRPC document. Catches cases where a method is
+	/// registered in `create_full()` or `gen_rpc_module()` but not added to
+	/// the OpenRPC metadata.
+	///
+	/// Requires a running node on `RPC_URL` (default `http://localhost:9944`).
+	///
+	/// ```sh
+	/// cargo test -p midnight-node --lib openrpc::tests::rpc_discover_matches_rpc_methods -- --ignored --nocapture
+	/// ```
+	#[test]
+	#[ignore]
+	fn rpc_discover_matches_rpc_methods() {
+		let rpc_url =
+			std::env::var("RPC_URL").unwrap_or_else(|_| "http://localhost:9944".to_string());
+
+		let call = |method: &str| -> Value {
+			let body = serde_json::json!({
+				"jsonrpc": "2.0",
+				"method": method,
+				"params": [],
+				"id": 1
+			});
+			let client = reqwest::blocking::Client::new();
+			let resp = client
+				.post(&rpc_url)
+				.header("Content-Type", "application/json")
+				.body(body.to_string())
+				.send()
+				.unwrap_or_else(|e| {
+					panic!(
+						"Failed to connect to node at {rpc_url}. \
+						 Is a node running? Error: {e}"
+					)
+				});
+			let json: Value = resp.json().unwrap();
+			assert!(json.get("error").is_none(), "RPC error from {method}: {:?}", json["error"]);
+			json["result"].clone()
+		};
+
+		let rpc_methods_result = call("rpc_methods");
+		let live_methods: Vec<&str> = rpc_methods_result["methods"]
+			.as_array()
+			.expect("rpc_methods.result.methods should be an array")
+			.iter()
+			.map(|v| v.as_str().unwrap())
+			.collect();
+
+		let discover_result = call("rpc.discover");
+		let openrpc_methods: Vec<&str> = discover_result["methods"]
+			.as_array()
+			.expect("rpc.discover.result.methods should be an array")
+			.iter()
+			.map(|m| m["name"].as_str().unwrap())
+			.collect();
+
+		let openrpc_set: std::collections::HashSet<&str> =
+			openrpc_methods.iter().copied().collect();
+
+		let mut missing: Vec<&str> = live_methods
+			.iter()
+			.filter(|m| !openrpc_set.contains(*m) && **m != "rpc_methods" && **m != "rpc.discover")
+			.copied()
+			.collect();
+		missing.sort();
+
+		assert!(
+			missing.is_empty(),
+			"Methods registered on the node but missing from rpc.discover:\n  {}\n\n\
+			 Add these to CUSTOM_METHOD_NAMES or SUBSTRATE_METHOD_NAMES in openrpc.rs \
+			 and create corresponding metadata entries.",
+			missing.join("\n  ")
+		);
+
+		eprintln!(
+			"OK: all {} live methods are present in the OpenRPC document ({} methods in document)",
+			live_methods.len(),
+			openrpc_methods.len()
+		);
 	}
 }
