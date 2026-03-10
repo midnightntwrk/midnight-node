@@ -203,7 +203,6 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-frame-storage-access-test-runtime = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-io = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -371,4 +370,4 @@ midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger
 midnight-storage-macros = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.1.0-rc.1" }
 
 [workspace.metadata.cargo-shear]
-ignored = ["frame-storage-access-test-runtime"]
+ignored = []
