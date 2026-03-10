@@ -968,4 +968,51 @@ mod tests {
 			assert!(seen.insert(name), "Duplicate method name: {}", name);
 		}
 	}
+
+	/// Sync test: verifies that `docs/openrpc.json` matches the output of
+	/// `build_openrpc_document()`. If this test fails, regenerate the static
+	/// file by running:
+	///
+	/// ```sh
+	/// cargo test -p midnight-node --lib openrpc::tests::generate_static_openrpc_json -- --ignored
+	/// ```
+	#[test]
+	fn static_openrpc_json_in_sync() {
+		let doc = build_openrpc_document(&all_custom_method_names());
+		let expected = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+
+		let static_path =
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/openrpc.json");
+		if !static_path.exists() {
+			panic!(
+				"docs/openrpc.json does not exist. Generate it with:\n\
+				 cargo test -p midnight-node --lib \
+				 openrpc::tests::generate_static_openrpc_json -- --ignored"
+			);
+		}
+		let actual = std::fs::read_to_string(&static_path).unwrap();
+		assert_eq!(
+			expected, actual,
+			"docs/openrpc.json is out of date. Regenerate with:\n\
+			 cargo test -p midnight-node --lib \
+			 openrpc::tests::generate_static_openrpc_json -- --ignored"
+		);
+	}
+
+	/// Helper: (re)generates `docs/openrpc.json`. Run with `--ignored`:
+	///
+	/// ```sh
+	/// cargo test -p midnight-node --lib openrpc::tests::generate_static_openrpc_json -- --ignored
+	/// ```
+	#[test]
+	#[ignore]
+	fn generate_static_openrpc_json() {
+		let doc = build_openrpc_document(&all_custom_method_names());
+		let json = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+		let out_path =
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/openrpc.json");
+		std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+		std::fs::write(&out_path, json).unwrap();
+		eprintln!("Wrote {}", out_path.display());
+	}
 }
