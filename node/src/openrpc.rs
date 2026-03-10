@@ -22,7 +22,7 @@ use schemars::schema_for;
 use serde_json::{Value, json};
 
 /// Expected set of custom RPC method names (from all midnight-node + partner-chains traits).
-pub const CUSTOM_METHOD_NAMES: &[&str] = &[
+pub(crate) const CUSTOM_METHOD_NAMES: &[&str] = &[
 	"midnight_contractState",
 	"midnight_zswapStateRoot",
 	"midnight_ledgerStateRoot",
@@ -237,7 +237,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				"Terms and conditions, or null",
 				json!({
 					"oneOf": [
-						schema_ref_inline("TermsAndConditionsRpcResponse"),
+						schema_ref("TermsAndConditionsRpcResponse"),
 						{"type": "null"}
 					]
 				}),
@@ -291,7 +291,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				"Array of peer reputation info",
 				json!({
 					"type": "array",
-					"items": schema_ref_inline("PeerReputationInfo")
+					"items": schema_ref("PeerReputationInfo")
 				}),
 			),
 			&[],
@@ -329,7 +329,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				json!({
 					"type": "object",
 					"properties": {
-						"genesis_utxo": schema_ref_inline("UtxoId")
+						"genesis_utxo": schema_ref("UtxoId")
 					},
 					"required": ["genesis_utxo"]
 				}),
@@ -377,7 +377,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				"Array of registration entries",
 				json!({
 					"type": "array",
-					"items": schema_ref_inline("CandidateRegistrationEntry")
+					"items": schema_ref("CandidateRegistrationEntry")
 				}),
 			),
 			&[],
@@ -421,7 +421,7 @@ fn build_substrate_stub(name: &str) -> Value {
 			"name": "result",
 			"schema": {}
 		},
-		"description": format!("Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."),
+		"description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
 	});
 
 	if is_substrate_unsafe(name) {
@@ -527,21 +527,21 @@ fn build_component_schemas() -> Value {
 	let tc_schema = serde_json::to_value(schema_for!(
 		pallet_system_parameters_rpc::TermsAndConditionsRpcResponse
 	))
-	.unwrap_or_default();
+	.expect("TermsAndConditionsRpcResponse schema must serialize to valid JSON");
 	let dp_schema =
 		serde_json::to_value(schema_for!(pallet_system_parameters_rpc::DParameterRpcResponse))
-			.unwrap_or_default();
+			.expect("DParameterRpcResponse schema must serialize to valid JSON");
 	let ap_schema = serde_json::to_value(schema_for!(
 		pallet_system_parameters_rpc::AriadneParametersRpcResponse
 	))
-	.unwrap_or_default();
-	let operation_schema =
-		serde_json::to_value(schema_for!(pallet_midnight_rpc::Operation)).unwrap_or_default();
+	.expect("AriadneParametersRpcResponse schema must serialize to valid JSON");
+	let operation_schema = serde_json::to_value(schema_for!(pallet_midnight_rpc::Operation))
+		.expect("Operation schema must serialize to valid JSON");
 	let midnight_tx_schema =
 		serde_json::to_value(schema_for!(pallet_midnight_rpc::MidnightRpcTransaction))
-			.unwrap_or_default();
-	let rpc_tx_schema =
-		serde_json::to_value(schema_for!(pallet_midnight_rpc::RpcTransaction)).unwrap_or_default();
+			.expect("MidnightRpcTransaction schema must serialize to valid JSON");
+	let rpc_tx_schema = serde_json::to_value(schema_for!(pallet_midnight_rpc::RpcTransaction))
+		.expect("RpcTransaction schema must serialize to valid JSON");
 
 	json!({
 		"BlockHash": {
@@ -653,9 +653,13 @@ fn build_component_schemas() -> Value {
 					"oneOf": [{ "type": "integer" }, { "type": "null" }]
 				},
 				"isValid": { "type": "boolean" },
-				"invalidReasons": {
-					"description": "Present only when isValid is false"
-				}
+			"invalidReasons": {
+				"description": "Present only when isValid is false",
+				"oneOf": [
+					{ "type": "array", "items": { "type": "string" } },
+					{ "type": "null" }
+				]
+			}
 			},
 			"required": [
 				"sidechainPubKey", "sidechainAccountId", "mainchainPubKey",
@@ -757,10 +761,6 @@ fn method_entry(
 }
 
 fn schema_ref(name: &str) -> Value {
-	json!({ "$ref": format!("#/components/schemas/{}", name) })
-}
-
-fn schema_ref_inline(name: &str) -> Value {
 	json!({ "$ref": format!("#/components/schemas/{}", name) })
 }
 
