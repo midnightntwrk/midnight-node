@@ -1,12 +1,3 @@
-# Stage 1: Build libfaketime (keeps gcc out of the runtime image)
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de AS libfaketime-builder
-# renovate: datasource=github-releases depName=wolfcw/libfaketime
-ARG LIBFAKETIME_VERSION=v0.9.10
-RUN microdnf -y install gcc-11.5.0 make-4.3 git-2.50.1 && \
-    git clone --depth 1 --branch ${LIBFAKETIME_VERSION} https://github.com/wolfcw/libfaketime.git && \
-    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make -C /libfaketime/src install
-
-# Stage 2: Runtime image
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
 
 ENV BASE_PATH=/node/chain
@@ -16,6 +7,9 @@ ENV RUST_BACKTRACE=1
 # curl to enable compose healthchecks
 # Package versions are tied to the base image — update when bumping the base digest
 RUN microdnf -y install \
+    ca-certificates-2025.2.76 \
+    curl-minimal-8.15.0 \
+    tar-1.34 \
     procps-ng-3.3.17 \
     strace-6.12 \
     gdb-16.3 \
@@ -28,9 +22,6 @@ RUN microdnf -y install \
     mv /tmp/libbytehound.so /usr/lib/libbytehound.so && \
     rm -f /tmp/bytehound.tgz && \
     microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-# Copy pre-built libfaketime from builder stage
-COPY --from=libfaketime-builder /usr/local/lib/faketime/ /usr/local/lib/faketime/
 
 COPY .envrc ./bin/.envrc
 COPY res/ ./res/

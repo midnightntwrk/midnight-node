@@ -3,6 +3,8 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836
 # curl to enable compose healthchecks
 # Package versions are tied to the base image — update when bumping the base digest
 RUN microdnf -y install \
+  ca-certificates-2025.2.76 \
+  curl-minimal-8.15.0 \
   procps-ng-3.3.17 \
   strace-6.12 \
   gdb-16.3 \
