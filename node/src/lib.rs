@@ -20,6 +20,8 @@ pub mod chain_spec;
 pub mod cli;
 pub mod command;
 pub mod extensions;
+#[cfg(feature = "deploy-filter")]
+mod filtering_pool;
 pub mod genesis;
 pub mod inherent_data;
 pub mod main_chain_follower;

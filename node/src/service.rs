@@ -44,6 +44,8 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
+#[cfg(feature = "deploy-filter")]
+use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool};
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -239,12 +241,17 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
+#[cfg(feature = "deploy-filter")]
+type TransactionPool = FilteringTransactionPool<Block, FullClient>;
+#[cfg(not(feature = "deploy-filter"))]
+type TransactionPool = sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
 	sc_consensus::DefaultImportQueue<Block>,
-	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
+	TransactionPool,
 	(
 		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
@@ -382,6 +389,12 @@ pub fn new_partial(
 	.with_options(config.transaction_pool.clone())
 	.with_prometheus(config.prometheus_registry())
 	.build();
+
+	#[cfg(feature = "deploy-filter")]
+	let transaction_pool = {
+		let metrics = FilteringMetrics::new(config.prometheus_registry());
+		FilteringTransactionPool::new(transaction_pool, client.clone(), metrics, true, true)
+	};
 
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
