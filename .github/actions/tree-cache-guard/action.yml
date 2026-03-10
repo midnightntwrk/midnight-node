@@ -40,8 +40,14 @@ runs:
           exit 0
         fi
 
-        check="${CHECK_NAME}-${RUNNER_ARCH}"
-        [[ -n "$MATRIX_KEY" ]] && check="${check}-${MATRIX_KEY}"
+        workflow="${WORKFLOW_NAME// /-}"
+        job="${CHECK_NAME// /-}"
+        arch="${RUNNER_ARCH// /-}"
+        check="${workflow}-${job}-${arch}"
+        if [[ -n "$MATRIX_KEY" ]]; then
+          matrix="${MATRIX_KEY// /-}"
+          check="${check}-${matrix}"
+        fi
         key="passed-${check}-${tree}"
 
         echo "key=${key}" >> "$GITHUB_OUTPUT"
@@ -59,3 +65,4 @@ runs:
         CHECK_NAME: ${{ inputs.check-name }}
         MATRIX_KEY: ${{ inputs.matrix-key }}
         RUNNER_ARCH: ${{ runner.arch }}
+        WORKFLOW_NAME: ${{ github.workflow }}
