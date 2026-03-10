@@ -918,4 +918,54 @@ mod tests {
 		assert!(errors.contains_key("SystemParametersRpcError"));
 		assert!(errors.contains_key("GetStatusRpcError"));
 	}
+
+	/// CI drift detection: fails if custom methods are added or removed without
+	/// updating CUSTOM_METHOD_NAMES. Hardcodes the expected count so a mismatch
+	/// surfaces immediately in CI output.
+	#[test]
+	fn ci_custom_method_count_drift_detection() {
+		assert_eq!(
+			CUSTOM_METHOD_NAMES.len(),
+			16,
+			"CUSTOM_METHOD_NAMES has {} entries but 16 are expected. \
+			 If you added or removed a custom RPC method, update CUSTOM_METHOD_NAMES \
+			 and the OpenRPC metadata in build_custom_method().",
+			CUSTOM_METHOD_NAMES.len()
+		);
+	}
+
+	/// CI drift detection: fails if standard Substrate methods are added or
+	/// removed without updating SUBSTRATE_METHOD_NAMES.
+	#[test]
+	fn ci_substrate_method_count_drift_detection() {
+		assert_eq!(
+			SUBSTRATE_METHOD_NAMES.len(),
+			52,
+			"SUBSTRATE_METHOD_NAMES has {} entries but 52 are expected. \
+			 If upstream Substrate RPC methods changed, update SUBSTRATE_METHOD_NAMES.",
+			SUBSTRATE_METHOD_NAMES.len()
+		);
+	}
+
+	/// Verify the document is valid JSON and can be round-tripped through
+	/// serde_json without loss.
+	#[test]
+	fn document_round_trips_through_json() {
+		let doc = build_openrpc_document(&all_custom_method_names());
+		let serialized = serde_json::to_string_pretty(&doc).unwrap();
+		let deserialized: Value = serde_json::from_str(&serialized).unwrap();
+		assert_eq!(doc, deserialized);
+	}
+
+	/// Verify no duplicate method names exist in the document.
+	#[test]
+	fn no_duplicate_method_names() {
+		let doc = build_openrpc_document(&all_custom_method_names());
+		let methods = doc["methods"].as_array().unwrap();
+		let names: Vec<&str> = methods.iter().map(|m| m["name"].as_str().unwrap()).collect();
+		let mut seen = std::collections::HashSet::new();
+		for name in &names {
+			assert!(seen.insert(name), "Duplicate method name: {}", name);
+		}
+	}
 }
