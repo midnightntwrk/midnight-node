@@ -1,0 +1,9 @@
+{
+  "reserve_validator_address": "addr_test1wrzr267rxr2sh9pt5ay67vsjjl4ld5tacsny23wtvlcdw5suqkzl5",
+  "asset": {
+    "policy_id": "0x00000000000000000000000000000000000000000000000000000000",
+    "asset_name": "0x"
+  },
+  "utxos": [],
+  "total_amount": 0
+}
