@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
@@ -194,7 +195,7 @@ impl From<StateRpcError> for ErrorObjectOwned {
 	}
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 pub enum Operation {
 	Call { address: String, entry_point: String },
 	Deploy { address: String },
@@ -203,14 +204,15 @@ pub enum Operation {
 	Maintain { address: String },
 	ClaimRewards { value: u128 },
 }
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MidnightRpcTransaction {
 	pub tx_hash: String,
 	pub operations: Vec<Operation>,
 	pub identifiers: Vec<String>,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 pub enum RpcTransaction {
 	MidnightTransaction {
 		#[serde(skip)]
@@ -223,6 +225,8 @@ pub enum RpcTransaction {
 	UnknownTransaction,
 }
 
+/// JSON Schema for this type is provided manually in the OpenRPC document
+/// because the generic `Header` type parameter does not implement `JsonSchema`.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct RpcBlock<Header> {
 	pub header: Header,
