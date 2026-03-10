@@ -25,6 +25,7 @@ pub mod inherent_data;
 pub mod main_chain_follower;
 pub mod memory_monitor;
 pub mod metrics_push;
+pub mod openrpc;
 pub mod partner_chains;
 pub mod payload;
 pub mod peer_info_rpc;
