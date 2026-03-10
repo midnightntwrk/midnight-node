@@ -1,7 +1,5 @@
----
-title: Fix DustWallet spend state propagation
-issue: PM-20016
----
+#toolkit
+# Fix DustWallet spend state propagation
 
 Fix `DustWallet::speculative_spend` to return the updated `DustLocalState`
 alongside spends, and extend `mark_spent` to commit the state atomically
