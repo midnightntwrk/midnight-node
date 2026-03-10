@@ -11,6 +11,8 @@ use super::super::{
 	short_tagged_serialize,
 };
 
+pub type DustSpendResult<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, Sp<DustLocalState<D>, D>);
+
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
@@ -88,8 +90,7 @@ impl<D: DB> DustWallet<D> {
 		amount: u128,
 		ctime: Timestamp,
 		params: &DustParameters,
-	) -> Result<(Vec<DustSpend<ProofPreimageMarker, D>>, Sp<DustLocalState<D>, D>), DustSpendError>
-	{
+	) -> Result<DustSpendResult<D>, DustSpendError> {
 		let Some(original_state) = self.dust_local_state.as_ref() else {
 			return Err(DustSpendError::MissingLocalState);
 		};
