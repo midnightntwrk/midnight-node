@@ -54,13 +54,25 @@ A Postman collection can be derived from the OpenRPC document using [openrpc-to-
 
 ## Drift detection
 
-CI tests verify that the specification stays in sync with the node's registered methods:
+Tests at two levels verify that the specification stays in sync with the node:
 
-- **Method inventory test** — compares method names in the OpenRPC document against `rpc_methods` output from a running node
-- **Static file sync test** — ensures `docs/openrpc.json` matches the document produced by `rpc.discover`
-- **Drift detection tests** — verify custom and standard method counts match expected totals
+**Unit tests (run in CI automatically):**
+- **Method count tests** — verify custom (16) and standard Substrate (52) method counts match expected totals
+- **Static file sync test** — ensures `docs/openrpc.json` matches the document produced by `build_openrpc_document()`
+- **No duplicates test** — verifies no duplicate method names exist in the document
 
-If a method is added or removed without updating the specification, CI will fail.
+**Integration test (requires a running node):**
+- **`rpc_discover_matches_rpc_methods`** — connects to a running node, calls both `rpc_methods` and `rpc.discover`, and verifies every method the node actually serves appears in the OpenRPC document. This catches methods registered in code but missing from the OpenRPC metadata.
+
+```bash
+# Run against a local node on port 9944:
+cargo test -p midnight-node --lib openrpc::tests::rpc_discover_matches_rpc_methods -- --ignored
+
+# Run against a different endpoint:
+RPC_URL=http://node.example.com:9944 cargo test -p midnight-node --lib openrpc::tests::rpc_discover_matches_rpc_methods -- --ignored
+```
+
+If a method is added or removed without updating the specification, the unit tests will fail in CI. The integration test provides an additional runtime verification layer.
 
 ## Regenerating the static file
 
