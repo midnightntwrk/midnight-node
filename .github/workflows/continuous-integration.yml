@@ -13,11 +13,8 @@ on:
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
-permissions:
-  id-token: write
-  contents: write
-  packages: write
-  attestations: write
+# no top level default permissions for security reasons
+permissions: {}
 
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
@@ -87,6 +84,11 @@ jobs:
           path: test-artifacts-amd64/
 
   sbom-scan-node:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Node
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
@@ -97,6 +99,11 @@ jobs:
     secrets: inherit
 
   sbom-scan-toolkit:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     name: SBOM/Scan Toolkit
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
@@ -201,6 +208,8 @@ jobs:
           . ./.envrc && earthly --push +hardfork-test-upgrader-image
 
   check-unused-deps:
+    permissions:
+      contents: read
     name: Check Unused Dependencies
     runs-on: ubuntu-latest
     steps:
@@ -281,6 +290,8 @@ jobs:
             +rebuild-genesis
 
   hardfork-e2e:
+    permissions:
+      contents: read
     name: Hardfork E2E
     needs:
       - run
@@ -303,6 +314,8 @@ jobs:
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ledger-rollback-e2e:
+    permissions:
+      contents: read
     name: Ledger Rollback E2E
     needs: run
     runs-on: ubuntu-latest
@@ -327,6 +340,8 @@ jobs:
 
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
+    permissions:
+      contents: read
     name: Test Pallet Fixtures
     runs-on: ubuntu-latest
     env:
@@ -350,6 +365,8 @@ jobs:
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
+    permissions:
+      contents: read
     name: Test Toolkit
     needs: [run]
     runs-on: ubuntu-latest-16-core-x64
@@ -382,6 +399,8 @@ jobs:
             +test-toolkit
 
   toolkit-e2e:
+    permissions:
+      contents: read
     name: Toolkit E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -402,6 +421,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-update-ledger-parameters-e2e:
+    permissions:
+      contents: read
     name: Toolkit Update Ledger Parameters E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -422,6 +443,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-maintenance-e2e:
+    permissions:
+      contents: read
     name: Toolkit Maintenance E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -442,6 +465,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-mint-e2e:
+    permissions:
+      contents: read
     name: Toolkit Mint E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -462,6 +487,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-tokens-minter-e2e:
+    permissions:
+      contents: read
     name: Toolkit Unshielded Token E2E
     needs: [ run ]
     runs-on: ubuntu-latest
@@ -482,6 +509,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   metadata-check:
+    permissions:
+      contents: read
     name: Metadata Check
     needs: run
     runs-on: ubuntu-latest
@@ -514,6 +543,8 @@ jobs:
             +check-metadata
 
   toolkit-contracts-e2e:
+    permissions:
+      contents: read
     name: Toolkit Contracts E2E
     needs: [run]
     runs-on: ubuntu-latest
@@ -534,6 +565,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
+    permissions:
+      contents: read
     name: Startup E2E in dev mode
     needs: run
     runs-on: ubuntu-latest
@@ -553,6 +586,8 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   genesis-undeployed-e2e:
+    permissions:
+      contents: read
     name: Genesis Wallets E2E for Undeployed network
     needs: run
     runs-on: ubuntu-latest

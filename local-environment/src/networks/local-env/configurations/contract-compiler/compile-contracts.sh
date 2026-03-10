@@ -24,7 +24,7 @@ CONTRACTS_SRC="/contracts"
 CONTRACTS_DIR="/tmp/contracts"
 OUTPUT_DIR="/runtime-values"
 AIKEN_TOML="${CONTRACTS_DIR}/aiken.toml"
-PLUTUS_JSON="${CONTRACTS_DIR}/plutus-default.json"
+PLUTUS_JSON="${CONTRACTS_DIR}/plutus-local.json"
 
 # Copy contracts to writable location
 echo "Copying contracts to writable location..."
@@ -65,49 +65,28 @@ echo "==================================="
 echo ""
 
 
-# Update aiken config
+# Update aiken config for local environment
 echo "=== Aiken Config Update ==="
-# Info: will use `toml set` but keeeping sed commands, just in case.
-# sed -i '/\[config\.default\..*_one_shot_hash\]/,/^bytes = / s/^bytes = ".*"/bytes = "'"$one_shot_hash"'"/' aiken.toml
-# sed -i '/\[config\.default\.collateral_utxo_hash\]/,/^bytes = / s/^bytes = ".*"/bytes = "'"$one_shot_hash"'"/' aiken.toml
-toml set aiken.toml config.default.reserve_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.council_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.ics_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.technical_authority_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.federated_operators_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.main_gov_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.staging_gov_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.main_council_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.main_tech_auth_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.main_federated_ops_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.committee_bridge_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.committee_threshold_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.terms_and_conditions_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.terms_and_conditions_threshold_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.cnight_minting_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-toml set aiken.toml config.default.collateral_utxo_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.reserve_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.council_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.ics_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.technical_authority_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.federated_operators_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.main_gov_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.staging_gov_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.main_council_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.main_tech_auth_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.main_federated_ops_update_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.committee_bridge_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.committee_threshold_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.terms_and_conditions_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.terms_and_conditions_threshold_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.cnight_minting_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+toml set aiken.toml config.local.collateral_utxo_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
 
-# Info: toml set is adding "" which breaks cli
-sed -i 's/^reserve_one_shot_index = .*/reserve_one_shot_index = 0/' aiken.toml
-sed -i 's/^council_one_shot_index = .*/council_one_shot_index = 1/' aiken.toml
-sed -i 's/^ics_one_shot_index = .*/ics_one_shot_index = 2/' aiken.toml
-sed -i 's/^technical_authority_one_shot_index = .*/technical_authority_one_shot_index = 3/' aiken.toml
-sed -i 's/^federated_operators_one_shot_index = .*/federated_operators_one_shot_index = 4/' aiken.toml
-sed -i 's/^main_gov_one_shot_index = .*/main_gov_one_shot_index = 5/' aiken.toml
-sed -i 's/^staging_gov_one_shot_index = .*/staging_gov_one_shot_index = 6/' aiken.toml
-sed -i 's/^main_council_update_one_shot_index = .*/main_council_update_one_shot_index = 7/' aiken.toml
-sed -i 's/^main_tech_auth_update_one_shot_index = .*/main_tech_auth_update_one_shot_index = 8/' aiken.toml
-sed -i 's/^main_federated_ops_update_one_shot_index = .*/main_federated_ops_update_one_shot_index = 9/' aiken.toml
-sed -i 's/^committee_bridge_one_shot_index = .*/committee_bridge_one_shot_index = 10/' aiken.toml
-sed -i 's/^committee_threshold_one_shot_index = .*/committee_threshold_one_shot_index = 11/' aiken.toml
-sed -i 's/^terms_and_conditions_one_shot_index = .*/terms_and_conditions_one_shot_index = 12/' aiken.toml
-sed -i 's/^terms_and_conditions_threshold_one_shot_index = .*/terms_and_conditions_threshold_one_shot_index = 13/' aiken.toml
-sed -i 's/^cnight_minting_one_shot_index = .*/cnight_minting_one_shot_index = 14/' aiken.toml
-sed -i 's/^collateral_utxo_index = .*/collateral_utxo_index = 15/' aiken.toml
-
-# Debug: Show the updated default section of aiken.toml
-echo "--- aiken.toml config.default values ---"
-toml get aiken.toml config.default | jq -r
+# Debug: Show the updated local section of aiken.toml
+echo "--- aiken.toml config.local values ---"
+toml get aiken.toml config.local | jq -r
 echo ""
 
 echo "✓ Aiken config updated successfully"
@@ -115,17 +94,17 @@ echo "==================================="
 echo ""
 
 
-# Compile contracts with modified default config
+# Compile contracts with local config
 echo "=== Aiken Contracts Compilation ==="
 echo "Aiken version:"
 aiken --version
 
-echo "Compiling Aiken contracts with modified default config..."
-just build
+echo "Compiling Aiken contracts with local config..."
+just build local
 
 # Check if plutus.json was generated
 if [[ ! -f "${PLUTUS_JSON}" ]]; then
-    echo "ERROR: plutus.json not generated after compilation"
+    echo "ERROR: plutus-local.json not generated after compilation"
     exit 1
 fi
 
@@ -162,7 +141,7 @@ echo ""
 echo "=== Contracts Data Exporter ==="
 echo "Saving contracts data for chain initialization (midnight-setup) and manual testing"
 bun cli info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
-cp $PLUTUS_JSON $AIKEN_TOML ${CONTRACTS_DIR}/contract_blueprint.ts ${CONTRACTS_DIR}/contract_blueprint_default.ts $CONTRACTS_DIR/contracts-info.json $OUTPUT_DIR
+cp $PLUTUS_JSON $AIKEN_TOML ${CONTRACTS_DIR}/contract_blueprint.ts ${CONTRACTS_DIR}/contract_blueprint_local.ts $CONTRACTS_DIR/contracts-info.json $OUTPUT_DIR
 echo "Contract files in ${OUTPUT_DIR}:"
 ls $OUTPUT_DIR
 echo ""

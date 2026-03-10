@@ -25,7 +25,8 @@ use crate::fetcher::{
 	runtimes::{
 		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
 		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0,
-		MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion, RuntimeVersionError,
+		MidnightMetadata0_20_1, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
+		RuntimeVersionError,
 	},
 };
 
@@ -60,18 +61,18 @@ impl ComputeTask {
 	) -> ComputeResult {
 		match self {
 			ComputeTask::ExtractBlockData { min, max, blocks } => {
-				log::info!("extracting block data {min}..{max}");
+				log::debug!("extracting block data {min}..{max}");
 				let mut blocks_to_insert = Vec::new();
 				for b in blocks {
 					let block_data = Self::extract_data(&b).await?;
 					blocks_to_insert.push((b.block.number() as u64, block_data));
 				}
 				storage.insert_block_data_range(chain_id, blocks_to_insert.into_iter()).await;
-				log::info!("extracting block data {min}..{max}: complete");
+				log::debug!("extracting block data {min}..{max}: complete");
 				Ok(ComputeTask::Verify { min, max })
 			},
 			ComputeTask::Verify { min, max } => {
-				log::info!("verifying {min}..{max}");
+				log::debug!("verifying {min}..{max}");
 				let blocks = storage.get_block_data_range(chain_id, (min..max).into_iter()).await;
 				let blocks: Result<Vec<RawBlockData>, ComputeError> = (min..max)
 					.into_iter()
@@ -88,12 +89,12 @@ impl ComputeTask {
 					return Err(ComputeError::ChildBlockVerificationFailed(child.number));
 				}
 
-				log::info!("verifying {min}..{max}: complete");
+				log::debug!("verifying {min}..{max}: complete");
 
 				Ok(ComputeTask::FinalVerify { min, max })
 			},
 			ComputeTask::FinalVerify { min, max } => {
-				log::info!("final verify {min} and {max}");
+				log::debug!("final verify {min} and {max}");
 
 				// Check min - only for genesis block
 				if min == 0 {
@@ -117,7 +118,7 @@ impl ComputeTask {
 				}
 				// If child (block `max`) doesn't exist, we're at the last batch - no forward check needed
 
-				log::info!("final verify {min} and {max}: complete");
+				log::debug!("final verify {min} and {max}: complete");
 				Ok(ComputeTask::NoOp)
 			},
 			ComputeTask::NoOp => Ok(ComputeTask::NoOp),
@@ -163,6 +164,10 @@ impl ComputeTask {
 			},
 			RuntimeVersion::V0_20_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_20_0>(block, spec_version)
+					.await
+			},
+			RuntimeVersion::V0_20_1 => {
+				Self::process_block_with_protocol::<MidnightMetadata0_20_1>(block, spec_version)
 					.await
 			},
 			RuntimeVersion::V0_21_0 => {

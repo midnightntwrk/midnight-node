@@ -157,7 +157,7 @@ pub async fn fetch_from_rpc(
 		join_set.spawn(async move {
 			for min in (min_height..max_height).step_by(blocks_per_job as usize) {
 				let max = u64::min(min + blocks_per_job, max_height);
-				log::info!("pushing new fetch job {min} -> {max}...");
+				log::debug!("pushing new fetch job {min} -> {max}...");
 				job_tx
 					.send(FetchTask::FetchBlocks { min, max })
 					.await
@@ -185,19 +185,19 @@ pub async fn fetch_from_rpc(
 				return Ok(TaskResult::FetchWorker);
 			};
 
-			log::info!("fetch worker {worker_id} connected successfully");
+			log::debug!("fetch worker {worker_id} connected successfully");
 
 			loop {
 				let Ok(job) = job_rx.recv().await else {
 					return Ok(TaskResult::FetchWorker);
 				};
 
-				log::info!("worker {worker_id}: received new job...");
+				log::debug!("worker {worker_id}: received new job...");
 
 				let work_job = job.fetch(chain_id, &client, fetch_storage.clone()).await?;
 
 				work_job_tx.send(work_job).await.expect("failed to push job on work queue");
-				log::info!("worker {worker_id}: completed job.");
+				log::debug!("worker {worker_id}: completed job.");
 			}
 		});
 	}
@@ -231,7 +231,7 @@ pub async fn fetch_from_rpc(
 					},
 				};
 
-				log::info!("received new work job...");
+				log::debug!("received new work job...");
 
 				let work_job = job.work(chain_id, fetch_storage.clone()).await?;
 
@@ -285,11 +285,12 @@ pub async fn fetch_from_rpc(
 			job = final_jobs_rx.recv() => {
 				jobs.push(job.expect("..."));
 				received += 1;
+				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, num_jobs * BLOCKS_PER_JOB);
 			}
 		}
 	}
 
-	log::info!("finished loop");
+	log::debug!("finished loop");
 
 	for job in jobs {
 		job.work(chain_id, fetch_storage.clone()).await?;

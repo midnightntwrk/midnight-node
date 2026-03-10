@@ -80,6 +80,9 @@ pub struct CircuitArgs {
 	/// Input file containing the private circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	input_private_state: RelativePath,
+	/// A file path of where the generated 'ZswapLocalState' is stored.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub input_zswap_state: Option<RelativePath>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	output_intent: RelativePath,
@@ -216,7 +219,7 @@ impl ToolkitJs {
 	}
 
 	pub fn execute_deploy(&self, args: DeployArgs) -> Result<(), ToolkitJsError> {
-		println!("Executing deploy command");
+		log::info!("Executing deploy command");
 		let config = args.config.absolute();
 		let output_intent = args.output_intent.absolute();
 		let output_private_state = args.output_private_state.absolute();
@@ -251,9 +254,11 @@ impl ToolkitJs {
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
-		println!(
+		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}
@@ -265,7 +270,7 @@ impl ToolkitJs {
 		ledger_parameters: RelativePath,
 	) -> Result<(), ToolkitJsError> {
 		let contract_address_str = hex::encode(args.contract_address.0.0);
-		println!("Executing circuit command");
+		log::info!("Executing circuit command");
 		let config = args.config.absolute();
 		let input_onchain_state = args.input_onchain_state.absolute();
 		let input_private_state = args.input_private_state.absolute();
@@ -311,9 +316,11 @@ impl ToolkitJs {
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
-		println!(
+		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}
@@ -321,7 +328,7 @@ impl ToolkitJs {
 	pub fn execute_maintain(&self, command: MaintainCommand) -> Result<(), ToolkitJsError> {
 		let args = command.shared_args();
 		let contract_address_str = hex::encode(args.contract_address.0.0);
-		println!("Executing maintain command");
+		log::info!("Executing maintain command");
 		let config = args.config.absolute();
 		let input_onchain_state = args.input_onchain_state.absolute();
 		let output_intent = args.output_intent.absolute();
@@ -361,13 +368,14 @@ impl ToolkitJs {
 			}
 		}
 		self.execute_js(&cmd_args)?;
-		println!("written: {}", args.output_intent);
+		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
 
 	fn execute_js(&self, args: &[&str]) -> Result<(), ToolkitJsError> {
 		let cmd = PathBuf::from(&self.path).join(BUILD_DIST).to_string_lossy().to_string();
-		println!("Executing {cmd}...");
+		log::info!("Executing {cmd}...");
+		log::debug!("Executing {cmd} with arguments: {args:?}...");
 
 		let output = std::process::Command::new(cmd)
 			.current_dir(&self.path)

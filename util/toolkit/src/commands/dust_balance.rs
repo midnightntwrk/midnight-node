@@ -45,7 +45,7 @@ pub async fn execute(
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
-		println!("Dry-run: fetching wallet for seed {:?}", args.seed);
+		log::info!("Dry-run: fetching wallet for seed {:?}", args.seed);
 		return Ok(DustBalanceResult::DryRun(()));
 	}
 
