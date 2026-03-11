@@ -15,6 +15,23 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 const LOG_TARGET: &str = "filtering_pool";
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TxFilterConfig {
+	pub enabled: bool,
+	pub deny_deploy: bool,
+	pub deny_maintain: bool,
+}
+
+impl TxFilterConfig {
+	pub fn enabled() -> Self {
+		Self { enabled: true, deny_deploy: true, deny_maintain: true }
+	}
+
+	pub fn disabled() -> Self {
+		Self { enabled: false, deny_deploy: false, deny_maintain: false }
+	}
+}
+
 pub struct FilteringTransactionPool<Block, Client>
 where
 	Block: BlockT,
@@ -27,6 +44,8 @@ where
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
 {
+	/// Is filtering behavior enabled. If false it behaves like 'inner' pool.
+	enabled: bool,
 	inner: TransactionPoolWrapper<Block, Client>,
 	client: Arc<Client>,
 	metrics: FilteringMetrics,
@@ -47,13 +66,19 @@ where
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
 {
 	pub(crate) fn new(
+		config: TxFilterConfig,
 		inner: TransactionPoolWrapper<Block, Client>,
 		client: Arc<Client>,
 		metrics: FilteringMetrics,
-		deny_deploy: bool,
-		deny_maintain: bool,
 	) -> Self {
-		Self { inner, client, metrics, deny_deploy, deny_maintain }
+		Self {
+			enabled: config.enabled,
+			inner,
+			client,
+			metrics,
+			deny_deploy: config.deny_deploy,
+			deny_maintain: config.deny_maintain,
+		}
 	}
 
 	fn should_block(&self, tx: &Tx) -> bool {
@@ -160,30 +185,33 @@ where
 		source: TransactionSource,
 		xts: Vec<TransactionFor<Self>>,
 	) -> Result<Vec<Result<TxHash<Self>, Self::Error>>, Self::Error> {
-		let total_xts = xts.len();
-		let mut filtered = Vec::with_capacity(total_xts);
-		let mut decode_failures = 0usize;
-		let mut blocked_txs = 0usize;
+		if self.enabled {
+			let total_xts = xts.len();
+			let mut filtered = Vec::with_capacity(total_xts);
+			let mut decode_failures = 0usize;
+			let mut blocked_txs = 0usize;
 
-		for xt in xts {
-			if self.should_accept_extrinsic(at, &xt) {
-				filtered.push(xt);
-			} else {
-				decode_failures += 1;
-				blocked_txs += 1;
+			for xt in xts {
+				if self.should_accept_extrinsic(at, &xt) {
+					filtered.push(xt);
+				} else {
+					decode_failures += 1;
+					blocked_txs += 1;
+				}
 			}
+
+			log::warn!(
+				target: LOG_TARGET,
+				"📊 Filtered transaction batch: total={}, accepted={}, decode_failures={}, blocked={}",
+				total_xts,
+				filtered.len(),
+				decode_failures,
+				blocked_txs
+			);
+			self.inner.submit_at(at, source, filtered).await
+		} else {
+			self.inner.submit_at(at, source, xts).await
 		}
-
-		log::warn!(
-			target: LOG_TARGET,
-			"📊 Filtered transaction batch: total={}, accepted={}, decode_failures={}, blocked={}",
-			total_xts,
-			filtered.len(),
-			decode_failures,
-			blocked_txs
-		);
-
-		self.inner.submit_at(at, source, filtered).await
 	}
 
 	async fn submit_one(
@@ -192,7 +220,7 @@ where
 		source: TransactionSource,
 		xt: TransactionFor<Self>,
 	) -> Result<TxHash<Self>, Self::Error> {
-		if !self.should_accept_extrinsic(at, &xt) {
+		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 
@@ -205,7 +233,7 @@ where
 		source: TransactionSource,
 		xt: TransactionFor<Self>,
 	) -> Result<Pin<Box<TransactionStatusStreamFor<Self>>>, Self::Error> {
-		if !self.should_accept_extrinsic(at, &xt) {
+		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 
@@ -303,7 +331,7 @@ where
 		at: <Self::Block as BlockT>::Hash,
 		xt: LocalTransactionFor<Self>,
 	) -> Result<Self::Hash, Self::Error> {
-		if !self.should_accept_extrinsic(at, &xt) {
+		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 		self.inner.submit_local(at, xt)

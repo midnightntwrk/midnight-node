@@ -145,7 +145,6 @@ sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-toki
 tokio.workspace = true
 blake2b_simd = "1.0"
 
-# Dependencies for 'deploy-filer'
 sp-transaction-pool.workspace = true
 midnight-serialize.workspace = true
 
@@ -157,7 +156,6 @@ substrate-build-script-utils.workspace = true
 
 [features]
 default = []
-deploy-filter = []
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [
     "midnight-node-runtime/runtime-benchmarks",

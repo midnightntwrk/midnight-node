@@ -44,8 +44,7 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-#[cfg(feature = "deploy-filter")]
-use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool};
+use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -241,10 +240,7 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
-#[cfg(feature = "deploy-filter")]
 type TransactionPool = FilteringTransactionPool<Block, FullClient>;
-#[cfg(not(feature = "deploy-filter"))]
-type TransactionPool = sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>;
 
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
@@ -268,6 +264,7 @@ pub fn new_partial(
 	epoch_config: MainchainEpochConfig,
 	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let data_sources = tokio::task::block_in_place(|| {
@@ -390,10 +387,9 @@ pub fn new_partial(
 	.with_prometheus(config.prometheus_registry())
 	.build();
 
-	#[cfg(feature = "deploy-filter")]
 	let transaction_pool = {
 		let metrics = FilteringMetrics::new(config.prometheus_registry());
-		FilteringTransactionPool::new(transaction_pool, client.clone(), metrics, true, true)
+		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
 	};
 
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
@@ -475,10 +471,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config)?;
+		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
 	let sc_service::PartialComponents {
 		client,
