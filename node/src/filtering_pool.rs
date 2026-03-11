@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use async_trait::async_trait;
 use midnight_node_ledger::types::{Op, Tx};
 use pallet_midnight::MidnightRuntimeApi;
@@ -81,7 +94,7 @@ where
 		}
 	}
 
-	fn should_block(&self, tx: &Tx) -> bool {
+	fn is_forbidden_tx(&self, tx: &Tx) -> bool {
 		tx.operations.iter().any(|operation| match operation {
 			Op::Deploy { .. } => {
 				if self.deny_deploy {
@@ -127,7 +140,7 @@ where
 			match self.client.runtime_api().get_decoded_transaction(at, midnight_tx) {
 				Ok(decoded_tx_result) => match decoded_tx_result {
 					Ok(decoded_tx) => {
-						if self.should_block(&decoded_tx) {
+						if self.is_forbidden_tx(&decoded_tx) {
 							log::info!(
 								target: LOG_TARGET,
 								"🚫 Blocking midnight transaction based on filtering policy",
@@ -142,6 +155,7 @@ where
 							"⚠️ Unable to decode midnight transaction, dropping it: {:?}",
 							error
 						);
+						return false;
 					},
 				},
 				Err(error) => {
@@ -151,6 +165,7 @@ where
 						"❌ Runtime API call get_decoded_transaction failed: {:?}",
 						error
 					);
+					return false;
 				},
 			}
 		}
@@ -188,26 +203,11 @@ where
 		if self.enabled {
 			let total_xts = xts.len();
 			let mut filtered = Vec::with_capacity(total_xts);
-			let mut decode_failures = 0usize;
-			let mut blocked_txs = 0usize;
-
 			for xt in xts {
 				if self.should_accept_extrinsic(at, &xt) {
 					filtered.push(xt);
-				} else {
-					decode_failures += 1;
-					blocked_txs += 1;
 				}
 			}
-
-			log::warn!(
-				target: LOG_TARGET,
-				"📊 Filtered transaction batch: total={}, accepted={}, decode_failures={}, blocked={}",
-				total_xts,
-				filtered.len(),
-				decode_failures,
-				blocked_txs
-			);
 			self.inner.submit_at(at, source, filtered).await
 		} else {
 			self.inner.submit_at(at, source, xts).await
