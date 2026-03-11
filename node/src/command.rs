@@ -17,22 +17,19 @@ use crate::{
 	cfg::Cfg,
 	cli::{self, Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
-	genesis::{
-		creation::{
-			cnight_genesis::generate_cnight_genesis,
-			federated_authority_genesis::generate_federated_authority_genesis,
-			ics_genesis::{IcsAddresses, generate_ics_genesis},
-			permissioned_candidates_genesis::{
-				PcChainConfig, PermissionedCandidatesAddresses,
-				generate_permissioned_candidates_genesis,
-			},
-			reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
+	genesis::creation::{
+		cnight_genesis::generate_cnight_genesis,
+		federated_authority_genesis::generate_federated_authority_genesis,
+		ics_genesis::{IcsAddresses, generate_ics_genesis},
+		permissioned_candidates_genesis::{
+			PcChainConfig, PermissionedCandidatesAddresses,
+			generate_permissioned_candidates_genesis,
 		},
-		verification::{
-			verify_auth_script_common, verify_federated_authority_auth_script,
-			verify_ics_auth_script, verify_ledger_state_genesis,
-			verify_permissioned_candidates_auth_script,
-		},
+		reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
+	},
+	genesis::verification::{
+		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
+		verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
 	},
 	service::{self, StorageInit},
 };
