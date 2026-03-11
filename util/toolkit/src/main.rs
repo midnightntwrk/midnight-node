@@ -51,24 +51,53 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			.build()
 			.unwrap()
 			.block_on(async {
-				// Initialize the logger.
-				structured_logger::Builder::new()
-					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::stderr(),
-					))
-					.init();
-
-				// Initialize tracing (used by ledger to emit warnings)
-				let subscriber =
-					tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).finish();
-				tracing::subscriber::set_global_default(subscriber)?;
-
 				let cli = Cli::parse();
+
+				// Build the log filter. RUST_LOG overrides CLI flags.
+				// CLI path uses with_regex(false) for prefix matching, where
+				// longer prefixes properly override shorter ones (e.g.
+				// midnight_node_toolkit::fetcher=info overrides midnight_node_toolkit=debug).
+				let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+					.unwrap_or_else(|_| {
+						let base =
+							if cli.quiet { "warn" } else { "warn,midnight_node_toolkit=info" };
+						let mut directives = base.to_string();
+						if cli.verbose {
+							directives += ",midnight_node_toolkit=debug";
+							directives += ",midnight_node_toolkit::fetcher=info";
+						}
+						if cli.verbose_fetch {
+							directives += ",midnight_node_toolkit::fetcher=debug";
+						}
+						if cli.verbose_ledger {
+							directives += ",midnight_ledger=debug";
+						}
+						tracing_subscriber::EnvFilter::builder()
+							.with_regex(false)
+							.parse_lossy(directives)
+					});
+
+				// Initialize unified logging (captures both `log` and `tracing` events).
+				if cli.log_json {
+					tracing_subscriber::fmt()
+						.json()
+						.with_env_filter(env_filter)
+						.with_writer(std::io::stderr)
+						.init();
+				} else {
+					tracing_subscriber::fmt()
+						.with_env_filter(env_filter)
+						.with_writer(std::io::stderr)
+						.with_target(cli.verbose)
+						.with_file(cli.verbose)
+						.with_line_number(cli.verbose)
+						.init();
+				}
 
 				let res = run_command(cli.command).await;
 
 				if let Err(ref e) = res {
-					println!("{e}");
+					eprintln!("{e}");
 				}
 
 				return res;

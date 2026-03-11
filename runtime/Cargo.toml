@@ -97,7 +97,6 @@ serde.workspace = true
 
 [build-dependencies]
 substrate-wasm-builder = { workspace = true, optional = true, default-features = true }
-frame-storage-access-test-runtime = { workspace = true, optional = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -153,7 +152,6 @@ std = [
     "sp-storage/std",
     "sp-genesis-builder/std",
     "substrate-wasm-builder",
-    "frame-storage-access-test-runtime",
     #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
@@ -176,6 +174,7 @@ runtime-benchmarks = [
     "pallet-beefy-mmr/runtime-benchmarks",
     "pallet-grandpa/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
+    "pallet-cnight-observation/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
     # "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
@@ -214,4 +213,4 @@ try-runtime = [
 experimental = []
 
 [package.metadata.cargo-shear]
-ignored = ["serde", "frame-storage-access-test-runtime"]
+ignored = ["serde"]

@@ -43,11 +43,17 @@ fn generate_chainspec(image: &str, tag: &str) -> String {
 async fn run_cli(args: &[&str]) {
 	let full_args: Vec<&str> =
 		std::iter::once("midnight-node-toolkit").chain(args.iter().copied()).collect();
+	eprintln!("[hardfork_e2e] running CLI: {full_args:?}");
 	let cli = Cli::parse_from(full_args);
-	run_command(cli.command).await.expect("CLI command failed");
+	if let Err(e) = run_command(cli.command).await {
+		eprintln!("[hardfork_e2e] CLI command failed: {e}");
+		eprintln!("[hardfork_e2e] error debug: {e:?}");
+		panic!("CLI command failed: {e}");
+	}
+	eprintln!("[hardfork_e2e] CLI command succeeded");
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn hardfork_single_tx() {
 	// 1. Generate chain-spec from fork-from node
 	let (old_name, old_tag) = test_image("midnight-node-fork-from");
@@ -98,15 +104,11 @@ async fn hardfork_single_tx() {
 	.await;
 
 	// 4. Runtime upgrade: extract WASM from new node image and apply it
+	let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+	let wasm_path_in_image =
+		format!("/artifacts-{arch}/midnight_node_runtime.compact.compressed.wasm");
 	let wasm_output = Command::new("docker")
-		.args([
-			"run",
-			"--rm",
-			"--entrypoint",
-			"cat",
-			&node_image,
-			"/artifacts-amd64/midnight_node_runtime.compact.compressed.wasm",
-		])
+		.args(["run", "--rm", "--entrypoint", "cat", &node_image, &wasm_path_in_image])
 		.output()
 		.expect("docker run cat wasm failed");
 	assert!(

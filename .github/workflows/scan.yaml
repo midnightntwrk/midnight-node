@@ -20,7 +20,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  build:
+  scan:
     runs-on: ubuntu-latest
     permissions:
       actions: read

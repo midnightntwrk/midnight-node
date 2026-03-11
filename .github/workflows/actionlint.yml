@@ -1,5 +1,7 @@
 name: Validate GitHub Actions Workflows
 
+permissions: {}
+
 on:
   merge_group:
   pull_request:
@@ -12,10 +14,16 @@ on:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
 
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
 jobs:
   actionlint:
     name: Lint workflows
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

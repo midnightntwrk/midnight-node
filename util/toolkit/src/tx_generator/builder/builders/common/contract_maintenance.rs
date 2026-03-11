@@ -107,7 +107,7 @@ impl ContractMaintenanceBuilder {
 		entrypoints_to_remove: Vec<EntryPointBuf>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB>> {
-		println!("Create intent info for Maintenance");
+		log::info!("Create intent info for Maintenance");
 
 		let mut updates = vec![];
 

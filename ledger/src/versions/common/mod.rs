@@ -488,7 +488,7 @@ where
 
 		let api = api::new();
 		let tx = api.tagged_deserialize::<SystemTransaction>(tx_serialized)?;
-		let tx_type = Self::get_system_tx_type(&tx);
+		let tx_type = Self::get_system_tx_type(&tx)?;
 		log::info!(
 			target: LOG_TARGET,
 			"⚙️  Processing SystemTx {tx:?}"
@@ -840,20 +840,8 @@ where
 		}
 	}
 
-	fn get_system_tx_type(tx: &SystemTransaction) -> &'static str {
-		match tx {
-			SystemTransaction::OverwriteParameters(_) => "overwrite_parameters",
-			SystemTransaction::DistributeNight(claim_kind, _) => match claim_kind {
-				ClaimKind::Reward => "distribute_night_reward",
-				ClaimKind::CardanoBridge => "distribute_night_cardano_bridge",
-			},
-			SystemTransaction::PayBlockRewardsToTreasury { .. } => "pay_block_rewards_to_treasury",
-			SystemTransaction::PayFromTreasuryShielded { .. } => "pay_from_treasury_shielded",
-			SystemTransaction::PayFromTreasuryUnshielded { .. } => "pay_from_treasury_unshielded",
-			SystemTransaction::DistributeReserve(_) => "distribute_reserve",
-			SystemTransaction::CNightGeneratesDustUpdate { .. } => "cnight_generates_dust_update",
-			_ => "unknown",
-		}
+	fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiError> {
+		get_system_tx_type(tx)
 	}
 
 	/// Gets a VerifiedTransaction, using the strict cache when possible.
@@ -1052,6 +1040,31 @@ where
 	}
 }
 
+#[cfg(feature = "std")]
+fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiError> {
+	match tx {
+		SystemTransaction::OverwriteParameters(_) => Ok("overwrite_parameters"),
+		SystemTransaction::DistributeNight(claim_kind, _) => match claim_kind {
+			ClaimKind::Reward => Ok("distribute_night_reward"),
+			ClaimKind::CardanoBridge => Ok("distribute_night_cardano_bridge"),
+		},
+		SystemTransaction::PayBlockRewardsToTreasury { .. } => Ok("pay_block_rewards_to_treasury"),
+		SystemTransaction::PayFromTreasuryShielded { .. } => Ok("pay_from_treasury_shielded"),
+		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
+		SystemTransaction::DistributeReserve(_) => Ok("distribute_reserve"),
+		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
+		other => {
+			log::error!(
+				target: LOG_TARGET,
+				"Unsupported system transaction type: {other:?}"
+			);
+			Err(LedgerApiError::Transaction(types::TransactionError::SystemTransaction(
+				types::SystemTransactionError::UnknownError,
+			)))
+		},
+	}
+}
+
 /// Creates a Nonce using BlakeTwo256; similar Hashing type set in the Runtime.
 ///
 /// # Arguments
@@ -1090,6 +1103,7 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 mod tests {
 	use super::*;
 	use base_crypto_local::cost_model::FixedPoint;
+	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
 
 	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
 		LedgerNormalizedCost {
@@ -1119,5 +1133,54 @@ mod tests {
 		assert_eq!(over_one, max_weight);
 		assert!(half >= zero);
 		assert!(one >= half);
+	}
+
+	#[test]
+	fn get_system_tx_type_distribute_night_reward() {
+		let tx = SystemTransaction::DistributeNight(ClaimKind::Reward, vec![]);
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_night_reward");
+	}
+
+	#[test]
+	fn get_system_tx_type_distribute_night_cardano_bridge() {
+		let tx = SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, vec![]);
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_night_cardano_bridge");
+	}
+
+	#[test]
+	fn get_system_tx_type_pay_block_rewards_to_treasury() {
+		let tx = SystemTransaction::PayBlockRewardsToTreasury { amount: 0 };
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "pay_block_rewards_to_treasury");
+	}
+
+	#[test]
+	fn get_system_tx_type_pay_from_treasury_shielded() {
+		let tx = SystemTransaction::PayFromTreasuryShielded {
+			outputs: vec![],
+			nonce: HashOutput([0u8; 32]),
+			token_type: ShieldedTokenType(HashOutput([0u8; 32])),
+		};
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "pay_from_treasury_shielded");
+	}
+
+	#[test]
+	fn get_system_tx_type_pay_from_treasury_unshielded() {
+		let tx = SystemTransaction::PayFromTreasuryUnshielded {
+			outputs: vec![],
+			token_type: UnshieldedTokenType(HashOutput([0u8; 32])),
+		};
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "pay_from_treasury_unshielded");
+	}
+
+	#[test]
+	fn get_system_tx_type_distribute_reserve() {
+		let tx = SystemTransaction::DistributeReserve(0);
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_reserve");
+	}
+
+	#[test]
+	fn get_system_tx_type_cnight_generates_dust_update() {
+		let tx = SystemTransaction::CNightGeneratesDustUpdate { events: vec![] };
+		assert_eq!(get_system_tx_type(&tx).unwrap(), "cnight_generates_dust_update");
 	}
 }

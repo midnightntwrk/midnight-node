@@ -1,21 +1,23 @@
 name: +contract-precompiles (Build ledger test static data contracts and CI image)
 
+permissions: {}
+
 on:
   workflow_dispatch:
-    inputs:
-      rust_version:
-        description: 'Rust version (e.g., 1.90, 1.92)'
-        required: true
-        type: string
   schedule:
     # Once a week
     - cron: "0 0 * * 0"
+# no top level default permissions for security reasons
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true
 jobs:
   build:
-    name: Precompile contracts (linux/${{ matrix.platform }})
+    name: Build CI image (linux/${{ matrix.platform }})
+    permissions:
+      contents: read
     strategy:
       matrix:
         # Define matrix with platform and corresponding GitHub-hosted runner
@@ -26,6 +28,8 @@ jobs:
             runner: ubuntu-latest-8-core-arm64 # Native ARM64 GitHub-hosted runner (public preview)
 
     runs-on: ${{ matrix.runner }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     env:
       FORCE_COLOR: 1
@@ -42,14 +46,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       # Log in to GitHub Container Registry
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  #v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -57,17 +61,19 @@ jobs:
 
       # Run Earthly build with platform-specific flags
       - name: Run Earthly build for linux/${{ matrix.platform }}
+        id: version
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # Run Earthly platform-specific image builds
-          # (todo: we can skip pushing to GHCR here and push directly to dockerhub)
-          . ./.envrc && earthly --ci --platform="linux/${{ matrix.platform }}" --push +node-ci-image-single-platform
+          . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
-          export VERSION="${{ github.event.inputs.rust_version }}"
+          RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+          COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+          VERSION="${RUST_VERSION}-${COMPACTC_VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           docker pull "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
 
           echo "Tag and push ${VERSION} images"
@@ -85,15 +91,15 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  #v3.12.0
 
       - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Create multiplatform image (Docker Hub)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          export VERSION="${{ github.event.inputs.rust_version }}"
-
           docker buildx imagetools create \
             -t "midnightntwrk/midnight-node-ci:${VERSION}" \
             "midnightntwrk/midnight-node-ci:${VERSION}-amd64" \

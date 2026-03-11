@@ -128,11 +128,11 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required = true)]
 	council_members: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required = true)]
 	technical_committee_members: Vec<String>,
 
 	/// RPC URL for sending the update.
@@ -260,9 +260,9 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		..base
 	};
 
-	println!("Ledger params loaded: {:#?}", parameters);
+	log::info!("Ledger params loaded: {:#?}", parameters);
 
-	println!("Executing ledger parameters update via federated authority.");
+	log::info!("Executing ledger parameters update via federated authority.");
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());

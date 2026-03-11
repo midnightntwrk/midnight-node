@@ -223,7 +223,7 @@ impl GenesisGenerator {
 
 		if let Some(system_tx) = cnight_system_tx {
 			self.apply_system_tx(system_tx.clone(), &genesis_block_context)?;
-			println!("cNight System Tx applied: {:?}", system_tx);
+			log::info!("cNight System Tx applied: {:?}", system_tx);
 		}
 
 		let block_limits = self.state.parameters.limits.block_limits;
@@ -462,7 +462,7 @@ impl GenesisGenerator {
 				outputs.push(out);
 			}
 
-			println!(
+			log::info!(
 				"generated {} outputs for wallet {:?}",
 				shielded_num_funding_outputs + shielded_alt_token_types.len(),
 				wallet.address(network).to_bech32(),
@@ -518,7 +518,7 @@ impl GenesisGenerator {
 				outputs.push(out);
 			}
 
-			println!(
+			log::info!(
 				"generated {} outputs for wallet {:?}",
 				unshielded_alt_token_types.len(),
 				wallet.address(network).to_bech32(),

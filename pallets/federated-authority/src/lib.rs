@@ -356,6 +356,7 @@ pub mod pallet {
 
 		#[cfg(feature = "runtime-benchmarks")]
 		fn motion_call() -> (T::Hash, T::MotionCall) {
+			use alloc::vec;
 			let call: T::MotionCall =
 				frame_system::Call::<T>::remark { remark: vec![1, 2, 3] }.into();
 			let motion_hash = T::Hashing::hash_of(&call);

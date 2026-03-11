@@ -13,25 +13,21 @@ use crate::ledger_8::{
 };
 
 pub fn old_to_new_sp<T1, T2>(
-	t1: crate::ledger_7::Sp<T1, Db7>,
+	mut t1: crate::ledger_7::Sp<T1, Db7>,
 ) -> Result<crate::ledger_8::Sp<T2, Db8>, std::io::Error>
 where
 	T1: crate::ledger_7::Storable<Db7>,
-	T2: crate::ledger_8::Storable<Db8>,
+	T2: crate::ledger_8::Storable<Db8> + crate::ledger_8::Tagged,
 {
+	t1.persist();
 	let old_root = t1.as_typed_key().key;
-	// SAFETY: Both ArenaKey types are digest::Output<sha2::Sha256> (= GenericArray<u8, U32>).
-	// They share the same physical content-addressed storage and identical memory layout.
-	const _: () = assert!(
-		std::mem::size_of::<crate::ledger_7::ArenaKey>()
-			== std::mem::size_of::<crate::ledger_8::ArenaKey>()
-	);
-	let new_arena_key: crate::ledger_8::ArenaKey = unsafe { std::mem::transmute(old_root) };
+	// Both ArenaKey types are the same type (unified via midnight-storage-core patch).
+	let new_arena_key: crate::ledger_8::ArenaKey = old_root;
 	let new_root = crate::ledger_8::mn_ledger_storage::arena::TypedArenaKey::<
 		T2,
 		<Db8 as crate::ledger_8::DB>::Hasher,
 	>::from(new_arena_key);
-	default_storage::<Db8>().arena.get(&new_root)
+	default_storage::<Db8>().arena.get_lazy(&new_root)
 }
 
 /// Serialize with ledger-7 format, deserialize with ledger-8 format (tagged).

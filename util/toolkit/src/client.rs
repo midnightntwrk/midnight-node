@@ -17,6 +17,7 @@ use backoff::ExponentialBackoff;
 use backoff::future::retry;
 use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use parity_scale_codec::Decode;
 use subxt::backend::legacy::rpc_methods::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
@@ -84,13 +85,18 @@ impl MidnightNodeClient {
 		&self,
 		at: Option<HashFor<MidnightNodeClientConfig>>,
 	) -> Result<Option<Vec<u8>>, ClientError> {
-		let storage_query = mn_meta::storage().midnight().state_key();
+		// Use a raw storage query to avoid IncompatibleCodegen errors when the
+		// toolkit is compiled against a different runtime version than the node.
+		// The storage key is stable: twox_128("Midnight") ++ twox_128("StateKey").
+		let key =
+			[sp_crypto_hashing::twox_128(b"Midnight"), sp_crypto_hashing::twox_128(b"StateKey")]
+				.concat();
 		let storage = match at {
 			Some(hash) => self.api.storage().at(hash),
 			None => self.api.storage().at_latest().await?,
 		};
-		let state_key = storage.fetch(&storage_query).await?;
-		Ok(state_key.map(|bounded| bounded.0))
+		let raw = storage.fetch_raw(key).await?;
+		Ok(raw.map(|bytes| Vec::<u8>::decode(&mut &bytes[..]).expect("failed to decode StateKey")))
 	}
 
 	pub async fn get_block_one_hash(

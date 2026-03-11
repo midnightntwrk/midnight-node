@@ -189,7 +189,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$domain_sep" \
     1000
 
-echo "Generate intent to send unshielded intent"
+echo "Generate intent to send unshielded token"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \

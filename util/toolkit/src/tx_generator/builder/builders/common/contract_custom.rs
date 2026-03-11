@@ -20,6 +20,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use midnight_node_ledger_helpers::onchain_runtime::context::Effects;
+use midnight_node_ledger_helpers::{BuildTransient, CoinInfo};
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
@@ -273,7 +275,7 @@ impl BuildTxsExt for CustomContractBuilder {
 impl CustomContractBuilder {
 	fn build_intent(&self) -> Result<IntentCustom<DefaultDB>, CustomContractBuilderError> {
 		let mut rng = self.rng_seed.map(StdRng::from_seed).unwrap_or(StdRng::from_entropy());
-		println!("Create intent info for contract custom");
+		log::info!("Create intent info for contract custom");
 		// This is to satisfy the `&'static` need to update the context's resolver
 		// Data lives for the remainder of the program's life.
 		let boxed_resolver = Box::new(
@@ -292,7 +294,7 @@ impl CustomContractBuilder {
 		let custom_intent =
 			IntentCustom::new_from_actions(&mut rng, &actions[..], static_ref_resolver);
 
-		println!("custom_intent: {:?}", custom_intent.intent);
+		log::debug!("custom_intent: {:?}", custom_intent.intent);
 		Ok(custom_intent)
 	}
 
@@ -335,7 +337,7 @@ impl BuildTxs for CustomContractBuilder {
 		&self,
 		_received_tx: SourceTransactions,
 	) -> Result<SerializedTxBatches, Self::Error> {
-		println!("Building Txs for CustomContract");
+		log::info!("Building Txs for CustomContract");
 
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
@@ -369,12 +371,16 @@ impl BuildTxs for CustomContractBuilder {
 		// - Intents
 		let contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
-		let (guaranteed_effects, _fallible_effects) = contract_intent.find_effects();
+		let (guaranteed_effects, fallible_effects) = contract_intent.find_effects();
 
-		let mut unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
-		if !guaranteed_effects.is_empty() {
+		let mut guaranteed_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
+		let mut fallible_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
+		let find_outputs = |effects_vec: Vec<Effects<DefaultDB>>| -> Result<
+			Vec<Box<dyn BuildUtxoOutput<DefaultDB>>>,
+			CustomContractBuilderError,
+		> {
 			let mut outputs = Vec::<Box<dyn BuildUtxoOutput<DefaultDB>>>::new();
-			for effects in guaranteed_effects {
+			for effects in effects_vec {
 				for (ClaimedUnshieldedSpendsKey(tt, dest), value) in
 					effects.claimed_unshielded_spends
 				{
@@ -390,8 +396,19 @@ impl BuildTxs for CustomContractBuilder {
 					}
 				}
 			}
+			Ok(outputs)
+		};
 
-			unshielded_offer_info = Some(UnshieldedOfferInfo { inputs: input_utxos, outputs });
+		let guaranteed_outputs = find_outputs(guaranteed_effects)?;
+		if !guaranteed_outputs.is_empty() || !input_utxos.is_empty() {
+			guaranteed_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: input_utxos, outputs: guaranteed_outputs });
+		}
+
+		let fallible_outputs = find_outputs(fallible_effects)?;
+		if !fallible_outputs.is_empty() {
+			fallible_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: vec![], outputs: fallible_outputs });
 		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
@@ -399,8 +416,8 @@ impl BuildTxs for CustomContractBuilder {
 		intents.insert(
 			contract_segment,
 			Box::new(IntentInfo {
-				guaranteed_unshielded_offer: unshielded_offer_info,
-				fallible_unshielded_offer: None,
+				guaranteed_unshielded_offer: guaranteed_unshielded_offer_info,
+				fallible_unshielded_offer: fallible_unshielded_offer_info,
 				actions: vec![Box::new(contract_intent.clone())],
 			}),
 		);
