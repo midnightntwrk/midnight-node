@@ -72,3 +72,27 @@ impl MidnightDataSourceMetrics {
 		})
 	}
 }
+
+/// Starts a Prometheus sub-query timer if metrics are available.
+/// The returned guard records the elapsed time to the histogram when dropped.
+pub fn start_sub_query_timer(
+	metrics_opt: &Option<MidnightDataSourceMetrics>,
+	label: &str,
+) -> Option<SubQueryTimer> {
+	metrics_opt.as_ref().map(|m| SubQueryTimer {
+		start: std::time::Instant::now(),
+		histogram: m.time_elapsed.with_label_values(&[label]),
+	})
+}
+
+/// RAII guard that records elapsed time to a Prometheus histogram on drop.
+pub struct SubQueryTimer {
+	start: std::time::Instant,
+	histogram: prometheus_endpoint::Histogram,
+}
+
+impl Drop for SubQueryTimer {
+	fn drop(&mut self) {
+		self.histogram.observe(self.start.elapsed().as_secs_f64());
+	}
+}

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::data_source::metrics::MidnightDataSourceMetrics;
+use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use crate::{
 	FederatedAuthorityObservationDataSource,
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
@@ -41,9 +41,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
 		// Get block number from hash
-		let _block_timer = self.metrics_opt.as_ref().map(|m|
-			m.time_elapsed().with_label_values(&["fedauth_get_block_by_hash"]).start_timer()
-		);
+		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
 		drop(_block_timer);
 
@@ -55,9 +53,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query council UTXO
-		let _council_timer = self.metrics_opt.as_ref().map(|m|
-			m.time_elapsed().with_label_values(&["fedauth_get_council_utxo"]).start_timer()
-		);
+		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
 		let council_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.council.address,
@@ -91,9 +87,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query technical committee UTXO
-		let _techcomm_timer = self.metrics_opt.as_ref().map(|m|
-			m.time_elapsed().with_label_values(&["fedauth_get_technical_committee_utxo"]).start_timer()
-		);
+		let _techcomm_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
 		let technical_committee_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.technical_committee.address,
