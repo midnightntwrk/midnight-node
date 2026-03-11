@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::data_source::metrics::MidnightDataSourceMetrics;
 use crate::{
 	FederatedAuthorityObservationDataSource,
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
@@ -21,14 +22,13 @@ use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
 
 #[derive(new)]
 pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
-	pub metrics_opt: Option<McFollowerMetrics>,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
 }

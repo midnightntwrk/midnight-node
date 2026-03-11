@@ -26,6 +26,7 @@ use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
@@ -263,10 +264,13 @@ pub fn new_partial(
 	storage_config: StorageInit,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
+	let midnight_metrics =
+		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
 	let data_sources = tokio::task::block_in_place(|| {
 		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
 			midnight_cfg.clone(),
 			mc_follower_metrics.clone(),
+			midnight_metrics.clone(),
 		))
 	})?;
 

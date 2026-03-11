@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
+use crate::data_source::metrics::MidnightDataSourceMetrics;
 use crate::db::{get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
@@ -25,7 +26,6 @@ use derive_new::new;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
 use std::fmt::Debug;
@@ -87,7 +87,7 @@ pub enum RegistrationDatumDecodeError {
 #[derive(new)]
 pub struct MidnightCNightObservationDataSourceImpl {
 	pub pool: PgPool,
-	pub metrics_opt: Option<McFollowerMetrics>,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
 }
