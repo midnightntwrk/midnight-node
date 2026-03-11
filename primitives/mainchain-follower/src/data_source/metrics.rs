@@ -12,50 +12,26 @@
 // limitations under the License.
 
 use log::warn;
-use prometheus_endpoint::{
-	CounterVec, HistogramOpts, HistogramVec, Opts, PrometheusError, Registry, U64, register,
-};
+use prometheus_endpoint::{HistogramOpts, HistogramVec, PrometheusError, Registry, register};
 
 pub type MetricsRegistry = Registry;
 
-/// Prometheus metrics client for Midnight-specific data sources.
-///
-/// Provides public accessor methods, unlike the upstream `McFollowerMetrics`
-/// whose accessors are crate-private in partner-chains.
+/// Prometheus metrics for Midnight-specific data source SQL queries.
 #[derive(Clone)]
 pub struct MidnightDataSourceMetrics {
 	time_elapsed: HistogramVec,
-	call_count: CounterVec<U64>,
 }
 
 impl MidnightDataSourceMetrics {
-	pub fn time_elapsed(&self) -> &HistogramVec {
-		&self.time_elapsed
-	}
-
-	pub fn call_count(&self) -> &CounterVec<U64> {
-		&self.call_count
-	}
-
 	pub fn register(registry: &Registry) -> Result<Self, PrometheusError> {
 		Ok(Self {
 			time_elapsed: register(
 				HistogramVec::new(
 					HistogramOpts::new(
-						"midnight_data_source_method_time_elapsed",
-						"Time spent in a midnight data source method call",
+						"midnight_data_source_query_time_elapsed",
+						"Time spent in a midnight data source SQL query",
 					),
-					&["method_name"],
-				)?,
-				registry,
-			)?,
-			call_count: register(
-				CounterVec::new(
-					Opts::new(
-						"midnight_data_source_method_call_count",
-						"Total number of midnight data source method calls",
-					),
-					&["method_name"],
+					&["query_name"],
 				)?,
 				registry,
 			)?,

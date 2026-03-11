@@ -358,10 +358,7 @@ macro_rules! observed_async_trait {
 		$(
 			async fn $method(&$self $(,$param_name: $param_type)*,) -> $res {
 				let method_name = stringify!($method);
-				let _timer = if let Some(metrics) = &$self.metrics_opt {
-					metrics.call_count().with_label_values(&[method_name]).inc();
-					Some(metrics.time_elapsed().with_label_values(&[method_name]).start_timer())
-				} else { None };
+				let _ = &$self.metrics_opt;
 				let params: Vec<String> = vec![$(format!("{:?}", $param_name.clone()),)*];
 				log::debug!("{} called with parameters: {:?}", method_name, params);
 				let result = $body;
