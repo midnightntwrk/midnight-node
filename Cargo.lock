@@ -7733,12 +7733,10 @@ dependencies = [
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
  "substrate-prometheus-endpoint",
- "syn 2.0.104",
  "tempfile",
  "thiserror 1.0.69",
  "time-source",
  "tokio",
- "walkdir",
 ]
 
 [[package]]
