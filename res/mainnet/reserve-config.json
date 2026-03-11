@@ -1,0 +1,9 @@
+{
+  "illiquid_circulation_supply_validator_address": "addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq",
+  "asset": {
+    "policy_id": "0x0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa",
+    "asset_name": "NIGHT"
+  },
+  "utxos": [],
+  "total_amount": 0
+}
