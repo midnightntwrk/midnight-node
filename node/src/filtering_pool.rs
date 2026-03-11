@@ -74,7 +74,7 @@ where
 					false
 				}
 			},
-			_ => false,
+			Op::Call { .. } | Op::ClaimRewards { .. } => false,
 		})
 	}
 
