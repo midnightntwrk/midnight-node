@@ -18,8 +18,8 @@ use crate::{
 	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 use cardano_serialization_lib::{
-	Address, BaseAddress, ByronAddress, ConstrPlutusData, Credential, Ed25519KeyHash,
-	EnterpriseAddress, PlutusData, RewardAddress, ScriptHash,
+	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
+	PlutusData, RewardAddress, ScriptHash,
 };
 use derive_new::new;
 use midnight_primitives_cnight_observation::{
@@ -446,14 +446,22 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let Some(owner) = reward_address_from_holder(&row.holder_address, cardano_network)
+			let Some(cardano_address) =
+				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
 				log::error!(
-					"Cardano address {:?} could not be resolved to a reward address",
+					"Cardano address {:?} not valid bech32 cardano address",
 					&row.holder_address
 				);
 				continue;
 			};
+
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -502,14 +510,22 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let Some(owner) = reward_address_from_holder(&row.holder_address, cardano_network)
+			let Some(cardano_address) =
+				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
 				log::error!(
-					"Cardano address {:?} could not be resolved to a reward address",
-					&row.holder_address
+					"Cardano address {:?} not valid bech32 cardano address",
+					row.holder_address
 				);
 				continue;
 			};
+
+			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
+				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				continue;
+			};
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
 
 			let utxo = ObservedUtxo {
 				header,
@@ -526,105 +542,5 @@ impl MidnightCNightObservationDataSourceImpl {
 		}
 
 		Ok(utxos)
-	}
-}
-
-/// Extracts a reward address (owner) from a Cardano holder address string.
-/// Used by `get_asset_create_utxos` and `get_asset_spend_utxos` to determine
-/// the owner of a cNIGHT UTXO.
-///
-/// Supports:
-/// - Shelley base addresses (bech32) — uses staking credential
-/// - Byron addresses (base58) — derives a synthetic reward address from a hash
-///   of the Byron address bytes, since Byron addresses have no staking credential
-///
-/// Returns `None` for enterprise, pointer, and other address types that have
-/// no staking credential and no Byron-compatible fallback.
-fn reward_address_from_holder(
-	holder_address: &str,
-	cardano_network: u8,
-) -> Option<CardanoRewardAddressBytes> {
-	// Try Shelley address (bech32) first
-	if let Ok(cardano_address) = Address::from_bech32(holder_address) {
-		// Prefer staking credential from base addresses
-		if let Some(base_address) = BaseAddress::from_address(&cardano_address) {
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			return Some(CardanoRewardAddressBytes(
-				reward_address.to_address().to_bytes().try_into().unwrap(),
-			));
-		}
-		// Enterprise addresses have no staking credential; use payment credential instead
-		if let Some(enterprise) = EnterpriseAddress::from_address(&cardano_address) {
-			let reward_address = RewardAddress::new(cardano_network, &enterprise.payment_cred());
-			return Some(CardanoRewardAddressBytes(
-				reward_address.to_address().to_bytes().try_into().unwrap(),
-			));
-		}
-		return None;
-	}
-
-	// Try Byron address (base58)
-	if let Ok(byron_address) = ByronAddress::from_base58(holder_address) {
-		// Byron addresses have no staking credential. Derive a synthetic reward address
-		// by hashing the Byron address bytes to produce a deterministic 28-byte script hash.
-		let addr_bytes = byron_address.to_bytes();
-		let hash = sp_core::hashing::blake2_256(&addr_bytes);
-		let script_hash = ScriptHash::from_bytes(hash[..28].to_vec()).ok()?;
-		let credential = Credential::from_scripthash(&script_hash);
-		let reward_address = RewardAddress::new(cardano_network, &credential);
-		return Some(CardanoRewardAddressBytes(
-			reward_address.to_address().to_bytes().try_into().unwrap(),
-		));
-	}
-
-	None
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	const CARDANO_MAINNET: u8 = 1;
-
-	// Byron-era address (base58, not bech32) — from the reported error
-	const BYRON_ADDRESS: &str = "DdzFFzCqrhsfZ1nFogsNsJ8NRqLp2CmiTRUeT3YEW3bNwjcEgBFkJZquo2bJefdvEaHSu9VyAaexiuDRP2SH1aJ7RhDYBHDoejbxzFPd";
-
-	// Mainnet enterprise address (no delegation/staking part) — from the reported error
-	const ENTERPRISE_ADDRESS: &str = "addr1wxgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqfvty7h";
-
-	fn make_base_address_bech32() -> String {
-		let payment_hash = Ed25519KeyHash::from_bytes(vec![0u8; 28]).unwrap();
-		let stake_hash = Ed25519KeyHash::from_bytes(vec![1u8; 28]).unwrap();
-		let base = BaseAddress::new(
-			CARDANO_MAINNET,
-			&Credential::from_keyhash(&payment_hash),
-			&Credential::from_keyhash(&stake_hash),
-		);
-		base.to_address().to_bech32(None).unwrap()
-	}
-
-	#[test]
-	fn base_address_holder_resolves_to_reward_address() {
-		let addr = make_base_address_bech32();
-		let result = reward_address_from_holder(&addr, CARDANO_MAINNET);
-		assert!(result.is_some(), "Base address should resolve to a reward address");
-	}
-
-	#[test]
-	fn byron_address_holder_resolves_to_reward_address() {
-		let result = reward_address_from_holder(BYRON_ADDRESS, CARDANO_MAINNET);
-		assert!(
-			result.is_some(),
-			"Byron address should resolve to a reward address, but from_bech32 fails on base58 addresses"
-		);
-	}
-
-	#[test]
-	fn enterprise_address_holder_resolves_to_reward_address() {
-		let result = reward_address_from_holder(ENTERPRISE_ADDRESS, CARDANO_MAINNET);
-		assert!(
-			result.is_some(),
-			"Enterprise address should resolve to a reward address, but BaseAddress::from_address returns None for enterprise addresses"
-		);
 	}
 }
