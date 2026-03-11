@@ -1,12 +1,13 @@
 use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
-	ClaimedUnshieldedSpendsKey, CoinInfo, CoinPublicKey, ContractAction, ContractAddress, DB,
-	DefaultDB, Deserializable, EncryptionPublicKey, HashOutput, Input, IntentCustom, IntentInfo,
-	LedgerContext, Nonce, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
-	PublicAddress, QualifiedInfo, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo,
-	TokenType, TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
-	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
+	ClaimedUnshieldedSpendsKey, CoinInfo, CoinPublicKey, ContractAction, ContractAddress,
+	ContractEffects, DB, DefaultDB, Deserializable, EncryptionPublicKey, HashOutput, Input,
+	IntentCustom, IntentInfo, LedgerContext, Nonce, OfferInfo, Output, ProofPreimage,
+	ProofPreimageMarker, ProofProvider, PublicAddress, QualifiedInfo, Recipient, ShieldedTokenType,
+	ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext, Transient,
+	UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, Wallet,
+	WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -20,8 +21,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
-use midnight_node_ledger_helpers::onchain_runtime::context::Effects;
-use midnight_node_ledger_helpers::{BuildTransient, CoinInfo};
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
@@ -375,7 +374,7 @@ impl BuildTxs for CustomContractBuilder {
 
 		let mut guaranteed_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
 		let mut fallible_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
-		let find_outputs = |effects_vec: Vec<Effects<DefaultDB>>| -> Result<
+		let find_outputs = |effects_vec: Vec<ContractEffects<DefaultDB>>| -> Result<
 			Vec<Box<dyn BuildUtxoOutput<DefaultDB>>>,
 			CustomContractBuilderError,
 		> {
