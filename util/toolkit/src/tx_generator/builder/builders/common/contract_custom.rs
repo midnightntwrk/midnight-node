@@ -92,7 +92,7 @@ impl EncodedOutputInfo {
 			{
 				encryption_public_key = Some(wallet.enc_public_key);
 			} else {
-				println!(
+				log::warn!(
 					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
 					hex::encode(&encoded_output.coin_info.nonce)
 				);
@@ -110,8 +110,6 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 		_context: Arc<LedgerContext<D>>,
 	) -> Output<ProofPreimage, D> {
 		let coin_info: CoinInfo = (&self.encoded_output).into();
-
-		println!("coin_info: {coin_info:?}");
 		let recipient: Recipient = (&self.encoded_output.recipient).into();
 
 		match recipient {
