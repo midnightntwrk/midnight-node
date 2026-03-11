@@ -85,7 +85,8 @@ impl TxGenerator {
 			let source: Box<dyn GetTxs> = Box::new(GetTxsFromUrl::new(
 				&url,
 				src.fetch_concurrency,
-				src.fetch_compute_concurrency.unwrap_or_else(num_cpus::get),
+				src.fetch_compute_concurrency
+					.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
 				src.dust_warp,
 				src.fetch_only_cached,
 				src.fetch_cache,

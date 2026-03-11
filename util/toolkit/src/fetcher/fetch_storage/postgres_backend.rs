@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use sqlx::{
 	PgPool, Row,
@@ -142,7 +141,6 @@ impl PostgresBackend {
 	}
 }
 
-#[async_trait]
 impl FetchStorage for PostgresBackend {
 	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let result: Option<PgRow> = sqlx::query(
@@ -470,7 +468,6 @@ impl PostgresBackend {
 }
 
 // Implement WalletStateCaching for PostgresBackend (delegates to FetchStorage impl)
-#[async_trait]
 impl WalletStateCaching for PostgresBackend {
 	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
 		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id).await

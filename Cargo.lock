@@ -7980,7 +7980,6 @@ dependencies = [
  "midnight-node-metadata",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
- "num_cpus",
  "parity-scale-codec",
  "rand 0.8.5",
  "redb",
