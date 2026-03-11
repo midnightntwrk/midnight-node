@@ -20,15 +20,10 @@ use subxt::{
 	utils::H256,
 };
 
-#[cfg(feature = "legacy-metadata")]
-use crate::fetcher::runtimes::{
-	MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0, MidnightMetadata0_18_1,
-	MidnightMetadata0_19_0,
-};
 use crate::fetcher::{
 	fetch_storage::{FetchStorage, FetchedBlock},
 	runtimes::{
-		MidnightMetadata, MidnightMetadata0_20_0, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
+		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
 		RuntimeVersion, RuntimeVersionError,
 	},
 };
@@ -141,46 +136,6 @@ impl ComputeTask {
 			})
 			.expect("no runtime version found")?;
 		match spec_version {
-			#[cfg(feature = "legacy-metadata")]
-			RuntimeVersion::V0_17_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_0>(block, spec_version)
-					.await
-			},
-			#[cfg(feature = "legacy-metadata")]
-			RuntimeVersion::V0_17_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_1>(block, spec_version)
-					.await
-			},
-			#[cfg(feature = "legacy-metadata")]
-			RuntimeVersion::V0_18_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_0>(block, spec_version)
-					.await
-			},
-			#[cfg(feature = "legacy-metadata")]
-			RuntimeVersion::V0_18_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_1>(block, spec_version)
-					.await
-			},
-			#[cfg(feature = "legacy-metadata")]
-			RuntimeVersion::V0_19_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_19_0>(block, spec_version)
-					.await
-			},
-			#[cfg(not(feature = "legacy-metadata"))]
-			RuntimeVersion::V0_17_0
-			| RuntimeVersion::V0_17_1
-			| RuntimeVersion::V0_18_0
-			| RuntimeVersion::V0_18_1
-			| RuntimeVersion::V0_19_0 => {
-				panic!(
-					"block uses runtime version {:?} which requires the `legacy-metadata` feature",
-					spec_version
-				)
-			},
-			RuntimeVersion::V0_20_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_20_0>(block, spec_version)
-					.await
-			},
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(block, spec_version)
 					.await

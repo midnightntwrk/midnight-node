@@ -15,7 +15,6 @@ default = []
 hardfork-test = []
 hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
-legacy-metadata = ["midnight-node-metadata/legacy-metadata"]
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
