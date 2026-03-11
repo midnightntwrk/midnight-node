@@ -121,16 +121,19 @@ where
 		at: <Block as BlockT>::Hash,
 		xt: &<Block as BlockT>::Extrinsic,
 	) -> bool {
+		if !self.enabled {
+			return true;
+		}
 		self.metrics.receive();
 		let Ok(decoded_xt) =
 			midnight_node_runtime::UncheckedExtrinsic::decode(&mut &xt.encode()[..])
 		else {
-			self.metrics.deny(PARSE_ERROR);
 			log::warn!(
 				target: LOG_TARGET,
-				"⚠️ Skipping transaction that failed to decode as runtime extrinsic",
+				"⚠️ Not denying transaction that failed to decode as runtime UncheckedExtrinsic",
 			);
-			return false;
+			self.metrics.forward();
+			return true;
 		};
 
 		if let midnight_node_runtime::RuntimeCall::Midnight(
@@ -200,18 +203,14 @@ where
 		source: TransactionSource,
 		xts: Vec<TransactionFor<Self>>,
 	) -> Result<Vec<Result<TxHash<Self>, Self::Error>>, Self::Error> {
-		if self.enabled {
-			let total_xts = xts.len();
-			let mut filtered = Vec::with_capacity(total_xts);
-			for xt in xts {
-				if self.should_accept_extrinsic(at, &xt) {
-					filtered.push(xt);
-				}
+		let total_xts = xts.len();
+		let mut filtered = Vec::with_capacity(total_xts);
+		for xt in xts {
+			if self.should_accept_extrinsic(at, &xt) {
+				filtered.push(xt);
 			}
-			self.inner.submit_at(at, source, filtered).await
-		} else {
-			self.inner.submit_at(at, source, xts).await
 		}
+		self.inner.submit_at(at, source, filtered).await
 	}
 
 	async fn submit_one(
@@ -220,7 +219,7 @@ where
 		source: TransactionSource,
 		xt: TransactionFor<Self>,
 	) -> Result<TxHash<Self>, Self::Error> {
-		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
+		if !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 
@@ -233,7 +232,7 @@ where
 		source: TransactionSource,
 		xt: TransactionFor<Self>,
 	) -> Result<Pin<Box<TransactionStatusStreamFor<Self>>>, Self::Error> {
-		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
+		if !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 
@@ -331,7 +330,7 @@ where
 		at: <Self::Block as BlockT>::Hash,
 		xt: LocalTransactionFor<Self>,
 	) -> Result<Self::Hash, Self::Error> {
-		if self.enabled && !self.should_accept_extrinsic(at, &xt) {
+		if !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
 		self.inner.submit_local(at, xt)
