@@ -7656,7 +7656,6 @@ dependencies = [
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-reserve-observation",
  "midnight-primitives-system-parameters",
- "midnight-serialize 1.0.0",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-cnight-observation",

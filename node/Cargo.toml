@@ -145,9 +145,8 @@ sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-toki
 tokio.workspace = true
 blake2b_simd = "1.0"
 
-# FilteringTransactionPool feature dependencies
+# FilteringTransactionPool feature dependency
 sp-transaction-pool.workspace = true
-midnight-serialize.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
