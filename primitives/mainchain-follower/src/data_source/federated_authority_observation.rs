@@ -41,7 +41,11 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
 		// Get block number from hash
+		let _block_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["fedauth_get_block_by_hash"]).start_timer()
+		);
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
+		drop(_block_timer);
 
 		let block_number = match block {
 			Some(b) => b.block_number.0,
@@ -51,6 +55,9 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query council UTXO
+		let _council_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["fedauth_get_council_utxo"]).start_timer()
+		);
 		let council_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.council.address,
@@ -58,6 +65,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_council_timer);
 
 		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
@@ -83,6 +91,9 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query technical committee UTXO
+		let _techcomm_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["fedauth_get_technical_committee_utxo"]).start_timer()
+		);
 		let technical_committee_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.technical_committee.address,
@@ -90,6 +101,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_techcomm_timer);
 
 		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {

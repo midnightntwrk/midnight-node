@@ -71,8 +71,12 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
 		let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
 
+		let _sq_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["candidates_get_token_utxo_for_epoch"]).start_timer()
+		);
 		let candidates_output_opt =
 			db_model::get_token_utxo_for_epoch(&self.pool, &permissioned_candidate_asset, epoch).await?;
+		drop(_sq_timer);
 
 		// DParameter is now read from pallet_system_parameters storage, not from mainchain.
 		// This hardcoded value is unused - the actual d_parameter comes from the runtime.
@@ -98,7 +102,12 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 	)-> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
 		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
 		let candidates = self.get_registered_candidates(epoch, committee_candidate_address).await?;
-		let stake_map = Self::make_stake_map(db_model::get_stake_distribution(&self.pool, epoch).await?);
+		let _stake_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["candidates_get_stake_distribution"]).start_timer()
+		);
+		let stake_entries = db_model::get_stake_distribution(&self.pool, epoch).await?;
+		drop(_stake_timer);
+		let stake_map = Self::make_stake_map(stake_entries);
 		Ok(Self::group_candidates_by_mc_pub_key(candidates).into_iter().map(|(mainchain_pub_key, candidate_registrations)| {
 			CandidateRegistrations {
 				stake_pool_public_key: mainchain_pub_key.clone(),
@@ -110,7 +119,11 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 
 	async fn get_epoch_nonce(&self, epoch: McEpochNumber) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
 		let epoch = self.get_epoch_of_data_storage(epoch)?;
+		let _sq_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["candidates_get_epoch_nonce"]).start_timer()
+		);
 		let nonce = db_model::get_epoch_nonce(&self.pool, EpochNumber(epoch.0)).await?;
+		drop(_sq_timer);
 		Ok(nonce.map(|n| EpochNonce(n.0)))
 	}
 
@@ -147,7 +160,11 @@ impl CandidatesDataSourceImpl {
 		&self,
 		epoch: EpochNumber,
 	) -> Result<Option<BlockNumber>, Box<dyn std::error::Error + Send + Sync>> {
+		let _sq_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["candidates_get_latest_block_for_epoch"]).start_timer()
+		);
 		let block_option = db_model::get_latest_block_for_epoch(&self.pool, epoch).await?;
+		drop(_sq_timer);
 		Ok(block_option.map(|b| b.block_no))
 	}
 
@@ -160,13 +177,18 @@ impl CandidatesDataSourceImpl {
 		let address: Address = Address(committee_candidate_address.to_string());
 		let active_utxos = match registrations_block_for_epoch {
 			Some(block) => {
-				db_model::get_utxos_for_address(
+				let _sq_timer = self.metrics_opt.as_ref().map(|m|
+					m.time_elapsed().with_label_values(&["candidates_get_utxos_for_address"]).start_timer()
+				);
+				let utxos = db_model::get_utxos_for_address(
 					&self.pool,
 					&address,
 					block,
 					self.db_sync_config.get_tx_in_config().await?,
 				)
-				.await?
+				.await?;
+				drop(_sq_timer);
+				utxos
 			},
 			None => vec![],
 		};

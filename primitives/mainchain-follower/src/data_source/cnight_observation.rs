@@ -128,10 +128,14 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				))?;
 
 		// Get end position from cardano block hash
+		let _block_timer = self.metrics_opt.as_ref().map(|m|
+			m.time_elapsed().with_label_values(&["cnight_get_block_by_hash"]).start_timer()
+		);
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
+		drop(_block_timer);
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
 
@@ -146,6 +150,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 
 		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
 			async {
+				let _sq_timer = self.metrics_opt.as_ref().map(|m|
+					m.time_elapsed().with_label_values(&["cnight_get_registrations"]).start_timer()
+				);
 				self.get_registration_utxos(
 					cardano_network,
 					&mapping_validator_policy_id,
@@ -160,6 +167,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
+				let _sq_timer = self.metrics_opt.as_ref().map(|m|
+					m.time_elapsed().with_label_values(&["cnight_get_deregistrations"]).start_timer()
+				);
 				self.get_deregistration_utxos(
 					cardano_network,
 					&config.mapping_validator_address,
@@ -172,6 +182,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
+				let _sq_timer = self.metrics_opt.as_ref().map(|m|
+					m.time_elapsed().with_label_values(&["cnight_get_asset_creates"]).start_timer()
+				);
 				self.get_asset_create_utxos(
 					cardano_network,
 					config.cnight_policy_id,
@@ -185,6 +198,9 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
+				let _sq_timer = self.metrics_opt.as_ref().map(|m|
+					m.time_elapsed().with_label_values(&["cnight_get_asset_spends"]).start_timer()
+				);
 				self.get_asset_spend_utxos(
 					cardano_network,
 					config.cnight_policy_id,
