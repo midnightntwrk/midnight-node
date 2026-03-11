@@ -463,6 +463,7 @@ pub fn new_partial(
 }
 
 /// Builds a new service for a full client.
+#[allow(clippy::too_many_arguments)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
