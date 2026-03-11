@@ -24,41 +24,49 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 
-// --- Version-local conversion helpers ---
+// --- Version-local conversion impls ---
 
-fn encoded_recipient_to_recipient(value: &EncodedRecipient) -> Recipient {
-	if value.is_left {
-		let bytes = value.left.0.0.0;
-		Recipient::User(CoinPublicKey(HashOutput(bytes)))
-	} else {
-		let mut serialized = Vec::new();
-		midnight_node_ledger_helpers::Serializable::serialize(&value.right.0, &mut serialized)
-			.expect("failed to serialize contract address");
-		let contract_address =
-			<ContractAddress as Deserializable>::deserialize(&mut &serialized[..], 0)
-				.expect("failed to deserialize contract address");
-		Recipient::Contract(contract_address)
+impl From<&EncodedRecipient> for Recipient {
+	fn from(value: &EncodedRecipient) -> Self {
+		if value.is_left {
+			let bytes = value.left.0.0.0;
+			Recipient::User(CoinPublicKey(HashOutput(bytes)))
+		} else {
+			let mut serialized = Vec::new();
+			midnight_node_ledger_helpers::Serializable::serialize(&value.right.0, &mut serialized)
+				.expect("failed to serialize contract address");
+			let contract_address =
+				<ContractAddress as Deserializable>::deserialize(&mut &serialized[..], 0)
+					.expect("failed to deserialize contract address");
+			Recipient::Contract(contract_address)
+		}
 	}
 }
 
-fn encoded_output_to_coin_info(value: &EncodedOutput) -> CoinInfo {
-	CoinInfo {
-		nonce: Nonce(HashOutput(value.coin_info.nonce)),
-		type_: ShieldedTokenType(HashOutput(value.coin_info.color)),
-		value: value.coin_info.value,
+impl From<&EncodedOutput> for CoinInfo {
+	fn from(value: &EncodedOutput) -> Self {
+		CoinInfo {
+			nonce: Nonce(HashOutput(value.coin_info.nonce)),
+			type_: ShieldedTokenType(HashOutput(value.coin_info.color)),
+			value: value.coin_info.value,
+		}
 	}
 }
 
-fn encoded_qualified_to_coin_info(value: &EncodedQualifiedShieldedCoinInfo) -> CoinInfo {
-	CoinInfo {
-		nonce: Nonce(HashOutput(value.nonce)),
-		type_: ShieldedTokenType(HashOutput(value.color)),
-		value: value.value,
+impl From<&EncodedQualifiedShieldedCoinInfo> for CoinInfo {
+	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+		CoinInfo {
+			nonce: Nonce(HashOutput(value.nonce)),
+			type_: ShieldedTokenType(HashOutput(value.color)),
+			value: value.value,
+		}
 	}
 }
 
-fn encoded_qualified_to_qualified_info(value: &EncodedQualifiedShieldedCoinInfo) -> QualifiedInfo {
-	encoded_qualified_to_coin_info(value).qualify(value.mt_index)
+impl From<&EncodedQualifiedShieldedCoinInfo> for QualifiedInfo {
+	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+		CoinInfo::from(value).qualify(value.mt_index)
+	}
 }
 
 // --- Version-local type definitions ---
@@ -77,7 +85,7 @@ impl EncodedOutputInfo {
 		possible_destinations: &[ShieldedWallet<DefaultDB>],
 	) -> Self {
 		let mut encryption_public_key = None;
-		let recipient = encoded_recipient_to_recipient(&encoded_output.recipient);
+		let recipient: Recipient = (&encoded_output.recipient).into();
 		if let Recipient::User(ref public_key) = recipient {
 			if let Some(wallet) =
 				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
@@ -101,10 +109,10 @@ impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
 		rng: &mut rand::prelude::StdRng,
 		_context: Arc<LedgerContext<D>>,
 	) -> Output<ProofPreimage, D> {
-		let coin_info = encoded_output_to_coin_info(&self.encoded_output);
+		let coin_info: CoinInfo = (&self.encoded_output).into();
 
 		println!("coin_info: {coin_info:?}");
-		let recipient = encoded_recipient_to_recipient(&self.encoded_output.recipient);
+		let recipient: Recipient = (&self.encoded_output.recipient).into();
 
 		match recipient {
 			Recipient::User(public_key) => Output::new(
@@ -148,7 +156,7 @@ impl<D: DB + Clone> BuildTransient<D> for EncodedTransientInfo<D> {
 		let output = self.encoded_output_info.build(rng, context.clone());
 		Transient::new_from_contract_owned_output(
 			rng,
-			&encoded_qualified_to_qualified_info(&self.encoded_qualified_info),
+			&(&self.encoded_qualified_info).into(),
 			Some(self.segment),
 			output,
 		)
@@ -181,7 +189,7 @@ impl<D: DB + Clone> BuildInput<D> for EncodedInputInfo<D> {
 	) -> Input<ProofPreimage, D> {
 		Input::new_contract_owned(
 			rng,
-			&encoded_qualified_to_qualified_info(&self.encoded_qualified_info),
+			&(&self.encoded_qualified_info).into(),
 			Some(self.segment),
 			self.contract_address,
 			&self.chain_zswap_state.coin_coms,
@@ -443,7 +451,7 @@ impl BuildTxs for CustomContractBuilder {
 			for encoded_output in zswap_state.outputs.into_iter() {
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
-				let coin_info = encoded_output_to_coin_info(&encoded_output);
+				let coin_info: CoinInfo = (&encoded_output).into();
 				let encoded_output_info =
 					EncodedOutputInfo::new(encoded_output, 1, &shielded_wallets);
 				encoded_output_infos.insert(coin_info, Box::new(encoded_output_info));
@@ -455,7 +463,7 @@ impl BuildTxs for CustomContractBuilder {
 					.expect("Contract address should be set");
 				let chain_zswap_state = context.with_ledger_state(|state| (*state.zswap).clone());
 				for encoded_input in zswap_state.inputs.into_iter() {
-					let coin_info = encoded_qualified_to_coin_info(&encoded_input);
+					let coin_info: CoinInfo = (&encoded_input).into();
 
 					if let Some(encoded_output_info) = encoded_output_infos.get(&coin_info) {
 						let transient = EncodedTransientInfo {
