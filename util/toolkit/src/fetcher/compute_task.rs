@@ -23,8 +23,8 @@ use subxt::{
 use crate::fetcher::{
 	fetch_storage::{FetchStorage, FetchedBlock},
 	runtimes::{
-		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
-		RuntimeVersion, RuntimeVersionError,
+		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
+		RuntimeVersionError,
 	},
 };
 
