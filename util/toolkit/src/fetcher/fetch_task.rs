@@ -48,7 +48,7 @@ impl FetchTask {
 		self,
 		chain_id: H256,
 		client: &MidnightNodeClient,
-		storage: impl FetchStorage + Send + Sync,
+		storage: impl FetchStorage,
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
