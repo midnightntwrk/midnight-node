@@ -154,7 +154,8 @@ impl CandidatesDataSourceImpl {
 		&self,
 		epoch: EpochNumber,
 	) -> Result<Option<BlockNumber>, Box<dyn std::error::Error + Send + Sync>> {
-		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_latest_block_for_epoch");
+		let _sq_timer =
+			start_sub_query_timer(&self.metrics_opt, "candidates_get_latest_block_for_epoch");
 		let block_option = db_model::get_latest_block_for_epoch(&self.pool, epoch).await?;
 		drop(_sq_timer);
 		Ok(block_option.map(|b| b.block_no))
@@ -169,7 +170,8 @@ impl CandidatesDataSourceImpl {
 		let address: Address = Address(committee_candidate_address.to_string());
 		let active_utxos = match registrations_block_for_epoch {
 			Some(block) => {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_utxos_for_address");
+				let _sq_timer =
+					start_sub_query_timer(&self.metrics_opt, "candidates_get_utxos_for_address");
 				let utxos = db_model::get_utxos_for_address(
 					&self.pool,
 					&address,
