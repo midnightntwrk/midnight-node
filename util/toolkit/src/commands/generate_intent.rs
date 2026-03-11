@@ -165,7 +165,9 @@ pub async fn execute(
 				log::info!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
 
-			let input_zswap_state = if let Some(wallet_seed) = args.wallet_seed {
+			let input_zswap_state = if args.circuit_call.input_zswap_state.is_some() {
+				args.circuit_call.input_zswap_state.clone()
+			} else if let Some(wallet_seed) = args.wallet_seed {
 				log::info!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
 					args.source.clone(),
