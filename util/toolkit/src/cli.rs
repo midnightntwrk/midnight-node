@@ -103,6 +103,14 @@ pub struct Cli {
 	#[arg(long, short = 'v', conflicts_with = "quiet", global = true, env = "MN_VERBOSE")]
 	pub verbose: bool,
 
+	/// Enable verbose ledger tracing output (sets tracing level to debug)
+	#[arg(long, conflicts_with = "quiet", global = true, env = "MN_VERBOSE_LEDGER")]
+	pub verbose_ledger: bool,
+
+	/// Enable verbose fetch logging (sets midnight_node_toolkit::fetcher to debug)
+	#[arg(long, conflicts_with = "quiet", global = true, env = "MN_VERBOSE_FETCH")]
+	pub verbose_fetch: bool,
+
 	/// Suppress info-level logs (only show warnings and errors)
 	#[arg(long, short = 'q', conflicts_with = "verbose", global = true, env = "MN_QUIET")]
 	pub quiet: bool,

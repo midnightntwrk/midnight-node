@@ -305,9 +305,9 @@ impl EncodedZswapLocalState {
 			outputs: value
 				.coins
 				.iter()
-				.map(|(nullifier, c)| EncodedOutput {
+				.map(|(_nullifier, c)| EncodedOutput {
 					coin_info: EncodedShieldedCoinInfo {
-						nonce: nullifier.0.0,
+						nonce: c.nonce.0.0,
 						color: c.type_.0.0,
 						value: c.value,
 					},
