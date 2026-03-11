@@ -74,6 +74,13 @@ See [Verification Guide](verification.md) for detailed instructions.
                     │  - genesis_block_*.mn           │
                     │  - genesis_state_*.mn           │
                     └─────────────────────────────────┘
+                    ┌─────────────────────────────────┐
+                    │  Bootnodes                      │
+                    │                                 │
+                    │  - bootnodes-config.json        │
+                    │    Injected into chain-spec     │
+                    │    after generation             │
+                    └─────────────────────────────────┘
                                     │
                                     ▼
 ┌───────────────────────────────────────────────────────────────────────────┐

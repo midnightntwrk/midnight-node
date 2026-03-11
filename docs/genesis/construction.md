@@ -86,9 +86,12 @@ Genesis generation creates the initial chain state for a Midnight network. The p
 │ federated-authority-│──┤
 │ config.json         │  │
 ├─────────────────────┤  │
-│ permissioned-       │──┘
-│ candidates-         │
-│ config.json         │
+│ permissioned-       │──┤
+│ candidates-         │  │
+│ config.json         │  │
+├─────────────────────┤  │
+│ bootnodes-config.   │──┘
+│ json                │
 └─────────────────────┘
 ```
 
@@ -116,6 +119,7 @@ These files contain Cardano smart contract addresses and must be configured befo
 | `ledger-parameters-config.json` | Ledger parameters (epoch length, slot duration, etc.) |
 | `pc-chain-config.json` | Partner chain configuration (security parameter, etc.) |
 | `system-parameters-config.json` | System-level parameters |
+| `bootnodes-config.json` | Initial peer-to-peer bootnode multiaddresses injected into the chain spec |
 
 ### Generated Config Files (from Address Files)
 
@@ -325,6 +329,8 @@ Creates the final chain specification:
 ```bash
 earthly -P +rebuild-chainspec --NETWORK=<network>
 ```
+
+After generation, if a `bootnodes-config.json` file exists in `res/<network>/` (or bootnodes are entered manually), the tool injects the bootnode multiaddresses into `chain-spec.json` and regenerates `chain-spec-raw.json` and `chain-spec-abridged.json`.
 
 **Output files:**
 - `res/<network>/chain-spec.json`
