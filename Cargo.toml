@@ -295,7 +295,6 @@ prost = { version = "0.13.5", default-features = false}
 reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls", "blocking", "json" ] }
 strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
-walkdir = "2"
 
 [profile.release]
 panic = "unwind"

@@ -148,8 +148,6 @@ blake2b_simd = "1.0"
 
 [dev-dependencies]
 tempfile = "3"
-syn.workspace = true
-walkdir.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true
