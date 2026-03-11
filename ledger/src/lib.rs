@@ -100,7 +100,12 @@ pub mod ledger_8 {
 pub use ledger_8 as latest;
 
 #[cfg(feature = "std")]
-fn drop_all_default_storage() {
+/// Drops all versioned default ledger storages.
+///
+/// Intended to be called from the embedding application shutdown path (for
+/// example after Tokio/node shutdown completes) to ensure DB-backed storage is
+/// released deterministically.
+pub fn drop_all_default_storage() {
 	ledger_7::storage::drop_default_storage_if_exists();
 	hard_fork_test::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();

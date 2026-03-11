@@ -1,5 +1,7 @@
 name: +contract-precompiles (Build ledger test static data contracts and CI image)
 
+permissions: {}
+
 on:
   workflow_dispatch:
   schedule:
@@ -14,6 +16,8 @@ concurrency:
 jobs:
   build:
     name: Build CI image (linux/${{ matrix.platform }})
+    permissions:
+      contents: read
     strategy:
       matrix:
         # Define matrix with platform and corresponding GitHub-hosted runner

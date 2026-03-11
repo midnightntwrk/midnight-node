@@ -337,8 +337,9 @@ jobs:
 
       - name: Extract files from Docker images
         id: extract
+        env:
+          IMAGE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
         run: |
-          IMAGE_TAG="${{ needs.prepare-release.outputs.release_tag }}"
           RELEASE_TAG="node-${IMAGE_TAG}"
           PLATFORM="${{ matrix.platform }}"
 
@@ -380,10 +381,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums
+        env:
+          NODE_RELEASE: ${{ steps.extract.outputs.node_release }}
+          TOOLKIT_RELEASE: ${{ steps.extract.outputs.toolkit_release }}
         run: |
           {
-            sha256sum "${{ steps.extract.outputs.node_release }}"
-            sha256sum "${{ steps.extract.outputs.toolkit_release }}"
+            sha256sum "$NODE_RELEASE"
+            sha256sum "$TOOLKIT_RELEASE"
           } >> "SHA256SUMS-${{ matrix.platform }}"
           echo "Generated checksums:"
           cat "SHA256SUMS-${{ matrix.platform }}"
@@ -401,11 +405,10 @@ jobs:
       - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.extract.outputs.release_tag }}
+          NODE_FILE: ${{ steps.extract.outputs.node_release }}
+          TOOLKIT_FILE: ${{ steps.extract.outputs.toolkit_release }}
         run: |
-          RELEASE_TAG="${{ steps.extract.outputs.release_tag }}"
-          NODE_FILE="${{ steps.extract.outputs.node_release }}"
-          TOOLKIT_FILE="${{ steps.extract.outputs.toolkit_release }}"
-
           echo "Uploading assets to release: $RELEASE_TAG"
           gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
             "$NODE_FILE" \
