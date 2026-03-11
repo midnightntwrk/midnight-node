@@ -548,16 +548,14 @@ fn reward_address_from_holder(
 	if let Ok(cardano_address) = Address::from_bech32(holder_address) {
 		// Prefer staking credential from base addresses
 		if let Some(base_address) = BaseAddress::from_address(&cardano_address) {
-			let reward_address =
-				RewardAddress::new(cardano_network, &base_address.stake_cred());
+			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
 			return Some(CardanoRewardAddressBytes(
 				reward_address.to_address().to_bytes().try_into().unwrap(),
 			));
 		}
 		// Enterprise addresses have no staking credential; use payment credential instead
 		if let Some(enterprise) = EnterpriseAddress::from_address(&cardano_address) {
-			let reward_address =
-				RewardAddress::new(cardano_network, &enterprise.payment_cred());
+			let reward_address = RewardAddress::new(cardano_network, &enterprise.payment_cred());
 			return Some(CardanoRewardAddressBytes(
 				reward_address.to_address().to_bytes().try_into().unwrap(),
 			));
@@ -589,12 +587,10 @@ mod tests {
 	const CARDANO_MAINNET: u8 = 1;
 
 	// Byron-era address (base58, not bech32) — from the reported error
-	const BYRON_ADDRESS: &str =
-		"DdzFFzCqrhsfZ1nFogsNsJ8NRqLp2CmiTRUeT3YEW3bNwjcEgBFkJZquo2bJefdvEaHSu9VyAaexiuDRP2SH1aJ7RhDYBHDoejbxzFPd";
+	const BYRON_ADDRESS: &str = "DdzFFzCqrhsfZ1nFogsNsJ8NRqLp2CmiTRUeT3YEW3bNwjcEgBFkJZquo2bJefdvEaHSu9VyAaexiuDRP2SH1aJ7RhDYBHDoejbxzFPd";
 
 	// Mainnet enterprise address (no delegation/staking part) — from the reported error
-	const ENTERPRISE_ADDRESS: &str =
-		"addr1wxgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqfvty7h";
+	const ENTERPRISE_ADDRESS: &str = "addr1wxgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqfvty7h";
 
 	fn make_base_address_bech32() -> String {
 		let payment_hash = Ed25519KeyHash::from_bytes(vec![0u8; 28]).unwrap();

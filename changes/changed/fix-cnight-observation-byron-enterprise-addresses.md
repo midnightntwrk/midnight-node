@@ -6,5 +6,5 @@ The cNIGHT observation data source now handles Byron (base58) and enterprise
 Previously these address types were silently skipped, causing token movements
 to/from such addresses to be missed.
 
-PR:
-JIRA:
+PR: https://github.com/midnightntwrk/midnight-node/pull/901
+JIRA: https://shielded.atlassian.net/browse/PM-22277
