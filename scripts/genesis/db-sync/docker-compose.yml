@@ -29,7 +29,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: cexplorer
       RESTORE_SNAPSHOT: ${RESTORE_SNAPSHOT:-}
       EXTRA_DB_SYNC_ARGS: ""
@@ -43,7 +43,7 @@ services:
     container_name: db-sync-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: cexplorer
     shm_size: 1g
     command: postgres -c max_wal_size=4GB -c checkpoint_timeout=30min -c shared_buffers=512MB -c work_mem=256MB -c maintenance_work_mem=1GB

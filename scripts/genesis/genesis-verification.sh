@@ -21,9 +21,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Available networks (excluding dev/undeployed which are for local development)
 AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet")
 
-# Default RNG seed (same as in Earthfile)
-DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
-
 # Function to print colored messages
 print_header() {
     echo -e "\n${BOLD}${BLUE}=================================================================${NC}"

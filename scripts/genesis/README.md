@@ -54,8 +54,11 @@ From the repository root:
 
 ```bash
 cd scripts/genesis/db-sync
+direnv allow   # generates a random password in postgres.password and exports POSTGRES_PASSWORD
 docker compose up -d
 ```
+
+The `.envrc` in this directory auto-generates a random password file (`postgres.password`, gitignored) on first run and exports `POSTGRES_PASSWORD` for docker-compose.
 
 This starts a PostgreSQL 16 container with tuned settings for large dataset operations. Verify it's running:
 
@@ -70,7 +73,7 @@ You should see `database system is ready to accept connections`.
 Extract and restore the snapshot into the running database:
 
 ```bash
-PGPASSWORD=postgres pg_restore \
+PGPASSWORD=$POSTGRES_PASSWORD pg_restore \
   --host localhost \
   --port 5432 \
   --username postgres \
@@ -91,7 +94,7 @@ PGPASSWORD=postgres pg_restore \
 Check that key tables have data:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d cexplorer -c "SELECT COUNT(*) FROM block;"
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d cexplorer -c "SELECT COUNT(*) FROM block;"
 ```
 
 For mainnet, you should see 11M+ blocks.
@@ -101,20 +104,20 @@ For mainnet, you should see 11M+ blocks.
 The genesis commands create required indexes automatically when connecting. However, if the restore was interrupted (e.g., disk space ran out), some standard DB Sync indexes may be missing. You can check with:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d cexplorer -c "\di"
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d cexplorer -c "\di"
 ```
 
 If key indexes like `idx_tx_out_address`, `idx_tx_block_id`, or `idx_ma_tx_out_tx_out_id` are missing, the genesis queries will be extremely slow. In that case, you'll need to restore again with sufficient disk space (see [Troubleshooting](#troubleshooting)).
 
 ### Connection String
 
-The default connection string for the local DB Sync is:
+The connection string for the local DB Sync is:
 
 ```
-postgres://postgres:postgres@localhost:5432/cexplorer
+postgres://postgres:<your-password>@localhost:5432/cexplorer
 ```
 
-Both `genesis-construction.sh` and `genesis-verification.sh` use this as the default when prompted.
+Both `genesis-construction.sh` and `genesis-verification.sh` will prompt for this value.
 
 ---
 
@@ -184,7 +187,7 @@ FATAL: password authentication failed for user "cardano"
 
 The docker-compose creates user `postgres` (not `cardano`). Use:
 ```bash
-PGPASSWORD=postgres pg_restore --username postgres ...
+PGPASSWORD=$POSTGRES_PASSWORD pg_restore --username postgres ...
 ```
 
 ### 6. Slow Queries / BufFileRead Disk Spilling
@@ -192,7 +195,7 @@ PGPASSWORD=postgres pg_restore --username postgres ...
 If genesis commands take hours or hang, check for active queries:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d cexplorer -c \
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d cexplorer -c \
   "SELECT pid, wait_event, state, LEFT(query, 80) FROM pg_stat_activity WHERE state = 'active';"
 ```
 
@@ -227,7 +230,7 @@ Using `docker stop`/`docker start` preserves the old container configuration and
 Creating indexes on large tables (e.g., `tx_out` with 200M+ rows) takes 10-30 minutes per index. You can monitor progress:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d cexplorer -c \
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d cexplorer -c \
   "SELECT phase, blocks_done, blocks_total, tuples_done, tuples_total
    FROM pg_stat_progress_create_index;"
 ```
