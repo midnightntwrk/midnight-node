@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
@@ -6,6 +6,7 @@ use midnight_primitives_cnight_observation::{
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData,
 };
 use pallet_cnight_observation::{
 	MappingEntry, Mappings, NextCardanoPosition, UtxoOwners,
@@ -112,6 +113,31 @@ pub async fn generate_cnight_genesis(
 			break;
 		}
 	}
+
+	// Collect all Cardano reward addresses that appear in any Registration or Deregistration.
+	// AssetCreate/AssetSpend for owners without a registration produce no effect in exec_pallet,
+	// so we can safely filter them out before processing.
+	let registered_addresses: BTreeSet<CardanoRewardAddressBytes> = all_utxos
+		.iter()
+		.filter_map(|utxo| match &utxo.data {
+			ObservedUtxoData::Registration(d) => Some(d.cardano_reward_address),
+			ObservedUtxoData::Deregistration(d) => Some(d.cardano_reward_address),
+			_ => None,
+		})
+		.collect();
+
+	let total_before = all_utxos.len();
+	all_utxos.retain(|utxo| match &utxo.data {
+		ObservedUtxoData::Registration(_) | ObservedUtxoData::Deregistration(_) => true,
+		ObservedUtxoData::AssetCreate(d) => registered_addresses.contains(&d.owner),
+		ObservedUtxoData::AssetSpend(d) => registered_addresses.contains(&d.owner),
+	});
+	log::info!(
+		"Filtered UTXOs: {} -> {} (removed {} without registration)",
+		total_before,
+		all_utxos.len(),
+		total_before - all_utxos.len(),
+	);
 
 	let observed_utxos = ObservedUtxos {
 		start: CardanoPosition::default(),

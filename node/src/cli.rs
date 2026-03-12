@@ -189,6 +189,11 @@ pub struct VerifyLedgerStateGenesisCmd {
 	/// Network name (e.g., "mainnet", "qanet"). Used for network-specific checks like empty state
 	#[arg(long)]
 	pub network: Option<String>,
+
+	/// Path to cardano-tip.json containing the genesis timestamp. If not provided,
+	/// defaults to the hardcoded Glacier Drop start timestamp.
+	#[arg(long)]
+	pub cardano_tip_config: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Parser)]

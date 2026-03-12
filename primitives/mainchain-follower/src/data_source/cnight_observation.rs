@@ -60,7 +60,7 @@ pub struct TxPosition {
 pub enum MidnightCNightObservationDataSourceError {
 	#[error("missing reference for block hash `{0}` in db-sync")]
 	MissingBlockReference(McBlockHash),
-	#[error("Error querying database")]
+	#[error("Error querying database: {0}")]
 	DBQueryError(#[from] sqlx::error::Error),
 	#[error("Error extracting network id from Cardano address")]
 	CardanoNetworkError(String),

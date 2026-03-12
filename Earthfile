@@ -228,6 +228,7 @@ rebuild-genesis-state:
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
+        COPY res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -263,7 +264,8 @@ rebuild-genesis-state:
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json \
-            --reserve-config /genesis-config/reserve-config.json
+            --reserve-config /genesis-config/reserve-config.json \
+            --cardano-tip-config /genesis-config/cardano-tip.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
