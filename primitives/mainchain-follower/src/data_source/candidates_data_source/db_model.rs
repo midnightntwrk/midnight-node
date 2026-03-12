@@ -477,17 +477,15 @@ pub(crate) async fn create_idx_tx_out_address(pool: &Pool<Postgres>) -> Result<(
 	Ok(())
 }
 
-pub(crate) async fn create_idx_ma_tx_out_tx_out_id_ident(
-	pool: &Pool<Postgres>,
-) -> Result<(), SqlxError> {
-	let exists = index_exists(pool, "idx_ma_tx_out_tx_out_id_ident").await?;
+pub(crate) async fn create_idx_ma_tx_out_id_ident(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
+	let exists = index_exists(pool, "idx_ma_tx_out_id_ident").await?;
 	if exists {
-		info!("Index 'idx_ma_tx_out_tx_out_id_ident' already exists");
+		info!("Index 'idx_ma_tx_out_id_ident' already exists");
 	} else {
-		let sql = "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_tx_out_id_ident ON ma_tx_out (tx_out_id, ident)";
+		let sql = "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out (tx_out_id, ident)";
 		info!("Executing '{}', this might take a while", sql);
 		sqlx::query(sql).execute(pool).await?;
-		info!("Index 'idx_ma_tx_out_tx_out_id_ident' has been created");
+		info!("Index 'idx_ma_tx_out_id_ident' has been created");
 	}
 	Ok(())
 }

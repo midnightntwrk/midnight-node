@@ -281,8 +281,8 @@ pub async fn create_cnight_observation_indexes(pool: &Pool<Postgres>) -> Result<
 	// avoiding a full scan over ~1 billion rows.
 	create_index_if_not_exists(
 		pool,
-		"idx_ma_tx_out_tx_out_id_ident",
-		"CREATE INDEX IF NOT EXISTS idx_ma_tx_out_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
+		"idx_ma_tx_out_id_ident",
+		"CREATE INDEX IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
 	)
 	.await?;
 
