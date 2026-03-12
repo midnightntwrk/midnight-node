@@ -31,7 +31,9 @@ use SerializationError::{
 };
 use TransactionError::{Invalid, Malformed, SystemTransaction};
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum InvalidError {
 	EffectsMismatch,
 	ContractAlreadyDeployed,
@@ -53,7 +55,9 @@ pub enum InvalidError {
 	UnknownError,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum SystemTransactionError {
 	IllegalPayout,
 	InsufficientTreasuryFunds,
@@ -67,7 +71,9 @@ pub enum SystemTransactionError {
 	TreasuryDisabled,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum MalformedError {
 	VerifierKeyNotSet,
 	TransactionTooLarge,
@@ -128,7 +134,9 @@ pub enum MalformedError {
 	UnknownError,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum DeserializationError {
 	NetworkId,
 	Transaction,
@@ -144,7 +152,9 @@ pub enum DeserializationError {
 	CNightGeneratesDustEvent,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum SerializationError {
 	TransactionIdentifier,
 	ZswapState,
@@ -162,14 +172,18 @@ pub enum SerializationError {
 	ArenaHash,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum TransactionError {
 	Invalid(InvalidError),
 	Malformed(MalformedError),
 	SystemTransaction(SystemTransactionError),
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(
+	RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq,
+)]
 pub enum LedgerApiError {
 	Deserialization(DeserializationError),
 	Serialization(SerializationError),
