@@ -12,11 +12,11 @@
 // limitations under the License.
 
 //! Db-Sync data source used by Partner Chain committee selection
+use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use authority_selection_inherents::*;
 use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber};
 use itertools::Itertools;
 use log::error;
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_plutus_data::{
 	permissioned_candidates::PermissionedCandidateDatums,
 	registered_candidates::RegisterValidatorDatum,
@@ -55,7 +55,7 @@ pub struct CandidatesDataSourceImpl {
 	/// Postgres connection pool
 	pool: PgPool,
 	/// Prometheus metrics client
-	metrics_opt: Option<McFollowerMetrics>,
+	metrics_opt: Option<MidnightDataSourceMetrics>,
 	/// Configuration used by Db-Sync
 	db_sync_config: db_model::DbSyncConfigurationProvider,
 }
@@ -71,8 +71,10 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
 		let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
 
+		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_token_utxo_for_epoch");
 		let candidates_output_opt =
 			db_model::get_token_utxo_for_epoch(&self.pool, &permissioned_candidate_asset, epoch).await?;
+		drop(_sq_timer);
 
 		// DParameter is now read from pallet_system_parameters storage, not from mainchain.
 		// This hardcoded value is unused - the actual d_parameter comes from the runtime.
@@ -98,7 +100,10 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 	)-> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
 		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
 		let candidates = self.get_registered_candidates(epoch, committee_candidate_address).await?;
-		let stake_map = Self::make_stake_map(db_model::get_stake_distribution(&self.pool, epoch).await?);
+		let _stake_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_stake_distribution");
+		let stake_entries = db_model::get_stake_distribution(&self.pool, epoch).await?;
+		drop(_stake_timer);
+		let stake_map = Self::make_stake_map(stake_entries);
 		Ok(Self::group_candidates_by_mc_pub_key(candidates).into_iter().map(|(mainchain_pub_key, candidate_registrations)| {
 			CandidateRegistrations {
 				stake_pool_public_key: mainchain_pub_key.clone(),
@@ -110,7 +115,9 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 
 	async fn get_epoch_nonce(&self, epoch: McEpochNumber) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
 		let epoch = self.get_epoch_of_data_storage(epoch)?;
+		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_epoch_nonce");
 		let nonce = db_model::get_epoch_nonce(&self.pool, EpochNumber(epoch.0)).await?;
+		drop(_sq_timer);
 		Ok(nonce.map(|n| EpochNonce(n.0)))
 	}
 
@@ -123,7 +130,7 @@ impl CandidatesDataSourceImpl {
 	/// Creates new instance of the data source
 	pub async fn new(
 		pool: PgPool,
-		metrics_opt: Option<McFollowerMetrics>,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
 	) -> Result<CandidatesDataSourceImpl, Box<dyn std::error::Error + Send + Sync>> {
 		db_model::create_idx_ma_tx_out_ident(&pool).await?;
 		db_model::create_idx_tx_out_address(&pool).await?;
@@ -148,7 +155,10 @@ impl CandidatesDataSourceImpl {
 		&self,
 		epoch: EpochNumber,
 	) -> Result<Option<BlockNumber>, Box<dyn std::error::Error + Send + Sync>> {
+		let _sq_timer =
+			start_sub_query_timer(&self.metrics_opt, "candidates_get_latest_block_for_epoch");
 		let block_option = db_model::get_latest_block_for_epoch(&self.pool, epoch).await?;
+		drop(_sq_timer);
 		Ok(block_option.map(|b| b.block_no))
 	}
 
@@ -161,13 +171,17 @@ impl CandidatesDataSourceImpl {
 		let address: Address = Address(committee_candidate_address.to_string());
 		let active_utxos = match registrations_block_for_epoch {
 			Some(block) => {
-				db_model::get_utxos_for_address(
+				let _sq_timer =
+					start_sub_query_timer(&self.metrics_opt, "candidates_get_utxos_for_address");
+				let utxos = db_model::get_utxos_for_address(
 					&self.pool,
 					&address,
 					block,
 					self.db_sync_config.get_tx_in_config().await?,
 				)
-				.await?
+				.await?;
+				drop(_sq_timer);
+				utxos
 			},
 			None => vec![],
 		};
@@ -329,7 +343,7 @@ impl CandidatesDataSourceImpl {
 /// Has to be made at the level of trait, because otherwise #[async_trait] is expanded first.
 /// '&self' matching yields "__self" identifier not found error, so "&$self:tt" is required.
 /// Works only if return type is Result.
-/// Note: Metrics tracking is disabled because McFollowerMetrics methods are crate-private in partner-chains.
+/// Records Prometheus call count and timing histogram when metrics are available.
 macro_rules! observed_async_trait {
 	(impl $(<$($type_param:tt),+>)? $trait_name:ident $(<$($type_arg:ident),+>)? for $target_type:ty
 		$(where $($where_type:ident : $where_bound:tt ,)+)?
@@ -347,7 +361,7 @@ macro_rules! observed_async_trait {
 		$(
 			async fn $method(&$self $(,$param_name: $param_type)*,) -> $res {
 				let method_name = stringify!($method);
-				let _ = &$self.metrics_opt; // Silence unused field warning
+				let _ = &$self.metrics_opt;
 				let params: Vec<String> = vec![$(format!("{:?}", $param_name.clone()),)*];
 				log::debug!("{} called with parameters: {:?}", method_name, params);
 				let result = $body;
