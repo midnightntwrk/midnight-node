@@ -131,16 +131,37 @@ jobs:
           name: midnight-node-amd64
           path: artifacts-amd64/
 
-      - name: Archive artifacts
+      - name: Create release archives
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          tar -czf midnight-node-amd64.tar.gz -C artifacts-amd64 .
-          echo "Created midnight-node-amd64.tar.gz"
-          ls -lh midnight-node-amd64.tar.gz
+          PLATFORM="amd64"
+
+          # Create node archive (binary + res directory, matching release format)
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$NODE_RELEASE" -C artifacts-${PLATFORM} midnight-node res
+          echo "Created: $NODE_RELEASE"
+          ls -lh "$NODE_RELEASE"
+
+          # Create toolkit archive
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$TOOLKIT_RELEASE" -C artifacts-${PLATFORM} midnight-node-toolkit
+          echo "Created: $TOOLKIT_RELEASE"
+          ls -lh "$TOOLKIT_RELEASE"
+
+          # Generate checksums
+          {
+            sha256sum "$NODE_RELEASE"
+            sha256sum "$TOOLKIT_RELEASE"
+          } > "SHA256SUMS-${PLATFORM}"
+          echo "Generated checksums:"
+          cat "SHA256SUMS-${PLATFORM}"
 
       - name: Create or Update Draft Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
           # Build release notes
           export SEASON_GHCR_REGISTRY="midnightntwrk"
@@ -174,7 +195,12 @@ jobs:
             --draft \
             --notes-file RELEASE_NOTES.md
 
-          gh release upload "$RELEASE_TITLE" midnight-node-amd64.tar.gz --clobber
+          PLATFORM="amd64"
+          gh release upload "$RELEASE_TITLE" \
+            "midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "SHA256SUMS-${PLATFORM}" \
+            --clobber
 
       - name: Archive release notes
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -212,6 +238,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Run Node and toolkit builds
+        id: export
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
@@ -223,12 +250,15 @@ jobs:
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
           . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
 
+          # Pass IMAGE_TAG to next steps (must match definition in Earthfile):
+          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
+          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Get image digests
         id: digests
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          # Calculate IMAGE_TAG (must match definition in Earthfile)
-          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
-
           NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
           TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
@@ -253,17 +283,37 @@ jobs:
           name: midnight-node-arm64
           path: artifacts-arm64/
 
-      - name: Archive ARM artifacts
+      - name: Create release archives
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          tar -czf midnight-node-arm64.tar.gz -C artifacts-arm64 .
-          echo "Created midnight-node-arm64.tar.gz"
-          ls -lh midnight-node-arm64.tar.gz
+          PLATFORM="arm64"
 
+          # Create node archive (binary + res directory, matching release format)
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$NODE_RELEASE" -C artifacts-${PLATFORM} midnight-node res
+          echo "Created: $NODE_RELEASE"
+          ls -lh "$NODE_RELEASE"
+
+          # Create toolkit archive
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$TOOLKIT_RELEASE" -C artifacts-${PLATFORM} midnight-node-toolkit
+          echo "Created: $TOOLKIT_RELEASE"
+          ls -lh "$TOOLKIT_RELEASE"
+
+          # Generate checksums
+          {
+            sha256sum "$NODE_RELEASE"
+            sha256sum "$TOOLKIT_RELEASE"
+          } > "SHA256SUMS-${PLATFORM}"
+          echo "Generated checksums:"
+          cat "SHA256SUMS-${PLATFORM}"
 
       - name: Create or Update Draft Release (ARM64)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
           if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
             echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for ARM64..."
@@ -277,9 +327,14 @@ jobs:
             exit 0
           fi
 
-          echo "Uploading ARM64 artifacts..."
-          gh release upload "$RELEASE_TITLE" midnight-node-arm64.tar.gz --clobber
-          echo "ARM64 artifacts uploaded successfully."
+          PLATFORM="arm64"
+          echo "Uploading ARM64 release archives..."
+          gh release upload "$RELEASE_TITLE" \
+            "midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "SHA256SUMS-${PLATFORM}" \
+            --clobber
+          echo "ARM64 release archives uploaded successfully."
 
   build-indexer-images:
     name: Build Indexer Images
