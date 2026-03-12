@@ -1545,6 +1545,7 @@ async fn get_contract_state_returns_error_if_not_present() {
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("Contract not present")
+            || err_msg.contains("Unable to get requested contract state")
             || err_msg.contains("Unable to get contract state")
             || err_msg.contains("UnableToGetContractState"),
         "Error message should indicate contract is not present or unable to get state. Got: {}",
