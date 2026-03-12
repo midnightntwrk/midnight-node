@@ -1,21 +1,18 @@
 use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
-	ClaimedUnshieldedSpendsKey, CoinInfo, CoinPublicKey, ContractAction, ContractAddress,
-	ContractEffects, DB, DefaultDB, Deserializable, EncryptionPublicKey, HashOutput, Input,
-	IntentCustom, IntentInfo, LedgerContext, Nonce, OfferInfo, Output, ProofPreimage,
-	ProofPreimageMarker, ProofProvider, PublicAddress, QualifiedInfo, Recipient, ShieldedTokenType,
-	ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext, Transient,
-	UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo, Wallet,
-	WalletAddress, WalletSeed, zswap,
+	ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress, ContractEffects, DB,
+	DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom, IntentInfo, LedgerContext,
+	OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider, PublicAddress, Recipient,
+	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext,
+	Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo,
+	Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
 	toolkit_js::{
 		EncodedZswapLocalState,
-		encoded_zswap_local_state::{
-			EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
-		},
+		encoded_zswap_local_state::{EncodedOutput, EncodedQualifiedShieldedCoinInfo},
 	},
 	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
@@ -23,51 +20,6 @@ use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
-
-// --- Version-local conversion impls ---
-
-impl From<&EncodedRecipient> for Recipient {
-	fn from(value: &EncodedRecipient) -> Self {
-		if value.is_left {
-			let bytes = value.left.0.0.0;
-			Recipient::User(CoinPublicKey(HashOutput(bytes)))
-		} else {
-			let mut serialized = Vec::new();
-			midnight_node_ledger_helpers::Serializable::serialize(&value.right.0, &mut serialized)
-				.expect("failed to serialize contract address");
-			let contract_address =
-				<ContractAddress as Deserializable>::deserialize(&mut &serialized[..], 0)
-					.expect("failed to deserialize contract address");
-			Recipient::Contract(contract_address)
-		}
-	}
-}
-
-impl From<&EncodedOutput> for CoinInfo {
-	fn from(value: &EncodedOutput) -> Self {
-		CoinInfo {
-			nonce: Nonce(HashOutput(value.coin_info.nonce)),
-			type_: ShieldedTokenType(HashOutput(value.coin_info.color)),
-			value: value.coin_info.value,
-		}
-	}
-}
-
-impl From<&EncodedQualifiedShieldedCoinInfo> for CoinInfo {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfo {
-			nonce: Nonce(HashOutput(value.nonce)),
-			type_: ShieldedTokenType(HashOutput(value.color)),
-			value: value.value,
-		}
-	}
-}
-
-impl From<&EncodedQualifiedShieldedCoinInfo> for QualifiedInfo {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfo::from(value).qualify(value.mt_index)
-	}
-}
 
 // --- Version-local type definitions ---
 
