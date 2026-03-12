@@ -45,6 +45,7 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
+use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -240,12 +241,14 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
+type TransactionPool = FilteringTransactionPool<Block, FullClient>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
 	sc_consensus::DefaultImportQueue<Block>,
-	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
+	TransactionPool,
 	(
 		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
@@ -262,6 +265,7 @@ pub fn new_partial(
 	epoch_config: MainchainEpochConfig,
 	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
@@ -387,6 +391,11 @@ pub fn new_partial(
 	.with_prometheus(config.prometheus_registry())
 	.build();
 
+	let transaction_pool = {
+		let metrics = FilteringMetrics::new(config.prometheus_registry());
+		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+	};
+
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
 		GRANDPA_JUSTIFICATION_PERIOD,
@@ -458,6 +467,7 @@ pub fn new_partial(
 }
 
 /// Builds a new service for a full client.
+#[allow(clippy::too_many_arguments)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
@@ -466,10 +476,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config)?;
+		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
 	let sc_service::PartialComponents {
 		client,
