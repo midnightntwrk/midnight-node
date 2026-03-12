@@ -18,6 +18,7 @@
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 use crate::db::{AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, RegistrationRow};
 use cardano_serialization_lib::ScriptHash;
+use log::info;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use sidechain_domain::*;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
@@ -230,6 +231,110 @@ LIMIT $7 OFFSET $8;
 	.await?;
 
 	Ok(rows)
+}
+
+async fn index_exists(pool: &Pool<Postgres>, index_name: &str) -> Result<bool, sqlx::Error> {
+	sqlx::query("select * from pg_indexes where indexname = $1")
+		.bind(index_name)
+		.fetch_all(pool)
+		.await
+		.map(|rows| rows.len() == 1)
+}
+
+async fn create_index_if_not_exists(
+	pool: &Pool<Postgres>,
+	index_name: &str,
+	sql: &str,
+) -> Result<(), sqlx::Error> {
+	if index_exists(pool, index_name).await? {
+		info!("Index '{index_name}' already exists");
+	} else {
+		info!("Creating index '{index_name}', this might take a while...");
+		sqlx::query(sql).execute(pool).await?;
+		info!("Index '{index_name}' has been created");
+	}
+	Ok(())
+}
+
+/// Creates indexes that optimize the cNight observation queries.
+/// These are critical for genesis generation performance when scanning
+/// the full Cardano blockchain for registration/asset events.
+pub async fn create_cnight_observation_indexes(pool: &Pool<Postgres>) -> Result<(), sqlx::Error> {
+	// For registrations & deregistrations: filter on tx_out.address
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_out_address",
+		"CREATE INDEX IF NOT EXISTS idx_tx_out_address ON tx_out USING hash (address)",
+	)
+	.await?;
+
+	// For asset creates & spends: filter on multi_asset(policy, name)
+	create_index_if_not_exists(
+		pool,
+		"idx_multi_asset_policy_name",
+		"CREATE INDEX IF NOT EXISTS idx_multi_asset_policy_name ON multi_asset(policy, name)",
+	)
+	.await?;
+
+	// For ma_tx_out joins: composite index on (tx_out_id, ident) to efficiently join
+	// from tx_out into ma_tx_out and resolve the multi_asset foreign key in a single lookup,
+	// avoiding a full scan over ~1 billion rows.
+	create_index_if_not_exists(
+		pool,
+		"idx_ma_tx_out_tx_out_id_ident",
+		"CREATE INDEX IF NOT EXISTS idx_ma_tx_out_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
+	)
+	.await?;
+
+	// For block range scans
+	create_index_if_not_exists(
+		pool,
+		"idx_block_block_no",
+		"CREATE INDEX IF NOT EXISTS idx_block_block_no ON block(block_no)",
+	)
+	.await?;
+
+	// For tx joins on block_id
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_block_id",
+		"CREATE INDEX IF NOT EXISTS idx_tx_block_id ON tx(block_id)",
+	)
+	.await?;
+
+	// For tx_out joins on tx_id
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_out_tx_id",
+		"CREATE INDEX IF NOT EXISTS idx_tx_out_tx_id ON tx_out(tx_id)",
+	)
+	.await?;
+
+	// For datum joins on data_hash
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_out_data_hash",
+		"CREATE INDEX IF NOT EXISTS idx_tx_out_data_hash ON tx_out(data_hash)",
+	)
+	.await?;
+
+	// For deregistration/spend joins on tx_in
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_in_tx_in_id",
+		"CREATE INDEX IF NOT EXISTS idx_tx_in_tx_in_id ON tx_in(tx_in_id)",
+	)
+	.await?;
+
+	// For tx_in joins on (tx_out_id, tx_out_index)
+	create_index_if_not_exists(
+		pool,
+		"idx_tx_in_tx_out_id_tx_out_index",
+		"CREATE INDEX IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index ON tx_in(tx_out_id, tx_out_index)",
+	)
+	.await?;
+
+	Ok(())
 }
 
 /// Query to get the block by its hash

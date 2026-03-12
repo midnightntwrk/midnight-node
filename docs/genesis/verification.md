@@ -178,6 +178,7 @@ For each contract, verification checks:
 | `chain-spec-raw.json` | Step 2 | Raw chain specification with genesis state |
 | `cnight-config.json` | Steps 1, 2 | cNIGHT genesis configuration |
 | `ics-config.json` | Step 1 | ICS genesis configuration |
+| `reserve-config.json` | Step 1 | Reserve observation genesis configuration |
 | `federated-authority-config.json` | Step 1 | Federated authority configuration |
 | `permissioned-candidates-config.json` | Steps 1, 3 | Permissioned candidates configuration |
 | `system-parameters-config.json` | Step 3 | System parameters including Dparameter |
@@ -189,6 +190,7 @@ For each contract, verification checks:
 |------|---------|-------------|
 | `cnight-addresses.json` | Step 1 | cNIGHT contract addresses |
 | `ics-addresses.json` | Steps 1, 4 | ICS contract addresses with compiled code |
+| `reserve-addresses.json` | Step 1 | Reserve validator addresses |
 | `federated-authority-addresses.json` | Steps 1, 4 | Federated authority addresses with compiled code |
 | `permissioned-candidates-addresses.json` | Steps 1, 4 | Permissioned candidates addresses with compiled code |
 
@@ -210,7 +212,7 @@ For a guided verification experience, use the interactive shell script:
    ```
 
 2. **Access to Cardano db-sync database**:
-   - Local: `postgres://cardano@localhost:54322/cexplorer`
+   - Local: `postgres://postgres:postgres@localhost:5432/cexplorer`
    - Or a remote db-sync instance
 
 3. **Generated chain specification** and config files for the network
@@ -239,7 +241,7 @@ Choose from available networks:
 Enter when prompted:
 
 1. **DB Sync PostgreSQL connection string**
-   - Default: `postgres://cardano@localhost:54322/cexplorer`
+   - Default: `postgres://postgres:postgres@localhost:5432/cexplorer`
 
 2. **Cardano block hash (tip)**
    - If `cardano-tip.json` exists, the value is prefilled
@@ -324,6 +326,8 @@ Block 12345678 has 500 confirmations (required: 432)
 [PASS] cnight-config.json matches
   > Regenerating ics-config.json...
 [PASS] ics-config.json matches
+  > Regenerating reserve-config.json...
+[PASS] reserve-config.json matches
 ...
 
 =================================================================

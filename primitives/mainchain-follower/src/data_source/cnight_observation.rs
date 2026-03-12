@@ -60,7 +60,7 @@ pub struct TxPosition {
 pub enum MidnightCNightObservationDataSourceError {
 	#[error("missing reference for block hash `{0}` in db-sync")]
 	MissingBlockReference(McBlockHash),
-	#[error("Error querying database")]
+	#[error("Error querying database: {0}")]
 	DBQueryError(#[from] sqlx::error::Error),
 	#[error("Error extracting network id from Cardano address")]
 	CardanoNetworkError(String),
@@ -455,7 +455,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
-				log::error!(
+				log::debug!(
 					"Cardano address {:?} not valid bech32 cardano address",
 					&row.holder_address
 				);
@@ -463,7 +463,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
@@ -519,7 +519,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
 			else {
-				log::error!(
+				log::debug!(
 					"Cardano address {:?} not valid bech32 cardano address",
 					row.holder_address
 				);
@@ -527,7 +527,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::error!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
