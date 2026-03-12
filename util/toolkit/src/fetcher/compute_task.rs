@@ -23,8 +23,8 @@ use subxt::{
 use crate::fetcher::{
 	fetch_storage::{FetchStorage, FetchedBlock},
 	runtimes::{
-		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
-		RuntimeVersionError,
+		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, MidnightMetadata1_0_0,
+		RuntimeVersion, RuntimeVersionError,
 	},
 };
 
@@ -142,6 +142,10 @@ impl ComputeTask {
 			},
 			RuntimeVersion::V0_22_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_22_0>(block, spec_version)
+					.await
+			},
+			RuntimeVersion::V1_0_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata1_0_0>(block, spec_version)
 					.await
 			},
 		}
