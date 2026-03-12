@@ -585,7 +585,7 @@ impl MidnightClient {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let response: String = self
             .rpc_client
-            .request("midnight_getContractState", rpc_params![contract_address])
+            .request("midnight_contractState", rpc_params![contract_address])
             .await?;
 
         Ok(response)
