@@ -426,7 +426,7 @@ jobs:
     uses: ./.github/workflows/srtool-build.yml
     with:
       ref: ${{ inputs.ref }}
-      release-tag: node-${{ needs.finalize-release.outputs.release_tag }}
+      release-tag: ${{ needs.finalize-release.outputs.release_tag }}
     secrets: inherit
 
   finalize-checksums:

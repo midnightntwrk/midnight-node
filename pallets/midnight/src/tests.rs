@@ -340,7 +340,6 @@ fn sets_extra_transaction_size_weight() {
 }
 
 #[test]
-#[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =

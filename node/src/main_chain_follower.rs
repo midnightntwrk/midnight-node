@@ -13,6 +13,7 @@
 
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use midnight_primitives_mainchain_follower::CandidatesDataSourceImpl;
+use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
 use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CachedTokenBridgeDataSourceImpl, DbSyncBlockDataSourceConfig,
@@ -61,7 +62,8 @@ pub struct DbPoolCfg {
 
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	mc_metrics_opt: Option<McFollowerMetrics>,
+	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> std::result::Result<DataSources, ServiceError> {
 	if cfg.use_main_chain_follower_mock {
 		let mock = create_mock_data_sources(cfg.clone()).await.map_err(|err| {
@@ -73,11 +75,13 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 
 		Ok(mock)
 	} else {
-		create_cached_data_sources(cfg, metrics_opt).await.map_err(|err| {
-			ServiceError::Application(
-				format!("Failed to create db-sync main chain follower: {err}").into(),
-			)
-		})
+		create_cached_data_sources(cfg, mc_metrics_opt, midnight_metrics_opt)
+			.await
+			.map_err(|err| {
+				ServiceError::Application(
+					format!("Failed to create db-sync main chain follower: {err}").into(),
+				)
+			})
 	}
 }
 
@@ -160,7 +164,8 @@ const ICS_POOL_CFG: DbPoolCfg =
 
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	mc_metrics_opt: Option<McFollowerMetrics>,
+	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
 	let postgres_uri = &cfg
 		.db_sync_postgres_connection_string
@@ -195,7 +200,7 @@ pub async fn create_cached_data_sources(
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone()).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
@@ -206,8 +211,10 @@ pub async fn create_cached_data_sources(
 		db_sync_block_data_source_config.clone(),
 		&mc,
 	));
-	let sidechain_rpc =
-		SidechainRpcDataSourceImpl::new(sidechain_block_data_source.clone(), metrics_opt.clone());
+	let sidechain_rpc = SidechainRpcDataSourceImpl::new(
+		sidechain_block_data_source.clone(),
+		mc_metrics_opt.clone(),
+	);
 
 	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.allow_non_ssl).await?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
@@ -216,13 +223,13 @@ pub async fn create_cached_data_sources(
 		&mc,
 	);
 	let mc_hash =
-		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), metrics_opt.clone());
+		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
 
 	let cnight_observation_pool =
 		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.allow_non_ssl).await?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
-		metrics_opt.clone(),
+		midnight_metrics_opt.clone(),
 		1000,
 	);
 
@@ -231,7 +238,7 @@ pub async fn create_cached_data_sources(
 			.await?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
-		metrics_opt.clone(),
+		midnight_metrics_opt,
 		1000,
 	);
 
@@ -239,7 +246,7 @@ pub async fn create_cached_data_sources(
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
-		metrics_opt,
+		mc_metrics_opt,
 		sidechain_block_data_source,
 		BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
 	);
@@ -257,7 +264,7 @@ pub async fn create_cached_data_sources(
 // Helper for users who only need native token observation data source
 pub async fn create_cnight_observation_data_source(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
@@ -269,12 +276,12 @@ pub async fn create_cnight_observation_data_source(
 
 	midnight_primitives_mainchain_follower::db::create_cnight_observation_indexes(&pool).await?;
 
-	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
+	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt, 1000)))
 }
 
 pub async fn create_federated_authority_observation_data_source(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<Arc<dyn FederatedAuthorityObservationDataSource>, Box<dyn Error + Send + Sync + 'static>>
 {
 	let pool = get_connection(
@@ -285,12 +292,12 @@ pub async fn create_federated_authority_observation_data_source(
 	)
 	.await?;
 
-	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt.clone(), 1000)))
+	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt, 1000)))
 }
 
 pub async fn create_authority_selection_data_source(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<
 	Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	Box<dyn Error + Send + Sync + 'static>,
@@ -302,7 +309,7 @@ pub async fn create_authority_selection_data_source(
 
 pub async fn create_authority_selection_data_source_with_pool(
 	cfg: MidnightCfg,
-	metrics_opt: Option<McFollowerMetrics>,
+	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<
 	(Arc<dyn AuthoritySelectionDataSource + Send + Sync>, sqlx::PgPool),
 	Box<dyn Error + Send + Sync + 'static>,
@@ -315,8 +322,7 @@ pub async fn create_authority_selection_data_source_with_pool(
 	)
 	.await?;
 
-	let candidates_data_source =
-		CandidatesDataSourceImpl::new(pool.clone(), metrics_opt.clone()).await?;
+	let candidates_data_source = CandidatesDataSourceImpl::new(pool.clone(), metrics_opt).await?;
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 
