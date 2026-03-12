@@ -76,10 +76,10 @@ zkir = { version = "^2.1.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
-mn-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "ledger-8.0.0" }
-ledger-storage-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "ledger-8.0.0", features = ["parity-db"] }
-onchain-runtime-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "ledger-8.0.0" }
-zswap-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "ledger-8.0.0" }
+mn-ledger-8 = { version = "=8.0.2", package = "midnight-ledger" }
+ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
+onchain-runtime-ledger-8 = { version = "=3.0.0", package = "midnight-onchain-runtime" }
+zswap-ledger-8 = { version = "=8.0.0", package = "midnight-zswap" }
 
 
 # Hard-fork test dependencies
@@ -93,7 +93,7 @@ transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger"
 zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-8.0.0" }
 zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zkir", tag = "hard-fork-test-ledger-8.0.0" }
 
-# Storage core v2 layout - patched to 1.1.0 via [patch.crates-io]
+# Storage core v2 layout
 midnight-storage-core = { version = "1.1.0", features = ["layout-v2"] }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
@@ -360,16 +360,6 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 cardano-serialization-lib = { git = "https://github.com/SupernaviX/cardano-serialization-lib", branch = "sg/patch-wasm-bindgen" }
-# Patch crates.io deps to the same git tag as L8 so crates.io and git
-# instances share the same types. Includes coin-structure, transient-crypto
-# and zkir which are shared between L7 and L8 (same version).
-midnight-storage-core = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-storage-macros = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
-midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.0.0" }
 
 [workspace.metadata.cargo-shear]
 ignored = []
