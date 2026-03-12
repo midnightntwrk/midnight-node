@@ -7728,6 +7728,7 @@ dependencies = [
  "sp-sidechain",
  "sp-state-machine",
  "sp-timestamp",
+ "sp-transaction-pool",
  "sp-version",
  "sqlx",
  "substrate-build-script-utils",

@@ -64,7 +64,10 @@ impl TryFrom<SubstrateCfg> for RunCmd {
 	fn try_from(value: SubstrateCfg) -> Result<Self, Self::Error> {
 		let default_run_cmd = RunCmd::parse_from(&["midnight-node".to_string()]);
 
-		let mut run_cmd = RunCmd::parse_from(value.argv());
+		let argv: Vec<String> =
+			value.argv().into_iter().filter(|e| e != "--filter-deploy-txs").collect();
+
+		let mut run_cmd = RunCmd::parse_from(argv);
 		if run_cmd.shared_params.base_path.is_none() && value.base_path.is_some() {
 			run_cmd.shared_params.base_path = value.base_path.map(|p| p.into());
 		}
