@@ -148,12 +148,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 			let mut wallets = self
 				.wallets
 				.lock()
-				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?;
 			for wallet in wallets.values_mut() {
 				wallet.update_dust_from_tx(&events).map_err(|e| {
 					LedgerContextError::DustUpdate {
 						tx_hash: tx_hash.clone(),
-						reason: e.to_string(),
+						reason: format!("{e:?}"),
 					}
 				})?;
 			}
@@ -163,7 +163,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut latest_ledger_state = self
 			.ledger_state
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
 			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
@@ -180,9 +180,9 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut latest_ledger_state = self
 			.ledger_state
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
-		let new_state: LedgerState<D> =
-			deserialize(state).map_err(|e| LedgerContextError::Deserialization(format!("{e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		let new_state: LedgerState<D> = deserialize(state)
+			.map_err(|e| LedgerContextError::Deserialization(format!("{e:?}")))?;
 		*latest_ledger_state = Sp::new(new_state);
 		Ok(())
 	}
@@ -213,7 +213,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let latest_ledger_state = self
 			.ledger_state
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != *expected_root => {
@@ -233,7 +233,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut wallets = self
 			.wallets
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?;
 		for wallet in wallets.values_mut() {
 			wallet.update_dust_from_block(block_context);
 		}
@@ -241,7 +241,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 		// Update latest block context
 		*self.latest_block_context.lock().map_err(|e| {
-			LedgerContextError::MutexPoisoned(format!("latest_block_context: {e}"))
+			LedgerContextError::MutexPoisoned(format!("latest_block_context: {e:?}"))
 		})? = Some(block_context.clone());
 		Ok(())
 	}
@@ -281,7 +281,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut ledger_state_guard = self
 			.ledger_state
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let tx_context = TransactionContext {
 			ref_state: (**ledger_state_guard).clone(),
 			block_context: block_context.clone(),
@@ -345,7 +345,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut wallets = self
 			.wallets
 			.lock()
-			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?;
 		for wallet in wallets.values_mut() {
 			wallet.update_state_from_offers(&offers);
 		}
