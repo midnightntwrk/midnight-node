@@ -8,6 +8,7 @@ license-file.workspace = true
 
 [dependencies]
 jsonrpsee  = { workspace = true, features = [ "client", "server", "macros" ] }
+schemars.workspace = true
 serde.workspace = true
 hex.workspace = true
 sc-client-api.workspace = true

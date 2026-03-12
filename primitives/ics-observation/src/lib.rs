@@ -31,7 +31,7 @@ pub use sidechain_domain::PolicyId;
 pub struct IcsAsset {
 	/// The policy ID of the cNIGHT token
 	pub policy_id: PolicyId,
-	/// The asset name of the cNIGHT token (hex string without 0x prefix, usually empty)
+	/// The asset name of the cNIGHT token (human-readable, e.g. "NIGHT" or empty)
 	pub asset_name: String,
 }
 

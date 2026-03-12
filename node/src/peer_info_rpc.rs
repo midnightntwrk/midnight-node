@@ -32,6 +32,10 @@ use std::sync::Arc;
 const BANNED_THRESHOLD: i32 = 71 * (i32::MIN / 100);
 
 /// Peer information enriched with reputation and ban status.
+///
+/// JSON Schema for this type is provided manually in the OpenRPC document
+/// because the generic type parameters (`Hash`, `Number`) do not implement
+/// `JsonSchema`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerReputationInfo<Hash, Number> {
@@ -39,7 +43,7 @@ pub struct PeerReputationInfo<Hash, Number> {
 	pub peer_id: String,
 	/// Roles advertised by the peer.
 	pub roles: String,
-	/// Best block hash known for this peer.
+	/// Best block hash known for this peer (0x-prefixed hex, 32 bytes).
 	pub best_hash: Hash,
 	/// Best block number known for this peer.
 	pub best_number: Number,

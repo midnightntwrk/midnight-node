@@ -566,8 +566,8 @@ impl Builder {
 					constr(v7::ContractMaintenanceBuilder::new(args, context, prover))
 				},
 			},
-			Builder::ContractCustom(_) => {
-				return Err(BuilderConstructionError::NotSupportedForLedger7("contract-custom"));
+			Builder::ContractCustom(args) => {
+				constr(v7::CustomContractBuilder::new(args, context, prover))
 			},
 			Builder::ClaimRewards(args) => {
 				constr(v7::ClaimRewardsBuilder::new(args, context, prover))

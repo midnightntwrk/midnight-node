@@ -37,9 +37,9 @@ just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 
 **Genesis generation:**
 ```bash
-./scripts/genesis/genesis-generation.sh  # Interactive genesis generation wizard
+./scripts/genesis/genesis-construction.sh  # Interactive genesis construction wizard
 ```
-See [Genesis Generation Guide](docs/genesis/generation.md) for complete documentation.
+See [Genesis Construction Guide](docs/genesis/construction.md) for complete documentation.
 
 **Genesis verification:**
 ```bash

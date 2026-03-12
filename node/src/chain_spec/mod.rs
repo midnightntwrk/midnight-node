@@ -21,7 +21,7 @@ use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
 	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
 	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SystemCall,
 	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
 	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
 };
@@ -114,6 +114,9 @@ pub fn runtime_wasm() -> &'static [u8] {
 	WASM_BINARY.expect("Runtime wasm not available")
 }
 
+/// Message embedded in the genesis block as a System::remark extrinsic.
+const GENESIS_REMARK: &[u8] = b"The One remains, the many change and pass; Heaven's light forever shines, Earth's shadows fly; Life, like a dome of many-colour'd glass, Stains the white radiance of Eternity, Until Death tramples it to fragments.";
+
 pub fn get_chainspec_extrinsics(
 	genesis_block: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
@@ -156,6 +159,12 @@ pub fn get_chainspec_extrinsics(
 			now: block_context.expect("missing block context").tblock.to_secs() * 1000,
 		}));
 	extrinsics.push(hex::encode(timestamp_extrinsic.encode()));
+
+	// Add System::remark extrinsic with genesis message
+	let remark_extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::System(SystemCall::remark {
+		remark: GENESIS_REMARK.to_vec(),
+	}));
+	extrinsics.push(hex::encode(remark_extrinsic.encode()));
 
 	// Add CNight extrinsic
 	if !observed_utxos_cnight.utxos.is_empty() {

@@ -62,6 +62,7 @@ sp-mmr-primitives.workspace = true
 
 # These dependencies are used for the node's RPCs
 jsonrpsee = { workspace = true, features = ["server"] }
+schemars.workspace = true
 sp-api.workspace = true
 sc-rpc.workspace = true
 sc-rpc-api.workspace = true
