@@ -182,6 +182,7 @@ pub enum LedgerApiError {
 	FeeCalculationError,
 	HostApiError,
 	GetTransactionContextError,
+	ContractNotPresent,
 }
 
 impl core::fmt::Display for LedgerApiError {
@@ -269,6 +270,9 @@ impl core::fmt::Display for LedgerApiError {
 			},
 			LedgerApiError::GetTransactionContextError => {
 				write!(f, "Error while getting transaction context")
+			},
+			LedgerApiError::ContractNotPresent => {
+				write!(f, "Error, contract is not present")
 			},
 		}
 	}
@@ -410,6 +414,7 @@ impl From<LedgerApiError> for u8 {
 			LedgerApiError::ContractCallCostError => 153,
 			LedgerApiError::BlockLimitExceededError => 154,
 			LedgerApiError::FeeCalculationError => 155,
+			LedgerApiError::ContractNotPresent => 156,
 			LedgerApiError::GetTransactionContextError => 165,
 			// Error in the Host API, not coming from Ledger
 			LedgerApiError::HostApiError => 255,
