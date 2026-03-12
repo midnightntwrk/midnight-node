@@ -28,7 +28,28 @@ use std::{
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
+
+#[derive(Debug, Error)]
+pub enum LedgerContextError {
+	#[error("mutex poisoned: {0}")]
+	MutexPoisoned(String),
+	#[error("invalid transaction: {0}")]
+	InvalidTransaction(String),
+	#[error("cost calculation failed: {0}")]
+	CostCalculation(String),
+	#[error("block update failed: {0}")]
+	BlockUpdate(String),
+	#[error(
+		"state root mismatch: expected {expected}, actual {actual} (parent block hash: {parent_block_hash})"
+	)]
+	StateRootMismatch { expected: String, actual: String, parent_block_hash: String },
+	#[error("deserialization failed: {0}")]
+	Deserialization(String),
+	#[error("dust update failed for tx {tx_hash}: {reason}")]
+	DustUpdate { tx_hash: String, reason: String },
+}
 
 lazy_static! {
 	pub static ref DEFAULT_RESOLVER: Resolver = Resolver::new(
@@ -116,28 +137,33 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
-	) where
+	) -> Result<(), LedgerContextError>
+	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(tx, block_context);
-			for wallet in
-				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
-			{
-				wallet.update_dust_from_tx(&events).unwrap_or_else(|e| {
-					panic!(
-						"failed to replay dust events for tx {}: {e}",
-						tx.transaction_hash().0.0.encode_hex::<String>()
-					)
-				});
+			let (events, cost) = self.update_from_tx(tx, block_context)?;
+			let tx_hash = tx.transaction_hash().0.0.encode_hex::<String>();
+			let mut wallets = self
+				.wallets
+				.lock()
+				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+			for wallet in wallets.values_mut() {
+				wallet.update_dust_from_tx(&events).map_err(|e| {
+					LedgerContextError::DustUpdate {
+						tx_hash: tx_hash.clone(),
+						reason: e.to_string(),
+					}
+				})?;
 			}
 			total_cost = total_cost + cost;
 		}
 
-		// Only when done processing txs for the same block, it's time to call `post_block_update`
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
 			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
@@ -145,16 +171,20 @@ impl<D: DB + Clone> LedgerContext<D> {
 		*latest_ledger_state = Sp::new(
 			latest_ledger_state
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
-				.expect("Error applying block updates"),
+				.map_err(|e| LedgerContextError::BlockUpdate(format!("{e:?}")))?,
 		);
+		Ok(())
 	}
 
-	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) -> Result<(), LedgerContextError> {
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
 		let new_state: LedgerState<D> =
-			deserialize(state).expect("failed to deserialize state bytes");
+			deserialize(state).map_err(|e| LedgerContextError::Deserialization(format!("{e}")))?;
 		*latest_ledger_state = Sp::new(new_state);
+		Ok(())
 	}
 
 	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
@@ -163,10 +193,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 		block_context: &BlockContext,
 		state_root: Option<&Vec<u8>>,
 		state: Option<&Vec<u8>>,
-	) where
+	) -> Result<(), LedgerContextError>
+	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		self.update_ledger_state_from_txs(txs, block_context);
+		self.update_ledger_state_from_txs(txs, block_context)?;
 
 		// This case is hit for the genesis block - in this case, we still need to process the txs
 		// to set dust info correctly for all the wallets, but we want the final ledger state for
@@ -176,35 +207,43 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// block, so it's no possible to reconstruct the ledger state by applying the genesis
 		// transactions to an empty state.
 		if let Some(state) = state {
-			self.update_ledger_state_from_bytes(state);
+			self.update_ledger_state_from_bytes(state)?;
 		}
 
-		// Only when done processing txs for the same block, it's time to call `post_block_update`
-		let latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != *expected_root => {
-					panic!(
-						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(expected_root),
-						hex_encode(&actual_root),
-						hex_encode(block_context.parent_block_hash.0),
-					);
+					return Err(LedgerContextError::StateRootMismatch {
+						expected: hex_encode(expected_root),
+						actual: hex_encode(&actual_root),
+						parent_block_hash: hex_encode(block_context.parent_block_hash.0),
+					});
 				},
 				Some(_) => {},
 				None => println!("Failed to compute local ledger state root for comparison"),
 			}
 		}
+		drop(latest_ledger_state);
+
 		// Update Local Wallets
-		for wallet in
-			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
-		{
+		let mut wallets = self
+			.wallets
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+		for wallet in wallets.values_mut() {
 			wallet.update_dust_from_block(block_context);
 		}
+		drop(wallets);
+
 		// Update latest block context
-		*self.latest_block_context.lock().expect("error locking latest_block_context") =
-			Some(block_context.clone());
+		*self.latest_block_context.lock().map_err(|e| {
+			LedgerContextError::MutexPoisoned(format!("latest_block_context: {e}"))
+		})? = Some(block_context.clone());
+		Ok(())
 	}
 
 	pub fn latest_block_context(&self) -> BlockContext {
@@ -235,12 +274,14 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
 		block_context: &BlockContext,
-	) -> (Vec<Event<D>>, SyntheticCost)
+	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let mut ledger_state_guard =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut ledger_state_guard = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e}")))?;
 		let tx_context = TransactionContext {
 			ref_state: (**ledger_state_guard).clone(),
 			block_context: block_context.clone(),
@@ -256,15 +297,14 @@ impl<D: DB + Clone> LedgerContext<D> {
 				Default::default()
 			};
 
-		// Update Ledger State
 		let (new_ledger_state, offers, events, cost) = match &tx {
 			SerdeTransaction::Midnight(tx) => {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
-					.expect("applying invalid transaction");
+					.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
-					.expect("error calculating fees");
+					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				let offers = Self::successful_shielded_offers(tx, &result);
@@ -302,14 +342,17 @@ impl<D: DB + Clone> LedgerContext<D> {
 		};
 
 		// Update Local Wallets
-		for wallet in
-			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
-		{
+		let mut wallets = self
+			.wallets
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e}")))?;
+		for wallet in wallets.values_mut() {
 			wallet.update_state_from_offers(&offers);
 		}
+		drop(wallets);
 
 		*ledger_state_guard = Sp::new(new_ledger_state);
-		(events, cost)
+		Ok((events, cost))
 	}
 
 	fn successful_shielded_offers<S: SignatureKind<D>, P: ProofKind<D>>(
@@ -489,5 +532,49 @@ mod tests {
 			n_threads * iterations,
 			"Lost updates detected: ledger_state mutex did not serialize concurrent RMW"
 		);
+	}
+
+	#[test]
+	fn update_ledger_state_from_bytes_returns_error_on_invalid_bytes() {
+		let ctx = LedgerContext::<TestDB>::new("test-net");
+		let result = ctx.update_ledger_state_from_bytes(&[0xFF, 0xFE, 0xFD]);
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(
+			matches!(err, LedgerContextError::Deserialization(_)),
+			"expected Deserialization error, got: {err}"
+		);
+	}
+
+	#[test]
+	fn mutex_remains_usable_after_deserialization_error() {
+		let ctx = LedgerContext::<TestDB>::new("test-net");
+
+		let result = ctx.update_ledger_state_from_bytes(&[0xFF]);
+		assert!(result.is_err());
+
+		// The ledger_state mutex must not be poisoned — subsequent locks must succeed.
+		let lock_result = ctx.ledger_state.lock();
+		assert!(lock_result.is_ok(), "mutex was poisoned after a deserialization error");
+	}
+
+	#[test]
+	fn error_variants_display_messages() {
+		let err = LedgerContextError::MutexPoisoned("ledger_state: poisoned".into());
+		assert!(err.to_string().contains("mutex poisoned"));
+		assert!(err.to_string().contains("ledger_state: poisoned"));
+
+		let err = LedgerContextError::InvalidTransaction("bad tx".into());
+		assert!(err.to_string().contains("invalid transaction"));
+
+		let err = LedgerContextError::StateRootMismatch {
+			expected: "aabb".into(),
+			actual: "ccdd".into(),
+			parent_block_hash: "eeff".into(),
+		};
+		let msg = err.to_string();
+		assert!(msg.contains("aabb"));
+		assert!(msg.contains("ccdd"));
+		assert!(msg.contains("eeff"));
 	}
 }

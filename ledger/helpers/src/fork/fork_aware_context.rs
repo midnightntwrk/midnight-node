@@ -183,7 +183,8 @@ fn update_context_7(ctx: &crate::ledger_7::context::LedgerContext<Db7>, block: &
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
-	);
+	)
+	.expect("failed to update ledger 7 context from block");
 }
 
 /// Deserialize raw transactions and update a Ledger8 context.
@@ -228,5 +229,6 @@ fn update_context_8(ctx: &crate::ledger_8::context::LedgerContext<Db8>, block: &
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
-	);
+	)
+	.expect("failed to update ledger 8 context from block");
 }
