@@ -177,16 +177,16 @@ const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 
 impl LedgerSnapshot {
 	pub fn to_value_bytes(&self) -> Result<Vec<u8>, CacheError> {
-		let bson_bytes = bson::serialize_to_vec(self)
+		let encoded = postcard::to_allocvec(self)
 			.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
-		zstd::encode_all(bson_bytes.as_slice(), ZSTD_COMPRESSION_LEVEL)
+		zstd::encode_all(encoded.as_slice(), ZSTD_COMPRESSION_LEVEL)
 			.map_err(|e| CacheError::Compression(format!("compress: {e}")))
 	}
 
 	pub fn from_value_bytes(bytes: &[u8], block_height: u64) -> Result<Self, CacheError> {
-		let bson_bytes = zstd::decode_all(bytes)
+		let decompressed = zstd::decode_all(bytes)
 			.map_err(|e| CacheError::Compression(format!("decompress: {e}")))?;
-		let mut snapshot: Self = bson::deserialize_from_slice(&bson_bytes)
+		let mut snapshot: Self = postcard::from_bytes(&decompressed)
 			.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?;
 		snapshot.block_height = block_height;
 		Ok(snapshot)
@@ -195,43 +195,27 @@ impl LedgerSnapshot {
 
 impl CachedWalletState {
 	pub fn to_value_bytes(&self) -> Result<Vec<u8>, CacheError> {
-		bson::serialize_to_vec(self).map_err(|e| CacheError::SerializeWalletState(e.to_string()))
+		let postcard_bytes = postcard::to_allocvec(self)
+			.map_err(|e| CacheError::SerializeWalletState(e.to_string()))?;
+		let mut out = Vec::with_capacity(8 + postcard_bytes.len());
+		out.extend_from_slice(&self.block_height.to_le_bytes());
+		out.extend_from_slice(&postcard_bytes);
+		Ok(out)
 	}
 
 	pub fn from_value_bytes(bytes: &[u8], seed_hash: H256) -> Result<Self, CacheError> {
-		let mut state: Self = bson::deserialize_from_slice(bytes)
+		if bytes.len() < 8 {
+			return Err(CacheError::DeserializeWalletState("data too short".into()));
+		}
+		let mut state: Self = postcard::from_bytes(&bytes[8..])
 			.map_err(|e| CacheError::DeserializeWalletState(e.to_string()))?;
 		state.seed_hash = seed_hash;
 		Ok(state)
 	}
 
-	/// Extract block_height from just the BSON header (first 26 bytes).
-	///
-	/// In BSON, `block_height` is always the first serialized field (since
-	/// `seed_hash` is `#[serde(skip)]`). The layout is deterministic:
-	/// - Bytes 0–3: document size (i32 LE)
-	/// - Byte 4: type tag `0x12` (int64)
-	/// - Bytes 5–17: `"block_height\0"` (13 bytes)
-	/// - Bytes 18–25: value (i64 LE)
-	///
-	/// Falls back to `None` if the header doesn't match the expected layout.
-	pub fn block_height_from_bson_header(header: &[u8]) -> Option<u64> {
-		const HEADER_LEN: usize = 26;
-		const FIELD_NAME_OFFSET: usize = 5;
-		const VALUE_OFFSET: usize = 18; // 5 + 13
-		const FIELD_NAME: &[u8] = b"block_height\0";
-
-		if header.len() < HEADER_LEN {
-			return None;
-		}
-		if header[4] != 0x12 {
-			return None;
-		}
-		if &header[FIELD_NAME_OFFSET..VALUE_OFFSET] != FIELD_NAME {
-			return None;
-		}
-		let bytes: [u8; 8] = header[VALUE_OFFSET..HEADER_LEN].try_into().ok()?;
-		Some(i64::from_le_bytes(bytes) as u64)
+	/// Extract block_height from the 8-byte LE header prefix.
+	pub fn block_height_from_header(data: &[u8]) -> Option<u64> {
+		data.get(..8)?.try_into().ok().map(u64::from_le_bytes)
 	}
 }
 
@@ -393,7 +377,7 @@ mod serde_opt_bytes {
 
 	pub fn serialize<S: Serializer>(v: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
 		match v {
-			Some(bytes) => serde_bytes::serialize(bytes, s),
+			Some(bytes) => s.serialize_some(&serde_bytes::Bytes::new(bytes)),
 			None => s.serialize_none(),
 		}
 	}
@@ -486,31 +470,9 @@ mod tests {
 		assert!(restored.dust_local_state_bytes.is_none());
 	}
 
-	/// Asserts that `block_height` is always the first BSON field so that
-	/// `block_height_from_bson_header` can safely read only 26 bytes.
-	///
-	/// If someone reorders fields, removes `#[serde(skip)]` from `seed_hash`,
-	/// or otherwise changes the BSON layout, this test will fail — preventing
-	/// silent GC corruption at runtime.
 	#[test]
-	fn bson_layout_block_height_is_first_field() {
-		let bytes = CachedWalletState {
-			seed_hash: H256::from([0xAB; 32]),
-			block_height: 0xDEAD_BEEF,
-			shielded_state_bytes: vec![0xDD; 500],
-			dust_local_state_bytes: Some(vec![0xEE; 200]),
-		}
-		.to_value_bytes()
-		.expect("serialize failed");
-
-		assert!(bytes.len() >= 26, "BSON too short: {} bytes", bytes.len());
-		assert_eq!(bytes[4], 0x12, "first field must be BSON int64 (0x12)");
-		assert_eq!(&bytes[5..18], b"block_height\0", "first field name must be \"block_height\"");
-	}
-
-	#[test]
-	fn block_height_from_bson_header_matches_full_deser() {
-		for height in [0u64, 1, 42, 12345, u32::MAX as u64, i64::MAX as u64] {
+	fn block_height_from_header_matches_full_deser() {
+		for height in [0u64, 1, 42, 12345, u32::MAX as u64, u64::MAX] {
 			let wallet = CachedWalletState {
 				seed_hash: H256::from([0xAB; 32]),
 				block_height: height,
@@ -519,19 +481,17 @@ mod tests {
 			};
 
 			let bytes = wallet.to_value_bytes().expect("serialize failed");
-			let from_full = bson::deserialize_from_slice::<CachedWalletState>(&bytes)
-				.ok()
-				.map(|w| w.block_height);
-			let from_header = CachedWalletState::block_height_from_bson_header(&bytes);
+			let from_full =
+				CachedWalletState::from_value_bytes(&bytes, H256::zero()).ok().map(|w| w.block_height);
+			let from_header = CachedWalletState::block_height_from_header(&bytes);
 			assert_eq!(from_header, from_full, "header extraction mismatch at height {height}");
+
+			// Verify the 8-byte LE prefix
+			assert_eq!(&bytes[..8], &height.to_le_bytes());
 		}
 
-		assert_eq!(CachedWalletState::block_height_from_bson_header(&[]), None);
-		assert_eq!(CachedWalletState::block_height_from_bson_header(&[0; 25]), None);
-		// Wrong type tag
-		let mut bad = [0u8; 26];
-		bad[4] = 0x01; // not int64
-		assert_eq!(CachedWalletState::block_height_from_bson_header(&bad), None);
+		assert_eq!(CachedWalletState::block_height_from_header(&[]), None);
+		assert_eq!(CachedWalletState::block_height_from_header(&[0; 7]), None);
 	}
 
 	/// Load genesis test data as SourceTransactions + build LedgerContext.

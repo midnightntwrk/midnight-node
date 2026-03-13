@@ -16,7 +16,7 @@
 //! Stores ledger snapshots and per-wallet state as plain files:
 //! ```text
 //! <root>/<chain_id_hex>/ledger/<block_height>.zstd
-//! <root>/<chain_id_hex>/wallets/<seed_hash_hex>.bson
+//! <root>/<chain_id_hex>/wallets/<seed_hash_hex>.bin
 //! ```
 //!
 //! Atomic writes (write `.tmp`, rename) ensure crash safety and safe concurrent
@@ -53,7 +53,7 @@ impl FileBackend {
 	}
 
 	fn wallet_path(&self, chain_id: H256, seed_hash: H256) -> PathBuf {
-		self.wallets_dir(chain_id).join(format!("{}.bson", hex::encode(seed_hash.0)))
+		self.wallets_dir(chain_id).join(format!("{}.bin", hex::encode(seed_hash.0)))
 	}
 }
 
@@ -62,7 +62,7 @@ fn parse_ledger_height(filename: &str) -> Option<u64> {
 }
 
 fn parse_seed_hash(filename: &str) -> Option<H256> {
-	let hex_str = filename.strip_suffix(".bson")?;
+	let hex_str = filename.strip_suffix(".bin")?;
 	let bytes = hex::decode(hex_str).ok()?;
 	if bytes.len() == 32 { Some(H256::from_slice(&bytes)) } else { None }
 }
@@ -266,9 +266,9 @@ impl WalletStateCaching for FileBackend {
 				let path = dir.join(&name);
 				let height = (|| {
 					let mut file = fs::File::open(&path).ok()?;
-					let mut header = [0u8; 26];
+					let mut header = [0u8; 8];
 					io::Read::read_exact(&mut file, &mut header).ok()?;
-					CachedWalletState::block_height_from_bson_header(&header)
+					CachedWalletState::block_height_from_header(&header)
 				})();
 				match height {
 					Some(h) => {
@@ -470,7 +470,7 @@ mod tests {
 		backend.set_wallet_states(cid, &[test_wallet(h1, 300)]).await;
 		let path = backend.wallet_path(cid, h1);
 		assert!(path.exists());
-		fs::write(&path, b"garbage data").unwrap();
+		fs::write(&path, b"short").unwrap();
 
 		// Height should not be found and the corrupted file should be deleted
 		let heights = backend.get_all_cached_wallet_heights(cid).await;
