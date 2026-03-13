@@ -103,12 +103,6 @@ pub mod pallet {
 		MotionNotEnded,
 		/// Motion has ended and therefore it doesn't accept more changes
 		MotionHasEnded,
-		/// Motion is approved but need to wait until the approval period ends
-		MotionTooEarlyToClose,
-		/// Motion already exists
-		MotionAlreadyExists,
-		/// Motion expired without enough approvals
-		MotionExpired,
 		/// The provided weight bound is too low for the motion's call
 		MotionWeightBoundTooLow,
 	}
@@ -313,10 +307,7 @@ pub mod pallet {
 				// persist regardless of the dispatch outcome.
 				Self::deposit_event(Event::MotionDispatched { motion_hash, motion_result });
 				Self::motion_remove(motion_hash);
-				// Propagate dispatch error after cleanup
-				motion_result?;
 
-				// Return actual weight for approved motion
 				Ok(PostDispatchInfo {
 					actual_weight: Some(
 						T::WeightInfo::motion_close_approved().saturating_add(dispatch_weight),
