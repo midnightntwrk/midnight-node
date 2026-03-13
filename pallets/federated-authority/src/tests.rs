@@ -28,6 +28,16 @@ fn create_remark_call(data: Vec<u8>) -> Box<RuntimeCall> {
 	Box::new(RuntimeCall::System(frame_system::Call::remark { remark: data }))
 }
 
+/// Creates a call that fails when dispatched as Root.
+/// `pallet_collective::Call::vote` uses `ensure_signed`, which rejects Root with BadOrigin.
+fn create_root_failing_call() -> Box<RuntimeCall> {
+	Box::new(RuntimeCall::Council(pallet_collective::Call::vote {
+		proposal: H256::zero(),
+		index: 0,
+		approve: false,
+	}))
+}
+
 fn get_motion_hash(call: &RuntimeCall) -> H256 {
 	<Test as frame_system::Config>::Hashing::hash_of(call)
 }
