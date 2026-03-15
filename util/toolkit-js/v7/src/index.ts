@@ -20,7 +20,7 @@ import {
     circuitCommand,
     maintainCommand
 } from '@midnight-ntwrk/compact-js-command/effect';
-import Package from '@midnight-ntwrk/node-toolkit/package.json' with {type: 'json'};
+import Package from '../package.json' with {type: 'json'};
 
 const cli = Command.run(
     Command.make('midnight-node-toolkit-js').pipe(
@@ -33,16 +33,18 @@ const cli = Command.run(
     ),
     {
         name: 'Midnight Node Toolkit',
-        version: `v${Package.version}`,
+        version: Package.name,
         executable: 'midnight-node-toolkit-js'
     }
 );
 
-cli(process.argv).pipe(
-    Logger.withMinimumLogLevel(LogLevel.None),
-    Effect.provide(Layer.mergeAll(
-        ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer)),
-        CliConfig.layer({showBuiltIns: false})
-    )),
-    NodeRuntime.runMain({disableErrorReporting: false})
-);
+export const run = () => {
+    cli(process.argv).pipe(
+        Logger.withMinimumLogLevel(LogLevel.None),
+        Effect.provide(Layer.mergeAll(
+            ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer)),
+            CliConfig.layer({showBuiltIns: false})
+        )),
+        NodeRuntime.runMain({disableErrorReporting: false})
+    );
+};
