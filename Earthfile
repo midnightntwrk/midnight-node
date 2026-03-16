@@ -1379,6 +1379,50 @@ audit:
     BUILD +audit-rust
     BUILD +audit-nodejs
 
+# fix-lock-npm regenerates a single npm package-lock.json inside a container
+fix-lock-npm:
+    ARG DIRECTORY
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Keep in sync with audit-npm target
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
+        node --version && npm --version
+
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    WORKDIR ${DIRECTORY}
+    RUN npm install
+    SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
+
+# fix-lock-js regenerates all npm lockfiles
+fix-lock-js:
+    BUILD +fix-lock-npm --DIRECTORY=local-environment
+    BUILD +fix-lock-npm --DIRECTORY=util/toolkit-js
+
+# fix-lock-rust regenerates Cargo.lock
+fix-lock-rust:
+    FROM +prep
+    RUN cargo generate-lockfile
+    SAVE ARTIFACT Cargo.lock AS LOCAL Cargo.lock
+
+# fix-lock regenerates all lockfiles
+fix-lock:
+    BUILD +fix-lock-rust
+    BUILD +fix-lock-js
+
 # partnerchains-dev contains tools for working with partner chains contracts on Cardano
 partnerchains-dev:
     LET PARTNER_CHAINS_VERSION=1.5.0
