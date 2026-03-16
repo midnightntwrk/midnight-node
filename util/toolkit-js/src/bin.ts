@@ -22,7 +22,18 @@ const toolkitRequire = createRequire(require.resolve(toolkitPackageName));
 const cjsPathSegment = `${sep}dist${sep}cjs${sep}`;
 const esmPathSegment = `${sep}dist${sep}esm${sep}`;
 
+/**
+ * Resolves a module relative to the toolkit package, with special handling to rewrite paths to support
+ * both CommonJS and ESM versions.
+ *
+ * @param specifier The module to resolve.
+ * @returns A string representing the resolved path to of `specifier` relative to the toolkit package.
+ * @throws If `specifier` cannot be resolved.
+ */
 const toolkitResolve = (specifier: string) => {
+  // While this is dependant on the exact error message format of MODULE_NOT_FOUND errors, it is the
+  // most simple way to support both CJS and ESM versions of paths without having to build a full resolver.
+  // In the future, we may want to consider building a more robust resolver or adopt a third party package.
   try {
     return toolkitRequire.resolve(specifier);
   } catch (error: unknown) {
@@ -34,7 +45,7 @@ const toolkitResolve = (specifier: string) => {
     }
     throw error;
   }
-}
+};
 
 registerHooks({
   resolve(specifier: string, context: ResolveHookContext, next) {
