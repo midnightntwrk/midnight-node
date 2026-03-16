@@ -301,14 +301,10 @@ pub fn new_partial(
 		.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?
 		.iter()
 		.map(|v| {
-			v.as_str()
-				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))
-				.map(|v| v.to_string())
-		})
-		.take_while(Result::is_ok)
-		.map(|v| {
-			let s = v.unwrap();
-			hex::decode(&s).map_err(|e| {
+			let s = v
+				.as_str()
+				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))?;
+			hex::decode(s).map_err(|e| {
 				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
 			})
 		})
