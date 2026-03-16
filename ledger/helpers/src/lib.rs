@@ -60,10 +60,9 @@ pub mod ledger_8 {
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
 	pub use {
-		base_crypto, coin_structure_ledger_8 as coin_structure,
-		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_8 as mn_ledger,
-		onchain_runtime_ledger_8 as onchain_runtime, transient_crypto_ledger_8 as transient_crypto,
-		zkir_ledger_8 as zkir, zswap_ledger_8 as zswap,
+		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
+		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
+		zkir, zswap_ledger_8 as zswap,
 	};
 
 	#[allow(clippy::duplicate_mod)]

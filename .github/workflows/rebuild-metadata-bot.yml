@@ -55,10 +55,12 @@ jobs:
       - name: Get PR branch
         id: pr
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
         with:
           script: |
             const prNumber = context.eventName === 'workflow_dispatch'
-              ? '${{ github.event.inputs.pr_number }}'
+              ? process.env.PR_NUMBER
               : context.issue.number;
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -76,7 +78,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ steps.pr.outputs.ref }}
+          ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
@@ -95,11 +97,13 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Run rebuild-metadata
+        env:
+          EARTHLY_CONFIG: .earthly/config.yml
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-          . ./.envrc && earthly -P +rebuild-metadata
+          earthly -P +rebuild-metadata
 
       - name: Commit and push changes
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0

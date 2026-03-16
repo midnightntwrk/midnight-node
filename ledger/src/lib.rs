@@ -79,12 +79,12 @@ pub mod ledger_7 {
 pub mod ledger_8 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure_ledger_8 as coin_structure_local,
+		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
 		ledger_storage_ledger_8 as ledger_storage_local,
 		midnight_node_ledger_helpers::ledger_8 as helpers_local,
 		midnight_serialize as midnight_serialize_local, mn_ledger_8 as mn_ledger_local,
 		onchain_runtime_ledger_8 as onchain_runtime_local,
-		transient_crypto_ledger_8 as transient_crypto_local, zswap_ledger_8 as zswap_local,
+		transient_crypto as transient_crypto_local, zswap_ledger_8 as zswap_local,
 	};
 
 	#[path = "block_context/post_ledger_8.rs"]

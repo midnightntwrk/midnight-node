@@ -134,7 +134,7 @@ impl CandidatesDataSourceImpl {
 	) -> Result<CandidatesDataSourceImpl, Box<dyn std::error::Error + Send + Sync>> {
 		db_model::create_idx_ma_tx_out_ident(&pool).await?;
 		db_model::create_idx_tx_out_address(&pool).await?;
-		db_model::create_idx_ma_tx_out_tx_out_id_ident(&pool).await?;
+		db_model::create_idx_ma_tx_out_id_ident(&pool).await?;
 		Ok(Self {
 			pool: pool.clone(),
 			metrics_opt,
