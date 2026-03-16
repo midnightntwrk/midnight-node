@@ -1146,7 +1146,8 @@ srtool-info:
 # node-image creates the Midnight Substrate Node's image
 node-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
@@ -1163,11 +1164,12 @@ node-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
@@ -1187,7 +1189,8 @@ node-image:
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
 node-benchmarks-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
@@ -1201,9 +1204,10 @@ node-benchmarks-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1219,7 +1223,8 @@ node-benchmarks-image:
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     # Set to false to skip toolkit-js
@@ -1263,10 +1268,11 @@ toolkit-image:
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
-    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH}-${NATIVEARCH}"
-    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${CONTENT_HASH}-node-dev-01"
+    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
+    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
@@ -1278,7 +1284,8 @@ toolkit-image:
 # hardfork-test-upgrader-image creates the hardfork test upgrader tool image
 hardfork-test-upgrader-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
@@ -1291,9 +1298,10 @@ hardfork-test-upgrader-image:
     COPY node/Cargo.toml /node/
     LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$CONTENT_HASH-$NATIVEARCH"
+    ENV IMAGE_TAG="$NODE_VERSION-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag

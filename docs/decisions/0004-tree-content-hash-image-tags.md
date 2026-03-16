@@ -52,6 +52,14 @@ Every CI run — whether it builds or skips — also creates alias tags in the o
 - Alias tags are created via `docker buildx imagetools create --tag` (no rebuild, no re-push of layers)
 - Multi-arch commit-hash manifests are created in the `publish-multi-arch` job
 
+### `GIT_CONTENT_HASH` environment variable
+
+Every image embeds the full 40-char tree hash as `GIT_CONTENT_HASH`. To find all commits that produced a given image:
+
+```bash
+git log --all --format='%h %T' | grep $(docker run --rm --entrypoint printenv midnightntwrk/midnight-node:latest-main GIT_CONTENT_HASH)
+```
+
 ## Alternatives Considered
 
 | Option | Description | Decision |
