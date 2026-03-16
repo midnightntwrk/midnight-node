@@ -259,6 +259,7 @@ type MidnightService = sc_service::PartialComponents<
 	),
 >;
 
+#[allow(clippy::result_large_err)]
 fn parse_genesis_extrinsic_values(
 	values: &[serde_json::Value],
 ) -> Result<Vec<Vec<u8>>, ServiceError> {
@@ -877,10 +878,7 @@ mod tests {
 
 	#[test]
 	fn parse_genesis_extrinsics_non_string_first_position() {
-		let values = vec![
-			serde_json::json!(42),
-			serde_json::Value::String("deadbeef".into()),
-		];
+		let values = vec![serde_json::json!(42), serde_json::Value::String("deadbeef".into())];
 		let result = parse_genesis_extrinsic_values(&values);
 		assert!(result.is_err());
 		let err = result.unwrap_err().to_string();
