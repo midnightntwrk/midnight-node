@@ -133,35 +133,35 @@ midnight-primitives-system-parameters = { path = "primitives/system-parameters",
 runtime-common = { path = "runtime/common", default-features = false }
 
 # Partnerchains dependencies
-partner-chains-db-sync-data-sources = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1", features = ["block-source", "candidate-source"] }
-partner-chains-mock-data-sources = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-partner-chains-plutus-data = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-db-sync-sqlx = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+partner-chains-db-sync-data-sources = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1", features = ["block-source", "candidate-source"] }
+partner-chains-mock-data-sources = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+partner-chains-plutus-data = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+db-sync-sqlx = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 cardano-serialization-lib = { default-features = false, version = "^14.1.1" }
 substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 
-pallet-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+pallet-sidechain = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 
-pallet-sidechain-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+pallet-sidechain-rpc = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sp-partner-chains-bridge = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 
-pallet-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-sidechain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sidechain-mc-hash = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sidechain-domain = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-authority-selection-inherents = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sidechain-slots = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-plutus = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-#pallet-block-rewards = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-#sp-block-rewards = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-session-validator-management = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sp-session-validator-management-query = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-time-source = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-pallet-partner-chains-session = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1", features = ["pallet-session-compat"] }
-sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+pallet-session-validator-management = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+pallet-session-validator-management-rpc = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+pallet-partner-chains-bridge = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sp-sidechain = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sidechain-mc-hash = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sidechain-domain = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+authority-selection-inherents = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sidechain-slots = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+plutus = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+#pallet-block-rewards = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+#sp-block-rewards = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sp-session-validator-management = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sp-session-validator-management-query = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+time-source = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+pallet-partner-chains-session = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1", features = ["pallet-session-compat"] }
+sp-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+sc-partner-chains-consensus-aura = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 # Substrate dependencies
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -188,8 +188,8 @@ sp-transaction-pool = { default-features = false, git = "https://github.com/pari
 sp-version = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-genesis-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-externalities = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-partner-chains-node-commands = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
-partner-chains-cli = { default-features = false, git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+partner-chains-node-commands = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+partner-chains-cli = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 
 substrate-wasm-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-try-runtime = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }

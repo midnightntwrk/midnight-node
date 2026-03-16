@@ -1088,7 +1088,7 @@ dependencies = [
 [[package]]
 name = "authority-selection-inherents"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "frame-support",
@@ -1701,7 +1701,7 @@ checksum = "7575182f7272186991736b70173b0ea045398f984bf5ebbb3804736ce1330c9d"
 [[package]]
 name = "byte-string-derive"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "quote 1.0.40",
  "syn 2.0.104",
@@ -2086,7 +2086,7 @@ dependencies = [
 [[package]]
 name = "cli-commands"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "anyhow",
  "clap",
@@ -3080,7 +3080,7 @@ dependencies = [
 [[package]]
 name = "db-sync-sqlx"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "num-traits",
  "sidechain-domain",
@@ -9480,7 +9480,7 @@ dependencies = [
 [[package]]
 name = "ogmios-client"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "anyhow",
  "fraction",
@@ -9990,7 +9990,7 @@ dependencies = [
 [[package]]
 name = "pallet-address-associations"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10273,7 +10273,7 @@ dependencies = [
 [[package]]
 name = "pallet-governed-map"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10430,7 +10430,7 @@ dependencies = [
 [[package]]
 name = "pallet-partner-chains-bridge"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10445,7 +10445,7 @@ dependencies = [
 [[package]]
 name = "pallet-partner-chains-session"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -10519,7 +10519,7 @@ dependencies = [
 [[package]]
 name = "pallet-session-validator-management"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "derive-new",
  "frame-benchmarking",
@@ -10540,7 +10540,7 @@ dependencies = [
 [[package]]
 name = "pallet-session-validator-management-rpc"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "derive-new",
  "jsonrpsee",
@@ -10551,7 +10551,7 @@ dependencies = [
 [[package]]
 name = "pallet-sidechain"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -10569,7 +10569,7 @@ dependencies = [
 [[package]]
 name = "pallet-sidechain-rpc"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "derive-new",
  "hex",
@@ -10897,7 +10897,7 @@ checksum = "7924d1d0ad836f665c9065e26d016c673ece3993f30d340068b16f282afc1156"
 [[package]]
 name = "partner-chains-cardano-offchain"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "anyhow",
  "cardano-serialization-lib 14.1.2",
@@ -10924,7 +10924,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-cli"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "anyhow",
  "authority-selection-inherents",
@@ -10963,7 +10963,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-db-sync-data-sources"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -10998,7 +10998,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-mock-data-sources"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -11018,7 +11018,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-node-commands"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "authority-selection-inherents",
  "clap",
@@ -11046,7 +11046,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-plutus-data"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "cardano-serialization-lib 14.1.2",
  "log",
@@ -11059,7 +11059,7 @@ dependencies = [
 [[package]]
 name = "partner-chains-smart-contracts-commands"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "anyhow",
  "clap",
@@ -11362,7 +11362,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "plutus"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "hex",
  "minicbor 0.25.1",
@@ -11373,7 +11373,7 @@ dependencies = [
 [[package]]
 name = "plutus-datum-derive"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "quote 1.0.40",
  "syn 2.0.104",
@@ -14023,7 +14023,7 @@ dependencies = [
 [[package]]
 name = "sc-partner-chains-consensus-aura"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "fork-tree 13.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -14829,7 +14829,7 @@ dependencies = [
 [[package]]
 name = "selection"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
@@ -15222,7 +15222,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "sidechain-block-search"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "hex",
  "parity-scale-codec",
@@ -15239,7 +15239,7 @@ dependencies = [
 [[package]]
 name = "sidechain-domain"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "bech32 0.11.0",
  "blake2b_simd",
@@ -15269,7 +15269,7 @@ dependencies = [
 [[package]]
 name = "sidechain-mc-hash"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -15287,7 +15287,7 @@ dependencies = [
 [[package]]
 name = "sidechain-slots"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "envy",
  "parity-scale-codec",
@@ -15803,7 +15803,7 @@ dependencies = [
 [[package]]
 name = "sp-block-producer-metadata"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "k256",
  "parity-scale-codec",
@@ -16054,7 +16054,7 @@ dependencies = [
 [[package]]
 name = "sp-governed-map"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "envy",
@@ -16211,7 +16211,7 @@ dependencies = [
 [[package]]
 name = "sp-partner-chains-bridge"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "envy",
@@ -16230,7 +16230,7 @@ dependencies = [
 [[package]]
 name = "sp-partner-chains-consensus-aura"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "futures",
  "sp-consensus",
@@ -16326,7 +16326,7 @@ dependencies = [
 [[package]]
 name = "sp-session-validator-management"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "envy",
  "parity-scale-codec",
@@ -16344,7 +16344,7 @@ dependencies = [
 [[package]]
 name = "sp-session-validator-management-query"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -16368,7 +16368,7 @@ dependencies = [
 [[package]]
 name = "sp-sidechain"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 dependencies = [
  "envy",
  "frame-support",
@@ -18016,7 +18016,7 @@ dependencies = [
 [[package]]
 name = "time-source"
 version = "1.8.1"
-source = "git+https://github.com/input-output-hk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
+source = "git+https://github.com/midnightntwrk/partner-chains?tag=v1.8.1#56c3af3f9f665b79a1d2212c3fe714b814fbe270"
 
 [[package]]
 name = "tiny-bip39"
