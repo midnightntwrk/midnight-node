@@ -164,7 +164,7 @@ fn load_ledger_parameters(
 	Ok(params)
 }
 
-/// Genesis timestamp used by the toolkit: December 5, 2025 (Glacier Drop start)
+/// Default genesis timestamp used by the toolkit: Aug 5, 2025 (Glacier Drop start)
 ///
 /// Note: This timestamp is used for consistency with the toolkit's genesis generation,
 /// but it doesn't actually affect the DustState hash. The `tblock` parameter in
@@ -184,6 +184,7 @@ fn verify_dust_state(
 	state: &LedgerState<DefaultDB>,
 	cnight_config_path: Option<&Path>,
 	network: Option<&str>,
+	genesis_timestamp_arg: Option<u64>,
 ) -> (bool, String) {
 	let Some(path) = cnight_config_path else {
 		return (false, "No cnight-config.json provided".to_string());
@@ -197,8 +198,9 @@ fn verify_dust_state(
 			// with the genesis state's DustState.
 			let fresh_state = LedgerState::<DefaultDB>::new(&state.network_id);
 
-			// Use the same genesis timestamp as the toolkit (Glacier Drop start: Dec 5, 2025)
-			let genesis_timestamp = Timestamp::from_secs(GENESIS_TIMESTAMP_SECS);
+			// Use the provided genesis timestamp, or fall back to the default (Aug 5, 2025)
+			let genesis_timestamp =
+				Timestamp::from_secs(genesis_timestamp_arg.unwrap_or(GENESIS_TIMESTAMP_SECS));
 
 			match fresh_state.apply_system_tx(&system_tx, genesis_timestamp) {
 				Ok((expected_state, _events)) => {
@@ -467,11 +469,56 @@ fn verify_ledger_parameters(
 			// Compare key fields
 			let mut issues = Vec::new();
 
-			// NOTE: We skip comparing fee_prices because they are dynamically adjusted
-			// during genesis generation. The post_block_update() function calls
-			// fee_prices.update_from_fullness() which modifies the fee prices based on
-			// block fullness. The config file contains the initial fee prices, while
-			// the genesis state contains the adjusted values after post_block_update.
+			// NOTE: fee_prices are dynamically adjusted during genesis generation.
+			// The post_block_update() function calls fee_prices.update_from_fullness()
+			// which modifies the fee prices based on block fullness. The config file
+			// contains the initial fee prices, while the genesis state contains the
+			// adjusted values after post_block_update. We allow up to 5% deviation.
+			{
+				const MAX_DEVIATION_PCT: f64 = 5.0;
+				let fee_fields: &[(&str, f64, f64)] = &[
+					(
+						"overall_price",
+						f64::from(state_params.fee_prices.overall_price),
+						f64::from(expected_params.fee_prices.overall_price),
+					),
+					(
+						"read_factor",
+						f64::from(state_params.fee_prices.read_factor),
+						f64::from(expected_params.fee_prices.read_factor),
+					),
+					(
+						"compute_factor",
+						f64::from(state_params.fee_prices.compute_factor),
+						f64::from(expected_params.fee_prices.compute_factor),
+					),
+					(
+						"block_usage_factor",
+						f64::from(state_params.fee_prices.block_usage_factor),
+						f64::from(expected_params.fee_prices.block_usage_factor),
+					),
+					(
+						"write_factor",
+						f64::from(state_params.fee_prices.write_factor),
+						f64::from(expected_params.fee_prices.write_factor),
+					),
+				];
+
+				for (name, actual, expected) in fee_fields {
+					let deviation_pct = if *expected == 0.0 {
+						if *actual == 0.0 { 0.0 } else { f64::INFINITY }
+					} else {
+						((actual - expected) / expected).abs() * 100.0
+					};
+
+					if deviation_pct > MAX_DEVIATION_PCT {
+						issues.push(format!(
+							"fee_prices.{} deviation {:.2}% exceeds {}% threshold:\n  state:    {}\n  expected: {}",
+							name, deviation_pct, MAX_DEVIATION_PCT, actual, expected
+						));
+					}
+				}
+			}
 
 			// Compare limits
 			if state_params.limits != expected_params.limits {
@@ -540,6 +587,7 @@ pub fn verify_ledger_state_genesis(
 	cnight_config_path: Option<&Path>,
 	ledger_params_path: Option<&Path>,
 	network: Option<&str>,
+	genesis_timestamp: Option<u64>,
 ) -> Result<VerificationResult, VerifyLedgerStateGenesisError> {
 	log::info!("Loading LedgerState from {}", chain_spec_path.display());
 	let state = load_ledger_state(chain_spec_path)?;
@@ -548,7 +596,7 @@ pub fn verify_ledger_state_genesis(
 
 	// Run all verifications
 	let (dust_state_ok, dust_state_message) =
-		verify_dust_state(&state, cnight_config_path, network);
+		verify_dust_state(&state, cnight_config_path, network, genesis_timestamp);
 	let (empty_state_ok, empty_state_message) = verify_empty_state(&state, network);
 	let (supply_invariant_ok, supply_invariant_message) = verify_supply_invariant(&state);
 	let (ledger_parameters_ok, ledger_parameters_message) =

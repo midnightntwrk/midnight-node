@@ -1,23 +1,154 @@
 use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend,
-	ClaimedUnshieldedSpendsKey, ContractAction, DefaultDB, IntentCustom, IntentInfo, LedgerContext,
-	OfferInfo, ProofPreimageMarker, ProofProvider, PublicAddress, ShieldedWallet, StdRng,
-	TokenType, TransactionWithContext, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
-	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
+	ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress, ContractEffects, DB,
+	DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom, IntentInfo, LedgerContext,
+	OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider, PublicAddress, Recipient,
+	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext,
+	Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo,
+	Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
 	toolkit_js::{
-		EncodedInputInfo, EncodedOutputInfo, EncodedTransientInfo, EncodedZswapLocalState,
+		EncodedZswapLocalState,
+		encoded_zswap_local_state::{EncodedOutput, EncodedQualifiedShieldedCoinInfo},
 	},
 	tx_generator::builder::{BuildTxs, CustomContractArgs},
 };
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
-use midnight_node_ledger_helpers::{BuildTransient, CoinInfo};
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
+
+// --- Version-local type definitions ---
+
+#[derive(Clone)]
+pub struct EncodedOutputInfo {
+	pub encoded_output: EncodedOutput,
+	pub segment: u16,
+	pub encryption_public_key: Option<EncryptionPublicKey>,
+}
+
+impl EncodedOutputInfo {
+	pub fn new(
+		encoded_output: EncodedOutput,
+		segment: u16,
+		possible_destinations: &[ShieldedWallet<DefaultDB>],
+	) -> Self {
+		let mut encryption_public_key = None;
+		let recipient: Recipient = (&encoded_output.recipient).into();
+		if let Recipient::User(ref public_key) = recipient {
+			if let Some(wallet) =
+				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
+			{
+				encryption_public_key = Some(wallet.enc_public_key);
+			} else {
+				log::warn!(
+					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
+					hex::encode(&encoded_output.coin_info.nonce)
+				);
+			}
+		}
+
+		Self { encoded_output, segment, encryption_public_key }
+	}
+}
+
+impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
+	fn build(
+		&self,
+		rng: &mut rand::prelude::StdRng,
+		_context: Arc<LedgerContext<D>>,
+	) -> Output<ProofPreimage, D> {
+		let coin_info: CoinInfo = (&self.encoded_output).into();
+		let recipient: Recipient = (&self.encoded_output.recipient).into();
+
+		match recipient {
+			Recipient::User(public_key) => Output::new(
+				rng,
+				&coin_info,
+				Some(self.segment),
+				&public_key,
+				self.encryption_public_key,
+			)
+			.expect("failed to construct output"),
+			Recipient::Contract(contract_address) => {
+				Output::new_contract_owned(rng, &coin_info, Some(self.segment), contract_address)
+					.expect("failed to construct output")
+			},
+		}
+	}
+}
+
+impl TokenInfo for EncodedOutputInfo {
+	fn token_type(&self) -> ShieldedTokenType {
+		ShieldedTokenType(HashOutput(self.encoded_output.coin_info.color))
+	}
+
+	fn value(&self) -> u128 {
+		self.encoded_output.coin_info.value
+	}
+}
+
+pub struct EncodedTransientInfo<D: DB + Clone> {
+	pub encoded_qualified_info: EncodedQualifiedShieldedCoinInfo,
+	pub segment: u16,
+	pub encoded_output_info: Box<dyn BuildOutput<D>>,
+}
+
+impl<D: DB + Clone> BuildTransient<D> for EncodedTransientInfo<D> {
+	fn build(
+		&self,
+		rng: &mut rand::prelude::StdRng,
+		context: Arc<LedgerContext<D>>,
+	) -> Transient<ProofPreimage, D> {
+		let output = self.encoded_output_info.build(rng, context.clone());
+		Transient::new_from_contract_owned_output(
+			rng,
+			&(&self.encoded_qualified_info).into(),
+			Some(self.segment),
+			output,
+		)
+		.expect("Failed to construct Transient")
+	}
+}
+
+pub struct EncodedInputInfo<D: DB + Clone> {
+	pub encoded_qualified_info: EncodedQualifiedShieldedCoinInfo,
+	pub segment: u16,
+	pub contract_address: ContractAddress,
+	pub chain_zswap_state: zswap::ledger::State<D>,
+}
+
+impl<D: DB + Clone> TokenInfo for EncodedInputInfo<D> {
+	fn token_type(&self) -> ShieldedTokenType {
+		ShieldedTokenType(HashOutput(self.encoded_qualified_info.color))
+	}
+
+	fn value(&self) -> u128 {
+		self.encoded_qualified_info.value
+	}
+}
+
+impl<D: DB + Clone> BuildInput<D> for EncodedInputInfo<D> {
+	fn build(
+		&mut self,
+		rng: &mut rand::prelude::StdRng,
+		_context: Arc<LedgerContext<D>>,
+	) -> Input<ProofPreimage, D> {
+		Input::new_contract_owned(
+			rng,
+			&(&self.encoded_qualified_info).into(),
+			Some(self.segment),
+			self.contract_address,
+			&self.chain_zswap_state.coin_coms,
+		)
+		.expect("Failed to construct Input")
+	}
+}
+
+// --- Builder ---
 
 #[derive(Debug, thiserror::Error)]
 pub enum CustomContractBuilderError {
@@ -55,24 +186,26 @@ impl CustomContractBuilder {
 		context: Arc<LedgerContext<DefaultDB>>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
-		let CustomContractArgs {
-			funding_seed,
-			rng_seed,
-			compiled_contract_dirs,
-			intent_files,
-			utxo_inputs,
-			zswap_state_file,
-			shielded_destinations,
-		} = args;
+		// Convert top-level types to version-local types via string representation
+		let utxo_inputs: Vec<UtxoId> = args
+			.utxo_inputs
+			.iter()
+			.map(|u| u.to_string().parse().expect("failed to convert UtxoId"))
+			.collect();
+		let shielded_destinations: Vec<WalletAddress> = args
+			.shielded_destinations
+			.iter()
+			.map(|addr| addr.to_bech32().parse().expect("failed to convert WalletAddress"))
+			.collect();
 		Self {
 			context,
 			prover,
-			funding_seed,
-			rng_seed,
-			artifact_dirs: compiled_contract_dirs,
-			intent_files,
+			funding_seed: args.funding_seed,
+			rng_seed: args.rng_seed,
+			artifact_dirs: args.compiled_contract_dirs,
+			intent_files: args.intent_files,
 			utxo_inputs,
-			zswap_state_file,
+			zswap_state_file: args.zswap_state_file,
 			shielded_destinations,
 		}
 	}
@@ -195,12 +328,16 @@ impl BuildTxs for CustomContractBuilder {
 		// - Intents
 		let contract_intent = self.build_intent()?;
 		let zswap_state = self.read_zswap_file()?;
-		let (guaranteed_effects, _fallible_effects) = contract_intent.find_effects();
+		let (guaranteed_effects, fallible_effects) = contract_intent.find_effects();
 
-		let mut unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
-		if !guaranteed_effects.is_empty() {
+		let mut guaranteed_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
+		let mut fallible_unshielded_offer_info: Option<UnshieldedOfferInfo<DefaultDB>> = None;
+		let find_outputs = |effects_vec: Vec<ContractEffects<DefaultDB>>| -> Result<
+			Vec<Box<dyn BuildUtxoOutput<DefaultDB>>>,
+			CustomContractBuilderError,
+		> {
 			let mut outputs = Vec::<Box<dyn BuildUtxoOutput<DefaultDB>>>::new();
-			for effects in guaranteed_effects {
+			for effects in effects_vec {
 				for (ClaimedUnshieldedSpendsKey(tt, dest), value) in
 					effects.claimed_unshielded_spends
 				{
@@ -216,8 +353,19 @@ impl BuildTxs for CustomContractBuilder {
 					}
 				}
 			}
+			Ok(outputs)
+		};
 
-			unshielded_offer_info = Some(UnshieldedOfferInfo { inputs: input_utxos, outputs });
+		let guaranteed_outputs = find_outputs(guaranteed_effects)?;
+		if !guaranteed_outputs.is_empty() || !input_utxos.is_empty() {
+			guaranteed_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: input_utxos, outputs: guaranteed_outputs });
+		}
+
+		let fallible_outputs = find_outputs(fallible_effects)?;
+		if !fallible_outputs.is_empty() {
+			fallible_unshielded_offer_info =
+				Some(UnshieldedOfferInfo { inputs: vec![], outputs: fallible_outputs });
 		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();
@@ -225,8 +373,8 @@ impl BuildTxs for CustomContractBuilder {
 		intents.insert(
 			contract_segment,
 			Box::new(IntentInfo {
-				guaranteed_unshielded_offer: unshielded_offer_info,
-				fallible_unshielded_offer: None,
+				guaranteed_unshielded_offer: guaranteed_unshielded_offer_info,
+				fallible_unshielded_offer: fallible_unshielded_offer_info,
 				actions: vec![Box::new(contract_intent.clone())],
 			}),
 		);
@@ -253,7 +401,7 @@ impl BuildTxs for CustomContractBuilder {
 			for encoded_output in zswap_state.outputs.into_iter() {
 				// NOTE: Using segment 0 here assumes that the contract is executing a guaranteed
 				// transcript
-				let coin_info = CoinInfo::from(&encoded_output);
+				let coin_info: CoinInfo = (&encoded_output).into();
 				let encoded_output_info =
 					EncodedOutputInfo::new(encoded_output, 1, &shielded_wallets);
 				encoded_output_infos.insert(coin_info, Box::new(encoded_output_info));
@@ -265,7 +413,7 @@ impl BuildTxs for CustomContractBuilder {
 					.expect("Contract address should be set");
 				let chain_zswap_state = context.with_ledger_state(|state| (*state.zswap).clone());
 				for encoded_input in zswap_state.inputs.into_iter() {
-					let coin_info = CoinInfo::from(&encoded_input);
+					let coin_info: CoinInfo = (&encoded_input).into();
 
 					if let Some(encoded_output_info) = encoded_output_infos.get(&coin_info) {
 						let transient = EncodedTransientInfo {

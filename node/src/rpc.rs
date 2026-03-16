@@ -220,10 +220,14 @@ where
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
-	// Extend this RPC with a custom API by using the following syntax.
-	// `YourRpcStruct` should have a reference to a client, which is needed
-	// to call into the runtime.
-	// `module.merge(YourRpcTrait::into_rpc(YourRpcStruct::new(ReferenceToClient, ...)))?;`
+	// Build the OpenRPC document from the set of custom methods currently
+	// registered.  Standard Substrate methods (author, chain, state, system)
+	// are added by sc_service *after* create_full returns, so they are listed
+	// statically inside the builder.
+	let custom_method_names: Vec<&str> = module.method_names().collect();
+	let openrpc_doc = crate::openrpc::build_openrpc_document(&custom_method_names);
+
+	module.register_method("rpc.discover", move |_, _, _| openrpc_doc.clone())?;
 
 	Ok(module)
 }

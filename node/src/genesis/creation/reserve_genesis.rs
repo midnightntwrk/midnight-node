@@ -84,7 +84,7 @@ async fn query_reserve_utxos(
 		SELECT
 			encode(tx.hash, 'hex') as tx_hash,
 			txo.index as output_index,
-			ma.quantity as amount
+			ma.quantity::BIGINT as amount
 		FROM tx_out txo
 		JOIN tx ON tx.id = txo.tx_id
 		JOIN block b ON b.id = tx.block_id
@@ -142,11 +142,13 @@ pub async fn generate_reserve_genesis(
 		hex::encode(cardano_tip.0)
 	);
 
+	let policy_id_hex = hex::encode(addresses.asset.policy_id.0);
+	let asset_name_hex = hex::encode(&addresses.asset.asset_name);
 	let utxos = query_reserve_utxos(
 		pool,
 		&addresses.reserve_validator_address,
-		&addresses.asset.policy_id.to_hex_string(),
-		&addresses.asset.asset_name,
+		&policy_id_hex,
+		&asset_name_hex,
 		&cardano_tip,
 	)
 	.await?;

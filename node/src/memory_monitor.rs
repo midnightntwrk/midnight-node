@@ -114,7 +114,7 @@ impl MemoryMonitorService {
 				target: LOG_TARGET,
 				"MemoryMonitorService: not supported on this platform, memory monitoring disabled",
 			);
-			return Ok(());
+			Ok(())
 		}
 
 		#[cfg(target_os = "linux")]

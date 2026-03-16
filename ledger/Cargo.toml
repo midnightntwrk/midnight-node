@@ -16,8 +16,6 @@ transient-crypto = { workspace = true, optional = true }
 zswap = { workspace = true, optional = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
-coin-structure-ledger-8 = { workspace = true, optional = true }
-transient-crypto-ledger-8 = { workspace = true, optional = true }
 onchain-runtime-ledger-8 = { workspace = true, optional = true }
 ledger-storage-ledger-8 = { workspace = true, optional = true }
 zswap-ledger-8 = { workspace = true, optional = true }
@@ -92,8 +90,6 @@ std = [
     "transient-crypto-hf",
     "zswap-hf",
     "mn-ledger-8",
-    "coin-structure-ledger-8",
-    "transient-crypto-ledger-8",
     "onchain-runtime-ledger-8",
     "ledger-storage-ledger-8",
     "zswap-ledger-8",

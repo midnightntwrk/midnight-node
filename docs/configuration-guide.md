@@ -322,7 +322,7 @@ All output paths default to `res/<CFG_PRESET>/` when `CFG_PRESET` is set.
 For an interactive guided experience, use the genesis generation script:
 
 ```sh
-$ ./scripts/genesis/genesis-generation.sh
+$ ./scripts/genesis/genesis-construction.sh
 ```
 
 See the [Genesis Generation Guide](genesis/README.md) for complete documentation.

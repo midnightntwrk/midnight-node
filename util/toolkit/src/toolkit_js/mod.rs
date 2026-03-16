@@ -9,10 +9,7 @@ use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
 pub(crate) mod encoded_zswap_local_state;
-pub use encoded_zswap_local_state::{
-	EncodedInputInfo, EncodedOutput, EncodedOutputInfo, EncodedTransientInfo,
-	EncodedZswapLocalState,
-};
+pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
 use crate::cli_parsers as cli;
 
