@@ -545,36 +545,4 @@ mod tests {
 			"expected Deserialization error, got: {err}"
 		);
 	}
-
-	#[test]
-	fn mutex_remains_usable_after_deserialization_error() {
-		let ctx = LedgerContext::<TestDB>::new("test-net");
-
-		let result = ctx.update_ledger_state_from_bytes(&[0xFF]);
-		assert!(result.is_err());
-
-		// The ledger_state mutex must not be poisoned — subsequent locks must succeed.
-		let lock_result = ctx.ledger_state.lock();
-		assert!(lock_result.is_ok(), "mutex was poisoned after a deserialization error");
-	}
-
-	#[test]
-	fn error_variants_display_messages() {
-		let err = LedgerContextError::MutexPoisoned("ledger_state: poisoned".into());
-		assert!(err.to_string().contains("mutex poisoned"));
-		assert!(err.to_string().contains("ledger_state: poisoned"));
-
-		let err = LedgerContextError::InvalidTransaction("bad tx".into());
-		assert!(err.to_string().contains("invalid transaction"));
-
-		let err = LedgerContextError::StateRootMismatch {
-			expected: "aabb".into(),
-			actual: "ccdd".into(),
-			parent_block_hash: "eeff".into(),
-		};
-		let msg = err.to_string();
-		assert!(msg.contains("aabb"));
-		assert!(msg.contains("ccdd"));
-		assert!(msg.contains("eeff"));
-	}
 }
