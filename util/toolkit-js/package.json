@@ -15,7 +15,7 @@
     "v*"
   ],
   "scripts": {
-    "build": "npm run build:variants && tsc",
+    "build": "npm run build:variants && tsc && chmod +x dist/bin.js",
     "build:variants": "turbo run build --filter='@midnight-ntwrk/node-toolkit-v*'",
     "start": "dist/bin.js",
     "test": "npm run build-compact && vitest run",
