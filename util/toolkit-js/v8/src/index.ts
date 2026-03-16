@@ -33,7 +33,7 @@ const cli = Command.run(
     ),
     {
         name: 'Midnight Node Toolkit',
-        version: Package.name,
+        version: `(with Compact.js version ${Package.dependencies['@midnight-ntwrk/compact-js']})`,
         executable: 'midnight-node-toolkit-js'
     }
 );
