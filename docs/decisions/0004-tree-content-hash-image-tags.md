@@ -28,11 +28,29 @@ New tag format: `{VERSION}-{12-char-tree-hash}-{ARCH}`
 | --------- | ------ |
 | `season-action` | New `hash_type` input (`commit`/`tree`), defaults to `commit` for backward compatibility |
 | `Earthfile` | Image targets compute `CONTENT_HASH` LET instead of `EARTHLY_GIT_SHORT_HASH` |
-| `main.yml` | Computes tree hash, checks if images exist before building, `force_rebuild` input to override |
+| `main.yml` | Computes tree hash, checks if images exist before building, `force_rebuild` input to override, creates commit-hash alias tags unconditionally |
 
 ### Skip logic
 
 Before building, CI checks whether both `midnight-node:{TAG}-{ARCH}` and `midnight-node-toolkit:{TAG}-{ARCH}` already exist in GHCR. If both exist and `force_rebuild` is not set, the build is skipped. Signing runs unconditionally (idempotent).
+
+### Commit-hash alias tags
+
+Every CI run — whether it builds or skips — also creates alias tags in the old `{VERSION}-{8-char-commit-hash}-{ARCH}` format pointing to the same image. This restores commit-to-image traceability without sacrificing content-hash deduplication.
+
+```text
+                content hash (primary, dedup)
+                        +----------+
+  commit abc123 --tag-->|          |
+  commit def456 --tag-->|  image   |<-- tag -- 0.20.0-abc123def0-amd64
+  commit 789abc --tag-->|  digest  |
+                        +----------+
+```
+
+- Forward lookup: pull by commit hash tag, Docker resolves to the content-hash image
+- Reverse lookup: enumerate tags sharing the same digest (via GHCR API) to find all commits that produced a given image
+- Alias tags are created via `docker buildx imagetools create --tag` (no rebuild, no re-push of layers)
+- Multi-arch commit-hash manifests are created in the `publish-multi-arch` job
 
 ## Alternatives Considered
 
@@ -60,8 +78,7 @@ Before building, CI checks whether both `midnight-node:{TAG}-{ARCH}` and `midnig
 
 ### Negative
 
-- Tags are no longer traceable to a specific commit (multiple commits may share a tree hash)
-- Existing tooling that parses image tags for commit hashes will need updating
+- Content-hash tags are not traceable to a specific commit (multiple commits may share a tree hash) — mitigated by commit-hash alias tags
 - 12-char hashes are longer than the previous 8-char ones
 
 ### Not Changed
