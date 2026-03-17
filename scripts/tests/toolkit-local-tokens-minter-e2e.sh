@@ -128,7 +128,6 @@ echo "Send created intents (tx #1)"
     --shielded-destination "$shielded_destination" \
     --zswap-state-file "$outdir/$mint_unshielded_zswap_filename"
 
-
 token_id=$(
   "$toolkit_bin" \
     show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001" \
