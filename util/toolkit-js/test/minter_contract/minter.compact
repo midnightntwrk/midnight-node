@@ -19,6 +19,11 @@ export ledger storage_coin_color: Bytes<32>;
 export ledger storage_amount: Uint<128>;
 export ledger storage_user: Bytes<32>;
 
+export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): Bytes<32> {
+  const color = mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
+  return color;
+}
+
 export circuit mintUnshieldedToUserTest(domainSep: Bytes<32>, address_bytes: Bytes<32>, amount: Uint<64>): Bytes<32> {
   const address = UserAddress { bytes: address_bytes };
   return mintUnshieldedToken(disclose(domainSep), disclose(amount), right<ContractAddress, UserAddress>(disclose(address)));
