@@ -339,10 +339,6 @@ impl BuildTxs for CustomContractBuilder {
 
 		let mut guaranteed_inputs = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
 		let mut fallible_inputs = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
-		let guaranteed_effects_unshielded_inputs = guaranteed_effects
-			.iter()
-			.flat_map(|effects| effects.unshielded_inputs.clone())
-			.collect::<Vec<_>>();
 		let fallible_effects_unshielded_inputs = fallible_effects
 			.iter()
 			.flat_map(|effects| effects.unshielded_inputs.clone())
@@ -363,14 +359,13 @@ impl BuildTxs for CustomContractBuilder {
 				intent_hash: Some(funding_match.intent_hash),
 				output_number: Some(funding_match.output_no),
 			});
-			if guaranteed_effects_unshielded_inputs
-				.contains(&(TokenType::Unshielded(funding_match.type_), funding_match.value))
-			{
-				guaranteed_inputs.push(input);
-			} else if fallible_effects_unshielded_inputs
+
+			if fallible_effects_unshielded_inputs
 				.contains(&(TokenType::Unshielded(funding_match.type_), funding_match.value))
 			{
 				fallible_inputs.push(input);
+			} else {
+				guaranteed_inputs.push(input);
 			}
 		}
 
