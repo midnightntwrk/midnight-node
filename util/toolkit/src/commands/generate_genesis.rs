@@ -13,8 +13,28 @@ use midnight_node_ledger_helpers::{
 
 #[derive(Deserialize)]
 pub struct CNightGeneratesDustConfig {
-	#[serde(with = "hex")]
-	system_tx: Vec<u8>,
+	#[serde(default, with = "hex_option")]
+	system_tx: Option<Vec<u8>>,
+}
+
+mod hex_option {
+	use serde::Deserializer;
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let opt: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+		match opt {
+			None => Ok(None),
+			Some(s) => hex::decode(&s).map(Some).map_err(serde::de::Error::custom),
+		}
+	}
+}
+
+#[derive(Deserialize)]
+struct CardanoTipConfig {
+	timestamp: String,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -52,6 +72,10 @@ pub struct GenerateGenesisArgs {
 	/// File containing ledger parameters config (JSON).
 	#[arg(long)]
 	ledger_parameters_config: PathBuf,
+	/// Path to cardano-tip.json containing the genesis timestamp. If not provided,
+	/// defaults to the hardcoded Glacier Drop start timestamp.
+	#[arg(long)]
+	cardano_tip_config: Option<PathBuf>,
 	/// Arguments for funding wallets
 	#[command(flatten)]
 	funding: FundingArgs,
@@ -98,7 +122,13 @@ pub async fn execute(
 	let cnight_system_tx: Option<SystemTransaction> = {
 		let json_str = std::fs::read_to_string(&args.cnight_generates_dust_config)?;
 		let config: CNightGeneratesDustConfig = serde_json::from_str(&json_str)?;
-		Some(tagged_deserialize(&mut &config.system_tx[..])?)
+		match config.system_tx {
+			Some(bytes) => Some(tagged_deserialize(&mut &bytes[..])?),
+			None => {
+				println!("No cNight system_tx in config - skipping");
+				None
+			},
+		}
 	};
 
 	// Parse and validate the ICS config
@@ -143,6 +173,22 @@ pub async fn execute(
 		Some(params)
 	};
 
+	// Parse genesis timestamp from cardano-tip.json (if provided)
+	let genesis_timestamp: Option<u64> = if let Some(ref path) = args.cardano_tip_config {
+		let json_str = std::fs::read_to_string(path)
+			.map_err(|e| format!("Failed to read cardano-tip config {:?}: {}", path, e))?;
+		let config: CardanoTipConfig = serde_json::from_str(&json_str)
+			.map_err(|e| format!("Failed to parse cardano-tip config: {}", e))?;
+		let ts: u64 = config
+			.timestamp
+			.parse()
+			.map_err(|e| format!("Invalid timestamp in cardano-tip config: {}", e))?;
+		println!("Using genesis timestamp from {}: {}", path.display(), ts);
+		Some(ts)
+	} else {
+		None
+	};
+
 	let genesis = GenesisGenerator::new(
 		args.nonce_seed,
 		&args.network,
@@ -153,6 +199,7 @@ pub async fn execute(
 		ics_config,
 		reserve_config,
 		ledger_parameters,
+		genesis_timestamp,
 	)
 	.await?;
 

@@ -391,12 +391,12 @@ run_ledger_state_generation() {
     local earthly_cmd
     if [[ "$network" == "mainnet" ]]; then
         echo -e "${BOLD}Command to execute:${NC}"
-        echo -e "  ${CYAN}earthly -P +$earthly_target${NC}"
-        earthly_cmd=(earthly -P "+$earthly_target")
+        echo -e "  ${CYAN}earthly --no-cache -P +$earthly_target${NC}"
+        earthly_cmd=(earthly --no-cache -P "+$earthly_target")
     else
         echo -e "${BOLD}Command to execute:${NC}"
-        echo -e "  ${CYAN}earthly -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
-        earthly_cmd=(earthly -P "+$earthly_target" "--RNG_SEED=$rng_seed")
+        echo -e "  ${CYAN}earthly --no-cache -P +$earthly_target --RNG_SEED=$rng_seed${NC}"
+        earthly_cmd=(earthly --no-cache -P "+$earthly_target" "--RNG_SEED=$rng_seed")
     fi
     echo ""
 
@@ -429,8 +429,8 @@ run_ledger_state_generation() {
     fi
 }
 
-# Function to run smart contract genesis config generation
-run_genesis_config_generation() {
+# Function to run federated authority genesis generation
+run_federated_authority_genesis_generation() {
     local network="$1"
     local db_connection="$2"
     local cardano_tip="$3"
@@ -442,52 +442,8 @@ run_genesis_config_generation() {
     echo -e "  ${CYAN}CARDANO_SECURITY_PARAMETER=$security_param \\\\${NC}"
     echo -e "  ${CYAN}ALLOW_NON_SSL=true \\\\${NC}"
     echo -e "  ${CYAN}DB_SYNC_POSTGRES_CONNECTION_STRING=\"...\" \\\\${NC}"
-    echo -e "  ${CYAN}$node_binary generate-genesis-config \\\\${NC}"
+    echo -e "  ${CYAN}$node_binary generate-federated-authority-genesis \\\\${NC}"
     echo -e "  ${CYAN}--cardano-tip $cardano_tip${NC}"
-    echo ""
-
-    print_info "Running genesis config generation..."
-    echo ""
-
-    cd "$REPO_ROOT"
-    export CFG_PRESET="$network"
-    export CARDANO_SECURITY_PARAMETER="$security_param"
-    export ALLOW_NON_SSL=true
-    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
-
-    if "$node_binary" generate-genesis-config --cardano-tip "$cardano_tip"; then
-        echo ""
-        print_success "Genesis config generation completed!"
-        echo ""
-        echo "Files created/updated:"
-        print_file "$REPO_ROOT/res/$network/cnight-config.json"
-        print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
-        print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
-
-        print_step_summary "Step 1: Genesis Config Generation" \
-            "Network: $network" \
-            "Security Parameter: $security_param" \
-            "Cardano Tip: $cardano_tip"
-
-        return 0
-    else
-        print_error "Genesis config generation failed!"
-        return 1
-    fi
-}
-
-# Function to run partial genesis config generation (federated-authority and permissioned-candidates only)
-# Used when cnight-config.json was already generated in Step 1a
-run_partial_genesis_config_generation() {
-    local network="$1"
-    local db_connection="$2"
-    local cardano_tip="$3"
-    local security_param="$4"
-    local node_binary="$5"
-
-    echo -e "${BOLD}Commands to execute:${NC}"
-    echo -e "  ${CYAN}1. $node_binary generate-federated-authority-genesis --cardano-tip $cardano_tip${NC}"
-    echo -e "  ${CYAN}2. $node_binary generate-permissioned-candidates-genesis --cardano-tip $cardano_tip${NC}"
     echo ""
 
     print_info "Running federated authority genesis generation..."
@@ -499,35 +455,109 @@ run_partial_genesis_config_generation() {
     export ALLOW_NON_SSL=true
     export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
 
-    if ! "$node_binary" generate-federated-authority-genesis --cardano-tip "$cardano_tip"; then
+    if "$node_binary" generate-federated-authority-genesis --cardano-tip "$cardano_tip"; then
+        echo ""
+        print_success "Federated authority genesis generation completed!"
+        echo ""
+        echo "File created/updated:"
+        print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
+
+        return 0
+    else
         print_error "Federated authority genesis generation failed!"
         return 1
     fi
-    print_success "Federated authority genesis generation completed!"
+}
+
+# Function to run permissioned candidates genesis generation
+run_permissioned_candidates_genesis_generation() {
+    local network="$1"
+    local db_connection="$2"
+    local cardano_tip="$3"
+    local security_param="$4"
+    local node_binary="$5"
+
+    echo -e "${BOLD}Command to execute:${NC}"
+    echo -e "  ${CYAN}CFG_PRESET=$network \\\\${NC}"
+    echo -e "  ${CYAN}CARDANO_SECURITY_PARAMETER=$security_param \\\\${NC}"
+    echo -e "  ${CYAN}ALLOW_NON_SSL=true \\\\${NC}"
+    echo -e "  ${CYAN}DB_SYNC_POSTGRES_CONNECTION_STRING=\"...\" \\\\${NC}"
+    echo -e "  ${CYAN}$node_binary generate-permissioned-candidates-genesis \\\\${NC}"
+    echo -e "  ${CYAN}--cardano-tip $cardano_tip${NC}"
     echo ""
 
     print_info "Running permissioned candidates genesis generation..."
     echo ""
 
-    if ! "$node_binary" generate-permissioned-candidates-genesis --cardano-tip "$cardano_tip"; then
+    cd "$REPO_ROOT"
+    export CFG_PRESET="$network"
+    export CARDANO_SECURITY_PARAMETER="$security_param"
+    export ALLOW_NON_SSL=true
+    export DB_SYNC_POSTGRES_CONNECTION_STRING="$db_connection"
+
+    if "$node_binary" generate-permissioned-candidates-genesis --cardano-tip "$cardano_tip"; then
+        echo ""
+        print_success "Permissioned candidates genesis generation completed!"
+        echo ""
+        echo "File created/updated:"
+        print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
+
+        return 0
+    else
         print_error "Permissioned candidates genesis generation failed!"
         return 1
     fi
+}
 
-    echo ""
-    print_success "Partial genesis config generation completed!"
-    echo ""
-    echo "Files created/updated:"
-    print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
-    print_file "$REPO_ROOT/res/$network/permissioned-candidates-config.json"
+# Function to inject bootnodes into chain-spec files and regenerate raw/abridged
+inject_bootnodes() {
+    local network="$1"
+    shift
+    local bootnodes=("$@")
 
-    print_step_summary "Step 1: Genesis Config Generation (partial)" \
-        "Network: $network" \
-        "Security Parameter: $security_param" \
-        "Cardano Tip: $cardano_tip" \
-        "Note: ics-config.json was preserved from a previous run"
+    if ! command -v jq &>/dev/null; then
+        print_error "'jq' is required to inject bootnodes but is not installed."
+        print_info "Install it with: brew install jq (macOS) or sudo apt install jq (Linux)"
+        return 1
+    fi
 
-    return 0
+    local spec_file="$REPO_ROOT/res/$network/chain-spec.json"
+    local abridged_file="$REPO_ROOT/res/$network/chain-spec-abridged.json"
+    local raw_file="$REPO_ROOT/res/$network/chain-spec-raw.json"
+
+    # Build jq array from bootnode args
+    local jq_array="[]"
+    for bn in "${bootnodes[@]}"; do
+        jq_array=$(echo "$jq_array" | jq --arg b "$bn" '. + [$b]')
+    done
+
+    print_info "Injecting ${#bootnodes[@]} bootnode(s) into chain-spec.json..."
+    jq --argjson bootnodes "$jq_array" '.bootNodes = $bootnodes' "$spec_file" > "${spec_file}.tmp" && mv "${spec_file}.tmp" "$spec_file"
+
+    print_info "Regenerating chain-spec-abridged.json..."
+    cat "$spec_file" | \
+      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>"' > "$abridged_file"
+
+    print_info "Regenerating chain-spec-raw.json..."
+    local node_binary
+    node_binary=$(ensure_node_binary) || return 1
+    "$node_binary" build-spec --chain="$spec_file" --raw --disable-default-bootnode > "$raw_file"
+
+    # Recompute hash of the updated chain-spec-raw.json
+    local hash_file="$REPO_ROOT/res/$network/chain-spec-hash.json"
+    print_info "Recomputing hash of chain-spec-raw.json..."
+    local spec_hash
+    if command -v sha256sum &>/dev/null; then
+        spec_hash=$(sha256sum "$raw_file" | awk '{print $1}')
+    elif command -v shasum &>/dev/null; then
+        spec_hash=$(shasum -a 256 "$raw_file" | awk '{print $1}')
+    fi
+    if [[ -n "${spec_hash:-}" ]]; then
+        echo "{\"hash\": \"$spec_hash\"}" > "$hash_file"
+        print_success "Updated hash: $spec_hash"
+    fi
+
+    print_success "Bootnodes injected into all chain-spec files."
 }
 
 # Function to run chainspec generation
@@ -557,7 +587,7 @@ run_chainspec_generation() {
     print_file "$REPO_ROOT/res/genesis/genesis_state_$network.mn"
     echo ""
 
-    local earthly_cmd=(earthly -P +rebuild-chainspec "--NETWORK=$network")
+    local earthly_cmd=(earthly --no-cache -P +rebuild-chainspec "--NETWORK=$network")
     if [[ "$deterministic" == "true" ]]; then
         earthly_cmd+=("--DETERMINISTIC=true")
     fi
@@ -667,7 +697,7 @@ main() {
     echo ""
 
     local db_connection
-    db_connection=$(prompt_input "DB Sync PostgreSQL connection string" "postgres://cardano@localhost:54322/cexplorer")
+    db_connection=$(prompt_input "DB Sync PostgreSQL connection string" "postgres://postgres:postgres@localhost:5432/cexplorer")
     echo ""
 
     # Get default cardano tip from cardano-tip.json if available
@@ -721,40 +751,81 @@ main() {
     print_step "Step 1: Smart Contract Genesis Configuration Generation"
 
     echo -e "${BOLD}This step generates genesis config files from smart contract addresses.${NC}"
-    echo ""
-    echo "Input files:"
-    print_file "$REPO_ROOT/res/$network/federated-authority-addresses.json -> federated-authority-config.json"
-    print_file "$REPO_ROOT/res/$network/permissioned-candidates-addresses.json -> permissioned-candidates-config.json"
-    print_file "$REPO_ROOT/res/$network/cnight-addresses.json -> cnight-config.json"
-    print_file "$REPO_ROOT/res/$network/ics-addresses.json -> ics-config.json (for treasury funding)"
-    print_file "$REPO_ROOT/res/$network/reserve-addresses.json -> reserve-config.json"
+    echo -e "Each config file can be generated or skipped individually."
     echo ""
 
-    if confirm "Run Step 1 (Genesis Config Generation)?" "y"; then
+    # 1a. cNIGHT config
+    echo -e "${BOLD}1a. cNIGHT config${NC} (cnight-addresses.json -> cnight-config.json)"
+    if confirm "  Generate cnight-config.json?" "y"; then
         echo ""
-
-        run_genesis_config_generation "$network" "$db_connection" "$cardano_tip" "$security_param" "$node_binary"
-        local result=$?
-        if [[ $result -eq 0 ]]; then
-            step1_completed=true
+        run_cnight_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+        if [[ $? -eq 0 ]]; then
             cnight_config_generated=true
-            ics_config_generated=true
-        elif [[ $result -eq 1 ]]; then
-            print_error "Step 1 failed. Exiting."
-            exit 1
-        fi
-
-        # Generate reserve config if the network uses it
-        if uses_reserve_config "$network"; then
-            echo ""
-            run_reserve_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
-            local reserve_result=$?
-            if [[ $reserve_result -ne 0 ]]; then
-                print_error "Reserve genesis generation failed."
-            fi
+        else
+            print_error "cNIGHT genesis generation failed."
         fi
     else
-        print_info "Skipping Step 1."
+        print_info "Skipping cnight-config.json generation."
+    fi
+    echo ""
+
+    # 1b. ICS config
+    echo -e "${BOLD}1b. ICS config${NC} (ics-addresses.json -> ics-config.json)"
+    if confirm "  Generate ics-config.json?" "y"; then
+        echo ""
+        run_ics_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+        if [[ $? -eq 0 ]]; then
+            ics_config_generated=true
+        else
+            print_error "ICS genesis generation failed."
+        fi
+    else
+        print_info "Skipping ics-config.json generation."
+    fi
+    echo ""
+
+    # 1c. Reserve config
+    echo -e "${BOLD}1c. Reserve config${NC} (reserve-addresses.json -> reserve-config.json)"
+    if confirm "  Generate reserve-config.json?" "y"; then
+        echo ""
+        run_reserve_genesis_generation "$network" "$db_connection" "$cardano_tip" "$node_binary"
+        if [[ $? -ne 0 ]]; then
+            print_error "Reserve genesis generation failed."
+        fi
+    else
+        print_info "Skipping reserve-config.json generation."
+    fi
+    echo ""
+
+    # 1d. Federated authority config
+    echo -e "${BOLD}1d. Federated authority config${NC} (federated-authority-addresses.json -> federated-authority-config.json)"
+    if confirm "  Generate federated-authority-config.json?" "y"; then
+        echo ""
+        run_federated_authority_genesis_generation "$network" "$db_connection" "$cardano_tip" "$security_param" "$node_binary"
+        if [[ $? -ne 0 ]]; then
+            print_error "Federated authority genesis generation failed."
+        fi
+    else
+        print_info "Skipping federated-authority-config.json generation."
+    fi
+    echo ""
+
+    # 1e. Permissioned candidates config
+    echo -e "${BOLD}1e. Permissioned candidates config${NC} (permissioned-candidates-addresses.json -> permissioned-candidates-config.json)"
+    if confirm "  Generate permissioned-candidates-config.json?" "y"; then
+        echo ""
+        run_permissioned_candidates_genesis_generation "$network" "$db_connection" "$cardano_tip" "$security_param" "$node_binary"
+        if [[ $? -ne 0 ]]; then
+            print_error "Permissioned candidates genesis generation failed."
+        fi
+    else
+        print_info "Skipping permissioned-candidates-config.json generation."
+    fi
+    echo ""
+
+    # Mark step 1 as completed if any config was generated
+    if [[ "$cnight_config_generated" == "true" ]] || [[ "$ics_config_generated" == "true" ]]; then
+        step1_completed=true
     fi
 
     # =========================================================================
@@ -885,9 +956,77 @@ main() {
             use_deterministic="true"
         fi
         echo ""
+
+        # Collect bootnodes
+        local bootnodes=()
+        local bootnodes_config="$REPO_ROOT/res/$network/bootnodes-config.json"
+        echo -e "${BOLD}Bootnodes are the initial peers that new nodes connect to when joining the network.${NC}"
+        echo -e "Format: ${CYAN}/dns/hostname/tcp/30333/p2p/<peer-id>${NC}"
+        echo -e "        ${CYAN}/ip4/1.2.3.4/tcp/30333/p2p/<peer-id>${NC}"
+        echo ""
+
+        # Pre-populate bootnodes from bootnodes-config.json if it exists
+        if [[ -f "$bootnodes_config" ]] && command -v jq &>/dev/null; then
+            local default_bootnodes
+            default_bootnodes=$(jq -r '.bootnodes[]' "$bootnodes_config" 2>/dev/null)
+            if [[ -n "$default_bootnodes" ]]; then
+                print_info "Found bootnodes in res/$network/bootnodes-config.json:"
+                while IFS= read -r bn; do
+                    bootnodes+=("$bn")
+                    print_file "$bn"
+                done <<< "$default_bootnodes"
+                echo ""
+            fi
+        fi
+
+        if [[ ${#bootnodes[@]} -gt 0 ]]; then
+            if confirm "Add bootnodes to the chain specification?" "y"; then
+                print_info "${#bootnodes[@]} bootnode(s) will be added after chain-spec generation."
+            else
+                bootnodes=()
+                print_info "No bootnodes will be added."
+            fi
+        else
+            if confirm "Add bootnodes to the chain specification?" "n"; then
+                echo ""
+                print_info "Enter bootnode multiaddresses one per line. Press Enter on an empty line to finish."
+                echo ""
+                while true; do
+                    local bootnode
+                    echo -en "${BOLD}Bootnode: ${NC}"
+                    read -r bootnode
+                    if [[ -z "$bootnode" ]]; then
+                        break
+                    fi
+                    # Basic validation: must start with /
+                    if [[ "$bootnode" != /* ]]; then
+                        print_warning "Invalid multiaddress (must start with /). Skipping: $bootnode"
+                        continue
+                    fi
+                    bootnodes+=("$bootnode")
+                    print_success "Added: $bootnode"
+                done
+                if [[ ${#bootnodes[@]} -gt 0 ]]; then
+                    print_info "${#bootnodes[@]} bootnode(s) will be added after chain-spec generation."
+                else
+                    print_info "No bootnodes added."
+                fi
+            fi
+        fi
+        echo ""
+
         run_chainspec_generation "$network" "$use_deterministic"
         local result=$?
         if [[ $result -eq 0 ]]; then
+            # Inject bootnodes if any were provided
+            if [[ ${#bootnodes[@]} -gt 0 ]]; then
+                echo ""
+                inject_bootnodes "$network" "${bootnodes[@]}"
+                if [[ $? -ne 0 ]]; then
+                    print_error "Failed to inject bootnodes."
+                    exit 1
+                fi
+            fi
             step3_completed=true
         elif [[ $result -eq 1 ]]; then
             print_error "Step 3 failed. Exiting."

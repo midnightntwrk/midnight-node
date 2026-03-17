@@ -13,7 +13,6 @@
 
 use std::{any::type_name, cmp::Ordering, path::Path, sync::Arc};
 
-use async_trait::async_trait;
 use core::fmt::Debug;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
@@ -61,7 +60,6 @@ impl RedbBackend {
 	}
 }
 
-#[async_trait]
 impl FetchStorage for RedbBackend {
 	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
@@ -256,7 +254,6 @@ impl FetchStorage for RedbBackend {
 }
 
 // Implement WalletStateCaching for RedbBackend (delegates to FetchStorage impl)
-#[async_trait]
 impl WalletStateCaching for RedbBackend {
 	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
 		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id).await

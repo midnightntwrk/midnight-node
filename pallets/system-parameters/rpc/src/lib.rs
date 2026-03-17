@@ -31,6 +31,7 @@ use jsonrpsee::{
 	proc_macros::rpc,
 	types::error::{ErrorObject, ErrorObjectOwned, INTERNAL_ERROR_CODE},
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use pallet_system_parameters::SystemParametersApi;
@@ -43,17 +44,18 @@ use sp_runtime::traits::Block as BlockT;
 use sp_session_validator_management_query::SessionValidatorManagementQueryApi;
 
 /// Terms and Conditions response for RPC
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TermsAndConditionsRpcResponse {
-	/// SHA-256 hash of the terms and conditions document
+	/// SHA-256 hash of the terms and conditions document (0x-prefixed hex, 32 bytes)
+	#[schemars(with = "String")]
 	pub hash: H256,
 	/// URL where the terms and conditions can be found
 	pub url: String,
 }
 
 /// D-Parameter response for RPC
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DParameterRpcResponse {
 	/// Number of permissioned candidates
@@ -66,7 +68,11 @@ pub struct DParameterRpcResponse {
 ///
 /// Returns the same schema as `sidechain_getAriadneParameters` but with D Parameter
 /// sourced from pallet-system-parameters instead of Cardano.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Note: `permissioned_candidates` and `candidate_registrations` use `serde_json::Value`,
+/// producing permissive schemas. The actual structures correspond to
+/// `PermissionedCandidateData` and `GetRegistrationsResponseMap` from partner-chains.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AriadneParametersRpcResponse {
 	/// The D-parameter (from pallet-system-parameters)

@@ -23,9 +23,7 @@ use subxt::{
 use crate::fetcher::{
 	fetch_storage::{FetchStorage, FetchedBlock},
 	runtimes::{
-		MidnightMetadata, MidnightMetadata0_17_0, MidnightMetadata0_17_1, MidnightMetadata0_18_0,
-		MidnightMetadata0_18_1, MidnightMetadata0_19_0, MidnightMetadata0_20_0,
-		MidnightMetadata0_20_1, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
+		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
 		RuntimeVersionError,
 	},
 };
@@ -54,11 +52,7 @@ pub enum ComputeTask {
 }
 
 impl ComputeTask {
-	pub async fn work(
-		self,
-		chain_id: H256,
-		storage: impl FetchStorage + Send + Sync,
-	) -> ComputeResult {
+	pub async fn work(self, chain_id: H256, storage: impl FetchStorage) -> ComputeResult {
 		match self {
 			ComputeTask::ExtractBlockData { min, max, blocks } => {
 				log::debug!("extracting block data {min}..{max}");
@@ -142,34 +136,6 @@ impl ComputeTask {
 			})
 			.expect("no runtime version found")?;
 		match spec_version {
-			RuntimeVersion::V0_17_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_0>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_17_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_17_1>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_18_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_0>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_18_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_18_1>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_19_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_19_0>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_20_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_20_0>(block, spec_version)
-					.await
-			},
-			RuntimeVersion::V0_20_1 => {
-				Self::process_block_with_protocol::<MidnightMetadata0_20_1>(block, spec_version)
-					.await
-			},
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(block, spec_version)
 					.await

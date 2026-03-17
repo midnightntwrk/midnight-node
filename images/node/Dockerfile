@@ -3,21 +3,24 @@ FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836
 ENV BASE_PATH=/node/chain
 ENV RUST_BACKTRACE=1
 
-# ntp to keep correct time
+# Runtime dependencies only — no build toolchain
 # curl to enable compose healthchecks
-RUN microdnf -y update && \
-    microdnf -y install ca-certificates curl-minimal procps-ng strace gdb vim jq tree gcc gcc-c++ make git cmake wget libtool autoconf automake && \
-    # Build libfaketime with FORCE_MONOTONIC_FIX and FORCE_PTHREAD_NONVER
-    git clone --depth 1 https://github.com/wolfcw/libfaketime.git && \
-    CFLAGS="-DFORCE_MONOTONIC_FIX -DFORCE_PTHREAD_NONVER" make -C /libfaketime/src install && \
-    rm -rf /libfaketime && \
-    # Download bytehound
-    wget -q https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
-    [ -f bytehound-x86_64-unknown-linux-gnu.tgz ] && \
-    tar -xzvf bytehound-x86_64-unknown-linux-gnu.tgz && \
-    mv libbytehound.so /usr/lib/libbytehound.so && \
-    rm -rf bytehound* && \
-    # Cleanup
+# Package versions are tied to the base image — update when bumping the base digest
+RUN microdnf -y install \
+    ca-certificates-2025.2.76 \
+    curl-minimal-8.15.0 \
+    tar-1.34 \
+    procps-ng-3.3.17 \
+    strace-6.12 \
+    gdb-16.3 \
+    vim-enhanced-9.1.1591 \
+    jq-1.7.1 \
+    tree-1.8.0 && \
+    # Download bytehound profiler (x86_64 only, harmless no-op on arm64)
+    curl -fsSL -o /tmp/bytehound.tgz https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
+    tar -xzf /tmp/bytehound.tgz -C /tmp && \
+    mv /tmp/libbytehound.so /usr/lib/libbytehound.so && \
+    rm -f /tmp/bytehound.tgz && \
     microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
 COPY .envrc ./bin/.envrc

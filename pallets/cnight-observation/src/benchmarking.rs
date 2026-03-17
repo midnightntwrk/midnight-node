@@ -19,6 +19,7 @@
 //! See planning assumption PL12 for the cost modelling rationale.
 
 use super::*;
+use alloc::vec::Vec;
 
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;

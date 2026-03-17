@@ -153,14 +153,19 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
 			.guaranteed_offer
 			.as_mut()
-			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
+			.map(|gc| gc.build(&mut self.rng, self.context.clone()))
+			.transpose()?;
 
 		let fallible_offer = self
 			.fallible_offers
 			.iter_mut()
-			.map(|(segment_id, offer_info)| {
-				(*segment_id, offer_info.build(&mut self.rng, self.context.clone()))
-			})
+			.map(
+				|(segment_id, offer_info)| -> std::result::Result<_, Box<dyn Error + Send + Sync>> {
+					Ok((*segment_id, offer_info.build(&mut self.rng, self.context.clone())?))
+				},
+			)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.into_iter()
 			.collect();
 
 		let mut intents = HashMapStorage::<
@@ -378,33 +383,46 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		Ok(())
 	}
 
-	pub async fn save_intents_to_file(mut self, parent_dir: &str, file_name: &str) {
+	pub async fn save_intents_to_file(mut self, parent_dir: &str, file_name: &str) -> Result<()> {
 		// make sure that the dir is created, if it does not exist
-		fs::create_dir_all(parent_dir).expect("failed to create directory");
+		fs::create_dir_all(parent_dir)?;
 
 		let now = self.context.latest_block_context().tblock;
 		let ttl = now + self.context.with_ledger_state(|ls| ls.parameters.global_ttl);
+
+		let mut saved_files: Vec<String> = Vec::new();
 
 		for (segment_id, intent_info) in self.intents.iter_mut() {
 			let intent =
 				intent_info.build(&mut self.rng, ttl, self.context.clone(), *segment_id).await;
 			println!("Serializing intent...");
-			match serialize(&intent) {
-				Ok(serialized_intent) => {
-					let complete_file_name =
-						format!("{parent_dir}/{segment_id}_{file_name}_intent.mn");
 
-					let mut file =
-						File::create(&complete_file_name).expect("failed to create file");
-					file.write_all(&serialized_intent).expect("failed to write file");
+			let serialized_intent = serialize(&intent).map_err(|e| {
+				// Clean up any files written so far
+				for path in &saved_files {
+					let _ = fs::remove_file(path);
+				}
+				format!("failed to serialize intent for segment {segment_id}: {e}")
+			})?;
 
-					println!("Saved {complete_file_name}");
-				},
-				Err(e) => {
-					println!("error({e:?}): failed to save to file {intent:#?}");
-				},
+			let complete_file_name = format!("{parent_dir}/{segment_id}_{file_name}_intent.mn");
+
+			let write_result = File::create(&complete_file_name)
+				.and_then(|mut file| file.write_all(&serialized_intent));
+
+			if let Err(e) = write_result {
+				// Clean up any files written so far
+				for path in &saved_files {
+					let _ = fs::remove_file(path);
+				}
+				return Err(format!("failed to write intent file {complete_file_name}: {e}").into());
 			}
+
+			println!("Saved {complete_file_name}");
+			saved_files.push(complete_file_name);
 		}
+
+		Ok(())
 	}
 
 	pub async fn erase_proof(mut self) -> Result<Transaction<(), (), Pedersen, D>> {

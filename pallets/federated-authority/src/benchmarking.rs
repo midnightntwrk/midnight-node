@@ -24,6 +24,7 @@ use sp_runtime::DispatchError;
 #[benchmarks]
 mod benchmarks {
 	use super::*;
+	use alloc::vec;
 
 	// Helper function to create a motion with a specific number of approvals
 	fn create_motion_with_approvals<T: Config>(num_approvals: u32) -> (T::Hash, T::MotionCall) {
