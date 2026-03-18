@@ -31,7 +31,6 @@ earthly doc                               # List all available targets
 
 **E2E tests (just):**
 ```bash
-just hardfork-e2e <NODE_IMAGE> <UPGRADER_IMAGE>
 just toolkit-e2e <NODE_IMAGE> <TOOLKIT_IMAGE>
 ```
 

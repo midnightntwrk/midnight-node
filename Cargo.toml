@@ -81,24 +81,11 @@ ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", fe
 onchain-runtime-ledger-8 = { version = "=3.0.0", package = "midnight-onchain-runtime" }
 zswap-ledger-8 = { version = "=8.0.0", package = "midnight-zswap" }
 
-
-# Hard-fork test dependencies
-
-mn-ledger-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-ledger", tag = "hard-fork-test-ledger-8.0.0" }
-ledger-storage-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-storage", tag = "hard-fork-test-ledger-8.0.0", features = ["parity-db"] }
-coin-structure-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-coin-structure", tag = "hard-fork-test-ledger-8.0.0" }
-onchain-runtime-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-onchain-runtime", tag = "hard-fork-test-ledger-8.0.0" }
-base-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-base-crypto", tag = "hard-fork-test-ledger-8.0.0" }
-transient-crypto-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-transient-crypto", tag = "hard-fork-test-ledger-8.0.0" }
-zswap-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zswap", tag = "hard-fork-test-ledger-8.0.0" }
-zkir-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-zkir", tag = "hard-fork-test-ledger-8.0.0" }
-
 # Storage core v2 layout
 midnight-storage-core = { version = "1.1.0", features = ["layout-v2"] }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
 midnight-serialize = { version = "=1.0.0", package = "midnight-serialize" }
-midnight-serialize-hf = { git = "https://github.com/midnightntwrk/midnight-ledger", package = "midnight-serialize", tag = "hard-fork-test-ledger-8.0.0" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }

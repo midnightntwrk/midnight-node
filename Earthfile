@@ -1022,17 +1022,6 @@ build-fork:
     RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
         && mv /target/release/upgrader /artifacts-$NATIVEARCH
 
-    # Hardfork build
-    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
-    RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
-        /artifacts-$NATIVEARCH/test
-
-    RUN rm -Rf /target/release/build/midnight-node-runtime-*
-    # Rollback build
-    RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
-    RUN mv /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
-        /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
-
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-benchmarks:
@@ -1236,37 +1225,6 @@ toolkit-image:
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
         $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
-
-# hardfork-test-upgrader-image creates the hardfork test upgrader tool image
-hardfork-test-upgrader-image:
-    LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
-    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
-
-    ARG NATIVEARCH
-    FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
-    USER root
-
-    COPY +build-fork/artifacts-$NATIVEARCH/upgrader /
-    COPY +build-fork/artifacts-$NATIVEARCH/test/* /
-    COPY +build-fork/artifacts-$NATIVEARCH/rollback/* /
-
-    COPY node/Cargo.toml /node/
-    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
-
-    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$CONTENT_HASH_SHORT-$NATIVEARCH"
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
