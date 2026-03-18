@@ -137,4 +137,22 @@ impl SourceTransactions {
 		let network_id = network_id.expect("no transactions found, can't derive network id");
 		Self { blocks: vec![block], network_id }
 	}
+
+	/// Derive a deterministic chain identity for wallet state cache keying.
+	///
+	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets),
+	/// which signals the caller to skip caching and avoid cross-dataset collisions.
+	pub fn chain_id(&self) -> Option<subxt::utils::H256> {
+		self.blocks
+			.iter()
+			.find(|b| b.number == 1)
+			.map(|b| subxt::utils::H256::from(b.hash))
+	}
+
+	pub fn ledger_version(&self) -> LedgerVersion {
+		self.blocks
+			.first()
+			.map(|b| b.ledger_version())
+			.unwrap_or(LedgerVersion::default())
+	}
 }

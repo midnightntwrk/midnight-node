@@ -20,8 +20,7 @@ use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
 use tokio::sync::RwLock;
 
-use super::{FetchStorage, WalletStateCache, WalletStateCaching};
-use crate::fetcher::wallet_state_cache::{WalletCacheKey, compress, decompress};
+use super::FetchStorage;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockKey {
@@ -31,14 +30,12 @@ pub struct BlockKey {
 
 /// Persistent [`FetchStorage`] backend using [redb](https://github.com/cberner/redb).
 ///
-/// Data is serialized as BSON. Uses `RwLock` for concurrent read access.
-/// Wallet state is compressed with zstd for efficient storage.
+/// Data is serialized with postcard. Uses `RwLock` for concurrent read access.
 #[derive(Clone)]
 pub struct RedbBackend {
 	pub db: Arc<RwLock<Database>>,
 	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<RawBlockData>>,
 	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
-	pub wallet_state_table: TableDefinition<'static, Serde<WalletCacheKey>, &'static [u8]>,
 }
 
 impl RedbBackend {
@@ -53,9 +50,8 @@ impl RedbBackend {
 			db: Arc::new(RwLock::new(
 				Database::create(path).expect("failed to create database - is it already open?"),
 			)),
-			block_data_table: TableDefinition::new("raw_block_data_v1"),
+			block_data_table: TableDefinition::new("raw_block_data_v2"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
-			wallet_state_table: TableDefinition::new("wallet_state"),
 		}
 	}
 }
@@ -136,143 +132,9 @@ impl FetchStorage for RedbBackend {
 		}
 		write_txn.commit().expect("failed to commit write")
 	}
-
-	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		let read_txn = match self.db.read().await.begin_read() {
-			Ok(txn) => txn,
-			Err(e) => {
-				log::warn!("Failed to begin read transaction for wallet state: {e}");
-				return None;
-			},
-		};
-		let Ok(table) = read_txn.open_table(self.wallet_state_table) else { return None };
-
-		let compressed = match table.get(key) {
-			Ok(Some(data)) => data,
-			Ok(None) => return None,
-			Err(e) => {
-				log::warn!("Failed to get wallet state from table: {e}");
-				return None;
-			},
-		};
-
-		// Decompress and deserialize
-		let decompressed = match decompress(compressed.value()) {
-			Ok(data) => data,
-			Err(e) => {
-				log::warn!("Failed to decompress wallet state cache: {e}");
-				return None;
-			},
-		};
-
-		match bson::deserialize_from_slice(&decompressed) {
-			Ok(cache) => Some(cache),
-			Err(e) => {
-				log::warn!("Failed to deserialize wallet state cache: {e}");
-				None
-			},
-		}
-	}
-
-	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		let block_height = cache.block_height;
-
-		// Serialize and compress
-		let serialized = match bson::serialize_to_vec(&cache) {
-			Ok(data) => data,
-			Err(e) => {
-				log::warn!("Failed to serialize wallet state: {e}");
-				return;
-			},
-		};
-		let compressed = match compress(&serialized) {
-			Ok(data) => data,
-			Err(e) => {
-				log::warn!("Failed to compress wallet state: {e}");
-				return;
-			},
-		};
-
-		let write_txn = match self.db.write().await.begin_write() {
-			Ok(txn) => txn,
-			Err(e) => {
-				log::warn!("Failed to begin write transaction for wallet state: {e}");
-				return;
-			},
-		};
-		{
-			let mut table = match write_txn.open_table(self.wallet_state_table) {
-				Ok(t) => t,
-				Err(e) => {
-					log::warn!("Failed to open wallet state table: {e}");
-					return;
-				},
-			};
-			if let Err(e) = table.insert(key, compressed.as_slice()) {
-				log::warn!("Failed to insert wallet state: {e}");
-				return;
-			}
-		}
-		if let Err(e) = write_txn.commit() {
-			log::warn!("Failed to commit wallet state write: {e}");
-			return;
-		}
-
-		log::info!(
-			"Cached wallet state at block {} (compressed: {} bytes)",
-			block_height,
-			compressed.len()
-		);
-	}
-
-	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id)
-			.await
-			.map(|c| c.block_height)
-	}
-
-	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		let write_txn = match self.db.write().await.begin_write() {
-			Ok(txn) => txn,
-			Err(e) => {
-				log::warn!("Failed to begin write transaction for wallet state deletion: {e}");
-				return;
-			},
-		};
-		{
-			if let Ok(mut table) = write_txn.open_table(self.wallet_state_table) {
-				let _ = table.remove(key);
-			}
-		}
-		if let Err(e) = write_txn.commit() {
-			log::warn!("Failed to commit wallet state deletion: {e}");
-		}
-	}
 }
 
-// Implement WalletStateCaching for RedbBackend (delegates to FetchStorage impl)
-impl WalletStateCaching for RedbBackend {
-	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
-		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id).await
-	}
-
-	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
-		<Self as FetchStorage>::set_wallet_state(self, chain_id, wallet_id, cache).await
-	}
-
-	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		<Self as FetchStorage>::get_cached_block_height(self, chain_id, wallet_id).await
-	}
-
-	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
-		<Self as FetchStorage>::delete_wallet_state(self, chain_id, wallet_id).await
-	}
-}
-
-/// Wrapper type to handle keys and values using bincode serialization
+/// Wrapper type to handle keys and values using postcard serialization
 #[derive(Debug)]
 pub struct Serde<T>(pub T);
 
@@ -298,7 +160,7 @@ where
 	where
 		Self: 'a,
 	{
-		bson::deserialize_from_slice(&data).unwrap()
+		postcard::from_bytes(data).unwrap()
 	}
 
 	fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
@@ -306,7 +168,7 @@ where
 		Self: 'a,
 		Self: 'b,
 	{
-		bson::serialize_to_vec(&value).unwrap()
+		postcard::to_allocvec(&value).unwrap()
 	}
 
 	fn type_name() -> TypeName {
@@ -320,264 +182,5 @@ where
 {
 	fn compare(data1: &[u8], data2: &[u8]) -> Ordering {
 		Self::from_bytes(data1).cmp(&Self::from_bytes(data2))
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::fetcher::wallet_state_cache::{SerializableBlockContext, WalletSnapshot};
-	use tempfile::tempdir;
-
-	fn create_test_cache(block_height: u64) -> WalletStateCache {
-		WalletStateCache {
-			chain_id: H256::from([1u8; 32]),
-			wallet_id: H256::from([2u8; 32]),
-			block_height,
-			ledger_state_bytes: vec![0u8; 1000], // 1KB of test data
-			wallet_snapshots: vec![WalletSnapshot {
-				seed_hash: H256::from([3u8; 32]),
-				shielded_state_bytes: vec![],
-				dust_local_state_bytes: None,
-			}],
-			latest_block_context: SerializableBlockContext {
-				tblock_secs: 1234567890,
-				tblock_err: 0,
-				parent_block_hash: [4u8; 32],
-				last_block_time: 1234567890,
-			},
-			state_root: Some(vec![5u8; 32]),
-			version: "wallet-state-cache-v1".to_string(),
-		}
-	}
-
-	#[tokio::test]
-	async fn test_redb_wallet_state_roundtrip() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-		let cache = create_test_cache(100);
-
-		// Initially no cache
-		let result = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
-		assert!(result.is_none());
-
-		// Save cache
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache.clone()).await;
-
-		// Retrieve cache
-		let retrieved = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
-		assert!(retrieved.is_some());
-		let retrieved = retrieved.unwrap();
-
-		assert_eq!(retrieved.chain_id, cache.chain_id);
-		assert_eq!(retrieved.wallet_id, cache.wallet_id);
-		assert_eq!(retrieved.block_height, cache.block_height);
-		assert_eq!(retrieved.ledger_state_bytes, cache.ledger_state_bytes);
-		assert_eq!(retrieved.version, cache.version);
-		assert_eq!(retrieved.state_root, cache.state_root);
-	}
-
-	#[tokio::test]
-	async fn test_redb_wallet_state_get_cached_height() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-
-		// No cache initially
-		assert!(
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id)
-				.await
-				.is_none()
-		);
-
-		// Save cache at height 500
-		let cache = create_test_cache(500);
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
-
-		// Check height
-		let height =
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await;
-		assert_eq!(height, Some(500));
-	}
-
-	#[tokio::test]
-	async fn test_redb_wallet_state_delete() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-		let cache = create_test_cache(100);
-
-		// Save and verify exists
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache).await;
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
-				.await
-				.is_some()
-		);
-
-		// Delete
-		WalletStateCaching::delete_wallet_state(&backend, chain_id, wallet_id).await;
-
-		// Verify deleted
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id)
-				.await
-				.is_none()
-		);
-	}
-
-	#[tokio::test]
-	async fn test_redb_wallet_state_update() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id = H256::from([2u8; 32]);
-
-		// Save at height 100
-		let cache1 = create_test_cache(100);
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache1).await;
-		assert_eq!(
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await,
-			Some(100)
-		);
-
-		// Update to height 200
-		let cache2 = create_test_cache(200);
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id, cache2).await;
-		assert_eq!(
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id).await,
-			Some(200)
-		);
-	}
-
-	#[tokio::test]
-	async fn test_redb_wallet_state_multiple_wallets() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let wallet_id_1 = H256::from([2u8; 32]);
-		let wallet_id_2 = H256::from([3u8; 32]);
-
-		let mut cache1 = create_test_cache(100);
-		cache1.wallet_id = wallet_id_1;
-
-		let mut cache2 = create_test_cache(200);
-		cache2.wallet_id = wallet_id_2;
-
-		// Save both
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id_1, cache1).await;
-		WalletStateCaching::set_wallet_state(&backend, chain_id, wallet_id_2, cache2).await;
-
-		// Verify independent
-		assert_eq!(
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id_1).await,
-			Some(100)
-		);
-		assert_eq!(
-			WalletStateCaching::get_cached_block_height(&backend, chain_id, wallet_id_2).await,
-			Some(200)
-		);
-
-		// Delete one doesn't affect other
-		WalletStateCaching::delete_wallet_state(&backend, chain_id, wallet_id_1).await;
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id_1)
-				.await
-				.is_none()
-		);
-		assert!(
-			WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id_2)
-				.await
-				.is_some()
-		);
-	}
-
-	#[tokio::test]
-	async fn test_redb_concurrent_access() {
-		let dir = tempdir().unwrap();
-		let db_path = dir.path().join("test.db");
-		let backend = RedbBackend::new(&db_path);
-
-		let chain_id = H256::from([1u8; 32]);
-		let num_wallets = 10;
-		let num_operations = 5;
-
-		// Spawn concurrent tasks that each operate on their own wallet
-		let mut handles = vec![];
-		for wallet_idx in 0..num_wallets {
-			let backend_clone = backend.clone();
-			let wallet_id = H256::from([wallet_idx as u8; 32]);
-
-			let handle = tokio::spawn(async move {
-				for op in 0..num_operations {
-					let cache = WalletStateCache {
-						chain_id,
-						wallet_id,
-						block_height: (wallet_idx * 100 + op) as u64,
-						ledger_state_bytes: vec![wallet_idx as u8; 100],
-						wallet_snapshots: vec![],
-						latest_block_context: SerializableBlockContext {
-							tblock_secs: 1234567890,
-							tblock_err: 0,
-							parent_block_hash: [wallet_idx as u8; 32],
-							last_block_time: 1234567890,
-						},
-						state_root: Some(vec![op as u8; 32]),
-						version: "wallet-state-cache-v1".to_string(),
-					};
-
-					// Write
-					WalletStateCaching::set_wallet_state(
-						&backend_clone,
-						chain_id,
-						wallet_id,
-						cache,
-					)
-					.await;
-
-					// Read back
-					let retrieved =
-						WalletStateCaching::get_wallet_state(&backend_clone, chain_id, wallet_id)
-							.await;
-					assert!(retrieved.is_some(), "Wallet {} should have cache", wallet_idx);
-
-					// Height check
-					let height = WalletStateCaching::get_cached_block_height(
-						&backend_clone,
-						chain_id,
-						wallet_id,
-					)
-					.await;
-					assert!(height.is_some(), "Wallet {} should have height", wallet_idx);
-				}
-			});
-			handles.push(handle);
-		}
-
-		// Wait for all tasks to complete
-		for handle in handles {
-			handle.await.expect("Task should complete successfully");
-		}
-
-		// Verify all wallets have their final state
-		for wallet_idx in 0..num_wallets {
-			let wallet_id = H256::from([wallet_idx as u8; 32]);
-			let cache = WalletStateCaching::get_wallet_state(&backend, chain_id, wallet_id).await;
-			assert!(cache.is_some(), "Wallet {} should have final state", wallet_idx);
-		}
 	}
 }
