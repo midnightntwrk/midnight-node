@@ -57,7 +57,13 @@ impl<D: DB + Clone> Wallet<D> {
 		// }
 	}
 
-	pub fn update_dust_from_tx(&mut self, events: &[Event<D>]) -> Result<(), EventReplayError> {
+	pub fn update_dust_from_tx<'a>(
+		&mut self,
+		events: impl IntoIterator<Item = &'a Event<D>>,
+	) -> Result<(), EventReplayError>
+	where
+		D: 'a,
+	{
 		self.dust.replay_events(events)
 	}
 
