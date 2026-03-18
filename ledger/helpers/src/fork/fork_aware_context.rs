@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::fork::fork_7_to_8::fork_context_7_to_8;
+pub use crate::fork::fork_7_to_8::fork_context_7_to_8;
 use crate::fork::raw_block_data::{LedgerVersion, RawBlockData, RawTransaction};
 
 type Db7 = crate::ledger_7::DefaultDB;
@@ -73,40 +73,6 @@ impl ForkAwareLedgerContext {
 		}
 	}
 
-	/// Process a raw block, handling fork transitions.
-	///
-	/// If the context is currently Ledger7 and the block is Ledger8,
-	/// the context is automatically forked to Ledger8 first.
-	pub fn update_from_block(mut self, block: &RawBlockData) -> Self {
-		let block_version = block.ledger_version();
-
-		// Handle fork transition: Ledger7 context + Ledger8 block
-		if self.version() == LedgerVersion::Ledger7 && block_version == LedgerVersion::Ledger8 {
-			self = self.next_fork();
-		}
-
-		match &self {
-			Self::Ledger7(ctx) => update_context_7(ctx, block),
-			Self::Ledger8(ctx) => update_context_8(ctx, block),
-		}
-
-		self
-	}
-
-	/// Fork the context from Ledger7 to Ledger8.
-	fn next_fork(self) -> Self {
-		match self {
-			Self::Ledger7(ctx7) => {
-				let ctx8 = fork_context_7_to_8(ctx7)
-					.expect("failed to fork context from ledger 7 to ledger 8");
-				Self::Ledger8(ctx8)
-			},
-			Self::Ledger8(_) => {
-				panic!("next_fork called on Ledger8 context");
-			},
-		}
-	}
-
 	/// Dispatch on the ledger version, passing the inner context to the
 	/// appropriate closure.
 	pub fn dispatch<T>(
@@ -141,11 +107,29 @@ impl ForkAwareLedgerContext {
 	}
 }
 
-/// Deserialize raw transactions and update a Ledger7 context.
-fn update_context_7(ctx: &crate::ledger_7::context::LedgerContext<Db7>, block: &RawBlockData) {
+pub fn block_context_from_raw_7(block: &RawBlockData) -> crate::ledger_7::BlockContext {
+	crate::ledger_7::make_block_context(
+		crate::ledger_7::Timestamp::from_secs(block.tblock_secs),
+		crate::ledger_7::HashOutput(block.parent_block_hash),
+		crate::ledger_7::Timestamp::from_secs(block.last_block_time_secs),
+	)
+}
+
+pub fn block_context_from_raw_8(block: &RawBlockData) -> crate::ledger_8::BlockContext {
+	crate::ledger_8::make_block_context(
+		crate::ledger_8::Timestamp::from_secs(block.tblock_secs),
+		crate::ledger_8::HashOutput(block.parent_block_hash),
+		crate::ledger_8::Timestamp::from_secs(block.last_block_time_secs),
+	)
+}
+
+/// Deserialize raw transactions and apply to a Ledger7 context, returning dust events.
+pub fn apply_block_7(
+	ctx: &crate::ledger_7::context::LedgerContext<Db7>,
+	block: &RawBlockData,
+) -> Vec<crate::ledger_7::Event<Db7>> {
 	use crate::ledger_7::{
-		HashOutput, SerdeTransaction, SystemTransaction, Timestamp,
-		midnight_serialize::tagged_deserialize,
+		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
 	};
 
 	type MnTx7 = crate::ledger_7::Transaction<
@@ -172,25 +156,23 @@ fn update_context_7(ctx: &crate::ledger_7::context::LedgerContext<Db7>, block: &
 		}
 	}
 
-	let block_context = crate::ledger_7::make_block_context(
-		Timestamp::from_secs(block.tblock_secs),
-		HashOutput(block.parent_block_hash),
-		Timestamp::from_secs(block.last_block_time_secs),
-	);
+	let block_context = block_context_from_raw_7(block);
 
 	ctx.update_from_block(
 		&transactions,
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
-	);
+	)
 }
 
-/// Deserialize raw transactions and update a Ledger8 context.
-fn update_context_8(ctx: &crate::ledger_8::context::LedgerContext<Db8>, block: &RawBlockData) {
+/// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
+pub fn apply_block_8(
+	ctx: &crate::ledger_8::context::LedgerContext<Db8>,
+	block: &RawBlockData,
+) -> Vec<crate::ledger_8::Event<Db8>> {
 	use crate::ledger_8::{
-		HashOutput, SerdeTransaction, SystemTransaction, Timestamp,
-		midnight_serialize::tagged_deserialize,
+		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
 	};
 
 	type MnTx8 = crate::ledger_8::Transaction<
@@ -217,16 +199,12 @@ fn update_context_8(ctx: &crate::ledger_8::context::LedgerContext<Db8>, block: &
 		}
 	}
 
-	let block_context = crate::ledger_8::make_block_context(
-		Timestamp::from_secs(block.tblock_secs),
-		HashOutput(block.parent_block_hash),
-		Timestamp::from_secs(block.last_block_time_secs),
-	);
+	let block_context = block_context_from_raw_8(block);
 
 	ctx.update_from_block(
 		&transactions,
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
-	);
+	)
 }

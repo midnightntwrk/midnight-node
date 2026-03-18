@@ -67,7 +67,13 @@ impl<D: DB> DustWallet<D> {
 		Self::from_seed(derived_seed, params)
 	}
 
-	pub fn replay_events(&mut self, events: &[Event<D>]) -> Result<(), EventReplayError> {
+	pub fn replay_events<'a>(
+		&mut self,
+		events: impl IntoIterator<Item = &'a Event<D>>,
+	) -> Result<(), EventReplayError>
+	where
+		D: 'a,
+	{
 		if let Some(state) = self.dust_local_state.as_mut()
 			&& let Some(sk) = self.secret_key.as_ref()
 		{

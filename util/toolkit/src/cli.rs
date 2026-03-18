@@ -2,6 +2,7 @@ use crate::commands::{
 	contract_address::{self, ContractAddressArgs},
 	contract_state::{self, ContractStateArgs},
 	dust_balance::{self, DustBalanceArgs, DustBalanceResult},
+	fetch::{self, FetchArgs},
 	generate_genesis::{self, GenerateGenesisArgs},
 	generate_intent::{self, GenerateIntentArgs},
 	generate_sample_intent::{self, GenerateSampleIntentArgs},
@@ -21,19 +22,8 @@ use crate::commands::{
 	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use crate::utils;
-use crate::{
-	serde_def::SourceTransactions,
-	tx_generator::source::{GetTxs, GetTxsFromUrl, Source},
-};
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use midnight_node_ledger_helpers::find_dependency_version;
-use std::time::Duration;
-
-#[derive(Args)]
-pub struct FetchArgs {
-	#[command(flatten)]
-	src: Source,
-}
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -118,6 +108,11 @@ pub struct Cli {
 	/// Output logs in JSON format (for machine parsing)
 	#[arg(long, global = true, env = "MN_LOG_JSON")]
 	pub log_json: bool,
+
+	/// Number of threads for parallel wallet updates during block replay.
+	/// Defaults to number of CPU cores.
+	#[arg(long, global = true, env = "MN_REPLAY_CONCURRENCY")]
+	pub replay_concurrency: Option<usize>,
 
 	#[command(subcommand)]
 	pub command: Commands,
@@ -255,31 +250,6 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			root_call::execute(args).await?;
 			Ok(())
 		},
-		Commands::Fetch(FetchArgs { src }) => {
-			if src.src_files.is_some() {
-				panic!("error: fetch command doesn't work with '--src-files'");
-			}
-			let start = std::time::Instant::now();
-			let txs: SourceTransactions = GetTxsFromUrl::new(
-				&src.src_url.unwrap(),
-				src.fetch_concurrency,
-				src.fetch_compute_concurrency
-					.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
-				src.dust_warp,
-				src.fetch_only_cached,
-				src.fetch_cache,
-			)
-			.get_txs()
-			.await?;
-			log::info!(
-				"fetched {} blocks in {:.3} s",
-				txs.blocks.len(),
-				start.elapsed().as_secs_f32()
-			);
-
-			// Wait a little - allows logs to reach stdout before exit
-			tokio::time::sleep(Duration::from_millis(200)).await;
-			Ok(())
-		},
+		Commands::Fetch(args) => fetch::execute(args).await,
 	}
 }
