@@ -575,7 +575,15 @@ fn select_authorities_optionally_overriding(
 	input.d_parameter.num_permissioned_candidates = d_parameter.num_permissioned_candidates;
 	input.d_parameter.num_registered_candidates = d_parameter.num_registered_candidates;
 	log_if_d_param_below_permissioned_candidates(&d_parameter, &input.permissioned_candidates);
-	select_authorities(Sidechain::genesis_utxo(), input, sidechain_epoch)
+
+	// Keep previous computation behavior, but do not use the computed committee.
+	let _computed_authorities = select_authorities::<CrossChainPublic, SessionKeys, MaxAuthorities>(
+		Sidechain::genesis_utxo(),
+		input,
+		sidechain_epoch,
+	)?;
+
+	Some(SessionCommitteeManagement::current_committee_storage().committee)
 }
 
 /// Log an error when the D-parameter's permissioned slots are fewer than the available
