@@ -51,7 +51,6 @@ well-known namespace:
 npm run snapshot:qanet
 npm run snapshot:devnet
 npm run snapshot:testnet-02
-npm run snapshot:node-dev-01
 ```
 
 By default the snapshot pod uploads to `MN_SNAPSHOT_S3_URI`. You can override
