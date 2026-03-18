@@ -18,6 +18,14 @@ use super::{
 use itertools::Itertools;
 use std::sync::Arc;
 
+#[derive(Debug, thiserror::Error)]
+pub enum UtxoSelectionError {
+	#[error("insufficient UTXOs: need {required} of token {token_type:?} from seed {seed:?}")]
+	InsufficientBalance { required: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
+	#[error("no UTXO of token {token_type:?} with value >= {min_value} for seed {seed:?}")]
+	NoMatchingUtxo { min_value: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
+}
+
 pub struct UtxoSpendInfo<O> {
 	pub value: u128,
 	pub owner: O,
@@ -36,7 +44,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		&self,
 		context: Arc<LedgerContext<D>>,
 		wallet: &Wallet<D>,
-	) -> Sp<Utxo, D> {
+	) -> Result<Sp<Utxo, D>, UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
 			let owner = wallet.unshielded.signing_key().verifying_key();
 
@@ -53,14 +61,12 @@ impl UtxoSpendInfo<WalletSeed> {
 				})
 				.sorted_by_key(|utxo| utxo.0.value)
 				.next()
-				.unwrap_or_else(|| {
-					panic!(
-						"There are no fundings of token {:?} and amount >= {:?} to spend by Wallet {:?}",
-						self.token_type, self.value, wallet
-					);
+				.ok_or(UtxoSelectionError::NoMatchingUtxo {
+					min_value: self.value,
+					token_type: self.token_type,
+					seed: self.owner,
 				})
-				.0
-				.clone()
+				.map(|utxo| utxo.0.clone())
 		})
 	}
 
@@ -71,7 +77,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: UnshieldedTokenType,
-	) -> (Vec<UtxoSpendInfo<WalletSeed>>, u128) {
+	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed, |wallet| {
 				let owner = wallet.unshielded.signing_key().verifying_key();
@@ -90,12 +96,13 @@ impl UtxoSpendInfo<WalletSeed> {
 						output_number: Some(utxo.0.output_no),
 					})
 					.collect();
-				Self::select_inputs(matching_inputs, required_value).unwrap_or_else(|| {
-					panic!(
-						"Could not select UTXOs with {:?} of {:?} from {:?}",
-						required_value, token_type, wallet
-					)
-				})
+				Self::select_inputs(matching_inputs, required_value).ok_or(
+					UtxoSelectionError::InsufficientBalance {
+						required: required_value,
+						token_type,
+						seed,
+					},
+				)
 			})
 		})
 	}
@@ -138,7 +145,8 @@ impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 					output_no,
 				},
 				_ => {
-					let utxo = self.min_match_utxo(context.clone(), wallet);
+					let utxo =
+						self.min_match_utxo(context.clone(), wallet).expect("UTXO lookup failed");
 					UtxoSpend {
 						value: utxo.value,
 						owner,

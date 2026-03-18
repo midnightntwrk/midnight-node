@@ -13,6 +13,12 @@ on:
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Force rebuild even if images already exist"
+        required: false
+        type: boolean
+        default: false
 # no top level default permissions for security reasons
 permissions: {}
 
@@ -32,6 +38,7 @@ jobs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+      skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -53,32 +60,51 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Compute image tags
+        id: image_tags
+        run: |
+          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing images
+        id: check_images
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+        run: |
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "Images already exist, skipping build"
+          else
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run build
+        if: steps.check_images.outputs.skip_build != 'true'
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --ci --push +images
-
-      - name: Export image tags
-        id: image_tags
-        run: |
-          short_hash=$(git rev-parse --short=8 HEAD)
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${short_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${short_hash}-amd64" >> "$GITHUB_OUTPUT"
+          . ./.envrc && earthly -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: success() || failure()
+        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: success() || failure()
+        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (amd64)
           path: test-artifacts-amd64/
@@ -115,11 +141,6 @@ jobs:
 
   run-arm64:
     name: Build node and images (arm64)
-    # ARM64 gating: only for merge_group, workflow_dispatch, or PRs with ci:arm64 label
-    if: |
-      github.event_name == 'merge_group' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:arm64'))
     permissions:
       id-token: write
       contents: read
@@ -143,24 +164,51 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Compute image tags
+        id: image_tags
+        run: |
+          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing images
+        id: check_images
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+        run: |
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "Images already exist, skipping build"
+          else
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run build
+        if: steps.check_images.outputs.skip_build != 'true'
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --ci --push +images
+          . ./.envrc && earthly -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: success() || failure()
+        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: success() || failure()
+        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
@@ -174,7 +222,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     outputs:
-      sha: ${{ steps.get_sha.outputs.sha }}
+      hardfork_image_tag: ${{ steps.image_tags.outputs.hardfork_image_tag }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -185,10 +233,6 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
-      - name: Get current commit SHA
-        id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
       - name: Login to GHCR
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
         with:
@@ -196,10 +240,38 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Compute image tags
+        id: image_tags
+        run: |
+          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          echo "content_hash=${content_hash}" >> "$GITHUB_OUTPUT"
+          echo "hardfork_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing images
+        id: check_images
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+        run: |
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG="${{ steps.image_tags.outputs.hardfork_image_tag }}"
+          EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${TAG}" > /dev/null 2>&1 && echo true || echo false)
+          if [ "$EXISTS" = "true" ]; then
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "Hardfork image already exists, skipping build"
+          else
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space
+        if: steps.check_images.outputs.skip_build != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run build
+        if: steps.check_images.outputs.skip_build != 'true'
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -211,6 +283,8 @@ jobs:
     permissions:
       contents: read
     name: Check Unused Dependencies
+    needs: [run]
+    if: needs.run.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -240,8 +314,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
-    outputs:
-      sha: ${{ steps.get_sha.outputs.sha }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -251,17 +323,6 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Get current commit SHA
-        id: get_sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
@@ -285,8 +346,8 @@ jobs:
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           . ./.envrc && earthly \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
-            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
 
   hardfork-e2e:
@@ -300,17 +361,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> $GITHUB_OUTPUT
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
       #     just-command: hardfork-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   ledger-rollback-e2e:
@@ -322,18 +377,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
       # - uses: ./.github/actions/reusable-e2e-tests
       #   with:
       #     just-command: ledger-rollback-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
       #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - name: 💤 Dummy step to bypass real test
         run: echo "Skipping test — dummy command"
@@ -407,17 +456,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-update-ledger-parameters-e2e:
@@ -429,17 +472,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-update-ledger-parameters-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-maintenance-e2e:
@@ -451,17 +488,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-maintenance-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-mint-e2e:
@@ -473,17 +504,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-mint-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   toolkit-tokens-minter-e2e:
@@ -495,17 +520,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-tokens-minter-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   metadata-check:
@@ -529,17 +548,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
       - name: Run metadata check
         run: |
           . ./.envrc && earthly --ci -P \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64" \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +check-metadata
 
   toolkit-contracts-e2e:
@@ -551,17 +563,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: toolkit-contracts-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   startup-dev-e2e:
@@ -573,16 +579,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: startup-dev-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   genesis-undeployed-e2e:
@@ -594,17 +594,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          echo "short_hash=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/reusable-e2e-tests
         with:
           just-command: genesis-wallets-undeployed-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.version }}-dev-${{ steps.meta.outputs.short_hash }}-amd64
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.short_hash }}-amd64
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
   build-indexer-images:
@@ -624,15 +618,53 @@ jobs:
         with:
           submodules: true
 
+      - name: Login to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
+
+      - name: Compute content hash and check for existing images
+        id: image_meta
+        env:
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+        run: |
+          # Use the indexer submodule's tree hash — indexer images depend on submodule content, not main repo
+          content_hash=$(git -C indexer rev-parse "HEAD^{tree}" | cut -c1-12)
+          {
+            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${content_hash}"
+            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}"
+            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}"
+            echo "content_hash=${content_hash}"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          API_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/indexer-api:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          CHAIN_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          WALLET_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+
+          if [ "$API_EXISTS" = "true" ] && [ "$CHAIN_EXISTS" = "true" ] && [ "$WALLET_EXISTS" = "true" ]; then
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            echo "Indexer images already exist for ${content_hash}, skipping build and tests"
+          else
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space
+        if: steps.image_meta.outputs.skip_build != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Install just
-        uses: taiki-e/install-action@cfdb446e391c69574ebc316dfb7d7849ec12b940 #v2.68.8
+        if: steps.image_meta.outputs.skip_build != 'true'
+        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
         with:
           tool: just
 
       - name: Build indexer images
+        if: steps.image_meta.outputs.skip_build != 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
@@ -645,80 +677,42 @@ jobs:
           export DOCKER_BUILDKIT=1
           export BUILDX_PLATFORM=linux/amd64
 
-          # Login to Docker once at the start
-          echo "🔐 Logging into Docker..."
-          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
-
-          pwd
-          ls
           cd indexer || exit 1
-          ls
           . .envrc
 
-          # Check available docker builders and platforms
-          echo "Available docker builders:"
-          docker buildx ls
-          echo "Current platform: $(uname -m)"
-          echo "DOCKER_DEFAULT_PLATFORM: $DOCKER_DEFAULT_PLATFORM"
-
-          # Build with explicit AMD64 platform
-          echo "🔧 Building indexer-api with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image indexer-api
-
-          echo "🔧 Building chain-indexer with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
-
-          echo "🔧 Building wallet-indexer with AMD64 platform..."
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag images with main repo's commit hash (not submodule's)
-          echo "🏷️ Retagging images with main repo commit hash..."
-
-          # Get commit hashes
-          MAIN_COMMIT=$(git -C .. rev-parse --short=8 HEAD)
-          echo "Main repo commit: $MAIN_COMMIT"
-
+          # Retag with submodule's content hash
+          CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
-          echo "Submodule commit: $SUBMODULE_COMMIT"
 
-          # Retag all indexer images
-          echo "🏷️ Retagging images..."
-          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
-          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
-          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
+          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
+          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
+          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
 
-          # Push the new tags
-          echo "📤 Pushing retagged images..."
-          docker push "ghcr.io/midnight-ntwrk/indexer-api:${MAIN_COMMIT}"
-          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${MAIN_COMMIT}"
-          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${MAIN_COMMIT}"
+          docker push "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
+          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
+          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
 
-          echo "✅ Images retagged and pushed successfully!"
-
-      - name: Expose image refs as outputs
-        id: image_meta
-        run: |
-          # Use main repo's commit hash (not submodule's)
-          short_hash=$(git rev-parse --short=8 HEAD)
-          {
-            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${short_hash}"
-            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${short_hash}"
-            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${short_hash}"
-          } >> "$GITHUB_OUTPUT"
-
-      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 #v2.9.1
+        if: steps.image_meta.outputs.skip_build != 'true'
 
       - name: Configure git for private repos
+        if: steps.image_meta.outputs.skip_build != 'true'
         run: |
           git config --global url."https://${GH_PAT}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
         env:
           GH_PAT: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Install cargo-nextest
+        if: steps.image_meta.outputs.skip_build != 'true'
         run: |
           cargo install cargo-nextest@0.9.128 --locked
 
       - name: just test
+        if: steps.image_meta.outputs.skip_build != 'true'
         env:
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
@@ -742,46 +736,17 @@ jobs:
         with:
           submodules: true
 
-      - name: Get Version and git commit
-        id: meta
-        run: |
-          set -euo pipefail
-
-          # Main repo short hash
-          short_hash=$(git rev-parse --short=8 HEAD)
-          echo "short_hash=$short_hash" >> "$GITHUB_OUTPUT"
-
-          # App version from node/Cargo.toml
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          # Indexer short hash (if indexer is its own git repo/submodule)
-          pushd indexer >/dev/null
-          indexer_tag=$(git rev-parse --short=8 HEAD)
-          popd >/dev/null
-          echo "indexer_tag=$indexer_tag" >> "$GITHUB_OUTPUT"
-
-          # Tag for node and toolkit images
-          node_tag="${version}-${short_hash}-amd64"
-          echo "node_tag=$node_tag" >> "$GITHUB_OUTPUT"
-
-          echo "Get Version and git commit"
-          echo "short_hash: $short_hash"
-          echo "version: $version"
-          echo "indexer_tag: $indexer_tag"
-          echo "node_tag: $node_tag"
-
       - name: Deploy and test against local environment
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ steps.meta.outputs.node_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.meta.outputs.node_tag }}
+          image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}
-          indexer-tag: ${{ steps.meta.outputs.indexer_tag }}
-          sha: ${{ steps.meta.outputs.short_hash }}
+          indexer-tag: unused
+          sha: ${{ needs.run.outputs.sha }}
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 

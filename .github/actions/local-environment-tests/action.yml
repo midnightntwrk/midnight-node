@@ -69,6 +69,17 @@ runs:
       run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
       shell: bash
 
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  #v6.3.0
+      with:
+        # Keep in sync with NODE_VERSION in Earthfile audit-npm target
+        node-version: '22'
+
+    - name: Upgrade npm
+      # Keep in sync with npm version in Earthfile audit-npm target
+      run: npm install -g npm@11.11.0
+      shell: bash
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."

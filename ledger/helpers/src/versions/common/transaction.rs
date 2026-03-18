@@ -153,14 +153,19 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
 			.guaranteed_offer
 			.as_mut()
-			.map(|gc| gc.build(&mut self.rng, self.context.clone()));
+			.map(|gc| gc.build(&mut self.rng, self.context.clone()))
+			.transpose()?;
 
 		let fallible_offer = self
 			.fallible_offers
 			.iter_mut()
-			.map(|(segment_id, offer_info)| {
-				(*segment_id, offer_info.build(&mut self.rng, self.context.clone()))
-			})
+			.map(
+				|(segment_id, offer_info)| -> std::result::Result<_, Box<dyn Error + Send + Sync>> {
+					Ok((*segment_id, offer_info.build(&mut self.rng, self.context.clone())?))
+				},
+			)
+			.collect::<std::result::Result<Vec<_>, _>>()?
+			.into_iter()
 			.collect();
 
 		let mut intents = HashMapStorage::<
