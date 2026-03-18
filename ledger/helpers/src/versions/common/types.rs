@@ -12,13 +12,14 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, Loader, ProofKind,
-	PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
+	ArenaKey, BlockContext, ContractAddress, CostDuration, DB, Deserializable, HashOutput, Loader,
+	ProofKind, PureGeneratorPedersen, Serializable, SignatureKind, StandardTransaction, Storable,
 	SyntheticCost, SystemTransaction, Tagged, Timestamp, Transaction, TransactionHash, Transcript,
 	deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
+use rand::RngCore;
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
@@ -341,6 +342,22 @@ where
 	pub block_context: BlockContext,
 }
 
+/// Generates a default `BlockContext` with the current timestamp and a random parent block hash.
+/// Used by the toolkit when no explicit block context is provided.
+pub(crate) fn default_block_context() -> BlockContext {
+	let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.expect("Time went backwards")
+		.as_secs();
+	let delay: u64 = 0;
+	let ttl = now + delay;
+	let timestamp = Timestamp::from_secs(ttl);
+
+	let mut parent_hash_bytes = [0u8; 32];
+	rand::rngs::OsRng.fill_bytes(&mut parent_hash_bytes);
+	super::make_block_context(timestamp, HashOutput(parent_hash_bytes), timestamp)
+}
+
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -349,17 +366,7 @@ where
 		tx: Transaction<S, P, PureGeneratorPedersen, D>,
 		block_context: Option<BlockContext>,
 	) -> Self {
-		let block_context = block_context.unwrap_or_else(|| {
-			let now = SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("Time went backwards")
-				.as_secs();
-			let delay: u64 = 0;
-			let ttl = now + delay;
-			let timestamp = Timestamp::from_secs(ttl);
-
-			super::make_block_context(timestamp, Default::default(), timestamp)
-		});
+		let block_context = block_context.unwrap_or_else(default_block_context);
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
 	}
@@ -579,5 +586,25 @@ mod tests {
 			lazy_hex.parse::<WalletSeed>(),
 			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
 		));
+	}
+
+	#[test]
+	fn default_block_context_has_non_zero_parent_hash() {
+		let ctx = super::default_block_context();
+		let default_hash: super::HashOutput = Default::default();
+		assert_ne!(
+			ctx.parent_block_hash, default_hash,
+			"parent_block_hash should not be all zeros"
+		);
+	}
+
+	#[test]
+	fn default_block_context_produces_unique_parent_hashes() {
+		let ctx1 = super::default_block_context();
+		let ctx2 = super::default_block_context();
+		assert_ne!(
+			ctx1.parent_block_hash, ctx2.parent_block_hash,
+			"successive calls should produce different parent hashes"
+		);
 	}
 }

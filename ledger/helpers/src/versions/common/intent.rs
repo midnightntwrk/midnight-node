@@ -113,10 +113,20 @@ pub struct IntentCustom<D: DB + Clone> {
 }
 
 impl<D: DB + Clone> IntentCustom<D> {
+	/// Maximum file size for intent files (64 MB)
+	const MAX_INTENT_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
 	pub fn new_from_file(
 		path: impl AsRef<Path>,
 		resolver: &'static Resolver,
 	) -> Result<Self, std::io::Error> {
+		let metadata = std::fs::metadata(path.as_ref())?;
+		if metadata.len() > Self::MAX_INTENT_FILE_SIZE {
+			return Err(std::io::Error::new(
+				std::io::ErrorKind::InvalidData,
+				format!("intent file exceeds maximum size of {} bytes", Self::MAX_INTENT_FILE_SIZE),
+			));
+		}
 		let bytes = std::fs::read(path)?;
 		let intent: IntentOf<D> = deserialize(bytes.as_slice())?;
 		Ok(Self { intent, resolver })

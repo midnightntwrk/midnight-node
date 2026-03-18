@@ -229,6 +229,7 @@ rebuild-genesis-state:
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
+        COPY res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -264,7 +265,8 @@ rebuild-genesis-state:
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json \
-            --reserve-config /genesis-config/reserve-config.json
+            --reserve-config /genesis-config/reserve-config.json \
+            --cardano-tip-config /genesis-config/cardano-tip.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -648,40 +650,12 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
-    # Download compactc compiler from public midnightntwrk/compact releases
-    COPY COMPACTC_VERSION .
-    RUN set -e && \
-        ARCH=$(uname -m) && \
-        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
-        URL="https://github.com/midnightntwrk/compact/releases/download/compactc-v${VERSION}/${ASSET}" && \
-        mkdir -p /compactc-bin && \
-        echo "Downloading compactc: ${URL}" && \
-        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
-        unzip /tmp/compactc.zip -d /compactc-bin && \
-        chmod +x /compactc-bin/compactc && \
-        rm /tmp/compactc.zip
-    ENV COMPACT_HOME=/compactc-bin
-
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
 
-    COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN $COMPACT_HOME/compactc simple-merkle-tree.compact simple-merkle-tree
-    # Keys should not have 0 size (but will have if we ran out of memory):
-    RUN [ -s /simple-merkle-tree/keys/check.prover ]
-    RUN [ -s /simple-merkle-tree/keys/check.verifier ]
-    RUN [ -s /simple-merkle-tree/keys/store.prover ]
-    RUN [ -s /simple-merkle-tree/keys/store.verifier ]
-
-    SAVE ARTIFACT /compactc-bin
-    SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
-
-    # SAVE IMAGE under the rust version and compactc version.
+    # SAVE IMAGE under the rust version.
     # We rebuild the image weekly to apply security patches.
-    ARG COMPACTC_VER=$(cat COMPACTC_VERSION)
-    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VER}"
+    ENV IMAGE_TAG="${RUST_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -692,19 +666,15 @@ node-ci-image-single-platform:
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
     FROM alpine:3.20
-    COPY rust-toolchain.toml COMPACTC_VERSION .
+    COPY rust-toolchain.toml .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
-    ARG COMPACTC_VER=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VER}-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-$NATIVEARCH
 
-    # Used to add repository for nodejs
-    RUN microdnf -y update && \
-        microdnf -y install ca-certificates && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    # ca-certificates and curl-minimal already present in the CI base image
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
@@ -752,7 +722,7 @@ toolkit-js-prep:
     WORKDIR /toolkit-js
     RUN npm ci
     RUN npm run build
-    # Compile compact contracts (fetch-compactc skipped via COMPACT_HOME from CI image)
+    # Compile compact contracts (fetch-compactc downloads compactc via COMPACTC_VERSION)
     RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
@@ -805,11 +775,13 @@ check-rust:
 
     RUN cargo fmt --all -- --check
 
-    ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
 
     # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
+    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
+    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1  cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
+
+    ENV SKIP_WASM_BUILD=1
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching issues where workspace feature unification masks missing dependencies.
@@ -1146,7 +1118,8 @@ srtool-info:
 # node-image creates the Midnight Substrate Node's image
 node-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
@@ -1163,11 +1136,12 @@ node-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
@@ -1187,7 +1161,8 @@ node-image:
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
 node-benchmarks-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
@@ -1201,9 +1176,10 @@ node-benchmarks-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1219,7 +1195,8 @@ node-benchmarks-image:
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     # Set to false to skip toolkit-js
@@ -1229,9 +1206,8 @@ toolkit-image:
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    # Install dependencies for Node.js and update vulnerable system packages
-    RUN microdnf -y install tar gzip xz && \
-        microdnf -y update libxml2 python3-pip python3-pip-wheel python3-setuptools && \
+    # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
@@ -1248,10 +1224,6 @@ toolkit-image:
         node --version && npm --version && \
         npm install -g npm@11.11.0 && npm --version
 
-    # Copy compactc from pre-built CI image (via prep-no-copy)
-    COPY +prep-no-copy/compactc-bin /compactc-bin
-    ENV COMPACT_HOME=/compactc-bin
-
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js /toolkit-js
@@ -1263,10 +1235,11 @@ toolkit-image:
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
-    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH}-${NATIVEARCH}"
-    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${CONTENT_HASH}-node-dev-01"
+    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
+    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
@@ -1278,7 +1251,8 @@ toolkit-image:
 # hardfork-test-upgrader-image creates the hardfork test upgrader tool image
 hardfork-test-upgrader-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
@@ -1291,9 +1265,10 @@ hardfork-test-upgrader-image:
     COPY node/Cargo.toml /node/
     LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$CONTENT_HASH-$NATIVEARCH"
+    ENV IMAGE_TAG="$NODE_VERSION-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
@@ -1395,6 +1370,50 @@ audit:
     BUILD +audit-rust
     BUILD +audit-nodejs
 
+# fix-lock-npm regenerates a single npm package-lock.json inside a container
+fix-lock-npm:
+    ARG DIRECTORY
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Keep in sync with audit-npm target
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
+        node --version && npm --version
+
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    WORKDIR ${DIRECTORY}
+    RUN npm install
+    SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
+
+# fix-lock-js regenerates all npm lockfiles
+fix-lock-js:
+    BUILD +fix-lock-npm --DIRECTORY=local-environment
+    BUILD +fix-lock-npm --DIRECTORY=util/toolkit-js
+
+# fix-lock-rust regenerates Cargo.lock
+fix-lock-rust:
+    FROM +prep
+    RUN cargo generate-lockfile
+    SAVE ARTIFACT Cargo.lock AS LOCAL Cargo.lock
+
+# fix-lock regenerates all lockfiles
+fix-lock:
+    BUILD +fix-lock-rust
+    BUILD +fix-lock-js
+
 # partnerchains-dev contains tools for working with partner chains contracts on Cardano
 partnerchains-dev:
     LET PARTNER_CHAINS_VERSION=1.5.0
@@ -1438,7 +1457,7 @@ partnerchains-dev:
         rm -rf cardano-node cardano-node.tar.gz
 
     # Download partner chains node
-    RUN curl -L https://github.com/input-output-hk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
+    RUN curl -L https://github.com/midnightntwrk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
         chmod +x partner-chains-node
 
     COPY +node-image/midnight-node /midnight-node

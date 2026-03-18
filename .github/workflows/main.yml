@@ -44,13 +44,13 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -80,7 +80,7 @@ jobs:
           hash_type: tree
 
       - name: Install just
-        uses: taiki-e/install-action@cfdb446e391c69574ebc316dfb7d7849ec12b940 #v2.68.8
+        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
         with:
           tool: just
 
@@ -143,6 +143,21 @@ jobs:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
+      - name: Add commit-hash alias tags (amd64)
+        continue-on-error: true
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
+        run: |
+          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
+          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
+          echo "Adding commit alias tags: ${COMMIT_TAG}-amd64 -> ${IMAGE_TAG}-amd64"
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${COMMIT_TAG}-amd64" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
+          done
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
         if: success() || failure()
@@ -150,16 +165,37 @@ jobs:
           name: midnight-node-amd64
           path: artifacts-amd64/
 
-      - name: Archive artifacts
+      - name: Create release archives
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          tar -czf midnight-node-amd64.tar.gz -C artifacts-amd64 .
-          echo "Created midnight-node-amd64.tar.gz"
-          ls -lh midnight-node-amd64.tar.gz
+          PLATFORM="amd64"
+
+          # Create node archive (binary + res directory, matching release format)
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$NODE_RELEASE" -C artifacts-${PLATFORM} midnight-node res
+          echo "Created: $NODE_RELEASE"
+          ls -lh "$NODE_RELEASE"
+
+          # Create toolkit archive
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$TOOLKIT_RELEASE" -C artifacts-${PLATFORM} midnight-node-toolkit
+          echo "Created: $TOOLKIT_RELEASE"
+          ls -lh "$TOOLKIT_RELEASE"
+
+          # Generate checksums
+          {
+            sha256sum "$NODE_RELEASE"
+            sha256sum "$TOOLKIT_RELEASE"
+          } > "SHA256SUMS-${PLATFORM}"
+          echo "Generated checksums:"
+          cat "SHA256SUMS-${PLATFORM}"
 
       - name: Create or Update Draft Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
           # Build release notes
           export SEASON_GHCR_REGISTRY="midnightntwrk"
@@ -193,7 +229,12 @@ jobs:
             --draft \
             --notes-file RELEASE_NOTES.md
 
-          gh release upload "$RELEASE_TITLE" midnight-node-amd64.tar.gz --clobber
+          PLATFORM="amd64"
+          gh release upload "$RELEASE_TITLE" \
+            "midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "SHA256SUMS-${PLATFORM}" \
+            --clobber
 
       - name: Archive release notes
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -224,7 +265,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -283,6 +324,21 @@ jobs:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
+      - name: Add commit-hash alias tags (arm64)
+        continue-on-error: true
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
+        run: |
+          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
+          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
+          echo "Adding commit alias tags: ${COMMIT_TAG}-arm64 -> ${IMAGE_TAG}-arm64"
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${COMMIT_TAG}-arm64" \
+              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
+          done
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
         if: success() || failure()
@@ -290,17 +346,37 @@ jobs:
           name: midnight-node-arm64
           path: artifacts-arm64/
 
-      - name: Archive ARM artifacts
+      - name: Create release archives
+        env:
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
-          tar -czf midnight-node-arm64.tar.gz -C artifacts-arm64 .
-          echo "Created midnight-node-arm64.tar.gz"
-          ls -lh midnight-node-arm64.tar.gz
+          PLATFORM="arm64"
 
+          # Create node archive (binary + res directory, matching release format)
+          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$NODE_RELEASE" -C artifacts-${PLATFORM} midnight-node res
+          echo "Created: $NODE_RELEASE"
+          ls -lh "$NODE_RELEASE"
+
+          # Create toolkit archive
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          tar -czf "$TOOLKIT_RELEASE" -C artifacts-${PLATFORM} midnight-node-toolkit
+          echo "Created: $TOOLKIT_RELEASE"
+          ls -lh "$TOOLKIT_RELEASE"
+
+          # Generate checksums
+          {
+            sha256sum "$NODE_RELEASE"
+            sha256sum "$TOOLKIT_RELEASE"
+          } > "SHA256SUMS-${PLATFORM}"
+          echo "Generated checksums:"
+          cat "SHA256SUMS-${PLATFORM}"
 
       - name: Create or Update Draft Release (ARM64)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ steps.export.outputs.IMAGE_TAG }}
         run: |
           if [[ "$BRANCH" != "main" && ! "$BRANCH" =~ ^release/.* ]]; then
             echo "Branch \"$BRANCH\" is not \"main\" and does not start with \"release/\", skipping draft release creation for ARM64..."
@@ -314,9 +390,14 @@ jobs:
             exit 0
           fi
 
-          echo "Uploading ARM64 artifacts..."
-          gh release upload "$RELEASE_TITLE" midnight-node-arm64.tar.gz --clobber
-          echo "ARM64 artifacts uploaded successfully."
+          PLATFORM="arm64"
+          echo "Uploading ARM64 release archives..."
+          gh release upload "$RELEASE_TITLE" \
+            "midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz" \
+            "SHA256SUMS-${PLATFORM}" \
+            --clobber
+          echo "ARM64 release archives uploaded successfully."
 
   build-indexer-images:
     name: Build Indexer Images
@@ -334,7 +415,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@cfdb446e391c69574ebc316dfb7d7849ec12b940 #v2.68.8
+        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
         with:
           tool: just
 
@@ -476,14 +557,14 @@ jobs:
       attestations: write  # Required for GitHub native attestations
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -589,6 +670,32 @@ jobs:
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
+
+      - name: Add commit-hash alias multi-arch manifests
+        continue-on-error: true
+        env:
+          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+        run: |
+          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
+          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
+          echo "Adding commit alias multi-arch manifests: ${COMMIT_TAG} -> ${IMAGE_TAG}"
+          for REGISTRY in ghcr.io/midnight-ntwrk ghcr.io/midnightntwrk; do
+            for IMAGE in midnight-node midnight-node-toolkit; do
+              docker buildx imagetools create \
+                --tag "${REGISTRY}/${IMAGE}:${COMMIT_TAG}" \
+                "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-amd64" \
+                "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-arm64"
+            done
+          done
+          # Arch-specific commit tags for midnightntwrk (midnight-ntwrk done in per-arch jobs)
+          for IMAGE in midnight-node midnight-node-toolkit; do
+            for ARCH in amd64 arm64; do
+              docker buildx imagetools create \
+                --tag "ghcr.io/midnightntwrk/${IMAGE}:${COMMIT_TAG}-${ARCH}" \
+                "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
+            done
+          done
 
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'

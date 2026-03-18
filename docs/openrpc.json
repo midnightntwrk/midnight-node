@@ -1,0 +1,1724 @@
+{
+  "openrpc": "1.4.0",
+  "info": {
+    "title": "Midnight Node JSON-RPC API",
+    "version": "0.22.0",
+    "description": "JSON-RPC API for the Midnight privacy blockchain node. Custom methods provide access to the privacy ledger, governance parameters, and peer management. Standard Substrate methods are also listed."
+  },
+  "methods": [
+    {
+      "name": "midnight_contractState",
+      "summary": "Returns the state of a deployed contract.",
+      "description": "The contract is identified by its hex-encoded address. The returned state is also hex-encoded. Queries run against the best block unless `at` specifies a historical block hash.",
+      "params": [
+        {
+          "name": "contract_address",
+          "description": "Hex-encoded contract address",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "state",
+        "description": "Hex-encoded contract state",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/StateRpcError"
+        }
+      ]
+    },
+    {
+      "name": "midnight_zswapStateRoot",
+      "summary": "Returns the Merkle root of the zswap (shielded transaction) state tree.",
+      "description": "The root is returned as a byte array. If `at` is null, the best block is used.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "root",
+        "description": "Merkle root bytes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/StateRpcError"
+        }
+      ]
+    },
+    {
+      "name": "midnight_ledgerStateRoot",
+      "summary": "Returns the Merkle root of the overall ledger state.",
+      "description": "The root is returned as a byte array. If `at` is null, the best block is used.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "root",
+        "description": "Merkle root bytes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/StateRpcError"
+        }
+      ]
+    },
+    {
+      "name": "midnight_apiVersions",
+      "summary": "Returns the RPC API version(s) supported by this node.",
+      "description": "The returned array currently contains a single element ([2]). This is the RPC protocol version, distinct from the runtime API version.",
+      "params": [],
+      "result": {
+        "name": "versions",
+        "description": "Supported API version numbers",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "midnight_ledgerVersion",
+      "summary": "Returns the ledger implementation version string.",
+      "description": "If `at` is null, the best block is used.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "version",
+        "description": "Ledger version string",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/BlockRpcError"
+        }
+      ]
+    },
+    {
+      "name": "systemParameters_getTermsAndConditions",
+      "summary": "Get the current Terms and Conditions.",
+      "description": "Returns the hash and URL of the current terms and conditions, or null if not set.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "termsAndConditions",
+        "description": "Terms and conditions, or null",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/TermsAndConditionsRpcResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/SystemParametersRpcError"
+        }
+      ]
+    },
+    {
+      "name": "systemParameters_getDParameter",
+      "summary": "Get the current D-Parameter.",
+      "description": "Returns the number of permissioned and registered candidates.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "dParameter",
+        "description": "D-Parameter values",
+        "schema": {
+          "$ref": "#/components/schemas/DParameterRpcResponse"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/SystemParametersRpcError"
+        }
+      ]
+    },
+    {
+      "name": "systemParameters_getAriadneParameters",
+      "summary": "Get Ariadne parameters for a given mainchain epoch.",
+      "description": "Returns permissioned candidates and candidate registrations from Cardano, with the D Parameter sourced from pallet-system-parameters on-chain storage. Preferred over sidechain_getAriadneParameters.",
+      "params": [
+        {
+          "name": "epoch_number",
+          "description": "Mainchain epoch number to query candidates for",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "d_parameter_at",
+          "description": "Block hash to query D Parameter from (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "ariadneParameters",
+        "description": "Ariadne parameters response",
+        "schema": {
+          "$ref": "#/components/schemas/AriadneParametersRpcResponse"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/SystemParametersRpcError"
+        }
+      ]
+    },
+    {
+      "name": "network_peerReputations",
+      "summary": "Returns reputation info for all connected peers.",
+      "description": "Lists all connected peers with their reputation score and ban status.",
+      "params": [],
+      "result": {
+        "name": "peers",
+        "description": "Array of peer reputation info",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/PeerReputationInfo"
+          }
+        }
+      }
+    },
+    {
+      "name": "network_peerReputation",
+      "summary": "Returns reputation info for a single peer.",
+      "description": "Looks up a peer by its base58-encoded peer ID.",
+      "params": [
+        {
+          "name": "peer_id",
+          "description": "Base58-encoded peer ID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "peer",
+        "description": "Peer reputation info",
+        "schema": {
+          "$ref": "#/components/schemas/PeerReputationInfo"
+        }
+      }
+    },
+    {
+      "name": "network_unbanPeer",
+      "summary": "Unbans a peer by boosting its reputation above the ban threshold.",
+      "description": "Requires the node to be started with --rpc-methods=unsafe.",
+      "params": [
+        {
+          "name": "peer_id",
+          "description": "Base58-encoded peer ID to unban",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Null on success",
+        "schema": {
+          "type": "null"
+        }
+      },
+      "x-unsafe": true
+    },
+    {
+      "name": "sidechain_getParams",
+      "summary": "Get sidechain parameters.",
+      "description": "Returns the genesis UTXO that uniquely identifies this partner chain.",
+      "params": [],
+      "result": {
+        "name": "params",
+        "description": "Sidechain parameters",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "genesis_utxo": {
+              "$ref": "#/components/schemas/UtxoId"
+            }
+          },
+          "required": [
+            "genesis_utxo"
+          ]
+        }
+      }
+    },
+    {
+      "name": "sidechain_getStatus",
+      "summary": "Get sidechain status.",
+      "description": "Returns current epoch/slot information for both the partner chain and Cardano mainchain.",
+      "params": [],
+      "result": {
+        "name": "status",
+        "description": "Sidechain and mainchain status",
+        "schema": {
+          "$ref": "#/components/schemas/GetStatusResponse"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/GetStatusRpcError"
+        }
+      ]
+    },
+    {
+      "name": "sidechain_getEpochCommittee",
+      "summary": "Get the validator committee for a sidechain epoch.",
+      "description": "Returns the ordered list of validators selected for the specified epoch.",
+      "params": [
+        {
+          "name": "epoch_number",
+          "description": "Sidechain epoch number",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "committee",
+        "description": "Committee response",
+        "schema": {
+          "$ref": "#/components/schemas/GetCommitteeResponse"
+        }
+      }
+    },
+    {
+      "name": "sidechain_getRegistrations",
+      "summary": "Get SPO registrations for a mainchain epoch.",
+      "description": "Returns Stake Pool Operator registration records for committee candidacy.",
+      "params": [
+        {
+          "name": "mc_epoch_number",
+          "description": "Mainchain epoch number",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "mc_public_key",
+          "description": "Stake pool public key (hex-encoded)",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "registrations",
+        "description": "Array of registration entries",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/CandidateRegistrationEntry"
+          }
+        }
+      }
+    },
+    {
+      "name": "sidechain_getAriadneParameters",
+      "summary": "Get Ariadne parameters for a mainchain epoch.",
+      "description": "Returns permissioned candidates, registrations, and D Parameter sourced from Cardano. Deprecated: use systemParameters_getAriadneParameters instead.",
+      "params": [
+        {
+          "name": "epoch_number",
+          "description": "Mainchain epoch number",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "result": {
+        "name": "ariadneParameters",
+        "description": "Ariadne parameters response",
+        "schema": {
+          "$ref": "#/components/schemas/AriadneParametersRpcResponse"
+        }
+      },
+      "deprecated": true
+    },
+    {
+      "name": "system_name",
+      "summary": "Node implementation name",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_version",
+      "summary": "Node implementation version",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_chain",
+      "summary": "Chain name",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_chainType",
+      "summary": "Chain type (Development, Local, Live, Custom)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_properties",
+      "summary": "Chain properties",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_health",
+      "summary": "Node health (peers, syncing, should_have_peers)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_localPeerId",
+      "summary": "Local node PeerId",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_localListenAddresses",
+      "summary": "Listen addresses",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_peers",
+      "summary": "Connected peers",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_nodeRoles",
+      "summary": "Node roles (Full, Authority, etc.)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_syncState",
+      "summary": "Sync state (starting, current, highest block)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_addReservedPeer",
+      "summary": "Add reserved peer (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "system_removeReservedPeer",
+      "summary": "Remove reserved peer (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "system_reservedPeers",
+      "summary": "List reserved peers",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_accountNextIndex",
+      "summary": "Account nonce",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "system_dryRun",
+      "summary": "Dry-run an extrinsic at a block (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "author_submitExtrinsic",
+      "summary": "Submit hex-encoded extrinsic to pool",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "author_pendingExtrinsics",
+      "summary": "Get pending extrinsics",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "author_removeExtrinsic",
+      "summary": "Remove extrinsics from pool",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "author_hasKey",
+      "summary": "Check if key exists in keystore",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "author_hasSessionKeys",
+      "summary": "Check if session keys exist",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "author_insertKey",
+      "summary": "Insert key into keystore (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "author_rotateKeys",
+      "summary": "Generate new session keys (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "author_submitAndWatchExtrinsic",
+      "summary": "Submit and subscribe to extrinsic status updates",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "chain_getHeader",
+      "summary": "Get header by hash",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "chain_getBlock",
+      "summary": "Get block by hash",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "chain_getBlockHash",
+      "summary": "Get block hash by number",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "chain_getFinalizedHead",
+      "summary": "Get finalized head hash",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "chain_subscribeNewHeads",
+      "summary": "Subscribe to new best head",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "chain_subscribeFinalizedHeads",
+      "summary": "Subscribe to finalized heads",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "chain_subscribeAllHeads",
+      "summary": "Subscribe to all heads",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "state_call",
+      "summary": "Execute a runtime API call",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getKeys",
+      "summary": "Get storage keys (deprecated)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getKeysPaged",
+      "summary": "Get storage keys (paginated)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getStorage",
+      "summary": "Get storage value at key",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getStorageHash",
+      "summary": "Get storage hash at key",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getStorageSize",
+      "summary": "Get storage size at key",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getMetadata",
+      "summary": "Get runtime metadata",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getRuntimeVersion",
+      "summary": "Get runtime version",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_queryStorage",
+      "summary": "Query storage over a range",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_queryStorageAt",
+      "summary": "Query storage at a block",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_getReadProof",
+      "summary": "Get read proof for keys",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "state_subscribeRuntimeVersion",
+      "summary": "Subscribe to version changes",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "state_subscribeStorage",
+      "summary": "Subscribe to storage changes",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "state_traceBlock",
+      "summary": "Trace block execution (unsafe)",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-unsafe": true
+    },
+    {
+      "name": "grandpa_roundState",
+      "summary": "Current GRANDPA round state",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "grandpa_proveFinality",
+      "summary": "Prove finality of a block",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "grandpa_subscribeJustifications",
+      "summary": "Subscribe to GRANDPA justifications",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    },
+    {
+      "name": "mmr_root",
+      "summary": "Get MMR root hash",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "mmr_generateProof",
+      "summary": "Generate MMR membership proof",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "beefy_getFinalizedHead",
+      "summary": "Get BEEFY finalized head hash",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
+    },
+    {
+      "name": "beefy_subscribeJustifications",
+      "summary": "Subscribe to BEEFY justifications",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": {}
+      },
+      "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
+      "x-subscription": true
+    }
+  ],
+  "components": {
+    "schemas": {
+      "BlockHash": {
+        "type": "string",
+        "description": "0x-prefixed hex-encoded 32-byte block hash",
+        "pattern": "^0x[0-9a-fA-F]{64}$"
+      },
+      "TermsAndConditionsRpcResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "TermsAndConditionsRpcResponse",
+        "description": "Terms and Conditions response for RPC",
+        "type": "object",
+        "required": [
+          "hash",
+          "url"
+        ],
+        "properties": {
+          "hash": {
+            "description": "SHA-256 hash of the terms and conditions document (0x-prefixed hex, 32 bytes)",
+            "type": "string"
+          },
+          "url": {
+            "description": "URL where the terms and conditions can be found",
+            "type": "string"
+          }
+        }
+      },
+      "DParameterRpcResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "DParameterRpcResponse",
+        "description": "D-Parameter response for RPC",
+        "type": "object",
+        "required": [
+          "numPermissionedCandidates",
+          "numRegisteredCandidates"
+        ],
+        "properties": {
+          "numPermissionedCandidates": {
+            "description": "Number of permissioned candidates",
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          },
+          "numRegisteredCandidates": {
+            "description": "Number of registered candidates",
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          }
+        }
+      },
+      "AriadneParametersRpcResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "AriadneParametersRpcResponse",
+        "description": "Ariadne parameters response\n\nReturns the same schema as `sidechain_getAriadneParameters` but with D Parameter sourced from pallet-system-parameters instead of Cardano.\n\nNote: `permissioned_candidates` and `candidate_registrations` use `serde_json::Value`, producing permissive schemas. The actual structures correspond to `PermissionedCandidateData` and `GetRegistrationsResponseMap` from partner-chains.",
+        "type": "object",
+        "required": [
+          "candidateRegistrations",
+          "dParameter"
+        ],
+        "properties": {
+          "candidateRegistrations": {
+            "description": "Map of candidate registrations from Cardano"
+          },
+          "dParameter": {
+            "description": "The D-parameter (from pallet-system-parameters)",
+            "allOf": [
+              {
+                "$ref": "#/definitions/DParameterRpcResponse"
+              }
+            ]
+          },
+          "permissionedCandidates": {
+            "description": "List of permissioned candidates from Cardano. None signifies a list was not set on mainchain.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": true
+          }
+        },
+        "definitions": {
+          "DParameterRpcResponse": {
+            "description": "D-Parameter response for RPC",
+            "type": "object",
+            "required": [
+              "numPermissionedCandidates",
+              "numRegisteredCandidates"
+            ],
+            "properties": {
+              "numPermissionedCandidates": {
+                "description": "Number of permissioned candidates",
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0.0
+              },
+              "numRegisteredCandidates": {
+                "description": "Number of registered candidates",
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0.0
+              }
+            }
+          }
+        }
+      },
+      "Operation": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Operation",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "FallibleCoins",
+              "GuaranteedCoins"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Call"
+            ],
+            "properties": {
+              "Call": {
+                "type": "object",
+                "required": [
+                  "address",
+                  "entry_point"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  },
+                  "entry_point": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Deploy"
+            ],
+            "properties": {
+              "Deploy": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Maintain"
+            ],
+            "properties": {
+              "Maintain": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "ClaimRewards"
+            ],
+            "properties": {
+              "ClaimRewards": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "integer",
+                    "format": "uint128",
+                    "minimum": 0.0
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MidnightRpcTransaction": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "MidnightRpcTransaction",
+        "type": "object",
+        "required": [
+          "identifiers",
+          "operations",
+          "tx_hash"
+        ],
+        "properties": {
+          "identifiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Operation"
+            }
+          },
+          "tx_hash": {
+            "type": "string"
+          }
+        },
+        "definitions": {
+          "Operation": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FallibleCoins",
+                  "GuaranteedCoins"
+                ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Call"
+                ],
+                "properties": {
+                  "Call": {
+                    "type": "object",
+                    "required": [
+                      "address",
+                      "entry_point"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "entry_point": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Deploy"
+                ],
+                "properties": {
+                  "Deploy": {
+                    "type": "object",
+                    "required": [
+                      "address"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Maintain"
+                ],
+                "properties": {
+                  "Maintain": {
+                    "type": "object",
+                    "required": [
+                      "address"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "ClaimRewards"
+                ],
+                "properties": {
+                  "ClaimRewards": {
+                    "type": "object",
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "integer",
+                        "format": "uint128",
+                        "minimum": 0.0
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "RpcTransaction": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "RpcTransaction",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "MalformedMidnightTransaction",
+              "RuntimeUpgrade",
+              "UnknownTransaction"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "MidnightTransaction"
+            ],
+            "properties": {
+              "MidnightTransaction": {
+                "type": "object",
+                "required": [
+                  "tx"
+                ],
+                "properties": {
+                  "tx": {
+                    "$ref": "#/definitions/MidnightRpcTransaction"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "Timestamp"
+            ],
+            "properties": {
+              "Timestamp": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "definitions": {
+          "MidnightRpcTransaction": {
+            "type": "object",
+            "required": [
+              "identifiers",
+              "operations",
+              "tx_hash"
+            ],
+            "properties": {
+              "identifiers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "operations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/Operation"
+                }
+              },
+              "tx_hash": {
+                "type": "string"
+              }
+            }
+          },
+          "Operation": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FallibleCoins",
+                  "GuaranteedCoins"
+                ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Call"
+                ],
+                "properties": {
+                  "Call": {
+                    "type": "object",
+                    "required": [
+                      "address",
+                      "entry_point"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      },
+                      "entry_point": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Deploy"
+                ],
+                "properties": {
+                  "Deploy": {
+                    "type": "object",
+                    "required": [
+                      "address"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "Maintain"
+                ],
+                "properties": {
+                  "Maintain": {
+                    "type": "object",
+                    "required": [
+                      "address"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "ClaimRewards"
+                ],
+                "properties": {
+                  "ClaimRewards": {
+                    "type": "object",
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "integer",
+                        "format": "uint128",
+                        "minimum": 0.0
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "PeerReputationInfo": {
+        "type": "object",
+        "description": "Peer information enriched with reputation and ban status",
+        "properties": {
+          "peerId": {
+            "type": "string",
+            "description": "Peer ID (base58-encoded)"
+          },
+          "roles": {
+            "type": "string",
+            "description": "Roles advertised by the peer (e.g. FULL)"
+          },
+          "bestHash": {
+            "type": "string",
+            "description": "Best block hash known for this peer (0x-prefixed hex)"
+          },
+          "bestNumber": {
+            "type": "integer",
+            "description": "Best block number known for this peer"
+          },
+          "reputation": {
+            "type": "integer",
+            "description": "Current reputation score"
+          },
+          "isBanned": {
+            "type": "boolean",
+            "description": "Whether the peer is currently banned"
+          }
+        },
+        "required": [
+          "peerId",
+          "roles",
+          "bestHash",
+          "bestNumber",
+          "reputation",
+          "isBanned"
+        ]
+      },
+      "RpcBlock": {
+        "type": "object",
+        "description": "A block with decoded transactions",
+        "properties": {
+          "header": {
+            "type": "object",
+            "description": "Block header"
+          },
+          "body": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RpcTransaction"
+            }
+          },
+          "transactions_index": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "required": [
+          "header",
+          "body",
+          "transactions_index"
+        ]
+      },
+      "UtxoId": {
+        "type": "string",
+        "description": "UTXO identifier in the format \"<hex_tx_hash>#<output_index>\"",
+        "pattern": "^[0-9a-fA-F]{64}#[0-9]+$"
+      },
+      "GetStatusResponse": {
+        "type": "object",
+        "description": "Sidechain and mainchain status",
+        "properties": {
+          "sidechain": {
+            "type": "object",
+            "properties": {
+              "epoch": {
+                "type": "integer"
+              },
+              "nextEpochTimestamp": {
+                "type": "integer",
+                "description": "Milliseconds since Unix epoch"
+              }
+            },
+            "required": [
+              "epoch",
+              "nextEpochTimestamp"
+            ]
+          },
+          "mainchain": {
+            "type": "object",
+            "properties": {
+              "epoch": {
+                "type": "integer"
+              },
+              "slot": {
+                "type": "integer"
+              },
+              "nextEpochTimestamp": {
+                "type": "integer",
+                "description": "Milliseconds since Unix epoch"
+              }
+            },
+            "required": [
+              "epoch",
+              "slot",
+              "nextEpochTimestamp"
+            ]
+          }
+        },
+        "required": [
+          "sidechain",
+          "mainchain"
+        ]
+      },
+      "GetCommitteeResponse": {
+        "type": "object",
+        "description": "Committee members for a sidechain epoch",
+        "properties": {
+          "sidechainEpoch": {
+            "type": "integer"
+          },
+          "committee": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sidechainPubKey": {
+                  "type": "string",
+                  "description": "0x-prefixed hex public key"
+                }
+              },
+              "required": [
+                "sidechainPubKey"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sidechainEpoch",
+          "committee"
+        ]
+      },
+      "CandidateRegistrationEntry": {
+        "type": "object",
+        "description": "SPO registration entry for committee candidacy",
+        "properties": {
+          "sidechainPubKey": {
+            "type": "string"
+          },
+          "sidechainAccountId": {
+            "type": "string",
+            "description": "SS58-encoded account ID"
+          },
+          "mainchainPubKey": {
+            "type": "string"
+          },
+          "crossChainPubKey": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "sidechainSignature": {
+            "type": "string"
+          },
+          "mainchainSignature": {
+            "type": "string"
+          },
+          "crossChainSignature": {
+            "type": "string"
+          },
+          "utxo": {
+            "$ref": "#/components/schemas/UtxoId"
+          },
+          "stakeDelegation": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isValid": {
+            "type": "boolean"
+          },
+          "invalidReasons": {
+            "description": "Present only when isValid is false",
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sidechainPubKey",
+          "sidechainAccountId",
+          "mainchainPubKey",
+          "crossChainPubKey",
+          "keys",
+          "sidechainSignature",
+          "mainchainSignature",
+          "crossChainSignature",
+          "utxo",
+          "isValid"
+        ]
+      }
+    },
+    "errors": {
+      "StateRpcError": {
+        "code": -32602,
+        "message": "Invalid params",
+        "data": {
+          "description": "Variants: BadContractAddress, BadAccountAddress, UnableToGetContractState, UnableToGetZSwapChainState, UnableToGetZSwapStateRoot, UnableToGetLedgerStateRoot"
+        }
+      },
+      "BlockRpcError": {
+        "code": -32602,
+        "message": "Invalid params",
+        "data": {
+          "description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
+        }
+      },
+      "SystemParametersRpcError": {
+        "code": -32603,
+        "message": "Internal error",
+        "data": {
+          "description": "Variants: UnableToGetTermsAndConditions, UnableToGetDParameter, UnableToGetAriadneParameters, RuntimeApiError"
+        }
+      },
+      "GetStatusRpcError": {
+        "code": -1,
+        "message": "Sidechain status error",
+        "data": {
+          "description": "Custom error from partner-chains sidechain RPC"
+        }
+      }
+    }
+  }
+}

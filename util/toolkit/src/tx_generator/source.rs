@@ -13,7 +13,7 @@
 
 use crate::{
 	cli_parsers as cli,
-	fetcher::{fetch_all, fetch_storage},
+	fetcher::{fetch_all, fetch_storage, fetch_storage::WalletStateCaching},
 };
 use async_trait::async_trait;
 use clap::Args;
@@ -68,6 +68,20 @@ impl FromStr for FetchCacheConfig {
 	}
 }
 
+/// Create a file-based wallet state cache backend.
+///
+/// Returns `None` if `ledger_state_db` is empty or `fetch_cache` is `InMemory`
+/// (ephemeral mode should not leave persistent wallet cache files).
+pub fn create_file_wallet_cache(
+	ledger_state_db: &str,
+	fetch_cache: &FetchCacheConfig,
+) -> Option<Box<dyn WalletStateCaching>> {
+	if ledger_state_db.is_empty() || matches!(fetch_cache, FetchCacheConfig::InMemory) {
+		return None;
+	}
+	Some(Box::new(fetch_storage::file_backend::FileBackend::new(ledger_state_db)))
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct Source {
 	/// Load input transactions/blocks from the node instance using an RPC URL
@@ -106,17 +120,25 @@ pub struct Source {
 		long,
 		global = true,
 		value_parser = cli::fetch_cache_config,
-		default_value = "redb:toolkit.db",
+		default_value = "redb:toolkit_cache/fetch_cache.db",
 		env = "MN_FETCH_CACHE"
 	)]
-	/// Fetch cache config. Caches both block data and wallet state.
+	/// Fetch cache config. Caches block data fetched from the node.
 	/// Available options:
 	/// - "inmemory" (RAM-only, no persistence),
 	/// - "redb:<filename>" (file-cache, single-writer)
 	/// - "postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]" (external db, multi-writer)
-	///
-	/// When using redb or postgres backends, wallet state is also cached to speed up subsequent runs.
 	pub fetch_cache: FetchCacheConfig,
+
+	/// Directory for file-based wallet state cache (ledger snapshots + per-wallet state).
+	/// Set to empty string to disable caching.
+	#[arg(
+		long,
+		global = true,
+		default_value = "toolkit_cache/ledger_cache_db",
+		env = "MN_LEDGER_CACHE_DB"
+	)]
+	pub ledger_state_db: String,
 }
 
 #[derive(Error, Debug)]
@@ -258,6 +280,7 @@ impl GetTxs for GetTxsFromUrl {
 	async fn get_txs(
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
+		let t = std::time::Instant::now();
 		let blocks = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
 				fetch_all(
@@ -290,7 +313,11 @@ impl GetTxs for GetTxsFromUrl {
 				.await?
 			},
 		};
+		log::debug!("[perf] fetch_all took {:?}", t.elapsed());
 
-		Ok(SourceTransactions::from_blocks(blocks, self.dust_warp))
+		let t = std::time::Instant::now();
+		let source_txs = SourceTransactions::from_blocks(blocks, self.dust_warp);
+		log::debug!("[perf] SourceTransactions::from_blocks took {:?}", t.elapsed());
+		Ok(source_txs)
 	}
 }
