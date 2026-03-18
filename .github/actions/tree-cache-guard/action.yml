@@ -43,7 +43,8 @@ runs:
         workflow="${WORKFLOW_NAME// /-}"
         job="${CHECK_NAME// /-}"
         arch="${RUNNER_ARCH// /-}"
-        check="${workflow}-${job}-${arch}"
+        os="${ImageOS:-unknown}"
+        check="${workflow}-${job}-${arch}-${os}"
         if [[ -n "$MATRIX_KEY" ]]; then
           matrix="${MATRIX_KEY// /-}"
           check="${check}-${matrix}"

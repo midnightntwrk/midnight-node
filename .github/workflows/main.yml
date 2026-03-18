@@ -103,6 +103,8 @@ jobs:
           VERSION=$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
 
+          NODE_EXISTS=false
+          TOOLKIT_EXISTS=false
           if [ "${{ inputs.force_rebuild }}" != "true" ]; then
             NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
             TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
