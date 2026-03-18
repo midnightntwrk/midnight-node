@@ -20,9 +20,12 @@ pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_raw};
+use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_cached};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
-use source::{GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError};
+use source::{
+	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
+	create_file_wallet_cache,
+};
 
 #[derive(Debug, Error)]
 pub enum TxGeneratorError {
@@ -44,6 +47,8 @@ pub struct TxGenerator {
 	pub destinations: Vec<Box<dyn SendTxs>>,
 	pub builder_config: Builder,
 	pub prover_config: ProverConfig,
+	pub fetch_cache_config: FetchCacheConfig,
+	pub ledger_state_db: String,
 	pub dry_run: bool,
 }
 
@@ -55,6 +60,8 @@ impl TxGenerator {
 		proof_server: Option<String>,
 		dry_run: bool,
 	) -> Result<Self, TxGeneratorError> {
+		let fetch_cache_config = src.fetch_cache.clone();
+		let ledger_state_db = src.ledger_state_db.clone();
 		let source = Self::source(src, dry_run).await?;
 		let destinations = Self::destinations(dest, dry_run).await?;
 		if dry_run {
@@ -62,7 +69,15 @@ impl TxGenerator {
 		}
 		let prover_config = Self::prover_config(proof_server, dry_run);
 
-		Ok(Self { source, destinations, builder_config: builder, prover_config, dry_run })
+		Ok(Self {
+			source,
+			destinations,
+			builder_config: builder,
+			prover_config,
+			fetch_cache_config,
+			ledger_state_db,
+			dry_run,
+		})
 	}
 
 	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
@@ -177,15 +192,27 @@ impl TxGenerator {
 		let fork_ctx = if seeds.is_empty() {
 			None
 		} else {
-			Some(build_fork_aware_context_raw(received_txs, &seeds))
+			let wallet_cache =
+				create_file_wallet_cache(&self.ledger_state_db, &self.fetch_cache_config);
+			let t = std::time::Instant::now();
+			let ctx =
+				build_fork_aware_context_cached(&seeds, received_txs, wallet_cache.as_deref())
+					.await;
+			log::debug!("[perf] build_fork_aware_context_cached took {:?}", t.elapsed());
+			Some(ctx)
 		};
 
+		let t = std::time::Instant::now();
 		let builder = self.builder_config.clone().to_versioned_builder(
 			fork_ctx,
 			&self.prover_config,
 			self.dry_run,
 		)?;
+		log::debug!("[perf] to_versioned_builder took {:?}", t.elapsed());
 
-		builder.build_txs_from(received_txs.clone()).await
+		let t = std::time::Instant::now();
+		let result = builder.build_txs_from(received_txs.clone()).await;
+		log::debug!("[perf] build_txs_from took {:?}", t.elapsed());
+		result
 	}
 }

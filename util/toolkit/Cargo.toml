@@ -44,10 +44,12 @@ sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
 redb = "3.1.0"
-bson = { version = "3.1.0", features = ["serde"] }
-sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+postcard = { version = "1.1", features = ["alloc"] }
+serde_bytes = "0.11"
 zstd = "0.13"
+sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 strum.workspace = true
+rayon.workspace = true
 
 [dev-dependencies]
 test-case = "3.3.1"

@@ -14,6 +14,7 @@
 pub mod contract_address;
 pub mod contract_state;
 pub mod dust_balance;
+pub mod fetch;
 pub mod generate_genesis;
 pub mod generate_sample_intent;
 pub mod generate_txs;
