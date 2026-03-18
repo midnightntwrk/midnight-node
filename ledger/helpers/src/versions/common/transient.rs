@@ -42,7 +42,9 @@ impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> 
 		let transients = vec![];
 
 		let mut offer_arg = OfferInfo { inputs, outputs, transients };
-		let offer = offer_arg.build(rng, context.clone());
+		let offer = offer_arg
+			.build(rng, context.clone())
+			.expect("offer build failed: arithmetic overflow");
 
 		context.with_wallets_from_seeds(
 			self.input.origin,

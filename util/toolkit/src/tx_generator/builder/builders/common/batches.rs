@@ -151,7 +151,8 @@ impl BatchesBuilder {
 			funding_seed,
 			self.initial_unshielded_intent_value,
 			self.unshielded_token_type,
-		);
+		)
+		.expect("insufficient UTXOs for transfer");
 
 		let inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
 			.into_iter()

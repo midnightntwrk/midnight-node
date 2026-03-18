@@ -16,6 +16,45 @@
 use crate::ledger_8::BlockContext;
 use serde::{Deserialize, Serialize};
 
+/// Hex for human-readable formats (JSON), raw bytes for binary (postcard).
+mod hex_or_bytes {
+	use serde::{Deserializer, Serializer};
+
+	pub fn serialize<S: Serializer>(bytes: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
+		if s.is_human_readable() {
+			hex::serde::serialize(bytes, s)
+		} else {
+			serde_bytes::serialize(bytes, s)
+		}
+	}
+
+	pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+		if d.is_human_readable() { hex::serde::deserialize(d) } else { serde_bytes::deserialize(d) }
+	}
+}
+
+/// Same as `hex_or_bytes` but for fixed-size `[u8; 32]`.
+mod hex_or_bytes_32 {
+	use serde::{Deserializer, Serializer, de::Error};
+
+	pub fn serialize<S: Serializer>(bytes: &[u8; 32], s: S) -> Result<S::Ok, S::Error> {
+		if s.is_human_readable() {
+			hex::serde::serialize(bytes, s)
+		} else {
+			serde_bytes::serialize(bytes.as_slice(), s)
+		}
+	}
+
+	pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
+		if d.is_human_readable() {
+			hex::serde::deserialize(d)
+		} else {
+			let bytes: &[u8] = serde_bytes::deserialize(d)?;
+			bytes.try_into().map_err(|_| D::Error::custom("expected 32 bytes"))
+		}
+	}
+}
+
 /// Which ledger version a block was produced under.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LedgerVersion {
@@ -28,9 +67,9 @@ pub enum LedgerVersion {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RawTransaction {
 	/// Raw bytes from `send_mn_transaction` extrinsic
-	Midnight(#[serde(with = "hex")] Vec<u8>),
+	Midnight(#[serde(with = "hex_or_bytes")] Vec<u8>),
 	/// Raw bytes from system transaction events / extrinsics
-	System(#[serde(with = "hex")] Vec<u8>),
+	System(#[serde(with = "hex_or_bytes")] Vec<u8>),
 }
 
 impl RawTransaction {
@@ -45,8 +84,8 @@ impl RawTransaction {
 /// Version-agnostic block data that stores transactions as raw serialized bytes.
 ///
 /// Deserialization into version-specific ledger types happens lazily in
-/// `ForkAwareLedgerContext::update_from_block`, which knows the current
-/// ledger version and uses the correct types.
+/// `apply_block_7` / `apply_block_8`, which use the correct types for
+/// the respective ledger version.
 ///
 /// The `spec_version` field stores the raw runtime spec version number.
 /// Use `LedgerVersion::from_spec_version()` to convert at point of use.
@@ -122,7 +161,7 @@ pub struct SerializedTx {
 	/// Serialized `BlockContext`
 	pub context: BlockContext,
 	/// Transaction hash for logging.
-	#[serde(with = "hex")]
+	#[serde(with = "hex_or_bytes_32")]
 	pub tx_hash: [u8; 32],
 }
 

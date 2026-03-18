@@ -303,25 +303,6 @@ impl BuildTxs for CustomContractBuilder {
 			context.with_wallet_from_seed(self.funding_seed(), |w| w.unshielded_utxos(&state))
 		});
 
-		let mut input_utxos = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
-		for input_utxo in &self.utxo_inputs {
-			let funding_match = funding_utxos
-				.iter()
-				.find(|u| {
-					u.intent_hash == input_utxo.intent_hash
-						&& u.output_no == input_utxo.output_number
-				})
-				.ok_or(CustomContractBuilderError::FailedToFindMatchingUtxo(*input_utxo))?;
-
-			input_utxos.push(Box::new(UtxoSpendInfo {
-				value: funding_match.value,
-				owner: self.funding_seed(),
-				token_type: funding_match.type_,
-				intent_hash: Some(funding_match.intent_hash),
-				output_number: Some(funding_match.output_no),
-			}));
-		}
-
 		// Use segment 1 for the custom contract
 		let contract_segment = 1;
 
@@ -356,16 +337,50 @@ impl BuildTxs for CustomContractBuilder {
 			Ok(outputs)
 		};
 
+		let mut guaranteed_inputs = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
+		let mut fallible_inputs = Vec::<Box<dyn BuildUtxoSpend<DefaultDB>>>::new();
+		let fallible_effects_unshielded_inputs = fallible_effects
+			.iter()
+			.flat_map(|effects| effects.unshielded_inputs.clone())
+			.collect::<Vec<_>>();
+		for input_utxo in &self.utxo_inputs {
+			let funding_match = funding_utxos
+				.iter()
+				.find(|u| {
+					u.intent_hash == input_utxo.intent_hash
+						&& u.output_no == input_utxo.output_number
+				})
+				.ok_or(CustomContractBuilderError::FailedToFindMatchingUtxo(*input_utxo))?;
+
+			let input = Box::new(UtxoSpendInfo {
+				value: funding_match.value,
+				owner: self.funding_seed(),
+				token_type: funding_match.type_,
+				intent_hash: Some(funding_match.intent_hash),
+				output_number: Some(funding_match.output_no),
+			});
+
+			if fallible_effects_unshielded_inputs
+				.contains(&(TokenType::Unshielded(funding_match.type_), funding_match.value))
+			{
+				fallible_inputs.push(input);
+			} else {
+				guaranteed_inputs.push(input);
+			}
+		}
+
 		let guaranteed_outputs = find_outputs(guaranteed_effects)?;
-		if !guaranteed_outputs.is_empty() || !input_utxos.is_empty() {
-			guaranteed_unshielded_offer_info =
-				Some(UnshieldedOfferInfo { inputs: input_utxos, outputs: guaranteed_outputs });
+		if !guaranteed_outputs.is_empty() || !guaranteed_inputs.is_empty() {
+			guaranteed_unshielded_offer_info = Some(UnshieldedOfferInfo {
+				inputs: guaranteed_inputs,
+				outputs: guaranteed_outputs,
+			});
 		}
 
 		let fallible_outputs = find_outputs(fallible_effects)?;
-		if !fallible_outputs.is_empty() {
+		if !fallible_outputs.is_empty() || !fallible_inputs.is_empty() {
 			fallible_unshielded_offer_info =
-				Some(UnshieldedOfferInfo { inputs: vec![], outputs: fallible_outputs });
+				Some(UnshieldedOfferInfo { inputs: fallible_inputs, outputs: fallible_outputs });
 		}
 
 		let mut intents: HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> = HashMap::new();

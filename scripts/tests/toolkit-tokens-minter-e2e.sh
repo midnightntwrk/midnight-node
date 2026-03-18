@@ -56,6 +56,8 @@ config_file="/toolkit-js/contract/minter.config.ts"
 mint_shielded_intent_filename="mint_shielded.bin"
 mint_unshielded_intent_filename="mint_unshielded.bin"
 send_unshielded_intent_filename="send_unshielded.bin"
+set_token_intent_filename="send_token.bin"
+receive_and_send_unshielded_intent_filename="receive_and_send_unshielded.bin"
 mint_shielded_zswap_filename="mint_zswap_shielded.json"
 mint_unshielded_zswap_filename="mint_zswap_unshielded.json"
 
@@ -200,6 +202,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --input-private-state "$outdir/temp_unshielded_private_state.json" \
     --contract-address $contract_address \
     --output-intent "$outdir/$send_unshielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_3.mn" \
     --output-private-state "$outdir/temp_send_private_state.json" \
     --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
     sendUnshieldedToUser \
@@ -207,7 +210,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$user_address" \
     1000
 
-echo "Send created txs"
+echo "Send created intents (tx #1)"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
@@ -218,10 +221,65 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --intent-file "$outdir/$send_unshielded_intent_filename" \
     --compiled-contract-dir "$compiled_contract" \
     --shielded-destination "$shielded_destination" \
-    --zswap-state-file "$outdir/$mint_shielded_zswap_filename" \
+    --zswap-state-file "$outdir/$mint_shielded_zswap_filename"
+
+token_id=$(
+    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+     "$TOOLKIT_IMAGE" \
+      show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001" \
+      | jq -r ".utxos[] | select(.token_type == \"$token_type\") | .id"
+)
+
+echo "Generate setToken() circuit call"
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
+    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    "$TOOLKIT_IMAGE" \
+    generate-intent circuit -c "$config_file" \
+    --coin-public "$coin_public" \
+    --input-onchain-state "$outdir/onchain_state_3.mn" \
+    --input-private-state "$outdir/temp_send_private_state.json" \
+    --contract-address $contract_address \
+    --output-intent "$outdir/$set_token_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_4.mn" \
+    --output-private-state "$outdir/temp_shielded_private_state.json" \
+    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
+    setToken \
+    "$token_type" \
+    1000 \
+    "$user_address"
+
+echo "Generate receiveAndSendUnshielded() circuit call"
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
+    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    "$TOOLKIT_IMAGE" \
+    generate-intent circuit -c "$config_file" \
+    --coin-public "$coin_public" \
+    --input-onchain-state "$outdir/onchain_state_4.mn" \
+    --input-private-state "$outdir/temp_shielded_private_state.json" \
+    --contract-address $contract_address \
+    --output-intent "$outdir/$receive_and_send_unshielded_intent_filename" \
+    --output-onchain-state "$outdir/onchain_state_5.mn" \
+    --output-private-state "$outdir/temp_shielded_private_state_2.json" \
+    --output-zswap-state "$outdir/$mint_unshielded_zswap_filename" \
+    receiveAndSendUnshielded
+
+echo "Send created intents (tx #2)"
+docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+    -e RESTORE_OWNER="$(id -u):$(id -g)" \
+    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    "$TOOLKIT_IMAGE" \
+    send-intent \
+    --intent-file "$outdir/$set_token_intent_filename" \
+    --intent-file "$outdir/$receive_and_send_unshielded_intent_filename" \
+    --compiled-contract-dir "$compiled_contract" \
+    --shielded-destination "$shielded_destination" \
+    --zswap-state-file "$outdir/$mint_unshielded_zswap_filename" \
+    --input-utxo "$token_id"
 
 show_wallet_output=$(
-    docker run --rm -e RUST_BACKTRACE=1  --network container:midnight-node-contracts \
+    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
      "$TOOLKIT_IMAGE" \
       show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001"
 )
