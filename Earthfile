@@ -445,11 +445,6 @@ rebuild-genesis-state-govnet:
     BUILD +rebuild-genesis-state \
         --NETWORK=govnet
 
-# rebuild-genesis-state-node-dev-01 rebuilds the genesis ledger state for node-dev-01 network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-node-dev-01:
-    BUILD +rebuild-genesis-state \
-        --NETWORK=node-dev-01
-
 # rebuild-genesis-state-qanet rebuilds the genesis ledger state for qanet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
     BUILD +rebuild-genesis-state \
@@ -1130,7 +1125,6 @@ node-image:
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
@@ -1138,7 +1132,6 @@ node-image:
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG \
         $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
@@ -1168,7 +1161,6 @@ node-benchmarks-image:
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$CONTENT_HASH_SHORT-node-dev-01"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1176,8 +1168,7 @@ node-benchmarks-image:
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-benchmarks:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
 
@@ -1228,13 +1219,11 @@ toolkit-image:
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-node-dev-01"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG \
         $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # audit-rust checks for rust security vulnerabilities
