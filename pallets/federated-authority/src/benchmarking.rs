@@ -20,6 +20,7 @@ use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{EnsureOrigin, Get};
 use frame_system::RawOrigin;
 use sp_runtime::DispatchError;
+use sp_runtime::Weight;
 
 #[benchmarks]
 mod benchmarks {
