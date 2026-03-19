@@ -476,9 +476,9 @@ jobs:
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           INDEXER_IMAGE_TAG="via-node-${MAIN_COMMIT}"
-          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
-          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
-          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."

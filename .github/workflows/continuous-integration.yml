@@ -586,9 +586,9 @@ jobs:
           CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
-          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
 
           docker push "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
           docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
