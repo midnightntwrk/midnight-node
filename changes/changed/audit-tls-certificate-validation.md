@@ -4,4 +4,4 @@
 Add ssl_root_cert configuration option
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1029
-JIRA: PM-19924
+JIRA: https://shielded.atlassian.net/browse/PM-19924
