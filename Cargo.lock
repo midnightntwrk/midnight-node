@@ -7715,6 +7715,8 @@ dependencies = [
  "thiserror 1.0.69",
  "time-source",
  "tokio",
+ "tokio-util",
+ "yamux 0.13.10",
 ]
 
 [[package]]
