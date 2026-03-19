@@ -12,8 +12,6 @@ path = "src/main.rs"
 
 [features]
 default = []
-hardfork-test = []
-hardfork-test-rollback = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 
 [dependencies]

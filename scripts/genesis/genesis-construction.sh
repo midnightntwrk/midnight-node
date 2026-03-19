@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "node-dev-01" "preview")
+AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "preview")
 
 # Default RNG seed (same as in Earthfile)
 DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
@@ -135,7 +135,7 @@ get_cardano_tip() {
 uses_cnight_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)
@@ -148,7 +148,7 @@ uses_cnight_config() {
 uses_ics_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)
@@ -161,7 +161,7 @@ uses_ics_config() {
 uses_reserve_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)

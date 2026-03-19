@@ -213,71 +213,6 @@ jobs:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
 
-  hardfork:
-    name: Build hardfork images
-    permissions:
-      id-token: write
-      contents: read
-    runs-on: ubuntu-latest
-    env:
-      FORCE_COLOR: 1
-    outputs:
-      hardfork_image_tag: ${{ steps.image_tags.outputs.hardfork_image_tag }}
-    steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-
-      - name: Compute image tags
-        id: image_tags
-        run: |
-          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "content_hash=${content_hash}" >> "$GITHUB_OUTPUT"
-          echo "hardfork_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-
-      - name: Check for existing images
-        id: check_images
-        env:
-          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
-        run: |
-          if [ "$FORCE_REBUILD" = "true" ]; then
-            echo "skip_build=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          TAG="${{ steps.image_tags.outputs.hardfork_image_tag }}"
-          EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${TAG}" > /dev/null 2>&1 && echo true || echo false)
-          if [ "$EXISTS" = "true" ]; then
-            echo "skip_build=true" >> "$GITHUB_OUTPUT"
-            echo "Hardfork image already exists, skipping build"
-          else
-            echo "skip_build=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Free disk space
-        if: steps.check_images.outputs.skip_build != 'true'
-        run: scripts/free-disk-space.sh
-
-      - name: Run build
-        if: steps.check_images.outputs.skip_build != 'true'
-        run: |
-          mkdir -p "$HOME/.cargo"
-          echo "[net]" >> "$HOME/.cargo/config"
-          echo "git-fetch-with-cli = true" >> "$HOME/.cargo/config"
-
-          . ./.envrc && earthly --push +hardfork-test-upgrader-image
 
   check-unused-deps:
     permissions:
@@ -349,43 +284,6 @@ jobs:
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
-
-  hardfork-e2e:
-    permissions:
-      contents: read
-    name: Hardfork E2E
-    needs:
-      - run
-      - hardfork
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: hardfork-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-
-  ledger-rollback-e2e:
-    permissions:
-      contents: read
-    name: Ledger Rollback E2E
-    needs: run
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      # TODO UNSHIELDED: Hard-fork capability broken after latest `ledger-5.0.0` release
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   with:
-      #     just-command: ledger-rollback-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     upgrader-image: ghcr.io/midnight-ntwrk/midnight-hardfork-test-upgrader:${{ needs.hardfork.outputs.hardfork_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-      - name: 💤 Dummy step to bypass real test
-        run: echo "Skipping test — dummy command"
 
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
