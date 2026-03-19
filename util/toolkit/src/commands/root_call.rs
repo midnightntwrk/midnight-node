@@ -266,8 +266,15 @@ async fn execute_governance_call(
 	log::info!("Motion hash: 0x{}", hex::encode(motion_hash.0));
 
 	log::info!("Closing federated motion to execute call with Root origin...");
-	let close_motion_call =
-		dynamic::tx("FederatedAuthority", "motion_close", vec![Value::from_bytes(&motion_hash.0)]);
+	let proposal_weight_bound = Value::named_composite(vec![
+		("ref_time", Value::u128(1_000_000_000_000)),
+		("proof_size", Value::u128(1_000_000)),
+	]);
+	let close_motion_call = dynamic::tx(
+		"FederatedAuthority",
+		"motion_close",
+		vec![Value::from_bytes(&motion_hash.0), proposal_weight_bound],
+	);
 
 	// Anyone can close the motion, use first council member
 	api.tx()

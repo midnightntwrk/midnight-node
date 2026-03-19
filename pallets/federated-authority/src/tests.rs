@@ -16,6 +16,7 @@ use alloc::boxed::Box;
 use frame_support::{
 	BoundedBTreeSet, assert_noop, assert_ok,
 	dispatch::{DispatchErrorWithPostInfo, Pays, PostDispatchInfo},
+	weights::Weight,
 };
 use pallet_collective::Proposals;
 use sp_core::H256;
@@ -353,7 +354,11 @@ fn motion_close_dispatches_when_approved() {
 		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
 
 		// Now can close the approved motion
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(1),
+			motion_hash,
+			Weight::MAX,
+		));
 
 		assert!(Motions::<Test>::get(motion_hash).is_none());
 
@@ -379,7 +384,7 @@ fn motion_close_removes_expired_motion() {
 
 		// Cannot close before expiry (not approved and not expired)
 		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
+			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash, Weight::MAX),
 			DispatchErrorWithPostInfo {
 				post_info: PostDispatchInfo {
 					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_still_ongoing()),
@@ -393,7 +398,11 @@ fn motion_close_removes_expired_motion() {
 		run_to_block(1 + MOTION_DURATION);
 
 		// Now can close the expired motion
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(1),
+			motion_hash,
+			Weight::MAX,
+		));
 
 		assert!(Motions::<Test>::get(motion_hash).is_none());
 
@@ -424,7 +433,7 @@ fn motion_close_fails_if_not_approved_and_not_expired() {
 		run_to_block(10);
 
 		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
+			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash, Weight::MAX),
 			DispatchErrorWithPostInfo {
 				post_info: PostDispatchInfo {
 					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_still_ongoing()),
@@ -443,7 +452,7 @@ fn motion_close_fails_if_motion_not_found() {
 		let motion_hash = H256::from([1u8; 32]);
 
 		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash),
+			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash, Weight::MAX),
 			DispatchErrorWithPostInfo {
 				post_info: PostDispatchInfo {
 					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_not_found()),
@@ -456,6 +465,34 @@ fn motion_close_fails_if_motion_not_found() {
 }
 
 #[test]
+fn motion_close_fails_if_weight_bound_too_low() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		let call = create_remark_call(vec![1, 2, 3]);
+		let motion_hash = get_motion_hash(&call);
+
+		// Both Council and TechnicalCommittee approve (unanimous = 2/2)
+		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
+		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
+
+		// Try to close with a weight bound that is too low
+		assert_noop!(
+			FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash, Weight::zero(),),
+			DispatchErrorWithPostInfo {
+				post_info: PostDispatchInfo {
+					actual_weight: Some(<Test as Config>::WeightInfo::motion_close_still_ongoing()),
+					pays_fee: Pays::No
+				},
+				error: Error::<Test>::MotionWeightBoundTooLow.into()
+			}
+		);
+
+		// Verify the motion was NOT removed (it should still exist)
+		assert!(Motions::<Test>::get(motion_hash).is_some());
+	});
+}
+
+#[test]
 fn motion_close_fails_from_unsigned_origin() {
 	new_test_ext().execute_with(|| {
 		System::set_block_number(1);
@@ -463,7 +500,7 @@ fn motion_close_fails_from_unsigned_origin() {
 
 		// Fails for an unsigned origin
 		assert_noop!(
-			FederatedAuthority::motion_close(RuntimeOrigin::none(), motion_hash),
+			FederatedAuthority::motion_close(RuntimeOrigin::none(), motion_hash, Weight::MAX),
 			sp_runtime::DispatchError::BadOrigin
 		);
 	});
@@ -560,7 +597,11 @@ fn motion_revoke_fails_after_motion_ended() {
 		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID));
 
 		// Motion can still be closed since it's approved and ended
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(1),
+			motion_hash,
+			Weight::MAX,
+		));
 	});
 }
 
@@ -590,9 +631,21 @@ fn multiple_concurrent_motions_work() {
 		run_to_block(1 + MOTION_DURATION);
 
 		// All motions should be closeable now
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(10), motion_hash1));
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(10), motion_hash2));
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(10), motion_hash3));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(10),
+			motion_hash1,
+			Weight::MAX,
+		));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(10),
+			motion_hash2,
+			Weight::MAX,
+		));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(10),
+			motion_hash3,
+			Weight::MAX,
+		));
 
 		assert!(Motions::<Test>::get(motion_hash1).is_none());
 		assert!(Motions::<Test>::get(motion_hash2).is_none());
@@ -626,7 +679,11 @@ fn motion_dispatchs_with_root_origin() {
 		run_to_block(1 + MOTION_DURATION);
 
 		// Motion is approved, anyone can close it
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(10), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(10),
+			motion_hash,
+			Weight::MAX,
+		));
 
 		// Motion was removed even though call failed
 		assert!(Motions::<Test>::get(motion_hash).is_none());
@@ -765,7 +822,11 @@ fn complete_collective_to_federated_flow() {
 		assert!(motion.approvals.contains(&TECHNICAL_COMMITTEE_PALLET_ID)); // TechnicalCommittee
 
 		// Step 5: Any user can now close the motion to execute it with Root origin
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(100), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(100),
+			motion_hash,
+			Weight::MAX,
+		));
 
 		// Step 6: Verify the motion was executed
 		assert!(Motions::<Test>::get(motion_hash).is_none());

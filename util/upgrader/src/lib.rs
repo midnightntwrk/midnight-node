@@ -186,8 +186,15 @@ pub async fn execute_upgrade(
 
 	// Step 11: Close the federated motion to execute authorize_upgrade with Root origin
 	log::info!("Closing federated motion to execute authorize_upgrade...");
-	let close_motion_call =
-		dynamic::tx("FederatedAuthority", "motion_close", vec![Value::from_bytes(&motion_hash.0)]);
+	let proposal_weight_bound = Value::named_composite(vec![
+		("ref_time", Value::u128(1_000_000_000_000)),
+		("proof_size", Value::u128(1_000_000)),
+	]);
+	let close_motion_call = dynamic::tx(
+		"FederatedAuthority",
+		"motion_close",
+		vec![Value::from_bytes(&motion_hash.0), proposal_weight_bound],
+	);
 
 	api.tx()
 		.sign_and_submit_then_watch_default(&close_motion_call, signer)
