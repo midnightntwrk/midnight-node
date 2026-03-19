@@ -110,12 +110,11 @@ Ports: P2P 30333, RPC 9944
 
 Config presets are in `res/cfg/`:
 - `dev` - Local development (no AWS secrets required)
-- `node-dev-01` - Single node development
 - `qanet` - QA testing network
 - `preview` - Preview/staging network
 - `preprod` - Pre-production network
 
-Networks other than `dev`/`node-dev-01` require AWS access for genesis rebuilds. Contact the node team if you need help.
+Networks other than `dev` require AWS access for genesis rebuilds. Contact the node team if you need help.
 
 ## Git Workflow
 
