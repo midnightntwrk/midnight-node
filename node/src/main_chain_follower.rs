@@ -193,19 +193,35 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool =
-		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.allow_non_ssl).await?;
+	let candidates_pool = get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.allow_non_ssl)
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for candidates data source: {e}");
+			e
+		})?;
 
 	// All these pools are connections to the same database, so we can use any pool to create the index
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to initialise candidates data source: {e}");
+				e
+			})?;
 	let candidates_data_source_cached =
-		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
+		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
+			log::warn!("Failed to create candidates data source cache: {e}");
+			e
+		})?;
 
-	let sidechain_pool =
-		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
+	let sidechain_pool = get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl)
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for sidechain data source: {e}");
+			e
+		})?;
 	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
@@ -216,7 +232,12 @@ pub async fn create_cached_data_sources(
 		mc_metrics_opt.clone(),
 	);
 
-	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.allow_non_ssl).await?;
+	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.allow_non_ssl)
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for mc_hash data source: {e}");
+			e
+		})?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
 		mc_hash_pool,
 		db_sync_block_data_source_config.clone(),
@@ -226,7 +247,12 @@ pub async fn create_cached_data_sources(
 		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
 
 	let cnight_observation_pool =
-		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.allow_non_ssl).await?;
+		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to connect to database for cnight_observation data source: {e}");
+				e
+			})?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
 		midnight_metrics_opt.clone(),
@@ -235,14 +261,25 @@ pub async fn create_cached_data_sources(
 
 	let federated_authority_observation_pool =
 		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
-			.await?;
+			.await
+			.map_err(|e| {
+				log::warn!(
+					"Failed to connect to database for federated_authority_observation data source: {e}"
+				);
+				e
+			})?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
 		midnight_metrics_opt,
 		1000,
 	);
 
-	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.allow_non_ssl).await?;
+	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.allow_non_ssl)
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for bridge data source: {e}");
+			e
+		})?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
