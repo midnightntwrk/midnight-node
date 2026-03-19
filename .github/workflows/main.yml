@@ -111,8 +111,7 @@ jobs:
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
               echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
-              --NATIVEARCH=amd64
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
           else
             # We don't use --ci as we want artifacts to be saved
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
@@ -295,8 +294,7 @@ jobs:
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" \
-              --NATIVEARCH=arm64
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
           else
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
             . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
