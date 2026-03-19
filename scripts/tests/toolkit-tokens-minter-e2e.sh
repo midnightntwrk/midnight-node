@@ -33,7 +33,7 @@ local_toolkit_bin="./target/debug/midnight-node-toolkit"
 if [[ "${1-}" != "" && "${2-}" != "" ]]; then
     NODE_IMAGE="$1"
     TOOLKIT_IMAGE="$2"
-    mode="image"
+    mode="docker"
     outdir=$docker_outdir
     toolkit_js_path=$docker_toolkit_js_path
     config_file=$docker_config_file
@@ -83,7 +83,7 @@ else
 fi
 
 toolkit() {
-    if [ $mode == "image" ]; then
+    if [ $mode == "docker" ]; then
         docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
             -e RESTORE_OWNER="$(id -u):$(id -g)" \
             -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
