@@ -4,4 +4,3 @@
 Add ssl_root_cert configuration option
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1029
-
