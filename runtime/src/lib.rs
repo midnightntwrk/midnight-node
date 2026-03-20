@@ -122,7 +122,7 @@ mod currency;
 mod migrations;
 mod session_manager;
 
-use check_call_filter::GovernanceAuthorityCallFilter;
+use check_call_filter::BaseRuntimeCallFilter;
 use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
@@ -322,7 +322,7 @@ parameter_types! {
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = InsideBoth<GovernanceAuthorityCallFilter, TxPause>;
+	type BaseCallFilter = InsideBoth<BaseRuntimeCallFilter, TxPause>;
 	/// The block type for the runtime.
 	type Block = Block;
 	/// The type for storing how many extrinsics an account has signed.
