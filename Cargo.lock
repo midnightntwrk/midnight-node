@@ -7610,6 +7610,7 @@ dependencies = [
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
  "substrate-prometheus-endpoint",
+ "tempfile",
  "thiserror 1.0.69",
  "time-source",
  "tokio",
@@ -20261,7 +20262,7 @@ dependencies = [
 [[package]]
 name = "yamux"
 version = "0.12.2"
-source = "git+https://github.com/gilescope/rust-yamux?branch=yamux-v0.12#f0f3d979d57d10f776426f3504d7d15380175734"
+source = "git+https://github.com/midnightntwrk/rust-yamux?branch=yamux-v0.12.2#8ed778c706ff6fd82228f3fde29b75896f48891b"
 dependencies = [
  "futures",
  "log",
