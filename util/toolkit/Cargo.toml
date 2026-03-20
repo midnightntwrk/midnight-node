@@ -38,6 +38,7 @@ toml.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
+scale-info.workspace = true
 sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
