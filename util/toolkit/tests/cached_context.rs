@@ -31,7 +31,7 @@ fn load_genesis_source() -> SourceTransactions {
 		format!("{}/test-data/genesis/genesis_block_undeployed.mn", env!("CARGO_MANIFEST_DIR"));
 	let batches = GetTxsFromFile::load_single_or_multiple(&genesis_path)
 		.expect("failed to load genesis file");
-	let mut source = SourceTransactions::from_batches(batches.batches, true);
+	let mut source = SourceTransactions::from_batches(batches.batches, true, None);
 
 	assign_block_numbers(&mut source);
 

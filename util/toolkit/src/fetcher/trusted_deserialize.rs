@@ -184,7 +184,8 @@ mod tests {
 		let batches =
 			crate::tx_generator::source::GetTxsFromFile::load_single_or_multiple(&genesis_path)
 				.expect("failed to load genesis file");
-		let source = crate::serde_def::SourceTransactions::from_batches(batches.batches, true);
+		let source =
+			crate::serde_def::SourceTransactions::from_batches(batches.batches, true, None);
 		crate::tx_generator::builder::build_fork_aware_context(&source, &[])
 			.expect("failed to build context")
 	}
