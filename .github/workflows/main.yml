@@ -872,7 +872,6 @@ jobs:
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
       skip-scan: true
-      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node-arm64:
@@ -890,7 +889,6 @@ jobs:
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
       skip-scan: true
-      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-amd64:
@@ -908,7 +906,6 @@ jobs:
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
       skip-scan: true
-      skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-arm64:
@@ -926,5 +923,4 @@ jobs:
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
       skip-scan: true
-      skip-attestation: true
     secrets: inherit
