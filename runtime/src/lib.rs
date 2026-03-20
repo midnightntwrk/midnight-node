@@ -122,7 +122,7 @@ mod currency;
 mod migrations;
 mod session_manager;
 
-use check_call_filter::CheckCallFilter;
+use check_call_filter::GovernanceAuthorityCallFilter;
 use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
@@ -280,7 +280,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_version: 000_022_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 2,
+	transaction_version: 3,
 	system_version: 1,
 };
 
@@ -322,7 +322,7 @@ parameter_types! {
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = TxPause;
+	type BaseCallFilter = InsideBoth<GovernanceAuthorityCallFilter, TxPause>;
 	/// The block type for the runtime.
 	type Block = Block;
 	/// The type for storing how many extrinsics an account has signed.
@@ -974,7 +974,6 @@ pub type SignedExtra = (
 	frame_system::CheckEra<Runtime>,
 	frame_system::CheckNonce<Runtime>,
 	frame_system::CheckWeight<Runtime>,
-	CheckCallFilter,
 	pallet_throttle::CheckThrottle<Runtime>,
 );
 
