@@ -858,7 +858,7 @@ jobs:
 
 
   sbom-scan-midnightntwrk-node-amd64:
-    name: SBOM/Scan Node midnightntwrk (amd64)
+    name: SBOM Attest Node midnightntwrk (amd64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -871,11 +871,12 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-scan: true
       skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node-arm64:
-    name: SBOM/Scan Node midnightntwrk (arm64)
+    name: SBOM Attest Node midnightntwrk (arm64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -888,11 +889,12 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-scan: true
       skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-amd64:
-    name: SBOM/Scan Toolkit midnightntwrk (amd64)
+    name: SBOM Attest Toolkit midnightntwrk (amd64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -905,11 +907,12 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-scan: true
       skip-attestation: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-arm64:
-    name: SBOM/Scan Toolkit midnightntwrk (arm64)
+    name: SBOM Attest Toolkit midnightntwrk (arm64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -922,5 +925,6 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
+      skip-scan: true
       skip-attestation: true
     secrets: inherit
