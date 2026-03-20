@@ -12,8 +12,7 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 				| RuntimeCall::TechnicalCommittee(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
-				)
-				| RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
+				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
 		)
 	}
 }
@@ -29,16 +28,12 @@ impl Contains<RuntimeCall> for ActiveUnsignedCallFilter {
 				| RuntimeCall::Midnight(pallet_midnight::Call::send_mn_transaction { .. })
 				| RuntimeCall::SessionCommitteeManagement(
 					pallet_session_validator_management::Call::set { .. }
-				)
-				| RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers {
-					..
-				})
+				) | RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers { .. })
 				| RuntimeCall::CNightObservation(
 					pallet_cnight_observation::Call::process_tokens { .. }
-				)
-				| RuntimeCall::FederatedAuthorityObservation(
-					pallet_federated_authority_observation::Call::reset_members { .. }
-				)
+				) | RuntimeCall::FederatedAuthorityObservation(
+				pallet_federated_authority_observation::Call::reset_members { .. }
+			)
 		)
 	}
 }
