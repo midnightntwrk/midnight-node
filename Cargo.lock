@@ -7610,7 +7610,6 @@ dependencies = [
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
  "substrate-prometheus-endpoint",
- "tempfile",
  "thiserror 1.0.69",
  "time-source",
  "tokio",
