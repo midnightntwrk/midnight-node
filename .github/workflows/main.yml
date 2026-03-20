@@ -112,6 +112,8 @@ jobs:
               echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
               --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
+            . ./.envrc && earthly +extract-toolkit-artifacts \
+              --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
           else
             # We don't use --ci as we want artifacts to be saved
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
@@ -295,14 +297,12 @@ jobs:
             echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
               --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
+            . ./.envrc && earthly +extract-toolkit-artifacts \
+              --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
           else
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
             . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
           fi
-
-          # Pass IMAGE_TAG to next steps (must match definition in Earthfile):
-          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
-          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Get image digests
         id: digests
