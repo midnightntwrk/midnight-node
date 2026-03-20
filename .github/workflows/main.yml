@@ -111,8 +111,9 @@ jobs:
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
               echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" \
-              --NATIVEARCH=amd64
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
+            . ./.envrc && earthly +extract-toolkit-artifacts \
+              --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
           else
             # We don't use --ci as we want artifacts to be saved
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
@@ -295,16 +296,13 @@ jobs:
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
             . ./.envrc && earthly +extract-node-artifacts \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" \
-              --NATIVEARCH=arm64
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
+            . ./.envrc && earthly +extract-toolkit-artifacts \
+              --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
           else
             . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
             . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
           fi
-
-          # Pass IMAGE_TAG to next steps (must match definition in Earthfile):
-          IMAGE_TAG="$(cat node/Cargo.toml | grep "version =" | head -1 | awk '{print $3}' | tr -d '"')-$(git rev-parse --short=8 HEAD)"
-          printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Get image digests
         id: digests
@@ -476,9 +474,9 @@ jobs:
           # Retag all indexer images
           echo "🏷️ Retagging images..."
           INDEXER_IMAGE_TAG="via-node-${MAIN_COMMIT}"
-          docker tag "ghcr.io/midnight-ntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
-          docker tag "ghcr.io/midnight-ntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
-          docker tag "ghcr.io/midnight-ntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${INDEXER_IMAGE_TAG}"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${INDEXER_IMAGE_TAG}"
 
           # Push the new tags
           echo "📤 Pushing retagged images..."
@@ -860,7 +858,7 @@ jobs:
 
 
   sbom-scan-midnightntwrk-node-amd64:
-    name: SBOM/Scan Node midnightntwrk (amd64)
+    name: SBOM Attest Node midnightntwrk (amd64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -873,11 +871,11 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
-      skip-attestation: true
+      skip-scan: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-node-arm64:
-    name: SBOM/Scan Node midnightntwrk (arm64)
+    name: SBOM Attest Node midnightntwrk (arm64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -890,11 +888,11 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
-      skip-attestation: true
+      skip-scan: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-amd64:
-    name: SBOM/Scan Toolkit midnightntwrk (amd64)
+    name: SBOM Attest Toolkit midnightntwrk (amd64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -907,11 +905,11 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-amd64
       platform: linux/amd64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
-      skip-attestation: true
+      skip-scan: true
     secrets: inherit
 
   sbom-scan-midnightntwrk-toolkit-arm64:
-    name: SBOM/Scan Toolkit midnightntwrk (arm64)
+    name: SBOM Attest Toolkit midnightntwrk (arm64)
     needs: [publish-multi-arch, publish-amd64]
     permissions:
       contents: read
@@ -924,5 +922,5 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-arm64
       platform: linux/arm64
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}
-      skip-attestation: true
+      skip-scan: true
     secrets: inherit
