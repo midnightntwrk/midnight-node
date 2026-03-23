@@ -80,7 +80,7 @@ jobs:
           hash_type: tree
 
       - name: Install just
-        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
+        uses: taiki-e/install-action@0d865d5cc6d507df4765f1f866bfae8bab4e2a73 #v2.69.7
         with:
           tool: just
 
@@ -417,7 +417,7 @@ jobs:
           submodules: true
 
       - name: Install just
-        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
+        uses: taiki-e/install-action@0d865d5cc6d507df4765f1f866bfae8bab4e2a73 #v2.69.7
         with:
           tool: just
 
