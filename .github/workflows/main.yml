@@ -41,6 +41,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
+          submodules: true
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
@@ -263,6 +264,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
+          submodules: true
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
