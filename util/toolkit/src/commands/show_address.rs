@@ -83,7 +83,7 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
 			.expect("failed to serialize CoinPublicKey")
 			.encode_hex(),
-		verifying_key: serialize_untagged(&unshielded_wallet.verifying_key)
+		verifying_key: serialize_untagged(&unshielded_wallet.verifying_key.unwrap())
 			.expect("failed to serialize VerifyingKey")
 			.encode_hex(),
 		user_address: unshielded_wallet.user_address.0.0.encode_hex(),
