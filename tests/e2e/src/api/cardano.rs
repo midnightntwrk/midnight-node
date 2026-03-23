@@ -655,6 +655,86 @@ impl CardanoClient {
         }
     }
 
+    /// Send cNight tokens to the ICS validator address with metadata identifying
+    /// the target Midnight address. This is the Cardano-side bridge transfer.
+    pub async fn bridge_transfer(
+        &self,
+        cnight_utxo: &OgmiosUtxo,
+        payment_utxo: &OgmiosUtxo,
+        ics_address: &str,
+        amount: u64,
+        target_address_hex: &str,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let policies = self.constants.policies.clone();
+        let policy_id = policies.cnight_token_policy_id();
+        let network = Network::Custom(self.constants.cost_model.clone());
+        let payment_addr = self.address_as_bech32();
+
+        let target_address_bytes =
+            hex::decode(target_address_hex).expect("Invalid target address hex");
+        println!("lovelace at cnight_utxo: {}", cnight_utxo.value.lovelace);
+        let estimated_fee_and_required_change = 250_000 + 1_500_000;
+        let send_assets = vec![
+            Asset::new_from_str(
+                "lovelace",
+                &(cnight_utxo.value.lovelace + payment_utxo.value.lovelace
+                    - estimated_fee_and_required_change)
+                    .to_string(),
+            ),
+            Asset::new_from_str(&policy_id, &amount.to_string()),
+        ];
+
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
+            .network(network)
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(cnight_utxo.transaction.id),
+                cnight_utxo.index.into(),
+                &Self::build_asset_vector(cnight_utxo),
+                &payment_addr,
+            )
+            .tx_in(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_out(ics_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(
+                serde_json::json!({"constructor": 0, "fields": []}).to_string(),
+            ))
+            .metadata_value(
+                "6500973",
+                &serde_json::json!([hex::encode(&target_address_bytes)]).to_string(),
+            )
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_builder.tx_hex())
+            .expect("Failed to sign bridge transfer tx");
+        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
     pub fn build_asset_vector(utxo: &OgmiosUtxo) -> Vec<Asset> {
         let mut assets: Vec<Asset> = utxo
             .value

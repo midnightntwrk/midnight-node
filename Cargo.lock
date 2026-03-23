@@ -7610,6 +7610,7 @@ name = "midnight-node-e2e"
 version = "0.1.0"
 dependencies = [
  "aiken-contracts-lib",
+ "bech32 0.7.3",
  "blake2 0.10.6",
  "hex",
  "midnight-node-ledger-helpers",
@@ -7826,6 +7827,7 @@ dependencies = [
  "midnight-node-metadata",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
+ "ogmios-client",
  "parity-scale-codec",
  "postcard",
  "rand 0.8.5",
@@ -7853,6 +7855,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trycmd",
+ "whisky",
  "zstd 0.13.3",
 ]
 

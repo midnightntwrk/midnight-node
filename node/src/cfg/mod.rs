@@ -18,8 +18,8 @@ use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
 	networks::{
-		CustomNetwork, MainChainScripts, PermissionedCandidatesConfig,
-		RegisteredCandidatesAddresses, UndeployedNetwork,
+		CaradnoToMidnightBridgeConfig, CustomNetwork, MainChainScripts,
+		PermissionedCandidatesConfig, RegisteredCandidatesAddresses, UndeployedNetwork,
 	},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
@@ -230,6 +230,16 @@ impl SubstrateCli for Cfg {
 				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
 					.map_err(|e| format!("failed to parse ReserveConfig: {e}"))?;
 
+				let cardano_to_midnight_bridge_config = CaradnoToMidnightBridgeConfig {
+					initial_data_checkpoint: pc_chain_config
+						.get("bridge")
+						.and_then(|v| v.get("initial_data_checkpoint").and_then(|v| v.as_str()))
+						.ok_or(
+							"failed to find initial_data_checkpoint in pc_chain_config".to_string(),
+						)?
+						.to_owned(),
+				};
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self
 						.chain_spec_cfg
@@ -259,6 +269,7 @@ impl SubstrateCli for Cfg {
 					system_parameters_config,
 					ics_config,
 					reserve_config,
+					cardano_to_midnight_bridge_config,
 				};
 				chain_config(network)
 			},

@@ -65,8 +65,8 @@ use {
 		dust::InitialNonce,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
-			Transaction as LedgerTransaction, VerifiedTransaction,
+			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
+			SingleUpdate, Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
 	std::{
@@ -1038,6 +1038,52 @@ where
 		let events: Result<Vec<CNightGeneratesDustEvent>, LedgerApiError> =
 			events.iter().map(|e| api.tagged_deserialize(e)).collect();
 		let system_tx = SystemTransaction::CNightGeneratesDustUpdate { events: events? };
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_night_cardano_bridge_system_tx(
+		amount: u128,
+		target_address_bytes: &[u8],
+		nonce_bytes: [u8; 32],
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let target_address = api.night_address(&target_address_bytes)?;
+		let output = OutputInstructionUnshielded {
+			amount,
+			target_address,
+			nonce: Nonce(HashOutput(nonce_bytes)),
+		};
+		let system_tx = SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, vec![output]);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_night_cardano_bridge_event(
+		value: u128,
+		owner: &[u8],
+		time: u64,
+		action: u8,
+		nonce: [u8; 32],
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let event = CNightGeneratesDustEvent {
+			value,
+			owner: api.deserialize(owner)?,
+			time: Timestamp::from_secs(time),
+			action: match action {
+				0 => Ok(CNightGeneratesDustActionType::Create),
+				1 => Ok(CNightGeneratesDustActionType::Destroy),
+				_ => Err(LedgerApiError::Deserialization(
+					api::DeserializationError::CNightGeneratesDustActionType,
+				)),
+			}?,
+			nonce: InitialNonce(HashOutput(nonce)),
+		};
+		api.tagged_serialize(&event)
+	}
+
+	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let system_tx = SystemTransaction::DistributeReserve(amount);
 		api.tagged_serialize(&system_tx)
 	}
 }

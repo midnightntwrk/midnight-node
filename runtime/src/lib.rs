@@ -48,8 +48,10 @@ pub use frame_support::{
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
-use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
-use midnight_primitives::BridgeRecipient;
+use midnight_node_ledger::types::{
+	GasCost, Tx, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
+};
+use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
@@ -834,11 +836,94 @@ parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
 
+/// Storage key for the bridge transfer nonce counter (transient, reset each block).
+const BRIDGE_TRANSFER_NONCE_COUNTER_KEY: &[u8] = b":bridge_transfer_nonce_counter:";
+
+impl MidnightTokenTransferHandler {
+	/// Generate a deterministic unique nonce for a bridge transfer.
+	///
+	/// Uses the parent hash (unique per block) combined with a monotonically
+	/// increasing counter (unique within a block) to guarantee uniqueness.
+	fn generate_nonce() -> [u8; 32] {
+		let counter: u32 =
+			frame_support::storage::unhashed::get(BRIDGE_TRANSFER_NONCE_COUNTER_KEY).unwrap_or(0);
+		frame_support::storage::unhashed::put(BRIDGE_TRANSFER_NONCE_COUNTER_KEY, &(counter + 1));
+
+		let parent_hash = frame_system::Pallet::<Runtime>::parent_hash();
+		let mut data = Vec::new();
+		data.extend(b"midnight:bridge-transfer-nonce:");
+		data.extend(parent_hash.as_ref());
+		data.extend(&counter.to_le_bytes());
+		sp_core::hashing::blake2_256(&data)
+	}
+}
+
 impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
 	for MidnightTokenTransferHandler
 {
 	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-		log::debug!("Bridge token transfer received {:?}", transfer);
+		match transfer {
+			BridgeTransferV1::UserTransfer { token_amount, recipient } => {
+				let recipient_bytes = recipient.as_bytes().to_vec();
+				let nonce = Self::generate_nonce();
+
+				let serialized_tx =
+					match LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+						token_amount.into(),
+						&recipient_bytes.clone(),
+						nonce,
+					) {
+						Ok(tx) => tx,
+						Err(e) => {
+							log::error!(
+								"Failed to construct bridge user transfer system tx: {e:?}"
+							);
+							return;
+						},
+					};
+
+				match MidnightSystem::execute_system_transaction(serialized_tx) {
+					Ok(hash) => {
+						log::info!(
+							"Bridge user transfer of {token_amount} to {recipient_bytes:?} applied: {hash:?}"
+						);
+					},
+					Err(e) => {
+						log::error!(
+							"Failed to apply bridge user transfer of {token_amount}: {e:?}"
+						);
+					},
+				}
+			},
+			BridgeTransferV1::ReserveTransfer { token_amount } => {
+				let serialized_tx =
+					match LedgerApi::construct_distribute_reserve_system_tx(token_amount.into()) {
+						Ok(tx) => tx,
+						Err(e) => {
+							log::error!(
+								"Failed to construct bridge reserve transfer system tx: {e:?}"
+							);
+							return;
+						},
+					};
+
+				match MidnightSystem::execute_system_transaction(serialized_tx) {
+					Ok(hash) => {
+						log::info!("Bridge reserve transfer of {token_amount} applied: {hash:?}");
+					},
+					Err(e) => {
+						log::error!(
+							"Failed to apply bridge reserve transfer of {token_amount}: {e:?}"
+						);
+					},
+				}
+			},
+			BridgeTransferV1::InvalidTransfer { token_amount, tx_hash } => {
+				log::warn!(
+					"Discarded invalid bridge transfer of {token_amount} from transaction {tx_hash}"
+				);
+			},
+		}
 	}
 }
 

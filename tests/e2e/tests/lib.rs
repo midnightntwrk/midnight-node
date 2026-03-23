@@ -2,6 +2,7 @@ use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
+use midnight_node_ledger_helpers::UnshieldedWallet;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, MappingAdded, Registration,
@@ -586,6 +587,101 @@ async fn register_2_cardano_same_dust_address_production() {
     } else {
         panic!("Waiting DustBalanceResult::Json(..)");
     }
+}
+
+#[tokio::test]
+async fn bridge_transfer_cnight_to_midnight_address() {
+    use bech32;
+    use bech32::ToBase32;
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let midnight_client = MidnightClient::new(settings.node_client).await;
+
+    let bech32_address = cardano_client.address_as_bech32();
+    println!("New Cardano wallet created: {:?}", bech32_address);
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let unshielded_wallet = UnshieldedWallet::default(midnight_wallet_seed);
+    println!(
+        "Unshielded address: {:?}",
+        bech32::encode(
+            "mn_addr_undeployed",
+            unshielded_wallet.user_address.0.0.to_base32()
+        )
+    );
+    let unshielded_address_hex = hex::encode(unshielded_wallet.user_address.0.0);
+
+    println!(
+        "Target Midnight (unshielded) address: {}",
+        unshielded_address_hex
+    );
+
+    // Fund the wallet: one UTXO for collateral, one for minting and transfer
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+
+    // Mint cNight tokens into the wallet
+    let mint_amount = 50000;
+    let mint_tx_id = cardano_client
+        .mint_tokens(mint_amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint cNight tokens")
+        .transaction
+        .id;
+    println!(
+        "Minted {} cNight. Tx: {}",
+        mint_amount,
+        hex::encode(mint_tx_id)
+    );
+    // Find the UTXO containing the minted cNight
+    let cnight_utxo = cardano_client
+        .find_utxo_by_tx_id(&bech32_address, hex::encode(mint_tx_id))
+        .await
+        .expect("No cNight UTXO found after minting");
+    println!(
+        "Found cNight UTXO: {}#{}",
+        hex::encode(cnight_utxo.transaction.id),
+        cnight_utxo.index
+    );
+    let payment_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    // ICS validator address (dev/local testnet)
+    let ics_address = "addr_test1wp9a24gezjgwhnt6a7tdef24xnqqcdzjzyf5u3q4urs2m7qeuln0n";
+
+    // Bridge transfer: send cNight to ICS address with target Midnight address in metadata
+    let transfer_amount = 49000;
+    let bridge_tx = cardano_client
+        .bridge_transfer(
+            &cnight_utxo,
+            &payment_utxo,
+            ics_address,
+            transfer_amount,
+            &unshielded_address_hex,
+        )
+        .await
+        .expect("Bridge transfer transaction failed");
+
+    let bridge_tx_id = bridge_tx.transaction.id;
+    let bridge_tx_id_hex = hex::encode(&bridge_tx_id);
+    println!("Bridge transfer submitted. Tx: {}", bridge_tx_id_hex);
+
+    // Verify the UTXO appeared at the ICS address
+    let ics_utxo = cardano_client
+        .find_utxo_by_tx_id(ics_address, bridge_tx_id_hex.clone())
+        .await;
+    assert!(
+        ics_utxo.is_some(),
+        "Bridge transfer UTXO not found at ICS address"
+    );
+    println!("Bridge transfer UTXO confirmed at ICS address");
+
+    let _events = midnight_client
+        .subscribe_to_c2n_bridge_transfers()
+        .await
+        .expect("Failed to observe bridge transfer handler calls");
+
+    // TODO: modify bridge to emit pallet event to be observed here
+
+    //midnight_client.submit_midnight_tx(tx_bytes)
 }
 
 #[tokio::test]

@@ -16,8 +16,8 @@
 # Fail if a command fails
 set -euxo pipefail
 
-microdnf -y update
-microdnf -y install curl-minimal jq nmap-ncat util-linux
+#microdnf -y update
+#microdnf -y install curl-minimal jq nmap-ncat util-linux
 
 check_json_validity() {
   local file="$1"
@@ -37,11 +37,7 @@ echo "Using Partner Chains node version:"
 export POSTGRES_HOST="postgres"
 export POSTGRES_PORT="5432"
 export POSTGRES_USER="postgres"
-if [ ! -f postgres.password ]; then
-    uuidgen | tr -d '-' | head -c 16 > postgres.password
-fi
-POSTGRES_PASSWORD="$(cat ./postgres.password)"
-export POSTGRES_PASSWORD
+export POSTGRES_PASSWORD="password123"
 export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
@@ -63,6 +59,9 @@ echo "Generating chain-spec.json file for Midnight Nodes..."
 jq 'env as $env | . + {
   "chain_parameters": {
     "genesis_utxo": $env.GENESIS_UTXO
+  },
+  "bridge": {
+    "initial_data_checkpoint": "d3ee13bfda14d2131a8e8115413baacb21b24b210dc3b071db583c5b8d488c6a"
   },
   "cardano_addresses": {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
