@@ -1,4 +1,4 @@
 #toolkit
 # Add logs to help inspect on-chain contract state
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1058
