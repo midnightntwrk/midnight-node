@@ -23,7 +23,7 @@ pub const HRP_CREDENTIAL_UNSHIELDED: &str = "addr";
 pub const HRP_CREDENTIAL_SHIELDED: &str = "shield-addr";
 /// Encrypted Shielded Key
 pub const HRP_CREDENTIAL_SHIELDED_ESK: &str = "shield-esk";
-pub const HRP_CREDENTIAL_DUST: &str = "dust-addr";
+pub const HRP_CREDENTIAL_DUST: &str = "dust";
 
 #[derive(Debug, Clone)]
 pub struct WalletAddress {
