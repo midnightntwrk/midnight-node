@@ -219,6 +219,88 @@ fn validate_rejects_one_byte_over_limit() {
 }
 
 // ---------------------------------------------------------------------------
+// Transaction count limit tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn validate_rejects_when_tx_count_exceeded() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 1));
+
+		assert_eq!(
+			validate_signed(1, 0).unwrap_err(),
+			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+		);
+	});
+}
+
+#[test]
+fn validate_passes_at_exact_tx_count_limit() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		// One below the limit — the next validate adds 1 to reach exactly MaxTxs
+		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get() - 1, 1));
+
+		assert!(validate_signed(1, 0).is_ok());
+	});
+}
+
+#[test]
+fn validate_rejects_one_tx_over_limit() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		// Already at the limit — the next validate would exceed it
+		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 1));
+
+		assert_eq!(
+			validate_signed(1, 0).unwrap_err(),
+			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+		);
+	});
+}
+
+#[test]
+fn validate_tx_count_resets_after_window_expires() {
+	new_test_ext().execute_with(|| {
+		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 10));
+
+		// Advance past the window
+		System::set_block_number(10 + WindowSize::get() as u64);
+
+		assert!(validate_signed(1, 0).is_ok());
+	});
+}
+
+#[test]
+fn validate_tx_count_does_not_reset_before_window_expires() {
+	new_test_ext().execute_with(|| {
+		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 10));
+
+		// One block before window expires
+		System::set_block_number(10 + WindowSize::get() as u64 - 1);
+
+		assert_eq!(
+			validate_signed(1, 0).unwrap_err(),
+			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+		);
+	});
+}
+
+#[test]
+fn prepare_increments_tx_count() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+
+		validate_and_prepare(1, 0);
+		validate_and_prepare(1, 0);
+		validate_and_prepare(1, 0);
+
+		assert_eq!(AccountUsage::<Test>::get(1u64).txs_used, 3);
+	});
+}
+
+// ---------------------------------------------------------------------------
 // Unsigned/none origin tests
 // ---------------------------------------------------------------------------
 
