@@ -35,9 +35,12 @@ pub struct SpecificAddressTypeArgs {
 	/// CoinPublic only
 	#[arg(long)]
 	coin_public: bool,
-	/// CoinPublic untagged only
+	/// CoinPublic tagged only
 	#[arg(long)]
 	coin_public_tagged: bool,
+	/// Verifying key only
+	#[arg(long)]
+	unshielded_verifying_key_untagged: bool,
 	/// Unshielded User Address only (use for contract interations)
 	#[arg(long)]
 	unshielded_user_address_untagged: bool,
@@ -52,6 +55,7 @@ pub struct Addresses {
 	dust_public: String,
 	coin_public: String,
 	coin_public_tagged: String,
+	unshielded_verifying_key_untagged: String,
 	unshielded_user_address_untagged: String,
 }
 
@@ -75,6 +79,9 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
 			.expect("failed to serialize CoinPublicKey")
 			.encode_hex(),
+		unshielded_verifying_key_untagged: serialize_untagged(&unshielded_wallet.verifying_key)
+			.expect("failed to serialize VerifyingKey")
+			.encode_hex(),
 		unshielded_user_address_untagged: unshielded_wallet.user_address.0.0.encode_hex(),
 	};
 
@@ -91,6 +98,8 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		ShowAddress::SingleAddress(all.coin_public)
 	} else if args.specific_address.coin_public_tagged {
 		ShowAddress::SingleAddress(all.coin_public_tagged)
+	} else if args.specific_address.unshielded_verifying_key_untagged {
+		ShowAddress::SingleAddress(all.unshielded_verifying_key_untagged)
 	} else if args.specific_address.unshielded_user_address_untagged {
 		ShowAddress::SingleAddress(all.unshielded_user_address_untagged)
 	} else {
