@@ -13,6 +13,24 @@ type ProofMarker = ledger_helpers_local::ProofMarker;
 type Transaction =
 	ledger_helpers_local::Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
 
+pub fn deserialize_raw_transaction(
+	raw: &RawTransaction,
+) -> Result<(String, usize, [u8; 32]), Box<dyn std::error::Error + Send + Sync>> {
+	let size = raw.as_bytes().len();
+	match raw {
+		RawTransaction::Midnight(tx_bytes) => {
+			let tx: Transaction = deserialize(tx_bytes.as_slice())?;
+			let hash = tx.transaction_hash().0.0;
+			Ok((format!("{tx:#?}"), size, hash))
+		},
+		RawTransaction::System(tx_bytes) => {
+			let tx: SystemTransaction = deserialize(tx_bytes.as_slice())?;
+			let hash = tx.transaction_hash().0.0;
+			Ok((format!("{tx:#?}"), size, hash))
+		},
+	}
+}
+
 pub fn show_transactions(
 	built_txs: &SerializedTxBatches,
 ) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {

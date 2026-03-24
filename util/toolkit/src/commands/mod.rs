@@ -23,6 +23,7 @@ pub mod root_call;
 pub mod runtime_upgrade;
 pub mod send_intent;
 pub mod show_address;
+pub mod show_block;
 pub mod show_ledger_parameters;
 pub mod show_seed;
 pub mod show_token_type;
