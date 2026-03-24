@@ -45,10 +45,7 @@ const KEY_TYPES = [
 type KeyTypeId = (typeof KEY_TYPES)[number]["id"];
 type KeyScheme = (typeof KEY_TYPES)[number]["scheme"];
 
-// Exceptions for networks such as node-dev-01, which are running with qanet keys
-const CHAIN_ID_OVERRIDE: Record<string, string> = {
-  "node-dev-01": "qanet",
-};
+const CHAIN_ID_OVERRIDE: Record<string, string> = {};
 
 interface NamespaceKeystoreOptions {
   namespace: string;

@@ -273,7 +273,6 @@ The tool presents available networks:
 - `qanet`
 - `devnet`
 - `govnet`
-- `node-dev-01`
 - `preview`
 
 ### Step 2: Provide Configuration
@@ -358,10 +357,9 @@ Available networks:
 1) qanet
 2) devnet
 3) govnet
-4) node-dev-01
-5) preview
+4) preview
 
-Select network (1-5): 1
+Select network (1-4): 1
 ✓ Selected network: qanet
 
 ▶ Configuration

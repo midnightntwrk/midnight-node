@@ -56,7 +56,7 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 		resolver: &Resolver,
 		cost_model: &CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
-		println!("Ensuring zswap key material is available...");
+		log::info!("Ensuring zswap key material is available...");
 		{
 			let ks =
 				futures::future::join_all((10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)));

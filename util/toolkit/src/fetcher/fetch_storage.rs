@@ -11,53 +11,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use std::{collections::HashMap, future::Future, sync::Arc};
 use subxt::utils::H256;
 use tokio::sync::Mutex;
 
-use super::{MidnightBlock, wallet_state_cache::WalletStateCache};
+use super::MidnightBlock;
+use super::wallet_state_cache::{CachedWalletState, LedgerSnapshot};
 
+pub mod file_backend;
 pub mod postgres_backend;
 pub mod redb_backend;
 
-// Re-export for convenience
-pub use super::wallet_state_cache::{WalletCacheKey, WalletStateCache as WalletCache};
-
-/// Trait for wallet state caching operations.
+/// Trait for per-wallet state caching operations.
 ///
-/// This is a simpler trait without the complex type bounds of `FetchStorage`,
-/// making it easier to use in contexts where only wallet caching is needed.
+/// Separates ledger snapshots (one per block height, ~49MB) from individual
+/// wallet state (~5-15KB), eliminating redundant storage when multiple wallets
+/// share the same chain state.
+#[async_trait]
 pub trait WalletStateCaching: Send + Sync {
-	/// Retrieve cached wallet state for the given chain and wallet.
-	fn get_wallet_state(
+	/// Retrieve a ledger snapshot at a specific block height.
+	async fn get_ledger_snapshot(
 		&self,
 		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = Option<WalletStateCache>> + Send;
+		block_height: u64,
+	) -> Option<LedgerSnapshot>;
 
-	/// Store wallet state cache.
-	fn set_wallet_state(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-		cache: WalletStateCache,
-	) -> impl Future<Output = ()> + Send;
+	/// Store a ledger snapshot.
+	async fn set_ledger_snapshot(&self, chain_id: H256, snapshot: LedgerSnapshot);
 
-	/// Get the cached block height for a chain/wallet pair.
-	fn get_cached_block_height(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = Option<u64>> + Send;
+	/// Get the latest (highest) ledger snapshot height for a chain.
+	async fn get_latest_ledger_height(&self, chain_id: H256) -> Option<u64>;
 
-	/// Delete cached wallet state.
-	fn delete_wallet_state(
+	/// Batch-retrieve wallet states by seed hash. Returns `None` for uncached wallets.
+	/// Implementors must keep the ordering in return value
+	/// seed_hashes.len() == result.len()
+	async fn get_wallet_states(
 		&self,
 		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = ()> + Send;
+		seed_hashes: &[H256],
+	) -> Vec<Option<CachedWalletState>>;
+
+	/// Batch-store wallet states.
+	async fn set_wallet_states(&self, chain_id: H256, wallets: &[CachedWalletState]);
+
+	/// Delete wallet states by seed hash.
+	async fn delete_wallet_states(&self, chain_id: H256, seed_hashes: &[H256]);
+
+	/// Remove ledger snapshots not referenced by any wallet cache entry.
+	/// Keeps only snapshots at the specified heights.
+	async fn gc_ledger_snapshots(&self, chain_id: H256, keep_heights: &[u64]);
+
+	/// Return all distinct block heights referenced by cached wallets for a chain.
+	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64>;
 }
 
 #[derive(Clone)]
@@ -67,13 +75,10 @@ pub struct FetchedBlock {
 	pub state: Option<Vec<u8>>,
 }
 
-/// Storage backend for fetched block data and wallet state caching.
+/// Storage backend for fetched block data.
 ///
 /// Provides methods to store and retrieve [`RawBlockData`] by chain ID and block number,
 /// as well as tracking the highest verified block per chain.
-///
-/// Also provides methods for wallet state caching to enable fast session restoration
-/// without replaying all transactions from genesis.
 pub trait FetchStorage: Send + Sync {
 	// =========================================================================
 	// Block data methods
@@ -129,74 +134,12 @@ pub trait FetchStorage: Send + Sync {
 		chain_id: H256,
 		height: u64,
 	) -> impl Future<Output = ()> + Send;
-
-	// =========================================================================
-	// Wallet state caching methods
-	// =========================================================================
-
-	/// Retrieve cached wallet state for the given chain and wallet.
-	fn get_wallet_state(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = Option<WalletStateCache>> + Send {
-		async move {
-			let _ = (chain_id, wallet_id);
-			None
-		}
-	}
-
-	/// Store wallet state cache.
-	fn set_wallet_state(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-		cache: WalletStateCache,
-	) -> impl Future<Output = ()> + Send {
-		async move {
-			let _ = (chain_id, wallet_id, cache);
-		}
-	}
-
-	/// Get the cached block height for a chain/wallet pair.
-	fn get_cached_block_height(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = Option<u64>> + Send {
-		async move {
-			let _ = (chain_id, wallet_id);
-			None
-		}
-	}
-
-	/// Delete cached wallet state.
-	fn delete_wallet_state(
-		&self,
-		chain_id: H256,
-		wallet_id: H256,
-	) -> impl Future<Output = ()> + Send {
-		async move {
-			let _ = (chain_id, wallet_id);
-		}
-	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct InMemory {
 	highest_verified: Arc<Mutex<HashMap<H256, u64>>>,
 	blocks: Arc<Mutex<HashMap<Vec<u8>, RawBlockData>>>,
-	wallet_cache: Arc<Mutex<HashMap<WalletCacheKey, WalletStateCache>>>,
-}
-
-impl Default for InMemory {
-	fn default() -> Self {
-		Self {
-			highest_verified: Arc::new(Mutex::new(HashMap::new())),
-			blocks: Arc::new(Mutex::new(HashMap::new())),
-			wallet_cache: Arc::new(Mutex::new(HashMap::new())),
-		}
-	}
 }
 
 impl InMemory {
@@ -246,44 +189,5 @@ impl FetchStorage for InMemory {
 
 	async fn set_highest_verified_block(&self, chain_id: H256, height: u64) {
 		self.highest_verified.lock().await.insert(chain_id, height);
-	}
-
-	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		self.wallet_cache.lock().await.get(&key).cloned()
-	}
-
-	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		self.wallet_cache.lock().await.insert(key, cache);
-	}
-
-	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		self.wallet_cache.lock().await.get(&key).map(|c| c.block_height)
-	}
-
-	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
-		let key = WalletCacheKey::new(chain_id, wallet_id);
-		self.wallet_cache.lock().await.remove(&key);
-	}
-}
-
-// Implement WalletStateCaching for InMemory (delegates to FetchStorage impl)
-impl WalletStateCaching for InMemory {
-	async fn get_wallet_state(&self, chain_id: H256, wallet_id: H256) -> Option<WalletStateCache> {
-		<Self as FetchStorage>::get_wallet_state(self, chain_id, wallet_id).await
-	}
-
-	async fn set_wallet_state(&self, chain_id: H256, wallet_id: H256, cache: WalletStateCache) {
-		<Self as FetchStorage>::set_wallet_state(self, chain_id, wallet_id, cache).await
-	}
-
-	async fn get_cached_block_height(&self, chain_id: H256, wallet_id: H256) -> Option<u64> {
-		<Self as FetchStorage>::get_cached_block_height(self, chain_id, wallet_id).await
-	}
-
-	async fn delete_wallet_state(&self, chain_id: H256, wallet_id: H256) {
-		<Self as FetchStorage>::delete_wallet_state(self, chain_id, wallet_id).await
 	}
 }

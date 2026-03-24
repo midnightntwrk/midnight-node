@@ -31,4 +31,4 @@ serde_json.workspace = true
 hex.workspace = true
 thiserror.workspace = true
 whisky = { git = "https://github.com/rsporny/whisky", branch = "wasm-bindgen-update" }
-ogmios-client = { git = "https://github.com/input-output-hk/partner-chains", tag = "v1.8.1" }
+ogmios-client = { git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }

@@ -15,6 +15,90 @@
 
 set -euxo pipefail
 
+# Function to start cardano-node and wait for the socket to be available
+start_node() {
+  echo "Current time is now: $(date +"%H:%M:%S.%3N"). Starting node..."
+
+  cardano-node run \
+    --topology /shared/node-1-topology.json \
+    --database-path /data/db \
+    --socket-path /data/node.socket \
+    --host-addr 0.0.0.0 \
+    --port 32000 \
+    --config /shared/node-1-config.json \
+    --shelley-kes-key /keys/kes.skey \
+    --shelley-vrf-key /keys/vrf.skey \
+    --shelley-operational-certificate /keys/node.cert \
+    > /data/node.log 2>&1 &
+  NODE_PID=$!
+
+  set +x
+  echo "Waiting for node.socket..."
+
+  for i in {1..60}; do
+    if [ -S /data/node.socket ]; then
+      echo "Node socket is available."
+      break
+    fi
+
+    if ! kill -0 $NODE_PID 2>/dev/null; then
+      echo "cardano-node process has exited unexpectedly. Dumping logs:"
+      cat /data/node.log
+      exit 1
+    fi
+
+    sleep 1
+  done
+
+  if [ ! -S /data/node.socket ]; then
+    echo "Timed out waiting for /data/node.socket"
+    cat /data/node.log
+    exit 1
+  fi
+
+  set -x
+}
+
+# Regenerate config files from base templates.
+# Copies genesis files, recomputes their hashes, and substitutes them into config files.
+# This allows config/genesis changes to be picked up on restart without a full re-init.
+regenerate_configs() {
+  cp /shared/conway/genesis.conway.json.base /shared/conway/genesis.conway.json
+  cp /shared/shelley/genesis.alonzo.json.base /shared/shelley/genesis.alonzo.json
+
+  byron_hash=$(/bin/cardano-cli byron genesis print-genesis-hash --genesis-json /shared/byron/genesis.json)
+  shelley_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.json)
+  alonzo_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.alonzo.json)
+  conway_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/conway/genesis.conway.json)
+
+  echo "Genesis hashes: byron=$byron_hash shelley=$shelley_hash alonzo=$alonzo_hash conway=$conway_hash"
+
+  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
+  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
+  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
+  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
+  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
+  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
+  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
+  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
+}
+
+# If /shared/cardano.ready exists from a previous run, skip prep work and just start the node.
+# This is useful for testing cardano-node image upgrades without re-running genesis setup.
+if [ -f /shared/cardano.ready ]; then
+  echo "/shared/cardano.ready found. Skipping prep work, starting node with existing config..."
+  chmod 600 /keys/*
+  rm -f /data/node.socket
+
+  # Regenerate config files from base templates, recomputing genesis hashes
+  regenerate_configs
+
+  start_node
+  echo "Cardano node restarted with existing chain data."
+  wait
+  exit 0
+fi
+
 chmod 600 /keys/*
 chmod +x /busybox
 chmod 777 /shared
@@ -55,27 +139,7 @@ mc_slot_length=$(extract_value "slotLength")
 mc_security_param=$(extract_value "securityParam")
 mc_active_slots_coeff=$(extract_value "activeSlotsCoeff")
 
-cp /shared/conway/genesis.conway.json.base /shared/conway/genesis.conway.json
-cp /shared/shelley/genesis.alonzo.json.base /shared/shelley/genesis.alonzo.json
-echo "Created /shared/conway/genesis.conway.json and /shared/shelley/genesis.alonzo.json"
-
-byron_hash=$(/bin/cardano-cli byron genesis print-genesis-hash --genesis-json /shared/byron/genesis.json)
-shelley_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.json)
-alonzo_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.alonzo.json)
-conway_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/conway/genesis.conway.json)
-
-/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
-/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
-/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
-/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
-/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
-/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
-/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
-/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
-
-echo "Updated ByronGenesisHash value in config files to: $byron_hash"
-echo "Updated ShelleyGenesisHash value in config files to: $shelley_hash"
-echo "Updated ConwayGenesisHash value in config files to: $conway_hash"
+regenerate_configs
 
 MC_ENV_FILE="/tmp/mc.env"
 touch "$MC_ENV_FILE"
@@ -111,44 +175,7 @@ cp "$MC_ENV_FILE" /shared/mc.env
 cp "$MC_ENV_FILE" /runtime-values/mc.env
 echo "Created /shared/mc.env with mainchain env-vars"
 
-echo "Current time is now: $(date +"%H:%M:%S.%3N"). Starting node..."
-
-cardano-node run \
-  --topology /shared/node-1-topology.json \
-  --database-path /data/db \
-  --socket-path /data/node.socket \
-  --host-addr 0.0.0.0 \
-  --port 32000 \
-  --config /shared/node-1-config.json \
-  --shelley-kes-key /keys/kes.skey \
-  --shelley-vrf-key /keys/vrf.skey \
-  --shelley-operational-certificate /keys/node.cert \
-  > /data/node.log 2>&1 &
-NODE_PID=$!
-
-set +x
-echo "Waiting for node.socket..."
-
-for i in {1..60}; do
-  if [ -S /data/node.socket ]; then
-    echo "Node socket is available."
-    break
-  fi
-
-  if ! kill -0 $NODE_PID 2>/dev/null; then
-    echo "cardano-node process has exited unexpectedly. Dumping logs:"
-    cat /data/node.log
-    exit 1
-  fi
-
-  sleep 1
-done
-
-if [ ! -S /data/node.socket ]; then
-  echo "Timed out waiting for /data/node.socket"
-  cat /data/node.log
-  exit 1
-fi
+start_node
 
 # Wait for genesis time to arrive and node to be ready before submitting transactions
 target_time=$(cat /shared/cardano.start)
@@ -186,7 +213,7 @@ echo "Genesis address: $genesis_address"
 # Retry loop for genesis UTXO query (node needs time to process genesis)
 for i in {1..30}; do
   echo "Querying genesis UTXO (attempt $i/30)..."
-  cardano-cli latest query utxo --testnet-magic 42 --address "${genesis_address}" > /tmp/genesis_utxo.txt
+  cardano-cli latest query utxo --output-text --testnet-magic 42 --address "${genesis_address}" > /tmp/genesis_utxo.txt
   
   # Check if we got any UTXOs (more than just header lines)
   utxo_count=$(cat /tmp/genesis_utxo.txt | /busybox awk 'NR>2 { count++ } END { print count+0 }')

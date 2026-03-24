@@ -372,7 +372,25 @@ impl ToolkitJs {
 	fn execute_js(&self, args: &[&str]) -> Result<(), ToolkitJsError> {
 		let cmd = PathBuf::from(&self.path).join(BUILD_DIST).to_string_lossy().to_string();
 		log::info!("Executing {cmd}...");
-		log::debug!("Executing {cmd} with arguments: {args:?}...");
+		if log::log_enabled!(log::Level::Debug) {
+			let redacted_args: Vec<&str> = {
+				let mut result = Vec::with_capacity(args.len());
+				let mut redact_next = false;
+				for &arg in args {
+					if redact_next {
+						result.push("[REDACTED]");
+						redact_next = false;
+					} else if arg == "--signing" {
+						result.push(arg);
+						redact_next = true;
+					} else {
+						result.push(arg);
+					}
+				}
+				result
+			};
+			log::debug!("Executing {cmd} with arguments: {redacted_args:?}...");
+		}
 
 		let output = std::process::Command::new(cmd)
 			.current_dir(&self.path)

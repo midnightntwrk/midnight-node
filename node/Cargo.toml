@@ -151,6 +151,8 @@ sp-transaction-pool.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+yamux = "0.13"
+tokio-util = { version = "0.7", features = ["compat"] }
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true

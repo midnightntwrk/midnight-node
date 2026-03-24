@@ -266,7 +266,6 @@ pub type CrossChainPublic = opaque::cross_chain_app::Public;
 
 // To learn more about runtime versioning, see:
 // https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
-#[cfg(all(not(hardfork_test), not(hardfork_test_rollback)))]
 #[allow(clippy::zero_prefixed_literal)]
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
@@ -279,41 +278,6 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
 	spec_version: 000_022_000,
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 2,
-	system_version: 1,
-};
-
-#[cfg(hardfork_test)]
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
-	//   the compatible custom types.
-	spec_version: 100_006_004,
-
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 2,
-	system_version: 1,
-};
-
-#[cfg(hardfork_test_rollback)]
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	spec_version: 100_006_002,
-
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
