@@ -235,3 +235,31 @@ pub async fn execute(
 	};
 	Ok(value)
 }
+
+#[cfg(test)]
+mod test {
+	use crate::{
+		commands::show_block::{ShowBlockArgs, ShowBlockValue},
+		tx_generator::source::FetchCacheConfig,
+	};
+
+	#[tokio::test]
+	async fn test_show_block_from_file() {
+		let result = super::execute(ShowBlockArgs {
+			src_file: Some("../../res/test-tx-deserialize/serialized_tx.mn".to_string()),
+			block_number: None,
+			json: true,
+			src_url: "".to_string(),
+			fetch_cache: FetchCacheConfig::InMemory,
+			fetch_only_cached: false,
+			dry_run: false,
+		})
+		.await
+		.unwrap();
+
+		let ShowBlockValue::Json(value) = result else {
+			panic!("result is not json");
+		};
+		assert!(!value.is_empty());
+	}
+}
