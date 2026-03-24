@@ -16,6 +16,7 @@ pub mod contract_state;
 pub mod dust_balance;
 pub mod fetch;
 pub mod generate_genesis;
+pub mod generate_intent;
 pub mod generate_sample_intent;
 pub mod generate_txs;
 pub mod random_address;
@@ -32,5 +33,5 @@ pub mod show_viewing_key;
 pub mod show_wallet;
 pub mod update_ledger_parameters;
 
+pub mod common;
 pub mod fork;
-pub mod generate_intent;

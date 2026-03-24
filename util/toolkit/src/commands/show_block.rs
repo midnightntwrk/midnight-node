@@ -11,16 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use core::fmt::Display;
+
 use crate::{
 	cli_parsers as cli,
 	client::MidnightNodeClient,
 	fetcher::{self, fetch_storage},
 	tx_generator::source::{FetchCacheConfig, GetTxsFromFile},
+	utils::format_timestamp_utc,
 };
 use clap::Args;
-use midnight_node_ledger_helpers::fork::raw_block_data::{
-	LedgerVersion, RawBlockData, RawTransaction, SerializedTxBatches,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
+use serde::{Deserialize, Serialize};
 
 #[derive(Args)]
 pub struct ShowBlockArgs {
@@ -52,173 +54,131 @@ pub struct ShowBlockArgs {
 	dry_run: bool,
 }
 
-struct DeserializedTx {
-	index: usize,
-	tx_type: &'static str,
-	size_bytes: usize,
-	hash: [u8; 32],
-	debug_str: String,
+#[derive(Debug)]
+pub enum ShowBlockValue {
+	Human(Vec<ShowBlockJson>),
+	Json(Vec<ShowBlockJson>),
+	DryRun(()),
 }
 
-fn deserialize_transactions(
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShowBlockJson {
+	pub number: u64,
+	#[serde(with = "hex")]
+	pub hash: [u8; 32],
+	#[serde(with = "hex")]
+	pub parent_hash: [u8; 32],
+	pub ledger_version: LedgerVersion,
+	pub timestamp_secs: u64,
+	pub timestamp_utc: String,
+	pub timestamp_err_secs: u32,
+	pub last_block_time_secs: u64,
+	#[serde(with = "hex")]
+	pub state_root: Vec<u8>,
+	pub transactions: Vec<ShowBlockTransaction>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ShowBlockTransaction {
+	pub index: usize,
+	pub tx_type: String,
+	pub size_bytes: usize,
+	#[serde(with = "hex")]
+	pub hash: [u8; 32],
+	pub debug_str: String,
+}
+
+impl ShowBlockJson {
+	pub fn new(raw_block: &RawBlockData) -> Result<Self, std::io::Error> {
+		let transactions = deserialize_transactions(raw_block)?;
+		Ok(Self {
+			number: raw_block.number,
+			hash: raw_block.hash,
+			parent_hash: raw_block.parent_hash,
+			ledger_version: raw_block.ledger_version,
+			timestamp_secs: raw_block.tblock_secs,
+			timestamp_utc: format_timestamp_utc(raw_block.tblock_secs),
+			timestamp_err_secs: raw_block.tblock_err,
+			last_block_time_secs: raw_block.last_block_time_secs,
+			state_root: raw_block.state_root.as_ref().cloned().unwrap_or(Vec::new()),
+			transactions,
+		})
+	}
+}
+
+impl Display for ShowBlockJson {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		writeln!(f, "Block #{}", self.number)?;
+		writeln!(f, "  Hash:            0x{}", hex::encode(self.hash))?;
+		writeln!(f, "  Parent Hash:     0x{}", hex::encode(self.parent_hash))?;
+		writeln!(f, "  Ledger Version:  {:?}", self.ledger_version)?;
+		writeln!(
+			f,
+			"  Timestamp:       {} ({}, err: {}s)",
+			self.timestamp_secs, self.timestamp_secs, self.timestamp_utc
+		)?;
+		writeln!(f, "  Parent Block Timestamp:       {}", self.last_block_time_secs,)?;
+		writeln!(f, "  State Root:      0x{}", hex::encode(&self.state_root))?;
+		writeln!(f, "  Transactions:    {}", self.transactions.len())?;
+
+		for tx in &self.transactions {
+			writeln!(f,)?;
+			writeln!(f, "{}", tx)?;
+		}
+		Ok(())
+	}
+}
+
+impl Display for ShowBlockTransaction {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		writeln!(
+			f,
+			"  [{}] {} ({} bytes) hash: 0x{}",
+			self.index,
+			self.tx_type,
+			self.size_bytes,
+			hex::encode(self.hash)
+		)?;
+		for line in self.debug_str.lines() {
+			writeln!(f, "    {line}")?;
+		}
+		Ok(())
+	}
+}
+
+pub fn deserialize_transactions(
 	block: &RawBlockData,
-) -> Result<Vec<DeserializedTx>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<ShowBlockTransaction>, std::io::Error> {
 	block
 		.transactions
 		.iter()
 		.enumerate()
-		.map(|(i, raw)| {
-			let (debug_str, size, hash) = match block.ledger_version {
-				LedgerVersion::Ledger8 => {
-					crate::commands::fork::ledger_8::show_transaction::deserialize_raw_transaction(
-						raw,
-					)?
-				},
-				LedgerVersion::Ledger7 => {
-					crate::commands::fork::ledger_7::show_transaction::deserialize_raw_transaction(
-						raw,
-					)?
-				},
-			};
-			let tx_type = match raw {
-				RawTransaction::Midnight(_) => "Midnight",
-				RawTransaction::System(_) => "System",
-			};
-			Ok(DeserializedTx { index: i, tx_type, size_bytes: size, hash, debug_str })
+		.map(|(i, raw)| match block.ledger_version {
+			LedgerVersion::Ledger8 => {
+				use crate::commands::fork::ledger_8::show_transaction::ShowTransaction;
+				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
+				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
+			},
+			LedgerVersion::Ledger7 => {
+				use crate::commands::fork::ledger_7::show_transaction::ShowTransaction;
+				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
+				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
+			},
 		})
 		.collect()
-}
-
-fn format_timestamp_utc(epoch_secs: u64) -> String {
-	const SECS_PER_DAY: u64 = 86400;
-	let days = epoch_secs / SECS_PER_DAY;
-	let day_secs = epoch_secs % SECS_PER_DAY;
-	let h = day_secs / 3600;
-	let m = (day_secs % 3600) / 60;
-	let s = day_secs % 60;
-
-	// Civil date from days since 1970-01-01 (algorithm from Howard Hinnant)
-	let z = days as i64 + 719468;
-	let era = z.div_euclid(146097);
-	let doe = z.rem_euclid(146097) as u64;
-	let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-	let y = yoe as i64 + era * 400;
-	let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-	let mp = (5 * doy + 2) / 153;
-	let d = doy - (153 * mp + 2) / 5 + 1;
-	let mo = if mp < 10 { mp + 3 } else { mp - 9 };
-	let y = if mo <= 2 { y + 1 } else { y };
-
-	format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
-}
-
-fn print_human_readable(block: &RawBlockData, txs: &[DeserializedTx]) {
-	println!("Block #{}", block.number);
-	println!("  Hash:            0x{}", hex::encode(block.hash));
-	println!("  Parent Hash:     0x{}", hex::encode(block.parent_hash));
-	println!("  Ledger Version:  {:?}", block.ledger_version);
-	println!(
-		"  Timestamp:       {} ({}, err: {}s)",
-		block.tblock_secs,
-		format_timestamp_utc(block.tblock_secs),
-		block.tblock_err
-	);
-	if let Some(ref sr) = block.state_root {
-		println!("  State Root:      0x{}", hex::encode(sr));
-	}
-	println!("  Transactions:    {}", block.transactions.len());
-
-	for tx in txs {
-		println!();
-		println!(
-			"  [{}] {} ({} bytes) hash: 0x{}",
-			tx.index,
-			tx.tx_type,
-			tx.size_bytes,
-			hex::encode(tx.hash)
-		);
-		for line in tx.debug_str.lines() {
-			println!("    {line}");
-		}
-	}
-}
-
-fn to_json(block: &RawBlockData, txs: &[DeserializedTx]) -> serde_json::Value {
-	let tx_values: Vec<serde_json::Value> = txs
-		.iter()
-		.map(|tx| {
-			serde_json::json!({
-				"index": tx.index,
-				"type": tx.tx_type,
-				"size_bytes": tx.size_bytes,
-				"hash": format!("0x{}", hex::encode(tx.hash)),
-				"deserialized": tx.debug_str,
-			})
-		})
-		.collect();
-
-	serde_json::json!({
-		"number": block.number,
-		"hash": format!("0x{}", hex::encode(block.hash)),
-		"parent_hash": format!("0x{}", hex::encode(block.parent_hash)),
-		"ledger_version": format!("{:?}", block.ledger_version),
-		"timestamp_secs": block.tblock_secs,
-		"timestamp_utc": format_timestamp_utc(block.tblock_secs),
-		"timestamp_err_secs": block.tblock_err,
-		"state_root": block.state_root.as_ref().map(|sr| format!("0x{}", hex::encode(sr))),
-		"transactions": tx_values,
-	})
 }
 
 fn blocks_from_file(
 	path: &str,
 ) -> Result<Vec<RawBlockData>, Box<dyn std::error::Error + Send + Sync>> {
 	let batches = GetTxsFromFile::load_single_or_multiple(path)?;
-	let mut blocks = Vec::new();
-	let mut ledger_version = LedgerVersion::default();
-
-	for batch in batches.batches {
-		let context = SerializedTxBatches::get_context(&batch)?;
-		let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
-
-		if let Some((_, v)) = transactions
-			.iter()
-			.filter_map(|tx| {
-				midnight_node_ledger_helpers::fork::network_id_and_ledger_version_from_tx_bytes(
-					tx.as_bytes(),
-				)
-				.ok()
-			})
-			.next()
-		{
-			ledger_version = v;
-		}
-
-		blocks.push(RawBlockData::new_from_timestamp(
-			context.tblock.to_secs(),
-			ledger_version,
-			transactions,
-		));
-	}
-
+	let blocks: Vec<RawBlockData> = (&batches).try_into()?;
 	Ok(blocks)
 }
 
-fn display_block(
-	block: &RawBlockData,
-	json: bool,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let txs = deserialize_transactions(block)?;
-	if json {
-		let json = to_json(block, &txs);
-		println!("{}", serde_json::to_string_pretty(&json)?);
-	} else {
-		print_human_readable(block, &txs);
-	}
-	Ok(())
-}
-
-pub async fn execute(args: ShowBlockArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn execute(
+	args: ShowBlockArgs,
+) -> Result<ShowBlockValue, Box<dyn std::error::Error + Send + Sync>> {
 	if args.dry_run {
 		if let Some(ref src_file) = args.src_file {
 			log::info!("Dry-run: show-block from file {:?}", src_file);
@@ -229,16 +189,20 @@ pub async fn execute(args: ShowBlockArgs) -> Result<(), Box<dyn std::error::Erro
 			log::info!("Dry-run: fetch only cached: {}", args.fetch_only_cached);
 		}
 		log::info!("Dry-run: json output: {}", args.json);
-		return Ok(());
+		return Ok(ShowBlockValue::DryRun(()));
 	}
 
 	// Fetch from file
 	if let Some(ref src_file) = args.src_file {
 		let blocks = blocks_from_file(src_file)?;
-		for block in &blocks {
-			display_block(block, args.json)?;
-		}
-		return Ok(());
+		let values_res: Result<Vec<ShowBlockJson>, _> =
+			blocks.iter().map(ShowBlockJson::new).collect();
+		let value = if args.json {
+			ShowBlockValue::Json(values_res?)
+		} else {
+			ShowBlockValue::Human(values_res?)
+		};
+		return Ok(value);
 	}
 
 	// Fetch from RPC
@@ -263,5 +227,11 @@ pub async fn execute(args: ShowBlockArgs) -> Result<(), Box<dyn std::error::Erro
 		},
 	};
 
-	display_block(&block, args.json)
+	let block = ShowBlockJson::new(&block)?;
+	let value = if args.json {
+		ShowBlockValue::Json(vec![block])
+	} else {
+		ShowBlockValue::Human(vec![block])
+	};
+	Ok(value)
 }

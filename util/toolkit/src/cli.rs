@@ -11,9 +11,8 @@ use crate::commands::{
 	root_call::{self, RootCallArgs},
 	runtime_upgrade::{self, RuntimeUpgradeArgs},
 	send_intent::{self, SendIntentArgs},
-	show_address::ShowAddress,
-	show_address::{self, ShowAddressArgs},
-	show_block::{self, ShowBlockArgs},
+	show_address::{self, ShowAddress, ShowAddressArgs},
+	show_block::{self, ShowBlockArgs, ShowBlockValue},
 	show_ledger_parameters::{self, ShowLedgerParametersArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
@@ -193,7 +192,21 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			println!("{viewing_key}");
 			Ok(())
 		},
-		Commands::ShowBlock(args) => show_block::execute(args).await,
+		Commands::ShowBlock(args) => {
+			let result = show_block::execute(args).await?;
+			match result {
+				ShowBlockValue::Json(json) => {
+					println!("{}", serde_json::to_string_pretty(&json)?);
+				},
+				ShowBlockValue::Human(value) => {
+					for block in value {
+						println!("{}", block);
+					}
+				},
+				ShowBlockValue::DryRun(()) => (),
+			};
+			Ok(())
+		},
 		Commands::ShowTransaction(args) => {
 			let transaction_information = show_transaction::execute(args)?;
 
