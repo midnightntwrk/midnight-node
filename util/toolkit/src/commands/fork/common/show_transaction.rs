@@ -1,8 +1,4 @@
-use std::io::Write as _;
-
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
-
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
 use serde::{Deserialize, Serialize};
 
 use super::ledger_helpers_local::{
@@ -51,39 +47,4 @@ impl TryFrom<&RawTransaction> for ShowTransaction {
 			},
 		}
 	}
-}
-
-pub fn show_transactions(
-	built_txs: &SerializedTxBatches,
-) -> Result<Vec<ShowTransaction>, std::io::Error> {
-	built_txs
-		.batches
-		.iter()
-		.flatten()
-		.map(|tx| ShowTransaction::try_from(&tx.tx))
-		.collect()
-}
-
-pub fn show_transaction(
-	serialized_tx: &SerializedTx,
-) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
-	let mut out_str = Vec::new();
-
-	writeln!(&mut out_str, "{{")?;
-	writeln!(&mut out_str, "hash: {}", hex::encode(serialized_tx.tx_hash))?;
-	writeln!(&mut out_str, "context: {:#?}", serialized_tx.context)?;
-	match &serialized_tx.tx {
-		RawTransaction::Midnight(tx) => {
-			let tx: Transaction = deserialize(tx.as_slice())?;
-			writeln!(&mut out_str, "{tx:#?}")?;
-		},
-		RawTransaction::System(tx) => {
-			let tx: SystemTransaction = deserialize(tx.as_slice())?;
-			writeln!(&mut out_str, "{tx:#?}")?;
-		},
-	}
-
-	writeln!(&mut out_str, "}}")?;
-	let size = serialized_tx.tx_byte_len();
-	Ok((String::from_utf8_lossy(&out_str).to_string(), size))
 }
