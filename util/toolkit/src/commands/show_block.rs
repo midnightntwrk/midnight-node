@@ -15,18 +15,21 @@ use crate::{
 	cli_parsers as cli,
 	client::MidnightNodeClient,
 	fetcher::{self, fetch_storage},
-	tx_generator::source::FetchCacheConfig,
+	tx_generator::source::{FetchCacheConfig, GetTxsFromFile},
 };
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::{
-	LedgerVersion, RawBlockData, RawTransaction,
+	LedgerVersion, RawBlockData, RawTransaction, SerializedTxBatches,
 };
 
 #[derive(Args)]
 pub struct ShowBlockArgs {
-	/// Block number to inspect
-	#[arg(short, long)]
-	block_number: u64,
+	/// Block number to inspect (from node/cache)
+	#[arg(short, long, required_unless_present = "src_file")]
+	block_number: Option<u64>,
+	/// Load block data from a file (e.g. genesis .mn file)
+	#[arg(long, conflicts_with_all = ["block_number", "src_url", "fetch_cache", "fetch_only_cached"])]
+	src_file: Option<String>,
 	/// Output as JSON
 	#[arg(long)]
 	json: bool,
@@ -167,16 +170,79 @@ fn to_json(block: &RawBlockData, txs: &[DeserializedTx]) -> serde_json::Value {
 	})
 }
 
+fn blocks_from_file(
+	path: &str,
+) -> Result<Vec<RawBlockData>, Box<dyn std::error::Error + Send + Sync>> {
+	let batches = GetTxsFromFile::load_single_or_multiple(path)?;
+	let mut blocks = Vec::new();
+	let mut ledger_version = LedgerVersion::default();
+
+	for batch in batches.batches {
+		let context = SerializedTxBatches::get_context(&batch)?;
+		let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
+
+		if let Some((_, v)) = transactions
+			.iter()
+			.filter_map(|tx| {
+				midnight_node_ledger_helpers::fork::network_id_and_ledger_version_from_tx_bytes(
+					tx.as_bytes(),
+				)
+				.ok()
+			})
+			.next()
+		{
+			ledger_version = v;
+		}
+
+		blocks.push(RawBlockData::new_from_timestamp(
+			context.tblock.to_secs(),
+			ledger_version,
+			transactions,
+		));
+	}
+
+	Ok(blocks)
+}
+
+fn display_block(
+	block: &RawBlockData,
+	json: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let txs = deserialize_transactions(block)?;
+	if json {
+		let json = to_json(block, &txs);
+		println!("{}", serde_json::to_string_pretty(&json)?);
+	} else {
+		print_human_readable(block, &txs);
+	}
+	Ok(())
+}
+
 pub async fn execute(args: ShowBlockArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	if args.dry_run {
-		log::info!("Dry-run: show-block #{}", args.block_number);
-		log::info!("Dry-run: source url: {:?}", args.src_url);
-		log::info!("Dry-run: fetch cache: {:?}", args.fetch_cache);
-		log::info!("Dry-run: fetch only cached: {}", args.fetch_only_cached);
+		if let Some(ref src_file) = args.src_file {
+			log::info!("Dry-run: show-block from file {:?}", src_file);
+		} else {
+			log::info!("Dry-run: show-block #{}", args.block_number.unwrap());
+			log::info!("Dry-run: source url: {:?}", args.src_url);
+			log::info!("Dry-run: fetch cache: {:?}", args.fetch_cache);
+			log::info!("Dry-run: fetch only cached: {}", args.fetch_only_cached);
+		}
 		log::info!("Dry-run: json output: {}", args.json);
 		return Ok(());
 	}
 
+	// Fetch from file
+	if let Some(ref src_file) = args.src_file {
+		let blocks = blocks_from_file(src_file)?;
+		for block in &blocks {
+			display_block(block, args.json)?;
+		}
+		return Ok(());
+	}
+
+	// Fetch from RPC
+	let block_number = args.block_number.unwrap();
 	let client = MidnightNodeClient::new(&args.src_url, None).await?;
 	let chain_id = client.get_block_one_hash().await?;
 
@@ -185,26 +251,17 @@ pub async fn execute(args: ShowBlockArgs) -> Result<(), Box<dyn std::error::Erro
 	let block = match &args.fetch_cache {
 		FetchCacheConfig::InMemory => {
 			let storage = fetch_storage::InMemory::default();
-			fetcher::fetch_single_block(chain_id, args.block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
 		},
 		FetchCacheConfig::Redb { filename } => {
 			let storage = fetch_storage::redb_backend::RedbBackend::new(filename);
-			fetcher::fetch_single_block(chain_id, args.block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
 		},
 		FetchCacheConfig::Postgres { database_url } => {
 			let storage = fetch_storage::postgres_backend::PostgresBackend::new(database_url).await;
-			fetcher::fetch_single_block(chain_id, args.block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
 		},
 	};
 
-	let txs = deserialize_transactions(&block)?;
-
-	if args.json {
-		let json = to_json(&block, &txs);
-		println!("{}", serde_json::to_string_pretty(&json)?);
-	} else {
-		print_human_readable(&block, &txs);
-	}
-
-	Ok(())
+	display_block(&block, args.json)
 }

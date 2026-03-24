@@ -564,7 +564,15 @@ $ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --blo
 Use `--json` for machine-readable output, or `--fetch-only-cached` to skip the node and read only from cache:
 
 ```console
-$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1 --json --fetch-only-cached 
+$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1 --json --fetch-only-cached
+...
+
+```
+
+Use `--src-file` to inspect a genesis or serialized block file without a running node:
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-file res/genesis/genesis_block_undeployed.mn
 ...
 
 ```
