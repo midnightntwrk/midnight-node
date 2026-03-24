@@ -41,15 +41,8 @@ struct Workspace {
 	dependencies: HashMap<String, DependencyValue>,
 }
 
-#[cfg(not(hardfork_test))]
 pub fn find_dependency_version(crate_name: &str) -> Option<String> {
 	do_find_dependency_version(crate_name.to_owned())
-}
-
-#[cfg(hardfork_test)]
-pub fn find_dependency_version(crate_name: &str) -> Option<String> {
-	let crate_name = format!("{}-hf", crate_name);
-	do_find_dependency_version(crate_name)
 }
 
 fn do_find_dependency_version(crate_name: String) -> Option<String> {

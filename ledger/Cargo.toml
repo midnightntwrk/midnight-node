@@ -20,14 +20,6 @@ onchain-runtime-ledger-8 = { workspace = true, optional = true }
 ledger-storage-ledger-8 = { workspace = true, optional = true }
 zswap-ledger-8 = { workspace = true, optional = true }
 
-mn-ledger-hf = { workspace = true, features = ["proving"], optional = true }
-base-crypto-hf = { workspace = true, optional = true }
-coin-structure-hf = { workspace = true, optional = true }
-onchain-runtime-hf = { workspace = true, optional = true }
-midnight-serialize-hf = { workspace = true, optional = true }
-ledger-storage-hf = { workspace = true, optional = true }
-transient-crypto-hf = { workspace = true, optional = true }
-zswap-hf = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
@@ -81,14 +73,6 @@ std = [
     "midnight-storage-core",
     "transient-crypto",
     "zswap",
-    "mn-ledger-hf",
-    "base-crypto-hf",
-    "coin-structure-hf",
-    "onchain-runtime-hf",
-    "midnight-serialize-hf",
-    "ledger-storage-hf",
-    "transient-crypto-hf",
-    "zswap-hf",
     "mn-ledger-8",
     "onchain-runtime-ledger-8",
     "ledger-storage-ledger-8",

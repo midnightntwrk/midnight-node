@@ -90,5 +90,9 @@ dist
 # Toolkit cache
 toolkit.db
 
+# toolkit artifacts
+/out/
+util/toolkit-js/result.json
+
 # AGENTS.local.md - locally-defined rules for AI agents
 AGENTS.local.md

@@ -878,6 +878,10 @@ where
 				ctx.block_context.tblock,
 			)
 			.map_err(|e| {
+				log::warn!(
+					target: LOG_TARGET,
+					"Transaction malformed: {e}",
+				);
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
 			})?;
 
