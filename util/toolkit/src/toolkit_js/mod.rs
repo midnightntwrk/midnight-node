@@ -356,7 +356,7 @@ impl ToolkitJs {
 			_ => None,
 		};
 		if let Some(ref new_authority) = new_authority {
-			cmd_args.extend_from_slice(&["--new-authority", new_authority])
+			cmd_args.push(new_authority)
 		}
 		if let MaintainCommand::Circuit(args) = &command {
 			cmd_args.push(&args.circuit_id);
