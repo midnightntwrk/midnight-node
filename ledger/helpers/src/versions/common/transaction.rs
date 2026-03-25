@@ -123,7 +123,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 	pub fn add_intent(&mut self, segment_id: SegmentId, intent: Box<dyn BuildIntent<D>>) {
 		if self.intents.insert(segment_id, intent).is_some() {
-			println!("WARN: value of segment_id({segment_id}) has been replaced.");
+			log::warn!("value of segment_id({segment_id}) has been replaced");
 		};
 	}
 
@@ -395,7 +395,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 		for (segment_id, intent_info) in self.intents.iter_mut() {
 			let intent =
 				intent_info.build(&mut self.rng, ttl, self.context.clone(), *segment_id).await;
-			println!("Serializing intent...");
+			log::debug!("Serializing intent...");
 
 			let serialized_intent = serialize(&intent).map_err(|e| {
 				// Clean up any files written so far
@@ -418,7 +418,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 				return Err(format!("failed to write intent file {complete_file_name}: {e}").into());
 			}
 
-			println!("Saved {complete_file_name}");
+			log::info!("Saved {complete_file_name}");
 			saved_files.push(complete_file_name);
 		}
 
