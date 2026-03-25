@@ -13,7 +13,7 @@
 
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
-use crate::db::{MultiAssetCache, get_deregistrations, get_registrations};
+use crate::db::{MultiAssetCache, QueryBounds, get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
@@ -158,8 +158,26 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
 		drop(_block_timer);
+
+		let (low_bounds, high_bounds) = tokio::try_join!(
+			async {
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
+				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+			},
+			async {
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
+				crate::db::get_high_bounds(&self.pool, end.block_number.into())
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+			},
+			)?;
+		let low_bounds = low_bounds.expect("Start position contains block hash that exists in database");
+		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
+		log::warn!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
 		// The "capacity" argument is capacity in terms of TRANSACTIONS,
 		// but the various sql queries below want a capacity in terms of UTXOs.
@@ -182,6 +200,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 						&end,
 						utxo_capacity,
 						0,
+						low_bounds,
+						high_bounds,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -197,6 +217,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					&end,
 					utxo_capacity,
 					0,
+					low_bounds,
+					high_bounds,
 				)
 				.await
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
@@ -211,6 +233,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 						&end,
 						utxo_capacity,
 						0,
+						low_bounds,
+						high_bounds,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -227,6 +251,8 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 						&end,
 						utxo_capacity,
 						0,
+						low_bounds,
+						high_bounds,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -336,10 +362,21 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
+		low_bounds: QueryBounds,
+		high_bounds: QueryBounds,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			get_registrations(&self.pool, address, auth_token_ident, start, end, limit, offset)
-				.await?;
+		let rows = get_registrations(
+			&self.pool,
+			address,
+			auth_token_ident,
+			start,
+			end,
+			limit,
+			offset,
+			low_bounds,
+			high_bounds,
+		)
+		.await?;
 
 		let mut utxos = Vec::new();
 
@@ -394,8 +431,20 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
+		low_bounds: QueryBounds,
+		high_bounds: QueryBounds,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_deregistrations(&self.pool, address, start, end, limit, offset).await?;
+		let rows = get_deregistrations(
+			&self.pool,
+			address,
+			start,
+			end,
+			limit,
+			offset,
+			low_bounds,
+			high_bounds,
+		)
+		.await?;
 
 		let mut utxos = Vec::new();
 
@@ -451,9 +500,20 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
+		low_bounds: QueryBounds,
+		high_bounds: QueryBounds,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			crate::db::get_asset_creates(&self.pool, ident, start, end, limit, offset).await?;
+		let rows = crate::db::get_asset_creates(
+			&self.pool,
+			ident,
+			start,
+			end,
+			limit,
+			offset,
+			low_bounds,
+			high_bounds,
+		)
+		.await?;
 
 		let mut utxos = Vec::new();
 
@@ -513,9 +573,20 @@ impl MidnightCNightObservationDataSourceImpl {
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
+		low_bounds: QueryBounds,
+		high_bounds: QueryBounds,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			crate::db::get_asset_spends(&self.pool, ident, start, end, limit, offset).await?;
+		let rows = crate::db::get_asset_spends(
+			&self.pool,
+			ident,
+			start,
+			end,
+			limit,
+			offset,
+			low_bounds,
+			high_bounds,
+		)
+		.await?;
 
 		let mut utxos = Vec::new();
 

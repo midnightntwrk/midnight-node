@@ -145,3 +145,13 @@ pub struct GovernanceBodyUtxoRow {
 	pub tx_hash: DbTxHash,
 	pub utxo_index: DbUtxoIndexInTx,
 }
+
+/// Encapsulates ids of three big tables.
+/// Used to filter out most of the tables before joining them.
+/// db_sync id types are 'bigint' which have bound like 'i64'
+#[derive(Debug, Clone, Copy, sqlx::FromRow)]
+pub struct QueryBounds {
+	pub tx_id: i64,
+	pub tx_out_id: i64,
+	pub ma_tx_out_id: i64,
+}
