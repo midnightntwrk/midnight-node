@@ -21,6 +21,7 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
+use midnight_node_ledger::rpc::query_contract_state;
 use pallet_midnight::MidnightRuntimeApi;
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sp_api::{ApiExt, ProvideRuntimeApi};
@@ -29,6 +30,11 @@ use sp_runtime::traits::Block as BlockT;
 use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
+/// TODO: Consider making this a CLI argument so RPC providers can customize it.
+pub const MAX_STATE_QUERIES: usize = 100;
+/// TODO: Re-use a constant from midnight-ledger once there is a depth limit
+/// for nested `StateValue`.
+pub const MAX_PATH_DEPTH: usize = 16;
 
 /// Midnight core RPC API.
 ///
@@ -72,6 +78,21 @@ pub trait MidnightApi<BlockHash> {
 	/// If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
+
+	/// Queries specific fields from a deployed contract's state tree.
+	///
+	/// Each query is a path of hex-encoded serialized `AlignedValue` keys that
+	/// navigates the state tree. Each key is interpreted based on the current
+	/// node type: array index, map key, or merkle tree position.
+	///
+	/// If `at` is `None`, the best block is used.
+	#[method(name = "midnight_queryContractState")]
+	fn query_contract_state(
+		&self,
+		contract_address: String,
+		queries: Vec<RpcStateQuery>,
+		at: Option<BlockHash>,
+	) -> Result<Vec<RpcStateQueryResult>, StateRpcError>;
 }
 
 #[derive(Debug)]
@@ -82,6 +103,11 @@ pub enum StateRpcError {
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
 	UnableToGetLedgerStateRoot,
+	UnableToQueryContractState,
+	TooManyQueries { max: usize, got: usize },
+	PathTooDeep(usize),
+	BadQueryKey(String),
+	QueryContractStateNotSupported,
 }
 
 #[derive(Debug)]
@@ -147,6 +173,21 @@ impl Display for StateRpcError {
 			StateRpcError::UnableToGetLedgerStateRoot => {
 				write!(f, "Unable to get requested ledger state root")
 			},
+			StateRpcError::UnableToQueryContractState => {
+				write!(f, "Unable to query contract state")
+			},
+			StateRpcError::TooManyQueries { max, got } => {
+				write!(f, "Too many queries: got {got}, maximum is {max}")
+			},
+			StateRpcError::PathTooDeep(got) => {
+				write!(f, "Path too deep: {got} steps exceeds the maximum of {MAX_PATH_DEPTH}")
+			},
+			StateRpcError::BadQueryKey(key) => {
+				write!(f, "Unable to hex decode query key: {key}")
+			},
+			StateRpcError::QueryContractStateNotSupported => {
+				write!(f, "query_contract_state is not supported by the runtime at this block")
+			},
 		}
 	}
 }
@@ -193,6 +234,21 @@ impl From<StateRpcError> for ErrorObjectOwned {
 	fn from(value: StateRpcError) -> Self {
 		ErrorObject::owned(INVALID_PARAMS_CODE, value.to_string(), None::<()>)
 	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcStateQuery {
+	/// Each element is a hex-encoded serialized `AlignedValue`.
+	pub path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcStateQueryResult {
+	pub query: RpcStateQuery,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub value: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub error: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -360,5 +416,73 @@ where
 			.map_err(|_e| BlockRpcError::BlockNotFound)?;
 
 		Ok(String::from_utf8_lossy(&ledger_version).to_string())
+	}
+
+	fn query_contract_state(
+		&self,
+		contract_address: String,
+		queries: Vec<RpcStateQuery>,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<Vec<RpcStateQueryResult>, StateRpcError> {
+		if queries.len() > MAX_STATE_QUERIES {
+			return Err(StateRpcError::TooManyQueries {
+				max: MAX_STATE_QUERIES,
+				got: queries.len(),
+			});
+		}
+		let dehexed_address = hex::decode(&contract_address)
+			.map_err(|_| StateRpcError::BadContractAddress(contract_address))?;
+
+		// Hex-decode each path step and enforce depth bound
+		let paths: Vec<Vec<Vec<u8>>> = queries
+			.iter()
+			.map(|q| {
+				if q.path.len() > MAX_PATH_DEPTH {
+					return Err(StateRpcError::PathTooDeep(q.path.len()));
+				}
+				q.path
+					.iter()
+					.map(|hex_step| hex::decode(hex_step).map_err(|_| StateRpcError::BadQueryKey(hex_step.clone())))
+					.collect::<Result<Vec<_>, _>>()
+			})
+			.collect::<Result<Vec<_>, StateRpcError>>()?;
+
+		let api = self.client.runtime_api();
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let api_version = get_api_version::<C, Block>(&api, at)
+			.map_err(|_| StateRpcError::UnableToQueryContractState)?;
+		if api_version < 6 {
+			return Err(StateRpcError::QueryContractStateNotSupported);
+		}
+
+		// Read the state key via the runtime API, then call the bridge directly.
+		// This avoids going through WASM for each query — the bridge navigates
+		// the contract state lazily in ParityDB (O(log n) per query).
+		let state_key = api
+			.get_state_key(at)
+			.map_err(|_| StateRpcError::UnableToQueryContractState)?;
+
+		let results = query_contract_state(&state_key, &dehexed_address, &paths)
+			.map_err(|_| StateRpcError::UnableToQueryContractState)?;
+
+		Ok(results
+			.into_iter()
+			.zip(queries.iter())
+			.map(|(result, query)| {
+				match result {
+					Ok(value) => RpcStateQueryResult {
+						query: query.clone(),
+						value: value.map(hex::encode),
+						error: None,
+					},
+					Err(msg) => RpcStateQueryResult {
+						query: query.clone(),
+						value: None,
+						error: Some(msg),
+					},
+				}
+			})
+			.collect())
 	}
 }

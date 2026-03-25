@@ -18,8 +18,9 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use scale_info::prelude::string::String;
 
 sp_api::decl_runtime_apis! {
-	#[api_version(5)]
+	#[api_version(6)]
 	pub trait MidnightRuntimeApi {
+		fn get_state_key() -> Vec<u8>;
 		#[changed_in(2)]
 		fn get_contract_state(contract_address: Vec<u8>) -> Vec<u8>;
 		fn get_contract_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError>;

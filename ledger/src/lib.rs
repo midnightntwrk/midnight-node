@@ -96,6 +96,27 @@ pub mod types {
 	pub use super::latest::types as active_version;
 }
 
+/// Direct bridge calls for use by the RPC layer.
+/// These bypass the host function / WASM boundary and call the bridge natively.
+#[cfg(feature = "std")]
+pub mod rpc {
+	use super::*;
+
+	/// Query specific fields in a contract's state tree.
+	///
+	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
+	pub fn query_contract_state(
+		state_key: &[u8],
+		contract_address: &[u8],
+		paths: &[Vec<Vec<u8>>],
+	) -> Result<Vec<Result<Option<Vec<u8>>, String>>, types::active_version::LedgerApiError> {
+		use latest::{Bridge, ledger_storage_local};
+		type Signature = base_crypto::signatures::Signature;
+		type Database = ledger_storage_local::db::ParityDb;
+		Bridge::<Signature, Database>::query_contract_state(state_key, contract_address, paths)
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use frame_support::assert_ok;

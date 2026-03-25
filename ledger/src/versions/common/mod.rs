@@ -679,6 +679,28 @@ where
 		Self::do_get_contract_state(&api, state_key, contract_address, f)
 	}
 
+	/// Query specific fields in a contract's state tree.
+	///
+	/// Returns one result per path, in the same order as the input.
+	pub fn query_contract_state(
+		state_key: &[u8],
+		contract_address: &[u8],
+		paths: &[Vec<Vec<u8>>],
+	) -> Result<Vec<Result<Option<Vec<u8>>, String>>, LedgerApiError> {
+		let api = api::new();
+		let addr = api.deserialize::<ContractAddress>(contract_address)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		// TODO: Use a dedicated ContractNotPresent error once PR #916 is merged.
+		// https://github.com/midnightntwrk/midnight-node/pull/916
+		let contract_state = ledger
+			.get_contract_state(addr)
+			.ok_or(LedgerApiError::NoLedgerState)?;
+
+		let root = contract_state.data.get_ref().clone();
+		Ok(paths.iter().map(|path| resolve_state_path(&root, path)).collect())
+	}
+
 	pub fn get_zswap_chain_state(
 		state_key: &[u8],
 		contract_address: &[u8],
@@ -1099,6 +1121,72 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	.expect("Hard-coded array should not be empty");
 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
+}
+
+/// Navigate a contract's state tree along a single path and return the
+/// serialized leaf value.
+///
+/// Each element in `path` is a serialized `AlignedValue` key, interpreted
+/// based on the current `StateValue` variant (array index, map key, or
+/// merkle tree position), mirroring the VM's `idx` instruction.
+///
+/// O(log n) — only the nodes along the path are loaded from storage.
+///
+/// TODO: This could be simplified by moving the key deserialization, navigation,
+/// and leaf serialization logic to `midnight-ledger` (onchain-state) where
+/// it belongs.
+#[cfg(feature = "std")]
+fn resolve_state_path<D: DB>(
+	root: &onchain_runtime_local::state::StateValue<D>,
+	path: &[Vec<u8>],
+) -> Result<Option<Vec<u8>>, String> {
+	use base_crypto_local::fab::{AlignedValue, Value};
+	use onchain_runtime_local::state::StateValue;
+
+	let mut current = root.clone();
+	for key_bytes in path {
+		let key: AlignedValue = midnight_serialize_local::Deserializable::deserialize(
+			&mut key_bytes.as_slice(), 0,
+		).map_err(|e| format!("failed to deserialize key: {e}"))?;
+
+		current = match &current {
+			StateValue::Array(arr) => {
+				let i: u8 = (&**AsRef::<Value>::as_ref(&key)).try_into()
+					.map_err(|e| format!("invalid array index: {e}"))?;
+				arr.get(i as usize).cloned()
+					.ok_or_else(|| format!("array index {i} out of bounds"))?
+			}
+			StateValue::Map(map) => match map.get(&key) {
+				Some(sp) => (*sp).clone(),
+				None => return Ok(None),
+			},
+			StateValue::BoundedMerkleTree(tree) => {
+				let pos: u64 = (&**AsRef::<Value>::as_ref(&key)).try_into()
+					.map_err(|e| format!("invalid merkle tree position: {e}"))?;
+				let max_leaves = 1u64 << tree.height() as u64;
+				if pos >= max_leaves {
+					return Err(format!("tree position {pos} out of range (max {max_leaves})"));
+				}
+				match tree.index(pos) {
+					Some((hash, ())) => StateValue::Cell(
+						ledger_storage_local::arena::Sp::new(hash.into()),
+					),
+					None => return Ok(None),
+				}
+			}
+			_ => return Err("only array, map, and merkle tree can be indexed".into()),
+		};
+	}
+
+	if matches!(&current, StateValue::Map(_) | StateValue::BoundedMerkleTree(_)) {
+		return Err("path resolves to a collection; provide a deeper path".into());
+	}
+
+	let size = midnight_serialize_local::tagged_serialized_size(&current);
+	let mut buf = Vec::with_capacity(size);
+	midnight_serialize_local::tagged_serialize(&current, &mut buf)
+		.map_err(|e| format!("failed to serialize result: {e}"))?;
+	Ok(Some(buf))
 }
 
 #[cfg(test)]
