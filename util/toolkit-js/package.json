@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@midnight-ntwrk/node-toolkit-v7": "^0.1.0",
-    "@midnight-ntwrk/node-toolkit-v8": "^0.1.0"
+    "@midnight-ntwrk/node-toolkit-v8": "^0.1.0",
+    "effect": "^3.21.0"
   },
   "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "4.0.2",
