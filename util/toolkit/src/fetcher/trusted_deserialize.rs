@@ -27,16 +27,45 @@
 
 use midnight_node_ledger_helpers::{
 	DefaultDB, Sp, Storable,
-	mn_ledger_serialize::{Deserializable, GLOBAL_TAG, Tagged},
+	mn_ledger_serialize::{Deserializable, GLOBAL_TAG, Serializable, Tagged},
 	mn_ledger_storage::{
 		arena::{ArenaHash, ArenaKey, TopoSortedNodes},
 		db::DB,
-		storable::Loader,
+		storable::{Loader, SMALL_OBJECT_LIMIT},
 		storage::default_storage,
 	},
 };
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io};
+
+/// Reimplements `child_from` from `midnight-storage-core/storable.rs`.
+///
+/// Must stay in sync with upstream's `child_from` + `is_in_small_object_limit`.
+fn child_from_reimpl(data: &[u8], children: &[ArenaKey<Sha256>]) -> ArenaKey<Sha256> {
+	let mut size = 2 + data.len();
+	// Max 16 children, so this is O(1)
+	for child in children {
+		size += child.serialized_size();
+		if size > SMALL_OBJECT_LIMIT {
+			return ArenaKey::Ref(compute_hash(data, children.iter().map(|k| k.hash())));
+		}
+	}
+	if size > SMALL_OBJECT_LIMIT {
+		return ArenaKey::Ref(compute_hash(data, children.iter().map(|k| k.hash())));
+	}
+
+	// `DirectChildNode::new` is `pub(crate)`, so we construct via its
+	// `Deserializable` impl (which calls `new` internally).
+	let mut buf = Vec::new();
+	data.to_vec().serialize(&mut buf).expect("serialize data for DirectChildNode");
+	children
+		.to_vec()
+		.serialize(&mut buf)
+		.expect("serialize children for DirectChildNode");
+	ArenaKey::Direct(
+		Deserializable::deserialize(&mut buf.as_slice(), 0).expect("deserialize DirectChildNode"),
+	)
+}
 
 /// Reimplements the `pub(crate) hash()` from `midnight-storage-core/arena.rs`.
 ///
@@ -134,32 +163,39 @@ pub fn trusted_deserialize_tagged<T: Storable<DefaultDB> + Deserializable + Tagg
 	let nodes: TopoSortedNodes = Deserializable::deserialize(&mut reader, 0)?;
 	log::debug!("Trusted deserialize: parsed {} nodes in {:?}", nodes.nodes.len(), start.elapsed());
 
-	// Step 3: Single-pass bottom-up hash computation + node_map construction.
+	// Step 3: Single-pass bottom-up ArenaKey computation + node_map construction.
 	// TopoSortedNodes are ordered so children precede parents, meaning we can
-	// compute all hashes in one forward pass.
-	let mut node_hashes: Vec<ArenaHash<Sha256>> = Vec::with_capacity(nodes.nodes.len());
+	// resolve all keys in one forward pass (mirrors IrLoader's key_to_child_repr).
+	//
+	// TODO: Remove the workaround described below after we start using fixed ledger
+	// (PR: https://github.com/midnightntwrk/midnight-ledger/pull/230)
+	// Each child key uses the correct ArenaKey variant (Direct vs Ref) matching
+	// what `child_from` in midnight-storage-core would produce. This is critical:
+	// `serialize_to_node_list_bounded` uses ArenaKey (not ArenaHash) as a map key
+	// for incoming_vertices. If the same logical node appears as both Ref(h) and
+	// Direct(d) with d.hash == h, the topological sort panics.
+	let mut node_repr: Vec<ArenaKey<Sha256>> = Vec::with_capacity(nodes.nodes.len());
 	let mut node_map: HashMap<ArenaHash<Sha256>, (Vec<u8>, Vec<ArenaKey<Sha256>>)> =
 		HashMap::with_capacity(nodes.nodes.len());
 
 	for node in &nodes.nodes {
-		let child_keys: Vec<ArenaKey<Sha256>> = node
-			.child_indices
-			.iter()
-			.map(|&i| ArenaKey::Ref(node_hashes[i as usize].clone()))
-			.collect();
+		let child_keys: Vec<ArenaKey<Sha256>> =
+			node.child_indices.iter().map(|&i| node_repr[i as usize].clone()).collect();
 
-		let hash = compute_hash(&node.data, child_keys.iter().map(|k| k.hash()));
-		node_map.insert(hash.clone(), (node.data.clone(), child_keys));
-		node_hashes.push(hash);
+		let repr = child_from_reimpl(&node.data, &child_keys);
+		node_map.insert(repr.hash().clone(), (node.data.clone(), child_keys));
+		node_repr.push(repr);
 	}
 
-	log::debug!("Trusted deserialize: hashed {} nodes in {:?}", node_hashes.len(), start.elapsed());
+	log::debug!("Trusted deserialize: hashed {} nodes in {:?}", node_repr.len(), start.elapsed());
 
 	// Step 4: Reconstruct root using TrustedCacheLoader
-	let root_hash = node_hashes
+	let root_hash = node_repr
 		.last()
-		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty node list"))?;
-	let root_key = ArenaKey::Ref(root_hash.clone());
+		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty node list"))?
+		.hash()
+		.clone();
+	let root_key = ArenaKey::Ref(root_hash);
 
 	let loader = TrustedCacheLoader { node_map: &node_map };
 	let sp: Sp<T, DefaultDB> = loader.get(&root_key)?;
@@ -188,6 +224,23 @@ mod tests {
 			crate::serde_def::SourceTransactions::from_batches(batches.batches, true, None);
 		crate::tx_generator::builder::build_fork_aware_context(&source, &[])
 			.expect("failed to build context")
+	}
+
+	fn assert_child_from_matches<T: Storable<DefaultDB>>(value: &T, label: &str) -> ArenaKey {
+		let upstream = Storable::<DefaultDB>::as_child(value);
+
+		let mut data = Vec::new();
+		value.to_binary_repr(&mut data).unwrap();
+		let children = value.children();
+		let ours = child_from_reimpl(&data, &children);
+
+		assert_eq!(upstream, ours, "{label}: child_from_reimpl diverges from upstream");
+		ours
+	}
+
+	fn assert_child_from_matches_as_direct<T: Storable<DefaultDB>>(value: &T, label: &str) {
+		let arena_key = assert_child_from_matches(value, label);
+		assert!(matches!(arena_key, ArenaKey::Direct(_)));
 	}
 
 	#[test]
@@ -241,5 +294,59 @@ mod tests {
 			standard_bytes.len(),
 			trusted_bytes.len()
 		);
+	}
+
+	#[test]
+	fn child_from_reimpl_fixed_size_types() {
+		assert_child_from_matches_as_direct(&0u8, "u8(0)");
+		assert_child_from_matches_as_direct(&255u8, "u8(255)");
+		assert_child_from_matches_as_direct(&u32::MAX, "u32::MAX");
+		assert_child_from_matches_as_direct(&u64::MAX, "u64::MAX");
+	}
+
+	// Sweep String lengths: serializes with a length prefix, so the
+	// serialized data crosses SMALL_OBJECT_LIMIT somewhere in this range, so we should catch
+	// if the formula changes.
+	#[test]
+	fn child_from_reimpl_boundary() {
+		let start = 950;
+		let end = 1130;
+		for n in start..=end {
+			let arena_key = assert_child_from_matches(&"a".repeat(n), &format!("String len={n}"));
+			if n == start {
+				assert!(matches!(arena_key, ArenaKey::Direct(_)))
+			}
+			if n == end {
+				assert!(matches!(arena_key, ArenaKey::Ref(_)))
+			}
+		}
+	}
+
+	/// Test with tuple types that exercise the children path in child_from_reimpl.
+	#[test]
+	fn child_from_reimpl_with_children() {
+		let arena = &default_storage::<DefaultDB>().arena;
+
+		let small_sp = arena.alloc(42u8);
+		assert_child_from_matches(&(small_sp,), "tuple(u8)");
+
+		let large_sp = arena.alloc([0u8; SMALL_OBJECT_LIMIT]);
+		assert_child_from_matches(&(large_sp,), "tuple([u8;1024])");
+
+		let sp_a = arena.alloc(1u32);
+		let sp_b = arena.alloc(2u32);
+		assert_child_from_matches(&(sp_a, sp_b), "tuple(u32,u32)");
+	}
+
+	/// Test with LedgerState (always Ref, validates hash computation with
+	/// real children from an actual ledger type).
+	#[test]
+	fn child_from_reimpl_ledger_state() {
+		let state = LedgerState::<DefaultDB>::new("test");
+		assert_child_from_matches(&state, "LedgerState::new");
+
+		let context = load_genesis_context();
+		let state = context.ledger_state.lock().unwrap();
+		assert_child_from_matches(&*state, "genesis LedgerState");
 	}
 }
