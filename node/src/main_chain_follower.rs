@@ -423,3 +423,23 @@ struct PostgresConnectionError(String);
 fn missing(field: &str) -> sc_service::Error {
 	ServiceError::Application(format!("Missing {field}. Check configuration.").into())
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn connection_error_redacts_infrastructure_details() {
+		let error = PostgresConnectionError("pool timed out".to_string());
+		let message = error.to_string();
+
+		assert!(
+			message.contains("Could not connect to database"),
+			"error must indicate connection failure"
+		);
+		assert!(message.contains("pool timed out"), "error must contain underlying error");
+		assert!(!message.contains("localhost"), "error must not contain host");
+		assert!(!message.contains("5432"), "error must not contain default port");
+		assert!(!message.contains("cexplorer"), "error must not contain database name");
+	}
+}
