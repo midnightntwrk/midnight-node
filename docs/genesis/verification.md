@@ -232,7 +232,6 @@ Choose from available networks:
 - `qanet`
 - `devnet`
 - `govnet`
-- `node-dev-01`
 - `preview`
 - `preprod`
 

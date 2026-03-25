@@ -1,14 +1,6 @@
 # Justfile for Midnight Node
 # This Justfile is used to define tasks for building, testing, and running the Midnight Node.
 
-hardfork-e2e NODE_IMAGE UPGRADER_IMAGE:
-  @scripts/tests/hardfork-e2e.sh {{NODE_IMAGE}} {{UPGRADER_IMAGE}}
-  @echo "✅ Hardfork E2E test completed successfully."
-
-ledger-rollback-e2e NODE_IMAGE UPGRADER_IMAGE:
-  @scripts/tests/ledger-rollback-e2e.sh {{NODE_IMAGE}} {{UPGRADER_IMAGE}}
-  @echo "✅ Ledger rollback E2E test completed successfully."
-
 toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Update Ledger Parameters E2E test completed successfully."
@@ -29,13 +21,9 @@ toolkit-mint-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-mint-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Mint E2E test completed successfully."
 
-toolkit-tokens-minter-e2e NODE_IMAGE TOOLKIT_IMAGE:
+toolkit-tokens-minter-e2e NODE_IMAGE="" TOOLKIT_IMAGE="":
   @scripts/tests/toolkit-tokens-minter-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Tokens Minter E2E test completed successfully."
-
-toolkit-local-tokens-minter-e2e:
-  @scripts/tests/toolkit-local-tokens-minter-e2e.sh
-  @echo "✅ Toolkit Local Tokens Minter E2E test completed successfully."
 
 toolkit-multi-dest-e2e TOOLKIT_IMAGE:
   @scripts/tests/toolkit-multi-dest-e2e.sh {{TOOLKIT_IMAGE}}

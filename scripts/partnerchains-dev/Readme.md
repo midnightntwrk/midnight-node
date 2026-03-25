@@ -2,7 +2,7 @@
 
 These scripts are intended to be used with the `./partnerchains-dev` script in the root of the node repo. This will port-forward from k8s and setup all the tools you need.
 
-These notes were created by following the [official partner-chains guide](https://github.com/input-output-hk/partner-chains/blob/master/docs/user-guides/chain-builder.md).
+These notes were created by following the [official partner-chains guide](https://github.com/midnightntwrk/partner-chains/blob/master/docs/user-guides/chain-builder.md).
 
 These scripts work well in conjunctions with the `earthly +generate-<network>-keys` targets.
 

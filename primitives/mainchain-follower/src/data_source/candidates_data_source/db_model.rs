@@ -14,7 +14,7 @@
 use cardano_serialization_lib::{
 	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
 };
-use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
+use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
 use log::info;
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
 use sqlx::error::BoxDynError;
@@ -280,13 +280,12 @@ pub(crate) async fn get_stake_distribution(
 }
 
 /// Returns the token data of the given policy at the given slot.
+/// Accepts a pre-resolved `multi_asset.id` (ident) to avoid joining the `multi_asset` table.
 pub(crate) async fn get_token_utxo_for_epoch(
 	pool: &Pool<Postgres>,
-	asset: &Asset,
+	ident: i64,
 	epoch: EpochNumber,
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
-	// In practice queried assets always have empty name.
-	// However, it's important to keep multi_asset.name condition, to enable use of compound index on multi_asset policy and name.
 	let sql = "SELECT
 			origin_tx.hash        AS origin_tx_hash,
         	tx_out.index          AS utxo_index,
@@ -296,19 +295,16 @@ pub(crate) async fn get_token_utxo_for_epoch(
         	origin_tx.block_index AS tx_block_index,
         	datum.value           AS datum
         FROM ma_tx_out
-        INNER JOIN multi_asset          ON ma_tx_out.ident = multi_asset.id
         INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
         INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
         INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
         LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
-        WHERE multi_asset.policy = $1
-		AND multi_asset.name = $2
-        AND origin_block.epoch_no <= $3
+        WHERE ma_tx_out.ident = $1
+        AND origin_block.epoch_no <= $2
         ORDER BY tx_block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
 	Ok(sqlx::query_as::<_, TokenTxOutput>(sql)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
+		.bind(ident)
 		.bind(epoch)
 		.fetch_optional(pool)
 		.await?)

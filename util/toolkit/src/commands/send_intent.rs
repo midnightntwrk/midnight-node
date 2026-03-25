@@ -118,6 +118,7 @@ mod test {
 			ignore_block_context: false,
 			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
+			ledger_state_db: String::new(),
 		};
 
 		let destination = Destination {

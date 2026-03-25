@@ -30,7 +30,7 @@
     "@midnight-ntwrk/node-toolkit-v8": "^0.1.0"
   },
   "devDependencies": {
-    "@midnight-ntwrk/midnight-js-compact": "3.2.0",
+    "@midnight-ntwrk/midnight-js-compact": "4.0.2",
     "@tsconfig/node24": "24.0.0",
     "@types/node": "22.18.10",
     "shx": "0.4.0",

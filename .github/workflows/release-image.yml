@@ -516,8 +516,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    name: SBOM/Scan Node Docker Hub (${{ matrix.arch }})
-    needs: [prepare-release]
+    name: SBOM Attest Node Docker Hub (${{ matrix.arch }})
+    needs: [prepare-release, sbom-scan-ghcr-node]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -525,6 +525,7 @@ jobs:
     with:
       image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
+      skip-scan: true
       tlog-upload: true
     secrets: inherit
 
@@ -534,8 +535,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    name: SBOM/Scan Toolkit Docker Hub (${{ matrix.arch }})
-    needs: [prepare-release]
+    name: SBOM Attest Toolkit Docker Hub (${{ matrix.arch }})
+    needs: [prepare-release, sbom-scan-ghcr-toolkit]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -543,6 +544,7 @@ jobs:
     with:
       image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
+      skip-scan: true
       tlog-upload: true
     secrets: inherit
 
@@ -552,8 +554,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    name: SBOM/Scan Node midnightntwrk (${{ matrix.arch }})
-    needs: [prepare-release]
+    name: SBOM Attest Node midnightntwrk (${{ matrix.arch }})
+    needs: [prepare-release, sbom-scan-ghcr-node]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -563,6 +565,7 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
+      skip-scan: true
       tlog-upload: true
     secrets: inherit
 
@@ -572,8 +575,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    name: SBOM/Scan Toolkit midnightntwrk (${{ matrix.arch }})
-    needs: [prepare-release]
+    name: SBOM Attest Toolkit midnightntwrk (${{ matrix.arch }})
+    needs: [prepare-release, sbom-scan-ghcr-toolkit]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -583,5 +586,6 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
+      skip-scan: true
       tlog-upload: true
     secrets: inherit

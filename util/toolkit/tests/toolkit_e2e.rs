@@ -19,7 +19,7 @@ use clap::Parser;
 use common::test_image;
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
-	commands::contract_address,
+	commands::{contract_address, show_address},
 };
 use std::{path::Path, time::Duration};
 use testcontainers::{
@@ -173,6 +173,26 @@ async fn get_version() {
 async fn register_dust_address() {
 	let url = node_ws_url().await;
 
+	// 3b. Extract contract address (parse CLI to get args, then call execute directly)
+	let dust_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			"0000000000000000000000000000000000000000000000000000000000000002",
+			"--dust",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("should not reach this arm"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
 	// 5. Register dust address (with destination-dust)
 	run_cli(&[
 		"generate-txs",
@@ -184,7 +204,7 @@ async fn register_dust_address() {
 		"--funding-seed",
 		"0000000000000000000000000000000000000000000000000000000000000002",
 		"--destination-dust",
-		"mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y",
+		&dust_address,
 		"-s",
 		url,
 		"-d",
