@@ -1339,7 +1339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43d193de1f7487df1914d3a568b772458861d33f9c54249612cc2893d6915054"
 dependencies = [
  "bitcoin_hashes 0.13.0",
- "rand_core 0.6.4",
+ "rand_core 0.4.2",
  "serde",
  "unicode-normalization",
 ]
@@ -3061,7 +3061,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 2.0.104",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -6793,8 +6793,8 @@ dependencies = [
  "libp2p-core",
  "thiserror 1.0.69",
  "tracing",
- "yamux 0.12.1",
- "yamux 0.13.8",
+ "yamux 0.12.2",
+ "yamux 0.13.10",
 ]
 
 [[package]]
@@ -6971,7 +6971,7 @@ dependencies = [
  "url",
  "x25519-dalek",
  "x509-parser 0.17.0",
- "yamux 0.13.8",
+ "yamux 0.13.10",
  "yasna",
  "zeroize",
 ]
@@ -7614,6 +7614,8 @@ dependencies = [
  "thiserror 1.0.69",
  "time-source",
  "tokio",
+ "tokio-util",
+ "yamux 0.13.10",
 ]
 
 [[package]]
@@ -10399,7 +10401,7 @@ checksum = "4e69bf016dc406eff7d53a7d3f7cf1c2e72c82b9088aac1118591e36dd2cd3e9"
 dependencies = [
  "bitcoin_hashes 0.13.0",
  "rand 0.8.5",
- "rand_core 0.6.4",
+ "rand_core 0.4.2",
  "serde",
  "unicode-normalization",
 ]
@@ -20259,9 +20261,8 @@ dependencies = [
 
 [[package]]
 name = "yamux"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ed0164ae619f2dc144909a9f082187ebb5893693d8c0196e8085283ccd4b776"
+version = "0.12.2"
+source = "git+https://github.com/midnightntwrk/rust-yamux?branch=yamux-v0.12.2#8ed778c706ff6fd82228f3fde29b75896f48891b"
 dependencies = [
  "futures",
  "log",
@@ -20274,9 +20275,9 @@ dependencies = [
 
 [[package]]
 name = "yamux"
-version = "0.13.8"
+version = "0.13.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deab71f2e20691b4728b349c6cee8fc7223880fa67b6b4f92225ec32225447e5"
+checksum = "1991f6690292030e31b0144d73f5e8368936c58e45e7068254f7138b23b00672"
 dependencies = [
  "futures",
  "log",

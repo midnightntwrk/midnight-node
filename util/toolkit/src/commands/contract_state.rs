@@ -15,7 +15,7 @@ pub struct ContractStateArgs {
 	contract_address: ContractAddress,
 	/// Destination file to save the state
 	#[arg(long, short)]
-	dest_file: String,
+	dest_file: Option<String>,
 	/// Dry-run - don't fetch anything, just print out the settings
 	#[arg(long)]
 	dry_run: bool,
@@ -57,12 +57,14 @@ pub async fn execute(
 		},
 	)?;
 
-	let full_path = Path::new(&args.dest_file);
-	if let Some(directory) = full_path.parent() {
-		fs::create_dir_all(directory).expect("failed to create directories");
-	}
+	if let Some(dest_file) = &args.dest_file {
+		let full_path = Path::new(dest_file);
+		if let Some(directory) = full_path.parent() {
+			fs::create_dir_all(directory).expect("failed to create directories");
+		}
 
-	fs::write(full_path, serialized_state).expect("failed to create file");
+		fs::write(full_path, serialized_state).expect("failed to create file");
+	}
 
 	Ok(())
 }
