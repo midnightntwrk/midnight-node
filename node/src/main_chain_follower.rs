@@ -405,20 +405,20 @@ async fn get_connection(
 		.connect_with(connect_options.clone())
 		.await
 		.map_err(|e| {
-			PostgresConnectionError(
-				connect_options.get_host().to_string(),
+			log::debug!(
+				"Database connection details: host={}, port={}, database={}; error: {e}",
+				connect_options.get_host(),
 				connect_options.get_port(),
-				connect_options.get_database().unwrap_or("cexplorer").to_string(),
-				e.to_string(),
-			)
-			.to_string()
+				connect_options.get_database().unwrap_or("cexplorer"),
+			);
+			PostgresConnectionError(e.to_string()).to_string()
 		})?;
 	Ok(pool)
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-#[error("Could not connect to database: postgres://***:***@{0}:{1}/{2}; error: {3}")]
-struct PostgresConnectionError(String, u16, String, String);
+#[error("Could not connect to database; error: {0}")]
+struct PostgresConnectionError(String);
 
 fn missing(field: &str) -> sc_service::Error {
 	ServiceError::Application(format!("Missing {field}. Check configuration.").into())
