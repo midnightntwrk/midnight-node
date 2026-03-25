@@ -201,6 +201,7 @@ impl SerializedTxBatches {
 	}
 }
 
+#[cfg(feature = "can-panic")]
 impl TryFrom<&SerializedTxBatches> for Vec<RawBlockData> {
 	type Error = String;
 

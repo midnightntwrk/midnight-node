@@ -1,5 +1,6 @@
 pub mod raw_block_data;
 
+#[cfg(feature = "can-panic")]
 use crate::fork::raw_block_data::LedgerVersion;
 
 #[cfg(feature = "can-panic")]
@@ -7,6 +8,7 @@ pub mod fork_7_to_8;
 #[cfg(feature = "can-panic")]
 pub mod fork_aware_context;
 
+#[cfg(feature = "can-panic")]
 pub fn network_id_and_ledger_version_from_tx_bytes(
 	tx_bytes: &[u8],
 ) -> Result<(String, LedgerVersion), std::io::Error> {
