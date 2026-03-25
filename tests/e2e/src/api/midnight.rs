@@ -58,6 +58,8 @@ pub struct AriadneParametersResponse {
     pub candidate_registrations: serde_json::Value,
 }
 
+pub use pallet_midnight_rpc::{RpcStateQuery, RpcStateQueryResult};
+
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
     rpc_client: RpcClient,
@@ -570,5 +572,23 @@ impl MidnightClient {
             }
         }
         Err("Transaction progress ended without confirmation".into())
+    }
+
+    // ========== Contract State Query Methods ==========
+
+    /// Query specific fields from a contract's state tree via `midnight_queryContractState`.
+    pub async fn query_contract_state(
+        &self,
+        contract_address: &str,
+        queries: Vec<RpcStateQuery>,
+    ) -> Result<Vec<RpcStateQueryResult>, Box<dyn std::error::Error>> {
+        let results: Vec<RpcStateQueryResult> = self
+            .rpc_client
+            .request(
+                "midnight_queryContractState",
+                rpc_params![contract_address, queries],
+            )
+            .await?;
+        Ok(results)
     }
 }

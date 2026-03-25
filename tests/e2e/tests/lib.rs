@@ -3012,3 +3012,126 @@ async fn authority_selection_uses_aiken_candidates() {
         valid_candidates
     );
 }
+
+// ========== midnight_queryContractState RPC Tests ==========
+
+use midnight_node_e2e::api::midnight::{RpcStateQuery, RpcStateQueryResult};
+use midnight_node_ledger_helpers::{base_crypto::fab::AlignedValue, serialize_untagged};
+
+#[tokio::test]
+async fn query_contract_state_returns_expected_value() {
+    use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
+    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize};
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // Deploy the test contract (may already exist from a previous test run)
+    let _ = client.submit_midnight_tx(DEPLOY_TX.to_vec()).await;
+    let contract_address =
+        String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
+
+    // The test contract's state after deployment is:
+    //   Array(1) [ Array(3) [ MerkleTree(10), Cell(0u64), Map{...} ] ]
+    //
+    // Query path [0][1] to reach the counter Cell initialized to 0.
+    let key_0 = hex::encode(serialize_untagged(&AlignedValue::from(0u8)).unwrap());
+    let key_1 = hex::encode(serialize_untagged(&AlignedValue::from(1u8)).unwrap());
+
+    let results = client
+        .query_contract_state(
+            &contract_address,
+            vec![RpcStateQuery { path: vec![key_0, key_1] }],
+        )
+        .await
+        .expect("RPC failed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].error, None);
+
+    let value_hex = results[0].value.as_ref().expect("field [0][1] should exist");
+    let value_bytes = hex::decode(value_hex).expect("invalid hex in value");
+    let state_value: StateValue<DefaultDB> =
+        deserialize(&mut &value_bytes[..]).expect("failed to deserialize StateValue");
+
+    // Field [0][1] is the counter Cell initialized to 0u64
+    let expected = StateValue::<DefaultDB>::from(0u64);
+    assert_eq!(state_value, expected);
+}
+
+#[tokio::test]
+async fn query_contract_state_batch_processes_all_queries() {
+    use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
+    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize};
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let _ = client.submit_midnight_tx(DEPLOY_TX.to_vec()).await;
+    let contract_address =
+        String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
+
+    let key = |v: u8| hex::encode(serialize_untagged(&AlignedValue::from(v)).unwrap());
+
+    // The test contract's map at [0][2] has one entry with key "820140c20141"
+    // (a compound AlignedValue: boolean(true) + field(0)) and value Null.
+    let map_key = "820140c20141".to_string();
+
+    // Batch three queries covering all result types:
+    //   [0][1]               → Cell(0u64)       (leaf value)
+    //   [0][2][map_key]      → Null              (map hit)
+    //   [0][99]              → error             (array out of bounds)
+    let results = client
+        .query_contract_state(
+            &contract_address,
+            vec![
+                RpcStateQuery { path: vec![key(0), key(1)] },
+                RpcStateQuery { path: vec![key(0), key(2), map_key] },
+                RpcStateQuery { path: vec![key(0), key(99)] },
+            ],
+        )
+        .await
+        .expect("RPC failed");
+
+    assert_eq!(results.len(), 3);
+
+    // [0][1]: counter Cell initialized to 0
+    assert_eq!(results[0].error, None);
+    let value_bytes = hex::decode(results[0].value.as_ref().unwrap()).unwrap();
+    let cell: StateValue<DefaultDB> = deserialize(&mut &value_bytes[..]).unwrap();
+    assert_eq!(cell, StateValue::from(0u64));
+
+    // [0][2][map_key]: map hit → Null
+    assert_eq!(results[1].error, None);
+    let value_bytes = hex::decode(results[1].value.as_ref().unwrap()).unwrap();
+    let map_value: StateValue<DefaultDB> = deserialize(&mut &value_bytes[..]).unwrap();
+    assert_eq!(map_value, StateValue::Null);
+
+    // [0][99]: array out of bounds → error
+    assert_eq!(results[2].value, None);
+    assert!(
+        results[2].error.as_ref().unwrap().contains("out of bounds"),
+        "expected out-of-bounds error, got: {:?}",
+        results[2].error
+    );
+}
+
+#[tokio::test]
+async fn query_contract_state_nonexistent_contract() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let fake_address = "00".repeat(35);
+    let err = client
+        .query_contract_state(
+            &fake_address,
+            vec![RpcStateQuery { path: vec![hex::encode(serialize_untagged(&AlignedValue::from(0u8)).unwrap())] }],
+        )
+        .await
+        .expect_err("should fail for a non-existent contract");
+
+    assert!(
+        err.to_string().contains("Unable to query contract state"),
+        "unexpected error: {err}"
+    );
+}
