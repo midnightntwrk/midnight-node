@@ -180,15 +180,22 @@ mod tests {
 	#[test]
 	fn tracker_concurrent_access() {
 		let tracker = SubscriptionTracker::new(100, None);
+		let barrier = Arc::new(std::sync::Barrier::new(101));
 		let handles: Vec<_> = (0..100)
 			.map(|_| {
 				let t = tracker.clone();
-				std::thread::spawn(move || t.try_acquire().is_some())
+				let b = barrier.clone();
+				std::thread::spawn(move || {
+					let guard = t.try_acquire();
+					b.wait();
+					guard
+				})
 			})
 			.collect();
-		let successes: usize = handles.into_iter().filter(|h| h.join().unwrap()).count();
-		assert_eq!(successes, 100);
+		barrier.wait();
 		assert_eq!(tracker.active_count(), 100);
 		assert!(tracker.try_acquire().is_none());
+		let guards: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+		assert!(guards.iter().all(|g| g.is_some()));
 	}
 }
