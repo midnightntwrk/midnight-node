@@ -3035,8 +3035,8 @@ async fn query_contract_state_returns_expected_value() {
     //   Array(1) [ Array(3) [ MerkleTree(10), Cell(0u64), Map{...} ] ]
     //
     // Query path [0][1] to reach the counter Cell initialized to 0.
-    let key_0 = hex::encode(serialize_untagged(&AlignedValue::from(0u8)).unwrap());
-    let key_1 = hex::encode(serialize_untagged(&AlignedValue::from(1u8)).unwrap());
+    let key_0 = serialize_untagged(&AlignedValue::from(0u8)).unwrap().into();
+    let key_1 = serialize_untagged(&AlignedValue::from(1u8)).unwrap().into();
 
     let results = client
         .query_contract_state(
@@ -3071,11 +3071,11 @@ async fn query_contract_state_batch_processes_all_queries() {
     let contract_address =
         String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
 
-    let key = |v: u8| hex::encode(serialize_untagged(&AlignedValue::from(v)).unwrap());
+    let key = |v: u8| serialize_untagged(&AlignedValue::from(v)).unwrap().into();
 
     // The test contract's map at [0][2] has one entry with key "820140c20141"
     // (a compound AlignedValue: boolean(true) + field(0)) and value Null.
-    let map_key = "820140c20141".to_string();
+    let map_key = hex::decode("820140c20141").unwrap().into();
 
     // Batch three queries covering all result types:
     //   [0][1]               → Cell(0u64)       (leaf value)
@@ -3125,7 +3125,7 @@ async fn query_contract_state_nonexistent_contract() {
     let err = client
         .query_contract_state(
             &fake_address,
-            vec![RpcStateQuery { path: vec![hex::encode(serialize_untagged(&AlignedValue::from(0u8)).unwrap())] }],
+            vec![RpcStateQuery { path: vec![serialize_untagged(&AlignedValue::from(0u8)).unwrap().into()] }],
         )
         .await
         .expect_err("should fail for a non-existent contract");
