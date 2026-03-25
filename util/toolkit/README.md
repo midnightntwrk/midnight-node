@@ -548,8 +548,8 @@ Show the structure of a saved transaction. Works with files containing multiple 
 ```console
 $ midnight-node-toolkit show-transaction
 >   --src-file ../../res/test-tx-deserialize/serialized_tx.mn
-
 ...
+
 ```
 
 ### Show Block
