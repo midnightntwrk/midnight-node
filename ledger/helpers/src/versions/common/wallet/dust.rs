@@ -185,6 +185,34 @@ impl<D: DB> TryFrom<&WalletAddress> for DustWallet<D> {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::super::super::{DefaultDB, DerivationPath, Role, WalletSeed};
+	use super::DustWallet;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::from([0u8; 32])
+	}
+
+	#[test]
+	fn from_path_accepts_dust_role() {
+		let path = DerivationPath::default_for_role(Role::Dust);
+		let _wallet = DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).unwrap();
+	}
+
+	#[test]
+	fn from_path_rejects_zswap_role() {
+		let path = DerivationPath::default_for_role(Role::Zswap);
+		assert!(DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).is_err());
+	}
+
+	#[test]
+	fn from_path_rejects_unshielded_role() {
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).is_err());
+	}
+}
+
 #[derive(Debug, Error)]
 pub enum DustSpendError {
 	#[error("This wallet was not initialized with all required data")]
