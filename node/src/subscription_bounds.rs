@@ -23,21 +23,6 @@ use std::sync::{
 	atomic::{AtomicU32, Ordering},
 };
 
-/// Configuration for subscription bounds.
-#[derive(Debug, Clone)]
-pub struct SubscriptionBoundsConfig {
-	/// Maximum number of concurrent finality subscriptions (GRANDPA + BEEFY combined).
-	pub max_finality_subscriptions: u32,
-	/// Queue-size warning threshold passed to upstream `NotificationStream::subscribe()`.
-	pub notification_queue_size_warning: usize,
-}
-
-impl Default for SubscriptionBoundsConfig {
-	fn default() -> Self {
-		Self { max_finality_subscriptions: 512, notification_queue_size_warning: 100_000 }
-	}
-}
-
 /// Optional Prometheus metrics for subscription tracking.
 #[derive(Clone)]
 pub struct SubscriptionMetrics {
@@ -97,6 +82,11 @@ impl SubscriptionTracker {
 		loop {
 			let current = self.inner.active.load(Ordering::Relaxed);
 			if current >= self.inner.max {
+				log::warn!(
+					"Finality subscription rejected: limit of {} reached ({} active)",
+					self.inner.max,
+					current,
+				);
 				if let Some(m) = &self.inner.metrics {
 					m.rejected.inc();
 				}

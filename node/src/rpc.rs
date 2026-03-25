@@ -57,6 +57,11 @@ use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
 
+use futures::StreamExt;
+use parity_scale_codec::Encode;
+use sc_rpc::utils::{BoundedVecDeque, PendingSubscription};
+use sc_utils::notification::{NotificationStream, TracingKeyStr};
+
 use crate::subscription_bounds::SubscriptionTracker;
 
 use crate::peer_info_rpc::{PeerInfoApiServer, PeerInfoRpc};
@@ -144,11 +149,8 @@ where
 	B::State: sc_client_api::backend::StateBackend<sp_runtime::traits::HashingFor<Block>>,
 	T: TimeSource + Send + Sync + 'static,
 {
-	use futures::StreamExt;
 	use mmr_rpc::{Mmr, MmrApiServer};
-	use parity_scale_codec::Encode;
 	use sc_consensus_beefy_rpc::{Beefy, BeefyApiServer};
-	use sc_rpc::utils::{BoundedVecDeque, PendingSubscription};
 	use substrate_frame_rpc_system::{System, SystemApiServer};
 
 	let mut module = RpcModule::new(());
@@ -195,47 +197,15 @@ where
 		finality_provider,
 	);
 	module.merge(grandpa_handler.into_rpc())?;
-	// Replace the upstream subscription method with our bounded version.
-	module.remove_method("grandpa_subscribeJustifications");
-	module.remove_method("grandpa_unsubscribeJustifications");
-	{
-		let tracker = subscription_tracker.clone();
-		let executor = subscription_executor;
-		let stream = justification_stream;
-		module.register_subscription(
-			"grandpa_subscribeJustifications",
-			"grandpa_justifications",
-			"grandpa_unsubscribeJustifications",
-			move |_params, pending, _ctx, _extensions| {
-				let tracker = tracker.clone();
-				let stream = stream.clone();
-				let executor = executor.clone();
-				async move {
-					let guard = match tracker.try_acquire() {
-						Some(g) => g,
-						None => {
-							pending.reject(jsonrpsee::types::ErrorObject::owned(
-								-32000i32,
-								"Finality subscription limit reached",
-								None::<()>,
-							));
-							return;
-						},
-					};
-					let rx = stream.subscribe(100_000);
-					let mapped = rx.map(|j: sc_consensus_grandpa::GrandpaJustification<Block>| {
-						sp_core::Bytes::from(j.encode())
-					});
-					sc_rpc::utils::spawn_subscription_task(&executor, async move {
-						let _guard = guard;
-						PendingSubscription::from(pending)
-							.pipe_from_stream(mapped, BoundedVecDeque::default())
-							.await;
-					});
-				}
-			},
-		)?;
-	}
+	register_bounded_finality_subscription(
+		&mut module,
+		"grandpa_subscribeJustifications",
+		"grandpa_justifications",
+		"grandpa_unsubscribeJustifications",
+		subscription_tracker.clone(),
+		subscription_executor,
+		justification_stream,
+	)?;
 
 	module.merge(
 		Mmr::new(
@@ -250,52 +220,21 @@ where
 	let BeefyDeps { beefy_finality_proof_stream, beefy_best_block_stream, subscription_executor } =
 		beefy;
 
-	// BEEFY: same approach — upstream handler for non-subscription methods,
-	// bounded subscription with limit enforcement.
 	let beefy_handler = Beefy::<Block, AuthorityId>::new(
 		beefy_finality_proof_stream.clone(),
 		beefy_best_block_stream,
 		subscription_executor.clone(),
 	)?;
 	module.merge(beefy_handler.into_rpc())?;
-	module.remove_method("beefy_subscribeJustifications");
-	module.remove_method("beefy_unsubscribeJustifications");
-	{
-		let tracker = subscription_tracker;
-		let executor = subscription_executor;
-		let stream = beefy_finality_proof_stream;
-		module.register_subscription(
-			"beefy_subscribeJustifications",
-			"beefy_justifications",
-			"beefy_unsubscribeJustifications",
-			move |_params, pending, _ctx, _extensions| {
-				let tracker = tracker.clone();
-				let stream = stream.clone();
-				let executor = executor.clone();
-				async move {
-					let guard = match tracker.try_acquire() {
-						Some(g) => g,
-						None => {
-							pending.reject(jsonrpsee::types::ErrorObject::owned(
-								-32000i32,
-								"Finality subscription limit reached",
-								None::<()>,
-							));
-							return;
-						},
-					};
-					let rx = stream.subscribe(100_000);
-					let mapped = rx.map(|vfp| sp_core::Bytes::from(vfp.encode()));
-					sc_rpc::utils::spawn_subscription_task(&executor, async move {
-						let _guard = guard;
-						PendingSubscription::from(pending)
-							.pipe_from_stream(mapped, BoundedVecDeque::default())
-							.await;
-					});
-				}
-			},
-		)?;
-	}
+	register_bounded_finality_subscription(
+		&mut module,
+		"beefy_subscribeJustifications",
+		"beefy_justifications",
+		"beefy_unsubscribeJustifications",
+		subscription_tracker,
+		subscription_executor,
+		beefy_finality_proof_stream,
+	)?;
 
 	let session_validator_query = Arc::new(SessionValidatorManagementQuery::new(
 		client.clone(),
@@ -313,4 +252,56 @@ where
 	module.register_method("rpc.discover", move |_, _, _| openrpc_doc.clone())?;
 
 	Ok(module)
+}
+
+/// Replace an upstream subscription method (already merged) with a bounded variant
+/// that enforces the global finality subscription limit via [`SubscriptionTracker`].
+fn register_bounded_finality_subscription<
+	T: Encode + Clone + Send + Sync + 'static,
+	TK: TracingKeyStr + Clone + Send + Sync + 'static,
+>(
+	module: &mut RpcModule<()>,
+	subscribe_method: &'static str,
+	notification_method: &'static str,
+	unsubscribe_method: &'static str,
+	tracker: SubscriptionTracker,
+	executor: SubscriptionTaskExecutor,
+	stream: NotificationStream<T, TK>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	module.remove_method(subscribe_method);
+	module.remove_method(unsubscribe_method);
+	module.register_subscription(
+		subscribe_method,
+		notification_method,
+		unsubscribe_method,
+		move |_params, pending, _ctx, _extensions| {
+			let tracker = tracker.clone();
+			let stream = stream.clone();
+			let executor = executor.clone();
+			async move {
+				let guard = match tracker.try_acquire() {
+					Some(g) => g,
+					None => {
+						pending
+							.reject(jsonrpsee::types::ErrorObject::owned(
+								-32000i32,
+								"Finality subscription limit reached",
+								None::<()>,
+							))
+							.await;
+						return;
+					},
+				};
+				let rx = stream.subscribe(100_000);
+				let mapped = rx.map(|item: T| sp_core::Bytes::from(item.encode()));
+				sc_rpc::utils::spawn_subscription_task(&executor, async move {
+					let _guard = guard;
+					PendingSubscription::from(pending)
+						.pipe_from_stream(mapped, BoundedVecDeque::default())
+						.await;
+				});
+			}
+		},
+	)?;
+	Ok(())
 }
