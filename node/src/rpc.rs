@@ -29,7 +29,7 @@ use sc_client_api::{BlockBackend, BlockchainEvents};
 use sc_consensus_grandpa::{
 	FinalityProofProvider, GrandpaJustificationStream, SharedAuthoritySet, SharedVoterState,
 };
-use sc_consensus_grandpa_rpc::{Grandpa, GrandpaApiServer};
+use sc_consensus_grandpa_rpc::GrandpaApiServer;
 use sc_rpc::SubscriptionTaskExecutor;
 use sc_transaction_pool_api::TransactionPool;
 use sidechain_domain::ScEpochNumber;
@@ -56,6 +56,8 @@ pub use sc_rpc_api::DenyUnsafe;
 use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
+
+use crate::subscription_bounds::SubscriptionTracker;
 
 use crate::peer_info_rpc::{PeerInfoApiServer, PeerInfoRpc};
 
@@ -105,6 +107,8 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub network: Arc<dyn NetworkPeers + Send + Sync>,
 	/// Channel for system RPC requests (used to query connected peers).
 	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
+	/// Shared tracker for finality subscription limits.
+	pub subscription_tracker: SubscriptionTracker,
 }
 
 /// Instantiate all full RPC extensions.
@@ -140,8 +144,11 @@ where
 	B::State: sc_client_api::backend::StateBackend<sp_runtime::traits::HashingFor<Block>>,
 	T: TimeSource + Send + Sync + 'static,
 {
+	use futures::StreamExt;
 	use mmr_rpc::{Mmr, MmrApiServer};
+	use parity_scale_codec::Encode;
 	use sc_consensus_beefy_rpc::{Beefy, BeefyApiServer};
+	use sc_rpc::utils::{BoundedVecDeque, PendingSubscription};
 	use substrate_frame_rpc_system::{System, SystemApiServer};
 
 	let mut module = RpcModule::new(());
@@ -156,6 +163,7 @@ where
 		backend,
 		network,
 		system_rpc_tx,
+		subscription_tracker,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -176,20 +184,59 @@ where
 		subscription_executor,
 		finality_provider,
 	} = grandpa;
-	module.merge(
-		Grandpa::new(
-			subscription_executor,
-			shared_authority_set.clone(),
-			shared_voter_state,
-			justification_stream,
-			finality_provider,
-		)
-		.into_rpc(),
-	)?;
 
-	// Making synchronous calls in light client freezes the browser currently,
-	// more context: https://github.com/paritytech/substrate/pull/3480
-	// These RPCs should use an asynchronous caller instead.
+	// GRANDPA: register non-subscription methods via the upstream handler,
+	// then add a bounded subscription method with limit enforcement.
+	let grandpa_handler = sc_consensus_grandpa_rpc::Grandpa::new(
+		subscription_executor.clone(),
+		shared_authority_set.clone(),
+		shared_voter_state,
+		justification_stream.clone(),
+		finality_provider,
+	);
+	module.merge(grandpa_handler.into_rpc())?;
+	// Replace the upstream subscription method with our bounded version.
+	module.remove_method("grandpa_subscribeJustifications");
+	module.remove_method("grandpa_unsubscribeJustifications");
+	{
+		let tracker = subscription_tracker.clone();
+		let executor = subscription_executor;
+		let stream = justification_stream;
+		module.register_subscription(
+			"grandpa_subscribeJustifications",
+			"grandpa_justifications",
+			"grandpa_unsubscribeJustifications",
+			move |_params, pending, _ctx, _extensions| {
+				let tracker = tracker.clone();
+				let stream = stream.clone();
+				let executor = executor.clone();
+				async move {
+					let guard = match tracker.try_acquire() {
+						Some(g) => g,
+						None => {
+							pending.reject(jsonrpsee::types::ErrorObject::owned(
+								-32000i32,
+								"Finality subscription limit reached",
+								None::<()>,
+							));
+							return;
+						},
+					};
+					let rx = stream.subscribe(100_000);
+					let mapped = rx.map(|j: sc_consensus_grandpa::GrandpaJustification<Block>| {
+						sp_core::Bytes::from(j.encode())
+					});
+					sc_rpc::utils::spawn_subscription_task(&executor, async move {
+						let _guard = guard;
+						PendingSubscription::from(pending)
+							.pipe_from_stream(mapped, BoundedVecDeque::default())
+							.await;
+					});
+				}
+			},
+		)?;
+	}
+
 	module.merge(
 		Mmr::new(
 			client.clone(),
@@ -199,16 +246,56 @@ where
 		)
 		.into_rpc(),
 	)?;
+
 	let BeefyDeps { beefy_finality_proof_stream, beefy_best_block_stream, subscription_executor } =
 		beefy;
-	module.merge(
-		Beefy::<Block, AuthorityId>::new(
-			beefy_finality_proof_stream,
-			beefy_best_block_stream,
-			subscription_executor,
-		)?
-		.into_rpc(),
+
+	// BEEFY: same approach — upstream handler for non-subscription methods,
+	// bounded subscription with limit enforcement.
+	let beefy_handler = Beefy::<Block, AuthorityId>::new(
+		beefy_finality_proof_stream.clone(),
+		beefy_best_block_stream,
+		subscription_executor.clone(),
 	)?;
+	module.merge(beefy_handler.into_rpc())?;
+	module.remove_method("beefy_subscribeJustifications");
+	module.remove_method("beefy_unsubscribeJustifications");
+	{
+		let tracker = subscription_tracker;
+		let executor = subscription_executor;
+		let stream = beefy_finality_proof_stream;
+		module.register_subscription(
+			"beefy_subscribeJustifications",
+			"beefy_justifications",
+			"beefy_unsubscribeJustifications",
+			move |_params, pending, _ctx, _extensions| {
+				let tracker = tracker.clone();
+				let stream = stream.clone();
+				let executor = executor.clone();
+				async move {
+					let guard = match tracker.try_acquire() {
+						Some(g) => g,
+						None => {
+							pending.reject(jsonrpsee::types::ErrorObject::owned(
+								-32000i32,
+								"Finality subscription limit reached",
+								None::<()>,
+							));
+							return;
+						},
+					};
+					let rx = stream.subscribe(100_000);
+					let mapped = rx.map(|vfp| sp_core::Bytes::from(vfp.encode()));
+					sc_rpc::utils::spawn_subscription_task(&executor, async move {
+						let _guard = guard;
+						PendingSubscription::from(pending)
+							.pipe_from_stream(mapped, BoundedVecDeque::default())
+							.await;
+					});
+				}
+			},
+		)?;
+	}
 
 	let session_validator_query = Arc::new(SessionValidatorManagementQuery::new(
 		client.clone(),
@@ -220,10 +307,6 @@ where
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
-	// Build the OpenRPC document from the set of custom methods currently
-	// registered.  Standard Substrate methods (author, chain, state, system)
-	// are added by sc_service *after* create_full returns, so they are listed
-	// statically inside the builder.
 	let custom_method_names: Vec<&str> = module.method_names().collect();
 	let openrpc_doc = crate::openrpc::build_openrpc_document(&custom_method_names);
 
