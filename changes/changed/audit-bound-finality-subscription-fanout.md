@@ -5,5 +5,5 @@ Add per-connection and global subscription limits with bounded notification
 channels for GRANDPA and BEEFY RPC handlers. Prevents resource exhaustion
 from unbounded fan-out of consensus notifications.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1075
 JIRA: https://shielded.atlassian.net/browse/PM-19967
