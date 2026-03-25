@@ -729,6 +729,8 @@ toolkit-js-prep:
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
+    ENV COMPACT_REPO=midnightntwrk/compact
+    ENV COMPACT_TAG_PREFIX=compactc-v
 
     WORKDIR /toolkit-js
     RUN npm ci
