@@ -452,7 +452,7 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 impl Builder {
 	/// Extract wallet seeds needed by this builder configuration, without constructing
 	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
-	pub fn relevant_wallet_seeds(&self) -> Vec<WalletSeed> {
+	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
 		match self {
 			Builder::Batches(args) => {
 				compute_batches_seeds(&args.funding_seed, args.num_txs_per_batch, args.num_batches)
@@ -463,31 +463,31 @@ impl Builder {
 					ContractCall::Call(args) => &args.funding_seed,
 					ContractCall::Maintenance(args) => &args.funding_seed,
 				};
-				vec![Wallet::<DefaultDB>::wallet_seed_decode(seed_str)]
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(seed_str)])
 			},
 			Builder::ContractCustom(args) => {
-				vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)]
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::ClaimRewards(args) => {
-				vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)]
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::SingleTx(args) => {
 				let mut seeds = vec![args.source_seed];
 				seeds.extend(args.funding_seed.iter());
-				seeds
+				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
 				if let Some(ref funding_seed) = args.funding_seed {
-					vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)]
+					Ok(vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)])
 				} else {
-					vec![seed]
+					Ok(vec![seed])
 				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
 				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
-				vec![seed, funding_seed]
+				Ok(vec![seed, funding_seed])
 			},
 			Builder::BatchSingleTx(args) => {
 				let specs = args.get_transfer_specs();
@@ -503,9 +503,9 @@ impl Builder {
 						}
 					}
 				}
-				seeds
+				Ok(seeds)
 			},
-			Builder::Send => vec![],
+			Builder::Send => Ok(vec![]),
 		}
 	}
 
