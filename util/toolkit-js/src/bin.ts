@@ -49,9 +49,9 @@ const toolkitResolve = (specifier: string) => {
 
 registerHooks({
   resolve(specifier: string, context: ResolveHookContext, next) {
-    // Intercept imports of the 'compact-js*' packages and resolve them relative to their version installed
-    // in the toolkit package that will be run for the current LEDGER_VERSION...
-    if (specifier.startsWith('@midnight-ntwrk/compact-js')) {
+    // Intercept imports of the 'compact-js*' and 'compact-runtime' packages, and resolve them relative to
+    // their version installed in the toolkit package that will be run for the current LEDGER_VERSION...
+    if (specifier.startsWith('@midnight-ntwrk/compact-js') || specifier.startsWith('@midnight-ntwrk/compact-runtime')) {
       return {
         url: `file://${toolkitResolve(specifier)}`,
         shortCircuit: true
