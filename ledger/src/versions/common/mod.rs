@@ -723,12 +723,10 @@ where
 		api.tagged_serialize(&ledger_parameters)
 	}
 
-	// TODO COST MODEL: Needs to be redone with the new ledger cost model
-	#[allow(unused_variables)]
 	pub fn get_transaction_cost(
 		state_key: &[u8],
 		tx: &[u8],
-		block_context: &BlockContext,
+		_block_context: &BlockContext,
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
 		let api = api::new();
@@ -880,6 +878,10 @@ where
 				ctx.block_context.tblock,
 			)
 			.map_err(|e| {
+				log::warn!(
+					target: LOG_TARGET,
+					"Transaction malformed: {e}",
+				);
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
 			})?;
 

@@ -26,6 +26,7 @@ use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
@@ -44,6 +45,7 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
+use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -216,7 +218,6 @@ pub type HostFunctions = (
 	frame_benchmarking::benchmarking::HostFunctions,
 	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
@@ -224,7 +225,6 @@ pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_hf::ledger_bridge_hf::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
@@ -239,12 +239,14 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
+type TransactionPool = FilteringTransactionPool<Block, FullClient>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
 	sc_consensus::DefaultImportQueue<Block>,
-	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
+	TransactionPool,
 	(
 		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
@@ -256,17 +258,38 @@ type MidnightService = sc_service::PartialComponents<
 >;
 
 #[allow(clippy::result_large_err)]
+fn parse_genesis_extrinsic_values(
+	values: &[serde_json::Value],
+) -> Result<Vec<Vec<u8>>, ServiceError> {
+	values
+		.iter()
+		.map(|v| {
+			let s = v
+				.as_str()
+				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))?;
+			hex::decode(s).map_err(|e| {
+				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
+			})
+		})
+		.collect()
+}
+
+#[allow(clippy::result_large_err)]
 pub fn new_partial(
 	config: &Configuration,
 	epoch_config: MainchainEpochConfig,
 	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
+	let midnight_metrics =
+		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
 	let data_sources = tokio::task::block_in_place(|| {
 		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
 			midnight_cfg.clone(),
 			mc_follower_metrics.clone(),
+			midnight_metrics.clone(),
 		))
 	})?;
 
@@ -284,27 +307,15 @@ pub fn new_partial(
 	let executor = sc_service::new_wasm_executor(&config.executor);
 	let backend = sc_service::new_db_backend(config.db_config())?;
 
-	let genesis_extrinsics: Result<Vec<Vec<u8>>, ServiceError> = config
-		.chain_spec
-		.properties()
-		.get("genesis_extrinsics")
-		.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
-		.as_array()
-		.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?
-		.iter()
-		.map(|v| {
-			v.as_str()
-				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))
-				.map(|v| v.to_string())
-		})
-		.take_while(Result::is_ok)
-		.map(|v| {
-			let s = v.unwrap();
-			hex::decode(&s).map_err(|e| {
-				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
-			})
-		})
-		.collect();
+	let genesis_extrinsics = parse_genesis_extrinsic_values(
+		config
+			.chain_spec
+			.properties()
+			.get("genesis_extrinsics")
+			.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
+			.as_array()
+			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
+	);
 
 	let genesis_storage = config
 		.chain_spec
@@ -383,6 +394,11 @@ pub fn new_partial(
 	.with_prometheus(config.prometheus_registry())
 	.build();
 
+	let transaction_pool = {
+		let metrics = FilteringMetrics::new(config.prometheus_registry());
+		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+	};
+
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
 		GRANDPA_JUSTIFICATION_PERIOD,
@@ -454,6 +470,7 @@ pub fn new_partial(
 }
 
 /// Builds a new service for a full client.
+#[allow(clippy::too_many_arguments)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
@@ -462,10 +479,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<TaskManager, ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config)?;
+		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
 	let sc_service::PartialComponents {
 		client,
@@ -840,4 +858,61 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	}
 
 	Ok(task_manager)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_genesis_extrinsics_valid_hex() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert_eq!(result, vec![vec![0xde, 0xad, 0xbe, 0xef], vec![0xca, 0xfe, 0xba, 0xbe]]);
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_first_position() {
+		let values = vec![serde_json::json!(42), serde_json::Value::String("deadbeef".into())];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_middle_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::Null,
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_invalid_hex_last_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+			serde_json::Value::String("not_valid_hex".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("error decoding extrinsic as hex"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_empty_array() {
+		let values: Vec<serde_json::Value> = vec![];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert!(result.is_empty());
+	}
 }

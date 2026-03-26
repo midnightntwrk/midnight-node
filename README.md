@@ -160,6 +160,7 @@ that we are still in the process of being release. As such:
 [Decisions](docs/decisions)
 
 - [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
+- [OpenRPC API Specification](docs/openrpc.md) - Machine-readable API schema via `rpc.discover`
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks

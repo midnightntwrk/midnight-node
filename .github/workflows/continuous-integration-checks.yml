@@ -21,21 +21,95 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Merge Conflict Finder
         uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Check for existing images
+        id: check_images
+        run: |
+          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          tag="${version}-dev-${content_hash}-amd64"
+          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${tag}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${version}-${content_hash}-amd64" > /dev/null 2>&1 && echo true || echo false)
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+            echo "skip_check=true" >> "$GITHUB_OUTPUT"
+            echo "Images already exist, skipping format/lint check"
+          else
+            echo "skip_check=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.check_images.outputs.skip_check != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
       - name: Free disk space
+        if: steps.check_images.outputs.skip_check != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run build
+        if: steps.check_images.outputs.skip_check != 'true'
         run: |
           . ./.envrc && earthly --ci +check
+
+  feature-unification:
+    name: Feature Unification Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 #v3.7.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Check for existing images
+        id: check_images
+        run: |
+          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
+          tag="${version}-dev-${content_hash}-amd64"
+          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${tag}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${version}-${content_hash}-amd64" > /dev/null 2>&1 && echo true || echo false)
+          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
+            echo "skip_check=true" >> "$GITHUB_OUTPUT"
+            echo "Images already exist, skipping feature unification check"
+          else
+            echo "skip_check=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.check_images.outputs.skip_check != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Free disk space
+        if: steps.check_images.outputs.skip_check != 'true'
+        run: scripts/free-disk-space.sh
+
+      - name: Run feature unification check
+        if: steps.check_images.outputs.skip_check != 'true'
+        run: |
+          . ./.envrc && earthly --ci +check-feature-unification

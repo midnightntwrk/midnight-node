@@ -12,7 +12,8 @@
 // limitations under the License.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
-use crate::db::{get_deregistrations, get_registrations};
+use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
+use crate::db::{MultiAssetCache, get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
@@ -21,11 +22,9 @@ use cardano_serialization_lib::{
 	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
 	PlutusData, RewardAddress, ScriptHash,
 };
-use derive_new::new;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
 use std::fmt::Debug;
@@ -84,12 +83,23 @@ pub enum RegistrationDatumDecodeError {
 	DustAddressInvalidLength(usize),
 }
 
-#[derive(new)]
 pub struct MidnightCNightObservationDataSourceImpl {
 	pub pool: PgPool,
-	pub metrics_opt: Option<McFollowerMetrics>,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
+	multi_asset_cache: MultiAssetCache,
+}
+
+impl MidnightCNightObservationDataSourceImpl {
+	pub fn new(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+	) -> Self {
+		let multi_asset_cache = MultiAssetCache::new(pool.clone());
+		Self { pool, metrics_opt, cache_size, multi_asset_cache }
+	}
 }
 
 observed_async_trait!(
@@ -127,11 +137,27 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					"MappingValidator address does not contain a script hash".to_string(),
 				))?;
 
+		// Resolve multi_asset.id for auth token and cNight token (cached after first call)
+		let auth_token_ident = self
+			.multi_asset_cache
+			.resolve_ident(
+				&mapping_validator_policy_id.to_bytes(),
+				config.auth_token_asset_name.as_bytes(),
+			)
+			.await?;
+
+		let cnight_ident = self
+			.multi_asset_cache
+			.resolve_ident(&config.cnight_policy_id, cnight_asset_name)
+			.await?;
+
 		// Get end position from cardano block hash
+		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
+		drop(_block_timer);
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
 
@@ -146,20 +172,24 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 
 		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
 			async {
-				self.get_registration_utxos(
-					cardano_network,
-					&mapping_validator_policy_id,
-					&config.mapping_validator_address,
-					&config.auth_token_asset_name,
-					start_position,
-					&end,
-					utxo_capacity,
-					0,
-				)
-				.await
-				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_registrations");
+				match auth_token_ident {
+					Some(ident) => self.get_registration_utxos(
+						cardano_network,
+						ident,
+						&config.mapping_validator_address,
+						start_position,
+						&end,
+						utxo_capacity,
+						0,
+					)
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+					None => Ok(vec![]),
+				}
 			},
 			async {
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_deregistrations");
 				self.get_deregistration_utxos(
 					cardano_network,
 					&config.mapping_validator_address,
@@ -172,30 +202,36 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
-				self.get_asset_create_utxos(
-					cardano_network,
-					config.cnight_policy_id,
-					cnight_asset_name,
-					start_position,
-					&end,
-					utxo_capacity,
-					0,
-				)
-				.await
-				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_creates");
+				match cnight_ident {
+					Some(ident) => self.get_asset_create_utxos(
+						cardano_network,
+						ident,
+						start_position,
+						&end,
+						utxo_capacity,
+						0,
+					)
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+					None => Ok(vec![]),
+				}
 			},
 			async {
-				self.get_asset_spend_utxos(
-					cardano_network,
-					config.cnight_policy_id,
-					cnight_asset_name,
-					start_position,
-					&end,
-					utxo_capacity,
-					0,
-				)
-				.await
-				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_spends");
+				match cnight_ident {
+					Some(ident) => self.get_asset_spend_utxos(
+						cardano_network,
+						ident,
+						start_position,
+						&end,
+						utxo_capacity,
+						0,
+					)
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+					None => Ok(vec![]),
+				}
 			}
 		)?;
 
@@ -294,25 +330,16 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_registration_utxos(
 		&self,
 		cardano_network: u8,
-		mapping_validator_policy_id: &ScriptHash,
+		auth_token_ident: i64,
 		address: &str,
-		auth_asset_name: &str,
 		start: &CardanoPosition,
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_registrations(
-			&self.pool,
-			address,
-			mapping_validator_policy_id,
-			auth_asset_name,
-			start,
-			end,
-			limit,
-			offset,
-		)
-		.await?;
+		let rows =
+			get_registrations(&self.pool, address, auth_token_ident, start, end, limit, offset)
+				.await?;
 
 		let mut utxos = Vec::new();
 
@@ -419,17 +446,14 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_asset_create_utxos(
 		&self,
 		cardano_network: u8,
-		policy_id: [u8; 28],
-		asset_name: &[u8],
+		ident: i64,
 		start: &CardanoPosition,
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_creates(
-			&self.pool, policy_id, asset_name, start, end, limit, offset,
-		)
-		.await?;
+		let rows =
+			crate::db::get_asset_creates(&self.pool, ident, start, end, limit, offset).await?;
 
 		let mut utxos = Vec::new();
 
@@ -483,17 +507,14 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_asset_spend_utxos(
 		&self,
 		cardano_network: u8,
-		policy_id: [u8; 28],
-		asset_name: &[u8],
+		ident: i64,
 		start: &CardanoPosition,
 		end: &CardanoPosition,
 		limit: usize,
 		offset: usize,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_spends(
-			&self.pool, policy_id, asset_name, start, end, limit, offset,
-		)
-		.await?;
+		let rows =
+			crate::db::get_asset_spends(&self.pool, ident, start, end, limit, offset).await?;
 
 		let mut utxos = Vec::new();
 
