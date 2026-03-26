@@ -23,9 +23,9 @@ pub fn fetch_zswap_state_from_context(
 		outputs: zswap_state
 			.coins
 			.iter()
-			.map(|(nullifier, c)| {
+			.map(|(_nullifier, c)| {
 				EncodedOutput::new(
-					EncodedShieldedCoinInfo::new(nullifier.0.0, c.type_.0.0, c.value),
+					EncodedShieldedCoinInfo::new(c.nonce.0.0, c.type_.0.0, c.value),
 					EncodedRecipient::user(EncodedCoinPublic::from_raw_bytes(coin_public_bytes)),
 				)
 			})
