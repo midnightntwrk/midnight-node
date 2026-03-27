@@ -299,7 +299,9 @@ impl BuildTxs for BatchesBuilder {
 			block_context: block_context.clone(),
 		};
 
-		context_arc.clone().update_from_tx(&initial_tx_with_context.tx, &block_context);
+		context_arc
+			.update_from_tx(&initial_tx_with_context.tx, &block_context)
+			.expect("failed to update context from initial tx");
 
 		spin.finish("generated initial tx.");
 
@@ -455,7 +457,9 @@ impl BuildTxs for BatchesBuilder {
 					tx: SerdeTransaction::Midnight(tx),
 					block_context: block_context.clone(),
 				};
-				context_arc.clone().update_from_tx(&tx_with_context.tx, &block_context);
+				context_arc
+					.update_from_tx(&tx_with_context.tx, &block_context)
+					.expect("failed to update context from tx");
 				txs.push(tx_with_context);
 			}
 

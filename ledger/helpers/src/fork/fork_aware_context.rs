@@ -164,6 +164,7 @@ pub fn apply_block_7(
 		block.state_root.as_ref(),
 		block.state.as_ref(),
 	)
+	.expect("failed to update ledger 7 context from block")
 }
 
 /// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
@@ -207,4 +208,5 @@ pub fn apply_block_8(
 		block.state_root.as_ref(),
 		block.state.as_ref(),
 	)
+	.expect("failed to update ledger 8 context from block")
 }
