@@ -52,6 +52,7 @@ pub mod ledger_8 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+	pub use common::wallet;
 }
 
 pub use ledger_8 as latest;
