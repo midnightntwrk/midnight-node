@@ -69,7 +69,7 @@ impl FetchTask {
 		}
 	}
 
-	async fn fetch_block_hash(
+	pub(crate) async fn fetch_block_hash(
 		client: &MidnightNodeClient,
 		block_number: u64,
 	) -> Result<H256, FetchTaskError> {
@@ -98,7 +98,7 @@ impl FetchTask {
 		Ok(block_hash)
 	}
 
-	async fn fetch_block(
+	pub(crate) async fn fetch_block(
 		client: &MidnightNodeClient,
 		block_hash: H256,
 	) -> Result<FetchedBlock, FetchTaskError> {

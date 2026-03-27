@@ -78,19 +78,25 @@ where
 		let who = who.clone();
 
 		let current_block = frame_system::Pallet::<T>::block_number();
-		let (bytes_used, window_start) = crate::AccountUsage::<T>::get(&who);
+		let usage = crate::AccountUsage::<T>::get(&who);
 
 		// Determine effective usage: reset if window has expired
 		let window_size =
 			frame_system::pallet_prelude::BlockNumberFor::<T>::from(T::WindowSize::get());
-		let effective_bytes = if current_block.saturating_sub(window_start) >= window_size {
-			0u64
-		} else {
-			bytes_used
-		};
+		let (effective_bytes, effective_txs) =
+			if current_block.saturating_sub(usage.window_start) >= window_size {
+				(0u64, 0u64)
+			} else {
+				(usage.bytes_used, usage.txs_used)
+			};
 
 		let new_bytes = effective_bytes.saturating_add(len as u64);
 		if new_bytes > T::MaxBytes::get() {
+			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
+		}
+
+		let new_txs = effective_txs.saturating_add(1);
+		if new_txs > T::MaxTxs::get() {
 			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
 		}
 
@@ -114,12 +120,14 @@ where
 		let window_size =
 			frame_system::pallet_prelude::BlockNumberFor::<T>::from(T::WindowSize::get());
 
-		crate::AccountUsage::<T>::mutate(&who, |(bytes_used, window_start)| {
-			if current_block.saturating_sub(*window_start) >= window_size {
-				*bytes_used = 0;
-				*window_start = current_block;
+		crate::AccountUsage::<T>::mutate(&who, |usage| {
+			if current_block.saturating_sub(usage.window_start) >= window_size {
+				usage.bytes_used = 0;
+				usage.txs_used = 0;
+				usage.window_start = current_block;
 			}
-			*bytes_used = bytes_used.saturating_add(len as u64);
+			usage.bytes_used = usage.bytes_used.saturating_add(len as u64);
+			usage.txs_used = usage.txs_used.saturating_add(1);
 		});
 
 		Ok(())
