@@ -569,7 +569,7 @@ node-ci-image:
 
 node-ci-image-single-platform:
     ARG NATIVEARCH
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
     # Install curl for rust installation
     RUN microdnf -y install curl-minimal ca-certificates && \
@@ -1255,7 +1255,7 @@ audit-rust:
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
     # Install dependencies for Node.js (curl-minimal already in base image)
     RUN microdnf -y install tar gzip xz && \
@@ -1286,7 +1286,7 @@ audit-npm:
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
     # Install dependencies for Node.js (curl-minimal already in base image)
     RUN microdnf -y install tar gzip xz && \
@@ -1338,7 +1338,7 @@ audit:
 # fix-lock-npm regenerates a single npm package-lock.json inside a container
 fix-lock-npm:
     ARG DIRECTORY
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
@@ -1386,7 +1386,7 @@ partnerchains-dev:
 
     ARG EARTHLY_GIT_SHORT_HASH
 
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
     # Get node version for the image tag
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
