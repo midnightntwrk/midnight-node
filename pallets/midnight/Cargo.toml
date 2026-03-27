@@ -35,7 +35,7 @@ sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
 #sp-block-rewards.workspace = true
-hex = {version = "0.4.3", features = ["alloc"] }
+hex = {version = "=0.4.3", features = ["alloc"] }
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 assert_matches.workspace = true
 #pallet-block-rewards.workspace = true
