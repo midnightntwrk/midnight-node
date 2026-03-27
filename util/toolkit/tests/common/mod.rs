@@ -31,7 +31,7 @@ static COMPOSE: LazyLock<Compose> = LazyLock::new(|| {
 	let path = concat!(env!("CARGO_MANIFEST_DIR"), "/test-images.docker-compose.yml");
 	let raw = std::fs::read_to_string(path).expect("failed to read test-images.docker-compose.yml");
 	let expanded = shellexpand::env(&raw).expect("failed to expand env vars in compose file");
-	serde_yaml::from_str(&expanded).expect("failed to parse compose file")
+	serde_yml::from_str(&expanded).expect("failed to parse compose file")
 });
 
 /// Returns `(name, tag)` for the given compose service, splitting on `:`.

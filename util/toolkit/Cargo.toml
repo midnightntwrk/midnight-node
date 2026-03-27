@@ -54,8 +54,8 @@ rayon.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true
 trycmd = "0.15.10"
-testcontainers = "0.25"
-serde_yaml = "0.9"
+testcontainers = "0.27"
+serde_yml = "0.0.12"
 shellexpand = "3"
 test-log.workspace = true
 

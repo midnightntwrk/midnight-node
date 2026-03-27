@@ -122,7 +122,7 @@ impl ComputeTask {
 		}
 	}
 
-	async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
+	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
 		let spec_version = block
 			.block
 			.header()

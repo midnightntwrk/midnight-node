@@ -13,7 +13,11 @@
 
 use crate::{
 	cli_parsers as cli,
-	fetcher::{fetch_all, fetch_storage, fetch_storage::WalletStateCaching},
+	client::MidnightNodeClient,
+	fetcher::{
+		fetch_all,
+		fetch_storage::{self, WalletStateCaching},
+	},
 };
 use async_trait::async_trait;
 use clap::Args;
@@ -216,9 +220,9 @@ impl GetTxsFromFile {
 
 			if self.ignore_block_context {
 				let txs: Vec<SerializedTx> = built_txs.batches.into_iter().flatten().collect();
-				Ok(SourceTransactions::from_txs(txs))
+				Ok(SourceTransactions::from_txs(txs, None))
 			} else {
-				Ok(SourceTransactions::from_batches(built_txs.batches, self.dust_warp))
+				Ok(SourceTransactions::from_batches(built_txs.batches, self.dust_warp, None))
 			}
 		} else {
 			// Load from multiple files
@@ -228,9 +232,9 @@ impl GetTxsFromFile {
 				res?.into_iter().flat_map(|b| b.batches).collect();
 
 			if self.ignore_block_context {
-				Ok(SourceTransactions::from_txs(batches.into_iter().flatten()))
+				Ok(SourceTransactions::from_txs(batches.into_iter().flatten(), None))
 			} else {
-				Ok(SourceTransactions::from_batches(batches, self.dust_warp))
+				Ok(SourceTransactions::from_batches(batches, self.dust_warp, None))
 			}
 		}
 	}
@@ -316,7 +320,12 @@ impl GetTxs for GetTxsFromUrl {
 		log::debug!("[perf] fetch_all took {:?}", t.elapsed());
 
 		let t = std::time::Instant::now();
-		let source_txs = SourceTransactions::from_blocks(blocks, self.dust_warp);
+		let client = MidnightNodeClient::new(&self.rpc_url, None).await?;
+		let network_id = client.get_network_id().await?;
+		log::debug!("[perf] get_network_id took {:?}", t.elapsed());
+
+		let t = std::time::Instant::now();
+		let source_txs = SourceTransactions::from_blocks(blocks, self.dust_warp, Some(network_id));
 		log::debug!("[perf] SourceTransactions::from_blocks took {:?}", t.elapsed());
 		Ok(source_txs)
 	}
