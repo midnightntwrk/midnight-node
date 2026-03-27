@@ -1369,7 +1369,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43d193de1f7487df1914d3a568b772458861d33f9c54249612cc2893d6915054"
 dependencies = [
  "bitcoin_hashes 0.13.0",
- "rand_core 0.4.2",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -2425,7 +2425,7 @@ dependencies = [
 [[package]]
 name = "cquisitor-lib"
 version = "0.1.0-beta.25"
-source = "git+https://github.com/gilescope/cquisitor-lib?branch=wasm-bindgen-update#4f7cd73fd75909bc9cd2c3de9dd04624be17ae35"
+source = "git+https://github.com/midnightntwrk/cquisitor-lib?branch=wasm-bindgen-update#89b334ca5fd433ec3a65d4e9b3e26cecd89fd242"
 dependencies = [
  "anyhow",
  "bech32 0.11.0",
@@ -3105,7 +3105,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -5605,7 +5605,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -10404,7 +10404,7 @@ checksum = "4e69bf016dc406eff7d53a7d3f7cf1c2e72c82b9088aac1118591e36dd2cd3e9"
 dependencies = [
  "bitcoin_hashes 0.13.0",
  "rand 0.8.5",
- "rand_core 0.4.2",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -19746,7 +19746,7 @@ dependencies = [
 [[package]]
 name = "whisky"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "async-trait",
  "cryptoxide",
@@ -19776,7 +19776,7 @@ dependencies = [
 [[package]]
 name = "whisky-common"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "async-trait",
  "hex",
@@ -19790,7 +19790,7 @@ dependencies = [
 [[package]]
 name = "whisky-csl"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "cardano-serialization-lib",
  "cquisitor-lib",
@@ -19817,7 +19817,7 @@ dependencies = [
 [[package]]
 name = "whisky-macros"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "proc-macro2",
  "quote 1.0.40",
@@ -19827,7 +19827,7 @@ dependencies = [
 [[package]]
 name = "whisky-provider"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "async-trait",
  "futures",
@@ -19844,7 +19844,7 @@ dependencies = [
 [[package]]
 name = "whisky-wallet"
 version = "1.0.16"
-source = "git+https://github.com/gilescope/whisky?branch=wasm-bindgen-update#d6f5ae80e38c27194ea9b39eaa89cbc0ec83dd2e"
+source = "git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update#1d473db05e5af4b453549bca73561c01a3bb6d86"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
