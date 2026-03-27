@@ -2,20 +2,22 @@ use std::fmt;
 
 use clap::Args;
 
-use crate::tx_generator::source::GetTxsFromFile;
-use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use crate::{
+	commands::show_block::{ShowBlockJson, ShowBlockTransaction},
+	tx_generator::source::GetTxsFromFile,
+};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 
 pub struct ShowTransactionResult {
-	display: String,
-	size: usize,
+	txs: Vec<ShowBlockTransaction>,
 }
 
 impl fmt::Display for ShowTransactionResult {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		writeln!(f)?;
-		writeln!(f, "Tx {}", self.display)?;
-		writeln!(f)?;
-		write!(f, "Size {:?}", self.size)
+		for tx in &self.txs {
+			writeln!(f, "{}", tx)?;
+		}
+		Ok(())
 	}
 }
 
@@ -29,17 +31,18 @@ pub struct ShowTransactionArgs {
 pub fn execute(
 	args: ShowTransactionArgs,
 ) -> Result<ShowTransactionResult, Box<dyn std::error::Error + Send + Sync>> {
-	let txs = GetTxsFromFile::load_single_or_multiple(&args.src_file)?;
-	let (display, size) = exec_inner(&txs)?;
-	Ok(ShowTransactionResult { display, size })
-}
-
-pub fn exec_inner(
-	txs: &SerializedTxBatches,
-) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
-	// Try ledger_8 first (most common), fall back to ledger_7
-	crate::commands::fork::ledger_8::show_transaction::show_transactions(&txs)
-		.or_else(|_| crate::commands::fork::ledger_7::show_transaction::show_transactions(&txs))
+	let batches = GetTxsFromFile::load_single_or_multiple(&args.src_file)?;
+	let blocks: Vec<RawBlockData> = (&batches).try_into()?;
+	let mut txs = Vec::new();
+	for block in blocks {
+		let show_block = ShowBlockJson::new(&block)?;
+		let start_index = txs.len();
+		for (i, mut tx) in show_block.transactions.into_iter().enumerate() {
+			tx.index = i + start_index;
+			txs.push(tx);
+		}
+	}
+	Ok(ShowTransactionResult { txs })
 }
 
 #[cfg(test)]
@@ -52,7 +55,6 @@ mod test {
 			src_file: "../../res/test-tx-deserialize/serialized_tx.mn".to_string(),
 		})
 		.unwrap();
-		assert!(result.size > 0);
-		assert!(!result.display.is_empty());
+		assert!(!result.txs.is_empty());
 	}
 }
