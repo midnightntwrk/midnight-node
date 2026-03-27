@@ -11,7 +11,7 @@ RUN microdnf -y install \
   vim-enhanced-9.1.1591 \
   jq-1.7.1 \
   tree-1.8.0 \
-  nodejs:22 && \
+  nodejs-22 && \
   microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
 COPY .envrc ./bin/.envrc
