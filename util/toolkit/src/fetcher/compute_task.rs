@@ -20,11 +20,14 @@ use subxt::{
 	utils::H256,
 };
 
-use crate::fetcher::{
-	fetch_storage::{FetchStorage, FetchedBlock},
-	runtimes::{
-		MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
-		RuntimeVersionError,
+use crate::{
+	client::MidnightNodeClientConfig,
+	fetcher::{
+		fetch_storage::{FetchStorage, FetchedBlock},
+		runtimes::{
+			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0, RuntimeVersion,
+			RuntimeVersionError,
+		},
 	},
 };
 
@@ -155,24 +158,27 @@ impl ComputeTask {
 		let block_header = block.block.header();
 		let parent_block_hash = block_header.parent_hash;
 
-		let extrinsics = block
-			.block
-			.extrinsics()
-			.await
-			.unwrap_or_else(|err| panic!("Error while fetching the transactions: {}", err));
+		let mut timestamp_ms = None;
+		let mut transactions = vec![];
+
+		let block_number = block.block.number() as u64;
+
+		// Decode extrinsics using version-specific metadata so that historical
+		// blocks are decoded with the schema they were produced under, not the
+		// live (post-upgrade) metadata from the OnlineClient.
+		let extrinsics =
+			subxt::ext::subxt_core::blocks::Extrinsics::<MidnightNodeClientConfig>::decode_from(
+				block.raw_body.clone(),
+				version.metadata(),
+			)
+			.map_err(subxt::Error::from)?;
+
 		let events = block
 			.block
 			.events()
 			.await
 			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
 
-		let mut timestamp_ms = None;
-		let mut transactions = vec![];
-
-		// Get block number to determine extraction strategy
-		let block_number = block.block.number() as u64;
-
-		// Extract timestamp and regular midnight transactions from extrinsics
 		for ext in extrinsics.iter() {
 			let Ok(call) = ext.as_root_extrinsic::<M::Call>() else {
 				continue;
@@ -183,7 +189,6 @@ impl ComputeTask {
 				}
 				timestamp_ms = Some(ts);
 			} else if let Some(bytes) = M::send_mn_transaction(&call) {
-				// Store raw bytes instead of deserializing
 				transactions.push(RawTransaction::Midnight(bytes));
 			} else if block_number == 0 {
 				// Genesis block: extract system transactions from extrinsics directly
