@@ -25,6 +25,12 @@
       ]
     }
   ],
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "replace"
+    }
+  ],
   "dockerfile": {
     "managerFilePatterns": [
       "//Earthfile//"
