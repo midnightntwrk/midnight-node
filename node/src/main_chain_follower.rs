@@ -193,10 +193,15 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
+	if cfg.allow_non_ssl {
+		log::warn!(
+			"allow_non_ssl is deprecated and will be removed in a future release. Plaintext database connections are no longer permitted. The flag is ignored — connections use TLS."
+		);
+	}
+
 	let candidates_pool = get_connection(
 		postgres_uri,
 		CANDIDATES_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -224,7 +229,6 @@ pub async fn create_cached_data_sources(
 	let sidechain_pool = get_connection(
 		postgres_uri,
 		SIDECHAIN_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -245,7 +249,6 @@ pub async fn create_cached_data_sources(
 	let mc_hash_pool = get_connection(
 		postgres_uri,
 		MC_HASH_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -264,7 +267,6 @@ pub async fn create_cached_data_sources(
 	let cnight_observation_pool = get_connection(
 		postgres_uri,
 		CNIGHT_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -281,7 +283,6 @@ pub async fn create_cached_data_sources(
 	let federated_authority_observation_pool = get_connection(
 		postgres_uri,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -300,7 +301,6 @@ pub async fn create_cached_data_sources(
 	let bridge_pool = get_connection(
 		postgres_uri,
 		BRIDGE_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -335,7 +335,6 @@ pub async fn create_cnight_observation_data_source(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CNIGHT_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -354,7 +353,6 @@ pub async fn create_federated_authority_observation_data_source(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -385,7 +383,6 @@ pub async fn create_authority_selection_data_source_with_pool(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CANDIDATES_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -405,33 +402,42 @@ pub async fn create_ics_genesis_pool(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		ICS_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 	Ok(pool)
 }
 
-// Copied from internal utility in partner-chains-db-sync-data-sources
+fn build_ssl_connect_options(
+	connection_string: &str,
+	ssl_root_cert: Option<&str>,
+) -> Result<
+	(sqlx::postgres::PgSslMode, sqlx::postgres::PgConnectOptions),
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	let ssl_mode = if ssl_root_cert.is_some() {
+		sqlx::postgres::PgSslMode::VerifyFull
+	} else {
+		log::warn!(
+			"No ssl_root_cert configured: using PgSslMode::Require (encrypted but no certificate validation). Set ssl_root_cert for full MITM protection."
+		);
+		sqlx::postgres::PgSslMode::Require
+	};
+	let mut options =
+		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(ssl_mode);
+	if let Some(cert_path) = ssl_root_cert {
+		options = options.ssl_root_cert(cert_path);
+	}
+	Ok((ssl_mode, options))
+}
+
 async fn get_connection(
 	connection_string: &str,
 	pool_cfg: DbPoolCfg,
-	allow_non_ssl: bool,
 	ssl_root_cert: Option<&str>,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let mut connect_options =
-		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
-			//Note: PgSslMode::Prefer has issues with some environments.
-			sqlx::postgres::PgSslMode::Disable
-		} else if ssl_root_cert.is_some() {
-			sqlx::postgres::PgSslMode::VerifyFull
-		} else {
-			log::warn!("No ssl_root_cert configured: using PgSslMode::Require (encrypted but no certificate validation). Set ssl_root_cert for full MITM protection.");
-			sqlx::postgres::PgSslMode::Require
-		});
-	if let Some(cert_path) = ssl_root_cert {
-		connect_options = connect_options.ssl_root_cert(cert_path);
-	}
+	let (ssl_mode, connect_options) = build_ssl_connect_options(connection_string, ssl_root_cert)?;
+	log::info!("Database connection SSL mode: {ssl_mode:?}");
 
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(pool_cfg.max_connections)
@@ -475,5 +481,34 @@ mod tests {
 		assert!(!message.contains("localhost"), "error must not contain host");
 		assert!(!message.contains("5432"), "error must not contain default port");
 		assert!(!message.contains("cexplorer"), "error must not contain database name");
+	}
+
+	const TEST_CONN_STR: &str = "postgres://user:pass@localhost:5432/testdb";
+
+	#[test]
+	fn ssl_mode_is_verify_full_when_root_cert_provided() {
+		let (mode, _opts) =
+			build_ssl_connect_options(TEST_CONN_STR, Some("/path/to/ca.pem")).unwrap();
+		assert!(matches!(mode, sqlx::postgres::PgSslMode::VerifyFull));
+	}
+
+	#[test]
+	fn ssl_mode_is_require_when_no_root_cert() {
+		let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, None).unwrap();
+		assert!(matches!(mode, sqlx::postgres::PgSslMode::Require));
+	}
+
+	#[test]
+	fn ssl_mode_is_never_disable() {
+		for cert in [None, Some("/path/to/ca.pem")] {
+			let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, cert).unwrap();
+			assert!(!matches!(mode, sqlx::postgres::PgSslMode::Disable));
+		}
+	}
+
+	#[test]
+	fn invalid_connection_string_returns_error() {
+		let result = build_ssl_connect_options("not-a-valid-uri", None);
+		assert!(result.is_err());
 	}
 }
