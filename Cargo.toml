@@ -323,7 +323,7 @@ raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-c
 sealed_test = "1.0.0"
 secp256k1 = { version = "0.30.0", default-features = false }
 selection = { path = "partner-chains/toolkit/committee-selection/selection", default-features = false }
-testcontainers = "0.25.0"
+testcontainers = "0.27.2"
 time = { version = "0.3.36", default-features = false }
 tokio-retry = "0.3"
 uplc = "1.1.6"
