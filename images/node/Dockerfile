@@ -15,7 +15,8 @@ RUN microdnf -y install \
     gdb-16.3 \
     vim-enhanced-9.1.1591 \
     jq-1.7.1 \
-    tree-1.8.0 && \
+    tree-1.8.0 \
+    nodejs24 && \
     # Download bytehound profiler (x86_64 only, harmless no-op on arm64)
     curl -fsSL -o /tmp/bytehound.tgz https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
     tar -xzf /tmp/bytehound.tgz -C /tmp && \
