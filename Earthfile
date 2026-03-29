@@ -1398,7 +1398,7 @@ partnerchains-dev:
     RUN printf "%s\n" \
         "[nodesource]" \
         "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_22.x/el/9/\$basearch" \
+        "baseurl=https://rpm.nodesource.com/pub_23.x/el/9/\$basearch" \
         "enabled=1" \
         "gpgcheck=1" \
         "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
