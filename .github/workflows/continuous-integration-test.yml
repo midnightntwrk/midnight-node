@@ -11,14 +11,14 @@ on:
 # no top level default permissions for security reasons
 permissions:
   contents: read
+  packages: write
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
   run:
     name: Run tests
-    # 16 core machines seem to have gone walkabout.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-core-x64
     env:
       FORCE_COLOR: 1
     steps:
@@ -26,7 +26,6 @@ jobs:
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
-          use-cache: false
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -34,11 +33,23 @@ jobs:
       - name: Free disk space
         run: scripts/free-disk-space.sh
 
+      - name: Log in to GHCR (for remote cache)
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
       - name: Run build
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" --strict +test
+          PUSH_FLAG=""
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" --strict $PUSH_FLAG --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

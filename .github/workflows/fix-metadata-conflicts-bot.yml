@@ -201,7 +201,7 @@ jobs:
 
       - name: Post success comment
         if: env.RESULT == 'resolved'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Metadata conflicts resolved successfully!
@@ -214,7 +214,7 @@ jobs:
 
       - name: Post no-conflicts comment
         if: env.RESULT == 'no-conflicts'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :information_source: No conflicts detected between this PR and the `${{ steps.pr.outputs.base }}` branch.
@@ -222,7 +222,7 @@ jobs:
 
       - name: Post non-metadata-conflicts comment
         if: env.RESULT == 'non-metadata-conflicts'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :warning: Cannot automatically resolve conflicts. Found conflicts in files outside `metadata/static/`:
@@ -236,7 +236,7 @@ jobs:
 
       - name: Post failure comment
         if: failure()
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :x: Failed to fix metadata conflicts. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
