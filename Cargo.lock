@@ -7493,7 +7493,7 @@ dependencies = [
  "midnight-storage 2.0.1",
  "midnight-transient-crypto",
  "midnight-zkir",
- "midnight-zswap 8.0.0",
+ "midnight-zswap 8.0.3",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.28",
@@ -7680,7 +7680,7 @@ dependencies = [
  "midnight-storage-core",
  "midnight-transient-crypto",
  "midnight-zswap 7.0.3",
- "midnight-zswap 8.0.0",
+ "midnight-zswap 8.0.3",
  "moka 0.11.3",
  "parity-scale-codec",
  "scale-info",
@@ -7721,7 +7721,7 @@ dependencies = [
  "midnight-transient-crypto",
  "midnight-zkir",
  "midnight-zswap 7.0.3",
- "midnight-zswap 8.0.0",
+ "midnight-zswap 8.0.3",
  "rand 0.8.5",
  "rayon",
  "serde",
@@ -8374,9 +8374,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "8.0.0"
+version = "8.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00b601ab95418e0471fd7d82d6f7b022d825292b90d917f929a0952d3817cf19"
+checksum = "0b1ef7334eb838a0fb19c3ca769b358a1e4796a76548a10f5f1c369fac41bc92"
 dependencies = [
  "derive-where",
  "fake",
