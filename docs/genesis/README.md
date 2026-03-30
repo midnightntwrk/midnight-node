@@ -122,7 +122,6 @@ Available networks for genesis generation/verification:
 - `qanet` - QA testing network
 - `devnet` - Development network
 - `govnet` - Governance testing network
-- `node-dev-01` - Single node development
 - `preview` - Preview/staging network
 - `preprod` - Pre-production network
 

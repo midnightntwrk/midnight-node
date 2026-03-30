@@ -57,7 +57,13 @@ impl<D: DB + Clone> Wallet<D> {
 		// }
 	}
 
-	pub fn update_dust_from_tx(&mut self, events: &[Event<D>]) -> Result<(), EventReplayError> {
+	pub fn update_dust_from_tx<'a>(
+		&mut self,
+		events: impl IntoIterator<Item = &'a Event<D>>,
+	) -> Result<(), EventReplayError>
+	where
+		D: 'a,
+	{
 		self.dust.replay_events(events)
 	}
 
@@ -81,7 +87,7 @@ impl<D: DB + Clone> Wallet<D> {
 	#[cfg(feature = "can-panic")]
 	pub fn increment_seed(s: &str) -> String {
 		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
-		let result = num + 1;
+		let result = num.checked_add(1).expect("wallet seed overflow");
 		let width = s.len();
 		format!("{result:0width$b}")
 	}

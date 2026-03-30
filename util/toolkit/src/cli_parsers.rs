@@ -14,6 +14,7 @@
 use std::str::FromStr;
 
 use midnight_node_ledger_helpers::*;
+use serde::Deserialize;
 
 use crate::tx_generator::source::FetchCacheConfig;
 
@@ -57,6 +58,17 @@ pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
 		err.insert(
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("failed to parse keypair: {}", e)),
+		);
+		err
+	})
+}
+
+pub fn serde_json_decode<T: for<'a> Deserialize<'a>>(input: &str) -> Result<T, clap::error::Error> {
+	serde_json::from_str(input).map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse input json: {}", e)),
 		);
 		err
 	})

@@ -27,7 +27,6 @@ npm run run:qanet
 npm run run:devnet
 npm run run:govnet
 npm run run:testnet-02
-npm run run:node-dev-01
 ```
 
 ### Upgrading Networks
@@ -39,7 +38,6 @@ npm run image-upgrade:qanet
 npm run image-upgrade:devnet
 npm run image-upgrade:govnet
 npm run image-upgrade:testnet-02
-npm run image-upgrade:node-dev-01
 ```
 
 ### Stopping Networks
@@ -51,7 +49,6 @@ npm run stop:qanet
 npm run stop:devnet
 npm run stop:govnet
 npm run stop:testnet-02
-npm run stop:node-dev-01
 ```
 
 ### Fork Testing

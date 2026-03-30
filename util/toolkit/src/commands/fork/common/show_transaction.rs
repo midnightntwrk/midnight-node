@@ -1,8 +1,5 @@
-use std::io::Write as _;
-
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
-
-use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
+use serde::{Deserialize, Serialize};
 
 use super::ledger_helpers_local::{
 	self, DefaultDB, PureGeneratorPedersen, SystemTransaction, deserialize,
@@ -13,40 +10,41 @@ type ProofMarker = ledger_helpers_local::ProofMarker;
 type Transaction =
 	ledger_helpers_local::Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
 
-pub fn show_transactions(
-	built_txs: &SerializedTxBatches,
-) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
-	let mut displays = Vec::new();
-	let mut total_size = 0;
-	for tx in built_txs.batches.iter().flatten() {
-		let (display, size) = show_transaction(tx)?;
-		displays.push(display);
-		total_size += size;
-	}
-	let display = displays.join("\n");
-	Ok((display, total_size))
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShowTransaction {
+	pub tx_type: String,
+	pub size_bytes: usize,
+	#[serde(with = "hex")]
+	pub hash: [u8; 32],
+	pub debug_str: String,
 }
 
-pub fn show_transaction(
-	serialized_tx: &SerializedTx,
-) -> Result<(String, usize), Box<dyn std::error::Error + Send + Sync>> {
-	let mut out_str = Vec::new();
+impl TryFrom<&RawTransaction> for ShowTransaction {
+	type Error = std::io::Error;
 
-	writeln!(&mut out_str, "{{")?;
-	writeln!(&mut out_str, "hash: {}", hex::encode(serialized_tx.tx_hash))?;
-	writeln!(&mut out_str, "context: {:#?}", serialized_tx.context)?;
-	match &serialized_tx.tx {
-		RawTransaction::Midnight(tx) => {
-			let tx: Transaction = deserialize(tx.as_slice())?;
-			writeln!(&mut out_str, "{tx:#?}")?;
-		},
-		RawTransaction::System(tx) => {
-			let tx: SystemTransaction = deserialize(tx.as_slice())?;
-			writeln!(&mut out_str, "{tx:#?}")?;
-		},
+	fn try_from(value: &RawTransaction) -> Result<Self, Self::Error> {
+		let size_bytes = value.as_bytes().len();
+		match value {
+			RawTransaction::Midnight(tx_bytes) => {
+				let tx: Transaction = deserialize(tx_bytes.as_slice())?;
+				let hash = tx.transaction_hash().0.0;
+				Ok(ShowTransaction {
+					tx_type: "Midnight".to_string(),
+					size_bytes,
+					hash,
+					debug_str: format!("{tx:#?}"),
+				})
+			},
+			RawTransaction::System(tx_bytes) => {
+				let tx: SystemTransaction = deserialize(tx_bytes.as_slice())?;
+				let hash = tx.transaction_hash().0.0;
+				Ok(ShowTransaction {
+					tx_type: "Midnight".to_string(),
+					size_bytes,
+					hash,
+					debug_str: format!("{tx:#?}"),
+				})
+			},
+		}
 	}
-
-	writeln!(&mut out_str, "}}")?;
-	let size = serialized_tx.tx_byte_len();
-	Ok((String::from_utf8_lossy(&out_str).to_string(), size))
 }

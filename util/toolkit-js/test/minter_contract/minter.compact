@@ -15,6 +15,10 @@
 
 import CompactStandardLibrary;
 
+export ledger storage_coin_color: Bytes<32>;
+export ledger storage_amount: Uint<128>;
+export ledger storage_user: Bytes<32>;
+
 export circuit mintUnshieldedToSelfTest(domainSep: Bytes<32>, amount: Uint<64>): Bytes<32> {
   const color = mintUnshieldedToken(disclose(domainSep), disclose(amount), left<ContractAddress, UserAddress>(kernel.self()));
   return color;
@@ -60,10 +64,25 @@ export circuit receiveShieldedTest(coin: ShieldedCoinInfo): [] {
 export circuit mintAndSendImmediate(domainSep: Bytes<32>, mint_amount: Uint<64>, send_amount: Uint<64>, user_key: ZswapCoinPublicKey): ShieldedCoinInfo {
     const coin = mintShieldedToken(
         disclose(domainSep),
-        disclose(disclose(mint_amount)),
+        disclose(mint_amount),
         evolveNonce(0 as Uint<128>, disclose(domainSep)),
         right<ZswapCoinPublicKey, ContractAddress>(kernel.self())
     );
     sendImmediateShielded(coin, left<ZswapCoinPublicKey, ContractAddress>(disclose(user_key)), disclose(send_amount));
     return coin;
+}
+
+export circuit setToken(color: Bytes<32>, transfer_amount: Uint<128>, user_address: Bytes<32>): [] {
+   storage_coin_color = disclose(color);
+   storage_amount = disclose(transfer_amount);
+   storage_user = disclose(user_address);
+}
+
+export circuit receiveAndSendUnshielded(): [] {
+    receiveUnshielded(storage_coin_color, storage_amount);
+    sendUnshielded(
+        storage_coin_color,
+        storage_amount,
+        right<ContractAddress, UserAddress>(UserAddress { bytes: storage_user })
+    );
 }

@@ -15,6 +15,7 @@ pub mod compute_task;
 pub mod fetch_storage;
 pub mod fetch_task;
 pub mod runtimes;
+pub mod trusted_deserialize;
 pub mod wallet_state_cache;
 
 use std::time::Duration;
@@ -69,12 +70,34 @@ enum TaskResult {
 	ComputeWorker,
 }
 
+/// Fetch a single block by number. Checks cache first, falls back to node RPC.
+/// On cache miss, fetches from the node and stores the result in cache.
+pub async fn fetch_single_block(
+	chain_id: H256,
+	block_number: u64,
+	client: Option<&MidnightNodeClient>,
+	storage: &(impl FetchStorage + Clone + 'static),
+) -> Result<RawBlockData, FetchError> {
+	if let Some(block) = storage.get_block_data(chain_id, block_number).await {
+		return Ok(block);
+	}
+	let client = client.ok_or(FetchError::BlockMissing(block_number))?;
+	let block_hash = FetchTask::fetch_block_hash(client, block_number).await?;
+	let fetched = FetchTask::fetch_block(client, block_hash).await?;
+	let raw = ComputeTask::extract_data(&fetched).await?;
+	storage.insert_block_data(chain_id, block_number, raw.clone()).await;
+	Ok(raw)
+}
+
 pub async fn read_blocks_from_cache(
 	chain_id: H256,
 	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
+	let t = std::time::Instant::now();
 	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
+	log::debug!("[perf] get_highest_verified_block took {:?}", t.elapsed());
 
+	let t = std::time::Instant::now();
 	let mut blocks: Vec<_> = fetch_storage
 		.get_block_data_range(chain_id, (0..max_height + 1).into_iter())
 		.await
@@ -82,12 +105,15 @@ pub async fn read_blocks_from_cache(
 		.enumerate()
 		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
+	log::debug!("[perf] get_block_data_range: {} blocks in {:?}", blocks.len(), t.elapsed());
 
 	// Set last_block_time for all blocks
 	// windows_mut() iterator does not exist - so we're indexing here
+	let t = std::time::Instant::now();
 	for i in 1..blocks.len() {
 		blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 	}
+	log::debug!("[perf] last_block_time fixup: {} blocks in {:?}", blocks.len(), t.elapsed());
 
 	Ok(blocks)
 }
@@ -129,6 +155,7 @@ pub async fn fetch_from_rpc(
 		);
 	}
 
+	let t_rpc_total = std::time::Instant::now();
 	let client = MidnightNodeClient::new(&url, None).await?;
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
@@ -303,9 +330,24 @@ pub async fn fetch_from_rpc(
 	compute_to_compute_rx.close();
 	final_jobs_rx.close();
 
+	// Wait for all workers to fully exit so their Arc<Database> handles are dropped.
+	// Without this, the JoinSet drop aborts tasks but doesn't synchronously release
+	// resources, causing "DatabaseAlreadyOpen" when the DB is reopened.
+	while let Some(result) = join_set.join_next().await {
+		if let Err(join_err) = result {
+			if join_err.is_panic() {
+				log::warn!("Worker task panicked during cleanup: {}", join_err);
+			}
+		}
+	}
+
+	log::debug!("[perf] fetch_from_rpc RPC pipeline took {:?}", t_rpc_total.elapsed());
+
 	// Set highest verified height for quicker fetch next time
 	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	let t = std::time::Instant::now();
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
+	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
 		"fetched {} blocks, read {} blocks from cache, total transations: {}",

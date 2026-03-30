@@ -17,6 +17,12 @@
 
 set -euo pipefail
 
+# If contracts were already compiled and deployed, skip everything.
+if [ -f /runtime-values/contracts-active-epoch ]; then
+  echo "contracts-active-epoch already exists, skipping contract compilation and deployment."
+  exit 0
+fi
+
 echo "=== Governance Contract Compiler and Deployer ==="
 
 RUNTIME_VALUES="/runtime-values"
@@ -117,9 +123,8 @@ echo "=== Contracts Deployment ==="
 bun cli deploy -p kupmios
 bun cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
 
-# TODO: uncomment when --use-build flag is added in contracts repo
-# bun cli register-gov-auth -p kupmios --use-build
-# bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
+bun cli register-gov-auth -p kupmios --use-build
+bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
 
 echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
@@ -150,13 +155,4 @@ echo "✓ Contracts data exported successfully"
 echo "=== Contracts Data Export Complete ==="
 echo ""
 
-# Signal completion for dependent services (healthcheck)
-touch /tmp/ready
-
-# Keep container alive for debugging
-echo "=== Container Ready ==="
-echo "Container will stay alive for debugging."
-echo "To exec into this container, run:"
-echo "  docker exec -it contract-compiler bash"
-echo ""
-sleep infinity
+echo "=== Contract Compiler Complete ==="
