@@ -687,7 +687,11 @@ fn motion_close_removes_motion_on_failed_dispatch() {
 		// motion_close returns Ok because the close operation itself succeeded:
 		// the motion was removed and events emitted. The dispatch failure is
 		// captured in the MotionDispatched event, not in the extrinsic return.
-		assert_ok!(FederatedAuthority::motion_close(RuntimeOrigin::signed(1), motion_hash));
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(1),
+			motion_hash,
+			Weight::MAX
+		));
 
 		// Motion must be removed from storage despite dispatch failure
 		assert!(
