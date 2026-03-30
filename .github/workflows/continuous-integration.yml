@@ -318,7 +318,7 @@ jobs:
 
       - name: Run pallet fixture tests
         run: |
-          . ./.envrc && earthly --strict +test-pallet-fixtures
+          . ./.envrc && earthly -P --strict +test-pallet-fixtures
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
