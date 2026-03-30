@@ -317,7 +317,7 @@ AuthorityBody<Pallet, EnsureProportionAtLeast<2, 3>>
    - Deletes motion if all approvals revoked
    - Prevents revocation of expired motions
 
-3. **`motion_close(motion_hash)`** - Anyone can attempt to close a motion
+3. **`motion_close(motion_hash, proposal_weight_bound)`** - Anyone can attempt to close a motion
    - If approved (reached proportion): Executes call with Root origin, removes motion
    - If expired without approval: Marks as expired, removes motion
    - Cannot close ongoing (not expired) unapproved motions
@@ -560,7 +560,7 @@ Motion Removed
 6. **Anyone closes motion**
 
    ```
-   FederatedAuthority.motion_close(motionHash)
+   FederatedAuthority.motion_close(motionHash, proposalWeightBound)
    ```
 
 7. **Motion executes with Root origin**

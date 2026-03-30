@@ -43,7 +43,7 @@ services:
 
   cardano-node-socat:
     container_name: cardano-node-1-socat
-    image: alpine/socat
+    image: alpine/socat@sha256:78b3a1f99ca8f9179c9dbbdcd09d9ceee4c5fa8349847a42cfa3d0c279be8022
     command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
     depends_on:
       - cardano-node-1
