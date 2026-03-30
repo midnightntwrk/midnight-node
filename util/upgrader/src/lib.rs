@@ -186,8 +186,18 @@ pub async fn execute_upgrade(
 
 	// Step 11: Close the federated motion to execute authorize_upgrade with Root origin
 	log::info!("Closing federated motion to execute authorize_upgrade...");
-	let close_motion_call =
-		dynamic::tx("FederatedAuthority", "motion_close", vec![Value::from_bytes(&motion_hash.0)]);
+	// Build motion_close args — newer runtimes require a proposal_weight_bound parameter,
+	// older runtimes only take motion_hash. Detect via metadata to stay backward-compatible.
+	let motion_close_args = if has_motion_close_weight_bound(&api) {
+		let proposal_weight_bound = Value::named_composite(vec![
+			("ref_time", Value::u128(1_000_000_000_000)),
+			("proof_size", Value::u128(1_000_000)),
+		]);
+		vec![Value::from_bytes(&motion_hash.0), proposal_weight_bound]
+	} else {
+		vec![Value::from_bytes(&motion_hash.0)]
+	};
+	let close_motion_call = dynamic::tx("FederatedAuthority", "motion_close", motion_close_args);
 
 	api.tx()
 		.sign_and_submit_then_watch_default(&close_motion_call, signer)
@@ -317,4 +327,27 @@ fn extract_proposal_index(
 		}
 	}
 	Err(UpgraderError::ProposalIndexNotFound)
+}
+
+/// Check whether the runtime's `FederatedAuthority::motion_close` accepts a
+/// `proposal_weight_bound` parameter (2 fields) or only `motion_hash` (1 field).
+fn has_motion_close_weight_bound(api: &OnlineClient<SubstrateConfig>) -> bool {
+	let metadata = api.metadata();
+	let Ok(pallet) = metadata.pallet_by_name_err("FederatedAuthority") else {
+		return false;
+	};
+	let Some(call_ty_id) = pallet.call_ty_id() else {
+		return false;
+	};
+	let Some(ty) = metadata.types().resolve(call_ty_id) else {
+		return false;
+	};
+	let scale_info::TypeDef::Variant(variant) = &ty.type_def else {
+		return false;
+	};
+	variant
+		.variants
+		.iter()
+		.find(|v| v.name == "motion_close")
+		.is_some_and(|v| v.fields.len() > 1)
 }

@@ -13,7 +13,7 @@
 
 #![cfg(feature = "can-panic")]
 
-use super::super::{Deserializable, Serializable, Tagged, WalletSeed};
+use super::super::WalletSeed;
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};
 use std::str::FromStr;
@@ -23,7 +23,7 @@ pub const HRP_CREDENTIAL_UNSHIELDED: &str = "addr";
 pub const HRP_CREDENTIAL_SHIELDED: &str = "shield-addr";
 /// Encrypted Shielded Key
 pub const HRP_CREDENTIAL_SHIELDED_ESK: &str = "shield-esk";
-pub const HRP_CREDENTIAL_DUST: &str = "dust-addr";
+pub const HRP_CREDENTIAL_DUST: &str = "dust";
 
 #[derive(Debug, Clone)]
 pub struct WalletAddress {
@@ -131,41 +131,4 @@ pub trait IntoWalletAddress {
 	}
 
 	fn address(&self, network: &str) -> WalletAddress;
-}
-
-// in bech32-encoded addresses, we use the data's specific tag as a prefix, but not the global tag prefix
-#[cfg(feature = "can-panic")]
-pub(crate) fn short_tagged_serialize<T: Serializable + Tagged>(data: &T) -> Vec<u8> {
-	let tag = T::tag();
-	let mut buffer = vec![0; tag.len() + 1 + data.serialized_size()];
-	buffer[..tag.len()].copy_from_slice(tag.as_bytes());
-	buffer[tag.len()] = b':';
-	let mut writer = &mut buffer[tag.len() + 1..];
-	data.serialize(&mut writer).expect("infallible");
-	buffer
-}
-
-pub(crate) fn short_tagged_deserialize<T: Deserializable + Tagged>(
-	buffer: &[u8],
-) -> Result<T, ShortTaggedDeserializeError> {
-	let Some(tag_end) = buffer.iter().position(|b| *b == b':') else {
-		return Err(ShortTaggedDeserializeError::MissingTag);
-	};
-	let expected_tag = T::tag();
-	let actual_tag = &buffer[..tag_end];
-	if expected_tag.as_bytes() != actual_tag {
-		return Err(ShortTaggedDeserializeError::InvalidTag {
-			expected: expected_tag,
-			actual: actual_tag.to_vec(),
-		});
-	}
-	let mut reader = &buffer[tag_end + 1..];
-	T::deserialize(&mut reader, 0).map_err(ShortTaggedDeserializeError::DeserializeError)
-}
-
-#[derive(Debug)]
-pub enum ShortTaggedDeserializeError {
-	MissingTag,
-	InvalidTag { expected: std::borrow::Cow<'static, str>, actual: Vec<u8> },
-	DeserializeError(std::io::Error),
 }

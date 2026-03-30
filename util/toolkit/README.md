@@ -27,26 +27,21 @@ docker pull midnightntwrk/midnight-node:0.18.0-rc.7
 
 ## Implementation Status
 
-| Feature | Progress |
-|----------------------------------------------------------------------|----------|
-| Send Shielded + Unshielded tokens                                    | ✅       |
-| Sync with local and remote networks                                  | ✅       |
-| DUST fee calculation                                                 | ✅       |
-| Execute compiled contracts                                           | ✅       |
-| Pre-generate and send 100s of transactions (performance testing)     | ✅       |
-| Support for node runtime forks                                       | ✅       |
-| Fetch and print wallet state and DUST balance                        | ✅       |
-| Builds Node genesis                                                  | ✅       |
-| Unit + integration tests                                             | ✅       |
-| Shielded + Unshielded tokens sending between contract calls          | ✅       |
-| Contract Maintenance - updating authority + verifier keys            | ✅       |
-| Execute calls via governance (root-call)                             | ✅       |
-| Runtime upgrade via governance                                       | ✅       |
-| Support for Ledger forks                                             | ✅       |
-| DUST registration command                                            | ✅       |
-| Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
-| Fallible Contracts                                                   | ⏳       |
-| Composable Contracts                                                 | ⏳       |
+| Feature                                                                         | Progress |
+|---------------------------------------------------------------------------------|----------|
+| User: Send Shielded + Unshielded tokens                                         | ✅       |
+| User: DUST registration command                                                 | ✅       |
+| Query: Sync with local and remote networks                                      | ✅       |
+| Query: Fetch and print wallet state and DUST balance                            | ✅       |
+| Query: Support for chains with mutiple Runtime and Ledger versions              | ✅       |
+| Genesis: Build genesis Ledger state                                             | ✅       |
+| Governance: Execute runtime upgrades                                            | ✅       |
+| Governance: Update ledger parameters                                            | ✅       |
+| Performance Testing: Pre-generate and send 100s of transactions                 | ✅       |
+| Contracts: Shielded + Unshielded token transfer between contracts and users     | ✅       |
+| Contracts: Maintenance - updating authority + verifier keys                     | ✅       |
+| Contracts: Fallible Contracts                                                   | ✅       |
+| Contracts: Composable Contracts                                                 | ⏳       |
 
 ---
 
@@ -553,8 +548,33 @@ Show the structure of a saved transaction. Works with files containing multiple 
 ```console
 $ midnight-node-toolkit show-transaction
 >   --src-file ../../res/test-tx-deserialize/serialized_tx.mn
-
 ...
+
+```
+
+### Show Block
+Inspect a block's metadata and deserialized transactions. Reads from the fetch cache first, falling back to a live node RPC on cache miss.
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1
+...
+
+```
+
+Use `--json` for machine-readable output, or `--fetch-only-cached` to skip the node and read only from cache:
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1 --json --fetch-only-cached
+...
+
+```
+
+Use `--src-file` to inspect a genesis or serialized block file without a running node:
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-file res/genesis/genesis_block_undeployed.mn
+...
+
 ```
 
 ### Show Ledger Parameters
