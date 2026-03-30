@@ -736,7 +736,8 @@ toolkit-js-prep:
     RUN npm ci
     RUN npm run build
     # Compile compact contracts (fetch-compactc downloads compactc via COMPACTC_VERSION)
-    RUN npm run compact
+    # GITHUB_TOKEN is passed as an Earthly secret in CI to avoid GitHub API rate limits.
+    RUN --secret GITHUB_TOKEN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
