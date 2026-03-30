@@ -845,7 +845,6 @@ test:
     # Test
     RUN mkdir /test-artifacts
     # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
-    ENV SKIP_WASM_BUILD=1
     ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
