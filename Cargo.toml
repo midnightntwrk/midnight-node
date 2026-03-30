@@ -285,7 +285,6 @@ syn = { version = "2", features = ["full", "extra-traits"] }
 
 # Partner-chains transitive workspace dependencies
 anyhow = "1.0.81"
-assert_cmd = "2.0.14"
 bech32 = { version = "0.11.0", default-features = false }
 bigdecimal = "0.4.8"
 blake2b_simd = { version = "1.0.2", default-features = false }
@@ -294,10 +293,8 @@ cbor_event = "2.4.0"
 cli-commands = { path = "partner-chains/toolkit/cli/commands" }
 colored = "3.0.0"
 derive_more = { version = "2.0.1", default-features = false }
-ed25519 = "2.2.2"
 ed25519-zebra = "4.0.3"
 envy = "0.4.2"
-fork-tree = "13.0.1"
 fraction = { version = "0.15.3", default-features = false }
 inquire = "0.7.5"
 k256 = { version = "0.13.4", default-features = false }
@@ -309,7 +306,6 @@ num-derive = "0.4.2"
 num-traits = { version = "0.2.17", default-features = false }
 ogmios-client = { path = "partner-chains/toolkit/utils/ogmios-client", default-features = false }
 once_cell = { version = "1.21.3", default-features = false }
-pallas-primitives = "0.33.0"
 parking_lot = { version = "0.12.4", default-features = false }
 paste = "1.0.15"
 plutus-datum-derive = { default-features = false, path = "partner-chains/toolkit/utils/plutus/plutus-datum-derive" }
@@ -320,7 +316,6 @@ quickcheck_macros = "1"
 quote = "1.0"
 rand_chacha = { version = "0.9.0", default-features = false }
 raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-contracts.git", tag = "v8.1.0" }
-sealed_test = "1.0.0"
 secp256k1 = { version = "0.30.0", default-features = false }
 selection = { path = "partner-chains/toolkit/committee-selection/selection", default-features = false }
 testcontainers = "0.27.2"
@@ -331,37 +326,20 @@ uplc = "1.1.6"
 # Partner-chains local crates (not directly used but needed for workspace resolution)
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
 partner-chains-smart-contracts-commands = { path = "partner-chains/toolkit/smart-contracts/commands", default-features = false }
-partner-chains-demo-runtime = { path = "partner-chains/demo/runtime" }
-partner-chains-data-sources-cli = { path = "partner-chains/toolkit/data-sources/cli" }
 sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-block-search", default-features = false }
 pallet-address-associations = { path = "partner-chains/toolkit/address-associations/pallet", default-features = false }
-pallet-block-participation = { path = "partner-chains/toolkit/block-participation/pallet", default-features = false }
-pallet-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/pallet", default-features = false }
-pallet-block-producer-fees-rpc = { path = "partner-chains/toolkit/block-producer-fees/rpc", default-features = false }
-pallet-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/pallet", default-features = false }
-pallet-block-producer-metadata-rpc = { path = "partner-chains/toolkit/block-producer-metadata/rpc", default-features = false }
-pallet-block-production-log = { path = "partner-chains/toolkit/block-production-log/pallet", default-features = false }
 pallet-governed-map = { path = "partner-chains/toolkit/governed-map/pallet", default-features = false }
 sp-block-participation = { path = "partner-chains/toolkit/block-participation/primitives", default-features = false }
-sp-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/primitives", default-features = false }
 sp-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/primitives", default-features = false }
-sp-block-production-log = { path = "partner-chains/toolkit/block-production-log/primitives", default-features = false }
 sp-governed-map = { path = "partner-chains/toolkit/governed-map/primitives", default-features = false }
 
 # Substrate deps needed by partner-chains
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-pallet-sudo = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-pallet-transaction-payment = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-pallet-transaction-payment-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-pallet-transaction-payment-rpc-runtime-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-sc-client-db = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-network-test = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-sp-weights = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 
 [profile.release]
