@@ -227,7 +227,7 @@ jobs:
 
       - name: Post success comment
         if: env.CHANGES_MADE == 'true'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Chainspec rebuild complete! Changes have been committed.
@@ -235,7 +235,7 @@ jobs:
 
       - name: Post no-changes comment
         if: env.CHANGES_MADE == 'false'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Chainspec rebuild complete. No changes detected.
@@ -243,7 +243,7 @@ jobs:
 
       - name: Post failure comment
         if: failure()
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :x: Chainspec rebuild failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.

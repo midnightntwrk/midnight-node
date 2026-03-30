@@ -25,6 +25,16 @@
       ]
     }
   ],
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "replace"
+    }
+  ],
+  "minimumReleaseAge": "3 days",
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "0 days"
+  },
   "dockerfile": {
     "managerFilePatterns": [
       "//Earthfile//"
