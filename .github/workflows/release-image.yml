@@ -339,6 +339,12 @@ jobs:
             "${FLAGS[@]}" \
             --notes-file RELEASE_NOTES.md
 
+      - name: Fetch release tag
+        working-directory: ./.tmp-package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git fetch origin tag "$GIT_TAG_RELEASE"
+
       - name: Archive changes
         env:
           ARCHIVE_MODE: ${{ inputs.archive-mode }}

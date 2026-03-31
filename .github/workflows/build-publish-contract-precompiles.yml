@@ -1,5 +1,6 @@
 name: +contract-precompiles (Build ledger test static data contracts and CI image)
 
+# no top level default permissions for security reasons
 permissions: {}
 
 on:
@@ -7,9 +8,6 @@ on:
   schedule:
     # Once a week
     - cron: "0 0 * * 0"
-# no top level default permissions for security reasons
-permissions:
-  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: true

@@ -1,5 +1,6 @@
 name: Validate GitHub Actions Workflows
 
+# no top level default permissions for security reasons
 permissions: {}
 
 on:
@@ -13,10 +14,6 @@ on:
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
-
-# no top level default permissions for security reasons
-permissions:
-  contents: read
 
 jobs:
   actionlint:
