@@ -149,18 +149,18 @@ jobs:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
-      - name: Add commit-hash alias tags (amd64)
+      - name: Add content-hash alias tags (amd64)
         continue-on-error: true
         env:
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
         run: |
-          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
-          echo "Adding commit alias tags: ${COMMIT_TAG}-amd64 -> ${IMAGE_TAG}-amd64"
+          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
+          echo "Adding content-hash alias tags: ${CONTENT_TAG}-amd64 -> ${IMAGE_TAG}-amd64"
           for IMAGE in midnight-node midnight-node-toolkit; do
             docker buildx imagetools create \
-              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${COMMIT_TAG}-amd64" \
+              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${CONTENT_TAG}-amd64" \
               "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
           done
 
@@ -351,18 +351,18 @@ jobs:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
-      - name: Add commit-hash alias tags (arm64)
+      - name: Add content-hash alias tags (arm64)
         continue-on-error: true
         env:
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
         run: |
-          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
-          echo "Adding commit alias tags: ${COMMIT_TAG}-arm64 -> ${IMAGE_TAG}-arm64"
+          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
+          echo "Adding content-hash alias tags: ${CONTENT_TAG}-arm64 -> ${IMAGE_TAG}-arm64"
           for IMAGE in midnight-node midnight-node-toolkit; do
             docker buildx imagetools create \
-              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${COMMIT_TAG}-arm64" \
+              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${CONTENT_TAG}-arm64" \
               "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
           done
 
@@ -617,28 +617,28 @@ jobs:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
 
-      - name: Add commit-hash alias multi-arch manifests
+      - name: Add content-hash alias multi-arch manifests
         continue-on-error: true
         env:
           IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
         run: |
-          SHORT_COMMIT=$(git rev-parse --short=8 HEAD)
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          COMMIT_TAG="${VERSION}-${SHORT_COMMIT}"
-          echo "Adding commit alias multi-arch manifests: ${COMMIT_TAG} -> ${IMAGE_TAG}"
+          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
+          echo "Adding content-hash alias multi-arch manifests: ${CONTENT_TAG} -> ${IMAGE_TAG}"
           for REGISTRY in ghcr.io/midnight-ntwrk ghcr.io/midnightntwrk; do
             for IMAGE in midnight-node midnight-node-toolkit; do
               docker buildx imagetools create \
-                --tag "${REGISTRY}/${IMAGE}:${COMMIT_TAG}" \
+                --tag "${REGISTRY}/${IMAGE}:${CONTENT_TAG}" \
                 "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-amd64" \
                 "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-arm64"
             done
           done
-          # Arch-specific commit tags for midnightntwrk (midnight-ntwrk done in per-arch jobs)
+          # Arch-specific content-hash tags for midnightntwrk (midnight-ntwrk done in per-arch jobs)
           for IMAGE in midnight-node midnight-node-toolkit; do
             for ARCH in amd64 arm64; do
               docker buildx imagetools create \
-                --tag "ghcr.io/midnightntwrk/${IMAGE}:${COMMIT_TAG}-${ARCH}" \
+                --tag "ghcr.io/midnightntwrk/${IMAGE}:${CONTENT_TAG}-${ARCH}" \
                 "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
             done
           done

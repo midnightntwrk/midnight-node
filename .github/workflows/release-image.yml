@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       node-version: ${{ steps.release-env.outputs.node_version }}
-      image-tag-commit: ${{ steps.release-env.outputs.image_tag_commit }}
+      image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
       image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
       git-tag-release: ${{ steps.release-env.outputs.git_tag_release }}
     env:
@@ -104,18 +104,19 @@ jobs:
         working-directory: ./.tmp-package
         run: |
           NODE_VERSION="$(grep -m 1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')"
-          IMAGE_TAG_COMMIT="$NODE_VERSION-$(git rev-parse --short=8 HEAD)"
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          IMAGE_TAG_CONTENT_HASH="$NODE_VERSION-$CONTENT_HASH"
           IMAGE_TAG_RELEASE="$NODE_VERSION$SUFFIX"
           GIT_TAG_RELEASE="node-$NODE_VERSION$SUFFIX"
 
           # Job outputs (for downstream jobs)
           echo "node_version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "image_tag_commit=$IMAGE_TAG_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "image_tag_content_hash=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_OUTPUT"
           echo "image_tag_release=$IMAGE_TAG_RELEASE" >> "$GITHUB_OUTPUT"
           echo "git_tag_release=$GIT_TAG_RELEASE" >> "$GITHUB_OUTPUT"
 
           # Env vars (for subsequent steps in this job)
-          echo "IMAGE_TAG_COMMIT=$IMAGE_TAG_COMMIT" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
           echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
 
       - name: Retag and push release images (GHCR)
@@ -126,11 +127,11 @@ jobs:
         run: |
           docker buildx imagetools create --tag \
             ghcr.io/midnight-ntwrk/midnight-node:$IMAGE_TAG_RELEASE \
-            ghcr.io/midnight-ntwrk/midnight-node:$IMAGE_TAG_COMMIT
+            ghcr.io/midnight-ntwrk/midnight-node:$IMAGE_TAG_CONTENT_HASH
 
           docker buildx imagetools create --tag \
             ghcr.io/midnight-ntwrk/midnight-node-toolkit:$IMAGE_TAG_RELEASE \
-            ghcr.io/midnight-ntwrk/midnight-node-toolkit:$IMAGE_TAG_COMMIT
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:$IMAGE_TAG_CONTENT_HASH
 
       - name: Get GHCR release image digests
         id: ghcr-digests
@@ -162,16 +163,16 @@ jobs:
           for IMAGE in midnight-node midnight-node-toolkit; do
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_COMMIT}-amd64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_COMMIT}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}-amd64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_COMMIT}-amd64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-amd64"
 
             docker buildx imagetools create \
               --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}-arm64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_COMMIT}-arm64"
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-arm64"
           done
 
       - name: Get GHCR midnightntwrk release image digests
@@ -196,17 +197,17 @@ jobs:
 
       - name: Retag and push release images (Docker Hub)
         run: |
-          echo "Creating manifests for node/toolkit from $IMAGE_TAG_COMMIT images"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_COMMIT}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_COMMIT}-arm64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_COMMIT}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_COMMIT}-arm64"
+          echo "Creating manifests for node/toolkit from $IMAGE_TAG_CONTENT_HASH images"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
           echo "Tagging each image with $IMAGE_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push ${IMAGE_TAG_RELEASE} images to Docker Hub"
           docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
@@ -288,11 +289,11 @@ jobs:
         shell: bash
         env:
           IMAGE_TAG_RELEASE: ${{ needs.prepare-release.outputs.image-tag-release }}
-          IMAGE_TAG_COMMIT: ${{ needs.prepare-release.outputs.image-tag-commit }}
+          IMAGE_TAG_CONTENT_HASH: ${{ needs.prepare-release.outputs.image-tag-content-hash }}
           GIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.git-tag-release }}
           NODE_VERSION: ${{ needs.prepare-release.outputs.node-version }}
         run: |
-          echo "IMAGE_TAG_COMMIT=$IMAGE_TAG_COMMIT" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
           echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
           echo "GIT_TAG_RELEASE=$GIT_TAG_RELEASE" >> "$GITHUB_ENV"
           echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
@@ -668,7 +669,7 @@ jobs:
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
-      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-commit }}-${{ matrix.arch }}
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
     secrets: inherit
@@ -687,7 +688,7 @@ jobs:
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
-      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-commit }}-${{ matrix.arch }}
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
     secrets: inherit
