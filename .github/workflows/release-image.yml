@@ -311,6 +311,7 @@ jobs:
         env:
           RELEASE_TYPE: ${{ github.event.inputs.release-type }}
           FORCE: ${{ github.event.inputs.force }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
             if gh release view "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
