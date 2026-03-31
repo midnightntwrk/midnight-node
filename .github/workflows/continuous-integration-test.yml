@@ -29,6 +29,8 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
 
       - name: Free disk space
         run: scripts/free-disk-space.sh
@@ -49,7 +51,7 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             PUSH_FLAG="--push"
           fi
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" --strict $PUSH_FLAG --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
+          . ./.envrc && earthly -P --secret GITHUB_TOKEN="$GITHUB_TOKEN" --strict $PUSH_FLAG --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

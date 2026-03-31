@@ -127,7 +127,7 @@ subxt:
 build-node-only:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
     ARG NATIVEARCH
 
@@ -697,7 +697,7 @@ prep:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -784,7 +784,7 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
 
@@ -805,7 +805,7 @@ check-feature-unification:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
@@ -845,7 +845,6 @@ test:
     # Test
     RUN mkdir /test-artifacts
     # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
-    ENV SKIP_WASM_BUILD=1
     ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
@@ -854,9 +853,13 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
-        --exclude midnight-node-toolkit \
-        -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
+    WITH DOCKER
+        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+            --exclude midnight-node-toolkit \
+            --exclude partner-chains-cardano-offchain \
+            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    END
 
     # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
     #     --exclude midnight-node-toolkit \
@@ -885,8 +888,10 @@ test-pallet-fixtures:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
     # Run pallet-midnight fixture tests in debug mode (compiles much faster)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
-        -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+    WITH DOCKER
+        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+    END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
 
@@ -1001,7 +1006,7 @@ build:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -1034,7 +1039,7 @@ build-fork:
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives res metadata runtime util tests relay .
+    ledger node pallets primitives res metadata runtime util tests relay partner-chains .
 
     RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
     RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
@@ -1045,7 +1050,7 @@ build-fork:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests .
+    ledger node pallets primitives metadata res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
@@ -1085,7 +1090,7 @@ srtool-build:
     USER root
     COPY Cargo.lock Cargo.toml ./
     # Include .sqlx for offline query validation (sqlx macros need this)
-    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
     # Fix ownership for builder user
     RUN chown -R builder:builder /build
 
@@ -1110,7 +1115,7 @@ srtool-info:
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
-    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay docs ./
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
     RUN chown -R builder:builder /build
     ENV PACKAGE=midnight-node-runtime
     ENV RUNTIME_DIR=runtime
@@ -1457,7 +1462,7 @@ testnet-sync-e2e:
 local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests local-environment scripts .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
