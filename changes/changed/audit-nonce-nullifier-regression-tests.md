@@ -6,4 +6,4 @@ nonce (randomness), not the nullifier (spend identifier), for the nonce
 field. Addresses Least Authority Q1 2026 Node DIFF audit Issue E.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1128
-JIRA: PM-22025
+JIRA: https://shielded.atlassian.net/browse/PM-22025

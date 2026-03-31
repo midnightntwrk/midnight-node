@@ -215,7 +215,8 @@ mod tests {
 		ShieldedTokenType, WalletState,
 	};
 
-	fn make_test_state() -> (WalletState<DefaultDB>, [u8; PERSISTENT_HASH_BYTES], [u8; PERSISTENT_HASH_BYTES]) {
+	fn make_test_state()
+	-> (WalletState<DefaultDB>, [u8; PERSISTENT_HASH_BYTES], [u8; PERSISTENT_HASH_BYTES]) {
 		let nonce_bytes = [0xAA_u8; PERSISTENT_HASH_BYTES];
 		let nullifier_bytes = [0xBB_u8; PERSISTENT_HASH_BYTES];
 
