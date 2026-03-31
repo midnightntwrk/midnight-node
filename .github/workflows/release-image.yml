@@ -313,8 +313,8 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
-            if gh release view "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
+          if gh release view -R "GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
+            if gh release view -R "GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
               if [ "$FORCE" != "true" ]; then
                 echo "Release has already been published, skipping (use force to override)..."
                 exit 0
@@ -334,7 +334,7 @@ jobs:
             latest)     FLAGS=("--latest" "--draft=false") ;;
           esac
 
-          gh release "$EDIT_OR_CREATE" "$GIT_TAG_RELEASE" \
+          gh release -R "GITHUB_REPOSITORY" "$EDIT_OR_CREATE" "$GIT_TAG_RELEASE" \
             --title "$GIT_TAG_RELEASE" \
             "${FLAGS[@]}" \
             --notes-file RELEASE_NOTES.md
