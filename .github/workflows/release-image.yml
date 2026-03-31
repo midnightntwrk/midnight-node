@@ -373,6 +373,7 @@ jobs:
         shell: bash
         env:
           BRANCH: archive-release-${{ needs.prepare-release.outputs.git-tag-release }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -583,7 +584,7 @@ jobs:
 
       - name: Upload release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_FILE: ${{ steps.extract.outputs.node_release }}
           TOOLKIT_FILE: ${{ steps.extract.outputs.toolkit_release }}
         run: |
