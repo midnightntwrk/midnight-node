@@ -259,7 +259,7 @@ hex-literal = { version = "1.0.0", default-features = false }
 schemars = { version = "0.8", default-features = false, features = ["derive"] }
 serde = { default-features = false, version = "1.0.209", features = ["derive", "alloc"] }
 serde_json = { default-features = false, version = '1.0.132', features = ["alloc"] }
-serde_valid = { default-features = false, version = "2.0.0" }
+serde_valid = { default-features = false, version = "2.0.1" }
 clap = { version = "4.5", features = ["env", "derive"] }
 lazy_static = { version = "1.4.0", default-features = false }
 derive-new = { version = "0.7.0", default-features = false }
