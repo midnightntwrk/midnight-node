@@ -124,6 +124,7 @@ WHERE block.block_no >= $2 AND block.block_no <= $4
     AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))
     AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
     AND tx.id >= $8 AND tx.id <=$9
+    AND tx_in.id >= $10 AND tx_in.id <= $11
 ORDER BY block.block_no, tx.block_index
 LIMIT $6 OFFSET $7;
         "#,
@@ -137,8 +138,8 @@ LIMIT $6 OFFSET $7;
 	.bind(offset as i32)
 	.bind(low_bound.tx_id)
 	.bind(high_bound.tx_id)
-	// .bind(low_bound.tx_out_id)
-	// .bind(high_bound.tx_out_id)
+	.bind(low_bound.tx_in_id)
+	.bind(high_bound.tx_in_id)
 	.fetch_all(pool)
 	.await
 }
@@ -236,6 +237,7 @@ WHERE spending_block.block_no >= $2 AND spending_block.block_no <= $4
     AND (spending_block.block_no > $2 OR (spending_block.block_no = $2 AND spending_tx.block_index >= $3))
     AND (spending_block.block_no < $4 OR (spending_block.block_no = $4 AND spending_tx.block_index < $5))
     AND spending_tx.id >= $8 AND spending_tx.id <=$9
+    AND tx_in.id >= $10 AND tx_in.id <= $11
 ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
 LIMIT $6 OFFSET $7;
     "#,
@@ -249,6 +251,8 @@ LIMIT $6 OFFSET $7;
 	.bind(offset as i32)
 	.bind(low_bound.tx_id)
 	.bind(high_bound.tx_id)
+	.bind(low_bound.tx_in_id)
+    .bind(high_bound.tx_in_id)
 	.fetch_all(pool)
 	.await
 }
@@ -395,12 +399,14 @@ pub async fn get_low_bounds(
 SELECT
     low_tx.tx_id,
     low_tx_out.tx_out_id,
-    low_ma_tx_out.ma_tx_out_id
+    low_ma_tx_out.ma_tx_out_id,
+    low_tx_in.tx_in_id
 FROM
     (SELECT COALESCE ((SELECT id FROM block WHERE block_no = $1 LIMIT 1), 0) AS id) AS block,
     LATERAL (SELECT COALESCE((SELECT id FROM tx WHERE block_id < block.id ORDER BY block_id DESC LIMIT 1), 0) AS tx_id) AS low_tx,
     LATERAL (SELECT COALESCE((SELECT id FROM tx_out WHERE tx_id <= low_tx.tx_id ORDER BY tx_id DESC LIMIT 1), 0) AS tx_out_id) AS low_tx_out,
-    LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id <= low_tx_out.tx_out_id ORDER BY tx_out_id DESC LIMIT 1), 0) AS ma_tx_out_id) AS low_ma_tx_out;
+    LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id <= low_tx_out.tx_out_id ORDER BY tx_out_id DESC LIMIT 1), 0) AS ma_tx_out_id) AS low_ma_tx_out,
+    LATERAL (SELECT COALESCE((SELECT id FROM tx_in WHERE tx_in.tx_in_id <= low_tx.tx_id ORDER BY tx_in_id DESC LIMIT 1), 0) AS tx_in_id) AS low_tx_in;
 "#,
 	)
 	.bind(block_no)
@@ -423,12 +429,14 @@ pub async fn get_high_bounds(
 SELECT
     high_tx.tx_id,
     high_tx_out.tx_out_id,
-    high_ma_tx_out.ma_tx_out_id
+    high_ma_tx_out.ma_tx_out_id,
+    high_tx_in.tx_in_id
 FROM
     (SELECT id FROM block WHERE block_no = $1 LIMIT 1) AS block,
     LATERAL (SELECT COALESCE((SELECT id FROM tx WHERE block_id > block.id ORDER BY block_id ASC LIMIT 1), 9223372036854775807) AS tx_id) AS high_tx,
     LATERAL (SELECT COALESCE((SELECT id FROM tx_out WHERE tx_id >= high_tx.tx_id ORDER BY tx_id ASC LIMIT 1), 9223372036854775807) AS tx_out_id) AS high_tx_out,
-    LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id >= high_tx_out.tx_out_id ORDER BY tx_out_id ASC LIMIT 1), 9223372036854775807) AS ma_tx_out_id) AS high_ma_tx_out;
+    LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id >= high_tx_out.tx_out_id ORDER BY tx_out_id ASC LIMIT 1), 9223372036854775807) AS ma_tx_out_id) AS high_ma_tx_out,
+    LATERAL (SELECT COALESCE((SELECT id FROM tx_in WHERE tx_in.tx_in_id >= high_tx.tx_id ORDER BY tx_in_id ASC LIMIT 1), 9223372036854775807) AS tx_in_id) AS high_tx_in;
 "#,
 	)
 	.bind(block_no)

@@ -154,4 +154,5 @@ pub struct QueryBounds {
 	pub tx_id: i64,
 	pub tx_out_id: i64,
 	pub ma_tx_out_id: i64,
+	pub tx_in_id: i64,
 }
