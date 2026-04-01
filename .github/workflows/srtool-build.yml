@@ -68,7 +68,6 @@ jobs:
             sha256sum midnight_node_runtime.wasm
             sha256sum midnight_node_runtime.compact.wasm
             sha256sum midnight_node_runtime.compact.compressed.wasm
-            sha256sum srtool-digest.json
           } >> SHA256SUMS-srtool
 
           echo "Generated checksums:"
