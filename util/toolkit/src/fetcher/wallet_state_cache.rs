@@ -491,7 +491,7 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000001",
 		)
 		.unwrap();
-		let wallet_seeds = vec![wallet_seed];
+		let wallet_seeds = vec![wallet_seed.clone()];
 
 		let (source, context) = load_genesis_context(&wallet_seeds);
 		let total_blocks = source.blocks.len() as u64;
@@ -549,7 +549,7 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000001",
 		)
 		.unwrap();
-		let wallet_seeds = vec![wallet_seed];
+		let wallet_seeds = vec![wallet_seed.clone()];
 
 		let (source, _) = load_genesis_context(&wallet_seeds);
 
