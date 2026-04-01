@@ -461,6 +461,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-arm64
+      platform: linux/arm64
       skip-attestation: true
     secrets: inherit
 
@@ -491,6 +492,7 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.publish-amd64.outputs.IMAGE_TAG }}-arm64
       sbom-artifact-name: sbom-midnight-node-toolkit-arm64
+      platform: linux/arm64
       skip-attestation: true
     secrets: inherit
 
