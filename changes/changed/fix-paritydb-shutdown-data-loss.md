@@ -6,4 +6,4 @@ down, ensuring parity-db's WAL pipeline is fully drained on SIGTERM. Without
 this, leaked Arc references in aborted async tasks could prevent the Drop impl
 from running, causing silent chain-state truncation on next startup.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1140
