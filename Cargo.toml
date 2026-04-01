@@ -251,7 +251,7 @@ jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"]
 
 async-trait = { default-features = false, version = "0.1.87" }
 futures = { default-features = false, version = "0.3.30", features = ["thread-pool"] }
-log = { default-features = false, version = "0.4.17" }
+log = { default-features = false, version = "0.4.29" }
 tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
