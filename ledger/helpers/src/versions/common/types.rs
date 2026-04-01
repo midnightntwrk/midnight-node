@@ -28,6 +28,7 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 use subxt_signer::{SecretUri, SecretUriError, sr25519};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Wallet seed for HD key derivation (BIP-32/44). Holds 16, 32, or 64 bytes
 /// of seed material from which all wallet keys are derived.
@@ -43,7 +44,7 @@ use subxt_signer::{SecretUri, SecretUriError, sr25519};
 /// // WalletSeed must not implement Default — this must fail to compile.
 /// let _ = midnight_node_ledger_helpers::WalletSeed::default();
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Storable, Serializable)]
+#[derive(Clone, PartialEq, Eq, Hash, Zeroize, ZeroizeOnDrop, Storable, Serializable)]
 #[storable(base)]
 pub enum WalletSeed {
 	Short([u8; 16]),
@@ -98,6 +99,11 @@ impl WalletSeed {
 		let parts: Vec<_> = value.split("..").collect();
 		if parts.len() != 2 {
 			return Err(WalletSeedError::LazyHexTwoPartsOnly);
+		}
+
+		let hex_len = parts[0].len() + parts[1].len();
+		if hex_len > 128 {
+			return Err(WalletSeedError::LazyHexLengthTooLong(hex_len / 2));
 		}
 
 		let mut seed = hex::decode(parts[0])?;
@@ -180,7 +186,6 @@ impl FromStr for WalletSeed {
 	}
 }
 
-#[derive(Clone)]
 pub struct Keypair(pub sr25519::Keypair);
 
 #[derive(Debug, thiserror::Error)]
@@ -257,8 +262,10 @@ impl MaintenanceUpdateBuilder {
 		self.addresses_vec.push(*addr);
 	}
 
-	pub fn add_addresses(&mut self, addrs: &[ContractAddress], counters: Vec<MaintenanceCounter>) {
-		(0..addrs.len()).for_each(|i| self.add_address(&addrs[i], counters[i]));
+	pub fn add_addresses(&mut self, addrs: &[ContractAddress], counters: &[MaintenanceCounter]) {
+		for (addr, &counter) in addrs.iter().zip(counters.iter()) {
+			self.add_address(addr, counter);
+		}
 	}
 
 	pub fn increase_counter(&mut self, addr: ContractAddress) {
@@ -617,6 +624,84 @@ mod tests {
 			lazy_hex.parse::<WalletSeed>(),
 			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
 		));
+	}
+
+	#[test]
+	fn debug_output_does_not_contain_seed_bytes() {
+		let seed = WalletSeed::Medium([0xAB; 32]);
+		let debug_str = format!("{:?}", seed);
+		assert!(debug_str.contains("REDACTED"), "Debug output should contain redaction marker");
+		assert!(!debug_str.contains("ab"), "Debug output must not contain hex-encoded seed bytes");
+		assert!(debug_str.contains("Medium"), "Debug output should identify the variant");
+	}
+
+	#[test]
+	fn debug_output_redacts_all_variants() {
+		let short = format!("{:?}", WalletSeed::Short([0xFF; 16]));
+		let medium = format!("{:?}", WalletSeed::Medium([0xFF; 32]));
+		let long = format!("{:?}", WalletSeed::Long([0xFF; 64]));
+		assert!(short.contains("Short(REDACTED)"));
+		assert!(medium.contains("Medium(REDACTED)"));
+		assert!(long.contains("Long(REDACTED)"));
+		for s in [&short, &medium, &long] {
+			assert!(!s.contains("255"), "Debug must not leak byte values");
+		}
+	}
+
+	#[test]
+	fn lazy_hex_rejects_oversized_input_before_allocation() {
+		let long_hex = "aa".repeat(70);
+		let oversized = format!("{}..{}", long_hex, "bb".repeat(10));
+		let result = WalletSeed::try_from_lazy_hex(&oversized);
+		assert!(
+			matches!(result, Err(WalletSeedError::LazyHexLengthTooLong(_))),
+			"oversized input should be rejected"
+		);
+	}
+
+	#[test]
+	fn lazy_hex_accepts_boundary_128_hex_chars() {
+		let head = "00".repeat(30);
+		let tail = "01".repeat(2);
+		let input = format!("{}..{}", head, tail);
+		assert!(WalletSeed::try_from_lazy_hex(&input).is_ok());
+	}
+
+	#[test]
+	fn add_addresses_with_zip_truncates_on_mismatch() {
+		use super::MaintenanceUpdateBuilder;
+		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
+		let addrs = vec![
+			super::ContractAddress(super::HashOutput([1u8; 32])),
+			super::ContractAddress(super::HashOutput([2u8; 32])),
+			super::ContractAddress(super::HashOutput([3u8; 32])),
+		];
+		let counters = vec![10u32, 20u32];
+		builder.add_addresses(&addrs, &counters);
+		assert_eq!(builder.addresses_map.len(), 2, "zip should stop at shorter slice");
+		assert_eq!(builder.addresses_vec.len(), 2);
+	}
+
+	#[test]
+	fn add_addresses_empty_inputs() {
+		use super::MaintenanceUpdateBuilder;
+		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
+		builder.add_addresses(&[], &[]);
+		assert!(builder.addresses_map.is_empty());
+		assert!(builder.addresses_vec.is_empty());
+	}
+
+	#[test]
+	fn wallet_seed_works_as_hashmap_key() {
+		use std::collections::HashMap;
+		let seed1 = WalletSeed::Medium([1u8; 32]);
+		let seed2 = WalletSeed::Medium([2u8; 32]);
+		let mut map = HashMap::new();
+		map.insert(seed1.clone(), "wallet1");
+		map.insert(seed2.clone(), "wallet2");
+		assert_eq!(map.get(&seed1), Some(&"wallet1"));
+		assert_eq!(map.get(&seed2), Some(&"wallet2"));
+		assert_eq!(map.len(), 2);
 	}
 
 	#[test]

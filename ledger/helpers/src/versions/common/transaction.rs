@@ -507,7 +507,7 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	fn build(&mut self) -> UnprovenTransaction<D> {
 		let nonce = self.rng.r#gen();
 		self.context.with_ledger_state(|ledger_state| {
-			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
+			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner.clone(), |wallet| {
 				let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
 					network_id: ledger_state.network_id.clone(),
 					value: self.coin.value,

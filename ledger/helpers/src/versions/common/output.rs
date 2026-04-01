@@ -53,7 +53,7 @@ impl<D: DB + Clone> BuildOutput<D> for OutputInfo<ContractAddress> {
 
 impl<D: DB + Clone> BuildOutput<D> for OutputInfo<WalletSeed> {
 	fn build(&self, rng: &mut StdRng, context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D> {
-		context.with_wallet_from_seed(self.destination, |wallet| {
+		context.with_wallet_from_seed(self.destination.clone(), |wallet| {
 			let coin_info = self.coin_info(rng);
 
 			wallet.shielded.state = wallet

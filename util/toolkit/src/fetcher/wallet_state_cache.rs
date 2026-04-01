@@ -309,7 +309,7 @@ pub fn inject_wallet_from_cache(
 	seed: &WalletSeed,
 	ledger_state: &LedgerState<DefaultDB>,
 ) -> Result<(), CacheError> {
-	let mut wallet = Wallet::default(*seed, ledger_state);
+	let mut wallet = Wallet::default(seed.clone(), ledger_state);
 
 	if !cached.shielded_state_bytes.is_empty() {
 		let shielded_state =
@@ -331,7 +331,7 @@ pub fn inject_wallet_from_cache(
 		.wallets
 		.lock()
 		.map_err(|_| CacheError::LockPoisoned("wallets".to_string()))?;
-	wallets.insert(*seed, wallet);
+	wallets.insert(seed.clone(), wallet);
 
 	Ok(())
 }

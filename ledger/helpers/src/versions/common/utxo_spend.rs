@@ -74,7 +74,7 @@ impl UtxoSpendInfo<WalletSeed> {
 				.ok_or(UtxoSelectionError::NoMatchingUtxo {
 					min_value: self.value,
 					token_type: self.token_type,
-					seed: self.owner,
+					seed: self.owner.clone(),
 				})
 				.map(|utxo| utxo.0.clone())
 		})
@@ -89,7 +89,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		token_type: UnshieldedTokenType,
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				let owner = wallet.unshielded.signing_key().verifying_key();
 				let matching_inputs = ledger_state
 					.utxo
@@ -100,7 +100,7 @@ impl UtxoSpendInfo<WalletSeed> {
 					})
 					.map(|utxo| UtxoSpendInfo {
 						value: utxo.0.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: utxo.0.type_,
 						intent_hash: Some(utxo.0.intent_hash),
 						output_number: Some(utxo.0.output_no),
@@ -110,7 +110,7 @@ impl UtxoSpendInfo<WalletSeed> {
 					UtxoSelectionError::InsufficientBalance {
 						required: required_value,
 						token_type,
-						seed,
+						seed: seed.clone(),
 					},
 				)
 			})
@@ -200,7 +200,7 @@ impl UtxoSpendInfo<WalletSeed> {
 
 impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend {
-		context.with_wallet_from_seed(self.owner, |wallet| {
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
 			let owner = wallet.unshielded.signing_key().verifying_key();
 			// If self identifies an UTXO then use it, otherwise try to find best matching UTXO in the wallet.
 			match (self.intent_hash, self.output_number) {
@@ -227,7 +227,7 @@ impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	}
 
 	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey {
-		context.with_wallet_from_seed(self.owner, |wallet| wallet.unshielded.signing_key().clone())
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| wallet.unshielded.signing_key().clone())
 	}
 }
 

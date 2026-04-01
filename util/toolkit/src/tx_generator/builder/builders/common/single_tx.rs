@@ -97,7 +97,7 @@ impl BuildTxs for SingleTxBuilder {
 		let spin = Spin::new("generating single tx...");
 
 		let context = self.context.clone();
-		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
+		let funding_seed = self.funding_seed.clone().unwrap_or(self.source_seed.clone());
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
@@ -131,7 +131,7 @@ impl BuildTxs for SingleTxBuilder {
 		if !shielded_wallets.is_empty() {
 			let offer = build_shielded_offer(
 				context.clone(),
-				self.source_seed,
+				self.source_seed.clone(),
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 				self.shielded_token_type,
@@ -147,7 +147,7 @@ impl BuildTxs for SingleTxBuilder {
 		if !unshielded_wallets.is_empty() {
 			let intents = build_unshielded_intents(
 				context.clone(),
-				self.source_seed,
+				self.source_seed.clone(),
 				unshielded_wallets,
 				self.unshielded_amount.unwrap(),
 				self.unshielded_token_type,
@@ -190,7 +190,7 @@ pub(crate) fn build_shielded_offer(
 		.expect("shielded amount overflow");
 
 	let (input_infos, change) =
-		InputInfo::coins_to_cover_value(context, funding_seed, total_required, token_type)?;
+		InputInfo::coins_to_cover_value(context, funding_seed.clone(), total_required, token_type)?;
 
 	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
 		.into_iter()
@@ -231,9 +231,20 @@ pub(crate) fn build_unshielded_intents(
 		.expect("unshielded amount overflow");
 
 	let (inputs_info, remaining_nights) = if input_utxos.is_empty() {
-		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)?
+		UtxoSpendInfo::utxos_to_cover_value(
+			context,
+			source_seed.clone(),
+			total_required,
+			token_type,
+		)?
 	} else {
-		UtxoSpendInfo::utxos_by_ids(context, source_seed, total_required, token_type, input_utxos)?
+		UtxoSpendInfo::utxos_by_ids(
+			context,
+			source_seed.clone(),
+			total_required,
+			token_type,
+			input_utxos,
+		)?
 	};
 
 	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info

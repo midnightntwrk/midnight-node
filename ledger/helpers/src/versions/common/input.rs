@@ -140,7 +140,7 @@ impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
 		rng: &mut StdRng,
 		context: Arc<LedgerContext<D>>,
 	) -> Input<ProofPreimage, D> {
-		context.with_wallet_from_seed(self.origin, |wallet| {
+		context.with_wallet_from_seed(self.origin.clone(), |wallet| {
 			let coin: Sp<QualifiedInfo, D> = self.min_match_coin(&wallet.shielded.state);
 
 			// Update the `InputInfo` value with the actual coin value that is going to be spent

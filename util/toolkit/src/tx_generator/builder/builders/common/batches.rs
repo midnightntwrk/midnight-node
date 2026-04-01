@@ -101,7 +101,7 @@ impl BatchesBuilder {
 
 		let (input_infos, change) = InputInfo::coins_to_cover_value(
 			context,
-			funding_seed,
+			funding_seed.clone(),
 			total_coins_required,
 			self.shielded_token_type,
 		)?;
@@ -118,7 +118,7 @@ impl BatchesBuilder {
 			.iter()
 			.map(|wallet_seed| {
 				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
-					destination: *wallet_seed,
+					destination: wallet_seed.clone(),
 					token_type: self.shielded_token_type,
 					value: self.coin_amount,
 				});
@@ -147,7 +147,7 @@ impl BatchesBuilder {
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let (inputs, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
 			context,
-			funding_seed,
+			funding_seed.clone(),
 			self.initial_unshielded_intent_value,
 			self.unshielded_token_type,
 		)
@@ -167,7 +167,7 @@ impl BatchesBuilder {
 			.map(|wallet_seed| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 					value: amount_to_send_per_output,
-					owner: *wallet_seed,
+					owner: wallet_seed.clone(),
 					token_type: self.unshielded_token_type,
 				});
 				output
@@ -232,7 +232,7 @@ impl BuildTxs for BatchesBuilder {
 		let spin = Spin::new("generating initial tx...");
 		// - Calculate the funding `WalletSeed` (can be more than one)
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
-		let inputs_wallet_seeds = vec![funding_seed];
+		let inputs_wallet_seeds = vec![funding_seed.clone()];
 
 		// - Calculate `WalletSeed` to be funded
 		// set the initial `wallet_seed`
@@ -270,7 +270,7 @@ impl BuildTxs for BatchesBuilder {
 			let initial_shielded_offer_info = self
 				.initial_shielded_offer(
 					context_arc.clone(),
-					funding_seed,
+					funding_seed.clone(),
 					first_batch_output_wallets.clone(),
 				)
 				.expect("insufficient shielded coins for initial batch");
@@ -370,13 +370,13 @@ impl BuildTxs for BatchesBuilder {
 					);
 
 					let input_seed = seed;
-					let output_seed = output_wallet_seeds[index];
+					let output_seed = output_wallet_seeds[index].clone();
 
 					if self.enable_shielded {
 						// ---------------- SHIELDED ------------------------
 						// Input info
 						let input_info = InputInfo {
-							origin: input_seed,
+							origin: input_seed.clone(),
 							token_type: self.shielded_token_type,
 							// All funds that where intially received
 							value: self.coin_amount,
@@ -387,7 +387,7 @@ impl BuildTxs for BatchesBuilder {
 
 						// Output info
 						let output_info = OutputInfo {
-							destination: output_seed,
+							destination: output_seed.clone(),
 							token_type: self.shielded_token_type,
 							value: self.coin_amount,
 						};
