@@ -268,7 +268,7 @@ lru = { version = "0.16.3" }
 subxt = "0.44.0"
 subxt-signer = "0.44.0"
 thiserror = { version = "2.0", default-features = false }
-rand = { version = "0.9.1", default-features = false }
+rand = { version = "0.10.0", default-features = false }
 rayon = "1.11"
 sha2 = "0.10.8"
 toml = "0.9.0"
@@ -284,44 +284,42 @@ strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 
 # Partner-chains transitive workspace dependencies
-anyhow = "1.0.81"
-bech32 = { version = "0.11.0", default-features = false }
-bigdecimal = "0.4.8"
+anyhow = "1.0.102"
+bigdecimal = { version = "0.4" }
 blake2b_simd = { version = "1.0.2", default-features = false }
 byte-string-derive = { default-features = false, path = "partner-chains/toolkit/utils/byte-string-derivation" }
-cbor_event = "2.4.0"
+cbor_event = { version = "2.4.0" }
 cli-commands = { path = "partner-chains/toolkit/cli/commands" }
-colored = "3.0.0"
-derive_more = { version = "2.0.1", default-features = false }
-ed25519-zebra = "4.0.3"
-envy = "0.4.2"
+colored = { version = "3.1.1" }
+derive_more = { version = "2.1.1", default-features = false }
+ed25519-zebra = { version = "4.2.0" }
+envy = { version = "0.4.2" }
 fraction = { version = "0.15.3", default-features = false }
-inquire = "0.7.5"
+inquire = { version = "0.7.5" }
 k256 = { version = "0.13.4", default-features = false }
-libp2p-identity = "0.2"
-log4rs = "1.3.0"
-minicbor = { version = "0.25.1", features = ["alloc"] }
+libp2p-identity = "0.2.13"
+log4rs = { version = "1.4.0", default-features = false, features = ["console_appender", "file_appender"] }
+minicbor = { version = "2.2.1", features = ["alloc"] }
 num-bigint = { version = "0.4.3", default-features = false }
-num-derive = "0.4.2"
+num-derive = { version = "0.4.2" }
 num-traits = { version = "0.2.17", default-features = false }
 ogmios-client = { path = "partner-chains/toolkit/utils/ogmios-client", default-features = false }
-once_cell = { version = "1.21.3", default-features = false }
-parking_lot = { version = "0.12.4", default-features = false }
-paste = "1.0.15"
+once_cell = { version = "1.21.4", default-features = false }
+parking_lot = { version = "0.12.5", default-features = false }
 plutus-datum-derive = { default-features = false, path = "partner-chains/toolkit/utils/plutus/plutus-datum-derive" }
-pretty_assertions = "1.4.1"
-proptest = "1.7.0"
-quickcheck = "1.0.3"
-quickcheck_macros = "1"
+pretty_assertions = { version = "1.4.1" }
+proptest = { version = "1.11.0" }
+quickcheck = { version = "1.1.0" }
+quickcheck_macros = { version = "1" }
 quote = "1.0"
-rand_chacha = { version = "0.9.0", default-features = false }
+rand_chacha = { version = "0.10.0", default-features = false }
 raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-contracts.git", tag = "v8.1.0" }
 secp256k1 = { version = "0.30.0", default-features = false }
 selection = { path = "partner-chains/toolkit/committee-selection/selection", default-features = false }
-testcontainers = "0.27.2"
-time = { version = "0.3.36", default-features = false }
-tokio-retry = "0.3"
-uplc = "1.1.6"
+testcontainers = { version = "0.27" }
+time = { version = "0.3.47", default-features = false }
+tokio-retry = { version = "0.3" }
+uplc = { version = "1.1.21" }
 
 # Partner-chains local crates (not directly used but needed for workspace resolution)
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
