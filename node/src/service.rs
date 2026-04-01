@@ -776,7 +776,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				None,
 				MmrGadget::start(
 					client.clone(),
-					backend,
+					backend.clone(),
 					sp_mmr_primitives::INDEXING_PREFIX.to_vec(),
 				),
 			);
