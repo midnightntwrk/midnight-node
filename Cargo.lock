@@ -7944,7 +7944,6 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "redb",
- "scale-info",
  "serde",
  "serde_bytes",
  "serde_json",
