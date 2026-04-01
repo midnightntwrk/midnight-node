@@ -16,9 +16,9 @@ use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
-	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSelectionError,
-	UtxoSpendInfo, WalletAddress, WalletSeed,
+	Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
+	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet,
+	UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -122,7 +122,8 @@ impl BuildTxs for SingleTxBuilder {
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
 				self.shielded_token_type,
-			);
+			)
+			.expect("insufficient shielded coins for transfer");
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
 			} else {
@@ -167,19 +168,23 @@ pub(crate) fn build_shielded_offer(
 	output_wallets: Vec<ShieldedWallet<DefaultDB>>,
 	amount: u128,
 	token_type: ShieldedTokenType,
-) -> OfferInfo<DefaultDB> {
+) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
 	let total_required = amount
 		.checked_mul(output_wallets.len() as u128)
 		.expect("shielded amount overflow");
 
-	let input_info = InputInfo { origin: funding_seed, token_type, value: total_required };
+	let (input_infos, change) =
+		InputInfo::coins_to_cover_value(context, funding_seed, total_required, token_type)?;
 
-	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
+	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
+		.into_iter()
+		.map(|input| {
+			let input: Box<dyn BuildInput<DefaultDB>> = Box::new(input);
+			input
+		})
+		.collect();
 
-	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>>;
-
-	// Outputs info
-	outputs_info = output_wallets
+	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
 		.iter()
 		.map(|wallet| {
 			let output: Box<dyn BuildOutput<DefaultDB>> =
@@ -188,19 +193,13 @@ pub(crate) fn build_shielded_offer(
 		})
 		.collect();
 
-	let funding_wallet = context.clone().wallet_from_seed(funding_seed);
-	let input_amount = input_info.min_match_coin(&funding_wallet.shielded.state).value;
-	let remaining_coins = input_amount
-		.checked_sub(total_required)
-		.expect("insufficient shielded input for total required amount");
+	if change > 0 {
+		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> =
+			Box::new(OutputInfo { destination: funding_seed, token_type, value: change });
+		outputs_info.push(output_info_refund);
+	}
 
-	// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
-	let output_info_refund: Box<dyn BuildOutput<DefaultDB>> =
-		Box::new(OutputInfo { destination: funding_seed, token_type, value: remaining_coins });
-
-	outputs_info.push(output_info_refund);
-
-	OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] }
+	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 }
 
 pub(crate) fn build_unshielded_intents(
