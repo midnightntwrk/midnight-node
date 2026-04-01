@@ -9,12 +9,12 @@ use serde::Serialize;
 pub struct ShowAddressArgs {
 	/// Target network
 	#[arg(long)]
-	network: String,
+	pub network: String,
 	/// Wallet seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	seed: WalletSeed,
+	pub seed: WalletSeed,
 	#[command(flatten)]
-	specific_address: SpecificAddressTypeArgs,
+	pub specific_address: SpecificAddressTypeArgs,
 }
 
 #[derive(Args, Clone, Default)]
@@ -22,31 +22,31 @@ pub struct ShowAddressArgs {
 pub struct SpecificAddressTypeArgs {
 	/// Shielded only
 	#[arg(long)]
-	shielded: bool,
+	pub shielded: bool,
 	/// Unshielded only
 	#[arg(long)]
-	unshielded: bool,
+	pub unshielded: bool,
 	/// Dust only
 	#[arg(long)]
-	dust: bool,
+	pub dust: bool,
 	/// DustPublic only
 	#[arg(long)]
-	dust_public: bool,
+	pub dust_public: bool,
 	/// CoinPublic only
 	#[arg(long)]
-	coin_public: bool,
+	pub coin_public: bool,
 	/// CoinPublic tagged only
 	#[arg(long)]
-	coin_public_tagged: bool,
+	pub coin_public_tagged: bool,
 	/// Verifying key only
 	#[arg(long)]
-	verifying_key: bool,
+	pub verifying_key: bool,
 	/// User Address only
 	#[arg(long, conflicts_with = "unshielded_user_address_untagged")]
-	user_address: bool,
+	pub user_address: bool,
 	/// User Address only (deprecated, use --user-address)
 	#[arg(long, conflicts_with = "user_address")]
-	unshielded_user_address_untagged: bool,
+	pub unshielded_user_address_untagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,11 +1,39 @@
+use std::fmt;
+use std::path::PathBuf;
+
 use whisky::csl::NetworkInfo as CardanoNetworkInfo;
 use whisky::{LanguageVersion, Network as CardanoNetwork};
+
+#[derive(Clone, Debug)]
+pub enum MidnightNetwork {
+    Undeployed,
+    Devnet,
+    Qanet,
+    Preview,
+    Preprod,
+    Mainnet,
+}
+
+impl fmt::Display for MidnightNetwork {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Undeployed => write!(f, "undeployed"),
+            Self::Devnet => write!(f, "devnet"),
+            Self::Qanet => write!(f, "qanet"),
+            Self::Preview => write!(f, "preview"),
+            Self::Preprod => write!(f, "preprod"),
+            Self::Mainnet => write!(f, "mainnet"),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Settings {
     pub node_client: NodeClientSettings,
     pub ogmios_client: OgmiosClientSettings,
     pub constants: Constants,
+    pub network: MidnightNetwork,
+    pub toolkit: ToolkitSettings,
 }
 
 impl Settings {
@@ -112,8 +140,39 @@ impl Settings {
                         ],
                     ],
                 },
+                network: {
+                    #[cfg(any(feature = "local", feature = "local-ci"))]
+                    { MidnightNetwork::Undeployed }
+                },
+                toolkit: ToolkitSettings::new(),
             }
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct ToolkitSettings {
+    pub toolkit_js_path: PathBuf,
+    pub funding_seed: String,
+    pub contracts_dir: PathBuf,
+}
+
+impl ToolkitSettings {
+    pub fn new() -> Self {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        Self {
+            toolkit_js_path: std::env::var("TOOLKIT_JS_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| manifest_dir.join("../../util/toolkit-js")),
+            funding_seed: midnight_node_toolkit::tx_generator::builder::FUNDING_SEED.to_string(),
+            contracts_dir: manifest_dir.join("contracts"),
+        }
+    }
+}
+
+impl Default for ToolkitSettings {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

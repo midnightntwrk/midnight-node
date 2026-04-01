@@ -1,5 +1,6 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
+use midnight_node_e2e::api::toolkit::ToolkitTestHelper;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
@@ -3010,5 +3011,179 @@ async fn authority_selection_uses_aiken_candidates() {
     println!(
         "\n✓ Validated {} Aiken permissioned candidates with complete key structure",
         valid_candidates
+    );
+}
+
+// -------- TOOLKIT INTEGRATION TESTS --------
+
+/// Verifies that a private witness (secret key) used in ZK proofs never leaks
+/// into on-chain transaction data. Deploys a bulletin board contract, posts a
+/// message using the secret key as a private witness, then asserts the key does
+/// not appear anywhere in the serialized transactions.
+#[tokio::test]
+async fn bboard_private_witness_not_leaked() {
+    let settings = Settings::new();
+    if !toolkit_js_prerequisites_ready(&settings) {
+        return;
+    }
+
+    let secret_key = "deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011";
+    let seed = &settings.toolkit.funding_seed.clone();
+    let toolkit_helper = ToolkitTestHelper::new(settings);
+
+    println!("1. Generating coin-public address");
+    let coin_public = toolkit_helper.show_address_coin_public(seed);
+    println!("   coin-public: {coin_public}");
+
+    println!("2. Compiling bboard contract");
+    let bboard_source = toolkit_helper.load_contract_file("bboard/bboard.compact");
+    let compiled_dir = toolkit_helper
+        .compile_contract(&bboard_source, "bboard")
+        .await
+        .expect("contract compilation failed");
+
+    let config_content = toolkit_helper.load_template(
+        "bboard/config.template.ts",
+        &[
+            ("SECRET_KEY", secret_key),
+            ("COIN_PUBLIC", &coin_public),
+            ("NETWORK", &toolkit_helper.settings().network.to_string()),
+        ],
+    );
+    let config_file = toolkit_helper.write_config(&config_content, "bboard/contract.config.ts");
+    println!("   compiled to: {}", compiled_dir.display());
+
+    println!("3. Deploying bboard contract");
+    let deploy = toolkit_helper
+        .generate_intent_deploy(&config_file, &coin_public)
+        .await
+        .expect("generate deploy intent failed");
+    let deploy_tx = toolkit_helper
+        .send_intent(&deploy.intent, &compiled_dir, seed, None)
+        .await
+        .expect("send deploy intent failed");
+    toolkit_helper
+        .submit_tx(&deploy_tx)
+        .await
+        .expect("submit deploy tx failed");
+    let bboard_addr = toolkit_helper
+        .contract_address(&deploy_tx)
+        .expect("contract address extraction failed");
+    println!("   bboard address: {bboard_addr}");
+
+    println!("4. Fetching contract state");
+    let state_file = toolkit_helper.work_dir.path().join("bboard_state.mn");
+    toolkit_helper
+        .contract_state(&bboard_addr, &state_file)
+        .await
+        .expect("contract state fetch failed");
+
+    println!("5. Calling post() with secret key as private witness");
+    let post = toolkit_helper
+        .generate_intent_circuit(
+            &config_file,
+            &coin_public,
+            &state_file,
+            &deploy.private_state,
+            &bboard_addr,
+            "post",
+            &["\"Hello from Rust e2e! Privacy verification test.\""],
+        )
+        .await
+        .expect("generate post intent failed");
+    let post_tx = toolkit_helper
+        .send_intent(&post.intent, &compiled_dir, seed, Some(&post.zswap_state))
+        .await
+        .expect("send post intent failed");
+    toolkit_helper
+        .submit_tx(&post_tx)
+        .await
+        .expect("submit post tx failed");
+    println!("   post() accepted on-chain");
+
+    println!("6. Verifying post() transaction does not contain secret key");
+    assert_secret_not_in_tx(&toolkit_helper, &post_tx, secret_key, "post()");
+
+    println!("7. Fetching updated contract state");
+    let state_file_2 = toolkit_helper.work_dir.path().join("bboard_state_2.mn");
+    toolkit_helper
+        .contract_state(&bboard_addr, &state_file_2)
+        .await
+        .expect("contract state fetch failed");
+
+    println!("8. Calling takeDown() with same secret key");
+    let takedown = toolkit_helper
+        .generate_intent_circuit(
+            &config_file,
+            &coin_public,
+            &state_file_2,
+            &post.private_state,
+            &bboard_addr,
+            "takeDown",
+            &[],
+        )
+        .await
+        .expect("generate takeDown intent failed");
+    let takedown_tx = toolkit_helper
+        .send_intent(
+            &takedown.intent,
+            &compiled_dir,
+            seed,
+            Some(&takedown.zswap_state),
+        )
+        .await
+        .expect("send takeDown intent failed");
+    toolkit_helper
+        .submit_tx(&takedown_tx)
+        .await
+        .expect("submit takeDown tx failed");
+    println!("   takeDown() accepted on-chain");
+
+    println!("9. Verifying takeDown() transaction does not contain secret key");
+    assert_secret_not_in_tx(&toolkit_helper, &takedown_tx, secret_key, "takeDown()");
+}
+
+fn toolkit_js_prerequisites_ready(settings: &Settings) -> bool {
+    let toolkit_js_dir = &settings.toolkit.toolkit_js_path;
+    let compactc_version = ToolkitTestHelper::compactc_version();
+    let required_paths = [
+        toolkit_js_dir.join("dist/bin.js"),
+        toolkit_js_dir.join("node_modules/@midnight-ntwrk/node-toolkit-v8"),
+        toolkit_js_dir.join(format!(
+            "node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
+        )),
+    ];
+
+    if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
+        eprintln!(
+            "Skipping integration tests: missing {}\n\
+             Setup: cd util/toolkit-js && npm install && npm run build && \
+             npx fetch-compactc --version={compactc_version}",
+            missing.display()
+        );
+        return false;
+    }
+
+    true
+}
+
+fn assert_secret_not_in_tx(
+    helper: &ToolkitTestHelper,
+    tx_file: &std::path::Path,
+    secret: &str,
+    label: &str,
+) {
+    let tx_dump = helper
+        .show_transaction(tx_file)
+        .expect("show transaction failed");
+    assert!(
+        !tx_dump.to_lowercase().contains(secret),
+        "PRIVACY BROKEN: secret key found in {label} transaction dump"
+    );
+
+    let raw_contents = std::fs::read_to_string(tx_file).expect("failed to read tx file");
+    assert!(
+        !raw_contents.to_lowercase().contains(secret),
+        "PRIVACY BROKEN: secret key found in raw {label} .mn file"
     );
 }

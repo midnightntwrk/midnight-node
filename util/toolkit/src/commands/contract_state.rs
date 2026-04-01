@@ -9,16 +9,16 @@ use std::{fs, path::Path};
 #[derive(Args)]
 pub struct ContractStateArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	/// Contract Address
 	#[arg(long, value_parser = cli::contract_address_decode)]
-	contract_address: ContractAddress,
+	pub contract_address: ContractAddress,
 	/// Destination file to save the state
 	#[arg(long, short)]
-	dest_file: Option<String>,
+	pub dest_file: Option<String>,
 	/// Dry-run - don't fetch anything, just print out the settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(

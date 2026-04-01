@@ -9,17 +9,17 @@ use clap::Args;
 #[derive(Args)]
 pub struct SendIntentArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	#[command(flatten)]
-	destination: Destination,
+	pub destination: Destination,
 	// Proof Server Host
 	#[arg(long, short)]
-	proof_server: Option<String>,
+	pub proof_server: Option<String>,
 	#[command(flatten)]
-	contract_args: CustomContractArgs,
+	pub contract_args: CustomContractArgs,
 	/// Dry-run - don't generate any txs, just print out the settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

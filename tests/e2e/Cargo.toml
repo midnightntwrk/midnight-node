@@ -14,7 +14,7 @@ default = ["local-ci"]
 [dependencies]
 aiken-contracts-lib = { path = "../../util/aiken-contracts-lib" }
 hex.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
 whisky = { git = "https://github.com/rsporny/whisky", branch = "wasm-bindgen-update" }
 tiny-bip39 = "2.0.0"
 ogmios-client = { git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
@@ -25,10 +25,11 @@ subxt.workspace = true
 midnight-node-metadata.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 blake2 = "0.10.6"
+midnight-node-toolkit = { path = "../../util/toolkit" }
+tempfile = "3"
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }
-midnight-node-toolkit = { path = "../../util/toolkit" }
 
 [[test]]
 name = "e2e_tests"
