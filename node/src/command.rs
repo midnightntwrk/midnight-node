@@ -270,19 +270,18 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		let (task_manager, backend) =
-			service::new_full::<sc_network::NetworkWorker<_, _>>(
-				config,
-				epoch_config,
-				midnight_cfg,
-				cfg.storage_monitor_params_cfg.into(),
-				cfg.memory_monitor_cfg.into(),
-				storage_config,
-				metrics_push_config,
-				tx_filter_config,
-			)
-			.await
-			.map_err(sc_cli::Error::Service)?;
+		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
+			config,
+			epoch_config,
+			midnight_cfg,
+			cfg.storage_monitor_params_cfg.into(),
+			cfg.memory_monitor_cfg.into(),
+			storage_config,
+			metrics_push_config,
+			tx_filter_config,
+		)
+		.await
+		.map_err(sc_cli::Error::Service)?;
 
 		// Stash the backend handle so it outlives the tokio runtime.
 		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
