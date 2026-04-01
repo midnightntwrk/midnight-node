@@ -34,6 +34,30 @@ on:
         description: "Node-only release (skip srtool runtime WASM build)?"
         required: false
         default: false
+      archive-changes:
+        type: boolean
+        description: 'Archive changes for this release on the main branch'
+        required: true
+        default: true
+      archive-mode:
+        type: choice
+        options:
+          - move
+          - copy
+          - delete
+        description: 'Archive changes for this release on the main branch'
+        required: true
+        default: move
+      bump-version:
+        type: boolean
+        description: 'Bump node Cargo version on main'
+        required: true
+        default: false
+      reset-changes:
+        type: boolean
+        description: 'Reset `changes/` to the change template'
+        required: true
+        default: true
 
 jobs:
   prepare-release:
@@ -45,8 +69,10 @@ jobs:
     name: Prepare release images
     runs-on: ubuntu-latest
     outputs:
-      release_tag: ${{ steps.export_tag.outputs.release_tag }}
-      commit_tag: ${{ steps.export_tag.outputs.commit_tag }}
+      node-version: ${{ steps.release-env.outputs.node_version }}
+      image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
+      image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
+      git-tag-release: ${{ steps.release-env.outputs.git_tag_release }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -64,14 +90,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      - name: Checkout Season action repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          repository: midnightntwrk/season-action
-          ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
-          path: season-action
-          token: ${{ secrets.MIDNIGHTCI_REPO }}
-
       - name: Checkout repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
@@ -79,19 +97,28 @@ jobs:
           ref: ${{ inputs.ref }}
           path: ./.tmp-package
 
-      - name: Setup Season
-        uses: ./season-action
-        with:
-          ghcr_registry: ghcr.io/midnight-ntwrk
-          ghcr_username: MidnightCI
-          ghcr_password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          suffix: ${{ github.event.inputs.suffix }}
-          tag_name: node
-          image_name: midnight-node
-          cargo_toml_path: node/Cargo.toml
-          changes_archive_dir: .changes_archive
-          repo_root: ./.tmp-package
+      - name: Setup Env
+        id: release-env
+        shell: bash
+        env:
+          SUFFIX: ${{ github.event.inputs.suffix }}
+        working-directory: ./.tmp-package
+        run: |
+          NODE_VERSION="$(grep -m 1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')"
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          IMAGE_TAG_CONTENT_HASH="$NODE_VERSION-$CONTENT_HASH"
+          IMAGE_TAG_RELEASE="$NODE_VERSION$SUFFIX"
+          GIT_TAG_RELEASE="node-$NODE_VERSION$SUFFIX"
+
+          # Job outputs (for downstream jobs)
+          echo "node_version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "image_tag_content_hash=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_OUTPUT"
+          echo "image_tag_release=$IMAGE_TAG_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "git_tag_release=$GIT_TAG_RELEASE" >> "$GITHUB_OUTPUT"
+
+          # Env vars (for subsequent steps in this job)
+          echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
 
       - name: Retag and push release images (GHCR)
         working-directory: ./.tmp-package
@@ -99,20 +126,25 @@ jobs:
         env:
           FORCE: ${{ github.event.inputs.force }}
         run: |
-          season-retag
-          SEASON_IMAGE_NAME=midnight-node-toolkit season-retag
+          docker buildx imagetools create --tag \
+            ghcr.io/midnight-ntwrk/midnight-node:$IMAGE_TAG_RELEASE \
+            ghcr.io/midnight-ntwrk/midnight-node:$IMAGE_TAG_CONTENT_HASH
+
+          docker buildx imagetools create --tag \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:$IMAGE_TAG_RELEASE \
+            ghcr.io/midnight-ntwrk/midnight-node-toolkit:$IMAGE_TAG_CONTENT_HASH
 
       - name: Get GHCR release image digests
         id: ghcr-digests
         run: |
-          if [ -z "${SEASON_IMAGE_TAG_RELEASE:-}" ]; then
-            echo "::error::SEASON_IMAGE_TAG_RELEASE is not set"
+          if [ -z "${IMAGE_TAG_RELEASE:-}" ]; then
+            echo "::error::IMAGE_TAG_RELEASE is not set"
             exit 1
           fi
 
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (GHCR)
@@ -131,25 +163,25 @@ jobs:
         run: |
           for IMAGE in midnight-node midnight-node-toolkit; do
             docker buildx imagetools create \
-              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
             docker buildx imagetools create \
-              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-amd64"
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}-amd64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-amd64"
 
             docker buildx imagetools create \
-              --tag "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_RELEASE}-arm64" \
-              "ghcr.io/midnightntwrk/${IMAGE}:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+              --tag "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_RELEASE}-arm64" \
+              "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG_CONTENT_HASH}-arm64"
           done
 
       - name: Get GHCR midnightntwrk release image digests
         id: midnightntwrk-digests
         run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (GHCR midnightntwrk)
@@ -166,51 +198,48 @@ jobs:
 
       - name: Retag and push release images (Docker Hub)
         run: |
-          export IMAGE_TAG="$SEASON_IMAGE_TAG_COMMIT"
-          export RELEASE_TAG="$SEASON_IMAGE_TAG_RELEASE"
+          echo "Creating manifests for node/toolkit from $IMAGE_TAG_CONTENT_HASH images"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
-          echo "Creating manifests for node/toolkit from $SEASON_IMAGE_TAG_COMMIT images"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64"
+          echo "Tagging each image with $IMAGE_TAG_RELEASE"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-amd64"
+          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-arm64"
 
-          echo "Tagging each image with $SEASON_IMAGE_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-amd64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_COMMIT}-arm64" "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Push ${SEASON_IMAGE_TAG_RELEASE} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
-          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          echo "Push ${IMAGE_TAG_RELEASE} images to Docker Hub"
+          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
+          docker push "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-amd64"
+          docker push "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-arm64"
 
           echo "Create multi-arch manifests for Docker Hub"
-          docker manifest create "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" \
-            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
-            "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker manifest create "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
 
-          docker manifest create "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" \
-            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-amd64" \
-            "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}-arm64"
+          docker manifest create "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}" \
+            "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-amd64" \
+            "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}-arm64"
 
           echo "Push manifests to Docker Hub"
-          docker manifest push "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}"
-          docker manifest push "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}"
+          docker manifest push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}"
+          docker manifest push "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}"
 
       - name: Get Docker Hub release image digests
         id: dockerhub-digests
         run: |
-          if [ -z "${SEASON_IMAGE_TAG_RELEASE:-}" ]; then
-            echo "::error::SEASON_IMAGE_TAG_RELEASE is not set"
+          if [ -z "${IMAGE_TAG_RELEASE:-}" ]; then
+            echo "::error::IMAGE_TAG_RELEASE is not set"
             exit 1
           fi
 
-          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "node=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${SEASON_IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
+          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node release image (Docker Hub)
@@ -225,14 +254,6 @@ jobs:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit }}
 
-      - name: Export release tag
-        id: export_tag
-        run: |
-          {
-            echo "release_tag=${SEASON_IMAGE_TAG_RELEASE}"
-            echo "commit_tag=${SEASON_IMAGE_TAG_COMMIT}"
-          } >> "$GITHUB_OUTPUT"
-
   # SBOM scan jobs run here (defined below) - they depend on prepare-release
   # and gate finalize-release
 
@@ -243,19 +264,9 @@ jobs:
     name: Create release
     runs-on: ubuntu-latest
     needs: [prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
-    outputs:
-      release_tag: ${{ steps.export-tags.outputs.release_tag }}
     env:
       FORCE_COLOR: 1
     steps:
-      - name: Checkout Season action repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          repository: midnightntwrk/season-action
-          ref: 1666b2819e86ffd23f187a3e854e32311a768161 # 0.4.2
-          path: season-action
-          token: ${{ secrets.MIDNIGHTCI_REPO }}
-
       - name: Checkout repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
@@ -263,60 +274,231 @@ jobs:
           ref: ${{ inputs.ref }}
           path: ./.tmp-package
 
-      - name: Setup Season
-        uses: ./season-action
+      # We can remove this once merged to main - useful for now for testing against main branch
+      # ./.github/actions/install-season
+      - name: Checkout node repo (for install-season action)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          ghcr_registry: ghcr.io/midnight-ntwrk
-          ghcr_username: MidnightCI
-          ghcr_password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          suffix: ${{ github.event.inputs.suffix }}
-          tag_name: node
-          image_name: midnight-node
-          cargo_toml_path: node/Cargo.toml
-          changes_archive_dir: .changes_archive
-          repo_root: ./.tmp-package
+          path: ./midnight-node-ci
+
+      - name: Install Season
+        uses: ./midnight-node-ci/.github/actions/install-season
+        with:
+          gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          config: ./midnight-node-ci/.github/season.yml
+
+      - name: Setup Env
+        shell: bash
+        env:
+          IMAGE_TAG_RELEASE: ${{ needs.prepare-release.outputs.image-tag-release }}
+          IMAGE_TAG_CONTENT_HASH: ${{ needs.prepare-release.outputs.image-tag-content-hash }}
+          GIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.git-tag-release }}
+          NODE_VERSION: ${{ needs.prepare-release.outputs.node-version }}
+        run: |
+          echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
+          echo "GIT_TAG_RELEASE=$GIT_TAG_RELEASE" >> "$GITHUB_ENV"
+          echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
 
       - name: Build Release Notes
-        working-directory: ./.tmp-package
         shell: bash
         run: |
-          export SEASON_GHCR_REGISTRY="midnightntwrk"
-          export SEASON_VAR_NODE_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/$SEASON_IMAGE_NAME:$SEASON_IMAGE_TAG_RELEASE"
-          export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="$SEASON_GHCR_REGISTRY/midnight-node-toolkit:$SEASON_IMAGE_TAG_RELEASE"
-          export SEASON_VAR_RELEASE_TAG="$SEASON_GIT_TAG"
-          season-build-release-notes
-
-      - name: Create tag
-        working-directory: ./.tmp-package
-        shell: bash
-        id: tag-commit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE: ${{ github.event.inputs.force }}
-        run: season-create-tag
+          export SEASON_VAR_NODE_DOCKER_IMAGE="midnightntwrk/midnight-node:$IMAGE_TAG_RELEASE"
+          export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="midnightntwrk/midnight-node-toolkit:$IMAGE_TAG_RELEASE"
+          export SEASON_VAR_RELEASE_TAG="$GIT_TAG_RELEASE"
+          season build --changes-dir ./.tmp-package/changes -o RELEASE_NOTES.md
 
       - name: Create release
         shell: bash
+        env:
+          RELEASE_TYPE: ${{ github.event.inputs.release-type }}
+          FORCE: ${{ github.event.inputs.force }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
+            if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
+              if [ "$FORCE" != "true" ]; then
+                echo "Release has already been published, skipping (use force to override)..."
+                exit 0
+              fi
+            fi
+            echo "Release already exists, modifying..."
+            EDIT_OR_CREATE="edit"
+          else
+            echo "Creating release..."
+            EDIT_OR_CREATE="create"
+          fi
+
+          FLAGS=()
+          case "$RELEASE_TYPE" in
+            draft)      FLAGS=("--draft") ;;
+            prerelease) FLAGS=("--prerelease" "--draft=false") ;;
+            latest)     FLAGS=("--latest" "--draft=false") ;;
+          esac
+
+          gh release --repo "$GITHUB_REPOSITORY" "$EDIT_OR_CREATE" "$GIT_TAG_RELEASE" \
+            --title "$GIT_TAG_RELEASE" \
+            "${FLAGS[@]}" \
+            --notes-file RELEASE_NOTES.md
+
+      - name: Fetch release tag
         working-directory: ./.tmp-package
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TYPE: ${{ github.event.inputs.release-type }}
-        run: |
-          season-create-release
+        run: git fetch origin tag "$GIT_TAG_RELEASE"
 
-      - name: Export tags for downstream jobs
-        id: export-tags
+      - name: Archive changes
+        env:
+          ARCHIVE_MODE: ${{ inputs.archive-mode }}
+        working-directory: ./.tmp-package
         run: |
-          echo "release_tag=$SEASON_GIT_TAG" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$SEASON_IMAGE_TAG_RELEASE" >> "$GITHUB_OUTPUT"
+          season archive-changes \
+            --tag "$GIT_TAG_RELEASE" \
+            --archive-mode "$ARCHIVE_MODE" \
+            --force
 
-      - name: Make PR against main
+      - name: Reset changes
+        if: inputs.reset-changes == true
+        working-directory: ./.tmp-package
+        run: |
+          season reset-changes --dirty
+
+      - name: Bump Cargo version
+        if: inputs.bump-version == true
+        working-directory: ./.tmp-package
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$NODE_VERSION"
+          NEW_NODE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          sed -i "0,/^version = \"$NODE_VERSION\"/s//version = \"$NEW_NODE_VERSION\"/" node/Cargo.toml
+          sed -i '/^name = "midnight-node"/{n;s/version = "'"$NODE_VERSION"'"/version = "'"$NEW_NODE_VERSION"'"/;}' Cargo.lock
+          echo "Bumped version: $NODE_VERSION -> $NEW_NODE_VERSION"
+
+      # Create a signed commit on a new branch and open a PR.
+      # Uses the GitHub GraphQL API (createCommitOnBranch) instead of a
+      # third-party action (e.g. peter-evans/create-pull-request)
+      # so the commit is automatically signed by GitHub.
+      - name: Create Archive-Changes PR against main
         working-directory: ./.tmp-package
         shell: bash
         env:
+          BRANCH: archive-release-${{ needs.prepare-release.outputs.git-tag-release }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: season-create-pr
+        run: |
+          set -euo pipefail
+
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY##*/}"
+
+          # Stage all working-tree changes so we can diff them
+          git add -A
+
+          # Collect added/modified files with base64-encoded contents
+          ADDITIONS_JSON=$(git diff --cached --name-only -z --diff-filter=AM | \
+            while IFS= read -r -d '' file; do
+              CONTENT_B64=$(base64 -w 0 "$file")
+              jq -n --arg path "$file" --arg contents "$CONTENT_B64" \
+                '{path: $path, contents: $contents}'
+            done | jq -s '.')
+
+          # Collect deleted files
+          DELETIONS_JSON=$(git diff --cached --name-only -z --diff-filter=D | \
+            while IFS= read -r -d '' file; do
+              jq -n --arg path "$file" '{path: $path}'
+            done | jq -s '.')
+
+          if [ "$ADDITIONS_JSON" = "[]" ] && [ "$DELETIONS_JSON" = "[]" ]; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          # Get repo ID and main branch HEAD OID
+          # shellcheck disable=SC2016
+          QUERY_RESULT=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                id
+                defaultBranchRef {
+                  target { oid }
+                }
+              }
+            }
+          ' -f owner="$OWNER" -f name="$REPO")
+
+          REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
+          MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
+
+          # Create branch at main HEAD, or force-update if it already exists
+          # shellcheck disable=SC2016
+          CREATE_RESULT=$(gh api graphql -f query='
+            mutation($repoId: ID!, $name: String!, $oid: GitObjectID!) {
+              createRef(input: {repositoryId: $repoId, name: $name, oid: $oid}) {
+                ref { name }
+              }
+            }
+          ' -f repoId="$REPO_ID" -f name="refs/heads/$BRANCH" -f oid="$MAIN_OID" 2>&1) || true
+
+          if echo "$CREATE_RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "Branch already exists, force-updating to main HEAD..."
+            # shellcheck disable=SC2016
+            REF_ID=$(gh api graphql -f query='
+              query($owner: String!, $name: String!, $ref: String!) {
+                repository(owner: $owner, name: $name) {
+                  ref(qualifiedName: $ref) { id }
+                }
+              }
+            ' -f owner="$OWNER" -f name="$REPO" -f ref="refs/heads/$BRANCH" \
+              | jq -r '.data.repository.ref.id')
+
+            # shellcheck disable=SC2016
+            gh api graphql -f query='
+              mutation($refId: ID!, $oid: GitObjectID!) {
+                updateRef(input: {refId: $refId, oid: $oid, force: true}) {
+                  ref { name }
+                }
+              }
+            ' -f refId="$REF_ID" -f oid="$MAIN_OID"
+          fi
+
+          # Create signed commit via GraphQL
+          COMMIT_RESULT=$(jq -n \
+            --arg nwo "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg oid "$MAIN_OID" \
+            --arg headline "chore: archive changes for $GIT_TAG_RELEASE" \
+            --argjson additions "$ADDITIONS_JSON" \
+            --argjson deletions "$DELETIONS_JSON" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {
+                input: {
+                  branch: {
+                    repositoryNameWithOwner: $nwo,
+                    branchName: $branch
+                  },
+                  expectedHeadOid: $oid,
+                  message: { headline: $headline },
+                  fileChanges: {
+                    additions: $additions,
+                    deletions: $deletions
+                  }
+                }
+              }
+            }' | gh api graphql --input -)
+
+          COMMIT_OID=$(echo "$COMMIT_RESULT" | jq -r '.data.createCommitOnBranch.commit.oid')
+          echo "Created signed commit: $COMMIT_OID"
+
+          # Create PR if one doesn't already exist
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+            echo "PR $EXISTING_PR already exists for branch $BRANCH"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: post-release $GIT_TAG_RELEASE" \
+              --body "Automated post-release PR for $GIT_TAG_RELEASE."
+          fi
 
   create-release-assets:
     permissions:
@@ -337,21 +519,27 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      - name: Setup Env
+        shell: bash
+        env:
+          IMAGE_TAG_RELEASE: ${{ needs.prepare-release.outputs.image-tag-release }}
+          GIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.git-tag-release }}
+        run: |
+          echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
+          echo "GIT_TAG_RELEASE=$GIT_TAG_RELEASE" >> "$GITHUB_ENV"
+
       - name: Extract files from Docker images
         id: extract
-        env:
-          IMAGE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
         run: |
-          RELEASE_TAG="node-${IMAGE_TAG}"
           PLATFORM="${{ matrix.platform }}"
 
-          echo "Release tag: $RELEASE_TAG"
-          echo "Image tag: $IMAGE_TAG"
+          echo "Release tag: $GIT_TAG_RELEASE"
+          echo "Image tag: $IMAGE_TAG_RELEASE"
           echo "Platform: $PLATFORM"
 
           # Extract midnight-node
-          NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}"
-          NODE_RELEASE="midnight-node-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG_RELEASE}"
+          NODE_RELEASE="midnight-node-${IMAGE_TAG_RELEASE}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $NODE_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$NODE_IMAGE"
@@ -364,8 +552,8 @@ jobs:
           echo "Created: $NODE_RELEASE"
 
           # Extract midnight-node-toolkit
-          TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}"
-          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG}-linux-${PLATFORM}.tar.gz"
+          TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG_RELEASE}"
+          TOOLKIT_RELEASE="midnight-node-toolkit-${IMAGE_TAG_RELEASE}-linux-${PLATFORM}.tar.gz"
 
           echo "Extracting from: $TOOLKIT_IMAGE"
           docker pull --platform "linux/${PLATFORM}" "$TOOLKIT_IMAGE"
@@ -377,7 +565,6 @@ jobs:
           echo "Created: $TOOLKIT_RELEASE"
 
           {
-            echo "release_tag=$RELEASE_TAG"
             echo "node_release=$NODE_RELEASE"
             echo "toolkit_release=$TOOLKIT_RELEASE"
           } >> "$GITHUB_OUTPUT"
@@ -406,13 +593,12 @@ jobs:
 
       - name: Upload release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.extract.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_FILE: ${{ steps.extract.outputs.node_release }}
           TOOLKIT_FILE: ${{ steps.extract.outputs.toolkit_release }}
         run: |
-          echo "Uploading assets to release: $RELEASE_TAG"
-          gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
+          echo "Uploading assets to release: $GIT_TAG_RELEASE"
+          gh release upload --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" \
             "$NODE_FILE" \
             "$TOOLKIT_FILE" \
             "SHA256SUMS-${{ matrix.platform }}"
@@ -423,12 +609,12 @@ jobs:
       id-token: write
       attestations: write
     name: srtool Build
-    needs: [finalize-release]
+    needs: [prepare-release, finalize-release]
     if: github.event.inputs.release-type != 'Don''t create a release.' && github.event.inputs.node-only != 'true'
     uses: ./.github/workflows/srtool-build.yml
     with:
       ref: ${{ inputs.ref }}
-      release-tag: ${{ needs.finalize-release.outputs.release_tag }}
+      release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
     secrets: inherit
 
   finalize-checksums:
@@ -440,13 +626,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.inputs.release-type != 'Don''t create a release.'
     steps:
+      - name: Setup Env
+        shell: bash
+        env:
+          GIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.git-tag-release }}
+        run: |
+          echo "GIT_TAG_RELEASE=$GIT_TAG_RELEASE" >> "$GITHUB_ENV"
+
       - name: Download and combine checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: node-${{ needs.prepare-release.outputs.release_tag }}
         run: |
-          echo "Downloading checksum files from release: $RELEASE_TAG"
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+          echo "Downloading checksum files from release: $GIT_TAG_RELEASE"
+          gh release download "$GIT_TAG_RELEASE" --repo "$GITHUB_REPOSITORY" \
             --pattern "SHA256SUMS-*"
 
           # Combine into single file
@@ -457,7 +649,7 @@ jobs:
           # Remove individual platform files from release
           echo "Removing per-platform checksum files from release..."
           for f in SHA256SUMS-*; do
-            gh release delete-asset "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "$f" --yes
+            gh release delete-asset "$GIT_TAG_RELEASE" --repo "$GITHUB_REPOSITORY" "$f" --yes
           done
 
       - name: Attest checksums file
@@ -468,10 +660,9 @@ jobs:
       - name: Upload final checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: node-${{ needs.prepare-release.outputs.release_tag }}
         run: |
-          echo "Uploading checksums to release: $RELEASE_TAG"
-          gh release upload --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
+          echo "Uploading checksums to release: $GIT_TAG_RELEASE"
+          gh release upload --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" \
             SHA256SUMS
 
   sbom-scan-ghcr-node:
@@ -488,7 +679,7 @@ jobs:
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
-      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
+      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
     secrets: inherit
@@ -507,7 +698,7 @@ jobs:
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       # GHCR only has arch-specific tags with commit tag (season-retag creates multi-arch release tag only)
-      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.commit_tag }}-${{ matrix.arch }}
+      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
     secrets: inherit
@@ -525,7 +716,7 @@ jobs:
         arch: [amd64, arm64]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
       skip-scan: true
       tlog-upload: true
@@ -544,7 +735,7 @@ jobs:
         arch: [amd64, arm64]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
       skip-scan: true
       tlog-upload: true
@@ -563,10 +754,10 @@ jobs:
         arch: [amd64, arm64]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
-      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.release_tag }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}
       skip-scan: true
       tlog-upload: true
     secrets: inherit
@@ -584,10 +775,10 @@ jobs:
         arch: [amd64, arm64]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}-${{ matrix.arch }}
+      image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-midnightntwrk-${{ matrix.arch }}-release
       platform: linux/${{ matrix.arch }}
-      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.release_tag }}
+      multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-release }}
       skip-scan: true
       tlog-upload: true
     secrets: inherit

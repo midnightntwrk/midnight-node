@@ -42,6 +42,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Install Season
+        uses: ./.github/actions/install-season
+        with:
+          gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - name: Get PR details
         id: pr
         env:
@@ -60,11 +65,10 @@ jobs:
           fi
 
       - name: Check changes can be rendered
-        # TODO: make season image public
         if: >
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.fork == false
-        run: docker run -v "$PWD/changes:/changes" ghcr.io/midnight-ntwrk/season:0.3.1 build /changes
+        run: season build
 
       - name: Check changes files for link to PR
         if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
