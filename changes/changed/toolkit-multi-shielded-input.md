@@ -4,4 +4,4 @@
 Multiple shielded amounts spread in coins of small values will now be combined to produce the required output amount.
 
 Fixes: https://shielded.atlassian.net/browse/PM-22405
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1216
