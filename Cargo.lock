@@ -4871,6 +4871,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "governance-helpers"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "log",
+ "scale-info",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
+ "subxt 0.44.0",
+ "subxt-signer 0.44.0",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "governor"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7917,6 +7930,7 @@ dependencies = [
  "clap",
  "console",
  "futures",
+ "governance-helpers",
  "hex",
  "hex-literal 1.0.0",
  "indicatif",
@@ -18740,10 +18754,9 @@ dependencies = [
  "bip39",
  "clap",
  "env_logger",
+ "governance-helpers",
  "hex",
  "log",
- "parity-scale-codec",
- "scale-info",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509)",
  "subxt 0.44.0",
  "subxt-signer 0.44.0",
