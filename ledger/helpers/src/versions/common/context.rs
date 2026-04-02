@@ -28,7 +28,28 @@ use std::{
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
+
+#[derive(Debug, Error)]
+pub enum LedgerContextError {
+	#[error("mutex poisoned: {0}")]
+	MutexPoisoned(String),
+	#[error("invalid transaction: {0}")]
+	InvalidTransaction(String),
+	#[error("cost calculation failed: {0}")]
+	CostCalculation(String),
+	#[error("block update failed: {0}")]
+	BlockUpdate(String),
+	#[error(
+		"state root mismatch: expected {expected}, actual {actual} (parent block hash: {parent_block_hash})"
+	)]
+	StateRootMismatch { expected: String, actual: String, parent_block_hash: String },
+	#[error("deserialization failed: {0}")]
+	Deserialization(String),
+	#[error("dust update failed for tx {tx_hash}: {reason}")]
+	DustUpdate { tx_hash: String, reason: String },
+}
 
 lazy_static! {
 	pub static ref DEFAULT_RESOLVER: Resolver = Resolver::new(
@@ -118,20 +139,22 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
-	) -> Vec<Event<D>>
+	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		let mut all_events: Vec<Event<D>> = Vec::new();
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(tx, block_context);
+			let (events, cost) = self.update_from_tx(tx, block_context)?;
 			all_events.extend(events);
 			total_cost = total_cost + cost;
 		}
 
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
 			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
@@ -139,10 +162,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 		*latest_ledger_state = Sp::new(
 			latest_ledger_state
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
-				.expect("Error applying block updates"),
+				.map_err(|e| LedgerContextError::BlockUpdate(format!("{e:?}")))?,
 		);
 
-		all_events
+		Ok(all_events)
 	}
 
 	/// Replay accumulated dust events to all wallets in parallel (no TTL processing).
@@ -181,12 +204,15 @@ impl<D: DB + Clone> LedgerContext<D> {
 			});
 	}
 
-	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
-		let new_state: LedgerState<D> =
-			deserialize(state).expect("failed to deserialize state bytes");
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) -> Result<(), LedgerContextError> {
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		let new_state: LedgerState<D> = deserialize(state)
+			.map_err(|e| LedgerContextError::Deserialization(format!("{e:?}")))?;
 		*latest_ledger_state = Sp::new(new_state);
+		Ok(())
 	}
 
 	/// Updates ledger state with transactions from a block and produces events. Caller must
@@ -203,24 +229,25 @@ impl<D: DB + Clone> LedgerContext<D> {
 		block_context: &BlockContext,
 		state_root: Option<&Vec<u8>>,
 		state: Option<&Vec<u8>>,
-	) -> Vec<Event<D>>
+	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let events = self.apply_txs_collect_events(txs, block_context);
+		let events = self.apply_txs_collect_events(txs, block_context)?;
 
 		// Genesis block: overwrite ledger state with the canonical genesis state,
 		// since constructor params aren't directly observable from genesis txs.
 		if let Some(state) = state {
-			self.update_ledger_state_from_bytes(state);
+			self.update_ledger_state_from_bytes(state)?;
 		}
 
-		self.verify_state_root(block_context, state_root);
+		self.verify_state_root(block_context, state_root)?;
 
-		*self.latest_block_context.lock().expect("error locking latest_block_context") =
-			Some(block_context.clone());
+		*self.latest_block_context.lock().map_err(|e| {
+			LedgerContextError::MutexPoisoned(format!("latest_block_context: {e:?}"))
+		})? = Some(block_context.clone());
 
-		events
+		Ok(events)
 	}
 
 	pub fn latest_block_context(&self) -> BlockContext {
@@ -240,23 +267,29 @@ impl<D: DB + Clone> LedgerContext<D> {
 			})
 	}
 
-	fn verify_state_root(&self, block_context: &BlockContext, state_root: Option<&Vec<u8>>) {
-		let latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+	fn verify_state_root(
+		&self,
+		block_context: &BlockContext,
+		state_root: Option<&Vec<u8>>,
+	) -> Result<(), LedgerContextError> {
+		let latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		if let Some(expected_root) = state_root {
 			match Self::compute_state_root(&*latest_ledger_state) {
 				Some(actual_root) if actual_root != *expected_root => {
-					panic!(
-						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(expected_root),
-						hex_encode(&actual_root),
-						hex_encode(block_context.parent_block_hash.0),
-					);
+					return Err(LedgerContextError::StateRootMismatch {
+						expected: hex_encode(expected_root),
+						actual: hex_encode(&actual_root),
+						parent_block_hash: hex_encode(block_context.parent_block_hash.0),
+					});
 				},
 				Some(_) => {},
 				None => println!("Failed to compute local ledger state root for comparison"),
 			}
 		}
+		Ok(())
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
@@ -270,12 +303,14 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
 		block_context: &BlockContext,
-	) -> (Vec<Event<D>>, SyntheticCost)
+	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let mut ledger_state_guard =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut ledger_state_guard = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let tx_context = TransactionContext {
 			ref_state: (**ledger_state_guard).clone(),
 			block_context: block_context.clone(),
@@ -296,10 +331,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			SerdeTransaction::Midnight(tx) => {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
-					.expect("applying invalid transaction");
+					.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
-					.expect("error calculating fees");
+					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				let offers = Self::successful_shielded_offers(tx, &result);
@@ -340,7 +375,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			use rayon::prelude::*;
 			self.wallets
 				.lock()
-				.expect("Error locking `LedgerContext` wallets")
+				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?
 				.par_iter_mut()
 				.for_each(|(_, wallet)| {
 					wallet.update_state_from_offers(&offers);
@@ -348,7 +383,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 
 		*ledger_state_guard = Sp::new(new_ledger_state);
-		(events, cost)
+		Ok((events, cost))
 	}
 
 	fn successful_shielded_offers<S: SignatureKind<D>, P: ProofKind<D>>(
@@ -527,6 +562,18 @@ mod tests {
 			counter.load(Ordering::SeqCst),
 			n_threads * iterations,
 			"Lost updates detected: ledger_state mutex did not serialize concurrent RMW"
+		);
+	}
+
+	#[test]
+	fn update_ledger_state_from_bytes_returns_error_on_invalid_bytes() {
+		let ctx = LedgerContext::<TestDB>::new("test-net");
+		let result = ctx.update_ledger_state_from_bytes(&[0xFF, 0xFE, 0xFD]);
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(
+			matches!(err, LedgerContextError::Deserialization(_)),
+			"expected Deserialization error, got: {err}"
 		);
 	}
 }

@@ -1,0 +1,45 @@
+name: Install Season
+description: >-
+  Download and install the Season CLI from the version pinned in
+  .github/season.yml. Requires actions/checkout to have run first.
+
+inputs:
+  gh-token:
+    description: GitHub token for downloading the release asset
+    required: true
+  config:
+    description: Location for Season config
+    required: true
+    default: .github/season.yml
+
+runs:
+  using: composite
+  steps:
+    - name: Read Season config
+      id: config
+      shell: bash
+      env:
+        SEASON_CONFIG: ${{ inputs.config }}
+      run: |
+        echo "tag=$(yq '.version.tag' "$SEASON_CONFIG")" >> "$GITHUB_OUTPUT"
+        echo "repo=$(yq '.version.repo' "$SEASON_CONFIG")" >> "$GITHUB_OUTPUT"
+        echo "checksum=$(yq '.version.checksum' "$SEASON_CONFIG")" >> "$GITHUB_OUTPUT"
+
+    - name: Download and install Season
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        SEASON_TAG: ${{ steps.config.outputs.tag }}
+        SEASON_REPO: ${{ steps.config.outputs.repo }}
+        SEASON_CHECKSUM: ${{ steps.config.outputs.checksum }}
+      run: |
+        gh release download "$SEASON_TAG" \
+          -R "$SEASON_REPO" \
+          -p "season-x86_64-unknown-linux-musl.tar.gz"
+        echo "$SEASON_CHECKSUM  season-x86_64-unknown-linux-musl.tar.gz" | sha256sum -c -
+        tar xzf season-x86_64-unknown-linux-musl.tar.gz
+        chmod +x season
+        mkdir -p "$HOME/.local/bin"
+        mv season "$HOME/.local/bin/"
+        rm season-x86_64-unknown-linux-musl.tar.gz
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
