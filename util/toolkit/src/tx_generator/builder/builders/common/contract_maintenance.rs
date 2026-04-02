@@ -53,8 +53,11 @@ impl ContractMaintenanceBuilder {
 
 		let commitee_seeds: Vec<WalletSeed> =
 			args.authority_seeds.iter().map(|s| convert_wallet_seed(s.clone())).collect();
-		let new_commitee_seeds: Vec<WalletSeed> =
-			args.new_authority_seeds.iter().map(|s| convert_wallet_seed(s.clone())).collect();
+		let new_commitee_seeds: Vec<WalletSeed> = args
+			.new_authority_seeds
+			.iter()
+			.map(|s| convert_wallet_seed(s.clone()))
+			.collect();
 
 		let current_committee = commitee_seeds
 			.iter()

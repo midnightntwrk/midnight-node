@@ -63,8 +63,12 @@ pub async fn execute(
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
 	if let Some(seed) = args.seed {
-		let fork_ctx =
-			build_fork_aware_context_cached(&[seed.clone()], &source_blocks, wallet_cache.as_deref()).await;
+		let fork_ctx = build_fork_aware_context_cached(
+			&[seed.clone()],
+			&source_blocks,
+			wallet_cache.as_deref(),
+		)
+		.await;
 
 		Ok(fork_ctx.dispatch(
 			|ctx| {

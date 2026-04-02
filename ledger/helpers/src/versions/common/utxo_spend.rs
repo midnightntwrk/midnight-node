@@ -227,7 +227,9 @@ impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	}
 
 	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey {
-		context.with_wallet_from_seed(self.owner.clone(), |wallet| wallet.unshielded.signing_key().clone())
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
+			wallet.unshielded.signing_key().clone()
+		})
 	}
 }
 

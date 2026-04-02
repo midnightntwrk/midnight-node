@@ -108,9 +108,12 @@ pub async fn fetch_zswap_state(
 
 	let received_tx = source.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
-	let fork_ctx =
-		build_fork_aware_context_cached(&[wallet_seed.clone()], &received_tx, wallet_cache.as_deref())
-			.await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&[wallet_seed.clone()],
+		&received_tx,
+		wallet_cache.as_deref(),
+	)
+	.await;
 
 	Ok(fork_ctx.dispatch(
 		|ctx| {
