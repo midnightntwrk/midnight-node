@@ -125,7 +125,7 @@ jobs:
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
           # We don't use --ci as we want artifacts to be saved
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --ci --push +toolkit-image
 
       - name: Get image digests
@@ -313,8 +313,8 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --ci --push +toolkit-image
 
       - name: Get image digests
         id: digests
