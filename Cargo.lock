@@ -1111,7 +1111,7 @@ dependencies = [
  "async-trait",
  "frame-support",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "log",
  "minicbor 2.2.1",
  "num-bigint",
@@ -2083,7 +2083,7 @@ dependencies = [
  "clap",
  "ed25519-zebra",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "k256",
  "pallet-address-associations",
  "parity-scale-codec",
@@ -5174,9 +5174,9 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hex-literal"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcaaec4551594c969335c98c903c1397853d4198408ea609190f420500f6be71"
+checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
 
 [[package]]
 name = "hickory-proto"
@@ -7824,7 +7824,7 @@ name = "midnight-node-res"
 version = "0.1.0"
 dependencies = [
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
@@ -7926,7 +7926,7 @@ dependencies = [
  "console",
  "futures",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "indicatif",
  "log",
  "midnight-node-ledger-helpers",
@@ -8100,7 +8100,7 @@ dependencies = [
 name = "midnight-primitives"
 version = "0.1.0"
 dependencies = [
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "midnight-node-ledger",
  "parity-scale-codec",
  "scale-info",
@@ -9255,7 +9255,7 @@ dependencies = [
  "anyhow",
  "fraction",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "jsonrpsee",
  "log",
  "serde",
@@ -9625,7 +9625,7 @@ dependencies = [
  "frame-benchmarking",
  "frame-support",
  "frame-system",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "pallet-balances",
  "parity-scale-codec",
  "scale-info",
@@ -10549,7 +10549,7 @@ dependencies = [
  "cbor_event",
  "fraction",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
  "minicbor 2.2.1",
@@ -10580,7 +10580,7 @@ dependencies = [
  "frame-support",
  "frame-system",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "inquire",
  "libp2p-identity",
  "ogmios-client",
@@ -10625,7 +10625,7 @@ dependencies = [
  "figment",
  "futures",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
  "lru 0.16.3",
@@ -10653,7 +10653,7 @@ version = "1.8.1"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "log",
  "pallet-sidechain-rpc",
  "serde",
@@ -10699,7 +10699,7 @@ version = "1.8.1"
 dependencies = [
  "cardano-serialization-lib",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "log",
  "pretty_assertions",
  "raw-scripts",
@@ -10716,7 +10716,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "ogmios-client",
  "partner-chains-cardano-offchain",
  "serde",
@@ -15010,7 +15010,7 @@ dependencies = [
  "ed25519-zebra",
  "figment",
  "hex",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "k256",
  "num-derive",
  "num-traits",
@@ -15583,7 +15583,7 @@ dependencies = [
 name = "sp-block-producer-metadata"
 version = "1.8.1"
 dependencies = [
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "k256",
  "parity-scale-codec",
  "sidechain-domain",
@@ -16126,7 +16126,7 @@ dependencies = [
  "async-trait",
  "authority-selection-inherents",
  "derive-new",
- "hex-literal 1.0.0",
+ "hex-literal 1.1.0",
  "minicbor 2.2.1",
  "parity-scale-codec",
  "plutus",
