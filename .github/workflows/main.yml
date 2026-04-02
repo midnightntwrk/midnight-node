@@ -124,9 +124,10 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # We don't use --ci as we want artifacts to be saved
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --ci --push +toolkit-image
+          # We don't use --ci as we want artifacts to be saved 
+          # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -149,21 +150,6 @@ jobs:
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
-
-      - name: Add content-hash alias tags (amd64)
-        continue-on-error: true
-        env:
-          IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
-        run: |
-          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
-          echo "Adding content-hash alias tags: ${CONTENT_TAG}-amd64 -> ${IMAGE_TAG}-amd64"
-          for IMAGE in midnight-node midnight-node-toolkit; do
-            docker buildx imagetools create \
-              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${CONTENT_TAG}-amd64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-amd64"
-          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
@@ -328,8 +314,8 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --strict --push +node-image
-          . ./.envrc && earthly --secret "GITHUB_TOKEN=$GITHUB_TOKEN" -P --ci --push +toolkit-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -353,20 +339,7 @@ jobs:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
-      - name: Add content-hash alias tags (arm64)
-        continue-on-error: true
-        env:
-          IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
-        run: |
-          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
-          echo "Adding content-hash alias tags: ${CONTENT_TAG}-arm64 -> ${IMAGE_TAG}-arm64"
-          for IMAGE in midnight-node midnight-node-toolkit; do
-            docker buildx imagetools create \
-              --tag "ghcr.io/midnight-ntwrk/${IMAGE}:${CONTENT_TAG}-arm64" \
-              "ghcr.io/midnight-ntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
-          done
+
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
@@ -621,31 +594,7 @@ jobs:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
 
-      - name: Add content-hash alias multi-arch manifests
-        continue-on-error: true
-        env:
-          IMAGE_TAG: ${{ needs.publish-amd64.outputs.IMAGE_TAG }}
-        run: |
-          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
-          CONTENT_TAG="${VERSION}-${CONTENT_HASH}"
-          echo "Adding content-hash alias multi-arch manifests: ${CONTENT_TAG} -> ${IMAGE_TAG}"
-          for REGISTRY in ghcr.io/midnight-ntwrk ghcr.io/midnightntwrk; do
-            for IMAGE in midnight-node midnight-node-toolkit; do
-              docker buildx imagetools create \
-                --tag "${REGISTRY}/${IMAGE}:${CONTENT_TAG}" \
-                "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-amd64" \
-                "${REGISTRY}/${IMAGE}:${IMAGE_TAG}-arm64"
-            done
-          done
-          # Arch-specific content-hash tags for midnightntwrk (midnight-ntwrk done in per-arch jobs)
-          for IMAGE in midnight-node midnight-node-toolkit; do
-            for ARCH in amd64 arm64; do
-              docker buildx imagetools create \
-                --tag "ghcr.io/midnightntwrk/${IMAGE}:${CONTENT_TAG}-${ARCH}" \
-                "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-${ARCH}"
-            done
-          done
+
 
       - name: Create and push `latest-main` images (GHCR)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
