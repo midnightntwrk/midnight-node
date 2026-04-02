@@ -1,4 +1,4 @@
-#node #toolkit
+#toolkit #relay
 # Upgrade subxt from v0.44 to v0.50
 
 Migrate the toolkit, upgrader, relay, and e2e tests to the subxt v0.50
