@@ -69,7 +69,7 @@ impl FetchTask {
 		}
 	}
 
-	async fn fetch_block_hash(
+	pub(crate) async fn fetch_block_hash(
 		client: &MidnightNodeClient,
 		block_number: u64,
 	) -> Result<H256, FetchTaskError> {
@@ -98,7 +98,7 @@ impl FetchTask {
 		Ok(block_hash)
 	}
 
-	async fn fetch_block(
+	pub(crate) async fn fetch_block(
 		client: &MidnightNodeClient,
 		block_hash: H256,
 	) -> Result<FetchedBlock, FetchTaskError> {
@@ -118,6 +118,7 @@ impl FetchTask {
 		.await?;
 
 		let state_root = client.get_state_root_at(Some(block.hash())).await?;
+		let raw_body = client.api.backend().block_body(block_hash).await?.unwrap_or_default();
 
 		let state = if block.header().parent_hash.is_zero() {
 			let system_properties = client.get_system_properties().await?;
@@ -134,6 +135,6 @@ impl FetchTask {
 			None
 		};
 
-		Ok(FetchedBlock { block, state_root, state })
+		Ok(FetchedBlock { block, raw_body, state_root, state })
 	}
 }

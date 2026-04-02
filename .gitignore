@@ -67,6 +67,7 @@ contractlog.json
 
 # Node project files to ignore
 node_modules/
+.turbo/
 
 # local environment generated files
 local-environment/.env

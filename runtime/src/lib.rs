@@ -853,6 +853,8 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type TransferHandler = MidnightTokenTransferHandler;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

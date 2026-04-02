@@ -12,17 +12,26 @@
 // limitations under the License.
 
 use super::{
-	DB, Input, LedgerContext, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType, Sp, StdRng,
-	TokenInfo, WalletSeed, WalletState,
+	DB, Input, LedgerContext, Nullifier, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType,
+	Sp, StdRng, TokenInfo, WalletSeed, WalletState,
 };
 use itertools::Itertools;
 use std::sync::Arc;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ShieldedCoinSelectionError {
+	#[error(
+		"insufficient shielded coins: need {required} of token {token_type:?} from seed {seed:?}"
+	)]
+	InsufficientBalance { required: u128, token_type: ShieldedTokenType, seed: WalletSeed },
+}
 
 #[derive(Clone, Copy)]
 pub struct InputInfo<O> {
 	pub origin: O,
 	pub token_type: ShieldedTokenType,
 	pub value: u128,
+	pub nullifier: Option<Nullifier>,
 }
 
 impl<O> TokenInfo for InputInfo<O> {
@@ -47,8 +56,14 @@ impl InputInfo<WalletSeed> {
 		let coins = wallet
 			.coins
 			.iter()
+			.filter(|(nullifier, coin)| {
+				if let Some(ref exact_nullifier) = self.nullifier {
+					exact_nullifier == nullifier
+				} else {
+					coin.type_ == self.token_type && coin.value >= self.value
+				}
+			})
 			.map(|(_nullifier, coin)| coin)
-			.filter(|coin| coin.type_ == self.token_type && coin.value >= self.value)
 			.sorted_by_key(|coin| coin.value)
 			.collect::<Vec<Sp<QualifiedInfo, D>>>();
 
@@ -61,6 +76,61 @@ impl InputInfo<WalletSeed> {
 				)
 			})
 			.clone()
+	}
+
+	/// Returns a vector of InputInfo matching coins selected from the wallet to cover
+	/// required_value of a token_type, plus the remaining change value.
+	pub fn coins_to_cover_value<D: DB + Clone>(
+		context: Arc<LedgerContext<D>>,
+		seed: WalletSeed,
+		required_value: u128,
+		token_type: ShieldedTokenType,
+	) -> Result<(Vec<InputInfo<WalletSeed>>, u128), ShieldedCoinSelectionError> {
+		context.with_wallet_from_seed(seed, |wallet| {
+			let matching_inputs: Vec<InputInfo<WalletSeed>> = wallet
+				.shielded
+				.state
+				.coins
+				.iter()
+				.filter(|(_nullifier, coin)| coin.type_ == token_type)
+				.map(|(nullifier, coin)| InputInfo {
+					origin: seed,
+					token_type,
+					value: coin.value,
+					nullifier: Some(nullifier),
+				})
+				.collect();
+			Self::select_inputs(matching_inputs, required_value).ok_or(
+				ShieldedCoinSelectionError::InsufficientBalance {
+					required: required_value,
+					token_type,
+					seed,
+				},
+			)
+		})
+	}
+
+	/// From given `inputs` select coins totaling at least `required`.
+	/// Returns selected coins and change.
+	fn select_inputs(
+		mut inputs: Vec<InputInfo<WalletSeed>>,
+		required: u128,
+	) -> Option<(Vec<InputInfo<WalletSeed>>, u128)> {
+		let mut total = 0u128;
+		let mut selected = vec![];
+		while !inputs.is_empty() {
+			let idx = inputs
+				.iter()
+				.position(|qi| qi.value + total > required)
+				.unwrap_or(inputs.len() - 1);
+			let input = inputs.swap_remove(idx);
+			total += input.value;
+			selected.push(input);
+			if let Some(change) = total.checked_sub(required) {
+				return Some((selected, change));
+			}
+		}
+		None
 	}
 }
 

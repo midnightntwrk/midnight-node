@@ -157,7 +157,7 @@ pub struct SharedMaintainArgs {
 pub struct MaintainContractArgs {
 	#[command(flatten)]
 	shared: SharedMaintainArgs,
-	#[arg(value_parser = cli::wallet_seed_decode)]
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
 	new_authority: WalletSeed,
 }
@@ -380,7 +380,7 @@ impl ToolkitJs {
 					if redact_next {
 						result.push("[REDACTED]");
 						redact_next = false;
-					} else if arg == "--signing" {
+					} else if arg == "--signing" || arg == "--new-authority" {
 						result.push(arg);
 						redact_next = true;
 					} else {

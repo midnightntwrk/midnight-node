@@ -440,6 +440,7 @@ mod test {
 			&contract_address_hex,
 			"--signing",
 			&signing_key_hex,
+			"--new-authority",
 			&signing_key_hex,
 		];
 		let cli = Cli::parse_from(args);

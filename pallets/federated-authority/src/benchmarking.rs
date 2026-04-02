@@ -20,6 +20,7 @@ use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{EnsureOrigin, Get};
 use frame_system::RawOrigin;
 use sp_runtime::DispatchError;
+use sp_runtime::Weight;
 
 #[benchmarks]
 mod benchmarks {
@@ -300,7 +301,7 @@ mod benchmarks {
 
 		#[block]
 		{
-			result = Pallet::<T>::motion_close(origin.into(), motion_hash);
+			result = Pallet::<T>::motion_close(origin.into(), motion_hash, Weight::MAX);
 		}
 
 		// The call should fail with `MotionNotEnded` error
@@ -320,7 +321,7 @@ mod benchmarks {
 		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
-		motion_close(origin, motion_hash);
+		motion_close(origin, motion_hash, Weight::MAX);
 
 		// Verify the motion was removed
 		assert!(Motions::<T>::get(motion_hash).is_none());
@@ -339,7 +340,7 @@ mod benchmarks {
 		let origin = RawOrigin::Signed(account);
 
 		#[extrinsic_call]
-		motion_close(origin, motion_hash);
+		motion_close(origin, motion_hash, Weight::MAX);
 
 		// Verify the motion was removed after execution
 		assert!(Motions::<T>::get(motion_hash).is_none());
@@ -360,7 +361,7 @@ mod benchmarks {
 
 		#[block]
 		{
-			result = Pallet::<T>::motion_close(origin.into(), motion_hash);
+			result = Pallet::<T>::motion_close(origin.into(), motion_hash, Weight::MAX);
 		}
 
 		// The call should fail with `MotionNotFound` error

@@ -32,6 +32,8 @@ jobs:
 
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
 
       - name: Run cargo deny and npm audit
         run: |
@@ -46,7 +48,7 @@ jobs:
           mv scan_reports/cargo-deny-fixed.sarif scan_reports/cargo-deny.sarif
 
       - name: Upload cargo-deny SARIF
-        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
         if: (success() || failure()) && hashFiles('scan_reports/cargo-deny.sarif') != ''
         continue-on-error: true
         with:
@@ -54,7 +56,7 @@ jobs:
           category: cargo-deny
 
       - name: Upload npm-audit-local-environment SARIF
-        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
         if: (success() || failure()) && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
         continue-on-error: true
         with:
@@ -62,10 +64,9 @@ jobs:
           category: npm-audit-local-environment
 
       - name: Upload npm-audit-node-toolkit-js SARIF
-        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
+        uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
         if: (success() || failure()) && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-toolkit-js.sarif
           category: npm-audit-node-toolkit-js
-
