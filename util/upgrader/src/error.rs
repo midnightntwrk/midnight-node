@@ -22,6 +22,16 @@ pub enum UpgraderError {
 	SubxtSignerError(#[from] subxt_signer::sr25519::Error),
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("online client error: {0}")]
+	OnlineClientError(#[from] subxt::error::OnlineClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
+	#[error("transaction finalized error: {0}")]
+	TransactionFinalizedError(#[from] subxt::error::TransactionFinalizedSuccessError),
+	#[error("events error: {0}")]
+	EventsError(#[from] subxt::error::EventsError),
 	#[error("BIP error: {0}")]
 	BipError(#[from] bip39::Error),
 	#[error("serialization error: {0}")]

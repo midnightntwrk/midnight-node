@@ -265,8 +265,8 @@ lazy_static = { version = "1.4.0", default-features = false }
 derive-new = { version = "0.7.0", default-features = false }
 figment = { version = "0.10.19", features = ["env", "test"] }
 lru = { version = "0.16.3" }
-subxt = "0.44.0"
-subxt-signer = "0.44.0"
+subxt = "0.50.0"
+subxt-signer = "0.50.0"
 thiserror = { version = "2.0", default-features = false }
 rand = { version = "0.10.0", default-features = false }
 rayon = "1.11"

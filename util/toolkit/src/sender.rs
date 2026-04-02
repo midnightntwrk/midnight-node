@@ -20,10 +20,11 @@ use std::{
 	},
 	time::Duration,
 };
+use parity_scale_codec::Encode;
 use subxt::{
-	OnlineClient,
-	ext::{codec::Encode, subxt_core::config::Hash},
-	tx::{TxInBlock, TxProgress},
+	client::OnlineClientAtBlockImpl,
+	config::Hash,
+	tx::{TransactionInBlock, TransactionProgress, TransactionStatus},
 };
 use thiserror::Error;
 
@@ -84,7 +85,7 @@ pub struct ClientHandle {
 
 struct Progress {
 	url: String,
-	tx_progress: TxProgress<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+	tx_progress: TransactionProgress<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>,
 }
 
 pub struct Sender {
@@ -179,6 +180,8 @@ impl Sender {
 					.client
 					.api
 					.tx()
+					.await
+					.map_err(|e| SenderError::SendToUrlError { url: client.url.clone(), source: e.into() })?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -189,6 +192,8 @@ impl Sender {
 					.client
 					.api
 					.tx()
+					.await
+					.map_err(|e| SenderError::SendToUrlError { url: client.url.clone(), source: e.into() })?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -221,13 +226,13 @@ impl Sender {
 		mut progress: Progress,
 	) -> (
 		Progress,
-		Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>>,
+		Option<TransactionInBlock<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>>,
 	) {
 		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(subxt::tx::TxStatus::InBestBlock(info)) = prog {
+				if let Ok(TransactionStatus::InBestBlock(info)) = prog {
 					return Some(info);
 				}
 			}
@@ -249,13 +254,13 @@ impl Sender {
 
 	async fn wait_for_finalized(
 		mut progress: Progress,
-	) -> Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>> {
+	) -> Option<TransactionInBlock<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>> {
 		const FINALIZED_TIMEOUT: Duration = Duration::from_secs(60);
 
 		let url = progress.url.clone();
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) = prog {
+				if let Ok(TransactionStatus::InFinalizedBlock(info)) = prog {
 					return Some(info);
 				}
 			}

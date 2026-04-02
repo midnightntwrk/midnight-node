@@ -18,12 +18,12 @@ use backoff::future::retry;
 use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Decode;
-use subxt::backend::legacy::rpc_methods::{BlockNumber, SystemProperties};
+use subxt::rpcs::methods::legacy::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
 	Config, OnlineClient,
-	backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
+	rpcs::{LegacyRpcMethods, RpcClient},
 	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
 };
 use thiserror::Error;
@@ -31,6 +31,7 @@ use thiserror::Error;
 /// Maximum time to wait for a client connection before giving up.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
+#[derive(Clone, Debug, Default)]
 pub struct MidnightNodeClientConfig;
 
 impl Config for MidnightNodeClientConfig {
@@ -38,9 +39,15 @@ impl Config for MidnightNodeClientConfig {
 	type Address = MultiAddress<Self::AccountId, ()>;
 	type Signature = MultiSignature;
 	type Hasher = BlakeTwo256;
-	type Header = SubstrateHeader<u32, BlakeTwo256>;
-	type ExtrinsicParams = SubstrateExtrinsicParams<Self>;
+	type Header = SubstrateHeader<<Self::Hasher as subxt::config::Hasher>::Hash>;
+	type TransactionExtensions = SubstrateExtrinsicParams<Self>;
 	type AssetId = u32;
+}
+
+impl subxt::rpcs::RpcConfig for MidnightNodeClientConfig {
+	type Header = SubstrateHeader<<BlakeTwo256 as subxt::config::Hasher>::Hash>;
+	type Hash = <BlakeTwo256 as subxt::config::Hasher>::Hash;
+	type AccountId = AccountId32;
 }
 
 pub struct MidnightNodeClient {
@@ -74,9 +81,9 @@ impl MidnightNodeClient {
 	pub async fn get_network_id(&self) -> Result<String, ClientError> {
 		// let storage_query = mn_meta::storage().midnight().network_id();
 		// let network_id = self.api.storage().at_latest().await?.fetch(&storage_query).await??;
-		let network_id_call = mn_meta::apis().midnight_runtime_api().get_network_id();
+		let network_id_call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_network_id();
 		// Submit the call and get back a result.
-		let network_id = self.api.runtime_api().at_latest().await?.call(network_id_call).await?;
+		let network_id = self.api.at_current_block().await?.runtime_apis().call(network_id_call).await?;
 
 		Ok(network_id)
 	}
@@ -91,11 +98,16 @@ impl MidnightNodeClient {
 		let key =
 			[sp_crypto_hashing::twox_128(b"Midnight"), sp_crypto_hashing::twox_128(b"StateKey")]
 				.concat();
-		let storage = match at {
-			Some(hash) => self.api.storage().at(hash),
-			None => self.api.storage().at_latest().await?,
+		let at_block = match at {
+			Some(hash) => self.api.at_block(hash).await?,
+			None => self.api.at_current_block().await?,
 		};
-		let raw = storage.fetch_raw(key).await?;
+		let storage = at_block.storage();
+		let raw = match storage.fetch_raw(key).await {
+			Ok(bytes) => Some(bytes),
+			Err(subxt::error::StorageError::NoValueFound) => None,
+			Err(e) => return Err(e.into()),
+		};
 		Ok(raw.map(|bytes| Vec::<u8>::decode(&mut &bytes[..]).expect("failed to decode StateKey")))
 	}
 
@@ -115,13 +127,13 @@ impl MidnightNodeClient {
 	}
 
 	pub async fn get_finalized_height(&self) -> Result<u64, ClientError> {
-		let latest_block = self.api.blocks().at_latest().await?;
-		Ok(latest_block.number().into())
+		let latest_block = self.api.at_current_block().await?;
+		Ok(latest_block.block_number())
 	}
 
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {
-		let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
-		let response = self.api.runtime_api().at_latest().await?.call(call).await?;
+		let call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
+		let response = self.api.at_current_block().await?.runtime_apis().call(call).await?;
 		let bytes = response.expect("Unable to retrieve ledger parameters from RPC server");
 		let parameters: LedgerParameters = deserialize(&mut &bytes[..])
 			.map_err(|e| ClientError::DeserializeLedgerParameters(e.into()))?;
@@ -134,7 +146,15 @@ pub enum ClientError {
 	#[error("subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt_rpc error: {0}")]
-	RpcClientError(#[from] subxt::ext::subxt_rpcs::Error),
+	RpcClientError(#[from] subxt::rpcs::Error),
+	#[error("online client error: {0}")]
+	OnlineClientError(#[from] subxt::error::OnlineClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("runtime api error: {0}")]
+	RuntimeApiError(#[from] subxt::error::RuntimeApiError),
+	#[error("storage error: {0}")]
+	StorageError(#[from] subxt::error::StorageError),
 	#[error("midnight node client received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
 	#[error("failed to get block hash for block {0}")]

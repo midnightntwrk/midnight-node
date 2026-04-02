@@ -21,7 +21,7 @@ pub mod wallet_state_cache;
 use std::time::Duration;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
-use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
+use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -33,7 +33,7 @@ use crate::{
 	},
 };
 
-pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
+pub type MidnightClientAtBlock = OnlineClientAtBlock<MidnightNodeClientConfig>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
@@ -46,7 +46,7 @@ pub enum FetchError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("error creating client")]
 	NodeClientError(#[from] ClientError),
 	#[error("block hash missing for block number {0}")]

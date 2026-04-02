@@ -18,7 +18,7 @@ use error::UpgraderError;
 use subxt::{
 	OnlineClient, SubstrateConfig,
 	dynamic::{self, Value},
-	tx::Payload,
+	ext::scale_value::Composite,
 	utils::H256,
 };
 use subxt_signer::SecretUri;
@@ -63,12 +63,12 @@ pub async fn execute_upgrade(
 
 	// Step 2: Create the authorize_upgrade call
 	let authorize_upgrade_call =
-		dynamic::tx("System", "authorize_upgrade", vec![Value::from_bytes(&code_hash)])
+		dynamic::tx("System", "authorize_upgrade", Composite::unnamed([Value::from_bytes(&code_hash)]))
 			.into_value();
 
 	// Step 3: Wrap it in FederatedAuthority::motion_approve
 	let fed_auth_call =
-		dynamic::tx("FederatedAuthority", "motion_approve", vec![authorize_upgrade_call.clone()])
+		dynamic::tx("FederatedAuthority", "motion_approve", Composite::unnamed([authorize_upgrade_call.clone()]))
 			.into_value();
 
 	// Step 4: Council proposes to approve the federated motion
@@ -77,9 +77,9 @@ pub async fn execute_upgrade(
 	// Compute the proposal hash ourselves (same way the collective pallet does)
 	// We need to encode the full call data including pallet and call indices
 	let fed_auth_tx =
-		dynamic::tx("FederatedAuthority", "motion_approve", vec![authorize_upgrade_call.clone()]);
-	let fed_auth_call_data = fed_auth_tx
-		.encode_call_data(&api.metadata())
+		dynamic::tx("FederatedAuthority", "motion_approve", Composite::unnamed([authorize_upgrade_call.clone()]));
+	let fed_auth_call_data = api.tx().await?
+		.call_data(&fed_auth_tx)
 		.map_err(|e| UpgraderError::EncodingError(format!("Failed to encode call: {:?}", e)))?;
 	let council_proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
 	let council_proposal_hash = H256(council_proposal_hash);
@@ -91,7 +91,7 @@ pub async fn execute_upgrade(
 	);
 
 	let council_propose_events = api
-		.tx()
+		.tx().await?
 		.sign_and_submit_then_watch_default(&council_proposal, &dave)
 		.await?
 		.wait_for_finalized_success()
@@ -129,7 +129,7 @@ pub async fn execute_upgrade(
 	);
 
 	let tech_propose_events = api
-		.tx()
+		.tx().await?
 		.sign_and_submit_then_watch_default(&tech_proposal, &alice)
 		.await?
 		.wait_for_finalized_success()
@@ -174,10 +174,10 @@ pub async fn execute_upgrade(
 	// Step 10: Compute the motion hash for the authorize_upgrade call
 	// The motion hash is computed by hashing the call data
 	let authorize_upgrade_call_for_hash =
-		dynamic::tx("System", "authorize_upgrade", vec![Value::from_bytes(&code_hash)]);
+		dynamic::tx("System", "authorize_upgrade", Composite::unnamed([Value::from_bytes(&code_hash)]));
 
-	let call_data = authorize_upgrade_call_for_hash
-		.encode_call_data(&api.metadata())
+	let call_data = api.tx().await?
+		.call_data(&authorize_upgrade_call_for_hash)
 		.map_err(|e| UpgraderError::EncodingError(format!("{:?}", e)))?;
 
 	let motion_hash = sp_crypto_hashing::blake2_256(&call_data);
@@ -188,7 +188,7 @@ pub async fn execute_upgrade(
 	log::info!("Closing federated motion to execute authorize_upgrade...");
 	// Build motion_close args — newer runtimes require a proposal_weight_bound parameter,
 	// older runtimes only take motion_hash. Detect via metadata to stay backward-compatible.
-	let motion_close_args = if has_motion_close_weight_bound(&api) {
+	let motion_close_args = if has_motion_close_weight_bound(&api).await {
 		let proposal_weight_bound = Value::named_composite(vec![
 			("ref_time", Value::u128(1_000_000_000_000)),
 			("proof_size", Value::u128(1_000_000)),
@@ -199,7 +199,7 @@ pub async fn execute_upgrade(
 	};
 	let close_motion_call = dynamic::tx("FederatedAuthority", "motion_close", motion_close_args);
 
-	api.tx()
+	api.tx().await?
 		.sign_and_submit_then_watch_default(&close_motion_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -213,7 +213,7 @@ pub async fn execute_upgrade(
 		dynamic::tx("System", "apply_authorized_upgrade", vec![Value::from_bytes(code)]);
 
 	let apply_events = api
-		.tx()
+		.tx().await?
 		.sign_and_submit_then_watch_default(&apply_upgrade_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -223,7 +223,7 @@ pub async fn execute_upgrade(
 	let mut success = false;
 	for event in apply_events.iter() {
 		let event = event?;
-		if event.pallet_name() == "System" && event.variant_name() == "CodeUpdated" {
+		if event.pallet_name() == "System" && event.event_name() == "CodeUpdated" {
 			log::info!("Code update success: {:?}", event);
 			success = true;
 			break;
@@ -255,7 +255,7 @@ async fn vote_on_proposal(
 		],
 	);
 
-	api.tx()
+	api.tx().await?
 		.sign_and_submit_then_watch_default(&vote_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -287,7 +287,7 @@ async fn close_proposal(
 		],
 	);
 
-	api.tx()
+	api.tx().await?
 		.sign_and_submit_then_watch_default(&close_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -297,14 +297,14 @@ async fn close_proposal(
 }
 
 fn extract_proposal_index(
-	events: &subxt::blocks::ExtrinsicEvents<SubstrateConfig>,
+	events: &subxt::extrinsics::ExtrinsicEvents<SubstrateConfig>,
 	pallet: &str,
 ) -> Result<u32, UpgraderError> {
 	use parity_scale_codec::Decode;
 
 	for event in events.iter() {
 		let event = event?;
-		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
+		if event.pallet_name() == pallet && event.event_name() == "Proposed" {
 			// Get the raw field bytes
 			let field_bytes = event.field_bytes();
 
@@ -331,9 +331,12 @@ fn extract_proposal_index(
 
 /// Check whether the runtime's `FederatedAuthority::motion_close` accepts a
 /// `proposal_weight_bound` parameter (2 fields) or only `motion_hash` (1 field).
-fn has_motion_close_weight_bound(api: &OnlineClient<SubstrateConfig>) -> bool {
-	let metadata = api.metadata();
-	let Ok(pallet) = metadata.pallet_by_name_err("FederatedAuthority") else {
+async fn has_motion_close_weight_bound(api: &OnlineClient<SubstrateConfig>) -> bool {
+	let Ok(at_block) = api.at_current_block().await else {
+		return false;
+	};
+	let metadata = at_block.metadata_ref();
+	let Some(pallet) = metadata.pallet_by_name("FederatedAuthority") else {
 		return false;
 	};
 	let Some(call_ty_id) = pallet.call_ty_id() else {
