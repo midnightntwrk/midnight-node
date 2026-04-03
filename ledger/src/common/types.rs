@@ -47,6 +47,7 @@ pub struct TransactionAppliedStateRoot {
 	pub state_root: Vec<u8>,
 	pub tx_hash: Hash,
 	pub all_applied: bool,
+	pub gas_cost: GasCost,
 	pub call_addresses: Vec<Vec<u8>>,
 	pub deploy_addresses: Vec<Vec<u8>>,
 	pub maintain_addresses: Vec<Vec<u8>>,

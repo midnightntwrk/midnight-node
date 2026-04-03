@@ -66,6 +66,7 @@ pub trait LedgerBridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
 		Bridge::<Signature, Database>::apply_transaction(
 			*self,
@@ -74,6 +75,7 @@ pub trait LedgerBridge {
 			block_context,
 			false,
 			runtime_version,
+			max_weight,
 		)
 	}
 
@@ -84,6 +86,7 @@ pub trait LedgerBridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
+		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
 		Bridge::<Signature, Database>::apply_transaction(
 			*self,
@@ -92,6 +95,7 @@ pub trait LedgerBridge {
 			block_context,
 			true,
 			runtime_version,
+			max_weight,
 		)
 	}
 
@@ -117,15 +121,16 @@ pub trait LedgerBridge {
 		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<(Hash, TransactionDetails), LedgerApiError>> {
-		let (hash, Some(tx_details)) = Bridge::<Signature, Database>::validate_transaction(
-			*self,
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			max_weight,
-			true,
-		)?
+		let (hash, _gas_cost, Some(tx_details)) =
+			Bridge::<Signature, Database>::validate_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				runtime_version,
+				max_weight,
+				true,
+			)?
 		else {
 			// This should never happen
 			log::error!("error: transaction_details is None");
@@ -144,8 +149,8 @@ pub trait LedgerBridge {
 		runtime_version: u32,
 		// The Runtime's max weight as of now
 		max_weight: u64,
-	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
-		let (hash, _) = Bridge::<Signature, Database>::validate_transaction(
+	) -> AllocateAndReturnByCodec<Result<(Hash, GasCost), LedgerApiError>> {
+		let (hash, gas_cost, _) = Bridge::<Signature, Database>::validate_transaction(
 			*self,
 			state_key,
 			tx,
@@ -155,7 +160,7 @@ pub trait LedgerBridge {
 			false,
 		)?;
 
-		Ok(hash)
+		Ok((hash, gas_cost))
 	}
 
 	/*
@@ -170,13 +175,15 @@ pub trait LedgerBridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
-	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
 		Bridge::<Signature, Database>::validate_guaranteed_execution(
 			*self,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
+			max_weight,
 		)
 	}
 

@@ -369,12 +369,14 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+			let max_weight = T::BlockWeights::get().max_block.ref_time();
 
 			let result = LedgerApi::apply_transaction(
 				&state_key,
 				&midnight_tx,
 				block_context,
 				runtime_version,
+				max_weight,
 			)
 			.map_err(Error::<T>::from)?;
 
@@ -464,14 +466,17 @@ pub mod pallet {
 			let block_context = Self::get_block_context();
 			let state_key = StateKey::<T>::get();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+			let max_weight = T::BlockWeights::get().max_block.ref_time();
 
-			LedgerApi::validate_guaranteed_execution(
+			let _pre_dispatch_gas = LedgerApi::validate_guaranteed_execution(
 				&state_key,
 				midnight_tx,
 				block_context,
 				runtime_version,
+				max_weight,
 			)
 			.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 			Ok(())
 		}
 	}
@@ -528,7 +533,7 @@ pub mod pallet {
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
-				let tx_hash = LedgerApi::validate_transaction(
+				let (tx_hash, _ledger_tx_gas) = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
 					block_context,

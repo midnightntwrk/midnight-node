@@ -279,6 +279,7 @@ where
 		block_context: BlockContext,
 		should_skip_failed_segments: bool,
 		runtime_version: u32,
+		max_weight: u64,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -317,6 +318,7 @@ where
 		// Use cached VerifiedTransaction if available
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 		let verified_tx = Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
+		let gas_cost = Self::gas_cost_for_loaded_transaction(&tx, &ledger, max_weight)?;
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building tx context (elapsed_ms={})",
@@ -395,6 +397,7 @@ where
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
 			all_applied,
+			gas_cost,
 			call_addresses: vec![],
 			deploy_addresses: vec![],
 			maintain_addresses: vec![],
@@ -529,7 +532,7 @@ where
 		// The runtime's max weight as of now
 		max_weight: u64,
 		get_tx_details: bool,
-	) -> Result<(Hash, Option<TransactionDetails>), LedgerApiError> {
+	) -> Result<(Hash, GasCost, Option<TransactionDetails>), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
 
@@ -542,10 +545,10 @@ where
 		let was_cached =
 			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
 
-		let tx_details = if get_tx_details {
-			let tx_gas_cost =
-				Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
+		let tx_gas_cost =
+			Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)?;
 
+		let tx_details = if get_tx_details {
 			Some(Self::get_transaction_details(&tx, &ledger, tx_gas_cost)?)
 		} else {
 			None
@@ -570,7 +573,7 @@ where
 			metrics.set_tx_validation_cache_size("soft", SOFT_TX_VALIDATION_CACHE.entry_count());
 		}
 
-		Ok((wrapped_cache_key.0, tx_details))
+		Ok((wrapped_cache_key.0, tx_gas_cost, tx_details))
 	}
 
 	/// Validates that applying a transaction will succeed.
@@ -587,7 +590,8 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		runtime_version: u32,
-	) -> Result<(), LedgerApiError>
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -598,8 +602,13 @@ where
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
 		// Perform dry-run validation with caching
-		let was_cached =
-			Self::do_validate_guaranteed_execution(&ledger, &tx, &block_context, &cache_key)?;
+		let (was_cached, gas_cost) = Self::do_validate_guaranteed_execution(
+			&ledger,
+			&tx,
+			&block_context,
+			&cache_key,
+			max_weight,
+		)?;
 
 		// Write Prometheus metrics
 		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
@@ -615,7 +624,7 @@ where
 			metrics.set_tx_validation_cache_size("soft", SOFT_TX_VALIDATION_CACHE.entry_count());
 		}
 
-		Ok(())
+		Ok(gas_cost)
 	}
 
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
@@ -732,7 +741,17 @@ where
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
+		Self::gas_cost_for_loaded_transaction(&tx, &ledger, max_weight)
+	}
 
+	/// Substrate weight (`ref_time`) for a transaction, from ledger cost normalization.
+	///
+	/// Uses the same formula as [`Self::get_transaction_cost`] without re-loading state.
+	fn gas_cost_for_loaded_transaction(
+		tx: &Transaction<S, D>,
+		ledger: &Ledger<D>,
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError> {
 		let cost =
 			tx.0.cost(&ledger.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
@@ -957,13 +976,15 @@ where
 	/// `VerifiedTransaction`, then performs a dry-run `apply()` to validate
 	/// the guaranteed part will succeed.
 	///
-	/// Returns `true` if validation was served from the strict cache, `false` otherwise.
+	/// Returns whether validation was served from the strict cache, and the transaction gas cost
+	/// (same units as [`Self::get_transaction_cost`]) computed from the loaded ledger state.
 	fn do_validate_guaranteed_execution(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-	) -> Result<bool, LedgerApiError>
+		max_weight: u64,
+	) -> Result<(bool, GasCost), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -983,7 +1004,10 @@ where
 
 		match result {
 			mn_ledger_local::semantics::TransactionResult::Success(_)
-			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => Ok(was_cached),
+			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => {
+				let gas_cost = Self::gas_cost_for_loaded_transaction(tx, ledger, max_weight)?;
+				Ok((was_cached, gas_cost))
+			},
 			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
