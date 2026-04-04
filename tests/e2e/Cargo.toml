@@ -15,9 +15,9 @@ default = ["local-ci"]
 aiken-contracts-lib = { path = "../../util/aiken-contracts-lib" }
 hex.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-whisky = { git = "https://github.com/rsporny/whisky", branch = "wasm-bindgen-update" }
+whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindgen-update" }
 tiny-bip39 = "2.0.0"
-ogmios-client = { git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
+ogmios-client = { path = "../../partner-chains/toolkit/utils/ogmios-client" }
 serde.workspace = true
 serde_json.workspace = true
 rand = "0.9.2"

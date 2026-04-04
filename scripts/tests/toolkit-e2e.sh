@@ -125,12 +125,20 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
+dust_address=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000002 \
+    --dust
+)
+
 echo "Register received tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs register-dust-address \
     --wallet-seed "0000000000000000000000000000000000000000000000000000000000000002" \
     --funding-seed "0000000000000000000000000000000000000000000000000000000000000002" \
-    --destination-dust mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y \
+    --destination-dust "$dust_address" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 

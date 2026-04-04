@@ -15,43 +15,89 @@
 
 set -euxo pipefail
 
-NODE_IMAGE="$1"
-TOOLKIT_IMAGE="$2"
-
 echo "🎯 Running Toolkit Tokens Minter test"
-echo "🧱 NODE_IMAGE: $NODE_IMAGE"
-echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 
-# Start node in background
-echo "🚀 Starting node container..."
-docker run -d --rm \
-  --name midnight-node-contracts \
-  -e CFG_PRESET=dev \
-  -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
-  "$NODE_IMAGE"
+contract_dir="contract"
 
-echo "⏳ Waiting for node to boot..."
-sleep 15
+docker_outdir="/out"
+docker_toolkit_js_path="/toolkit-js"
+docker_config_file="/toolkit-js/contract/minter.config.ts"
+docker_compiled_contract="/toolkit-js/contract/out"
+
+local_outdir="out"
+local_toolkit_js_path="$PWD/util/toolkit-js"
+local_config_file="util/toolkit-js/test/minter_contract/minter.config.ts"
+local_compiled_contract="util/toolkit-js/test/minter_contract/out"
+local_toolkit_bin="./target/debug/midnight-node-toolkit"
+
+if [[ "${1-}" != "" && "${2-}" != "" ]]; then
+    NODE_IMAGE="$1"
+    TOOLKIT_IMAGE="$2"
+    mode="docker"
+    outdir=$docker_outdir
+    toolkit_js_path=$docker_toolkit_js_path
+    config_file=$docker_config_file
+    compiled_contract=$docker_compiled_contract
+
+    echo "🧱 NODE_IMAGE: $NODE_IMAGE"
+    echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
+
+    # Start node in background
+    echo "🚀 Starting node container..."
+    docker run -d --rm \
+        --name midnight-node-contracts \
+        -e CFG_PRESET=dev \
+        -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
+        "$NODE_IMAGE"
+
+    echo "⏳ Waiting for node to boot..."
+    sleep 15
+
+    tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
+
+    cleanup() {
+        echo "🛑 Killing node container..."
+        docker container stop midnight-node-contracts
+        echo "🧹 Removing tempdir..."
+        rm -rf $tempdir
+    }
+    # Set up trap to cleanup on exit
+    trap cleanup EXIT
+
+    # Compiled mint contract is included in the toolkit image
+    tmpid=$(docker create "$TOOLKIT_IMAGE")
+    docker cp "$tmpid:/toolkit-js/test/minter_contract" "$tempdir/$contract_dir"
+    docker rm -v $tmpid
+else
+    echo "🧱 NODE_IMAGE: local"
+    echo "🧱 TOOLKIT_IMAGE: local"
+
+    mode="local"
+    outdir=$local_outdir
+    toolkit_js_path=$local_toolkit_js_path
+    tempdir=$outdir
+    config_file=$local_config_file
+    compiled_contract=$local_compiled_contract
+
+    mkdir -p $outdir
+fi
+
+toolkit() {
+    if [ $mode == "docker" ]; then
+        docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
+            -e RESTORE_OWNER="$(id -u):$(id -g)" \
+            -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+            $TOOLKIT_IMAGE $@
+    else
+        $local_toolkit_bin $@
+    fi
+}
+
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."
 
-tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
-
-cleanup() {
-    echo "🛑 Killing node container..."
-    docker container stop midnight-node-contracts
-    echo "🧹 Removing tempdir..."
-    rm -rf $tempdir
-}
-# Set up trap to cleanup on exit
-trap cleanup EXIT
-
-compiled_contract="/toolkit-js/contract/out"
-contract_dir="contract"
-outdir="/out"
 state_filename="contract_state.mn"
-config_file="/toolkit-js/contract/minter.config.ts"
 
 mint_shielded_intent_filename="mint_shielded.bin"
 mint_unshielded_intent_filename="mint_unshielded.bin"
@@ -67,25 +113,17 @@ deploy_zswap_filename="deploy_zswap.json"
 deploy_intent_filename="deploy.bin"
 deploy_tx_filename="deploy.mn"
 
-# Compiled mint contract is included in the toolkit image
-tmpid=$(docker create "$TOOLKIT_IMAGE")
-docker cp "$tmpid:/toolkit-js/test/minter_contract" "$tempdir/$contract_dir"
-docker rm -v $tmpid
-
 coin_public=$(
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
-      show-address \
-      --network undeployed \
-      --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-      --coin-public
+    toolkit show-address \
+    --network undeployed \
+    --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+    --coin-public
 )
 
 echo "Generate deploy intent"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent deploy -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --output-intent "$outdir/$deploy_intent_filename" \
     --output-private-state "$outdir/$initial_private_state_filename" \
@@ -95,36 +133,23 @@ test -f "$tempdir/$deploy_intent_filename"
 test -f "$tempdir/$initial_private_state_filename"
 
 echo "Generate deploy tx"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     send-intent \
     --intent-file "$outdir/$deploy_intent_filename" \
     --compiled-contract-dir $compiled_contract \
     --dest-file "$outdir/$deploy_tx_filename"
 
 echo "Send deploy tx"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
-    generate-txs --src-file $outdir/$deploy_tx_filename -r 1 send
+toolkit generate-txs --src-file $outdir/$deploy_tx_filename -r 1 send
 
 contract_address=$(
-    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-      -e RESTORE_OWNER="$(id -u):$(id -g)" \
-      -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-      "$TOOLKIT_IMAGE" \
-      contract-address \
-      --src-file $outdir/$deploy_tx_filename
+    toolkit \
+        contract-address \
+        --src-file $outdir/$deploy_tx_filename
 )
 
 echo "Get contract state"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     contract-state \
     --contract-address $contract_address \
     --dest-file $outdir/$state_filename
@@ -134,33 +159,31 @@ test -f "$tempdir/$state_filename"
 domain_sep=$(echo "feeb000000000000000000000000000000000000000000000000000000000000")
 
 user_address=$(
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    toolkit \
         show-address \
         --network undeployed \
         --seed 0000000000000000000000000000000000000000000000000000000000000001 \
         --unshielded
 )
 token_type=$(
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    toolkit \
         show-token-type \
         --contract-address "$contract_address" \
         --domain-sep "$domain_sep" \
         --unshielded
 )
 shielded_destination=$(
-    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
-      show-address \
-      --network undeployed \
-      --seed 0000000000000000000000000000000000000000000000000000000000000001 \
-      --shielded
+    toolkit \
+        show-address \
+        --network undeployed \
+        --seed 0000000000000000000000000000000000000000000000000000000000000001 \
+        --shielded
 )
 
 echo "Generate intent to mint shielded token"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/$state_filename" \
     --input-private-state "$outdir/$initial_private_state_filename" \
@@ -174,11 +197,9 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     1000
 
 echo "Generate intent to mint unshielded token"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_1.mn" \
     --input-private-state "$outdir/temp_shielded_private_state.json" \
@@ -192,11 +213,9 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     1000
 
 echo "Generate intent to send unshielded token"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_2.mn" \
     --input-private-state "$outdir/temp_unshielded_private_state.json" \
@@ -211,10 +230,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     1000
 
 echo "Send created intents (tx #1)"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     send-intent \
     --intent-file "$outdir/$mint_shielded_intent_filename" \
     --intent-file "$outdir/$mint_unshielded_intent_filename" \
@@ -224,18 +240,15 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --zswap-state-file "$outdir/$mint_shielded_zswap_filename"
 
 token_id=$(
-    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-     "$TOOLKIT_IMAGE" \
+    toolkit \
       show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001" \
       | jq -r ".utxos[] | select(.token_type == \"$token_type\") | .id"
 )
 
 echo "Generate setToken() circuit call"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_3.mn" \
     --input-private-state "$outdir/temp_send_private_state.json" \
@@ -250,11 +263,9 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     "$user_address"
 
 echo "Generate receiveAndSendUnshielded() circuit call"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     generate-intent circuit -c "$config_file" \
+    --toolkit-js-path "$toolkit_js_path" \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_4.mn" \
     --input-private-state "$outdir/temp_shielded_private_state.json" \
@@ -266,10 +277,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     receiveAndSendUnshielded
 
 echo "Send created intents (tx #2)"
-docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-    -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-    "$TOOLKIT_IMAGE" \
+toolkit \
     send-intent \
     --intent-file "$outdir/$set_token_intent_filename" \
     --intent-file "$outdir/$receive_and_send_unshielded_intent_filename" \
@@ -279,9 +287,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts 
     --input-utxo "$token_id"
 
 show_wallet_output=$(
-    docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
-     "$TOOLKIT_IMAGE" \
-      show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001"
+    toolkit show-wallet --seed "0000000000000000000000000000000000000000000000000000000000000001"
 )
 
 if echo "$show_wallet_output" | grep -q "$token_type"; then

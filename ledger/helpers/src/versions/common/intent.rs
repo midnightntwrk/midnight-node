@@ -195,15 +195,15 @@ impl<D: DB + Clone> IntentCustom<D> {
 							let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
 							match std::fs::read(&path) {
 								Err(e) if e.kind() == io::ErrorKind::NotFound => {
-									println!("Resolver: missing key at path {path}");
+									log::debug!("Resolver: missing key at path {path}");
 									continue;
 								},
 								Err(e) => {
-									println!("Resolver: error reading key at path {path}: {e}");
+									log::error!("Resolver: error reading key at path {path}: {e}");
 									return Err(e);
 								},
 								Ok(v) => {
-									println!("Resolver: found key at path {path}");
+									log::debug!("Resolver: found key at path {path}");
 									return Ok(Some(v));
 								},
 							}
@@ -211,19 +211,19 @@ impl<D: DB + Clone> IntentCustom<D> {
 						Ok(None)
 					};
 					let Some(prover_key) = read_file("keys", "prover")? else {
-						println!("WARN: prover key not created");
+						log::warn!("prover key not created");
 						return Ok(None);
 					};
 					let Some(verifier_key) = read_file("keys", "verifier")? else {
-						println!("WARN: verifier key not created");
+						log::warn!("verifier key not created");
 						return Ok(None);
 					};
 					let Some(ir_source) = read_file("zkir", "bzkir")? else {
-						println!("WARN:  ir source not created");
+						log::warn!("IR source not created");
 						return Ok(None);
 					};
 
-					println!("Creating Proving Key Material...");
+					log::info!("Creating Proving Key Material...");
 
 					Ok(Some(ProvingKeyMaterial { prover_key, verifier_key, ir_source }))
 				};
@@ -243,11 +243,10 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 		context: Arc<LedgerContext<D>>,
 		_segment_id: SegmentId,
 	) -> IntentOf<D> {
-		println!("Updating the resolver...");
+		log::debug!("Updating the resolver...");
 		context.update_resolver(self.resolver).await;
 		let mut intent = self.intent.clone();
 		intent.ttl = ttl;
-		println!("custom intent: {intent:#?}");
 		intent
 	}
 }

@@ -232,7 +232,7 @@ pub type HostFunctions = (
 pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
-type FullBackend = sc_service::TFullBackend<Block>;
+pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
 /// The minimum period of blocks on which justifications will be
@@ -256,6 +256,23 @@ type MidnightService = sc_service::PartialComponents<
 		DataSources,
 	),
 >;
+
+#[allow(clippy::result_large_err)]
+fn parse_genesis_extrinsic_values(
+	values: &[serde_json::Value],
+) -> Result<Vec<Vec<u8>>, ServiceError> {
+	values
+		.iter()
+		.map(|v| {
+			let s = v
+				.as_str()
+				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))?;
+			hex::decode(s).map_err(|e| {
+				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
+			})
+		})
+		.collect()
+}
 
 #[allow(clippy::result_large_err)]
 pub fn new_partial(
@@ -290,27 +307,15 @@ pub fn new_partial(
 	let executor = sc_service::new_wasm_executor(&config.executor);
 	let backend = sc_service::new_db_backend(config.db_config())?;
 
-	let genesis_extrinsics: Result<Vec<Vec<u8>>, ServiceError> = config
-		.chain_spec
-		.properties()
-		.get("genesis_extrinsics")
-		.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
-		.as_array()
-		.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?
-		.iter()
-		.map(|v| {
-			v.as_str()
-				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))
-				.map(|v| v.to_string())
-		})
-		.take_while(Result::is_ok)
-		.map(|v| {
-			let s = v.unwrap();
-			hex::decode(&s).map_err(|e| {
-				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
-			})
-		})
-		.collect();
+	let genesis_extrinsics = parse_genesis_extrinsic_values(
+		config
+			.chain_spec
+			.properties()
+			.get("genesis_extrinsics")
+			.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
+			.as_array()
+			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
+	);
 
 	let genesis_storage = config
 		.chain_spec
@@ -475,7 +480,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
 	tx_filter_config: TxFilterConfig,
-) -> Result<TaskManager, ServiceError> {
+) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
@@ -771,7 +776,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				None,
 				MmrGadget::start(
 					client.clone(),
-					backend,
+					backend.clone(),
 					sp_mmr_primitives::INDEXING_PREFIX.to_vec(),
 				),
 			);
@@ -852,5 +857,62 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		}
 	}
 
-	Ok(task_manager)
+	Ok((task_manager, backend))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_genesis_extrinsics_valid_hex() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert_eq!(result, vec![vec![0xde, 0xad, 0xbe, 0xef], vec![0xca, 0xfe, 0xba, 0xbe]]);
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_first_position() {
+		let values = vec![serde_json::json!(42), serde_json::Value::String("deadbeef".into())];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_middle_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::Null,
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_invalid_hex_last_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+			serde_json::Value::String("not_valid_hex".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("error decoding extrinsic as hex"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_empty_array() {
+		let values: Vec<serde_json::Value> = vec![];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert!(result.is_empty());
+	}
 }

@@ -109,6 +109,8 @@ pub mod pallet {
 		MotionAlreadyExists,
 		/// Motion expired without enough approvals
 		MotionExpired,
+		/// The provided weight bound is too low for the motion's call
+		MotionWeightBoundTooLow,
 	}
 
 	#[pallet::event]
@@ -260,11 +262,17 @@ pub mod pallet {
 		}
 
 		#[pallet::call_index(2)]
-		#[pallet::weight(T::WeightInfo::motion_close_approved().max(T::WeightInfo::motion_close_expired()))]
+		#[pallet::weight((
+			T::WeightInfo::motion_close_approved()
+				.max(T::WeightInfo::motion_close_expired())
+				.saturating_add(*proposal_weight_bound),
+			DispatchClass::Operational
+		))]
 		#[allow(clippy::useless_conversion)]
 		pub fn motion_close(
 			origin: OriginFor<T>,
 			motion_hash: T::Hash,
+			proposal_weight_bound: Weight,
 		) -> DispatchResultWithPostInfo {
 			// Anyone can try to close a motion
 			ensure_signed(origin)?;
@@ -282,6 +290,16 @@ pub mod pallet {
 
 			if Self::is_motion_approved(total_approvals) {
 				let dispatch_weight = motion.call.get_dispatch_info().call_weight;
+				ensure!(
+					dispatch_weight.all_lte(proposal_weight_bound),
+					DispatchErrorWithPostInfo {
+						post_info: PostDispatchInfo {
+							actual_weight: Some(T::WeightInfo::motion_close_still_ongoing()),
+							pays_fee: Pays::No,
+						},
+						error: Error::<T>::MotionWeightBoundTooLow.into(),
+					}
+				);
 				// Isolate the dispatch in its own storage layer so a failed
 				// dispatch rolls back only its own state mutations.
 				let motion_result = with_storage_layer(|| {

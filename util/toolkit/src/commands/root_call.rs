@@ -36,12 +36,30 @@ pub struct RootCallArgs {
 	#[arg(long, env = "RPC_URL", default_value = "ws://127.0.0.1:9944")]
 	pub rpc_url: String,
 
-	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(long = "council-keys", required = true, num_args = 1..)]
+	/// Council member private keys as hex strings (32-byte sr25519 seeds).
+	/// Defaults to Ferdie, Dave, Eve (dev network council members).
+	#[arg(
+		long = "council-keys",
+		num_args = 1..,
+		default_values_t = [
+			"42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842".to_string(),
+			"868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246".to_string(),
+			"786ad0e2df456fe43dd1f91ebca22e235bc162e0bb8d53c633e8c85b2af68b7a".to_string(),
+		]
+	)]
 	pub council_keys: Vec<String>,
 
-	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(long = "tc-keys", required = true, num_args = 1..)]
+	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds).
+	/// Defaults to Bob, Charlie, Alice (dev network TC members).
+	#[arg(
+		long = "tc-keys",
+		num_args = 1..,
+		default_values_t = [
+			"398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89".to_string(),
+			"bc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938".to_string(),
+			"e5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a".to_string(),
+		]
+	)]
 	pub tc_keys: Vec<String>,
 
 	/// Encoded call as hex string (e.g., 0x...)
@@ -266,8 +284,19 @@ async fn execute_governance_call(
 	log::info!("Motion hash: 0x{}", hex::encode(motion_hash.0));
 
 	log::info!("Closing federated motion to execute call with Root origin...");
-	let close_motion_call =
-		dynamic::tx("FederatedAuthority", "motion_close", vec![Value::from_bytes(&motion_hash.0)]);
+	// Build motion_close args — newer runtimes require a proposal_weight_bound parameter,
+	// older runtimes only take motion_hash. Detect via metadata to stay backward-compatible
+	// with pre-upgrade runtimes (e.g. during hardfork tests).
+	let motion_close_args = if has_motion_close_weight_bound(api) {
+		let proposal_weight_bound = Value::named_composite(vec![
+			("ref_time", Value::u128(1_000_000_000_000)),
+			("proof_size", Value::u128(1_000_000)),
+		]);
+		vec![Value::from_bytes(&motion_hash.0), proposal_weight_bound]
+	} else {
+		vec![Value::from_bytes(&motion_hash.0)]
+	};
+	let close_motion_call = dynamic::tx("FederatedAuthority", "motion_close", motion_close_args);
 
 	// Anyone can close the motion, use first council member
 	api.tx()
@@ -360,4 +389,27 @@ fn extract_proposal_index(
 		}
 	}
 	Err(RootCallError::ProposalIndexNotFound)
+}
+
+/// Check whether the runtime's `FederatedAuthority::motion_close` accepts a
+/// `proposal_weight_bound` parameter (2 fields) or only `motion_hash` (1 field).
+fn has_motion_close_weight_bound(api: &OnlineClient<SubstrateConfig>) -> bool {
+	let metadata = api.metadata();
+	let Ok(pallet) = metadata.pallet_by_name_err("FederatedAuthority") else {
+		return false;
+	};
+	let Some(call_ty_id) = pallet.call_ty_id() else {
+		return false;
+	};
+	let Some(ty) = metadata.types().resolve(call_ty_id) else {
+		return false;
+	};
+	let scale_info::TypeDef::Variant(variant) = &ty.type_def else {
+		return false;
+	};
+	variant
+		.variants
+		.iter()
+		.find(|v| v.name == "motion_close")
+		.is_some_and(|v| v.fields.len() > 1)
 }

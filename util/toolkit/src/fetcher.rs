@@ -70,6 +70,25 @@ enum TaskResult {
 	ComputeWorker,
 }
 
+/// Fetch a single block by number. Checks cache first, falls back to node RPC.
+/// On cache miss, fetches from the node and stores the result in cache.
+pub async fn fetch_single_block(
+	chain_id: H256,
+	block_number: u64,
+	client: Option<&MidnightNodeClient>,
+	storage: &(impl FetchStorage + Clone + 'static),
+) -> Result<RawBlockData, FetchError> {
+	if let Some(block) = storage.get_block_data(chain_id, block_number).await {
+		return Ok(block);
+	}
+	let client = client.ok_or(FetchError::BlockMissing(block_number))?;
+	let block_hash = FetchTask::fetch_block_hash(client, block_number).await?;
+	let fetched = FetchTask::fetch_block(client, block_hash).await?;
+	let raw = ComputeTask::extract_data(&fetched).await?;
+	storage.insert_block_data(chain_id, block_number, raw.clone()).await;
+	Ok(raw)
+}
+
 pub async fn read_blocks_from_cache(
 	chain_id: H256,
 	fetch_storage: impl FetchStorage + Clone + 'static,

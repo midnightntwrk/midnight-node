@@ -95,7 +95,7 @@ pub use sp_runtime::{Perbill, Permill};
 #[allow(deprecated)]
 use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
-use crate::currency::CurrencyWaiver;
+use crate::{constants::time_units::HOURS, currency::CurrencyWaiver};
 use alloc::{vec, vec::Vec};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
@@ -275,9 +275,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
-	//   the compatible custom types.
-	spec_version: 000_022_000,
+	spec_version: 001_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 2,
@@ -816,12 +814,15 @@ impl pallet_system_parameters::Config for Runtime {
 parameter_types! {
 	/// Maximum bytes a single account can submit within a throttle window (10 MB).
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
+	/// Maximum transactions a single account can submit within a throttle window
+	pub const MaxTxs: u64 = 100;
 	/// Number of blocks that define a throttle window (1 day at 6s/block).
-	pub const WindowSize: u32 = DAYS;
+	pub const WindowSize: u32 = HOURS;
 }
 
 impl pallet_throttle::Config for Runtime {
 	type MaxBytes = MaxBytes;
+	type MaxTxs = MaxTxs;
 	type WindowSize = WindowSize;
 }
 
@@ -850,6 +851,8 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type TransferHandler = MidnightTokenTransferHandler;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -994,7 +997,7 @@ pub type Executive = frame_executive::Executive<
 >;
 
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = ();
+pub type Migrations = pallet_throttle::migration::ClearAccountUsageV1<Runtime>;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benches {

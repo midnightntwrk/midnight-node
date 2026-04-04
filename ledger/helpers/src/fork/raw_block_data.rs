@@ -101,6 +101,7 @@ pub struct RawBlockData {
 	/// Timestamp error margin (always 30)
 	pub tblock_err: u32,
 	/// Parent block hash (from block header)
+	/// TODO: Remove this?! Duplicate of parent_hash
 	pub parent_block_hash: [u8; 32],
 	/// Previous block's timestamp in seconds (fixed up after fetch)
 	pub last_block_time_secs: u64,
@@ -197,5 +198,38 @@ impl SerializedTxBatches {
 		}
 
 		context.ok_or("batch is empty, block context not found".to_string())
+	}
+}
+
+#[cfg(feature = "can-panic")]
+impl TryFrom<&SerializedTxBatches> for Vec<RawBlockData> {
+	type Error = String;
+
+	fn try_from(value: &SerializedTxBatches) -> Result<Self, Self::Error> {
+		let mut blocks = Vec::new();
+		let mut ledger_version = LedgerVersion::default();
+
+		for batch in &value.batches {
+			let context = SerializedTxBatches::get_context(batch)?;
+			let transactions: Vec<_> = batch.iter().map(|t| t.tx.clone()).collect();
+
+			if let Some((_, v)) = transactions
+				.iter()
+				.filter_map(|tx| {
+					crate::fork::network_id_and_ledger_version_from_tx_bytes(tx.as_bytes()).ok()
+				})
+				.next()
+			{
+				ledger_version = v;
+			}
+
+			blocks.push(RawBlockData::new_from_timestamp(
+				context.tblock.to_secs(),
+				ledger_version,
+				transactions,
+			));
+		}
+
+		Ok(blocks)
 	}
 }

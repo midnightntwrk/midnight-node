@@ -23,6 +23,8 @@ pub use pallet::*;
 mod check_throttle;
 pub use check_throttle::CheckThrottle;
 
+pub mod migration;
+
 #[cfg(test)]
 mod mock;
 
@@ -34,14 +36,37 @@ pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
 	#[pallet::pallet]
+	#[pallet::storage_version(STORAGE_VERSION)]
 	pub struct Pallet<T>(_);
+
+	#[derive(
+		Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo, MaxEncodedLen,
+	)]
+	#[scale_info(skip_type_params(T))]
+	pub struct UsageStats<T: Config> {
+		pub bytes_used: u64,
+		pub txs_used: u64,
+		pub window_start: BlockNumberFor<T>,
+	}
+
+	impl<T: Config> Default for UsageStats<T> {
+		fn default() -> Self {
+			Self { bytes_used: 0, txs_used: 0, window_start: Default::default() }
+		}
+	}
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// Maximum bytes a single account can submit within a throttle window.
 		#[pallet::constant]
 		type MaxBytes: Get<u64>;
+
+		/// Maximum transactions a single account can submit within a throttle window.
+		#[pallet::constant]
+		type MaxTxs: Get<u64>;
 
 		/// Number of blocks that define a throttle window.
 		#[pallet::constant]
@@ -51,5 +76,5 @@ pub mod pallet {
 	/// Tracks (bytes_used, window_start_block) per account for throttling signed transactions.
 	#[pallet::storage]
 	pub type AccountUsage<T: Config> =
-		StorageMap<_, Blake2_128Concat, T::AccountId, (u64, BlockNumberFor<T>), ValueQuery>;
+		StorageMap<_, Blake2_128Concat, T::AccountId, UsageStats<T>, ValueQuery>;
 }

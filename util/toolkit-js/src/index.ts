@@ -11,38 +11,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Effect, Layer, Logger, LogLevel} from 'effect';
-import {Command, CliConfig} from '@effect/cli';
-import {NodeContext, NodeRuntime} from "@effect/platform-node";
-import {
-    ConfigCompiler,
-    deployCommand,
-    circuitCommand,
-    maintainCommand
-} from '@midnight-ntwrk/compact-js-command/effect';
-import Package from '@midnight-ntwrk/node-toolkit/package.json' with {type: 'json'};
-
-const cli = Command.run(
-    Command.make('midnight-node-toolkit-js').pipe(
-        Command.withDescription('Provides utilities to execute Compact compiled contracts from the command line.'),
-        Command.withSubcommands([
-            deployCommand,
-            circuitCommand,
-            maintainCommand
-        ])
-    ),
-    {
-        name: 'Midnight Node Toolkit',
-        version: `v${Package.version}`,
-        executable: 'midnight-node-toolkit-js'
-    }
-);
-
-cli(process.argv).pipe(
-    Logger.withMinimumLogLevel(LogLevel.None),
-    Effect.provide(Layer.mergeAll(
-        ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer)),
-        CliConfig.layer({showBuiltIns: false})
-    )),
-    NodeRuntime.runMain({disableErrorReporting: false})
-);
+import './bin.js';
