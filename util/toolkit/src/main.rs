@@ -59,11 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 				// midnight_node_toolkit::fetcher=info overrides midnight_node_toolkit=debug).
 				let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
 					.unwrap_or_else(|_| {
-						let base = if cli.quiet {
-							"warn"
-						} else {
-							"warn,midnight_node_toolkit=info,governance_helpers=info"
-						};
+						let base =
+							if cli.quiet { "warn" } else { "warn,midnight_node_toolkit=info" };
 						let mut directives = base.to_string();
 						if cli.verbose {
 							directives += ",midnight_node_toolkit=debug";

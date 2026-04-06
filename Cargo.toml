@@ -23,8 +23,6 @@ members = [
     "runtime",
     "util/toolkit",
     "util/documented",
-    "util/upgrader",
-    "util/governance-helpers",
     "util/aiken-deployer",
     "util/aiken-contracts-lib",
     "tests/e2e",
@@ -107,7 +105,6 @@ pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
 documented = { path = "util/documented", default-features = false }
-governance-helpers = { path = "util/governance-helpers" }
 
 midnight-node-runtime = { path = "runtime", default-features = false }
 midnight-primitives = { path = "primitives/midnight", default-features = false }

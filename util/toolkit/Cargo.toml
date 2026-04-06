@@ -16,7 +16,6 @@ erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
-governance-helpers.workspace = true
 midnight-node-metadata.workspace = true
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
@@ -39,6 +38,7 @@ toml.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
+scale-info.workspace = true
 sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
