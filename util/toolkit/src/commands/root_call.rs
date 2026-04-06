@@ -83,16 +83,16 @@ pub enum RootCallError {
 	IoError(#[from] std::io::Error),
 	#[error("No encoded call provided. Use --encoded-call or --encoded-call-file")]
 	NoEncodedCall,
+	#[error("Proposal index not found in events")]
+	ProposalIndexNotFound,
 	#[error("Call execution failed")]
 	CallExecutionFailed,
 	#[error("Need at least 2 council keys for 2/3 threshold voting")]
 	NotEnoughCouncilKeys,
 	#[error("Need at least 2 technical committee keys for 2/3 threshold voting")]
 	NotEnoughTcKeys,
-	#[error("Keypair parse error")]
+	#[error("Kepair parse error")]
 	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
-	#[error("Proposal index not found in events")]
-	ProposalIndexNotFound,
 	#[error("Failed to decode call: {0}")]
 	CallDecodeError(String),
 }
@@ -156,13 +156,16 @@ fn get_signer(key_str: &str) -> Result<Keypair, RootCallError> {
 	Ok(midnight_node_ledger_helpers::Keypair::from_str(key_str)?.0)
 }
 
-/// Decode SCALE-encoded call bytes into a Value using runtime metadata.
+/// Decode SCALE-encoded call bytes into a Value using runtime metadata
 fn decode_call_to_value(encoded_call: &[u8], metadata: &Metadata) -> Result<Value, RootCallError> {
+	// Get the RuntimeCall type ID from metadata
 	let call_ty_id = metadata.outer_enums().call_enum_ty();
 
+	// Decode the bytes into a Value<u32> (with type ID context)
 	let value = decode_as_type(&mut &encoded_call[..], call_ty_id, metadata.types())
 		.map_err(|e| RootCallError::CallDecodeError(format!("{:?}", e)))?;
 
+	// Convert Value<u32> to Value<()> by removing type ID context
 	Ok(value.remove_context())
 }
 
@@ -172,6 +175,9 @@ async fn execute_governance_call(
 	council_keypairs: &[Keypair],
 	tc_keypairs: &[Keypair],
 ) -> Result<(), RootCallError> {
+	// The encoded_call is already the full SCALE-encoded call
+	// We need to decode it into a Value and wrap it in FederatedAuthority::motion_approve
+
 	// Step 1: Decode the encoded call bytes into a Value using metadata
 	let call_value = decode_call_to_value(encoded_call, &api.metadata())?;
 	log::info!("Decoded call successfully");
@@ -190,7 +196,7 @@ async fn execute_governance_call(
 
 	log::info!("Proposal hash: 0x{}", hex::encode(proposal_hash.0));
 
-	// Step 3: Council proposes
+	// Step 2: Council proposes
 	log::info!("Council proposing federated motion approval...");
 	let council_proposer = &council_keypairs[0];
 
@@ -214,7 +220,7 @@ async fn execute_governance_call(
 		council_proposal_index
 	);
 
-	// Step 4: Council members vote (need 2/3 threshold)
+	// Step 3: Council members vote (need 2/3 threshold)
 	log::info!("Council members voting...");
 	for (i, voter) in council_keypairs.iter().take(2).enumerate() {
 		log::info!("Council vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
@@ -222,11 +228,11 @@ async fn execute_governance_call(
 			.await?;
 	}
 
-	// Step 5: Close Council proposal
+	// Step 4: Close Council proposal
 	log::info!("Closing Council proposal...");
 	close_proposal(api, council_proposer, "Council", proposal_hash, council_proposal_index).await?;
 
-	// Step 6: Technical Committee proposes
+	// Step 5: Technical Committee proposes
 	log::info!("Technical Committee proposing federated motion approval...");
 	let tc_proposer = &tc_keypairs[0];
 
@@ -250,7 +256,7 @@ async fn execute_governance_call(
 		tech_proposal_index
 	);
 
-	// Step 7: Technical Committee members vote
+	// Step 6: Technical Committee members vote
 	log::info!("Technical Committee members voting...");
 	for (i, voter) in tc_keypairs.iter().take(2).enumerate() {
 		log::info!("TC vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
@@ -265,14 +271,14 @@ async fn execute_governance_call(
 		.await?;
 	}
 
-	// Step 8: Close Technical Committee proposal
+	// Step 7: Close Technical Committee proposal
 	log::info!("Closing Technical Committee proposal...");
 	close_proposal(api, tc_proposer, "TechnicalCommittee", proposal_hash, tech_proposal_index)
 		.await?;
 
 	log::info!("Federated authority motion approved by both councils!");
 
-	// Step 9: Compute the motion hash and close the federated motion
+	// Step 8: Compute the motion hash and close the federated motion
 	let motion_hash = sp_crypto_hashing::blake2_256(encoded_call);
 	let motion_hash = H256(motion_hash);
 	log::info!("Motion hash: 0x{}", hex::encode(motion_hash.0));
@@ -370,8 +376,11 @@ fn extract_proposal_index(
 	for event in events.iter() {
 		let event = event?;
 		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
+			// Use subxt's field_values() to decode the event fields using metadata
 			let fields = event.field_values().map_err(|e| RootCallError::SubxtError(e.into()))?;
 
+			// The Proposed event has fields: account, proposal_index, proposal_hash, threshold
+			// Access proposal_index by field name
 			if let Some(proposal_index_value) = fields.at("proposal_index") {
 				if let Some(index) = proposal_index_value.as_u128() {
 					return Ok(index as u32);
