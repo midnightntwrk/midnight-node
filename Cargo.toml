@@ -295,7 +295,7 @@ derive_more = { version = "2.1.1", default-features = false }
 ed25519-zebra = { version = "4.2.0" }
 envy = { version = "0.4.2" }
 fraction = { version = "0.15.3", default-features = false }
-inquire = { version = "0.7.5" }
+inquire = { version = "0.9.4" }
 k256 = { version = "0.13.4", default-features = false }
 libp2p-identity = "0.2.13"
 log4rs = { version = "1.4.0", default-features = false, features = ["console_appender", "file_appender"] }
