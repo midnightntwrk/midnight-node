@@ -14,9 +14,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::ledger_helpers_local::{
-	DefaultDB, FromContext as _, LedgerContext, ProofProvider, ShieldedTokenType, ShieldedWallet,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedTokenType, UnshieldedWallet,
-	UtxoSelectionError, WalletAddress,
+	DefaultDB, FromContext as _, LedgerContext, ProofProvider, ShieldedCoinSelectionError,
+	ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
+	UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError, WalletAddress,
 };
 use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
@@ -31,6 +31,8 @@ use crate::tx_generator::builder::{BuildTxs, TransferSpec};
 enum BatchTransferError {
 	#[error("{0}")]
 	UtxoSelection(#[from] UtxoSelectionError),
+	#[error("{0}")]
+	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
 	#[error("proving failed: {0}")]
 	ProvingFailed(String),
 }
@@ -119,7 +121,7 @@ impl BatchSingleTxBuilder {
 				(&dest_address).try_into().expect("destination is not a valid shielded address");
 
 			let offer =
-				build_shielded_offer(context, source_seed, vec![dest_wallet], amount, token_type);
+				build_shielded_offer(context, source_seed, vec![dest_wallet], amount, token_type)?;
 
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
@@ -208,12 +210,22 @@ impl BuildTxs for BatchSingleTxBuilder {
 			let index = index_iter.next().unwrap();
 			match result {
 				Ok(tx) => {
-					log::info!(index = index, total = num_transfers; "Built tx {} ", hex::encode(tx.tx_hash));
+					tracing::info!(
+						index = index,
+						total = num_transfers,
+						"Built tx {} ",
+						hex::encode(tx.tx_hash)
+					);
 					txs.push(tx);
 					succeeded += 1;
 				},
 				Err(e) => {
-					log::error!(index = index, total = num_transfers; "Failed to build tx: {}", e);
+					tracing::error!(
+						index = index,
+						total = num_transfers,
+						"Failed to build tx: {}",
+						e
+					);
 					failed += 1;
 				},
 			}

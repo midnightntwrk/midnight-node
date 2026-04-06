@@ -26,7 +26,7 @@ pub use super::{
 	},
 	coin_structure::{
 		coin::{
-			Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey,
+			Info as CoinInfo, NIGHT, Nonce, Nullifier, PublicAddress, PublicKey as CoinPublicKey,
 			QualifiedInfo, ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 		},
 		contract::ContractAddress,

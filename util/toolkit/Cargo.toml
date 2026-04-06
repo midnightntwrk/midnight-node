@@ -35,6 +35,7 @@ backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv_std"] }
 async-trait = "0.1.87"
 toml.workspace = true
+tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
