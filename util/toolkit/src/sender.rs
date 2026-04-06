@@ -166,15 +166,15 @@ impl Sender {
 		tx: &SerializedTx,
 	) -> Result<(TxHashes, Progress), SenderError> {
 		let client = self.get_client();
-		log::debug!(url = client.url; "send_tx_no_wait: got client");
+		tracing::debug!(url = client.url, "send_tx_no_wait: got client");
 
 		let midnight_tx_hash = TransactionHash(HashOutput(tx.tx_hash));
-		log::debug!(url = client.url; "send_tx_no_wait: computed hash");
+		tracing::debug!(url = client.url, "send_tx_no_wait: computed hash");
 
 		let unsigned_extrinsic = match &tx.tx {
 			RawTransaction::Midnight(tx) => {
 				let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.clone());
-				log::debug!(url = client.url; "send_tx_no_wait: created mn_tx");
+				tracing::debug!(url = client.url, "send_tx_no_wait: created mn_tx");
 				client
 					.client
 					.api
@@ -184,7 +184,7 @@ impl Sender {
 			},
 			RawTransaction::System(tx) => {
 				let mn_tx = mn_meta::tx().midnight_system().send_mn_system_transaction(tx.clone());
-				log::debug!(url = client.url; "send_tx_no_wait: created mn_system_tx");
+				tracing::debug!(url = client.url, "send_tx_no_wait: created mn_system_tx");
 				client
 					.client
 					.api
@@ -194,11 +194,11 @@ impl Sender {
 			},
 		};
 
-		log::debug!(url = client.url; "send_tx_no_wait: created unsigned extrinsic");
+		tracing::debug!(url = client.url, "send_tx_no_wait: created unsigned extrinsic");
 
-		log::info!(
+		tracing::info!(
 			url = client.url,
-			midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash);
+			midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash),
 			"SENDING"
 		);
 		let tx_progress = unsigned_extrinsic.submit_and_watch().await.map_err(|e| {

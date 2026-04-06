@@ -231,6 +231,17 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
 	}
 
+	// Hold the database backend handle outside the tokio runtime so we can
+	// explicitly drop it after all async tasks have finished.  Without this,
+	// the backend's Arc may be leaked inside aborted tokio tasks during
+	// shutdown, preventing parity-db's Drop impl (which drains the WAL
+	// pipeline) from ever running.  The result is silent chain-state
+	// truncation on the next startup — see the PR description for details.
+	let backend_handle: std::sync::Arc<
+		std::sync::Mutex<Option<std::sync::Arc<service::FullBackend>>>,
+	> = std::sync::Arc::new(std::sync::Mutex::new(None));
+	let backend_handle_inner = backend_handle.clone();
+
 	let run_result = runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 		let midnight_cfg = cfg.midnight_cfg.clone();
@@ -259,7 +270,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		service::new_full::<sc_network::NetworkWorker<_, _>>(
+		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
 			midnight_cfg,
@@ -270,8 +281,18 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			tx_filter_config,
 		)
 		.await
-		.map_err(sc_cli::Error::Service)
+		.map_err(sc_cli::Error::Service)?;
+
+		// Stash the backend handle so it outlives the tokio runtime.
+		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
+
+		Ok(task_manager)
 	});
+
+	// Explicitly flush and release the chain-state database.
+	// This ensures parity-db's Drop impl runs (joining its background I/O
+	// threads and draining the WAL) even if async tasks leaked Arc clones.
+	drop(backend_handle.lock().expect("backend mutex poisoned").take());
 
 	// Explicitly release global ledger storage on shutdown.
 	midnight_node_ledger::drop_all_default_storage();

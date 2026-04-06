@@ -20,7 +20,7 @@ use midnight_primitives_cnight_observation::{
 };
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;

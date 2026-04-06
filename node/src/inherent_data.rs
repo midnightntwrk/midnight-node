@@ -122,7 +122,11 @@ where
 			*slot,
 			sc_slot_config.slot_duration,
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create mc_hash inherent data for proposal: {e}");
+			e
+		})?;
 
 		let ariadne_data_provider = AriadneIDP::new(
 			client.as_ref(),
@@ -133,7 +137,11 @@ where
 			authority_selection_data_source.as_ref(),
 			mc_hash.mc_epoch(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create authority_selection inherent data for proposal: {e}");
+			e
+		})?;
 		/*
 		#[cfg(feature = "experimental")]
 		let block_beneficiary_provider = BlockBeneficiaryInherentProvider::<BeneficiaryId>::from_env(
@@ -147,7 +155,11 @@ where
 			parent_hash,
 			mc_hash.mc_hash(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create cnight_observation inherent data for proposal: {e}");
+			e
+		})?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			client.clone(),
@@ -155,7 +167,11 @@ where
 			parent_hash,
 			&mc_hash.mc_hash(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create federated_authority inherent data for proposal: {e}");
+			e
+		})?;
 
 		let bridge = TokenBridgeInherentDataProvider::new(
 			client.as_ref(),
@@ -163,7 +179,11 @@ where
 			mc_hash.mc_hash(),
 			bridge_data_source.as_ref(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create bridge inherent data for proposal: {e}");
+			e
+		})?;
 
 		Ok((
 			slot,
@@ -250,7 +270,11 @@ where
 			config.slot_duration(),
 			mc_hash_data_source.as_ref(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create mc_hash inherent data for verification: {e}");
+			e
+		})?;
 
 		let ariadne_data_provider = AriadneIDP::new(
 			client.as_ref(),
@@ -261,7 +285,11 @@ where
 			authority_selection_data_source.as_ref(),
 			mc_state_reference.epoch,
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create authority_selection inherent data for verification: {e}");
+			e
+		})?;
 
 		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
 			client.clone(),
@@ -269,7 +297,11 @@ where
 			parent_hash,
 			mc_hash.clone(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create cnight_observation inherent data for verification: {e}");
+			e
+		})?;
 
 		let federated_authority = FederatedAuthorityInherentDataProvider::new(
 			client.clone(),
@@ -277,7 +309,11 @@ where
 			parent_hash,
 			&mc_hash,
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create federated_authority inherent data for verification: {e}");
+			e
+		})?;
 
 		let bridge = TokenBridgeInherentDataProvider::new(
 			client.as_ref(),
@@ -285,7 +321,11 @@ where
 			mc_hash,
 			bridge_data_source.as_ref(),
 		)
-		.await?;
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to create bridge inherent data for verification: {e}");
+			e
+		})?;
 
 		Ok((timestamp, ariadne_data_provider, cnight_observation, federated_authority, bridge))
 	}

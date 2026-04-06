@@ -232,7 +232,7 @@ pub type HostFunctions = (
 pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
-type FullBackend = sc_service::TFullBackend<Block>;
+pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
 /// The minimum period of blocks on which justifications will be
@@ -480,7 +480,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
 	tx_filter_config: TxFilterConfig,
-) -> Result<TaskManager, ServiceError> {
+) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
@@ -776,7 +776,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				None,
 				MmrGadget::start(
 					client.clone(),
-					backend,
+					backend.clone(),
 					sp_mmr_primitives::INDEXING_PREFIX.to_vec(),
 				),
 			);
@@ -857,7 +857,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		}
 	}
 
-	Ok(task_manager)
+	Ok((task_manager, backend))
 }
 
 #[cfg(test)]
