@@ -193,7 +193,7 @@ jobs:
           git commit -m "chore: merge $BASE_BRANCH and resolve metadata conflicts ($strategy_desc)"
 
           # Push the merge commit
-          git push origin HEAD
+          git push origin "HEAD:refs/heads/${{ steps.pr.outputs.ref }}"
 
           echo "RESULT=resolved" >> "$GITHUB_ENV"
           # Replace newlines with comma-space for display
