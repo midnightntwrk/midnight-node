@@ -192,8 +192,9 @@ With both bodies having approved, anyone can now close the federated motion to e
 
 Go to **Developer > Extrinsics** and submit:
 
-- **extrinsic**: `federatedAuthority` > `motionClose(motionHash)`
+- **extrinsic**: `federatedAuthority` > `motionClose(motionHash, proposalWeightBound)`
 - **motionHash**: The motion hash from the storage query
+- **proposalWeightBound**: Weight estimate for the dispatched call (e.g., `refTime: 1000000000`, `proofSize: 1000000`)
 
 ![Federated authority motion close extrinsic](assets/extrinsic-federated-auth-motion-close.png)
 
