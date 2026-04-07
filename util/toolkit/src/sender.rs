@@ -13,6 +13,7 @@
 
 use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use parity_scale_codec::Encode;
 use std::{
 	sync::{
 		Arc,
@@ -20,7 +21,6 @@ use std::{
 	},
 	time::Duration,
 };
-use parity_scale_codec::Encode;
 use subxt::{
 	client::OnlineClientAtBlockImpl,
 	config::Hash,
@@ -85,7 +85,10 @@ pub struct ClientHandle {
 
 struct Progress {
 	url: String,
-	tx_progress: TransactionProgress<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>,
+	tx_progress: TransactionProgress<
+		MidnightNodeClientConfig,
+		OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+	>,
 }
 
 pub struct Sender {
@@ -181,7 +184,10 @@ impl Sender {
 					.api
 					.tx()
 					.await
-					.map_err(|e| SenderError::SendToUrlError { url: client.url.clone(), source: e.into() })?
+					.map_err(|e| SenderError::SendToUrlError {
+						url: client.url.clone(),
+						source: e.into(),
+					})?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -193,7 +199,10 @@ impl Sender {
 					.api
 					.tx()
 					.await
-					.map_err(|e| SenderError::SendToUrlError { url: client.url.clone(), source: e.into() })?
+					.map_err(|e| SenderError::SendToUrlError {
+						url: client.url.clone(),
+						source: e.into(),
+					})?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -226,7 +235,12 @@ impl Sender {
 		mut progress: Progress,
 	) -> (
 		Progress,
-		Option<TransactionInBlock<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>>,
+		Option<
+			TransactionInBlock<
+				MidnightNodeClientConfig,
+				OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+			>,
+		>,
 	) {
 		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -254,7 +268,12 @@ impl Sender {
 
 	async fn wait_for_finalized(
 		mut progress: Progress,
-	) -> Option<TransactionInBlock<MidnightNodeClientConfig, OnlineClientAtBlockImpl<MidnightNodeClientConfig>>> {
+	) -> Option<
+		TransactionInBlock<
+			MidnightNodeClientConfig,
+			OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+		>,
+	> {
 		const FINALIZED_TIMEOUT: Duration = Duration::from_secs(60);
 
 		let url = progress.url.clone();

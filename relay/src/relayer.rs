@@ -141,7 +141,12 @@ impl Relayer {
 	/// Returns the Best Block Number, or None if querying fails.
 	/// No need to throw an error
 	async fn get_best_block_number(&self) -> Option<BlockNumber> {
-		match self.api.at_current_block().await.map(|at_block| at_block.block_number() as BlockNumber) {
+		match self
+			.api
+			.at_current_block()
+			.await
+			.map(|at_block| at_block.block_number() as BlockNumber)
+		{
 			Ok(block) => Some(block),
 			Err(e) => {
 				log::warn!("Failed to get best block number: {e:?}");

@@ -89,9 +89,9 @@ impl FetchTask {
 		let block_hash = retry(backoff, || async {
 			client
 				.rpc
-				.chain_get_block_hash(Some(
-					subxt::rpcs::methods::legacy::NumberOrHex::Number(block_number),
-				))
+				.chain_get_block_hash(Some(subxt::rpcs::methods::legacy::NumberOrHex::Number(
+					block_number,
+				)))
 				.await
 				.map_err(|e| {
 					log::warn!("block hash fetch failed, retrying: {e}");

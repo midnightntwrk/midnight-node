@@ -18,13 +18,13 @@ use backoff::future::retry;
 use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Decode;
-use subxt::rpcs::methods::legacy::{BlockNumber, SystemProperties};
 use subxt::config::HashFor;
+use subxt::rpcs::methods::legacy::{BlockNumber, SystemProperties};
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
 	Config, OnlineClient,
-	rpcs::{LegacyRpcMethods, RpcClient},
 	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
+	rpcs::{LegacyRpcMethods, RpcClient},
 };
 use thiserror::Error;
 
@@ -81,9 +81,11 @@ impl MidnightNodeClient {
 	pub async fn get_network_id(&self) -> Result<String, ClientError> {
 		// let storage_query = mn_meta::storage().midnight().network_id();
 		// let network_id = self.api.storage().at_latest().await?.fetch(&storage_query).await??;
-		let network_id_call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_network_id();
+		let network_id_call =
+			mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_network_id();
 		// Submit the call and get back a result.
-		let network_id = self.api.at_current_block().await?.runtime_apis().call(network_id_call).await?;
+		let network_id =
+			self.api.at_current_block().await?.runtime_apis().call(network_id_call).await?;
 
 		Ok(network_id)
 	}

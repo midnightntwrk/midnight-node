@@ -189,9 +189,7 @@ impl MidnightClient {
         utxo: String,
     ) -> Result<Option<UtxoOwners>, Box<dyn std::error::Error>> {
         let nonce = hex::decode(&utxo).unwrap();
-        let storage_address = mn_meta::storage()
-            .c_night_observation()
-            .utxo_owners();
+        let storage_address = mn_meta::storage().c_night_observation().utxo_owners();
 
         let owners = self
             .online_client
@@ -271,10 +269,7 @@ impl MidnightClient {
 
         // First, check historical finalized blocks for the events
         // The events may have been emitted before we started listening
-        let finalized_at = self
-            .online_client
-            .at_current_block()
-            .await?;
+        let finalized_at = self.online_client.at_current_block().await?;
         let current_finalized = finalized_at.block_number();
 
         println!(
@@ -370,7 +365,10 @@ impl MidnightClient {
 
     /// Get the current best block hash from the node.
     pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let hash: H256 = self.rpc_client.request("chain_getBlockHash", rpc_params![]).await?;
+        let hash: H256 = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![])
+            .await?;
         Ok(hash)
     }
 
@@ -500,7 +498,13 @@ impl MidnightClient {
     pub async fn submit_midnight_tx(
         &self,
         tx_bytes: Vec<u8>,
-    ) -> Result<TransactionProgress<SubstrateConfig, subxt::client::OnlineClientAtBlockImpl<SubstrateConfig>>, Box<dyn std::error::Error>> {
+    ) -> Result<
+        TransactionProgress<
+            SubstrateConfig,
+            subxt::client::OnlineClientAtBlockImpl<SubstrateConfig>,
+        >,
+        Box<dyn std::error::Error>,
+    > {
         let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
         let unsigned_extrinsic = self.online_client.tx().await?.create_unsigned(&mn_tx)?;
         Ok(unsigned_extrinsic.submit_and_watch().await?)

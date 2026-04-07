@@ -143,13 +143,17 @@ impl ComputeTask {
 		match spec_version {
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(
-					block, &header, spec_version,
+					block,
+					&header,
+					spec_version,
 				)
 				.await
 			},
 			RuntimeVersion::V0_22_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_22_0>(
-					block, &header, spec_version,
+					block,
+					&header,
+					spec_version,
 				)
 				.await
 			},
@@ -175,11 +179,7 @@ impl ComputeTask {
 
 		// Decode extrinsics using the metadata from the ClientAtBlock, which
 		// automatically resolves the correct schema for this block's spec version.
-		let extrinsics = block
-			.block
-			.extrinsics()
-			.from_bytes(block.raw_body.clone())
-			.await;
+		let extrinsics = block.block.extrinsics().from_bytes(block.raw_body.clone()).await;
 
 		let events = block
 			.block

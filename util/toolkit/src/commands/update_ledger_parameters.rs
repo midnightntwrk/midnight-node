@@ -160,8 +160,10 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(Box::new(e)))?
 		},
 		None => {
-			let call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
-			api.at_current_block().await?
+			let call =
+				mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
+			api.at_current_block()
+				.await?
 				.runtime_apis()
 				.call(call)
 				.await?
@@ -276,8 +278,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		"send_mn_system_transaction",
 		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
 	);
-	let send_system_tx_call_value =
-		api.tx().await?.call_data(&send_system_tx_call)?;
+	let send_system_tx_call_value = api.tx().await?.call_data(&send_system_tx_call)?;
 
 	root_call::execute(RootCallArgs {
 		rpc_url: args.rpc_url,

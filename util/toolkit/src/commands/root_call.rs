@@ -192,14 +192,16 @@ async fn execute_governance_call(
 	log::info!("Decoded call successfully");
 
 	// Step 2: Create the FederatedAuthority::motion_approve call wrapping our decoded call
-	let fed_auth_call =
-		dynamic::tx("FederatedAuthority", "motion_approve", Composite::unnamed([call_value.clone()])).into_value();
+	let fed_auth_call = dynamic::tx(
+		"FederatedAuthority",
+		"motion_approve",
+		Composite::unnamed([call_value.clone()]),
+	)
+	.into_value();
 
 	// Compute the proposal hash for the federated authority call
 	let fed_auth_tx = dynamic::tx("FederatedAuthority", "motion_approve", vec![call_value.clone()]);
-	let fed_auth_call_data = api
-		.tx().await?
-		.call_data(&fed_auth_tx)?;
+	let fed_auth_call_data = api.tx().await?.call_data(&fed_auth_tx)?;
 	let proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
 	let proposal_hash = H256(proposal_hash);
 
@@ -216,7 +218,8 @@ async fn execute_governance_call(
 	);
 
 	let council_propose_events = api
-		.tx().await?
+		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&council_proposal, council_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -252,7 +255,8 @@ async fn execute_governance_call(
 	);
 
 	let tech_propose_events = api
-		.tx().await?
+		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&tech_proposal, tc_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -308,7 +312,8 @@ async fn execute_governance_call(
 	let close_motion_call = dynamic::tx("FederatedAuthority", "motion_close", motion_close_args);
 
 	// Anyone can close the motion, use first council member
-	api.tx().await?
+	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&close_motion_call, council_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -337,7 +342,8 @@ async fn vote_on_proposal(
 		],
 	);
 
-	api.tx().await?
+	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&vote_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -369,7 +375,8 @@ async fn close_proposal(
 		],
 	);
 
-	api.tx().await?
+	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&close_call, signer)
 		.await?
 		.wait_for_finalized_success()

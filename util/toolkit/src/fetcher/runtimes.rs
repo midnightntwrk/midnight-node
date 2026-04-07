@@ -61,18 +61,14 @@ impl RuntimeVersion {
 
 		static META_0_21_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
 			Arc::new(
-				subxt::Metadata::decode(
-					&mut &midnight_node_metadata::METADATA_0_21_0_BYTES[..],
-				)
-				.expect("valid 0.21.0 metadata"),
+				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_21_0_BYTES[..])
+					.expect("valid 0.21.0 metadata"),
 			)
 		});
 		static META_0_22_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
 			Arc::new(
-				subxt::Metadata::decode(
-					&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..],
-				)
-				.expect("valid 0.22.0 metadata"),
+				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..])
+					.expect("valid 0.22.0 metadata"),
 			)
 		});
 		static META_1_0_0: LazyLock<subxt::ext::subxt_core::Metadata> = LazyLock::new(|| {

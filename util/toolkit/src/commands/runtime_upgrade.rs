@@ -102,7 +102,8 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 		dynamic::tx("System", "apply_authorized_upgrade", vec![dynamic::Value::from_bytes(&code)]);
 
 	let apply_events = api
-		.tx().await?
+		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&apply_upgrade_call, &signer)
 		.await?
 		.wait_for_finalized_success()
