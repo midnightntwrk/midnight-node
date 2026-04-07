@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use backoff::ExponentialBackoff;
 use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Encode;
-use backoff::ExponentialBackoff;
 use std::{
 	sync::{
 		Arc,
@@ -160,18 +160,17 @@ impl Sender {
 			..ExponentialBackoff::default()
 		};
 
-		let (tx_hash_string, tx_progress) =
-			backoff::future::retry(backoff, || async {
-				self.send_tx_no_wait(tx).await.map_err(|e| {
-					if e.is_retryable() {
-						log::warn!("retryable error sending tx, will retry: {e}");
-						backoff::Error::transient(e)
-					} else {
-						backoff::Error::permanent(e)
-					}
-				})
+		let (tx_hash_string, tx_progress) = backoff::future::retry(backoff, || async {
+			self.send_tx_no_wait(tx).await.map_err(|e| {
+				if e.is_retryable() {
+					log::warn!("retryable error sending tx, will retry: {e}");
+					backoff::Error::transient(e)
+				} else {
+					backoff::Error::permanent(e)
+				}
 			})
-			.await?;
+		})
+		.await?;
 
 		if self.watch_progress {
 			self.send_and_log(&tx_hash_string, tx_progress).await?;
