@@ -87,6 +87,10 @@ pub struct MidnightCfg {
 	/// Allow non-SSL database connections (not recommended for production)
 	pub allow_non_ssl: bool,
 
+	/// Reject midnight transactions whose estimated gas cost exceeds this limit.
+	/// The value is in Substrate weight ref_time units (u64).
+	pub max_tx_gas_cost: Option<u64>,
+
 	/// URL of the Prometheus Remote Write endpoint to push metrics to.
 	/// Example: https://thanos.example.com/api/v1/receive
 	/// Supports Thanos Receive, Cortex, Mimir, and other remote write compatible endpoints.

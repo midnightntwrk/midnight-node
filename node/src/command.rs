@@ -151,10 +151,11 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	let run_cmd: RunCmd = cfg.substrate_cfg.clone().try_into()?;
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let max_tx_gas_cost = run_midnight.max_tx_gas_cost.or(cfg.midnight_cfg.max_tx_gas_cost);
 	let tx_filter_config = TxFilterConfig::new(
 		run_midnight.filter_deploy_txs,
 		run_midnight.filter_deploy_txs,
-		run_midnight.max_tx_gas_cost,
+		max_tx_gas_cost,
 	);
 
 	if cfg.midnight_cfg.wipe_chain_state
