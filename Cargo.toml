@@ -249,7 +249,7 @@ itertools = { default-features = false, version = "0.14.0", features = ["use_all
 jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"] }
 
 async-trait = { default-features = false, version = "0.1.89" }
-futures = { default-features = false, version = "0.3.30", features = ["thread-pool"] }
+futures = { default-features = false, version = "0.3.32", features = ["thread-pool"] }
 log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
 tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
