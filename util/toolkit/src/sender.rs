@@ -14,6 +14,7 @@
 use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Encode;
+use backoff::ExponentialBackoff;
 use std::{
 	sync::{
 		Arc,
@@ -24,6 +25,7 @@ use std::{
 use subxt::{
 	client::OnlineClientAtBlockImpl,
 	config::Hash,
+	error::{BackendError, ExtrinsicError, RpcError},
 	tx::{TransactionInBlock, TransactionProgress, TransactionStatus},
 };
 use thiserror::Error;
@@ -52,6 +54,34 @@ pub enum SenderError {
 		#[source]
 		source: subxt::Error,
 	},
+}
+
+impl SenderError {
+	fn is_retryable(&self) -> bool {
+		let SenderError::SendToUrlError { source, .. } = self else {
+			return false;
+		};
+
+		// Reconnection in progress — always retryable.
+		if source.is_disconnected_will_reconnect() {
+			return true;
+		}
+
+		// Transport errors from transaction submission (e.g., HTTP 429 rate limiting).
+		if let subxt::Error::ExtrinsicError(ExtrinsicError::ErrorSubmittingTransaction(
+			BackendError::Rpc(RpcError::ClientError(subxt::rpcs::Error::Client(_))),
+		)) = source
+		{
+			return true;
+		}
+
+		// Direct RPC client errors (e.g., from .tx().await).
+		if let subxt::Error::OtherRpcClientError(subxt::rpcs::Error::Client(_)) = source {
+			return true;
+		}
+
+		false
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +155,24 @@ impl Sender {
 	}
 
 	pub async fn send_tx(&self, tx: &SerializedTx) -> Result<(), SenderError> {
-		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(Duration::from_secs(60)),
+			..ExponentialBackoff::default()
+		};
+
+		let (tx_hash_string, tx_progress) =
+			backoff::future::retry(backoff, || async {
+				self.send_tx_no_wait(tx).await.map_err(|e| {
+					if e.is_retryable() {
+						log::warn!("retryable error sending tx, will retry: {e}");
+						backoff::Error::transient(e)
+					} else {
+						backoff::Error::permanent(e)
+					}
+				})
+			})
+			.await?;
+
 		if self.watch_progress {
 			self.send_and_log(&tx_hash_string, tx_progress).await?;
 		}

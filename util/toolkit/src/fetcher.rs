@@ -168,6 +168,10 @@ pub async fn fetch_from_rpc(
 		BLOCKS_PER_JOB
 	};
 
+	// Cap workers to the number of jobs to avoid unnecessary connections.
+	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_workers = num_workers.min(num_jobs as usize).max(1);
+
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
@@ -195,7 +199,7 @@ pub async fn fetch_from_rpc(
 		});
 	}
 
-	log::info!("spawning {num_workers} fetch workers");
+	log::info!("spawning {num_workers} fetch workers (capped from requested, {num_jobs} jobs)");
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {

@@ -158,8 +158,12 @@ impl ComputeTask {
 				.await
 			},
 			RuntimeVersion::V1_0_0 => {
-				Self::process_block_with_protocol::<MidnightMetadata1_0_0>(block, spec_version)
-					.await
+				Self::process_block_with_protocol::<MidnightMetadata1_0_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
 			},
 		}
 	}

@@ -29,7 +29,8 @@ use subxt::{
 use thiserror::Error;
 
 /// Maximum time to wait for a client connection before giving up.
-const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// Set generously to handle rate-limiting (429) during concurrent connection attempts.
+const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug, Default)]
 pub struct MidnightNodeClientConfig;
@@ -74,7 +75,7 @@ impl MidnightNodeClient {
 	pub async fn new_without_timeout(rpc_url: &str) -> Result<Self, ClientError> {
 		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
 		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
-		let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(rpc_url).await?;
+		let api = OnlineClient::<MidnightNodeClientConfig>::from_rpc_client(rpc_client).await?;
 		Ok(MidnightNodeClient { rpc, api })
 	}
 
