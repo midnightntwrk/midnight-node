@@ -33,7 +33,7 @@ indicatif = "0.17.8"
 console = "0.15.8"
 backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv_std"] }
-async-trait = "0.1.87"
+async-trait = "0.1.89"
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }

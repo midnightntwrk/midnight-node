@@ -32,7 +32,7 @@ pub fn compute_batches_seeds(
 	funding_seed: &str,
 	num_txs_per_batch: usize,
 	num_batches: usize,
-) -> Vec<WalletSeed> {
+) -> Result<Vec<WalletSeed>, &'static str> {
 	let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(funding_seed);
 	let inputs_wallet_seeds = vec![funding_seed];
 
@@ -43,11 +43,11 @@ pub fn compute_batches_seeds(
 		for _ in 0..num_txs_per_batch {
 			init_output_wallet_seeds
 				.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
-			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str)?;
 		}
 	}
 
-	[&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat()
+	Ok([&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat())
 }
 
 /// The higher the number of transactions per batch, the longer it will take to generate the
@@ -245,7 +245,8 @@ impl BuildTxs for BatchesBuilder {
 			for _ in 0..self.num_txs_per_batch {
 				init_output_wallet_seeds
 					.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
-				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str)
+					.expect("wallet seed overflow: batch seed exhaustion is physically impossible");
 			}
 		}
 
