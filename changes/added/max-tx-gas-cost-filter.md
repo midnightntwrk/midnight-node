@@ -6,5 +6,4 @@ transactions whose estimated gas cost exceeds a configurable limit. This allows 
 operators to protect their nodes from expensive transactions at the pool gateway level.
 The CLI arg takes precedence over the env var when both are set.
 
-PR:
-JIRA:
+PR: shttps://github.com/midnightntwrk/midnight-node/pull/1251
