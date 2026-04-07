@@ -210,12 +210,22 @@ impl BuildTxs for BatchSingleTxBuilder {
 			let index = index_iter.next().unwrap();
 			match result {
 				Ok(tx) => {
-					log::info!(index = index, total = num_transfers; "Built tx {} ", hex::encode(tx.tx_hash));
+					tracing::info!(
+						index = index,
+						total = num_transfers,
+						"Built tx {} ",
+						hex::encode(tx.tx_hash)
+					);
 					txs.push(tx);
 					succeeded += 1;
 				},
 				Err(e) => {
-					log::error!(index = index, total = num_transfers; "Failed to build tx: {}", e);
+					tracing::error!(
+						index = index,
+						total = num_transfers,
+						"Failed to build tx: {}",
+						e
+					);
 					failed += 1;
 				},
 			}

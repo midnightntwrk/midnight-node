@@ -23,7 +23,6 @@ members = [
     "runtime",
     "util/toolkit",
     "util/documented",
-    "util/upgrader",
     "util/aiken-deployer",
     "util/aiken-contracts-lib",
     "tests/e2e",
@@ -249,13 +248,14 @@ itertools = { default-features = false, version = "0.14.0", features = ["use_all
 
 jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"] }
 
-async-trait = { default-features = false, version = "0.1.87" }
+async-trait = { default-features = false, version = "0.1.89" }
 futures = { default-features = false, version = "0.3.30", features = ["thread-pool"] }
 log = { default-features = false, version = "0.4.29" }
+tracing = { default-features = false, version = "0.1.44" }
 tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
-hex-literal = { version = "1.0.0", default-features = false }
+hex-literal = { version = "1.1.0", default-features = false }
 schemars = { version = "0.8", default-features = false, features = ["derive"] }
 serde = { default-features = false, version = "1.0.209", features = ["derive", "alloc"] }
 serde_json = { default-features = false, version = '1.0.132', features = ["alloc"] }
