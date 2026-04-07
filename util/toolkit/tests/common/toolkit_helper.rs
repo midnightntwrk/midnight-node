@@ -43,6 +43,11 @@ pub struct CircuitOutput {
 	pub zswap_state: PathBuf,
 }
 
+pub struct CircuitCall<'a> {
+	pub circuit_id: &'a str,
+	pub call_args: &'a [&'a str],
+}
+
 pub struct ToolkitTestHelper {
 	node_ws: String,
 	toolkit_js_path: PathBuf,
@@ -268,9 +273,9 @@ impl ToolkitTestHelper {
 		onchain_state: &Path,
 		private_state: &Path,
 		contract_address: &str,
-		circuit_id: &str,
-		call_args: &[&str],
+		call: CircuitCall<'_>,
 	) -> Result<CircuitOutput, Box<dyn std::error::Error + Send + Sync>> {
+		let CircuitCall { circuit_id, call_args } = call;
 		let out_intent = self.work_dir.path().join(format!("{circuit_id}_intent.bin"));
 		let out_private_state =
 			self.work_dir.path().join(format!("{circuit_id}_private_state.json"));

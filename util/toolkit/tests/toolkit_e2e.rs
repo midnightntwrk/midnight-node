@@ -16,7 +16,10 @@
 mod common;
 
 use clap::Parser;
-use common::{test_image, toolkit_helper::ToolkitTestHelper};
+use common::{
+	test_image,
+	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+};
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	commands::{contract_address, show_address},
@@ -440,8 +443,10 @@ async fn bboard_private_witness_not_leaked() {
 			&state_file,
 			&deploy.private_state,
 			&bboard_addr,
-			"post",
-			&["\"Hello from Rust e2e! Privacy verification test.\""],
+			CircuitCall {
+				circuit_id: "post",
+				call_args: &["\"Hello from Rust e2e! Privacy verification test.\""],
+			},
 		)
 		.await
 		.expect("generate post intent failed");
@@ -470,8 +475,7 @@ async fn bboard_private_witness_not_leaked() {
 			&state_file_2,
 			&post.private_state,
 			&bboard_addr,
-			"takeDown",
-			&[],
+			CircuitCall { circuit_id: "takeDown", call_args: &[] },
 		)
 		.await
 		.expect("generate takeDown intent failed");
