@@ -6,3 +6,4 @@ block-centric API. This includes new transaction types, granular error
 handling, async metadata access, and updated storage/event APIs.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1229
+Required for https://github.com/midnightntwrk/midnight-node/issues/1244
