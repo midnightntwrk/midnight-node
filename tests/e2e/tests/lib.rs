@@ -87,7 +87,7 @@ async fn register_for_dust_production() {
     let registration = registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -104,7 +104,7 @@ async fn register_for_dust_production() {
     let mapping_added = registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<MappingAdded>().and_then(|r| r.ok()))
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_bytes
@@ -372,7 +372,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let registration_1 = registration_events_1
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address_1
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -381,7 +381,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let registration_2 = registration_events_2
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address_2
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -410,7 +410,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let mapping_added_1 = registration_events_1
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<MappingAdded>().and_then(|r| r.ok()))
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_1
                 && map.0.dust_public_key.0.0 == dust_bytes
@@ -420,7 +420,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let mapping_added_2 = registration_events_2
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<MappingAdded>().and_then(|r| r.ok()))
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_2
                 && map.0.dust_public_key.0.0 == dust_bytes
@@ -776,7 +776,10 @@ async fn deregister_from_dust_production() {
     let deregistration = events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
+        .filter_map(|evt| {
+            evt.decode_fields_as::<Deregistration>()
+                .and_then(|r| r.ok())
+        })
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -794,9 +797,8 @@ async fn deregister_from_dust_production() {
         .iter()
         .filter_map(|e| e.ok())
         .filter_map(|evt| {
-            evt.as_event::<c_night_observation::events::MappingRemoved>()
-                .ok()
-                .flatten()
+            evt.decode_fields_as::<c_night_observation::events::MappingRemoved>()
+                .and_then(|r| r.ok())
         })
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
@@ -968,7 +970,7 @@ async fn removing_excessive_registrations() {
     let registration = registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -985,7 +987,7 @@ async fn removing_excessive_registrations() {
     let mapping_added = registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<MappingAdded>().and_then(|r| r.ok()))
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_address
@@ -1019,7 +1021,7 @@ async fn removing_excessive_registrations() {
     let second_mapping_added = second_registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<MappingAdded>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<MappingAdded>().and_then(|r| r.ok()))
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == second_dust_address
@@ -1037,7 +1039,10 @@ async fn removing_excessive_registrations() {
     let deregistration = second_registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
+        .filter_map(|evt| {
+            evt.decode_fields_as::<Deregistration>()
+                .and_then(|r| r.ok())
+        })
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -1082,9 +1087,8 @@ async fn removing_excessive_registrations() {
         .iter()
         .filter_map(|e| e.ok())
         .filter_map(|evt| {
-            evt.as_event::<c_night_observation::events::MappingRemoved>()
-                .ok()
-                .flatten()
+            evt.decode_fields_as::<c_night_observation::events::MappingRemoved>()
+                .and_then(|r| r.ok())
         })
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
@@ -1103,7 +1107,7 @@ async fn removing_excessive_registrations() {
     let registration_after_removing_excessive_mapping = deregister_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == second_dust_address
@@ -1270,7 +1274,7 @@ async fn create_hundred_registrations() {
     let registration = registration_events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Registration>().ok().flatten())
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -1410,23 +1414,23 @@ async fn replay_attack_rejected_via_rpc() {
         println!("Waiting for first transaction to be included in block...");
         while let Some(status) = progress.next().await {
             match status {
-                Ok(subxt::tx::TxStatus::InBestBlock(info)) => {
+                Ok(subxt::tx::TransactionStatus::InBestBlock(info)) => {
                     println!("  First transaction in best block: {:?}", info.block_hash());
                     break;
                 }
-                Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) => {
+                Ok(subxt::tx::TransactionStatus::InFinalizedBlock(info)) => {
                     println!("  First transaction finalized: {:?}", info.block_hash());
                     break;
                 }
-                Ok(subxt::tx::TxStatus::Error { message }) => {
+                Ok(subxt::tx::TransactionStatus::Error { message }) => {
                     println!("  First transaction error: {}", message);
                     break;
                 }
-                Ok(subxt::tx::TxStatus::Invalid { message }) => {
+                Ok(subxt::tx::TransactionStatus::Invalid { message }) => {
                     println!("  First transaction invalid: {}", message);
                     break;
                 }
-                Ok(subxt::tx::TxStatus::Dropped { message }) => {
+                Ok(subxt::tx::TransactionStatus::Dropped { message }) => {
                     println!("  First transaction dropped: {}", message);
                     break;
                 }
@@ -1776,7 +1780,10 @@ async fn deregister_with_valid_cnight_utxo() {
     let deregistration = events
         .iter()
         .filter_map(|e| e.ok())
-        .filter_map(|evt| evt.as_event::<Deregistration>().ok().flatten())
+        .filter_map(|evt| {
+            evt.decode_fields_as::<Deregistration>()
+                .and_then(|r| r.ok())
+        })
         .find(|reg| {
             reg.0.cardano_reward_address.0 == reward_address
                 && reg.0.dust_public_key.0.0 == dust_address
@@ -1794,9 +1801,8 @@ async fn deregister_with_valid_cnight_utxo() {
         .iter()
         .filter_map(|e| e.ok())
         .filter_map(|evt| {
-            evt.as_event::<c_night_observation::events::MappingRemoved>()
-                .ok()
-                .flatten()
+            evt.decode_fields_as::<c_night_observation::events::MappingRemoved>()
+                .and_then(|r| r.ok())
         })
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
