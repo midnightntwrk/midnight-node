@@ -43,7 +43,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Setup Earthly
-        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        uses: EarthBuild/actions-setup@f3ec0597069d379fe9ef463ab162f037266ea139
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
