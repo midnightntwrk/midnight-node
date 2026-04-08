@@ -255,6 +255,12 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::construct_distribute_reserve_system_tx(amount)
 	}
 
+	fn construct_distribute_treasury_system_tx(
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::construct_distribute_treasury_system_tx(amount)
+	}
+
 	/// Ensures the correct ledger storage is initialized for this runtime version.
 	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
 	/// drops new version's storage and initializes normal storage.

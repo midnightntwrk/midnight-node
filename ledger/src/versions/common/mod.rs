@@ -1057,33 +1057,18 @@ where
 		api.tagged_serialize(&system_tx)
 	}
 
-	pub fn construct_distribute_night_cardano_bridge_event(
-		value: u128,
-		owner: &[u8],
-		time: u64,
-		action: u8,
-		nonce: [u8; 32],
-	) -> Result<Vec<u8>, LedgerApiError> {
-		let api = api::new();
-		let event = CNightGeneratesDustEvent {
-			value,
-			owner: api.deserialize(owner)?,
-			time: Timestamp::from_secs(time),
-			action: match action {
-				0 => Ok(CNightGeneratesDustActionType::Create),
-				1 => Ok(CNightGeneratesDustActionType::Destroy),
-				_ => Err(LedgerApiError::Deserialization(
-					api::DeserializationError::CNightGeneratesDustActionType,
-				)),
-			}?,
-			nonce: InitialNonce(HashOutput(nonce)),
-		};
-		api.tagged_serialize(&event)
-	}
-
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let system_tx = SystemTransaction::DistributeReserve(amount);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		//TODO: this is wrong transaction, ledger is missing the correct one yet
+		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
 		api.tagged_serialize(&system_tx)
 	}
 }

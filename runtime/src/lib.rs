@@ -78,6 +78,7 @@ use sp_consensus_beefy::{
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_partner_chains_bridge::{
 	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
+	TransferRecipient,
 };
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
@@ -858,70 +859,69 @@ impl MidnightTokenTransferHandler {
 	}
 }
 
-impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
+type MaybeMidnightTxHash = Option<[u8; 32]>;
+
+impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient, MaybeMidnightTxHash>
 	for MidnightTokenTransferHandler
 {
-	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-		match transfer {
-			BridgeTransferV1::UserTransfer { token_amount, recipient } => {
+	fn handle_incoming_transfer(
+		transfer: BridgeTransferV1<BridgeRecipient>,
+	) -> MaybeMidnightTxHash {
+		let amount = transfer.amount;
+		let serialized_tx = match transfer.recipient {
+			TransferRecipient::Address { recipient } => {
 				let recipient_bytes = recipient.as_bytes().to_vec();
 				let nonce = Self::generate_nonce();
 
-				let serialized_tx =
-					match LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
-						token_amount.into(),
-						&recipient_bytes.clone(),
-						nonce,
-					) {
-						Ok(tx) => tx,
-						Err(e) => {
-							log::error!(
-								"Failed to construct bridge user transfer system tx: {e:?}"
-							);
-							return;
-						},
-					};
-
-				match MidnightSystem::execute_system_transaction(serialized_tx) {
-					Ok(hash) => {
+				match LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+					amount.into(),
+					&recipient_bytes.clone(),
+					nonce,
+				) {
+					Ok(tx) => {
 						log::info!(
-							"Bridge user transfer of {token_amount} to {recipient_bytes:?} applied: {hash:?}"
+							"Will execute distribute {amount} of Night to {recipient_bytes:?}",
 						);
+						tx
 					},
 					Err(e) => {
-						log::error!(
-							"Failed to apply bridge user transfer of {token_amount}: {e:?}"
-						);
+						log::error!("Failed to construct bridge user transfer system tx: {e:?}");
+						return None;
 					},
 				}
 			},
-			BridgeTransferV1::ReserveTransfer { token_amount } => {
-				let serialized_tx =
-					match LedgerApi::construct_distribute_reserve_system_tx(token_amount.into()) {
-						Ok(tx) => tx,
-						Err(e) => {
-							log::error!(
-								"Failed to construct bridge reserve transfer system tx: {e:?}"
-							);
-							return;
-						},
-					};
-
-				match MidnightSystem::execute_system_transaction(serialized_tx) {
-					Ok(hash) => {
-						log::info!("Bridge reserve transfer of {token_amount} applied: {hash:?}");
+			TransferRecipient::Reserve => {
+				match LedgerApi::construct_distribute_reserve_system_tx(amount.into()) {
+					Ok(tx) => {
+						log::info!("Will execute distribute {amount} of Night to reserve");
+						tx
 					},
 					Err(e) => {
-						log::error!(
-							"Failed to apply bridge reserve transfer of {token_amount}: {e:?}"
-						);
+						log::error!("Failed to construct bridge reserve transfer system tx: {e:?}");
+						return None;
 					},
 				}
 			},
-			BridgeTransferV1::InvalidTransfer { token_amount, tx_hash } => {
-				log::warn!(
-					"Discarded invalid bridge transfer of {token_amount} from transaction {tx_hash}"
-				);
+			TransferRecipient::Invalid => {
+				match LedgerApi::construct_distribute_treasury_system_tx(amount.into()) {
+					Ok(tx) => {
+						log::info!("Will execute distribute {amount} of Night to treasury");
+						tx
+					},
+					Err(e) => {
+						log::error!(
+							"Failed to construct bridge treasury transfer system tx: {e:?}"
+						);
+						return None;
+					},
+				}
+			},
+		};
+		match MidnightSystem::execute_system_transaction(serialized_tx.clone()) {
+			Ok(hash) => Some(hash),
+			Err(e) => {
+				log::error!("Failed to execute system transaction {serialized_tx:?}: {e:?}");
+				None
 			},
 		}
 	}
@@ -936,6 +936,7 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
 	type TransferHandler = MidnightTokenTransferHandler;
+	type HandlerResult = MaybeMidnightTxHash;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
