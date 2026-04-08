@@ -391,24 +391,21 @@ fn extract_proposal_index(
 ) -> Result<u32, RootCallError> {
 	use parity_scale_codec::Decode;
 
+	/// Prefix of the collective pallet's `Proposed` event.
+	/// Only the fields we need are decoded; trailing fields are ignored.
+	#[derive(Decode)]
+	struct ProposedPrefix {
+		_account: [u8; 32],
+		#[codec(compact)]
+		proposal_index: u32,
+	}
+
 	for event in events.iter() {
 		let event = event?;
 		if event.pallet_name() == pallet && event.event_name() == "Proposed" {
-			// The Proposed event has fields: account_id (32 bytes), proposal_index (compact u32), ...
-			let mut cursor = event.field_bytes();
-
-			// Skip account_id (32 bytes)
-			if cursor.len() < 32 {
-				continue;
-			}
-			cursor = &cursor[32..];
-
-			// Read proposal_index (compact encoded u32)
-			if let Ok(parity_scale_codec::Compact(index)) =
-				parity_scale_codec::Compact::<u32>::decode(&mut cursor)
-			{
-				return Ok(index);
-			}
+			let prefix = ProposedPrefix::decode(&mut event.field_bytes())
+				.map_err(|_| RootCallError::ProposalIndexNotFound)?;
+			return Ok(prefix.proposal_index);
 		}
 	}
 	Err(RootCallError::ProposalIndexNotFound)
