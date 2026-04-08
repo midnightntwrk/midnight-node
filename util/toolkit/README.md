@@ -24,7 +24,7 @@ For guaranteed compatibility with a specific node version, use matching tags:
 docker pull midnightntwrk/midnight-node-toolkit:0.22.0
 docker pull midnightntwrk/midnight-node:0.22.0
 # or, install from source
-cargo install --git https://github.com/midnightntwrk/midnight-node --tag node-0.22.0 midnight-node-toolkit
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node --tag node-0.22.0 midnight-node-toolkit
 ```
 
 ---
