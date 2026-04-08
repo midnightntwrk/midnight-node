@@ -65,13 +65,23 @@ impl std::str::FromStr for UtxoId {
 	}
 }
 
-#[derive(Clone, Debug, Storable, Serializable)]
+#[derive(Clone, Storable, Serializable)]
 #[tag = "unshielded-wallet"]
 #[storable(base)]
 pub struct UnshieldedWallet {
 	pub user_address: UserAddress,
 	pub verifying_key: Option<VerifyingKey>,
 	signing_key: Option<SigningKey>,
+}
+
+impl std::fmt::Debug for UnshieldedWallet {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("UnshieldedWallet")
+			.field("user_address", &self.user_address)
+			.field("verifying_key", &self.verifying_key)
+			.field("signing_key", &"REDACTED")
+			.finish()
+	}
 }
 
 impl DeriveSeed for UnshieldedWallet {}
