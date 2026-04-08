@@ -13,8 +13,31 @@ use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::OnceCell;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::{OnceCell, Semaphore};
 use tokio::time::{Duration, timeout};
+
+// Tests that must complete before any DEPLOY_TX submission.
+// IMPORTANT: --test-threads must be >= NUM_PRE_DEPLOY_TESTS + NUM_DEPLOY_TESTS (currently 4),
+// otherwise these tests cannot run concurrently and will deadlock.
+const NUM_PRE_DEPLOY_TESTS: usize = 2;
+const NUM_DEPLOY_TESTS: usize = 2;
+
+static PRE_DEPLOY_COUNT: AtomicUsize = AtomicUsize::new(0);
+static DEPLOY_GATE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(0));
+
+fn finished_pre_deploy_test() {
+    let prev = PRE_DEPLOY_COUNT.fetch_add(1, Ordering::SeqCst);
+    if prev == NUM_PRE_DEPLOY_TESTS - 1 {
+        DEPLOY_GATE.add_permits(NUM_DEPLOY_TESTS);
+    }
+}
+
+async fn wait_before_deploying() {
+    let permit = DEPLOY_GATE.acquire().await.unwrap();
+    permit.forget();
+}
 
 // -------- GLOBAL ASYNC FAUCET MANAGER --------
 
@@ -1316,6 +1339,8 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
 
     let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
 
+    finished_pre_deploy_test();
+
     assert!(
         result.is_ok(),
         "Transaction should be rejected at pre_dispatch, but was accepted: {:?}",
@@ -1370,6 +1395,8 @@ async fn ddos_batch_attack_all_rejected() {
         }
     }
 
+    finished_pre_deploy_test();
+
     assert_eq!(
         rejected_count, total_attacks,
         "All {} attack transactions should be rejected, but only {} were",
@@ -1395,6 +1422,8 @@ async fn replay_attack_rejected_via_rpc() {
     let client = MidnightClient::new(settings.node_client).await;
 
     println!("=== PR367-TC-0003-02 E2E: Replay Attack Prevention Test ===");
+
+    wait_before_deploying().await;
 
     // First submission - may succeed or fail depending on node state
     // (contract may already be deployed from previous test runs)
@@ -1484,6 +1513,7 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     let client = MidnightClient::new(settings.node_client).await;
 
     println!("=== PR367-TC-0003-03 E2E: Valid Transaction Test ===");
+    wait_before_deploying().await;
     println!("Submitting valid DEPLOY_TX...");
 
     let result = client.submit_expecting_success(DEPLOY_TX.to_vec()).await;
