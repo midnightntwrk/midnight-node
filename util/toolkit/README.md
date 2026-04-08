@@ -15,7 +15,7 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 ```bash
 docker pull midnightntwrk/midnight-node-toolkit:latest-main
 # or, install from source:
-cargo install --git https://github.com/midnightntwrk/midnight-node midnight-node-toolkit
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node midnight-node-toolkit
 ```
 
 For guaranteed compatibility with a specific node version, use matching tags:
