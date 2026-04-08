@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use backoff::{ExponentialBackoff, future::retry};
+use futures::stream::{FuturesOrdered, StreamExt};
 use hex::ToHex as _;
 use subxt::{rpcs, rpcs::rpc_params, utils::H256};
 
@@ -67,10 +68,13 @@ impl FetchTask {
 
 				let hashes = Self::fetch_block_hashes(client, &uncached).await?;
 
+				let mut futs: FuturesOrdered<_> = hashes
+					.into_iter()
+					.map(|hash| Self::fetch_block(client, hash))
+					.collect();
 				let mut blocks = Vec::new();
-				for hash in hashes {
-					let block = Self::fetch_block(client, hash).await?;
-					blocks.push(block);
+				while let Some(result) = futs.next().await {
+					blocks.push(result?);
 				}
 				log::debug!("fetching blocks {min}..{max}: complete");
 				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
