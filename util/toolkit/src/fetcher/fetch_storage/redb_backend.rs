@@ -101,14 +101,15 @@ impl FetchStorage for RedbBackend {
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, RawBlockData)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
 		// Can only open the table as writable from one thread
 		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
 			let mut table =
 				write_txn.open_table(self.block_data_table).expect("failed to open table");
-			for (block_number, block) in range {
+			for block in range {
+				let block_number = block.number;
 				table
 					.insert(BlockKey { chain_id, block_number }, block)
 					.expect("failed to insert block");
