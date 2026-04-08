@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, HRP_CONSTANT,
+	ArenaKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable, HRP_CONSTANT,
 	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader, Role,
 	Serializable, SigningKey, Storable, Tagged, UserAddress, VerifyingKey, WalletAddress,
 	WalletSeed, deserialize_untagged, serialize_untagged,
@@ -110,10 +110,13 @@ impl UnshieldedWallet {
 		Self::from_seed(derived_seed)
 	}
 
-	pub fn from_path(root_seed: WalletSeed, path: &DerivationPath) -> Self {
+	pub fn from_path(
+		root_seed: WalletSeed,
+		path: &DerivationPath,
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-
-		Self::from_seed(derived_seed)
+		Ok(Self::from_seed(derived_seed))
 	}
 
 	#[cfg(feature = "can-panic")]

@@ -14,9 +14,9 @@
 #![cfg(feature = "can-panic")]
 
 use super::super::{
-	CoinPublicKey, DB, DerivationPath, DeriveSeed, Deserializable, EncryptionPublicKey,
-	HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK, HashOutput,
-	IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
+	CoinPublicKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable,
+	EncryptionPublicKey, HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK,
+	HashOutput, IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
 	WalletState,
 };
 use bech32::{Bech32m, Hrp};
@@ -67,9 +67,13 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		Self::from_seed(derived_seed)
 	}
 
-	pub fn from_path(root_seed: WalletSeed, path: &DerivationPath) -> Self {
+	pub fn from_path(
+		root_seed: WalletSeed,
+		path: &DerivationPath,
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::Zswap])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-		Self::from_seed(derived_seed)
+		Ok(Self::from_seed(derived_seed))
 	}
 
 	pub fn from_pub_keys(

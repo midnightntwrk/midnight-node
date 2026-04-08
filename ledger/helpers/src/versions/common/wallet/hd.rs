@@ -59,7 +59,7 @@ impl std::str::FromStr for WalletAddress {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Role {
 	UnshieldedExternal,
 	UnshieldedInternal,
@@ -68,37 +68,68 @@ pub enum Role {
 	Metadata,
 }
 
+impl TryFrom<u32> for Role {
+	type Error = DerivationPathError;
+
+	fn try_from(value: u32) -> Result<Self, Self::Error> {
+		match value {
+			0 => Ok(Role::UnshieldedExternal),
+			1 => Ok(Role::UnshieldedInternal),
+			2 => Ok(Role::Dust),
+			3 => Ok(Role::Zswap),
+			4 => Ok(Role::Metadata),
+			_ => Err(DerivationPathError::UnknownRole(value)),
+		}
+	}
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DerivationPathError {
+	#[error("Invalid derivation path format: {0}")]
+	InvalidFormat(String),
+	#[error("Invalid role value: {0}")]
+	InvalidRoleValue(String),
+	#[error("Unknown role value: {0}")]
+	UnknownRole(u32),
+	#[error("Role mismatch: expected one of {expected:?}, got {actual:?}")]
+	RoleMismatch { expected: Vec<Role>, actual: Role },
+}
+
 pub struct DerivationPath {
 	pub path: String,
 	pub role: Role,
 }
 
 impl DerivationPath {
-	pub fn new(path: String) -> Self {
+	pub fn new(path: String) -> Result<Self, DerivationPathError> {
 		// Split the path by '/' and collect the elements
 		let parts: Vec<&str> = path.split('/').collect();
 
 		if parts.len() != 6 || parts[0] != "m" {
-			panic!("Invalid derivation path format {path}");
+			return Err(DerivationPathError::InvalidFormat(path));
 		}
 
 		// Parse the role component (4th index)
 		let role_part = parts[4];
 
 		// Attempt to parse role_part into an integer
-		let role_index: u32 =
-			role_part.parse().unwrap_or_else(|err| panic!("Invalid role value {err}"));
+		let role_index: u32 = role_part
+			.parse()
+			.map_err(|_| DerivationPathError::InvalidRoleValue(role_part.to_string()))?;
 
-		let role = match role_index {
-			0 => Role::UnshieldedExternal,
-			1 => Role::UnshieldedInternal,
-			2 => Role::Dust,
-			3 => Role::Zswap,
-			4 => Role::Metadata,
-			_ => panic!("Unknown role value: {role_index}"),
-		};
+		let role = Role::try_from(role_index)?;
 
-		Self { path, role }
+		Ok(Self { path, role })
+	}
+
+	pub fn validate_role(&self, expected: &[Role]) -> Result<(), DerivationPathError> {
+		if !expected.contains(&self.role) {
+			return Err(DerivationPathError::RoleMismatch {
+				expected: expected.to_vec(),
+				actual: self.role.clone(),
+			});
+		}
+		Ok(())
 	}
 
 	pub fn default_for_role(role: Role) -> Self {
@@ -131,4 +162,110 @@ pub trait IntoWalletAddress {
 	}
 
 	fn address(&self, network: &str) -> WalletAddress;
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_derivation_path_valid_all_roles() {
+		for (role_index, expected_role) in [
+			(0, Role::UnshieldedExternal),
+			(1, Role::UnshieldedInternal),
+			(2, Role::Dust),
+			(3, Role::Zswap),
+			(4, Role::Metadata),
+		] {
+			let path = format!("m/44'/2400'/0'/{role_index}/0");
+			let dp = DerivationPath::new(path.clone()).expect("should be valid");
+			assert_eq!(dp.role, expected_role);
+			assert_eq!(dp.path, path);
+		}
+	}
+
+	#[test]
+	fn test_derivation_path_invalid_format_too_few_parts() {
+		let result = DerivationPath::new("m/44'/2400'/0'".to_string());
+		assert!(matches!(result, Err(DerivationPathError::InvalidFormat(_))));
+	}
+
+	#[test]
+	fn test_derivation_path_invalid_format_wrong_prefix() {
+		let result = DerivationPath::new("x/44'/2400'/0'/0/0".to_string());
+		assert!(matches!(result, Err(DerivationPathError::InvalidFormat(_))));
+	}
+
+	#[test]
+	fn test_derivation_path_invalid_role_value() {
+		let result = DerivationPath::new("m/44'/2400'/0'/abc/0".to_string());
+		assert!(matches!(result, Err(DerivationPathError::InvalidRoleValue(_))));
+	}
+
+	#[test]
+	fn test_derivation_path_unknown_role() {
+		let result = DerivationPath::new("m/44'/2400'/0'/5/0".to_string());
+		assert!(matches!(result, Err(DerivationPathError::UnknownRole(5))));
+
+		let result = DerivationPath::new("m/44'/2400'/0'/99/0".to_string());
+		assert!(matches!(result, Err(DerivationPathError::UnknownRole(99))));
+	}
+
+	#[test]
+	fn test_role_try_from_valid() {
+		assert_eq!(Role::try_from(0).unwrap(), Role::UnshieldedExternal);
+		assert_eq!(Role::try_from(1).unwrap(), Role::UnshieldedInternal);
+		assert_eq!(Role::try_from(2).unwrap(), Role::Dust);
+		assert_eq!(Role::try_from(3).unwrap(), Role::Zswap);
+		assert_eq!(Role::try_from(4).unwrap(), Role::Metadata);
+	}
+
+	#[test]
+	fn test_role_try_from_invalid() {
+		assert!(matches!(Role::try_from(5), Err(DerivationPathError::UnknownRole(5))));
+		assert!(matches!(Role::try_from(99), Err(DerivationPathError::UnknownRole(99))));
+		assert!(matches!(
+			Role::try_from(u32::MAX),
+			Err(DerivationPathError::UnknownRole(u32::MAX))
+		));
+	}
+
+	#[test]
+	fn test_validate_role_single_match() {
+		let dp = DerivationPath::default_for_role(Role::Zswap);
+		assert!(dp.validate_role(&[Role::Zswap]).is_ok());
+	}
+
+	#[test]
+	fn test_validate_role_single_mismatch() {
+		let dp = DerivationPath::default_for_role(Role::Dust);
+		let result = dp.validate_role(&[Role::Zswap]);
+		assert!(matches!(result, Err(DerivationPathError::RoleMismatch { .. })));
+	}
+
+	#[test]
+	fn test_validate_role_multiple_accepts_any_match() {
+		let dp_ext = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(
+			dp_ext
+				.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal])
+				.is_ok()
+		);
+
+		let dp_int = DerivationPath::default_for_role(Role::UnshieldedInternal);
+		assert!(
+			dp_int
+				.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal])
+				.is_ok()
+		);
+	}
+
+	#[test]
+	fn test_validate_role_multiple_rejects_non_match() {
+		let dp = DerivationPath::default_for_role(Role::Dust);
+		assert!(matches!(
+			dp.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal]),
+			Err(DerivationPathError::RoleMismatch { .. })
+		));
+	}
 }
