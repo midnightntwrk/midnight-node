@@ -38,7 +38,28 @@ use {
 	super::transient_crypto_local::commitment::PureGeneratorPedersen,
 };
 
-pub fn get_root(state: &[u8]) -> Vec<u8> {
+#[derive(Debug, Clone)]
+pub enum GetRootError {
+	DeserializationFailure,
+	NetworkIdMismatch,
+	SerializationFailure,
+}
+
+impl core::fmt::Display for GetRootError {
+	fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+		match *self {
+			GetRootError::DeserializationFailure => {
+				write!(f, "Failed to deserialize genesis state")
+			},
+			GetRootError::NetworkIdMismatch => {
+				write!(f, "genesis state network id != configured chainspec network id")
+			},
+			GetRootError::SerializationFailure => write!(f, "Failed to serialize genesis state"),
+		}
+	}
+}
+
+pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;
 	use super::ledger_storage_local::{DefaultDB, storage::default_storage};
@@ -47,10 +68,15 @@ pub fn get_root(state: &[u8]) -> Vec<u8> {
 		super::midnight_serialize_local::tagged_deserialize(state)
 			.expect("Failed to deserialize initial state");
 	let state = Ledger::new(state);
+
+	if network_id.is_some_and(|n| state.state.network_id != n) {
+		return Err(GetRootError::NetworkIdMismatch);
+	}
+
 	let state = default_storage::<DefaultDB>().arena.alloc(state);
 	let mut bytes = vec![];
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
-	bytes
+	Ok(bytes)
 }
 
 #[cfg(feature = "std")]
