@@ -14,6 +14,9 @@ impl Settings {
             let network_info = CardanoNetworkInfo::testnet_preview();
             Self {
                 node_client: NodeClientSettings {
+                    #[cfg(feature="local-dev")]
+                    base_url: "ws://127.0.0.1:9944".into(),
+
                     #[cfg(feature="local")]
                     base_url: "ws://127.0.0.1:9933".into(),
 
@@ -24,7 +27,7 @@ impl Settings {
                     base_url: "wss://rpc.qanet.dev.midnight.network".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
-                    #[cfg(feature="local")]
+                    #[cfg(any(feature="local", feature="local-dev"))]
                     base_url: "ws://127.0.0.1:1337".into(),
                     #[cfg(feature="local-ci")]
                     base_url: "ws://172.17.0.1:1337".into(),

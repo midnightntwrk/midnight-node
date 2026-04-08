@@ -7,6 +7,7 @@ autotests = false
 
 [features]
 local = []
+local-dev = []
 local-ci = []
 qanet = []
 default = ["local-ci"]
