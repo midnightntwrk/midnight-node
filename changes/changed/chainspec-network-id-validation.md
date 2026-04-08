@@ -4,5 +4,5 @@
 Adds validation to ensure the `networkId` set in the chainspec matches the
 `networkId` used to generate the genesis state.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1265
 Fix for: https://shielded.atlassian.net/browse/PM-22422
