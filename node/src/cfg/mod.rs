@@ -18,7 +18,7 @@ use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
 	networks::{
-		CustomNetwork, MainChainScripts, PermissionedCandidatesConfig,
+		CustomNetwork, MainChainScripts, MessageConfig, PermissionedCandidatesConfig,
 		RegisteredCandidatesAddresses, UndeployedNetwork,
 	},
 };
@@ -230,6 +230,20 @@ impl SubstrateCli for Cfg {
 				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
 					.map_err(|e| format!("failed to parse ReserveConfig: {e}"))?;
 
+				let message_config = self
+					.chain_spec_cfg
+					.chainspec_message_config
+					.as_ref()
+					.map(|path| -> Result<MessageConfig, String> {
+						let config_str = validated_file::safe_read_to_string(
+							path,
+							validated_file::MAX_GENESIS_FILE_SIZE,
+						)?;
+						serde_json::from_str(&config_str)
+							.map_err(|e| format!("failed to parse MessageConfig: {e}"))
+					})
+					.transpose()?;
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self
 						.chain_spec_cfg
@@ -259,6 +273,7 @@ impl SubstrateCli for Cfg {
 					system_parameters_config,
 					ics_config,
 					reserve_config,
+					message_config,
 				};
 				chain_config(network)
 			},
