@@ -1,10 +1,8 @@
 {
-  "bootnodes": [],
+  "bootnodes": [
+  ],
   "chain_parameters": {
     "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
-  },
-  "bridge": {
-    "initial_data_checkpoint": "0x387c6da8bfa5666b61ec4deadce6a8f28971145ed1d21d648ee2effbbdda5fce"
   },
   "cardano": {
     "security_parameter": 2160,

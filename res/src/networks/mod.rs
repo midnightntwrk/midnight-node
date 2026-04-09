@@ -119,12 +119,6 @@ pub struct PermissionedCandidatesConfig {
 	pub initial_permissioned_candidates: Vec<InitialAuthorityData>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct CaradnoToMidnightBridgeConfig {
-	#[serde(default)]
-	pub initial_data_checkpoint: String,
-}
-
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
 	fn from(value: MainChainScripts) -> Self {
 		let committee_candidate_address = FromStr::from_str(&value.committee_candidates_address)
@@ -181,7 +175,6 @@ pub trait MidnightNetwork {
 	fn genesis_utxo(&self) -> &str;
 	fn main_chain_scripts(&self) -> MainChainScripts;
 	fn initial_authorities(&self) -> Vec<InitialAuthorityData>;
-	fn cardano_to_midnight_bridge_config(&self) -> CaradnoToMidnightBridgeConfig;
 	fn federated_authority_config(&self) -> FederatedAuthorityObservationConfig;
 	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;

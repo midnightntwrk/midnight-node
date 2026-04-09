@@ -1,5 +1,4 @@
 use crate::commands::{
-	bridge_transfer::{self, BridgeTransferArgs},
 	contract_address::{self, ContractAddressArgs},
 	contract_state::{self, ContractStateArgs},
 	dust_balance::{self, DustBalanceArgs, DustBalanceResult},
@@ -86,8 +85,6 @@ pub enum Commands {
 	Version,
 	/// Fetch
 	Fetch(FetchArgs),
-	/// Transfer cNight from a Cardano wallet to the ICS validator address
-	BridgeTransfer(BridgeTransferArgs),
 }
 
 /// Node Toolkit for Midnight
@@ -271,9 +268,5 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::Fetch(args) => fetch::execute(args).await,
-		Commands::BridgeTransfer(args) => {
-			bridge_transfer::execute(args).await?;
-			Ok(())
-		},
 	}
 }

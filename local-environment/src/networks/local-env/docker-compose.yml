@@ -449,7 +449,6 @@ services:
 
   midnight-setup:
     container_name: midnight-setup
-    #image: ghcr.io/midnightntwrk/midnight-node:1.0.0-d1a17dc0b6cf-amd64
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:

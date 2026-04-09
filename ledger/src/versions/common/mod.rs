@@ -1067,7 +1067,7 @@ where
 		amount: u128,
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		//TODO: this is wrong transaction, ledger is missing the correct one yet
+		//TODO: this is wrong transaction, ledger is missing the correct one yet. https://github.com/midnightntwrk/midnight-node/issues/1277
 		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
 		api.tagged_serialize(&system_tx)
 	}

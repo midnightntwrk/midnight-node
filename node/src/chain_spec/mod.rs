@@ -333,7 +333,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
-			let pc_config = genesis.cardano_to_midnight_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
 					.illiquid_circulation_supply_validator_address
@@ -350,17 +349,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
 					})
 				},
-				initial_checkpoint: if pc_config.initial_data_checkpoint.is_empty() {
-					None
-				} else {
-					Some(
-						sidechain_domain::McTxHash::try_from(
-							hex::decode(&pc_config.initial_data_checkpoint)
-								.expect("Failed to decode initial_data_checkpoint to bytes"),
-						)
-						.expect("Failed to decode initial_data_checkpoint to Cardano Tx Hash"),
-					)
-				},
+				initial_checkpoint: None,
 				_marker: Default::default(),
 			}
 		},

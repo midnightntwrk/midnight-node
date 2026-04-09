@@ -17,8 +17,6 @@ use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
-use crate::networks::CaradnoToMidnightBridgeConfig;
-
 use super::{
 	InitialAuthorityData, MainChainScripts, MidnightNetwork, PermissionedCandidatesConfig,
 	RegisteredCandidatesAddresses,
@@ -96,13 +94,6 @@ impl MidnightNetwork for UndeployedNetwork {
 
 		super::MainChainScripts::load_from_configs(&registered_candidates, &permissioned_candidates)
 	}
-
-	fn cardano_to_midnight_bridge_config(&self) -> CaradnoToMidnightBridgeConfig {
-		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/pc-chain-config.json"));
-		let pc_config: serde_json::Value = serde_json::from_str(&config_str).unwrap();
-		let bridge_config = pc_config.as_object().unwrap().get("bridge").unwrap();
-		serde_json::from_value(bridge_config.clone()).unwrap()
-	}
 }
 /// Used when `--chain` is not specified when running `build-spec` - it will source chain values from
 /// environment variables at runtime rather than hard-coded values at compile-time
@@ -120,7 +111,6 @@ pub struct CustomNetwork {
 	pub system_parameters_config: SystemParametersConfig,
 	pub ics_config: IcsConfig,
 	pub reserve_config: ReserveConfig,
-	pub cardano_to_midnight_bridge_config: CaradnoToMidnightBridgeConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -173,9 +163,5 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn genesis_utxo(&self) -> &str {
 		&self.genesis_utxo
-	}
-
-	fn cardano_to_midnight_bridge_config(&self) -> CaradnoToMidnightBridgeConfig {
-		self.cardano_to_midnight_bridge_config.clone()
 	}
 }

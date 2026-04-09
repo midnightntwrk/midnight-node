@@ -5,9 +5,6 @@
   "chain_parameters": {
     "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
   },
-  "bridge": {
-    "initial_data_checkpoint": "d3ee13bfda14d2131a8e8115413baacb21b24b210dc3b071db583c5b8d488c6a"
-  },
   "cardano": {
     "security_parameter": 5,
     "active_slots_coeff": 1,
