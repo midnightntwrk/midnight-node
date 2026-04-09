@@ -133,50 +133,34 @@ mod handle_transfers {
 		})
 	}
 
-	// #[test]
-	// fn duplicate_inherent_protection_works() {
-	// 	new_test_ext().execute_with(|| {
-	// 		init_ledger_state();
-	// 		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+	#[test]
+	fn duplicate_inherent_protection_works() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				BoundedVec::new(),
+				data_checkpoint()
+			));
+			frame_support::assert_noop!(
+				Bridge::handle_transfers(
+					RuntimeOrigin::none(),
+					BoundedVec::new(),
+					data_checkpoint()
+				),
+				Error::<Test>::InherentAlreadyExecuted
+			);
 
-	// 		let utxos = vec![ObservedUtxo {
-	// 			header: test_header(1, 2, 0, None),
-	// 			data: ObservedUtxoData::Registration(RegistrationData {
-	// 				cardano_reward_address,
-	// 				dust_public_key: dust_public_key.clone(),
-	// 			}),
-	// 		}];
+			Bridge::on_finalize(System::block_number());
+			System::set_block_number(System::block_number() + 1);
+			Bridge::on_initialize(System::block_number());
 
-	// 		// First call succeeds
-	// 		let inherent_data = create_inherent(utxos.clone(), test_position(3, 0));
-	// 		let call = CNightObservation::create_inherent(&inherent_data).unwrap();
-	// 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
-
-	// 		// Second call in same block fails
-	// 		let call2 = Call::process_tokens {
-	// 			utxos: utxos.clone(),
-	// 			next_cardano_position: test_position(3, 0),
-	// 		};
-	// 		assert_noop!(
-	// 			RuntimeCall::CNightObservation(call2).dispatch(RawOrigin::None.into()),
-	// 			Error::<Test>::InherentAlreadyExecuted
-	// 		);
-
-	// 		advance_block_and_reset_events();
-
-	// 		// Third call in new block succeeds
-	// 		let utxos2 = vec![ObservedUtxo {
-	// 			header: test_header(4, 0, 0, None),
-	// 			data: ObservedUtxoData::Registration(RegistrationData {
-	// 				cardano_reward_address,
-	// 				dust_public_key,
-	// 			}),
-	// 		}];
-	// 		let inherent_data2 = create_inherent(utxos2, test_position(5, 0));
-	// 		let call3 = CNightObservation::create_inherent(&inherent_data2).unwrap();
-	// 		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
-	// 	});
-	// }
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				BoundedVec::new(),
+				data_checkpoint()
+			));
+		});
+	}
 }
 
 mod provide_inherent {
