@@ -13,6 +13,7 @@
 
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::backend::create_database_source;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -35,6 +36,7 @@ use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
 use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
+use sc_service::DatabaseSource;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
 };
@@ -71,6 +73,8 @@ fn init_ledger_storage<P: AsRef<Path>>(
 	storage_config: &StorageInit,
 	runtime_version: sp_version::RuntimeVersion,
 ) {
+	// TODO: Replace with allow_with_initial_state
+	// Storage is already initialized in create_database_source
 	#[allow(clippy::zero_prefixed_literal)]
 	if runtime_version.spec_version < 000_022_000 {
 		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
@@ -305,7 +309,12 @@ pub fn new_partial(
 		.transpose()?;
 
 	let executor = sc_service::new_wasm_executor(&config.executor);
-	let backend = sc_service::new_db_backend(config.db_config())?;
+
+	let mut db_config = config.db_config();
+	if let DatabaseSource::ParityDb { path } = db_config.source {
+		db_config.source = create_database_source(&path, storage_config.cache_size)?;
+	}
+	let backend = sc_service::new_db_backend(db_config)?;
 
 	let genesis_extrinsics = parse_genesis_extrinsic_values(
 		config

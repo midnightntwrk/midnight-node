@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 pub mod cfg;
