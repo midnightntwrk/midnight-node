@@ -1047,7 +1047,7 @@ where
 		nonce_bytes: [u8; 32],
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let target_address = api.night_address(&target_address_bytes)?;
+		let target_address = api.night_address(target_address_bytes)?;
 		let output = OutputInstructionUnshielded {
 			amount,
 			target_address,
