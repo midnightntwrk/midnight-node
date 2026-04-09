@@ -91,6 +91,10 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_registered_candidates_addresses: Option<String>,
+
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_message_config: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
