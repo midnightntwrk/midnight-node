@@ -1,6 +1,8 @@
 {
     "bootnodes": [
         "/dns4/bootnode-whippet-bengal.mainnet.midnight.network/tcp/30333/ws/p2p/12D3KooWMmfho3eEFvcnThAfzc9QfieTc91fdhvByL4a2naRjbr2",
-        "/dns4/bootnode-labrador-marten.mainnet.midnight.network/tcp/30333/ws/p2p/12D3KooWK2c9vf4UtrjGB27A8weKd6eiBnRQSfeR4TVmQv9MDdDt"
+        "/dns4/bootnode-labrador-marten.mainnet.midnight.network/tcp/30333/ws/p2p/12D3KooWK2c9vf4UtrjGB27A8weKd6eiBnRQSfeR4TVmQv9MDdDt",
+        "/dns4/bootnode-glider-spaniel.bn.midnight.network/tcp/30333/ws/p2p/12D3KooWHif7N1ZPhrB8WxTFqjWTxo2U2a2FtJuSA8XRBdFMss6i",
+        "/dns4/bootnode-dog-pelican.bn.midnight.network/tcp/30333/ws/p2p/12D3KooWQ2NCZCnqkYKHKsYVUc8amBKAk4jhEMJyYDAJjmSuM4uK"
     ]
 }

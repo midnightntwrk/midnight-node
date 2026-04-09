@@ -2,7 +2,10 @@
   "name": "Midnight Preprod",
   "id": "midnight_preprod",
   "chainType": "Live",
-  "bootNodes": [],
+  "bootNodes": [
+    "/dns/bootnode-1.preprod.midnight.network/tcp/30333/ws/p2p/12D3KooWQxxUgq7ndPfAaCFNbAxtcKYxrAzTxDfRGNktF75SxdX5",
+    "/dns/bootnode-2.preprod.midnight.network/tcp/30333/ws/p2p/12D3KooWNrUBs22FfmgjqFMa9ZqKED2jnxwsXWw5E4q2XVwN35TJ"
+  ],
   "telemetryEndpoints": null,
   "protocolId": null,
   "properties": {
@@ -71,38 +74,38 @@
             41,
             58,
             0,
-            165,
-            178,
-            102,
-            69,
+            40,
+            227,
             180,
-            45,
-            168,
-            35,
-            182,
-            21,
-            211,
-            187,
-            84,
-            234,
-            122,
-            84,
-            76,
-            82,
-            131,
-            41,
-            201,
-            9,
-            159,
-            249,
-            126,
-            53,
-            154,
+            107,
+            241,
+            24,
             176,
-            186,
-            120,
+            104,
+            13,
+            144,
+            83,
+            153,
+            19,
+            15,
+            155,
+            5,
+            209,
+            0,
+            75,
+            250,
+            184,
+            210,
+            24,
+            198,
             114,
-            197
+            159,
+            189,
+            40,
+            225,
+            180,
+            206,
+            68
           ]
         },
         "sessionCommitteeManagement": {
@@ -145,55 +148,82 @@
             },
             {
               "Permissioned": {
-                "id": "KWE9eTMrsBEhuYjHg34NtB7JkZzVfBogYFCD21X6LExwr1R54",
+                "id": "KWCU1MD8yhbsrTP3Vz2qk33PSppAUdQUeobUzGX7ga2pwKFe5",
                 "keys": {
-                  "aura": "5CURNASFt3cSJfeVcLAfZ78znpFDK8jcrJBfTGEEKnksM1HM",
-                  "grandpa": "5FZLKNzTYaSkyLijYf9RrsySiowHoE2FFZWWDnhidjwmH8uQ"
+                  "aura": "5D7uJWt8wH6Szi5FSMZt1qLPmJtDD5bxnyKvtnzikyd5AUrD",
+                  "grandpa": "5EAGGK5zsAWt2bPfdAtyKoFXi75fCBGy9tJzziA6ZFu7ro8Z"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW6t1hWePS8sCYA6qSY4JwksU6zpRWfYe6yLN8DKwb3VRWRai",
+                "id": "KW43f7FYx9nCKhdJ87rQzMZjUHt6ZXgNH6jzFojs9xonQJ8c6",
                 "keys": {
-                  "aura": "5CPJUYWkpfmJEWCJxtt8idaGVgVq6yeoyb3LiB4RdxF4htum",
-                  "grandpa": "5G6L7MwKyWihnxYaqewRquuu35hYuu1Ev7jQJSQGqX4AQVtR"
+                  "aura": "5DkoZ5YUnbkX3UzwDsTdTEPSrhZmbobwYno83VzEK2XBQCcd",
+                  "grandpa": "5EC1qfPnjM2zh2Lgg8MLskAJNnjGLyyZWpngFWV53Q2RBEpo"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KWEMU445KFvEZkMdS4M5TUuaArwgFsV29VQkfGub9pXCsbScp",
+                "id": "KWDA5UxdmTh1vR7CT6JvwdFSc5M7SAeJePYiq8xPL3dgwJQ96",
                 "keys": {
-                  "aura": "5CaHcGe7eqSD6KNCnS3DyLcHtKc98xvHn6ZxHDSeWnBFX76p",
-                  "grandpa": "5G7dFaQfKJmkhE4vfkzoaCA3mETEPdSqTqP6CdVe34aHvfYX"
+                  "aura": "5FgbhHKdrkUd6uSdcmFnE8sWr7oaPopgWUK3tajJjEsDZKW6",
+                  "grandpa": "5HPGSGBedG5fLZz5yZWkJeRqi6daM1aFZTSzB2T1dWM8bJLj"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW8AiaiGAqrZRHufsHtNu9CKnYzUF5Zs9CXTiQa4ux6U2o5aW",
+                "id": "KWCbreW6YKP3TaS9s2rKEQtHxkGg98UQLpZdczR7ZQrXsUcM6",
                 "keys": {
-                  "aura": "5HjhMyzr7mj82qZq6Yk5ncATGxDNHuG7EiwtV3dnSPDAvqkS",
-                  "grandpa": "5EZx5CK72yE8Tywjrp1oxhnvTomzQuqG2Mv4WLnCnoWVa6RM"
+                  "aura": "5EFoLbqt2jmB8rTVG8CSy4AKcyzJjTLskQWoVVNadjr7trya",
+                  "grandpa": "5DvXw5kvkPAjGuFjPBYkzjcjSK7ccS7qE3rUW2JKVnPXZDiR"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KWCBJF5CQR66oy9T2tUfPcyKbqBim3LGjGL6v7SYpckJK1zkc",
+                "id": "KWEMpncWcUVKNsbCxvyXnbmrWdatzXbahik8MdCtwoU5StwZk",
                 "keys": {
-                  "aura": "5G1R8QMbzGjjBZjL4YVJMdQ5vPMDLV7ipueBTtfSCh5uRbA8",
-                  "grandpa": "5CsBCSFoV1AYyAMNjNBUzJ7EGmjs3ruddviQGREGK6W3t3Uu"
+                  "aura": "5FEfvfvBCK1rjEG1jV4cxBdGWc63bfhP8h9gYEimzvWCcpQg",
+                  "grandpa": "5H7WAMamExY2LqJhUj97FXBKcNgAZ1Qury96KsiQjbBeNUeJ"
                 }
               }
             },
             {
               "Permissioned": {
-                "id": "KW8yhTRkE9TeXi7Rx2BQmwiC89hFDREDKYMECrviq82oyRxHV",
+                "id": "KW6Fzg1mZW33CtnZXQsXGD2AiGLx3mgejtUMTtiusU19abzV9",
                 "keys": {
-                  "aura": "5DHbzLTEq5nEVV5qyLeBuTdp3uHsrBJAQdXQNTCtg414Vif6",
-                  "grandpa": "5FsoDMBiVKuNUfTCDsQtHtiXPvnzS7EyfUC9JJq4R46JvCC4"
+                  "aura": "5FGumw1hETBWv4Tiv4qkdNvA5vLCevhpoEBDRuCMrezsUP6W",
+                  "grandpa": "5GwyihJRLLtV7N6C4qoBACvdGK1TzMsy2Hbiym34Akp4487L"
+                }
+              }
+            },
+            {
+              "Permissioned": {
+                "id": "KW3mRxBztvKzMj6syCjWr8ym8rE4FkqhpYoe8ibcRhxLaZzDh",
+                "keys": {
+                  "aura": "5FcJuJy8RKwk7jhqDgtjzd1SDW7fAeMvjocqU3HgnqiwpbbS",
+                  "grandpa": "5EBCaMWLeYjpaUXUCGTzN1QnwuGKd2RJvFzZ7x7ogmtYV2VP"
+                }
+              }
+            },
+            {
+              "Permissioned": {
+                "id": "KW7VHTgSAZ4izStXdEkySvCZV9A9QzXwUabxnC2uNDgG6Vs5c",
+                "keys": {
+                  "aura": "5FCVd5Drfmg1etTJEsyCgHyHiEAHF2sFrbbJscxNBftxs7ov",
+                  "grandpa": "5Haw3hpV6xMMZfoYSMQbYAXHmCKdNiXfScfc8BFyaWWRuwtX"
+                }
+              }
+            },
+            {
+              "Permissioned": {
+                "id": "KW64Wt3pa6WNZHFhWUiJqXzras93VSSX5GZVbESeGnZ7BzzBN",
+                "keys": {
+                  "aura": "5HRNwhMVwaLRwkbkEwVkibUznbt9zz8eEJRPS1oMYEsgEyN3",
+                  "grandpa": "5Dqypvzh1QsjgFPJBDCciyCVmv6cPJop1bVuvTGyt4KHA3XK"
                 }
               }
             }
@@ -209,34 +239,19 @@
             "addresses": {
               "mapping_validator_address": "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
               "auth_token_asset_name": "",
-              "redemption_validator_address": "addr_test1wzgp2xvmvh0lrfdeu2q3jtqp2lprej6hjvgjx2u5lcwqxlqjylc3j",
               "cnight_policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
               "cnight_asset_name": ""
             },
-            "observed_utxos": {
-              "start": {
-                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "block_number": 0,
-                "block_timestamp": 0,
-                "tx_index_in_block": 0
-              },
-              "end": {
-                "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "block_number": 0,
-                "block_timestamp": 0,
-                "tx_index_in_block": 0
-              },
-              "utxos": []
-            },
-            "mappings": {},
-            "utxo_owners": {},
+            "observed_utxos": "<snipped>",
+            "mappings": "<snipped>",
+            "utxo_owners": "<snipped>",
             "next_cardano_position": {
-              "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-              "block_number": 0,
-              "block_timestamp": 0,
-              "tx_index_in_block": 0
+              "block_hash": "0x121c92dde3aa55b2b85e5ebd9b6cf9d1f42ad51848584ef6e2fc553f535e2e94",
+              "block_number": 4500197,
+              "block_timestamp": 1773277903000,
+              "tx_index_in_block": 4
             },
-            "system_tx": null
+            "system_tx": "6d69646e696768743a73797374656d2d7472616e73616374696f6e5b76365d3a06cca10f73d40ac380a646d56d74b1557cf15e682a57bab3c15747175f3be644121d83261903e30b9669004d24a71a65a864bab02a134eac1444b072aecc2d7b8c4de1b7d1168471d0f6a9411f73795990f8a6fb05f203df5d457eb30b8dd5b07b3ad8f5f02af894f740bec37c1503157d97690021991aca6aa0920c875860f8722a0b8065ac0298d0b086feaa0dad36bc6a38b0a10f732136a5a332098e4b4c856102698469a5122220b01d48171127fc7674869c361f03152c9f690049a9fd1ce4d26e9e8d0e962209b482bc5d04489b5d1590548e53f7773d2d0f97a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b037a4ba06900be3af1422e26b4b3880e3d876ecf8d60845e5f56812293f21fb6d5ce993da4756d0f738c283de86ff61bf0456e7f472da42e40c4bd5b7ff1d0055169b36d76467d53510321daa16900f2c42b302788c732f5218f50fc123478565f5f7cd40096c0158037f4e440bff9a10f7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a037d00a76900223d930f3785c52d2c69fe33bc85156d721f8f1cc21adeb98119b8dc6291926bed017313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a037907a7690094dd880ce42b61a3e923b6347e976ade624343efe81ee2822f940137c6134f3f810d738c283de86ff61bf0456e7f472da42e40c4bd5b7ff1d0055169b36d76467d5351037907a76900b78396b8944aaa10a7f1aedea09a4983cc09b4384af9c29caa26e63543a12ae86d0f738c283de86ff61bf0456e7f472da42e40c4bd5b7ff1d0055169b36d76467d5351037907a76901f2c42b302788c732f5218f50fc123478565f5f7cd40096c0158037f4e440bff9a10f73637b8abc3664cda47202bcea0d417358876e2a4d987f2a673a73f94610796d4c03b80ba76900b0ee40d4f9f39f4e32e92e7398b56edf4c0a5ed4f926268372c30379cada2d91a10f7393d4088301814698f09b3ac9bff6050b778fb6845bbcde3880163fd4a9f8124b03793fa86900e316233f1ce99e7bc970c74ab8ab18a395f13cec800c0a929f2cfa6115353136810c7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a03b773a86900203fed43bd87ae81298a98d6284b124129254ace8619674765bc563c1abf2a33a10f7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a03b773a86901223d930f3785c52d2c69fe33bc85156d721f8f1cc21adeb98119b8dc6291926bb47313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a869004b5a8a139c8580de96c221aa25e6756986247181aa75926f68f2235956bfe152687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a869008aa94e28024aa3636de77cd0a4f7cb0e7f521f50f1a36210b1ab3095f256fc87687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a869003bf8a476098a7b07db920f639bfab8796cb018bad1e86724cec51bd98edab260687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a86900f793caa569d0a2cfd5186c1f13e34a0d663eec316911764fd5907a13ae66066c810c7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a86901203fed43bd87ae81298a98d6284b124129254ace8619674765bc563c1abf2a33ed017313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a035e74a8690194dd880ce42b61a3e923b6347e976ade624343efe81ee2822f940137c6134f3fb47313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a038274a869014b5a8a139c8580de96c221aa25e6756986247181aa75926f68f2235956bfe152687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a038274a869018aa94e28024aa3636de77cd0a4f7cb0e7f521f50f1a36210b1ab3095f256fc87687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a038274a869013bf8a476098a7b07db920f639bfab8796cb018bad1e86724cec51bd98edab260687313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a038274a86901f793caa569d0a2cfd5186c1f13e34a0d663eec316911764fd5907a13ae66066ca10f7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a034775a869002eeec41a9f19f7e6bdc1b42576d6cb672fde9a6dcc5d7717650d59bd2ca7a15e21037313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a039679a869007262d4216c1e62ea9347154735e013bac884ed47f911361966edd8802c000dee21037313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a039679a8690001036b3a7e3fb2aa1fc3f5025bd855b61c81dd69879c54b70da4fa6b4427f49d21037313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a039679a86900701fab9c2d03697c3cc48fdda6ef3eed41aaaa0b170407d3d3e211bccdd5489921037313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a039679a86900234095a325dffadc34a8acb66789f317e095637c87977375bbca1440a21828f8a10f7313f7f35027a89a21c0f1f69f451030ca6062bc25c7b836a7f54ef94663c5715a039679a869012eeec41a9f19f7e6bdc1b42576d6cb672fde9a6dcc5d7717650d59bd2ca7a15e9d0f73d438099f6df72a82468a49a11086f8bb2d371863d60ecf274ab929374d588c7203c8d4a869009781c43bd987a4dee7cb6ba1056cb556de2bb3c2841166e569258322f7f968dfa10f739d8bf01c7603538989c28486d4ba6575ea9d96e73a98b23542a91c22f6087553035aafa9690047dc1950c3cdf406a0877bde3be58f5865ea8d02c938fc7939e034a13f3efb46a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b03bdb2a9690024f53059b6af909dc927bb52e27ae5e0b0fae7067faf36ee57310361ba6ca4b4a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b03bdb2a96901be3af1422e26b4b3880e3d876ecf8d60845e5f56812293f21fb6d5ce993da475a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b0362b3a969006ad26e64ac543bfdfc20e8f147379479eea2abbbd327671cc2abb7b80fc41394a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b0362b3a9690124f53059b6af909dc927bb52e27ae5e0b0fae7067faf36ee57310361ba6ca4b4a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b032cb7a96900d51a1fe5f2d280c4a0e6480b260e804dce7621398f465669bf2684405ccc97b4a10f7328f9de74c2c87c7ed816bbcf410075ef8f4ccf19b819dba10f7a7e07915a2f3b032cb7a969016ad26e64ac543bfdfc20e8f147379479eea2abbbd327671cc2abb7b80fc41394a10f739d8bf01c7603538989c28486d4ba6575ea9d96e73a98b23542a91c22f60875530322d4aa6900d9d9ed4026bfbd435d0420e8df45b35122249a7ee737136da9dc2aeb8879bbf3a10f73637b8abc3664cda47202bcea0d417358876e2a4d987f2a673a73f94610796d4c03ee39b06900334a906b0aaa770e8068a357169dbcfd00aac6078faeeb47698b4c33bad77fd6a10f73637b8abc3664cda47202bcea0d417358876e2a4d987f2a673a73f94610796d4c03ee39b06901b0ee40d4f9f39f4e32e92e7398b56edf4c0a5ed4f926268372c30379cada2d91a10f733704360c74cc29fc387edf8bdb9b1686ca65cb82c2ed101fe1fc9e93928dbf1803066cb0690043a6f5c7792b0b3dda17d0bc70191a1daf0c2860a930632527f572f3dea1cafda10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703507cb16900505f9954ee49e007be8c44ce5ca08ef76d8119fdd85445a6bfa9903266c4f0bfa10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703797cb16900ba7bd9cce3b4e19b79e51033a31b7a78979454861d7c21cf619c29e5b70b40c7a10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a67035f7db16900dcf60494a34a164803f5d335ba6fa709ed0707a75bdbeeef4e018bd9b7241ce6a10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703777db169002cbf2ff015f5bef56192b6addeb6d5e1f7a9680725ffd480b29f71a178ef9c91a10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703e17db169002f3a644291b4446502d3e9338f24f38d75065814aa9f8dcbbbf398295180dfc6a10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703de7eb1690004641cb114e727c41e0cb831691459fb4dd06ebe191c5325bd7450acd6f1f848a10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a67037d7fb16900571be00089ff270eab2af367d9aa553c3fbcd11ac2a8bd1ed8a314f2a0cd2baea10f73abf36afe6eb29ca1c88e139dec25a918354b14e9dcf8d7ec4eff6725870f2a6703d27fb16900db7976dc09bea96428c5b46a53f659108bf5eab4adef2c45f2cc1e532c44b64ea10f733704360c74cc29fc387edf8bdb9b1686ca65cb82c2ed101fe1fc9e93928dbf180303dcb1690064ea8f23da7dad8d40a8aab98350af70d8549fb588ee10f6bfd41268c0c5e277a10f733704360c74cc29fc387edf8bdb9b1686ca65cb82c2ed101fe1fc9e93928dbf180303dcb1690143a6f5c7792b0b3dda17d0bc70191a1daf0c2860a930632527f572f3dea1cafd"
           },
           "marker": null
         },
@@ -253,12 +268,15 @@
             "KW3mGheLTb1wmRJvEzb3X4q8VTKDjAxtRArnN6tbPnAcADewB",
             "KWCus4SFZ9hdYKQ4GyGCQvPGaEa24EYQ2WYy5rD554uJSpuaa",
             "KW3NHp9aLNYHAD7VB3b6Vcyu5sikdNNAHpVLNPLAWnZ2rUZqJ",
-            "KWE9eTMrsBEhuYjHg34NtB7JkZzVfBogYFCD21X6LExwr1R54",
-            "KW6t1hWePS8sCYA6qSY4JwksU6zpRWfYe6yLN8DKwb3VRWRai",
-            "KWEMU445KFvEZkMdS4M5TUuaArwgFsV29VQkfGub9pXCsbScp",
-            "KW8AiaiGAqrZRHufsHtNu9CKnYzUF5Zs9CXTiQa4ux6U2o5aW",
-            "KWCBJF5CQR66oy9T2tUfPcyKbqBim3LGjGL6v7SYpckJK1zkc",
-            "KW8yhTRkE9TeXi7Rx2BQmwiC89hFDREDKYMECrviq82oyRxHV"
+            "KWCU1MD8yhbsrTP3Vz2qk33PSppAUdQUeobUzGX7ga2pwKFe5",
+            "KW43f7FYx9nCKhdJ87rQzMZjUHt6ZXgNH6jzFojs9xonQJ8c6",
+            "KWDA5UxdmTh1vR7CT6JvwdFSc5M7SAeJePYiq8xPL3dgwJQ96",
+            "KWCbreW6YKP3TaS9s2rKEQtHxkGg98UQLpZdczR7ZQrXsUcM6",
+            "KWEMpncWcUVKNsbCxvyXnbmrWdatzXbahik8MdCtwoU5StwZk",
+            "KW6Fzg1mZW33CtnZXQsXGD2AiGLx3mgejtUMTtiusU19abzV9",
+            "KW3mRxBztvKzMj6syCjWr8ym8rE4FkqhpYoe8ibcRhxLaZzDh",
+            "KW7VHTgSAZ4izStXdEkySvCZV9A9QzXwUabxnC2uNDgG6Vs5c",
+            "KW64Wt3pa6WNZHFhWUiJqXzras93VSSX5GZVbESeGnZ7BzzBN"
           ],
           "genesisBlock": 1
         },
@@ -293,51 +311,76 @@
               }
             ],
             [
-              "5GKJui3SMuJrbVA4AhXmVX3eh53qbNbsVN1upU32gFFZcAb1",
+              "5DimHCNdyu6H977ZAiKfVucncWH6FyM8TKaeGLeCyQcV8XqA",
               {
-                "aura": "5CURNASFt3cSJfeVcLAfZ78znpFDK8jcrJBfTGEEKnksM1HM",
-                "grandpa": "5FZLKNzTYaSkyLijYf9RrsySiowHoE2FFZWWDnhidjwmH8uQ"
+                "aura": "5D7uJWt8wH6Szi5FSMZt1qLPmJtDD5bxnyKvtnzikyd5AUrD",
+                "grandpa": "5EAGGK5zsAWt2bPfdAtyKoFXi75fCBGy9tJzziA6ZFu7ro8Z"
               }
             ],
             [
-              "5E9rjCsw6K4uLMPPoerDCVrVt8b2zEgEx1eTza4oSkUadS5p",
+              "5DnNWmyTVA2j2tzKPNwRKnhtzWDs5g79Fp3p33cay6NEcr8u",
               {
-                "aura": "5CPJUYWkpfmJEWCJxtt8idaGVgVq6yeoyb3LiB4RdxF4htum",
-                "grandpa": "5G6L7MwKyWihnxYaqewRquuu35hYuu1Ev7jQJSQGqX4AQVtR"
+                "aura": "5DkoZ5YUnbkX3UzwDsTdTEPSrhZmbobwYno83VzEK2XBQCcd",
+                "grandpa": "5EC1qfPnjM2zh2Lgg8MLskAJNnjGLyyZWpngFWV53Q2RBEpo"
               }
             ],
             [
-              "5CitryYpY5EC3evavRRuyEiFknhdWuN5cig6FrVyUzxqX2aK",
+              "5GeHJoxmzW6nZGYkvS8rAJN3oWqapc93FbtH8iXj8uDZ2aRu",
               {
-                "aura": "5CaHcGe7eqSD6KNCnS3DyLcHtKc98xvHn6ZxHDSeWnBFX76p",
-                "grandpa": "5G7dFaQfKJmkhE4vfkzoaCA3mETEPdSqTqP6CdVe34aHvfYX"
+                "aura": "5FgbhHKdrkUd6uSdcmFnE8sWr7oaPopgWUK3tajJjEsDZKW6",
+                "grandpa": "5HPGSGBedG5fLZz5yZWkJeRqi6daM1aFZTSzB2T1dWM8bJLj"
               }
             ],
             [
-              "5DiA4NUXA6NsnF7Y2z2grena8MoG6KwDBemUoUxtpWqKiPtA",
+              "5ExHzywvANuyy5y1YtQpZFbEVDw6GJu2cL3aqyyfQFGcx96P",
               {
-                "aura": "5HjhMyzr7mj82qZq6Yk5ncATGxDNHuG7EiwtV3dnSPDAvqkS",
-                "grandpa": "5EZx5CK72yE8Tywjrp1oxhnvTomzQuqG2Mv4WLnCnoWVa6RM"
+                "aura": "5EFoLbqt2jmB8rTVG8CSy4AKcyzJjTLskQWoVVNadjr7trya",
+                "grandpa": "5DvXw5kvkPAjGuFjPBYkzjcjSK7ccS7qE3rUW2JKVnPXZDiR"
               }
             ],
             [
-              "5Emtn423tvEyr2MZBJjT7t7UgWXoG1aRrS5wcFYEvUNh85ot",
+              "5DzJwk2ah3v2pTTcCP2AmPEgoKnGQCW7hCV8jJ6YdqwtTQnG",
               {
-                "aura": "5G1R8QMbzGjjBZjL4YVJMdQ5vPMDLV7ipueBTtfSCh5uRbA8",
-                "grandpa": "5CsBCSFoV1AYyAMNjNBUzJ7EGmjs3ruddviQGREGK6W3t3Uu"
+                "aura": "5FEfvfvBCK1rjEG1jV4cxBdGWc63bfhP8h9gYEimzvWCcpQg",
+                "grandpa": "5H7WAMamExY2LqJhUj97FXBKcNgAZ1Qury96KsiQjbBeNUeJ"
               }
             ],
             [
-              "5HFZ1kRg7cCXHkeXSJAGcmV1jDaa54sfpbDS7tiB7gqWgYLa",
+              "5GzLob8DSB14JChWFf2rSZXZFKBnhsZTMLSXZvL3PjxeUR27",
               {
-                "aura": "5DHbzLTEq5nEVV5qyLeBuTdp3uHsrBJAQdXQNTCtg414Vif6",
-                "grandpa": "5FsoDMBiVKuNUfTCDsQtHtiXPvnzS7EyfUC9JJq4R46JvCC4"
+                "aura": "5FGumw1hETBWv4Tiv4qkdNvA5vLCevhpoEBDRuCMrezsUP6W",
+                "grandpa": "5GwyihJRLLtV7N6C4qoBACvdGK1TzMsy2Hbiym34Akp4487L"
+              }
+            ],
+            [
+              "5GhGz3sAtRxAgm3W247fJG92SV8Ddx812WRZukn2YJkBw3Zu",
+              {
+                "aura": "5FcJuJy8RKwk7jhqDgtjzd1SDW7fAeMvjocqU3HgnqiwpbbS",
+                "grandpa": "5EBCaMWLeYjpaUXUCGTzN1QnwuGKd2RJvFzZ7x7ogmtYV2VP"
+              }
+            ],
+            [
+              "5GU8RN3cH2w1Qeznfbk1SkcmFfa8yTwyv2MS3NncBUY69Mze",
+              {
+                "aura": "5FCVd5Drfmg1etTJEsyCgHyHiEAHF2sFrbbJscxNBftxs7ov",
+                "grandpa": "5Haw3hpV6xMMZfoYSMQbYAXHmCKdNiXfScfc8BFyaWWRuwtX"
+              }
+            ],
+            [
+              "5FjatUn9K2HiyRnq2BNWM1XsrjPZNcTdB1XiF7qsG6HfrFqm",
+              {
+                "aura": "5HRNwhMVwaLRwkbkEwVkibUznbt9zz8eEJRPS1oMYEsgEyN3",
+                "grandpa": "5Dqypvzh1QsjgFPJBDCciyCVmv6cPJop1bVuvTGyt4KHA3XK"
               }
             ]
           ]
         },
         "bridge": {
-          "mainChainScripts": null,
+          "mainChainScripts": {
+            "token_policy_id": "0xd2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+            "token_asset_name": "0x4e49474854",
+            "illiquid_circulation_supply_validator_address": "addr_test1wpr4mvu8h2fzs23c06waldlc6t7jjlumvcz9qqzl8mfh25qw9zcjz"
+          },
           "initialCheckpoint": null,
           "marker": null
         },
@@ -383,7 +426,7 @@
             "url": "https://www.midnight.gd/global-terms-txt"
           },
           "dParameter": {
-            "num_permissioned_candidates": 10,
+            "num_permissioned_candidates": 130,
             "num_registered_candidates": 0
           }
         }
