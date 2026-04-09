@@ -167,7 +167,7 @@ impl MidnightClient {
         &self,
     ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
         println!("Subscribing for C-to-N transfer extrinsic",);
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let inner = async {
             while let Some(block_result) = blocks_sub.next().await {
@@ -176,10 +176,11 @@ impl MidnightClient {
                 let block_number = block.header().number;
                 println!("Finalized block #{}", block_number);
 
-                let extrinsic = block.extrinsics().await?;
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
 
-                for ext in extrinsic.iter() {
-                    let Ok(decoded) = ext.as_root_extrinsic::<mn_meta::Call>() else {
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
                         continue;
                     };
 
