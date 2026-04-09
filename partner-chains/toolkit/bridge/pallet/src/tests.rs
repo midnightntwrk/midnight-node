@@ -1,7 +1,7 @@
 use crate::mock::*;
 use crate::pallet::Call;
 use crate::*;
-use BridgeTransferV1::*;
+use TransferRecipient::*;
 use core::str::FromStr;
 use frame_support::{
 	assert_err, assert_ok,
@@ -14,9 +14,13 @@ use sp_runtime::{AccountId32, BoundedVec};
 
 fn transfers() -> BoundedVec<BridgeTransferV1<RecipientAddress>, MaxTransfersPerBlock> {
 	bounded_vec![
-		UserTransfer { token_amount: 100, recipient: AccountId32::new([2; 32]) },
-		ReserveTransfer { token_amount: 200 },
-		InvalidTransfer { token_amount: 300, tx_hash: McTxHash([1; 32]) }
+		BridgeTransferV1 {
+			amount: 100,
+			recipient: Address { recipient: AccountId32::new([2; 32]) },
+			mc_tx_hash: McTxHash([1; 32])
+		},
+		BridgeTransferV1 { amount: 200, mc_tx_hash: McTxHash([2; 32]), recipient: Reserve },
+		BridgeTransferV1 { amount: 300, mc_tx_hash: McTxHash([3; 32]), recipient: Invalid }
 	]
 }
 
@@ -70,6 +74,34 @@ mod handle_transfers {
 	}
 
 	#[test]
+	fn emits_events() {
+		new_test_ext().execute_with(|| {
+			// Frame system drops events from block 0.
+			frame_system::Pallet::<Test>::set_block_number(1);
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers(),
+				data_checkpoint()
+			));
+
+			let events: Vec<_> =
+				frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
+			let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> = transfers()
+				.into_iter()
+				.map(|t| {
+					mock::RuntimeEvent::Bridge(Event::Transfer {
+						mc_tx_hash: t.mc_tx_hash,
+						amount: t.amount,
+						result: t.amount / 10,
+						recipient: t.recipient,
+					})
+				})
+				.collect();
+			assert_eq!(events, expected);
+		})
+	}
+
+	#[test]
 	fn updates_the_data_checkpoint() {
 		new_test_ext().execute_with(|| {
 			assert_ok!(Bridge::handle_transfers(
@@ -100,6 +132,51 @@ mod handle_transfers {
 			);
 		})
 	}
+
+	// #[test]
+	// fn duplicate_inherent_protection_works() {
+	// 	new_test_ext().execute_with(|| {
+	// 		init_ledger_state();
+	// 		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+	// 		let utxos = vec![ObservedUtxo {
+	// 			header: test_header(1, 2, 0, None),
+	// 			data: ObservedUtxoData::Registration(RegistrationData {
+	// 				cardano_reward_address,
+	// 				dust_public_key: dust_public_key.clone(),
+	// 			}),
+	// 		}];
+
+	// 		// First call succeeds
+	// 		let inherent_data = create_inherent(utxos.clone(), test_position(3, 0));
+	// 		let call = CNightObservation::create_inherent(&inherent_data).unwrap();
+	// 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+	// 		// Second call in same block fails
+	// 		let call2 = Call::process_tokens {
+	// 			utxos: utxos.clone(),
+	// 			next_cardano_position: test_position(3, 0),
+	// 		};
+	// 		assert_noop!(
+	// 			RuntimeCall::CNightObservation(call2).dispatch(RawOrigin::None.into()),
+	// 			Error::<Test>::InherentAlreadyExecuted
+	// 		);
+
+	// 		advance_block_and_reset_events();
+
+	// 		// Third call in new block succeeds
+	// 		let utxos2 = vec![ObservedUtxo {
+	// 			header: test_header(4, 0, 0, None),
+	// 			data: ObservedUtxoData::Registration(RegistrationData {
+	// 				cardano_reward_address,
+	// 				dust_public_key,
+	// 			}),
+	// 		}];
+	// 		let inherent_data2 = create_inherent(utxos2, test_position(5, 0));
+	// 		let call3 = CNightObservation::create_inherent(&inherent_data2).unwrap();
+	// 		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
+	// 	});
+	// }
 }
 
 mod provide_inherent {

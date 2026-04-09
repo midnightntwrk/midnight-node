@@ -202,18 +202,19 @@ use sp_partner_chains_bridge::BridgeTransferV1;
 /// ledger structure. Calls to all functions defined by this trait should not return any errors
 /// as this would fail the block creation. Instead, any validation and business logic errors
 /// should be handled gracefully inside the handler code.
-pub trait TransferHandler<Recipient> {
+pub trait TransferHandler<Recipient, HandlerResult> {
 	/// Should handle an incoming token transfer of `token_mount` tokens to `recipient`
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>);
+	fn handle_incoming_transfer(transfer: BridgeTransferV1<Recipient>) -> HandlerResult;
 }
 
 /// No-op implementation of `TransferHandler` for unit type.
-impl<Recipient> TransferHandler<Recipient> for () {
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>) {}
+impl<Recipient> TransferHandler<Recipient, ()> for () {
+	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>) -> () {}
 }
 
 #[frame_support::pallet]
 pub mod pallet {
+
 	use super::*;
 	use crate::weights::WeightInfo;
 	use frame_system::{
@@ -224,7 +225,7 @@ pub mod pallet {
 	use sidechain_domain::McTxHash;
 	use sp_partner_chains_bridge::{
 		BridgeDataCheckpoint, INHERENT_IDENTIFIER, InherentError, MainChainScripts,
-		TokenBridgeTransfersV1,
+		TokenBridgeTransfersV1, TransferRecipient,
 	};
 
 	/// Current version of the pallet
@@ -243,8 +244,11 @@ pub mod pallet {
 		/// Transfer recipient
 		type Recipient: Member + Parameter + MaxEncodedLen;
 
+		/// User defined handler returns this type. Values are attached to pallet events.
+		type HandlerResult: Member + Parameter + MaxEncodedLen;
+
 		/// Handler for incoming token transfers
-		type TransferHandler: TransferHandler<Self::Recipient>;
+		type TransferHandler: TransferHandler<Self::Recipient, Self::HandlerResult>;
 
 		/// Maximum number of transfers that can be handled in one block for each transfer type
 		type MaxTransfersPerBlock: Get<u32>;
@@ -255,6 +259,22 @@ pub mod pallet {
 		/// Benchmark helper type used for running benchmarks
 		#[cfg(feature = "runtime-benchmarks")]
 		type BenchmarkHelper: benchmarking::BenchmarkHelper<Self>;
+	}
+
+	#[pallet::event]
+	#[pallet::generate_deposit(pub (super) fn deposit_event)]
+	pub enum Event<T: Config> {
+		/// For each handled transfer this event is emitted
+		Transfer {
+			/// Main chain transaction hash for correlation of PC with MC
+			mc_tx_hash: McTxHash,
+			/// Amount of tokens that were transferred
+			amount: u64,
+			/// Handler specific infomation passed to the event
+			result: <T as Config>::HandlerResult,
+			/// Beneficiary of the transfer
+			recipient: TransferRecipient<<T as Config>::Recipient>,
+		},
 	}
 
 	/// Error type used by the pallet's extrinsics
@@ -324,8 +344,14 @@ pub mod pallet {
 			ensure_none(origin)?;
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
-			for transfer in transfers {
-				T::TransferHandler::handle_incoming_transfer(transfer);
+			for transfer in transfers.into_iter() {
+				let result = T::TransferHandler::handle_incoming_transfer(transfer.clone());
+				Self::deposit_event(Event::Transfer {
+					mc_tx_hash: transfer.mc_tx_hash,
+					amount: transfer.amount,
+					result,
+					recipient: transfer.recipient,
+				})
 			}
 			DataCheckpoint::<T>::put(data_checkpoint);
 			Ok(())
