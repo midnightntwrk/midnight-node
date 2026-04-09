@@ -1,4 +1,0 @@
-# Copy almost everything to the builder image docker context
-# dotfiles in the repo root
-/.*
-/target/
