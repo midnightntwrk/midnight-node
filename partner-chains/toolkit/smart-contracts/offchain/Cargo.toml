@@ -1,0 +1,45 @@
+[package]
+name = "partner-chains-cardano-offchain"
+version.workspace = true
+license = "Apache-2.0"
+description = "Partner Chains Smart Contracts Offchain code"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+cardano-serialization-lib = { workspace = true }
+cbor_event = { workspace = true }
+partner-chains-plutus-data = { workspace = true }
+fraction = { workspace = true }
+hex = { workspace = true }
+hex-literal = { workspace = true }
+log = { workspace = true }
+minicbor = { workspace = true }
+ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
+#pallas-primitives = { workspace = true }
+plutus = { workspace = true }
+raw-scripts = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+sidechain-domain = { workspace = true, features = ["std"] }
+uplc = { workspace = true }
+tokio = { workspace = true }
+tokio-retry = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+pretty_assertions = { workspace = true }
+testcontainers = { workspace = true, features = ["blocking"] }
+itertools = { workspace = true }
+
+[lib]
+doctest = false

@@ -53,28 +53,29 @@ impl RuntimeVersion {
 		RuntimeVersion::iter().max().unwrap()
 	}
 
-	/// Return subxt `Metadata` for this runtime version, used to decode
+	/// Return subxt `ArcMetadata` for this runtime version, used to decode
 	/// extrinsics from historical blocks with the correct schema.
-	pub fn metadata(&self) -> subxt::ext::subxt_core::Metadata {
+	pub fn metadata(&self) -> subxt::metadata::ArcMetadata {
 		use parity_scale_codec::Decode;
+		use std::sync::Arc;
 
-		static META_0_21_0: LazyLock<subxt::ext::subxt_core::Metadata> = LazyLock::new(|| {
-			subxt::ext::subxt_core::Metadata::decode(
-				&mut &midnight_node_metadata::METADATA_0_21_0_BYTES[..],
+		static META_0_21_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
+			Arc::new(
+				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_21_0_BYTES[..])
+					.expect("valid 0.21.0 metadata"),
 			)
-			.expect("valid 0.21.0 metadata")
 		});
-		static META_0_22_0: LazyLock<subxt::ext::subxt_core::Metadata> = LazyLock::new(|| {
-			subxt::ext::subxt_core::Metadata::decode(
-				&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..],
+		static META_0_22_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
+			Arc::new(
+				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..])
+					.expect("valid 0.22.0 metadata"),
 			)
-			.expect("valid 0.22.0 metadata")
 		});
-		static META_1_0_0: LazyLock<subxt::ext::subxt_core::Metadata> = LazyLock::new(|| {
-			subxt::ext::subxt_core::Metadata::decode(
-				&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..],
+		static META_1_0_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
+			Arc::new(
+				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_1_0_0_BYTES[..])
+					.expect("valid 1.0.0 metadata"),
 			)
-			.expect("valid 0.22.0 metadata")
 		});
 
 		match self {
@@ -99,7 +100,7 @@ impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 
 pub trait MidnightMetadata {
 	type Call: subxt::ext::scale_decode::DecodeAsType;
-	type SystemTransactionAppliedEvent: subxt::ext::subxt_core::events::StaticEvent;
+	type SystemTransactionAppliedEvent: subxt::events::DecodeAsEvent;
 
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;

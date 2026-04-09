@@ -13,7 +13,7 @@
 
 use backoff::{ExponentialBackoff, future::retry};
 use hex::ToHex as _;
-use subxt::{ext::subxt_rpcs, utils::H256};
+use subxt::{rpcs, utils::H256};
 
 use crate::{
 	client::{ClientError, MidnightNodeClient},
@@ -31,9 +31,15 @@ pub enum FetchTaskError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("node client error")]
 	NodeClientError(#[from] ClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
+	#[error("block error: {0}")]
+	BlockError(#[from] subxt::error::BlockError),
 	#[error("block hash missing for block number {0}")]
 	BlockHashMissing(u64),
 }
@@ -83,9 +89,9 @@ impl FetchTask {
 		let block_hash = retry(backoff, || async {
 			client
 				.rpc
-				.chain_get_block_hash(Some(
-					subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
-				))
+				.chain_get_block_hash(Some(subxt::rpcs::methods::legacy::NumberOrHex::Number(
+					block_number,
+				)))
 				.await
 				.map_err(|e| {
 					log::warn!("block hash fetch failed, retrying: {e}");
@@ -110,17 +116,25 @@ impl FetchTask {
 		};
 
 		let block = retry(backoff, || async {
-			client.api.blocks().at(block_hash).await.map_err(|e| {
+			client.api.at_block(block_hash).await.map_err(|e| {
 				log::warn!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})
 		})
 		.await?;
 
-		let state_root = client.get_state_root_at(Some(block.hash())).await?;
-		let raw_body = client.api.backend().block_body(block_hash).await?.unwrap_or_default();
+		let state_root = client.get_state_root_at(Some(block.block_hash())).await?;
+		let raw_body = block
+			.extrinsics()
+			.fetch()
+			.await?
+			.iter()
+			.filter_map(|ext| ext.ok())
+			.map(|ext| ext.bytes().to_vec())
+			.collect();
 
-		let state = if block.header().parent_hash.is_zero() {
+		let header = block.block_header().await?;
+		let state = if header.parent_hash.is_zero() {
 			let system_properties = client.get_system_properties().await?;
 			let genesis_state_value = system_properties
 				.get("genesis_state")

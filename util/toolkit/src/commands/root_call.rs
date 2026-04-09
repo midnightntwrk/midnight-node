@@ -23,8 +23,7 @@ use clap::Args;
 use subxt::{
 	Metadata, OnlineClient, SubstrateConfig,
 	dynamic::{self, Value},
-	ext::scale_value::{At, scale::decode_as_type},
-	tx::Payload,
+	ext::scale_value::{Composite, scale::decode_as_type},
 	utils::H256,
 };
 use subxt_signer::sr25519::Keypair;
@@ -95,6 +94,14 @@ pub enum RootCallError {
 	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
 	#[error("Failed to decode call: {0}")]
 	CallDecodeError(String),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
+	#[error("transaction finalized error: {0}")]
+	TransactionFinalizedError(#[from] subxt::error::TransactionFinalizedSuccessError),
+	#[error("events error: {0}")]
+	EventsError(#[from] subxt::error::EventsError),
 }
 
 pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -179,18 +186,22 @@ async fn execute_governance_call(
 	// We need to decode it into a Value and wrap it in FederatedAuthority::motion_approve
 
 	// Step 1: Decode the encoded call bytes into a Value using metadata
-	let call_value = decode_call_to_value(encoded_call, &api.metadata())?;
+	let at_block = api.at_current_block().await?;
+	let metadata = at_block.metadata_ref();
+	let call_value = decode_call_to_value(encoded_call, &metadata)?;
 	log::info!("Decoded call successfully");
 
 	// Step 2: Create the FederatedAuthority::motion_approve call wrapping our decoded call
-	let fed_auth_call =
-		dynamic::tx("FederatedAuthority", "motion_approve", vec![call_value.clone()]).into_value();
+	let fed_auth_call = dynamic::tx(
+		"FederatedAuthority",
+		"motion_approve",
+		Composite::unnamed([call_value.clone()]),
+	)
+	.into_value();
 
 	// Compute the proposal hash for the federated authority call
 	let fed_auth_tx = dynamic::tx("FederatedAuthority", "motion_approve", vec![call_value.clone()]);
-	let fed_auth_call_data = fed_auth_tx
-		.encode_call_data(&api.metadata())
-		.map_err(|e| RootCallError::SubxtError(subxt::Error::Other(format!("{:?}", e))))?;
+	let fed_auth_call_data = api.tx().await?.call_data(&fed_auth_tx)?;
 	let proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
 	let proposal_hash = H256(proposal_hash);
 
@@ -208,6 +219,7 @@ async fn execute_governance_call(
 
 	let council_propose_events = api
 		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&council_proposal, council_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -244,6 +256,7 @@ async fn execute_governance_call(
 
 	let tech_propose_events = api
 		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&tech_proposal, tc_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -287,7 +300,7 @@ async fn execute_governance_call(
 	// Build motion_close args — newer runtimes require a proposal_weight_bound parameter,
 	// older runtimes only take motion_hash. Detect via metadata to stay backward-compatible
 	// with pre-upgrade runtimes (e.g. during hardfork tests).
-	let motion_close_args = if has_motion_close_weight_bound(api) {
+	let motion_close_args = if has_motion_close_weight_bound(api).await? {
 		let proposal_weight_bound = Value::named_composite(vec![
 			("ref_time", Value::u128(1_000_000_000_000)),
 			("proof_size", Value::u128(1_000_000)),
@@ -300,6 +313,7 @@ async fn execute_governance_call(
 
 	// Anyone can close the motion, use first council member
 	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&close_motion_call, council_proposer)
 		.await?
 		.wait_for_finalized_success()
@@ -329,6 +343,7 @@ async fn vote_on_proposal(
 	);
 
 	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&vote_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -361,6 +376,7 @@ async fn close_proposal(
 	);
 
 	api.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&close_call, signer)
 		.await?
 		.wait_for_finalized_success()
@@ -370,22 +386,26 @@ async fn close_proposal(
 }
 
 fn extract_proposal_index(
-	events: &subxt::blocks::ExtrinsicEvents<SubstrateConfig>,
+	events: &subxt::extrinsics::ExtrinsicEvents<SubstrateConfig>,
 	pallet: &str,
 ) -> Result<u32, RootCallError> {
+	use parity_scale_codec::Decode;
+
+	/// Prefix of the collective pallet's `Proposed` event.
+	/// Only the fields we need are decoded; trailing fields are ignored.
+	#[derive(Decode)]
+	struct ProposedPrefix {
+		_account: [u8; 32],
+		#[codec(compact)]
+		proposal_index: u32,
+	}
+
 	for event in events.iter() {
 		let event = event?;
-		if event.pallet_name() == pallet && event.variant_name() == "Proposed" {
-			// Use subxt's field_values() to decode the event fields using metadata
-			let fields = event.field_values().map_err(|e| RootCallError::SubxtError(e.into()))?;
-
-			// The Proposed event has fields: account, proposal_index, proposal_hash, threshold
-			// Access proposal_index by field name
-			if let Some(proposal_index_value) = fields.at("proposal_index") {
-				if let Some(index) = proposal_index_value.as_u128() {
-					return Ok(index as u32);
-				}
-			}
+		if event.pallet_name() == pallet && event.event_name() == "Proposed" {
+			let prefix = ProposedPrefix::decode(&mut event.field_bytes())
+				.map_err(|_| RootCallError::ProposalIndexNotFound)?;
+			return Ok(prefix.proposal_index);
 		}
 	}
 	Err(RootCallError::ProposalIndexNotFound)
@@ -393,23 +413,26 @@ fn extract_proposal_index(
 
 /// Check whether the runtime's `FederatedAuthority::motion_close` accepts a
 /// `proposal_weight_bound` parameter (2 fields) or only `motion_hash` (1 field).
-fn has_motion_close_weight_bound(api: &OnlineClient<SubstrateConfig>) -> bool {
-	let metadata = api.metadata();
-	let Ok(pallet) = metadata.pallet_by_name_err("FederatedAuthority") else {
-		return false;
+async fn has_motion_close_weight_bound(
+	api: &OnlineClient<SubstrateConfig>,
+) -> Result<bool, RootCallError> {
+	let at_block = api.at_current_block().await?;
+	let metadata = at_block.metadata_ref();
+	let Some(pallet) = metadata.pallet_by_name("FederatedAuthority") else {
+		return Ok(false);
 	};
 	let Some(call_ty_id) = pallet.call_ty_id() else {
-		return false;
+		return Ok(false);
 	};
 	let Some(ty) = metadata.types().resolve(call_ty_id) else {
-		return false;
+		return Ok(false);
 	};
 	let scale_info::TypeDef::Variant(variant) = &ty.type_def else {
-		return false;
+		return Ok(false);
 	};
-	variant
+	Ok(variant
 		.variants
 		.iter()
 		.find(|v| v.name == "motion_close")
-		.is_some_and(|v| v.fields.len() > 1)
+		.is_some_and(|v| v.fields.len() > 1))
 }

@@ -18,7 +18,7 @@ use std::{collections::HashMap, future::Future, sync::Arc};
 use subxt::utils::H256;
 use tokio::sync::Mutex;
 
-use super::MidnightBlock;
+use super::MidnightClientAtBlock;
 use super::wallet_state_cache::{CachedWalletState, LedgerSnapshot};
 
 pub mod file_backend;
@@ -70,7 +70,7 @@ pub trait WalletStateCaching: Send + Sync {
 
 #[derive(Clone)]
 pub struct FetchedBlock {
-	pub block: MidnightBlock,
+	pub block: MidnightClientAtBlock,
 	pub raw_body: Vec<Vec<u8>>,
 	pub state_root: Option<Vec<u8>>,
 	pub state: Option<Vec<u8>>,

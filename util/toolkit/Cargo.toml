@@ -54,7 +54,7 @@ rayon.workspace = true
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
-trycmd = "0.15.10"
+trycmd = "1.2.0"
 testcontainers.workspace = true
 serde_yaml = "0.9"
 shellexpand = "3"

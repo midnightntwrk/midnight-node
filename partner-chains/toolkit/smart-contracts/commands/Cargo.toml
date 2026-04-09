@@ -1,0 +1,29 @@
+[package]
+name = "partner-chains-smart-contracts-commands"
+version.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true, features = ["derive", "env"] }
+sidechain-domain = { workspace = true }
+partner-chains-cardano-offchain = { workspace = true }
+hex = { workspace = true }
+ogmios-client = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+sp-runtime = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+hex-literal = { workspace = true }
+
+[lib]
+doctest = false
