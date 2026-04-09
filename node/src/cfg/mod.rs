@@ -18,8 +18,8 @@ use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
 	networks::{
-		CustomNetwork, MainChainScripts,
-		PermissionedCandidatesConfig, RegisteredCandidatesAddresses, UndeployedNetwork,
+		CustomNetwork, MainChainScripts, PermissionedCandidatesConfig,
+		RegisteredCandidatesAddresses, UndeployedNetwork,
 	},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
