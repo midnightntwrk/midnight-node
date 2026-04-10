@@ -76,7 +76,8 @@ impl MidnightNodeClient {
 	pub async fn new_without_timeout(rpc_url: &str) -> Result<Self, ClientError> {
 		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
 		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
-		let api = OnlineClient::<MidnightNodeClientConfig>::from_rpc_client(rpc_client.clone()).await?;
+		let api =
+			OnlineClient::<MidnightNodeClientConfig>::from_rpc_client(rpc_client.clone()).await?;
 		Ok(MidnightNodeClient { rpc, api, rpc_client })
 	}
 

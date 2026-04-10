@@ -68,10 +68,8 @@ impl FetchTask {
 
 				let hashes = Self::fetch_block_hashes(client, &uncached).await?;
 
-				let mut futs: FuturesOrdered<_> = hashes
-					.into_iter()
-					.map(|hash| Self::fetch_block(client, hash))
-					.collect();
+				let mut futs: FuturesOrdered<_> =
+					hashes.into_iter().map(|hash| Self::fetch_block(client, hash)).collect();
 				let mut blocks = Vec::new();
 				while let Some(result) = futs.next().await {
 					blocks.push(result?);
@@ -112,9 +110,7 @@ impl FetchTask {
 		.await?;
 
 		if hashes.len() != block_numbers.len() {
-			return Err(FetchTaskError::BlockHashMissing(
-				block_numbers[hashes.len()],
-			));
+			return Err(FetchTaskError::BlockHashMissing(block_numbers[hashes.len()]));
 		}
 
 		Ok(hashes)

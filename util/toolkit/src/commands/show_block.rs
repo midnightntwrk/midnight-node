@@ -210,8 +210,7 @@ pub async fn execute(
 	let client = MidnightNodeClient::new(&args.src_url, None).await?;
 	let chain_id = client.get_block_one_hash().await?;
 
-	let block_hashes =
-		FetchTask::fetch_block_hashes(&client, &[block_number]).await?;
+	let block_hashes = FetchTask::fetch_block_hashes(&client, &[block_number]).await?;
 	let block_hash = *block_hashes
 		.first()
 		.ok_or_else(|| format!("no block hash for block {block_number}"))?;

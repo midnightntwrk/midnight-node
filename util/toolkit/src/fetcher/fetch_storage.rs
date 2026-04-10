@@ -117,9 +117,9 @@ pub trait FetchStorage: Send + Sync {
 		range: impl Iterator<Item = RawBlockData> + Send,
 	) -> impl Future<Output = ()> + Send {
 		async move {
-			let block_stream = stream::iter(range.map(|block| {
-				self.insert_block_data(chain_id, block.number, block)
-			}));
+			let block_stream = stream::iter(
+				range.map(|block| self.insert_block_data(chain_id, block.number, block)),
+			);
 			let buffered = block_stream.buffer_unordered(10);
 			buffered.collect().await
 		}
