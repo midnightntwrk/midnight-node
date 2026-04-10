@@ -22,14 +22,15 @@ use midnight_node_toolkit::{
 		source::{FetchCacheConfig, Source},
 	},
 };
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
-const DEFAULT_FETCH_CONCURRENCY: usize = 20;
-const DEFAULT_COMPACTC_VERSION: &str = "0.30.0";
+const DEFAULT_FETCH_CONCURRENCY: usize = 1;
 const COMPACTC_VERSION_FILE: &str = "../../COMPACTC_VERSION";
 const TOOLKIT_JS_RELATIVE_PATH: &str = "../toolkit-js";
 const CONTRACTS_RELATIVE_PATH: &str = "tests/contracts";
 const DEFAULT_NETWORK: &str = "undeployed";
+const COMPILE_CACHE_DIR: &str = "midnight-toolkit-contract-cache";
 
 pub struct DeployOutput {
 	pub intent: PathBuf,
@@ -78,6 +79,14 @@ fn manifest_dir() -> PathBuf {
 	PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+fn compile_cache_key(source: &str, compactc_version: &str) -> String {
+	let mut hasher = Sha256::new();
+	hasher.update(source.as_bytes());
+	hasher.update(b"\0");
+	hasher.update(compactc_version.as_bytes());
+	hex::encode(hasher.finalize())
+}
+
 impl ToolkitTestHelper {
 	pub fn new(node_ws: &str) -> Self {
 		let base = manifest_dir();
@@ -97,7 +106,7 @@ impl ToolkitTestHelper {
 			let version_file = manifest_dir().join(COMPACTC_VERSION_FILE);
 			std::fs::read_to_string(&version_file)
 				.map(|s| s.trim().to_string())
-				.unwrap_or_else(|_| DEFAULT_COMPACTC_VERSION.to_string())
+				.unwrap_or_else(|e| panic!("failed to read {}: {e}", version_file.display()))
 		})
 	}
 
@@ -177,22 +186,32 @@ impl ToolkitTestHelper {
 		compact_source: &str,
 		name: &str,
 	) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-		let contract_dir = self.work_dir.path().join(name);
-		std::fs::create_dir_all(&contract_dir)?;
+		let compactc_version = Self::compactc_version();
+		let cache_key = compile_cache_key(compact_source, &compactc_version);
+		let cache_dir = std::env::temp_dir().join(COMPILE_CACHE_DIR).join(&cache_key);
+		let cached_out = cache_dir.join("out");
 
-		let node_modules_src = self.toolkit_js_path.join("node_modules");
-		std::os::unix::fs::symlink(&node_modules_src, contract_dir.join("node_modules"))?;
+		let work_contract_dir = self.work_dir.path().join(name);
+		std::fs::create_dir_all(&work_contract_dir)?;
+		std::os::unix::fs::symlink(
+			self.toolkit_js_path.join("node_modules"),
+			work_contract_dir.join("node_modules"),
+		)?;
+		std::os::unix::fs::symlink(&cached_out, work_contract_dir.join("out"))?;
 
-		let source_file = contract_dir.join(format!("{name}.compact"));
+		if cached_out.join("contract").exists() {
+			return Ok(cached_out);
+		}
+
+		std::fs::create_dir_all(&cache_dir)?;
+		let source_file = cache_dir.join(format!("{name}.compact"));
 		std::fs::write(&source_file, compact_source)?;
-
-		let out_dir = contract_dir.join("out");
 
 		let output = tokio::process::Command::new("npx")
 			.arg("run-compactc")
 			.arg(&source_file)
-			.arg(&out_dir)
-			.env("COMPACTC_VERSION", Self::compactc_version())
+			.arg(&cached_out)
+			.env("COMPACTC_VERSION", &compactc_version)
 			.current_dir(&self.toolkit_js_path)
 			.output()
 			.await?;
@@ -207,11 +226,11 @@ impl ToolkitTestHelper {
 		}
 
 		assert!(
-			out_dir.join("contract").exists(),
+			cached_out.join("contract").exists(),
 			"Compilation succeeded but output directory not found"
 		);
 
-		Ok(out_dir)
+		Ok(cached_out)
 	}
 
 	pub fn write_config(&self, content: &str, name: &str) -> PathBuf {
