@@ -411,7 +411,7 @@ async fn get_connection(
 				connect_options.get_port(),
 				connect_options.get_database().unwrap_or("cexplorer"),
 			);
-			PostgresConnectionError(e.to_string()).to_string()
+			PostgresConnectionError(e.to_string())
 		})?;
 	Ok(pool)
 }
