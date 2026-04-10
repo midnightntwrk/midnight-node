@@ -1145,7 +1145,7 @@ impl_runtime_apis! {
 			VERSION
 		}
 
-		fn execute_block(block: Block) {
+		fn execute_block(block: <Block as BlockT>::LazyBlock) {
 			Executive::execute_block(block);
 		}
 
@@ -1235,7 +1235,7 @@ impl_runtime_apis! {
 		}
 
 		fn check_inherents(
-			block: Block,
+			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
 			data.check_extrinsics(&block)
@@ -1304,16 +1304,6 @@ impl_runtime_apis! {
 		) -> Option<()> {
 			None
 		}
-
-		fn generate_ancestry_proof(
-			prev_block_number: BlockNumber,
-			best_known_block_number: Option<BlockNumber>,
-		) -> Option<OpaqueValue> {
-			Mmr::generate_ancestry_proof(prev_block_number, best_known_block_number)
-				.map(|p| p.encode())
-				.map(OpaqueKeyOwnershipProof::new)
-				.ok()
-		}
 	}
 
 	// Collects the (Current BeefyStakes, Next BeefyStakes)
@@ -1343,6 +1333,7 @@ impl_runtime_apis! {
 		}
 	}
 
+	#[api_version(3)]
 	impl mmr::MmrApi<Block, Hash, BlockNumber> for Runtime {
 		fn mmr_root() -> Result<mmr::Hash, mmr::Error> {
 			Ok(Mmr::mmr_root())
@@ -1367,6 +1358,13 @@ impl_runtime_apis! {
 					)
 				},
 			)
+		}
+
+		fn generate_ancestry_proof(
+			prev_block_number: BlockNumber,
+			best_known_block_number: Option<BlockNumber>,
+		) -> Result<mmr::AncestryProof<mmr::Hash>, mmr::Error> {
+			Mmr::generate_ancestry_proof(prev_block_number, best_known_block_number)
 		}
 
 		fn verify_proof(leaves: Vec<mmr::EncodableOpaqueLeaf>, proof: mmr::LeafProof<mmr::Hash>)
