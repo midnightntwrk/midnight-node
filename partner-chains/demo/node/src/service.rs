@@ -305,6 +305,7 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 		sync_service: sync_service.clone(),
 		config,
 		telemetry: telemetry.as_mut(),
+		tracing_execute_block: None,
 	})?;
 
 	if role.is_authority() {
