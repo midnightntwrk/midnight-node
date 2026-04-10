@@ -11,5 +11,5 @@ pydantic==2.10.6
 scalecodec==1.2.11
 pytest-json-ctrf==0.3.5
 numpy==2.2.3
-ecdsa==0.19.1
+ecdsa==0.19.2
 bech32==1.2.0
