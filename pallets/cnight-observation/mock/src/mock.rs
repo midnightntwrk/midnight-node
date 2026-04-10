@@ -163,7 +163,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 			network_id: UndeployedNetwork.id().to_string(),
 			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
 				UndeployedNetwork.genesis_state(),
-			),
+				Some(UndeployedNetwork.id()),
+			)
+			.unwrap(),
 		},
 	}
 	.build_storage()

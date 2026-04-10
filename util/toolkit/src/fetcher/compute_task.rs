@@ -65,7 +65,7 @@ impl ComputeTask {
 				let mut blocks_to_insert = Vec::new();
 				for b in blocks {
 					let block_data = Self::extract_data(&b).await?;
-					blocks_to_insert.push((b.block.block_number(), block_data));
+					blocks_to_insert.push(block_data);
 				}
 				storage.insert_block_data_range(chain_id, blocks_to_insert.into_iter()).await;
 				log::debug!("extracting block data {min}..{max}: complete");

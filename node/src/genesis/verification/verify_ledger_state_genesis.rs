@@ -20,6 +20,7 @@
 //! - Empty state verification for mainnet (utxo, zswap, contract)
 //! - Total NIGHT supply invariance (24B = treasury + reserve_pool)
 //! - LedgerParameters verification against config file
+//! - Genesis timestamp verification in state root histories
 
 use frame_support::traits::Len;
 use midnight_node_ledger_helpers::{
@@ -33,6 +34,9 @@ use thiserror::Error;
 /// Maximum NIGHT supply: 24 billion NIGHT with 10^6 atomic units per NIGHT
 pub const STARS_PER_NIGHT: u128 = 1_000_000;
 pub const MAX_SUPPLY: u128 = 24_000_000_000 * STARS_PER_NIGHT;
+
+const EXPECTED_RESERVE_VALUE: u128 = 6_000_000_000_873_988; // STARS
+const EXPECTED_ICS_VALUE: u128 = 1_200_000_000_000_000; // STARS
 
 #[derive(Debug, Error)]
 pub enum VerifyLedgerStateGenesisError {
@@ -62,6 +66,8 @@ pub struct VerificationResult {
 	pub supply_invariant_message: String,
 	pub ledger_parameters_ok: bool,
 	pub ledger_parameters_message: String,
+	pub timestamp_in_state_ok: bool,
+	pub timestamp_in_state_message: String,
 }
 
 impl VerificationResult {
@@ -70,6 +76,7 @@ impl VerificationResult {
 			&& self.empty_state_ok
 			&& self.supply_invariant_ok
 			&& self.ledger_parameters_ok
+			&& self.timestamp_in_state_ok
 	}
 
 	pub fn print_summary(&self) {
@@ -85,6 +92,9 @@ impl VerificationResult {
 		}
 		if self.ledger_parameters_ok {
 			println!("LEDGER_PARAMETERS_OK");
+		}
+		if self.timestamp_in_state_ok {
+			println!("GENESIS_TIMESTAMP_IN_STATE_OK");
 		}
 
 		// Print human-readable details
@@ -112,6 +122,12 @@ impl VerificationResult {
 			"Ledger Parameters: {} - {}",
 			if self.ledger_parameters_ok { "PASS" } else { "FAIL" },
 			self.ledger_parameters_message
+		);
+
+		println!(
+			"Genesis Timestamp in State: {} - {}",
+			if self.timestamp_in_state_ok { "PASS" } else { "FAIL" },
+			self.timestamp_in_state_message
 		);
 	}
 }
@@ -164,15 +180,6 @@ fn load_ledger_parameters(
 	Ok(params)
 }
 
-/// Default genesis timestamp used by the toolkit: Aug 5, 2025 (Glacier Drop start)
-///
-/// Note: This timestamp is used for consistency with the toolkit's genesis generation,
-/// but it doesn't actually affect the DustState hash. The `tblock` parameter in
-/// `apply_system_tx` is only used for event metadata (`block_time` field), not for
-/// any state that contributes to the DustState hash. The actual dust generation info
-/// uses `action.time` (from the cNight config) for timestamps like `ctime`.
-const GENESIS_TIMESTAMP_SECS: u64 = 1754395200;
-
 /// Verify that DustState matches the expected state after applying cnight system_tx
 ///
 /// For mainnet (no faucet wallets), DustState should exactly match the system_tx result.
@@ -184,7 +191,7 @@ fn verify_dust_state(
 	state: &LedgerState<DefaultDB>,
 	cnight_config_path: Option<&Path>,
 	network: Option<&str>,
-	genesis_timestamp_arg: Option<u64>,
+	genesis_timestamp_arg: u64,
 ) -> (bool, String) {
 	let Some(path) = cnight_config_path else {
 		return (false, "No cnight-config.json provided".to_string());
@@ -198,9 +205,7 @@ fn verify_dust_state(
 			// with the genesis state's DustState.
 			let fresh_state = LedgerState::<DefaultDB>::new(&state.network_id);
 
-			// Use the provided genesis timestamp, or fall back to the default (Aug 5, 2025)
-			let genesis_timestamp =
-				Timestamp::from_secs(genesis_timestamp_arg.unwrap_or(GENESIS_TIMESTAMP_SECS));
+			let genesis_timestamp = Timestamp::from_secs(genesis_timestamp_arg);
 
 			match fresh_state.apply_system_tx(&system_tx, genesis_timestamp) {
 				Ok((expected_state, _events)) => {
@@ -379,6 +384,7 @@ fn verify_empty_state(state: &LedgerState<DefaultDB>, network: Option<&str>) -> 
 }
 
 /// Verify total NIGHT supply invariance: all pools + UTXOs + contracts = MAX_SUPPLY (24B)
+/// Also verifies that reserve_pool and treasury (ICS) match their expected values.
 fn verify_supply_invariant(state: &LedgerState<DefaultDB>) -> (bool, String) {
 	// Get treasury balance for NIGHT token
 	let night_token = TokenType::Unshielded(NIGHT);
@@ -419,37 +425,41 @@ fn verify_supply_invariant(state: &LedgerState<DefaultDB>) -> (bool, String) {
 		.saturating_add(unclaimed_rewards)
 		.saturating_add(contract_value);
 
-	if total == MAX_SUPPLY {
-		(
-			true,
-			format!(
-				"Total NIGHT supply = {} (24B). Reserve: {}, Treasury: {}, UTXOs: {}, Contracts: {}, Block Rewards: {}, Unclaimed: {}, Locked: {}",
-				MAX_SUPPLY,
-				reserve_pool,
-				treasury_balance,
-				utxo_value,
-				contract_value,
-				block_reward_pool,
-				unclaimed_rewards,
-				locked_pool
-			),
-		)
+	let mut issues = Vec::new();
+
+	if total != MAX_SUPPLY {
+		issues.push(format!("NIGHT supply mismatch! Expected {}, got {}", MAX_SUPPLY, total));
+	}
+
+	if reserve_pool != EXPECTED_RESERVE_VALUE {
+		issues.push(format!(
+			"Reserve pool mismatch: expected {}, got {}",
+			EXPECTED_RESERVE_VALUE, reserve_pool
+		));
+	}
+
+	if treasury_balance != EXPECTED_ICS_VALUE {
+		issues.push(format!(
+			"Treasury (ICS) mismatch: expected {}, got {}",
+			EXPECTED_ICS_VALUE, treasury_balance
+		));
+	}
+
+	let detail = format!(
+		"Reserve: {}, Treasury: {}, UTXOs: {}, Contracts: {}, Block Rewards: {}, Unclaimed: {}, Locked: {}",
+		reserve_pool,
+		treasury_balance,
+		utxo_value,
+		contract_value,
+		block_reward_pool,
+		unclaimed_rewards,
+		locked_pool
+	);
+
+	if issues.is_empty() {
+		(true, format!("Total NIGHT supply = {} (24B). {}", MAX_SUPPLY, detail))
 	} else {
-		(
-			false,
-			format!(
-				"NIGHT supply mismatch! Expected {}, got {}. Reserve: {}, Treasury: {}, UTXOs: {}, Contracts: {}, Block Rewards: {}, Unclaimed: {}, Locked: {}",
-				MAX_SUPPLY,
-				total,
-				reserve_pool,
-				treasury_balance,
-				utxo_value,
-				contract_value,
-				block_reward_pool,
-				unclaimed_rewards,
-				locked_pool
-			),
-		)
+		(false, format!("{}\n{}", issues.join("\n"), detail))
 	}
 }
 
@@ -581,13 +591,72 @@ fn verify_ledger_parameters(
 	}
 }
 
+/// Verify that the genesis timestamp is recorded in the LedgerState root histories.
+///
+/// During genesis generation, `post_block_update(tblock, ...)` inserts `tblock` as a key into
+/// three `TimeFilterMap`s: `zswap.past_roots`, `dust.utxo.root_history`, and
+/// `dust.generation.root_history`. For the genesis block, each should contain exactly one entry
+/// at the expected timestamp. We verify this by checking that `get(expected_ts)` returns `Some`
+/// and `get(expected_ts - 1)` returns `None` (confirming no predecessor, i.e. the entry is
+/// exactly at the expected timestamp).
+fn verify_genesis_timestamp_in_state(
+	state: &LedgerState<DefaultDB>,
+	genesis_timestamp_arg: u64,
+) -> (bool, String) {
+	let expected_secs = genesis_timestamp_arg;
+	let expected_ts = Timestamp::from_secs(expected_secs);
+	let before_ts = Timestamp::from_secs(expected_secs - 1);
+
+	let checks: [(&str, bool, bool); 3] = [
+		(
+			"zswap.past_roots",
+			state.zswap.past_roots.get(expected_ts).is_some(),
+			state.zswap.past_roots.get(before_ts).is_some(),
+		),
+		(
+			"dust.utxo.root_history",
+			state.dust.utxo.root_history.get(expected_ts).is_some(),
+			state.dust.utxo.root_history.get(before_ts).is_some(),
+		),
+		(
+			"dust.generation.root_history",
+			state.dust.generation.root_history.get(expected_ts).is_some(),
+			state.dust.generation.root_history.get(before_ts).is_some(),
+		),
+	];
+
+	let mut issues = Vec::new();
+	for (name, has_entry, has_predecessor) in &checks {
+		if !has_entry {
+			issues.push(format!("{}: no entry at timestamp {}", name, expected_secs));
+		} else if *has_predecessor {
+			issues.push(format!(
+				"{}: unexpected predecessor before timestamp {} (entry may not be exact)",
+				name, expected_secs
+			));
+		}
+	}
+
+	if issues.is_empty() {
+		(
+			true,
+			format!(
+				"Genesis timestamp {} confirmed in zswap.past_roots, dust.utxo.root_history, dust.generation.root_history",
+				expected_secs
+			),
+		)
+	} else {
+		(false, format!("Timestamp verification failed:\n{}", issues.join("\n")))
+	}
+}
+
 /// Inspect and verify the genesis state
 pub fn verify_ledger_state_genesis(
 	chain_spec_path: &Path,
 	cnight_config_path: Option<&Path>,
 	ledger_params_path: Option<&Path>,
 	network: Option<&str>,
-	genesis_timestamp: Option<u64>,
+	genesis_timestamp: u64,
 ) -> Result<VerificationResult, VerifyLedgerStateGenesisError> {
 	log::info!("Loading LedgerState from {}", chain_spec_path.display());
 	let state = load_ledger_state(chain_spec_path)?;
@@ -601,6 +670,8 @@ pub fn verify_ledger_state_genesis(
 	let (supply_invariant_ok, supply_invariant_message) = verify_supply_invariant(&state);
 	let (ledger_parameters_ok, ledger_parameters_message) =
 		verify_ledger_parameters(&state, ledger_params_path);
+	let (timestamp_in_state_ok, timestamp_in_state_message) =
+		verify_genesis_timestamp_in_state(&state, genesis_timestamp);
 
 	Ok(VerificationResult {
 		dust_state_ok,
@@ -611,5 +682,7 @@ pub fn verify_ledger_state_genesis(
 		supply_invariant_message,
 		ledger_parameters_ok,
 		ledger_parameters_message,
+		timestamp_in_state_ok,
+		timestamp_in_state_message,
 	})
 }

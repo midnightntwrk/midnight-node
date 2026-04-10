@@ -10,7 +10,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use std::sync::LazyLock;
 use strum::{EnumIter, IntoEnumIterator as _};
 
 #[derive(thiserror::Error, Debug)]
@@ -51,38 +50,6 @@ impl RuntimeVersion {
 
 	pub fn latest_version() -> Self {
 		RuntimeVersion::iter().max().unwrap()
-	}
-
-	/// Return subxt `ArcMetadata` for this runtime version, used to decode
-	/// extrinsics from historical blocks with the correct schema.
-	pub fn metadata(&self) -> subxt::metadata::ArcMetadata {
-		use parity_scale_codec::Decode;
-		use std::sync::Arc;
-
-		static META_0_21_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
-			Arc::new(
-				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_21_0_BYTES[..])
-					.expect("valid 0.21.0 metadata"),
-			)
-		});
-		static META_0_22_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
-			Arc::new(
-				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_0_22_0_BYTES[..])
-					.expect("valid 0.22.0 metadata"),
-			)
-		});
-		static META_1_0_0: LazyLock<subxt::metadata::ArcMetadata> = LazyLock::new(|| {
-			Arc::new(
-				subxt::Metadata::decode(&mut &midnight_node_metadata::METADATA_1_0_0_BYTES[..])
-					.expect("valid 1.0.0 metadata"),
-			)
-		});
-
-		match self {
-			Self::V0_21_0 => META_0_21_0.clone(),
-			Self::V0_22_0 => META_0_22_0.clone(),
-			Self::V1_0_0 => META_1_0_0.clone(),
-		}
 	}
 }
 
