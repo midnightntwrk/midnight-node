@@ -1,5 +1,4 @@
-# Commented out to skip `check_all_chainspec_integrity()` until the chain-spec-raw.json exists
-#chain = "res/mainnet/chain-spec-raw.json"
+chain = "res/mainnet/chain-spec-raw.json"
 base_path = "node/chain"
 
 chainspec_name = "Midnight Mainnet"
@@ -15,6 +14,7 @@ chainspec_federated_authority_config = "res/mainnet/federated-authority-config.j
 chainspec_system_parameters_config = "res/mainnet/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/mainnet/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/mainnet/registered-candidates-addresses.json"
+chainspec_message_config = "res/mainnet/message-config.json"
 
 cardano_security_parameter = 2160
 cardano_active_slots_coeff = 0.05

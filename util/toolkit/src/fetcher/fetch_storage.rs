@@ -114,12 +114,12 @@ pub trait FetchStorage: Send + Sync {
 	fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, RawBlockData)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) -> impl Future<Output = ()> + Send {
 		async move {
-			let block_stream = stream::iter(range.map(|(block_number, block)| {
-				self.insert_block_data(chain_id, block_number, block)
-			}));
+			let block_stream = stream::iter(
+				range.map(|block| self.insert_block_data(chain_id, block.number, block)),
+			);
 			let buffered = block_stream.buffer_unordered(10);
 			buffered.collect().await
 		}
@@ -175,11 +175,11 @@ impl FetchStorage for InMemory {
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, RawBlockData)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
 		let mut blocks = self.blocks.lock().await;
-		range.for_each(|(block_number, block)| {
-			let k = Self::block_key(&chain_id.0, block_number);
+		range.for_each(|block| {
+			let k = Self::block_key(&chain_id.0, block.number);
 			blocks.insert(k, block);
 		});
 	}

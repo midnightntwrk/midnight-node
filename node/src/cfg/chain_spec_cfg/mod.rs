@@ -91,6 +91,12 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_registered_candidates_addresses: Option<String>,
+
+	/// Optional genesis remark message config file e.g. mainnet/message-config.json
+	/// If not provided, no System::remark extrinsic will be added to genesis
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_message_config: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
