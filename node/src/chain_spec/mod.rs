@@ -53,6 +53,7 @@ pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
 	Serialization(String),
+	GenesisStateError(midnight_node_ledger::ledger_8::storage::GetRootError),
 }
 
 impl fmt::Display for ChainSpecInitError {
@@ -62,6 +63,9 @@ impl fmt::Display for ChainSpecInitError {
 			ChainSpecInitError::ParseError(msg) => write!(f, "ChainSpec Parse error: {msg}"),
 			ChainSpecInitError::Serialization(msg) => {
 				write!(f, "ChainSpec Serialization error: {msg}")
+			},
+			ChainSpecInitError::GenesisStateError(msg) => {
+				write!(f, "ChainSpec GenesisState error: {msg}")
 			},
 		}
 	}
@@ -263,7 +267,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			network_id: genesis.network_id(),
 			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
 				genesis.genesis_state(),
-			),
+				Some(&genesis.network_id()),
+			)
+			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
 		session: SessionConfig {
 			initial_validators: authority_keys
