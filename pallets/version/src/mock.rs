@@ -63,7 +63,7 @@ impl_runtime_apis! {
 			VERSION
 		}
 
-		fn execute_block(_: Block) {}
+		fn execute_block(_: <Block as BlockT>::LazyBlock) {}
 
 		fn initialize_block(_: &<Block as BlockT>::Header) -> sp_runtime::ExtrinsicInclusionMode {
 			sp_runtime::ExtrinsicInclusionMode::OnlyInherents
