@@ -88,7 +88,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.uniform = true;
 
 	// TODO: Add call to:
-	// midnight_storage::ParityDb::<COLUMN_OFFSET = NUM_COLUMNS_POLKADOT>::set_init_options(&mut config)
+	// midnight_storage::ParityDb::<sha2::Sha256, NUM_COLUMNS_POLKADOT>::set_init_options(&mut config)
 
 	if upgrade {
 		log::info!("Upgrading database metadata.");
@@ -101,7 +101,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	// TODO: Add call to:
 	// let res = set_default_storage(|| {
-	// 	let db = ParityDb::<sha2::Sha256>::from_existing_db(db.clone());
+	// 	let db = ParityDb::<sha2::Sha256, NUM_COLUMNS_POLKADOT>::from_existing_db(db.clone());
 	// 	Storage::new(midnight_storage_cache_size, db)
 	// });
 
