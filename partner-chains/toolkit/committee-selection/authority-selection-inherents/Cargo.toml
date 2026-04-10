@@ -1,0 +1,64 @@
+[package]
+name = "authority-selection-inherents"
+version.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true, optional = true }
+frame-support = { workspace = true }
+log = { workspace = true }
+minicbor = { workspace = true }
+sp-session-validator-management = { workspace = true }
+parity-scale-codec = { workspace = true }
+plutus = { workspace = true }
+plutus-datum-derive = { workspace = true }
+scale-info = { workspace = true }
+selection = { workspace = true }
+sidechain-domain = { workspace = true }
+sidechain-slots = { workspace = true, optional = true }
+sp-api = { workspace = true }
+sp-core = { workspace = true }
+sp-inherents = { workspace = true }
+sp-runtime = { workspace = true }
+thiserror = { workspace = true, optional = true }
+serde = { workspace = true }
+sp-consensus-slots = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+hex-literal = { workspace = true }
+num-bigint = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"frame-support/std",
+	"sidechain-domain/std",
+	"parity-scale-codec/std",
+	"serde/std",
+	"sidechain-slots",
+	"sidechain-slots/std",
+	"sidechain-slots/serde",
+	"sp-api/std",
+	"sp-session-validator-management/std",
+	"sp-session-validator-management/serde",
+	"sp-core/std",
+	"sp-inherents/std",
+	"sp-runtime/std",
+	"thiserror",
+	"async-trait",
+]
+mock = []
+
+[lib]
+doctest = false

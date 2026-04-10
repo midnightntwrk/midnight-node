@@ -25,7 +25,7 @@ hex = { workspace = true, features = ["std", "serde"] }
 sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rand.workspace = true
+rand = "0.8.4"
 thiserror.workspace = true
 clap = { workspace = true, features = ["env", "derive"] }
 futures.workspace = true
@@ -33,8 +33,9 @@ indicatif = "0.17.8"
 console = "0.15.8"
 backoff = { version = "0.4.0", features = ["tokio"] }
 log = { workspace = true, features = ["kv_std"] }
-async-trait = "0.1.87"
+async-trait = "0.1.89"
 toml.workspace = true
+tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
@@ -42,7 +43,7 @@ scale-info.workspace = true
 sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
-redb = "3.1.0"
+redb = "3.1.1"
 postcard = { version = "1.1", features = ["alloc"] }
 serde_bytes = "0.11"
 zstd = "0.13"
@@ -53,9 +54,9 @@ rayon.workspace = true
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
-trycmd = "0.15.10"
-testcontainers = "0.27"
-serde_yml = "0.0.12"
+trycmd = "1.2.0"
+testcontainers.workspace = true
+serde_yaml = "0.9"
 shellexpand = "3"
 test-log.workspace = true
 

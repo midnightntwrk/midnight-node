@@ -15,3 +15,8 @@
 
 pub mod creation;
 pub mod verification;
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct CardanoTipConfig {
+	pub timestamp: String,
+}

@@ -4,5 +4,35 @@
     "github>midnightntwrk/renovate-config",
     "github>midnightntwrk/renovate-config:earthfile"
   ],
-  "git-submodules": { "enabled": true }
+  "git-submodules": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "Rust crates: individual PRs (breaking API changes are common)",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": null,
+      "groupSlug": null
+    },
+    {
+      "description": "GitHub Actions: group minor+patch together",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "npm/pnpm: group minor+patch together",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "JS dependencies",
+      "groupSlug": "js-deps"
+    },
+    {
+      "description": "Docker: group minor+patch together",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Docker images",
+      "groupSlug": "docker-images"
+    }
+  ]
 }

@@ -16,7 +16,7 @@ use core::fmt::Display;
 use crate::{
 	cli_parsers as cli,
 	client::MidnightNodeClient,
-	fetcher::{self, fetch_storage},
+	fetcher::{self, fetch_storage, fetch_task::FetchTask},
 	tx_generator::source::{FetchCacheConfig, GetTxsFromFile},
 	utils::format_timestamp_utc,
 };
@@ -210,20 +210,28 @@ pub async fn execute(
 	let client = MidnightNodeClient::new(&args.src_url, None).await?;
 	let chain_id = client.get_block_one_hash().await?;
 
+	let block_hashes = FetchTask::fetch_block_hashes(&client, &[block_number]).await?;
+	let block_hash = *block_hashes
+		.first()
+		.ok_or_else(|| format!("no block hash for block {block_number}"))?;
+
 	let fetch_client = if args.fetch_only_cached { None } else { Some(&client) };
 
 	let block = match &args.fetch_cache {
 		FetchCacheConfig::InMemory => {
 			let storage = fetch_storage::InMemory::default();
-			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, block_hash, fetch_client, &storage)
+				.await?
 		},
 		FetchCacheConfig::Redb { filename } => {
 			let storage = fetch_storage::redb_backend::RedbBackend::new(filename);
-			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, block_hash, fetch_client, &storage)
+				.await?
 		},
 		FetchCacheConfig::Postgres { database_url } => {
 			let storage = fetch_storage::postgres_backend::PostgresBackend::new(database_url).await;
-			fetcher::fetch_single_block(chain_id, block_number, fetch_client, &storage).await?
+			fetcher::fetch_single_block(chain_id, block_number, block_hash, fetch_client, &storage)
+				.await?
 		},
 	};
 
