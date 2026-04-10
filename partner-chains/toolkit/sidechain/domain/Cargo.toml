@@ -1,0 +1,60 @@
+[package]
+name = "sidechain-domain"
+version.workspace = true
+license = "Apache-2.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[package.metadata.cargo-shear]
+ignored = ["num-traits"]
+
+[lints]
+workspace = true
+
+[dependencies]
+sp-core = { workspace = true, features = ["serde"] }
+parity-scale-codec = { workspace = true }
+scale-info = { workspace = true }
+plutus = { workspace = true }
+plutus-datum-derive = { workspace = true }
+serde = { workspace = true, optional = true }
+byte-string-derive = { workspace = true }
+hex = { workspace = true }
+derive_more = { workspace = true, features = ["from", "from_str", "into"] }
+num-traits = { workspace = true }
+num-derive = { workspace = true }
+sp-std = { workspace = true }
+blake2b_simd = { workspace = true }
+figment = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+sp-io = { workspace = true }
+secp256k1 = { workspace = true, features = ["hashes", "alloc"] }
+ed25519-zebra = { workspace = true, optional = true }
+k256 = { workspace = true }
+derive-where = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex-literal = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+	"serde/std",
+	"sp-core/std",
+	"parity-scale-codec/std",
+	"scale-info/std",
+	"figment",
+	"thiserror",
+	"sp-io/std",
+	"secp256k1/std",
+	"secp256k1/global-context",
+	"ed25519-zebra",
+	"ed25519-zebra/std",
+]
+serde = ["dep:serde", "scale-info/serde", "sp-core/serde"]
+
+[lib]
+doctest = false

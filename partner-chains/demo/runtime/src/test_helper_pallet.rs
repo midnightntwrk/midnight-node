@@ -1,0 +1,211 @@
+#![allow(deprecated)]
+
+pub use pallet::*;
+
+#[frame_support::pallet]
+pub mod pallet {
+	use crate::{AccountId, Balances, BlockAuthor, MaxKeyLength, MaxValueLength};
+	use frame_support::pallet_prelude::{StorageMap, *};
+	use frame_support::traits::Currency;
+	use frame_system::pallet_prelude::OriginFor;
+	use frame_system::{ensure_none, ensure_root};
+	use sidechain_domain::byte_string::BoundedString;
+	use sidechain_domain::*;
+	use sp_block_participation::BlockProductionData;
+	use sp_core::bytes::*;
+	use sp_inherents::IsFatalError;
+	use sp_partner_chains_bridge::BridgeTransferV1;
+
+	type ParticipationData = BlockProductionData<BlockAuthor, DelegatorKey>;
+
+	pub const DEFAULT_PARTICIPATION_DATA_RELEASE_PERIOD: u64 = 30;
+
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
+
+	#[pallet::config]
+	pub trait Config: frame_system::Config {
+		type ReserveAccount: Get<AccountId>;
+	}
+
+	#[pallet::storage]
+	#[pallet::unbounded]
+	pub type LatestParticipationData<T: Config> = StorageValue<_, ParticipationData, OptionQuery>;
+
+	#[pallet::type_value]
+	pub fn DefaultParticipationDataReleasePeriod<T: Config>() -> u64 {
+		DEFAULT_PARTICIPATION_DATA_RELEASE_PERIOD
+	}
+
+	#[pallet::storage]
+	pub type ParticipationDataReleasePeriod<T: Config> =
+		StorageValue<_, u64, ValueQuery, DefaultParticipationDataReleasePeriod<T>>;
+
+	#[pallet::storage]
+	pub type TotalInvalidTransfers<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+	#[pallet::storage]
+	pub type TotalReserveTransfers<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+	#[pallet::storage]
+	pub type UserTransferTotals<T: Config> =
+		StorageMap<_, Twox64Concat, AccountId, u64, ValueQuery>;
+
+	#[pallet::genesis_config]
+	#[derive(frame_support::DefaultNoBound)]
+	pub struct GenesisConfig<T: Config> {
+		pub participation_data_release_period: u64,
+		pub _phantom: PhantomData<T>,
+	}
+	#[pallet::genesis_build]
+	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+		fn build(&self) {
+			ParticipationDataReleasePeriod::<T>::put(self.participation_data_release_period);
+		}
+	}
+
+	impl<T: Config> Pallet<T> {
+		pub fn should_release_participation_data(
+			slot: sidechain_slots::Slot,
+		) -> Option<sidechain_slots::Slot> {
+			if (*slot).is_multiple_of(ParticipationDataReleasePeriod::<T>::get()) {
+				Some(slot)
+			} else {
+				None
+			}
+		}
+	}
+
+	impl<T: Config> sp_sidechain::OnNewEpoch for Pallet<T> {
+		fn on_new_epoch(
+			_old_epoch: ScEpochNumber,
+			_new_epoch: ScEpochNumber,
+		) -> sp_weights::Weight {
+			crate::RuntimeDbWeight::get().reads_writes(0, 0)
+		}
+	}
+
+	impl<T: Config> pallet_address_associations::OnNewAssociation<AccountId> for Pallet<T> {
+		fn on_new_association(
+			partner_chain_address: AccountId,
+			main_chain_key_hash: MainchainKeyHash,
+		) {
+			log::info!(
+				"New address association: {partner_chain_address:?} -> {main_chain_key_hash:?}"
+			);
+		}
+	}
+
+	impl<T: Config> sp_governed_map::OnGovernedMappingChange<MaxKeyLength, MaxValueLength>
+		for Pallet<T>
+	{
+		fn on_governed_mapping_change(
+			key: BoundedString<MaxKeyLength>,
+			new_value: Option<BoundedVec<u8, MaxValueLength>>,
+			old_value: Option<BoundedVec<u8, MaxValueLength>>,
+		) {
+			match (new_value, old_value) {
+				(Some(new_value), Some(old_value)) => log::info!(
+					"Governed Map value for key '{key}' has changed: {} → {}",
+					to_hex(&old_value, false),
+					to_hex(&new_value, false)
+				),
+				(Some(new_value), None) => {
+					log::info!(
+						"New Governed Map value for key '{key}': {}",
+						to_hex(&new_value, false)
+					)
+				},
+
+				(None, Some(old_value)) => {
+					log::info!(
+						"Governed Map value for key '{key}' deleted, old value: {}",
+						to_hex(&old_value, false)
+					)
+				},
+				_ => { /* technically unreachable */ },
+			}
+		}
+	}
+
+	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<AccountId> for Pallet<T> {
+		fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId>) {
+			match transfer {
+				BridgeTransferV1::InvalidTransfer { token_amount, tx_hash } => {
+					log::warn!("⚠️ Recorded an invalid transfer of {token_amount} (tx {tx_hash})");
+					TotalInvalidTransfers::<T>::mutate(|v| *v + token_amount);
+				},
+				BridgeTransferV1::UserTransfer { token_amount, recipient } => {
+					log::info!("💸 Registered a transfer of {token_amount} to {recipient:?}");
+					let _ = Balances::deposit_creating(&recipient, token_amount.into());
+					UserTransferTotals::<T>::mutate(recipient, |v| *v += token_amount);
+				},
+				BridgeTransferV1::ReserveTransfer { token_amount } => {
+					log::info!("🏦 Registered a reserve transfer of {token_amount}.");
+					let _ =
+						Balances::deposit_creating(&T::ReserveAccount::get(), token_amount.into());
+					TotalReserveTransfers::<T>::mutate(|v| *v += token_amount);
+				},
+			}
+		}
+	}
+
+	#[pallet::call]
+	impl<T: Config> Pallet<T> {
+		#[pallet::call_index(0)]
+		#[pallet::weight((0, DispatchClass::Mandatory))]
+		pub fn handle_participation_data(
+			origin: OriginFor<T>,
+			data: ParticipationData,
+		) -> DispatchResult {
+			ensure_none(origin)?;
+			log::info!("📊 Block participation inherent data released");
+			LatestParticipationData::<T>::put(data);
+			Ok(())
+		}
+
+		#[pallet::call_index(1)]
+		#[pallet::weight(0)]
+		pub fn set_block_participation_data_release_period(
+			origin: OriginFor<T>,
+			period: u64,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			log::info!("📊 Block participation data release period changed to {period}");
+			ParticipationDataReleasePeriod::<T>::put(period);
+			Ok(())
+		}
+	}
+
+	#[derive(Clone, Debug, Encode, Decode)]
+	pub enum InherentError {}
+	impl IsFatalError for InherentError {
+		fn is_fatal_error(&self) -> bool {
+			true
+		}
+	}
+
+	#[pallet::inherent]
+	impl<T: Config> ProvideInherent for Pallet<T> {
+		type Call = Call<T>;
+		type Error = InherentError;
+		const INHERENT_IDENTIFIER: InherentIdentifier = *b"testhelp";
+
+		fn create_inherent(data: &InherentData) -> Option<Self::Call> {
+			let inherent = data
+				.get_data::<ParticipationData>(&Self::INHERENT_IDENTIFIER)
+				.expect("Block participation inherent data invalid")
+				.map(|data| Self::Call::handle_participation_data { data });
+
+			inherent
+		}
+
+		fn is_inherent(_call: &Self::Call) -> bool {
+			true
+		}
+
+		fn is_inherent_required(_data: &InherentData) -> Result<Option<Self::Error>, Self::Error> {
+			Ok(None)
+		}
+	}
+}

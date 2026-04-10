@@ -1,6 +1,3 @@
 [submodule "indexer"]
 	path = indexer
 	url = https://github.com/midnightntwrk/midnight-indexer
-[submodule "partner-chains"]
-	path = partner-chains
-	url = https://github.com/midnightntwrk/partner-chains

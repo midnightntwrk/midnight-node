@@ -1,0 +1,43 @@
+[package]
+name = "partner-chains-node-commands"
+version.workspace = true
+license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[package.metadata.cargo-shear]
+ignored = ["plutus"]
+
+[lints]
+workspace = true
+
+[dependencies]
+authority-selection-inherents = { workspace = true }
+clap = { workspace = true }
+cli-commands = { workspace = true }
+frame-support = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+parity-scale-codec = { workspace = true }
+partner-chains-cli = { workspace = true }
+partner-chains-smart-contracts-commands = { workspace = true }
+plutus = { workspace = true }
+sidechain-domain = { workspace = true, features = ["std"] }
+sc-cli = { workspace = true }
+sc-service = { workspace = true }
+sp-api = { workspace = true, features = ["std"] }
+#sp-core = { workspace = true, features = ["std"] }
+sp-blockchain = { workspace = true }
+sp-runtime = { workspace = true, features = ["std"] }
+sp-sidechain = { workspace = true, features = ["std"] }
+sp-session-validator-management = { workspace = true }
+sp-session-validator-management-query = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lib]
+doctest = false

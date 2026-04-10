@@ -518,7 +518,12 @@ impl MidnightClient {
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         println!("Submitting transaction expecting rejection...");
-        match self.submit_midnight_tx(tx_bytes).await {
+        match self
+            .submit_midnight_tx(tx_bytes)
+            .await?
+            .wait_for_finalized_success()
+            .await
+        {
             Err(e) => {
                 println!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())
