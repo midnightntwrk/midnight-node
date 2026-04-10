@@ -69,7 +69,7 @@ pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"blprdlog";
 /// Error type used for failing calls of the block production log feature's inherent.
 #[derive(Encode, PartialEq)]
 #[cfg_attr(not(feature = "std"), derive(Debug))]
-#[cfg_attr(feature = "std", derive(Decode, thiserror::Error, sp_runtime::RuntimeDebug))]
+#[cfg_attr(feature = "std", derive(Debug, Decode, thiserror::Error))]
 pub enum InherentError {
 	/// Inherent was not produced when expected
 	#[cfg_attr(
