@@ -18,8 +18,8 @@ use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
 use super::{
-	InitialAuthorityData, MainChainScripts, MidnightNetwork, PermissionedCandidatesConfig,
-	RegisteredCandidatesAddresses,
+	InitialAuthorityData, MainChainScripts, MessageConfig, MidnightNetwork,
+	PermissionedCandidatesConfig, RegisteredCandidatesAddresses,
 };
 
 pub struct UndeployedNetwork;
@@ -75,6 +75,10 @@ impl MidnightNetwork for UndeployedNetwork {
 		serde_json::from_str(&config_str).unwrap()
 	}
 
+	fn message_config(&self) -> Option<MessageConfig> {
+		None
+	}
+
 	fn genesis_utxo(&self) -> &str {
 		"c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
 	}
@@ -111,6 +115,7 @@ pub struct CustomNetwork {
 	pub system_parameters_config: SystemParametersConfig,
 	pub ics_config: IcsConfig,
 	pub reserve_config: ReserveConfig,
+	pub message_config: Option<MessageConfig>,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -155,6 +160,10 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn reserve_config(&self) -> ReserveConfig {
 		self.reserve_config.clone()
+	}
+
+	fn message_config(&self) -> Option<MessageConfig> {
+		self.message_config.clone()
 	}
 
 	fn main_chain_scripts(&self) -> MainChainScripts {
