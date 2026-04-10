@@ -249,7 +249,7 @@ itertools = { default-features = false, version = "0.14.0", features = ["use_all
 jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"] }
 
 async-trait = { default-features = false, version = "0.1.89" }
-futures = { default-features = false, version = "0.3.30", features = ["thread-pool"] }
+futures = { default-features = false, version = "0.3.32", features = ["thread-pool"] }
 log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
 tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
@@ -265,8 +265,8 @@ lazy_static = { version = "1.4.0", default-features = false }
 derive-new = { version = "0.7.0", default-features = false }
 figment = { version = "0.10.19", features = ["env", "test"] }
 lru = { version = "0.16.3" }
-subxt = "0.44.0"
-subxt-signer = "0.44.0"
+subxt = "0.50.0"
+subxt-signer = "0.50.0"
 thiserror = { version = "2.0", default-features = false }
 rand = { version = "0.10.0", default-features = false }
 rayon = "1.11"
@@ -295,7 +295,7 @@ derive_more = { version = "2.1.1", default-features = false }
 ed25519-zebra = { version = "4.2.0" }
 envy = { version = "0.4.2" }
 fraction = { version = "0.15.3", default-features = false }
-inquire = { version = "0.7.5" }
+inquire = { version = "0.9.4" }
 k256 = { version = "0.13.4", default-features = false }
 libp2p-identity = "0.2.13"
 log4rs = { version = "1.4.0", default-features = false, features = ["console_appender", "file_appender"] }

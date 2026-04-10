@@ -1,0 +1,29 @@
+[package]
+name = "partner-chains-plutus-data"
+version.workspace = true
+description = "Parsing and serialization of Plutus data schemas used by Partner Chains smart contracts."
+license = "Apache-2.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+sidechain-domain = { workspace = true, features = ["std"] }
+sp-core = { workspace = true }
+cardano-serialization-lib = { workspace = true }
+thiserror = { workspace = true }
+raw-scripts = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }
+hex-literal = { workspace = true }
+pretty_assertions = { workspace = true }
+
+[lib]
+doctest = false

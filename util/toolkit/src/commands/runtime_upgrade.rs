@@ -16,7 +16,7 @@
 use std::str::FromStr;
 
 use clap::Args;
-use subxt::{OnlineClient, SubstrateConfig, dynamic, tx::Payload};
+use subxt::{OnlineClient, SubstrateConfig, dynamic};
 use thiserror::Error;
 
 use crate::commands::root_call::{self, RootCallArgs};
@@ -27,6 +27,16 @@ pub enum RuntimeUpgradeError {
 	IoError(#[from] std::io::Error),
 	#[error("subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("online client error: {0}")]
+	OnlineClientError(#[from] subxt::error::OnlineClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
+	#[error("transaction finalized error: {0}")]
+	TransactionFinalizedError(#[from] subxt::error::TransactionFinalizedSuccessError),
+	#[error("events error: {0}")]
+	EventsError(#[from] subxt::error::EventsError),
 	#[error("keypair parse error: {0}")]
 	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
 	#[error("error executing root call: {0}")]
@@ -71,9 +81,7 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 	let authorize_upgrade_call =
 		dynamic::tx("System", "authorize_upgrade", vec![dynamic::Value::from_bytes(&code_hash)]);
-	let encoded_call = authorize_upgrade_call
-		.encode_call_data(&api.metadata())
-		.map_err(|e| RuntimeUpgradeError::SubxtError(subxt::Error::Other(format!("{e:?}"))))?;
+	let encoded_call = api.tx().await?.call_data(&authorize_upgrade_call)?;
 
 	// Step 4: Execute the authorization through governance
 	log::info!("Executing authorize_upgrade via federated authority governance.");
@@ -95,6 +103,7 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 
 	let apply_events = api
 		.tx()
+		.await?
 		.sign_and_submit_then_watch_default(&apply_upgrade_call, &signer)
 		.await?
 		.wait_for_finalized_success()
@@ -104,7 +113,7 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	let mut success = false;
 	for event in apply_events.iter() {
 		let event = event?;
-		if event.pallet_name() == "System" && event.variant_name() == "CodeUpdated" {
+		if event.pallet_name() == "System" && event.event_name() == "CodeUpdated" {
 			log::info!("Code update success: {:?}", event);
 			success = true;
 			break;

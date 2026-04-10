@@ -4,7 +4,7 @@ use parity_scale_codec::Decode;
 use serde::{Deserialize, Serialize};
 use subxt::{
     OnlineClient, SubstrateConfig,
-    backend::{legacy::LegacyRpcMethods, rpc::RpcClient},
+    rpcs::{LegacyRpcMethods, RpcClient},
 };
 
 /// SCALE-decoded mirror of pallet_midnight::UnshieldedTokensDetails
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?
             .ok_or_else(|| format!("no block hash for height {height}"))?;
 
-        let events = api.events().at(block_hash).await?;
+        let events = api.at_block(block_hash).await?.events().fetch().await?;
 
         let mut pending: Option<(Vec<UtxoRef>, Vec<UtxoRef>)> = None;
 
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
-            match event.variant_name() {
+            match event.event_name() {
                 "UnshieldedTokens" => {
                     let mut bytes = event.field_bytes();
                     let details = UnshieldedTokensEvent::decode(&mut bytes)?;

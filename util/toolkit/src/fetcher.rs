@@ -21,7 +21,7 @@ pub mod wallet_state_cache;
 use std::time::Duration;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
-use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
+use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -33,7 +33,7 @@ use crate::{
 	},
 };
 
-pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
+pub type MidnightClientAtBlock = OnlineClientAtBlock<MidnightNodeClientConfig>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
@@ -46,7 +46,7 @@ pub enum FetchError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("error creating client")]
 	NodeClientError(#[from] ClientError),
 	#[error("block hash missing for block number {0}")]
@@ -168,6 +168,10 @@ pub async fn fetch_from_rpc(
 		BLOCKS_PER_JOB
 	};
 
+	// Cap workers to the number of jobs to avoid unnecessary connections.
+	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_workers = num_workers.min(num_jobs as usize).max(1);
+
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
@@ -195,7 +199,7 @@ pub async fn fetch_from_rpc(
 		});
 	}
 
-	log::info!("spawning {num_workers} fetch workers");
+	log::info!("spawning {num_workers} fetch workers (capped from requested, {num_jobs} jobs)");
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {

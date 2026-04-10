@@ -2,12 +2,13 @@ use derive_where::derive_where;
 use thiserror::Error;
 
 use super::super::{
-	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier,
-	DustOutput, DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError,
-	HRP_CONSTANT, HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, Loader,
-	MnLedgerDustSpendError, ProofPreimageMarker, QualifiedDustOutput, Role, Serializable, Sp,
-	Storable, Tagged, Timestamp, WalletAddress, WalletSeed, deserialize_untagged,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, serialize_untagged,
+	ArenaKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable, DustLocalState,
+	DustNullifier, DustOutput, DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event,
+	EventReplayError, HRP_CONSTANT, HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress,
+	LedgerParameters, Loader, MnLedgerDustSpendError, ProofPreimageMarker, QualifiedDustOutput,
+	Role, Serializable, Sp, Storable, Tagged, Timestamp, WalletAddress, WalletSeed,
+	deserialize_untagged, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	serialize_untagged,
 };
 
 #[derive(Debug, Storable)]
@@ -60,10 +61,10 @@ impl<D: DB> DustWallet<D> {
 		root_seed: WalletSeed,
 		path: &DerivationPath,
 		params: Option<&LedgerParameters>,
-	) -> Self {
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::Dust])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-
-		Self::from_seed(derived_seed, params)
+		Ok(Self::from_seed(derived_seed, params))
 	}
 
 	pub fn replay_events<'a>(
