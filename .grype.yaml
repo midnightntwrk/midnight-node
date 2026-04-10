@@ -11,19 +11,16 @@ ignore:
   # TODO: Remove this ignore once npm releases a version with the fix
   - vulnerability: GHSA-7h2j-956f-4vf2
 
-  # wasmtime 35.0.0 vulnerabilities (transitive via polkadot-sdk polkadot-stable2509)
+  # wasmtime 35.0.0 critical vulnerability (transitive via polkadot-sdk polkadot-stable2509)
   # sc-executor-wasmtime pins wasmtime; cannot be bumped without upgrading polkadot-sdk
-  # TODO: Remove these ignores after upgrading to a polkadot-sdk version using wasmtime >= 36.0.7
+  # After checking the advistory description: https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-jhxm-h53p-jm7w
+  # > This vulnerability has a few ingredients, all of which must be met, for this situation to occur and bypass the sandbox restrictions:
+  # >  This miscompiled shape of load only occurs on 64-bit WebAssembly linear memories, or when Config::wasm_memory64 is enabled. 32-bit WebAssembly is not affected.
+  # >  Spectre mitigations or signals-based-traps must be disabled. When spectre mitigations are enabled then the offending shape of load is not generated. When signals-based-traps are disabled then spectre mitigations are also automatically disabled.
+  #
+  # I've confirmed that this does not affect the node/polkadot-sdk
+  # - We're using wasm 32-bit memory, not 64
+  # - No spectre config — Spectre mitigations stay at the default (enabled)
+  # - No signals_based_traps config — stays at default (enabled)
+  # TODO: Remove this ignore after upgrading to a polkadot-sdk version using wasmtime >= 36.0.7
   - vulnerability: GHSA-jhxm-h53p-jm7w   # Critical: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-852m-cvvp-9p4w   # Medium: wasmtime 35.0.0, fixed in 36.0.6
-  - vulnerability: GHSA-243v-98vx-264h   # Medium: wasmtime 35.0.0, fixed in 36.0.6
-  - vulnerability: GHSA-394w-hwhg-8vgm   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-hx6p-xpx3-jvvv   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-jxhv-7h78-9775   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-m758-wjhj-p3jq   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-q49f-xg75-m9xw   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-qqfj-4vcm-26hv   # Medium: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-vc8c-j3xm-xj73   # Medium: wasmtime 35.0.0, fixed in 36.0.5
-  - vulnerability: GHSA-hc7m-r6v8-hg9q   # Low: wasmtime 35.0.0, fixed in 36.0.3
-  - vulnerability: GHSA-6wgr-89rj-399p   # Low: wasmtime 35.0.0, fixed in 36.0.7
-  - vulnerability: GHSA-m9w2-8782-2946   # Low: wasmtime 35.0.0, fixed in 36.0.7
