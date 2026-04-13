@@ -76,7 +76,7 @@ zkir = { version = "^2.1.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
-mn-ledger-8 = { version = "=8.0.2", package = "midnight-ledger" }
+mn-ledger-8 = { version = "=8.0.3", package = "midnight-ledger" }
 ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
 onchain-runtime-ledger-8 = { version = "=3.0.0", package = "midnight-onchain-runtime" }
 zswap-ledger-8 = { version = "=8.0.0", package = "midnight-zswap" }
