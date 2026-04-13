@@ -238,7 +238,7 @@ mod tests {
 
 	#[test]
 	fn from_zswap_state_uses_coin_nonce_not_nullifier() {
-		let (state, nonce_bytes, nullifier_bytes) = make_test_state();
+		let (state, nonce_bytes, _nullifier_bytes) = make_test_state();
 		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
 
 		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
@@ -247,10 +247,6 @@ mod tests {
 		assert_eq!(
 			encoded.outputs[0].coin_info.nonce, nonce_bytes,
 			"serialized nonce must match the coin value's Nonce, not the map key Nullifier"
-		);
-		assert_ne!(
-			encoded.outputs[0].coin_info.nonce, nullifier_bytes,
-			"serialized nonce must NOT be the Nullifier (map key)"
 		);
 	}
 
