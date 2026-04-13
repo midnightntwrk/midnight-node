@@ -48,20 +48,20 @@ pub async fn get_connection(
 		.connect_with(connect_options.clone())
 		.await
 		.map_err(|e| {
-			PostgresConnectionError(
-				connect_options.get_host().to_string(),
+			log::debug!(
+				"Database connection details: host={}, port={}, database={}; error: {e}",
+				connect_options.get_host(),
 				connect_options.get_port(),
-				connect_options.get_database().unwrap_or("cexplorer").to_string(),
-				e.to_string(),
-			)
-			.to_string()
+				connect_options.get_database().unwrap_or("cexplorer"),
+			);
+			PostgresConnectionError(e.to_string())
 		})?;
 	Ok(pool)
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-#[error("Could not connect to database: postgres://***:***@{0}:{1}/{2}; error: {3}")]
-struct PostgresConnectionError(String, u16, String, String);
+#[error("Could not connect to database; error: {0}")]
+struct PostgresConnectionError(String);
 
 #[cfg(test)]
 mod tests {
@@ -69,19 +69,22 @@ mod tests {
 	use sqlx::Error::PoolTimedOut;
 
 	#[tokio::test]
-	async fn display_passwordless_connection_string_on_connection_error() {
-		let expected_connection_error = PostgresConnectionError(
-			"localhost".to_string(),
-			4432,
-			"cexplorer_test".to_string(),
-			PoolTimedOut.to_string(),
-		);
+	async fn connection_error_redacts_host_port_and_database() {
 		let test_connection_string = "postgres://postgres:randompsw@localhost:4432/cexplorer_test";
 		let actual_connection_error =
 			get_connection(test_connection_string, std::time::Duration::from_millis(1)).await;
-		assert_eq!(
-			expected_connection_error.to_string(),
-			actual_connection_error.unwrap_err().to_string()
+		let error_message = actual_connection_error.unwrap_err().to_string();
+
+		let expected = PostgresConnectionError(PoolTimedOut.to_string()).to_string();
+		assert_eq!(expected, error_message);
+
+		assert!(!error_message.contains("localhost"), "error must not contain host");
+		assert!(!error_message.contains("4432"), "error must not contain port");
+		assert!(!error_message.contains("cexplorer_test"), "error must not contain database name");
+		assert!(!error_message.contains("randompsw"), "error must not contain password");
+		assert!(
+			error_message.contains("Could not connect to database"),
+			"error must indicate connection failure"
 		);
 	}
 }
