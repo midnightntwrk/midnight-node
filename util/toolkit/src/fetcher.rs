@@ -70,11 +70,12 @@ enum TaskResult {
 	ComputeWorker,
 }
 
-/// Fetch a single block by number. Checks cache first, falls back to node RPC.
+/// Fetch a single block by hash. Checks cache first, falls back to node RPC.
 /// On cache miss, fetches from the node and stores the result in cache.
 pub async fn fetch_single_block(
 	chain_id: H256,
 	block_number: u64,
+	block_hash: H256,
 	client: Option<&MidnightNodeClient>,
 	storage: &(impl FetchStorage + Clone + 'static),
 ) -> Result<RawBlockData, FetchError> {
@@ -82,7 +83,6 @@ pub async fn fetch_single_block(
 		return Ok(block);
 	}
 	let client = client.ok_or(FetchError::BlockMissing(block_number))?;
-	let block_hash = FetchTask::fetch_block_hash(client, block_number).await?;
 	let fetched = FetchTask::fetch_block(client, block_hash).await?;
 	let raw = ComputeTask::extract_data(&fetched).await?;
 	storage.insert_block_data(chain_id, block_number, raw.clone()).await;
@@ -131,7 +131,7 @@ pub async fn fetch_all(
 		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 
 		log::info!(
-			"read {} blocks from cache, total transations: {}",
+			"read {} blocks from cache, total transactions: {}",
 			blocks.len(),
 			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 		);
@@ -354,7 +354,7 @@ pub async fn fetch_from_rpc(
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transations: {}",
+		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
 		finalized_height - min_height,
 		blocks.len() - (finalized_height - min_height) as usize,
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),

@@ -23,17 +23,17 @@ pub enum GenerateTxsError {
 #[derive(Args)]
 pub struct GenerateTxsArgs {
 	#[clap(subcommand)]
-	builder: Builder,
+	pub builder: Builder,
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	#[command(flatten)]
-	destination: Destination,
+	pub destination: Destination,
 	// Proof Server Host
 	#[arg(long, short, global = true)]
-	proof_server: Option<String>,
+	pub proof_server: Option<String>,
 	/// Dry-run - don't generate any txs, just print out the settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {

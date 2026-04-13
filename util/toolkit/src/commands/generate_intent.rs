@@ -21,38 +21,38 @@ pub enum JsCommand {
 #[derive(Args, Debug)]
 pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 
 	/// Seed for the source wallet zswap state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	wallet_seed: Option<WalletSeed>,
+	pub wallet_seed: Option<WalletSeed>,
 
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	circuit_call: toolkit_js::CircuitArgs,
+	pub circuit_call: toolkit_js::CircuitArgs,
 
 	/// Custom serialized ledger parameters, otherwise the latest will be fetched.
 	#[arg(long)]
-	custom_ledger_parameters: Option<String>,
+	pub custom_ledger_parameters: Option<String>,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployCommandArgs {
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	deploy: toolkit_js::DeployArgs,
+	pub deploy: toolkit_js::DeployArgs,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -85,7 +85,7 @@ pub struct MaintainCircuitCommandArgs {
 pub struct GenerateIntentArgs {
 	/// Supported commands
 	#[clap(subcommand)]
-	js_command: JsCommand,
+	pub js_command: JsCommand,
 }
 
 pub async fn fetch_zswap_state(
