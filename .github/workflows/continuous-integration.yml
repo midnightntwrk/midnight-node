@@ -40,7 +40,7 @@ jobs:
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -152,7 +152,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -230,7 +230,7 @@ jobs:
     if: needs.run.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -260,7 +260,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -308,7 +308,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -336,7 +336,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -462,7 +462,7 @@ jobs:
     needs: run
     runs-on: ubuntu-latest
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@d7be6d8fe6f3c65e94d630cef5d49b258c265b31
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
