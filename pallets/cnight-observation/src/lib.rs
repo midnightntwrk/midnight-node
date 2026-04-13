@@ -465,8 +465,10 @@ pub mod pallet {
 			cur_time: u64,
 			data: CreateData,
 		) -> Option<CNightGeneratesDustEventSerialized> {
+			// Unregistered owners are expected (most Cardano reward addresses never
+			// post a DUST registration) — drop the create silently; the matching
+			// spend will also be a no-op in handle_spend.
 			let Some(ref dust_public_key) = Self::get_registration(&data.owner) else {
-				log::warn!("No valid dust registration for {:?}", &data.owner);
 				return None;
 			};
 
@@ -504,12 +506,9 @@ pub mod pallet {
 					.concat(),
 			);
 
+			// No create event means the UTXO was created under an unregistered owner
+			// (filtered in handle_create) — the matching spend is simply a no-op.
 			let Some(dust_public_key) = UtxoOwners::<T>::take(nonce) else {
-				log::warn!(
-					"No create event for UTXO: {}#{}",
-					hex::encode(data.utxo_tx_hash.0),
-					data.utxo_tx_index
-				);
 				return None;
 			};
 

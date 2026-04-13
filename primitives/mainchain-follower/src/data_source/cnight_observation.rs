@@ -481,7 +481,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				// Non-base addresses (enterprise, pointer, reward) carry no stake
+				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
@@ -542,7 +543,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				// Non-base addresses (enterprise, pointer, reward) carry no stake
+				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
