@@ -10,5 +10,6 @@ once the motion is approved, with the dispatch outcome captured in the
 `MotionDispatched` event. Also removes three unused error variants
 (`MotionTooEarlyToClose`, `MotionAlreadyExists`, `MotionExpired`).
 
+Fixes: https://github.com/midnightntwrk/midnight-node/issues/1318
 PR: https://github.com/midnightntwrk/midnight-node/pull/938
-Ticket: https://shielded.atlassian.net/browse/PM-22085
+JIRA: https://shielded.atlassian.net/browse/PM-22085
