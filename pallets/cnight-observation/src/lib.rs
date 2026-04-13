@@ -330,8 +330,7 @@ pub mod pallet {
 				return Ok(());
 			};
 
-			let parsed =
-				Self::get_data_from_inherent_data(data)?.ok_or(InherentError::Other)?;
+			let parsed = Self::get_data_from_inherent_data(data)?.ok_or(InherentError::Other)?;
 			if parsed.utxos != *utxos || parsed.next_cardano_position != *next_cardano_position {
 				return Err(InherentError::Other);
 			}

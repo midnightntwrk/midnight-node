@@ -1602,10 +1602,8 @@ fn create_inherent_with_malformed_data_returns_none() {
 fn check_inherent_with_malformed_data_returns_error() {
 	new_test_ext().execute_with(|| {
 		let malformed = create_malformed_inherent();
-		let call = Call::process_tokens {
-			utxos: vec![],
-			next_cardano_position: test_position(1, 0),
-		};
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(1, 0) };
 		let result = CNightObservation::check_inherent(&call, &malformed);
 		assert_eq!(result, Err(InherentError::DecodeFailed));
 	});
