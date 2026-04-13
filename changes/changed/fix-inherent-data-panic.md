@@ -8,5 +8,6 @@ the panic with typed `Result<Option<...>, InherentError>` error handling
 using a new `DecodeFailed` variant, matching the pattern already established
 in the sibling `federated-authority-observation` pallet.
 
+Fixes: https://github.com/midnightntwrk/midnight-node/issues/1317
 PR: https://github.com/midnightntwrk/midnight-node/pull/1234
-Ticket: https://shielded.atlassian.net/browse/PM-21799
+JIRA: https://shielded.atlassian.net/browse/PM-21799
