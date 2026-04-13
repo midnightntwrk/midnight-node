@@ -65,6 +65,7 @@ pub enum SystemTransactionError {
 	InvalidBasisPoints,
 	InvariantViolation,
 	TreasuryDisabled,
+	MerkleTreeError,
 }
 
 #[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
@@ -401,6 +402,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::InvalidBasisPoints => 208,
 					SystemTransactionError::InvariantViolation => 209,
 					SystemTransactionError::TreasuryDisabled => 210,
+					SystemTransactionError::MerkleTreeError => 211,
 				},
 			},
 			// Reserved from [150-255) for future Errors
