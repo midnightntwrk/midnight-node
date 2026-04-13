@@ -43,7 +43,7 @@ pub mod migrations;
 pub mod pallet {
 	use crate::alloc::string::ToString;
 	use frame_support::dispatch::GetDispatchInfo;
-	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
+	use frame_support::{ensure, pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
 	use scale_info::prelude::{string::String, vec::Vec};
@@ -549,11 +549,8 @@ pub mod pallet {
 			let block_limit_hit = all_weight.total().any_gt(maximum_weight.max_block)
 				&& per_class.any_gt(reserved_limit);
 
-			if class_limit_hit || block_limit_hit {
-				Err(InvalidTransaction::ExhaustsResources.into())
-			} else {
-				Ok(())
-			}
+			ensure!(!class_limit_hit && !block_limit_hit, InvalidTransaction::ExhaustsResources);
+			Ok(())
 		}
 
 		//todo annotate with exclude for non test runs
