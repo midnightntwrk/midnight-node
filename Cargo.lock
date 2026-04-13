@@ -7876,6 +7876,7 @@ dependencies = [
  "midnight-node-metadata",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
+ "ogmios-client",
  "parity-scale-codec",
  "postcard",
  "rand 0.8.5",
@@ -7888,6 +7889,7 @@ dependencies = [
  "serde_yaml",
  "sha2 0.10.9",
  "shellexpand",
+ "sidechain-domain",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603)",
  "sqlx",
  "strum 0.28.0",
@@ -7903,6 +7905,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trycmd",
+ "whisky",
  "zstd 0.13.3",
 ]
 
