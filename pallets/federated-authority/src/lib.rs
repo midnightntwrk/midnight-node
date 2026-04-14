@@ -50,7 +50,7 @@ pub mod pallet {
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 
 	/// Struct holding Motion information
-	#[derive(CloneNoBound, PartialEqNoBound, Decode, Encode, RuntimeDebugNoBound, TypeInfo)]
+	#[derive(CloneNoBound, PartialEqNoBound, Decode, Encode, DebugNoBound, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
 	pub struct MotionInfo<T: Config> {
 		pub approvals: BoundedBTreeSet<AuthId, T::MaxAuthorityBodies>,
