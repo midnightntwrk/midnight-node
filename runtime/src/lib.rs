@@ -118,7 +118,7 @@ pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod beefy;
-mod c2n_bridge;
+mod c2m_bridge;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -841,8 +841,8 @@ impl pallet_cnight_observation::Config for Runtime {
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
-	type TransferHandler = crate::c2n_bridge::MidnightTokenTransferHandler;
-	type HandlerResult = crate::c2n_bridge::MidnightTxHash;
+	type TransferHandler = crate::c2m_bridge::MidnightTokenTransferHandler;
+	type HandlerResult = crate::c2m_bridge::MidnightTxHash;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
