@@ -144,7 +144,13 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 ## Change Files
 
-PRs that affect the node or toolkit images should include a change file. Create a new file in the `changes/added` or `changes/changed` directory with the format:
+PRs that affect the node, toolkit, or runtime should include a change file in the appropriate component subdirectory:
+
+- `changes/node/added/` or `changes/node/changed/` — for node changes
+- `changes/toolkit/added/` or `changes/toolkit/changed/` — for toolkit changes
+- `changes/runtime/added/` or `changes/runtime/changed/` — for runtime changes
+
+Format:
 
 ```
 #tag1 #tag2
@@ -157,6 +163,28 @@ JIRA: <link to JIRA ticket, if applicable>
 ```
 
 Change files are optional for changes that don't affect products (e.g., CI-only changes), but are worth adding for significant changes anyway.
+
+## GitHub Actions Workflows
+
+When writing or modifying GitHub Actions workflows (`.github/workflows/*.yml`):
+
+- **Never interpolate `${{ }}` expressions directly in `run:` blocks.** Pass them via `env:` and reference as `"$ENV_VAR"` in the script. This prevents shell injection from untrusted context data.
+
+  ```yaml
+  # Bad — shell injection risk
+  run: |
+    if [ "${{ inputs.my-input }}" = "true" ]; then ...
+
+  # Good — safe
+  env:
+    MY_INPUT: ${{ inputs.my-input }}
+  run: |
+    if [ "$MY_INPUT" = "true" ]; then ...
+  ```
+
+- **`if:` conditions on steps are safe** — `if: inputs.skip-node != true` is evaluated by the Actions runner, not interpolated into shell.
+- **Job-level `if:` on reusable workflow calls uses string comparison** — use `github.event.inputs.skip-node != 'true'` (quoted string), not boolean.
+- **Use `!cancelled() && !failure()`** on downstream jobs to let them run when upstream jobs are skipped (but not when failed).
 
 ## License Header
 

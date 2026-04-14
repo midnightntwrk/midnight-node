@@ -5,12 +5,12 @@ use sp_consensus_beefy::{VersionedFinalityProof, ecdsa_crypto::Signature as Ecds
 use sp_core::Bytes;
 use subxt::{
 	OnlineClient, PolkadotConfig,
-	backend::rpc::RpcClient,
-	ext::subxt_rpcs::{
+	rpcs::{
+		RpcClient,
 		client::{RpcParams, RpcSubscription},
 		rpc_params,
 	},
-	runtime_api::Payload as SubxtPayload,
+	runtime_apis::Payload as SubxtPayload,
 };
 
 use crate::{
@@ -129,7 +129,7 @@ impl Relayer {
 		&self,
 		at_block_hash: Option<BlockHash>,
 	) -> Result<BeefyValidatorSet, Error> {
-		let validator_set_call = mn_meta::apis().beefy_api().validator_set();
+		let validator_set_call = mn_meta::runtime_apis::RuntimeApi.beefy_api().validator_set();
 
 		let validator_set = self.runtime_api(at_block_hash, validator_set_call).await?;
 
@@ -141,7 +141,12 @@ impl Relayer {
 	/// Returns the Best Block Number, or None if querying fails.
 	/// No need to throw an error
 	async fn get_best_block_number(&self) -> Option<BlockNumber> {
-		match self.api.blocks().at_latest().await.map(|block| block.number()) {
+		match self
+			.api
+			.at_current_block()
+			.await
+			.map(|at_block| at_block.block_number() as BlockNumber)
+		{
 			Ok(block) => Some(block),
 			Err(e) => {
 				log::warn!("Failed to get best block number: {e:?}");
@@ -170,13 +175,10 @@ impl Relayer {
 		at_block_hash: Option<BlockHash>,
 		payload: T,
 	) -> Result<T::ReturnType, Error> {
-		match at_block_hash {
-			Some(at_block_hash) => self.api.runtime_api().at(at_block_hash).call(payload).await,
-			None => {
-				let result = self.api.runtime_api().at_latest().await?;
-				result.call(payload).await
-			},
-		}
-		.map_err(Error::Subxt)
+		let at_block = match at_block_hash {
+			Some(at_block_hash) => self.api.at_block(at_block_hash).await.map_err(Error::from)?,
+			None => self.api.at_current_block().await.map_err(Error::from)?,
+		};
+		at_block.runtime_apis().call(payload).await.map_err(Error::from)
 	}
 }

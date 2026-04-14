@@ -14,13 +14,17 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 **Recommended:** Use `latest-main` for backwards compatibility and latest bugfixes:
 ```bash
 docker pull midnightntwrk/midnight-node-toolkit:latest-main
+# or, install from source:
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node midnight-node-toolkit
 ```
 
 For guaranteed compatibility with a specific node version, use matching tags:
 ```bash
-# Example: both toolkit and node at version 0.18.0-rc.7
-docker pull midnightntwrk/midnight-node-toolkit:0.18.0-rc.7
-docker pull midnightntwrk/midnight-node:0.18.0-rc.7
+# Example: both toolkit and node at version 0.22.0
+docker pull midnightntwrk/midnight-node-toolkit:0.22.0
+docker pull midnightntwrk/midnight-node:0.22.0
+# or, install from source
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node --tag node-0.22.0 midnight-node-toolkit
 ```
 
 ---
@@ -120,11 +124,11 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 - Query from chain, generate, and send to chain:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
-[..] Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-[..] Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
-[..] Dry-run: Destination rate: 1.0 TPS
-[..] Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
-[..] Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 1.0 TPS[..]
+[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from file, generate, and send to file:
@@ -135,11 +139,11 @@ $ midnight-node-toolkit generate-txs --dry-run --dest-file txs.json batches -n 5
 - Query from file and send to chain with rate control:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run -r 2 --src-file txs.json --dest-url ws://127.0.0.1:9944 send
-[..] Dry-run: Source transactions from file(s): ["txs.json"]
-[..] Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
-[..] Dry-run: Destination rate: 2.0 TPS
-[..] Dry-run: Builder type: Send
-[..] Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from file(s): ["txs.json"][..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 2.0 TPS[..]
+[..]Dry-run: Builder type: Send[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 
@@ -167,11 +171,11 @@ $ midnight-node-toolkit generate-txs --dry-run
 $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-[..] Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-[..] Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
-[..] Dry-run: Destination rate: 1.0 TPS
-[..] Dry-run: Builder type: ContractSimple(Deploy[..]
-[..] Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 1.0 TPS[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from chain, generate, and send to bytes file:
@@ -181,10 +185,10 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --dest-file deploy.mn
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-[..] Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"]
-[..] Dry-run: Destination file: "deploy.mn"
-[..] Dry-run: Builder type: ContractSimple(Deploy[..]
-[..] Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"][..]
+[..]Dry-run: Destination file: "deploy.mn"[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from file, generate, and send to bytes file:
@@ -193,10 +197,10 @@ $ midnight-node-toolkit generate-txs --dry-run
 >   --dest-file deploy.mn
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-[..] Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-[..] Dry-run: Destination file: "deploy.mn"
-[..] Dry-run: Builder type: ContractSimple(Deploy[..]
-[..] Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination file: "deploy.mn"[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query fom chain, generate, and save as a serialized intent file:
@@ -220,10 +224,10 @@ $ midnight-node-toolkit generate-intent deploy
 >    --output-zswap-state out/zswap.json \
 >    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
 >    0
-[..] Executing generate-intent
-[..] Executing deploy command
-[..] Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
-[..] written: out/intent.bin, out/private_state.json, out/zswap.json
+[..]Executing generate-intent[..]
+[..]Executing deploy command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
+[..]written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
 
@@ -298,9 +302,9 @@ $ midnight-node-toolkit generate-intent deploy --dry-run
 >    --output-intent "/out/deploy.bin"
 >    --output-private-state "/out/initial_private_state.json"
 >    --output-zswap-state "/out/out.json"
-[..] Executing generate-intent
-[..] Dry-run: toolkit-js path: "../toolkit-js/"
-[..] Dry-run: generate deploy intent: DeployArgs[..]
+[..]Executing generate-intent[..]
+[..]Dry-run: toolkit-js path: "../toolkit-js/"[..]
+[..]Dry-run: generate deploy intent: DeployArgs[..]
 ...
 ```
 
@@ -362,11 +366,11 @@ $ midnight-node-toolkit generate-intent circuit
 >   --output-zswap-state out/zswap_state.json
 >   --output-result out/result.json
 >   increment
-[..] Executing generate-intent
-[..] Executing circuit command
-[..] Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "--output-oc", "[CWD]/out/onchain_state.mn", "--output-result", "[CWD]/out/result.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+[..]Executing generate-intent[..]
+[..]Executing circuit command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "--output-oc", "[CWD]/out/onchain_state.mn", "--output-result", "[CWD]/out/result.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 toolkit-js> []
-[..] written: out/intent.bin, out/ps_state.json, out/zswap_state.json
+[..]written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```
 
@@ -429,10 +433,10 @@ $ midnight-node-toolkit generate-intent maintain-contract
 >   --output-intent out/intent.bin
 >   --signing 0000000000000000000000000000000000000000000000000000000000000001
 >   0000000000000000000000000000000000000000000000000000000000000002
-[..] Executing generate-intent
-[..] Executing maintain command
-[..] Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
-[..] written: out/intent.bin
+[..]Executing generate-intent[..]
+[..]Executing maintain command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
+[..]written: out/intent.bin
 
 ```
 
@@ -450,10 +454,10 @@ $ midnight-node-toolkit generate-intent maintain-circuit
 >   --signing 0000000000000000000000000000000000000000000000000000000000000001
 >   increment
 >   ./test-data/contract/counter/keys/increment.verifier
-[..] Executing generate-intent
-[..] Executing maintain command
-[..] Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
-[..] written: out/intent.bin
+[..]Executing generate-intent[..]
+[..]Executing maintain command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
+[..]written: out/intent.bin
 
 ```
 

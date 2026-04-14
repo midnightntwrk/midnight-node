@@ -1,0 +1,207 @@
+[package]
+name = "partner-chains-demo-runtime"
+version.workspace = true
+description = "A reference implementation of a partner chain runtime"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license = "Unlicense"
+publish = false
+
+[package.metadata.cargo-shear]
+ignored = ["pallet-session"]
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+parity-scale-codec = { workspace = true }
+scale-info = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true, default-features = false, features = [
+	"alloc",
+] }
+
+pallet-aura = { workspace = true }
+pallet-balances = { workspace = true }
+frame-support = { workspace = true }
+pallet-grandpa = { workspace = true }
+pallet-partner-chains-session = { workspace = true, features = [
+	"pallet-session-compat",
+] }
+pallet-session = { workspace = true }
+pallet-sudo = { workspace = true }
+frame-system = { workspace = true }
+frame-try-runtime = { workspace = true, optional = true }
+hex = { workspace = true }
+pallet-timestamp = { workspace = true }
+pallet-transaction-payment = { workspace = true }
+frame-executive = { workspace = true }
+sp-api = { workspace = true }
+sp-block-builder = { workspace = true }
+sp-consensus-aura = { workspace = true }
+sp-consensus-grandpa = { workspace = true }
+sp-consensus-slots = { workspace = true }
+sp-core = { workspace = true }
+sp-genesis-builder = { workspace = true }
+sp-inherents = { workspace = true }
+sp-keyring = { workspace = true }
+sp-offchain = { workspace = true }
+sp-runtime = { workspace = true }
+sp-session = { workspace = true }
+sp-std = { workspace = true }
+sp-transaction-pool = { workspace = true }
+sp-version = { workspace = true }
+sp-storage = { workspace = true }
+sp-weights = { workspace = true }
+authority-selection-inherents = { workspace = true }
+
+hex-literal = { workspace = true }
+
+# Used for the node template's RPCs
+frame-system-rpc-runtime-api = { workspace = true }
+pallet-transaction-payment-rpc-runtime-api = { workspace = true }
+
+# Used for runtime benchmarking
+frame-benchmarking = { workspace = true, optional = true }
+frame-system-benchmarking = { workspace = true, optional = true }
+
+# Local Dependencies
+sp-block-production-log = { workspace = true }
+pallet-block-production-log = { workspace = true }
+sp-sidechain = { workspace = true }
+pallet-sidechain = { workspace = true }
+pallet-session-validator-management = { workspace = true, features = [
+	"pallet-session-compat",
+] }
+sp-session-validator-management = { workspace = true, features = ["serde"] }
+sidechain-domain = { workspace = true, features = ["serde"] }
+sidechain-slots = { workspace = true }
+pallet-address-associations = { workspace = true }
+pallet-block-producer-metadata = { workspace = true }
+sp-block-producer-metadata = { workspace = true }
+pallet-block-participation = { workspace = true }
+sp-block-participation = { workspace = true }
+pallet-governed-map = { workspace = true }
+sp-governed-map = { workspace = true }
+sp-block-producer-fees = { workspace = true }
+pallet-block-producer-fees = { workspace = true }
+pallet-partner-chains-bridge = { workspace = true }
+sp-partner-chains-bridge = { workspace = true }
+
+[dev-dependencies]
+sp-io = { workspace = true }
+sp-keyring = { workspace = true }
+# we actually don't need it, cause in dev we can use full sp-keyring, but its usage gives a good example of how to create accountIds in WASM
+hex = { workspace = true }
+sp-consensus-slots = { workspace = true }
+minicbor = { workspace = true }
+plutus = { workspace = true }
+serde_json = { workspace = true }
+
+[build-dependencies]
+substrate-wasm-builder = { workspace = true, optional = true }
+
+[features]
+default = ["std"]
+std = [
+	"authority-selection-inherents/std",
+	"serde_json/std",
+	"frame-try-runtime?/std",
+	"frame-system-benchmarking?/std",
+	"frame-system-rpc-runtime-api/std",
+	"frame-benchmarking?/std",
+	"parity-scale-codec/std",
+	"scale-info/std",
+	"frame-executive/std",
+	"frame-support/std",
+	"frame-system-rpc-runtime-api/std",
+	"frame-system/std",
+	"frame-executive/std",
+	"frame-try-runtime/std",
+	"pallet-aura/std",
+	"pallet-balances/std",
+	"pallet-block-producer-fees/std",
+	"pallet-block-production-log/std",
+	"pallet-grandpa/std",
+	"pallet-sudo/std",
+	"pallet-partner-chains-session/std",
+	"pallet-session-validator-management/std",
+	"pallet-timestamp/std",
+	"pallet-transaction-payment-rpc-runtime-api/std",
+	"pallet-transaction-payment/std",
+	"pallet-address-associations/std",
+	"pallet-block-producer-metadata/std",
+	"sp-block-producer-metadata/std",
+	"sp-api/std",
+	"sp-block-builder/std",
+	"sp-block-producer-fees/std",
+	"sp-consensus-aura/std",
+	"sp-consensus-grandpa/std",
+	"sp-consensus-slots/std",
+	"sp-core/std",
+	"sp-genesis-builder/std",
+	"sp-keyring/std",
+	"sp-inherents/std",
+	"sp-offchain/std",
+	"sp-runtime/std",
+	"sp-session/std",
+	"sp-std/std",
+	"sp-transaction-pool/std",
+	"sp-version/std",
+	"sp-storage/std",
+	"sp-io/std",
+	"sp-weights/std",
+	"substrate-wasm-builder",
+	"pallet-sidechain/std",
+	"sidechain-slots/std",
+	"sidechain-domain/std",
+	"sp-inherents/std",
+	"sp-block-production-log/std",
+	"pallet-block-participation/std",
+	"sp-block-participation/std",
+	"pallet-governed-map/std",
+	"sp-governed-map/std",
+	"pallet-partner-chains-bridge/std",
+	"sp-partner-chains-bridge/std",
+]
+
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"frame-system-benchmarking/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"pallet-grandpa/runtime-benchmarks",
+	"pallet-sudo/runtime-benchmarks",
+	"pallet-timestamp/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+	"pallet-block-production-log/runtime-benchmarks",
+	"pallet-address-associations/runtime-benchmarks",
+	"pallet-block-producer-fees/runtime-benchmarks",
+	"pallet-block-producer-metadata/runtime-benchmarks",
+	"pallet-block-participation/runtime-benchmarks",
+	"pallet-governed-map/runtime-benchmarks",
+	"pallet-partner-chains-bridge/runtime-benchmarks",
+	"pallet-session-validator-management/runtime-benchmarks",
+]
+try-runtime = [
+	"frame-try-runtime/try-runtime",
+	"frame-executive/try-runtime",
+	"frame-system/try-runtime",
+	"frame-support/try-runtime",
+	"pallet-aura/try-runtime",
+	"pallet-balances/try-runtime",
+	"pallet-grandpa/try-runtime",
+	"pallet-sudo/try-runtime",
+	"pallet-timestamp/try-runtime",
+	"pallet-transaction-payment/try-runtime",
+]
+
+[lib]
+doctest = false

@@ -1,0 +1,10 @@
+.obsidian
+**/__pycache__/
+.decrypted~*
+*.decrypted
+venv/
+contractlog.json
+reports
+logs/
+.vscode/settings.json
+my_env/

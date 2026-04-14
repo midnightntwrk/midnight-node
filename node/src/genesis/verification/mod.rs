@@ -15,6 +15,9 @@
 
 pub mod verify_auth_script_common;
 pub mod verify_federated_authority_auth_script;
+pub mod verify_genesis_message;
+pub mod verify_genesis_timestamp;
 pub mod verify_ics_auth_script;
 pub mod verify_ledger_state_genesis;
 pub mod verify_permissioned_candidates_auth_script;
+pub mod verify_reserve_auth_script;

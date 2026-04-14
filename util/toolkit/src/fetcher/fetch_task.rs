@@ -12,8 +12,9 @@
 // limitations under the License.
 
 use backoff::{ExponentialBackoff, future::retry};
+use futures::stream::{FuturesOrdered, StreamExt};
 use hex::ToHex as _;
-use subxt::{ext::subxt_rpcs, utils::H256};
+use subxt::{rpcs, rpcs::rpc_params, utils::H256};
 
 use crate::{
 	client::{ClientError, MidnightNodeClient},
@@ -31,9 +32,15 @@ pub enum FetchTaskError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("node client error")]
 	NodeClientError(#[from] ClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
+	#[error("block error: {0}")]
+	BlockError(#[from] subxt::error::BlockError),
 	#[error("block hash missing for block number {0}")]
 	BlockHashMissing(u64),
 }
@@ -54,13 +61,18 @@ impl FetchTask {
 			FetchTask::FetchBlocks { min, max } => {
 				log::debug!("fetching blocks {min}..{max}");
 				let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
+				let uncached: Vec<u64> = (min..max)
+					.zip(cached_blocks)
+					.filter_map(|(i, b)| b.is_none().then_some(i))
+					.collect();
+
+				let hashes = Self::fetch_block_hashes(client, &uncached).await?;
+
+				let mut futs: FuturesOrdered<_> =
+					hashes.into_iter().map(|hash| Self::fetch_block(client, hash)).collect();
 				let mut blocks = Vec::new();
-				for (i, b) in (min..max).into_iter().zip(cached_blocks.into_iter()) {
-					if b.is_none() {
-						let block_hash = Self::fetch_block_hash(client, i).await?;
-						let block = Self::fetch_block(client, block_hash).await?;
-						blocks.push(block);
-					}
+				while let Some(result) = futs.next().await {
+					blocks.push(result?);
 				}
 				log::debug!("fetching blocks {min}..{max}: complete");
 				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
@@ -69,33 +81,39 @@ impl FetchTask {
 		}
 	}
 
-	pub(crate) async fn fetch_block_hash(
+	/// Fetch block hashes for a batch of block numbers in a single RPC call.
+	pub(crate) async fn fetch_block_hashes(
 		client: &MidnightNodeClient,
-		block_number: u64,
-	) -> Result<H256, FetchTaskError> {
-		log::debug!("fetching block hash for number {block_number}...");
+		block_numbers: &[u64],
+	) -> Result<Vec<H256>, FetchTaskError> {
+		if block_numbers.is_empty() {
+			return Ok(Vec::new());
+		}
+
+		log::debug!("fetching {} block hashes in batch...", block_numbers.len());
 
 		let backoff = ExponentialBackoff {
 			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
 			..ExponentialBackoff::default()
 		};
 
-		let block_hash = retry(backoff, || async {
+		let hashes: Vec<H256> = retry(backoff, || async {
 			client
-				.rpc
-				.chain_get_block_hash(Some(
-					subxt::backend::legacy::rpc_methods::NumberOrHex::Number(block_number),
-				))
+				.rpc_client
+				.request("chain_getBlockHash", rpc_params![block_numbers])
 				.await
 				.map_err(|e| {
-					log::warn!("block hash fetch failed, retrying: {e}");
+					log::warn!("batch block hash fetch failed, retrying: {e}");
 					backoff::Error::transient(e)
 				})
 		})
-		.await?
-		.ok_or(FetchTaskError::BlockHashMissing(block_number))?;
+		.await?;
 
-		Ok(block_hash)
+		if hashes.len() != block_numbers.len() {
+			return Err(FetchTaskError::BlockHashMissing(block_numbers[hashes.len()]));
+		}
+
+		Ok(hashes)
 	}
 
 	pub(crate) async fn fetch_block(
@@ -110,17 +128,25 @@ impl FetchTask {
 		};
 
 		let block = retry(backoff, || async {
-			client.api.blocks().at(block_hash).await.map_err(|e| {
+			client.api.at_block(block_hash).await.map_err(|e| {
 				log::warn!("rpc fetch failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})
 		})
 		.await?;
 
-		let state_root = client.get_state_root_at(Some(block.hash())).await?;
-		let raw_body = client.api.backend().block_body(block_hash).await?.unwrap_or_default();
+		let state_root = client.get_state_root_at(Some(block.block_hash())).await?;
+		let raw_body = block
+			.extrinsics()
+			.fetch()
+			.await?
+			.iter()
+			.filter_map(|ext| ext.ok())
+			.map(|ext| ext.bytes().to_vec())
+			.collect();
 
-		let state = if block.header().parent_hash.is_zero() {
+		let header = block.block_header().await?;
+		let state = if header.parent_hash.is_zero() {
 			let system_properties = client.get_system_properties().await?;
 			let genesis_state_value = system_properties
 				.get("genesis_state")

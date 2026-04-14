@@ -11,6 +11,10 @@ on:
         description: "GitHub release tag to attach artifacts to (leave empty for workflow artifacts only)"
         required: false
         default: ""
+      runtime-tag-release:
+        description: "Runtime version tag (e.g. 1.0.0-rc.1) for versioned asset filenames"
+        required: false
+        default: ""
 
   workflow_call:
     inputs:
@@ -20,6 +24,11 @@ on:
         type: string
       release-tag:
         description: "GitHub release tag to attach artifacts to"
+        required: false
+        type: string
+        default: ""
+      runtime-tag-release:
+        description: "Runtime version tag for versioned asset filenames"
         required: false
         type: string
         default: ""
@@ -53,6 +62,16 @@ jobs:
         run: |
           . ./.envrc && earthly +srtool-build
 
+      - name: Rename WASM assets with version
+        if: inputs.runtime-tag-release != ''
+        env:
+          RTAG: ${{ inputs.runtime-tag-release }}
+        run: |
+          cd artifacts/srtool || exit 1
+          mv midnight_node_runtime.wasm "midnight_node_runtime-${RTAG}.wasm"
+          mv midnight_node_runtime.compact.wasm "midnight_node_runtime-${RTAG}.compact.wasm"
+          mv midnight_node_runtime.compact.compressed.wasm "midnight_node_runtime-${RTAG}.compact.compressed.wasm"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
@@ -60,14 +79,30 @@ jobs:
           path: artifacts/srtool/
           retention-days: 90
 
+      - name: Determine WASM filenames
+        if: inputs.release-tag != ''
+        id: wasm-names
+        env:
+          RTAG: ${{ inputs.runtime-tag-release }}
+        run: |
+          if [ -n "$RTAG" ]; then
+            echo "wasm=midnight_node_runtime-${RTAG}.wasm" >> "$GITHUB_OUTPUT"
+            echo "compact=midnight_node_runtime-${RTAG}.compact.wasm" >> "$GITHUB_OUTPUT"
+            echo "compressed=midnight_node_runtime-${RTAG}.compact.compressed.wasm" >> "$GITHUB_OUTPUT"
+          else
+            echo "wasm=midnight_node_runtime.wasm" >> "$GITHUB_OUTPUT"
+            echo "compact=midnight_node_runtime.compact.wasm" >> "$GITHUB_OUTPUT"
+            echo "compressed=midnight_node_runtime.compact.compressed.wasm" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate checksums
         if: inputs.release-tag != ''
         run: |
           cd artifacts/srtool || exit 1
           {
-            sha256sum midnight_node_runtime.wasm
-            sha256sum midnight_node_runtime.compact.wasm
-            sha256sum midnight_node_runtime.compact.compressed.wasm
+            sha256sum "${{ steps.wasm-names.outputs.wasm }}"
+            sha256sum "${{ steps.wasm-names.outputs.compact }}"
+            sha256sum "${{ steps.wasm-names.outputs.compressed }}"
           } >> SHA256SUMS-srtool
 
           echo "Generated checksums:"
@@ -77,19 +112,19 @@ jobs:
         if: inputs.release-tag != ''
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
-          subject-path: artifacts/srtool/midnight_node_runtime.wasm
+          subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.wasm }}
 
       - name: Attest compact runtime WASM
         if: inputs.release-tag != ''
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
-          subject-path: artifacts/srtool/midnight_node_runtime.compact.wasm
+          subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.compact }}
 
       - name: Attest compressed runtime WASM
         if: inputs.release-tag != ''
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
-          subject-path: artifacts/srtool/midnight_node_runtime.compact.compressed.wasm
+          subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.compressed }}
 
       - name: Upload to GitHub release
         if: inputs.release-tag != ''
@@ -100,8 +135,8 @@ jobs:
           cd artifacts/srtool || exit 1
           echo "Uploading srtool artifacts to release: $RELEASE_TAG"
           gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            midnight_node_runtime.wasm \
-            midnight_node_runtime.compact.wasm \
-            midnight_node_runtime.compact.compressed.wasm \
+            "${{ steps.wasm-names.outputs.wasm }}" \
+            "${{ steps.wasm-names.outputs.compact }}" \
+            "${{ steps.wasm-names.outputs.compressed }}" \
             srtool-digest.json \
             SHA256SUMS-srtool

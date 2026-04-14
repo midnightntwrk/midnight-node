@@ -21,7 +21,7 @@ pub mod wallet_state_cache;
 use std::time::Duration;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
-use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
+use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -33,7 +33,7 @@ use crate::{
 	},
 };
 
-pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
+pub type MidnightClientAtBlock = OnlineClientAtBlock<MidnightNodeClientConfig>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
@@ -46,7 +46,7 @@ pub enum FetchError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("error creating client")]
 	NodeClientError(#[from] ClientError),
 	#[error("block hash missing for block number {0}")]
@@ -70,11 +70,12 @@ enum TaskResult {
 	ComputeWorker,
 }
 
-/// Fetch a single block by number. Checks cache first, falls back to node RPC.
+/// Fetch a single block by hash. Checks cache first, falls back to node RPC.
 /// On cache miss, fetches from the node and stores the result in cache.
 pub async fn fetch_single_block(
 	chain_id: H256,
 	block_number: u64,
+	block_hash: H256,
 	client: Option<&MidnightNodeClient>,
 	storage: &(impl FetchStorage + Clone + 'static),
 ) -> Result<RawBlockData, FetchError> {
@@ -82,7 +83,6 @@ pub async fn fetch_single_block(
 		return Ok(block);
 	}
 	let client = client.ok_or(FetchError::BlockMissing(block_number))?;
-	let block_hash = FetchTask::fetch_block_hash(client, block_number).await?;
 	let fetched = FetchTask::fetch_block(client, block_hash).await?;
 	let raw = ComputeTask::extract_data(&fetched).await?;
 	storage.insert_block_data(chain_id, block_number, raw.clone()).await;
@@ -131,7 +131,7 @@ pub async fn fetch_all(
 		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 
 		log::info!(
-			"read {} blocks from cache, total transations: {}",
+			"read {} blocks from cache, total transactions: {}",
 			blocks.len(),
 			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 		);
@@ -168,6 +168,10 @@ pub async fn fetch_from_rpc(
 		BLOCKS_PER_JOB
 	};
 
+	// Cap workers to the number of jobs to avoid unnecessary connections.
+	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_workers = num_workers.min(num_jobs as usize).max(1);
+
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
@@ -195,7 +199,7 @@ pub async fn fetch_from_rpc(
 		});
 	}
 
-	log::info!("spawning {num_workers} fetch workers");
+	log::info!("spawning {num_workers} fetch workers (capped from requested, {num_jobs} jobs)");
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
@@ -350,7 +354,7 @@ pub async fn fetch_from_rpc(
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transations: {}",
+		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
 		finalized_height - min_height,
 		blocks.len() - (finalized_height - min_height) as usize,
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),

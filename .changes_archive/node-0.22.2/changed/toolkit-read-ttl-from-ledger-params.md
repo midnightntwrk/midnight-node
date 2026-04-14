@@ -1,5 +1,5 @@
 #toolkit
-# When building transations use global_ttl from the ledger parameters instead of hardcoded 10 minutes
+# When building transactions use global_ttl from the ledger parameters instead of hardcoded 10 minutes
 
 Changes the toolkit to use ledger_parameters.global_ttl to compute transaction ttl instead of hardcoded 10 minutes.
 
