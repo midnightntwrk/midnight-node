@@ -145,7 +145,7 @@ testcontainers = { version = "0.27" }
 quickcheck_macros = { version = "1" }
 quote = "1.0"
 rand_chacha = { version = "0.10.0", default-features = false }
-rand = { version = "0.10.0", default-features = false }
+rand = { version = "0.10.1", default-features = false }
 tokio-retry = { version = "0.3" }
 secp256k1 = { version = "0.30.0", default-features = false }
 k256 = { version = "0.13.4", default-features = false }
@@ -162,7 +162,7 @@ thiserror = { version = "2.0.18", default-features = false }
 time = { version = "0.3.47", default-features = false }
 tokio = { version = "1.50", features = ["rt-multi-thread", "macros"] }
 uplc = { version = "1.1.21" }
-lru = { version = "0.16.3" }
+lru = { version = "0.16.4" }
 pretty_assertions = { version = "1.4.1" }
 derive_more = { version = "2.1.1", default-features = false }
 num-derive = { version = "0.4.2" }
