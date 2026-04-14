@@ -95,6 +95,8 @@ if [ -f /shared/cardano.ready ]; then
 
   start_node
   echo "Cardano node restarted with existing chain data."
+  echo "Note: cardano-node logs are written to /data/node.log, not stdout."
+  echo "  To view: docker exec cardano-node-1 tail -f /data/node.log"
   wait
   exit 0
 fi
@@ -335,6 +337,8 @@ chown $(id -u):$(id -g) /runtime-values/mc.env
 chmod u+rw /runtime-values/mc.env
 
 touch /shared/cardano.ready
-echo "Cardano chain is ready. Starting DB-Sync..."
+echo "Cardano chain is ready."
+echo "Note: cardano-node logs are written to /data/node.log, not stdout."
+echo "  To view: docker exec cardano-node-1 tail -f /data/node.log"
 
 wait

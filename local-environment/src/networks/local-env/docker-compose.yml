@@ -15,7 +15,9 @@ services:
       - ./configurations/busybox:/busybox
       - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
       - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
+      - ./configurations/cardano/keys/cold.skey:/keys/cold.skey
       - ./configurations/cardano/keys/cold.vkey:/keys/cold.vkey
+      - ./configurations/cardano/governance-keys:/governance-keys
       - ./configurations/cardano/keys/kes.skey:/keys/kes.skey
       - ./configurations/cardano/keys/vrf.skey:/keys/vrf.skey
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey

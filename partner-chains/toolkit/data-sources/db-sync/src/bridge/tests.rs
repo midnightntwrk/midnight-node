@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use crate::bridge::cache::CachedTokenBridgeDataSourceImpl;
 use crate::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig, TokenBridgeDataSourceImpl};
 use hex_literal::hex;
@@ -8,6 +10,7 @@ use sidechain_domain::{
 };
 use sp_partner_chains_bridge::{
 	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts, TokenBridgeDataSource,
+	TransferRecipient,
 };
 use sqlx::PgPool;
 use std::str::FromStr;
@@ -46,37 +49,48 @@ fn init_ics_tx_hash() -> McTxHash {
 }
 
 fn reserve_transfer() -> BridgeTransferV1<ByteString> {
-	BridgeTransferV1::<ByteString>::ReserveTransfer { token_amount: 100 }
+	BridgeTransferV1 {
+		amount: 100,
+		mc_tx_hash: reserve_transfer_tx(),
+		recipient: TransferRecipient::Reserve,
+	}
 }
 
 fn user_transfer_1() -> BridgeTransferV1<ByteString> {
-	BridgeTransferV1::UserTransfer {
+	BridgeTransferV1 {
 		// user transfer 1 consumes utxo from reserve transfer
-		token_amount: 110 - 100,
-		recipient: ByteString(hex!("abcd").to_vec()),
+		amount: 110 - 100,
+		recipient: TransferRecipient::Address { recipient: ByteString(hex!("abcd").to_vec()) },
+		mc_tx_hash: user_transfer_1_tx(),
 	}
 }
 
 fn user_transfer_2() -> BridgeTransferV1<ByteString> {
-	BridgeTransferV1::UserTransfer {
+	BridgeTransferV1 {
 		// user transfer 2 consumes utxo from user transfer 1
-		token_amount: 120 - 110,
-		recipient: ByteString(hex!("1234").to_vec()),
+		amount: 120 - 110,
+		recipient: TransferRecipient::Address { recipient: ByteString(hex!("1234").to_vec()) },
+		mc_tx_hash: user_transfer_2_tx(),
 	}
 }
 
 // transfer with invalid datum
 fn invalid_transfer_1() -> BridgeTransferV1<ByteString> {
-	BridgeTransferV1::InvalidTransfer {
+	BridgeTransferV1 {
 		// invalid transfer consumes utxo from user transfer 2
-		token_amount: 1000 - 120,
-		tx_hash: invalid_transfer_1_tx(),
+		amount: 1000 - 120,
+		mc_tx_hash: invalid_transfer_1_tx(),
+		recipient: TransferRecipient::Invalid,
 	}
 }
 
 // transfer with no datum
 fn invalid_transfer_2() -> BridgeTransferV1<ByteString> {
-	BridgeTransferV1::InvalidTransfer { token_amount: 1000, tx_hash: invalid_transfer_2_tx() }
+	BridgeTransferV1 {
+		amount: 1000,
+		mc_tx_hash: invalid_transfer_2_tx(),
+		recipient: TransferRecipient::Invalid,
+	}
 }
 
 fn reserve_transfer_tx() -> McTxHash {
@@ -85,6 +99,10 @@ fn reserve_transfer_tx() -> McTxHash {
 
 fn user_transfer_1_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000003"))
+}
+
+fn user_transfer_2_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000004"))
 }
 
 fn invalid_transfer_1_tx() -> McTxHash {

@@ -24,3 +24,9 @@ ignore:
   # - No signals_based_traps config — stays at default (enabled)
   # TODO: Remove this ignore after upgrading to a polkadot-sdk version using wasmtime >= 36.0.7
   - vulnerability: GHSA-jhxm-h53p-jm7w   # Critical: wasmtime 35.0.0, fixed in 36.0.7
+
+  # wasmtime 35.0.0 critical vulnerability
+  # Only applies when using the non-default Winch compiler - we use cranelift
+  # More info: https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-xx5w-cvp6-jv83
+  # TODO: Remove this ignore after upgrading to a polkadot-sdk version using wasmtime >= 36.0.7
+  - vulnerability: GHSA-xx5w-cvp6-jv83   # Critical: wasmtime 35.0.0, fixed in 36.0.7
