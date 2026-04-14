@@ -85,7 +85,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 						.with_writer(std::io::stderr)
 						.init();
 				} else {
+					// Plain format (no timestamp/level) keeps CLI output stable for trycmd README
+					// snapshots and matches historical `log` output users see in terminals.
 					tracing_subscriber::fmt()
+						.without_time()
+						.with_level(false)
 						.with_env_filter(env_filter)
 						.with_writer(std::io::stderr)
 						.with_target(cli.verbose)

@@ -1398,10 +1398,13 @@ impl_runtime_apis! {
 	}
 
 	impl sp_session::SessionKeys<Block> for Runtime {
-		fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
+		fn generate_session_keys(
+			owner: Vec<u8>,
+			seed: Option<Vec<u8>>,
+		) -> sp_session::OpaqueGeneratedSessionKeys {
 			// despite being named "generate" this function also adds generated keys to local keystore
-			CrossChainKey::generate(seed.clone());
-			SessionKeys::generate(seed)
+			let _ = CrossChainKey::generate(&owner, seed.clone());
+			SessionKeys::generate(&owner, seed).into()
 		}
 
 		fn decode_session_keys(
