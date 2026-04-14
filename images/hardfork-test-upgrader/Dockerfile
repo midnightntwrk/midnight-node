@@ -1,4 +1,4 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:13bffb7de7ef4836742a6be2b09642e819aaec50ceed1d7961424e19a95da0de
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:891544b0b3a6aae4e26901cfea4c21a0cb5bf02472c488167f971ec67be7465d
 # ntp to keep correct time
 # curl to enable compose healthchecks
 # Package versions are tied to the base image — update when bumping the base digest

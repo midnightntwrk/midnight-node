@@ -188,7 +188,10 @@ impl TxGenerator {
 		&self,
 		received_txs: &SourceTransactions,
 	) -> Result<SerializedTxBatches, DynamicError> {
-		let seeds = self.builder_config.relevant_wallet_seeds();
+		let seeds = self
+			.builder_config
+			.relevant_wallet_seeds()
+			.map_err(|e| DynamicError { error: e.into() })?;
 		let fork_ctx = if seeds.is_empty() {
 			None
 		} else {

@@ -7,9 +7,6 @@ inputs:
   node-image:
     description: "The full node image name (with tag)"
     required: false
-  upgrader-image:
-    description: "Optional: the upgrader image (if needed)"
-    required: false
   toolkit-image:
     description: "Optional: the toolkit image (if needed)"
     required: false
@@ -46,7 +43,7 @@ runs:
             just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
             ;;
           *)
-            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
         esac
       shell: bash

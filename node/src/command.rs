@@ -28,8 +28,9 @@ use crate::{
 		reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
 	},
 	genesis::verification::{
-		verify_auth_script_common, verify_federated_authority_auth_script, verify_ics_auth_script,
-		verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
+		verify_auth_script_common, verify_federated_authority_auth_script, verify_genesis_message,
+		verify_genesis_timestamp, verify_ics_auth_script, verify_ledger_state_genesis,
+		verify_permissioned_candidates_auth_script, verify_reserve_auth_script,
 	},
 	service::{self, StorageInit},
 };
@@ -231,6 +232,17 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
 	}
 
+	// Hold the database backend handle outside the tokio runtime so we can
+	// explicitly drop it after all async tasks have finished.  Without this,
+	// the backend's Arc may be leaked inside aborted tokio tasks during
+	// shutdown, preventing parity-db's Drop impl (which drains the WAL
+	// pipeline) from ever running.  The result is silent chain-state
+	// truncation on the next startup — see the PR description for details.
+	let backend_handle: std::sync::Arc<
+		std::sync::Mutex<Option<std::sync::Arc<service::FullBackend>>>,
+	> = std::sync::Arc::new(std::sync::Mutex::new(None));
+	let backend_handle_inner = backend_handle.clone();
+
 	let run_result = runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 		let midnight_cfg = cfg.midnight_cfg.clone();
@@ -259,7 +271,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		service::new_full::<sc_network::NetworkWorker<_, _>>(
+		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
 			midnight_cfg,
@@ -270,8 +282,18 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			tx_filter_config,
 		)
 		.await
-		.map_err(sc_cli::Error::Service)
+		.map_err(sc_cli::Error::Service)?;
+
+		// Stash the backend handle so it outlives the tokio runtime.
+		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
+
+		Ok(task_manager)
 	});
+
+	// Explicitly flush and release the chain-state database.
+	// This ensures parity-db's Drop impl runs (joining its background I/O
+	// threads and draining the WAL) even if async tasks leaked Arc clones.
+	drop(backend_handle.lock().expect("backend mutex poisoned").take());
 
 	// Explicitly release global ledger storage on shutdown.
 	midnight_node_ledger::drop_all_default_storage();
@@ -995,12 +1017,15 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
 
-			// Parse genesis timestamp from cardano-tip.json (if provided)
-			let genesis_timestamp: Option<u64> = if let Some(ref path) = cmd.cardano_tip_config {
-				#[derive(serde::Deserialize)]
-				struct CardanoTipConfig {
-					timestamp: String,
-				}
+			// Parse genesis timestamp from cardano-tip.json
+			let genesis_timestamp: u64 = {
+				let path = cmd.cardano_tip_config.as_ref().ok_or_else(|| {
+					sc_cli::Error::Input(
+						"--cardano-tip-config is required for genesis timestamp verification"
+							.to_string(),
+					)
+				})?;
+				use crate::genesis::CardanoTipConfig;
 				let json_str = std::fs::read_to_string(path).map_err(|e| {
 					sc_cli::Error::Input(format!(
 						"Failed to read cardano-tip config {:?}: {}",
@@ -1010,11 +1035,9 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				let config: CardanoTipConfig = serde_json::from_str(&json_str).map_err(|e| {
 					sc_cli::Error::Input(format!("Failed to parse cardano-tip config: {}", e))
 				})?;
-				Some(config.timestamp.parse::<u64>().map_err(|e| {
+				config.timestamp.parse::<u64>().map_err(|e| {
 					sc_cli::Error::Input(format!("Invalid timestamp in cardano-tip config: {}", e))
-				})?)
-			} else {
-				None
+				})?
 			};
 
 			let result = verify_ledger_state_genesis::verify_ledger_state_genesis(
@@ -1141,6 +1164,10 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				.permissioned_candidates_addresses
 				.clone()
 				.unwrap_or_else(|| res_dir.join("permissioned-candidates-addresses.json"));
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
 			let authorization_addresses = cmd
 				.authorization_addresses
 				.clone()
@@ -1206,6 +1233,22 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					})?;
 				pc_result.print_summary();
 				if !pc_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 4. Verify Reserve
+				let reserve_result = verify_reserve_auth_script::verify_reserve_auth_script(
+					&reserve_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve auth script verification failed: {e}"))
+				})?;
+				reserve_result.print_summary();
+				if !reserve_result.all_passed() {
 					all_passed = false;
 				}
 
@@ -1348,6 +1391,100 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
 				}
 			})
+		},
+		Subcommand::VerifyReserveAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result = verify_reserve_auth_script::verify_reserve_auth_script(
+					&reserve_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve auth script verification failed: {e}"))
+				})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyGenesisMessage(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default message-config path based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let message_config = cmd
+				.message_config
+				.clone()
+				.unwrap_or_else(|| res_dir.join("message-config.json"));
+
+			let result =
+				verify_genesis_message::verify_genesis_message(&cmd.chain_spec, &message_config)
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("Genesis message verification failed: {e}"))
+					})?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Genesis message verification failed".to_string()))
+			}
+		},
+		Subcommand::VerifyGenesisTimestamp(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default cardano-tip-config path based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let cardano_tip_config = cmd
+				.cardano_tip_config
+				.clone()
+				.unwrap_or_else(|| res_dir.join("cardano-tip.json"));
+
+			let result = verify_genesis_timestamp::verify_genesis_timestamp(
+				&cmd.chain_spec,
+				&cardano_tip_config,
+			)
+			.map_err(|e| {
+				sc_cli::Error::Input(format!("Genesis timestamp verification failed: {e}"))
+			})?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Genesis timestamp verification failed".to_string()))
+			}
 		},
 	}
 }

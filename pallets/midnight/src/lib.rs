@@ -42,7 +42,8 @@ pub mod migrations;
 #[frame_support::pallet]
 pub mod pallet {
 	use crate::alloc::string::ToString;
-	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
+	use frame_support::dispatch::GetDispatchInfo;
+	use frame_support::{ensure, pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
 	use scale_info::prelude::{string::String, vec::Vec};
@@ -457,6 +458,11 @@ pub mod pallet {
 				return Err(Self::invalid_transaction(Default::default()));
 			};
 
+			// Substrate's Bare extrinsic path runs pallet pre_dispatch before the
+			// CheckWeight extension, so we pre-check here to avoid expensive ledger
+			// validation for txs that won't fit in the block.
+			Self::check_weight(call)?;
+
 			let block_context = Self::get_block_context();
 			let state_key = StateKey::<T>::get();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
@@ -512,6 +518,40 @@ pub mod pallet {
 			LedgerApi::get_zswap_chain_state(&state_key, contract_address)
 		}
 		// grcov-excl-stop
+
+		/// Early block weight check to avoid expensive ledger validation for
+		/// transactions that won't fit. It is slightly more relaxed than
+		/// `frame_system::extensions::check_weight::calculate_consumed_weight`.
+		/// Assumes that Dispatch class has both max_total and reserved limits set.
+		/// Assumes that `frame_system::extensions::check_weight::calculate_consumed_weight` is
+		/// called later
+		fn check_weight(call: &Call<T>) -> Result<(), TransactionValidityError> {
+			let info = call.get_dispatch_info();
+			let maximum_weight = T::BlockWeights::get();
+			let mut all_weight = <frame_system::Pallet<T>>::block_weight();
+
+			let limit_per_class = maximum_weight.get(info.class);
+			let extrinsic_weight =
+				info.total_weight().saturating_add(limit_per_class.base_extrinsic);
+
+			let (max_total_limit, reserved_limit) =
+				match (limit_per_class.max_total, limit_per_class.reserved) {
+					(Some(max_total), Some(reserved)) => (max_total, reserved),
+					_ => return Ok(()),
+				};
+
+			all_weight
+				.checked_accrue(extrinsic_weight, info.class)
+				.map_err(|_| InvalidTransaction::ExhaustsResources)?;
+
+			let per_class = *all_weight.get(info.class);
+			let class_limit_hit = per_class.any_gt(max_total_limit);
+			let block_limit_hit = all_weight.total().any_gt(maximum_weight.max_block)
+				&& per_class.any_gt(reserved_limit);
+
+			ensure!(!class_limit_hit && !block_limit_hit, InvalidTransaction::ExhaustsResources);
+			Ok(())
+		}
 
 		//todo annotate with exclude for non test runs
 		fn invalid_transaction(error_code: u8) -> TransactionValidityError {

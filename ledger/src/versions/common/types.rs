@@ -16,7 +16,6 @@
 use frame_support::PalletError;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info_derive::TypeInfo;
-use sp_runtime::RuntimeDebug;
 
 pub use super::super::BlockContext;
 
@@ -31,7 +30,7 @@ use SerializationError::{
 };
 use TransactionError::{Invalid, Malformed, SystemTransaction};
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum InvalidError {
 	EffectsMismatch,
 	ContractAlreadyDeployed,
@@ -53,7 +52,7 @@ pub enum InvalidError {
 	UnknownError,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum SystemTransactionError {
 	IllegalPayout,
 	InsufficientTreasuryFunds,
@@ -65,9 +64,10 @@ pub enum SystemTransactionError {
 	InvalidBasisPoints,
 	InvariantViolation,
 	TreasuryDisabled,
+	MerkleTreeError,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum MalformedError {
 	VerifierKeyNotSet,
 	TransactionTooLarge,
@@ -128,7 +128,7 @@ pub enum MalformedError {
 	UnknownError,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum DeserializationError {
 	NetworkId,
 	Transaction,
@@ -144,7 +144,7 @@ pub enum DeserializationError {
 	CNightGeneratesDustEvent,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum SerializationError {
 	TransactionIdentifier,
 	ZswapState,
@@ -162,14 +162,14 @@ pub enum SerializationError {
 	ArenaHash,
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum TransactionError {
 	Invalid(InvalidError),
 	Malformed(MalformedError),
 	SystemTransaction(SystemTransactionError),
 }
 
-#[derive(RuntimeDebug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError)]
 pub enum LedgerApiError {
 	Deserialization(DeserializationError),
 	Serialization(SerializationError),
@@ -401,6 +401,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::InvalidBasisPoints => 208,
 					SystemTransactionError::InvariantViolation => 209,
 					SystemTransactionError::TreasuryDisabled => 210,
+					SystemTransactionError::MerkleTreeError => 211,
 				},
 			},
 			// Reserved from [150-255) for future Errors
