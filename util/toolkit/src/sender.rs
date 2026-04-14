@@ -303,9 +303,6 @@ impl Sender {
 	) {
 		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
-		// Track the last status name seen so a plain timeout can report what the node
-		// did tell us (Validated/Broadcasted/...), which is far more actionable than
-		// a bare "failed to reach best block".
 		let mut last_status: &'static str = "<none>";
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
