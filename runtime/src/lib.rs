@@ -48,7 +48,9 @@ pub use frame_support::{
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
-use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{
+	GasCost, Tx, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
+};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
@@ -74,9 +76,7 @@ use sp_consensus_beefy::{
 	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
-use sp_partner_chains_bridge::{
-	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
-};
+use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
@@ -118,6 +118,7 @@ pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod beefy;
+mod c2m_bridge;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -828,18 +829,8 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
-pub struct MidnightTokenTransferHandler;
-
 parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
-}
-
-impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
-	for MidnightTokenTransferHandler
-{
-	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-		log::debug!("Bridge token transfer received {:?}", transfer);
-	}
 }
 
 impl pallet_cnight_observation::Config for Runtime {
@@ -850,7 +841,8 @@ impl pallet_cnight_observation::Config for Runtime {
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
-	type TransferHandler = MidnightTokenTransferHandler;
+	type TransferHandler = crate::c2m_bridge::MidnightTokenTransferHandler;
+	type HandlerResult = crate::c2m_bridge::MidnightTxHash;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
