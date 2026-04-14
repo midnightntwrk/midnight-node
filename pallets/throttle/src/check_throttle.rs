@@ -19,7 +19,7 @@
 
 use crate::pallet::Config;
 use core::marker::PhantomData;
-use frame_support::RuntimeDebugNoBound;
+use frame_support::DebugNoBound;
 use frame_support::{dispatch::DispatchInfo, pallet_prelude::*};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::TypeInfo;
@@ -31,9 +31,7 @@ use sp_runtime::{
 	transaction_validity::{InvalidTransaction, TransactionValidityError, ValidTransaction},
 };
 
-#[derive(
-	Encode, Decode, Clone, Eq, PartialEq, TypeInfo, RuntimeDebugNoBound, DecodeWithMemTracking,
-)]
+#[derive(Encode, Decode, Clone, Eq, PartialEq, TypeInfo, DebugNoBound, DecodeWithMemTracking)]
 #[scale_info(skip_type_params(T))]
 pub struct CheckThrottle<T: Config>(PhantomData<T>);
 
