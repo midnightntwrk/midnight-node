@@ -32,7 +32,7 @@ pub struct MidnightCNightObservationInherentDataProvider {
 	pub next_cardano_position: CardanoPosition,
 }
 
-#[derive(thiserror::Error, sp_runtime::RuntimeDebug)]
+#[derive(thiserror::Error, Debug)]
 pub enum IDPCreationError {
 	#[error("Failed to read native token data from data source: {0:?}")]
 	DataSourceError(Box<dyn Error + Send + Sync>),

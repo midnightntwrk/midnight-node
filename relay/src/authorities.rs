@@ -2,7 +2,7 @@
 
 use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStake, BeefyStakes};
 use rs_merkle::proof_tree::ProofNode;
-use sp_consensus_beefy::{BeefySignatureHasher, ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
+use sp_consensus_beefy::{ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
 use sp_core::keccak_256;
 use subxt::utils::to_hex;
 
@@ -120,7 +120,7 @@ fn collect_signature_indices(
 
 	// verify the signatures in the commitment are from the validator set
 	beefy_signed_commitment
-		.verify_signatures::<_, BeefySignatureHasher>(block_number, validator_set)
+		.verify_signatures(block_number, validator_set)
 		.map_err(|e| Error::NoMatchingSignature(block_number, e))?;
 
 	Ok(beefy_signed_commitment
