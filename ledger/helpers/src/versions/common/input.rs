@@ -136,6 +136,32 @@ impl InputInfo<WalletSeed> {
 	}
 }
 
+impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
+	fn build(
+		&mut self,
+		rng: &mut StdRng,
+		context: Arc<LedgerContext<D>>,
+	) -> Input<ProofPreimage, D> {
+		context.with_wallet_from_seed(self.origin, |wallet| {
+			let coin: Sp<QualifiedInfo, D> = self.min_match_coin(&wallet.shielded.state);
+
+			// Update the `InputInfo` value with the actual coin value that is going to be spent
+			self.value = coin.value;
+
+			let (updated_walet, input) = wallet
+				.shielded
+				.state
+				.spend(rng, wallet.shielded.secret_keys(), &coin, Segment::Guaranteed.into())
+				.expect("Failed to spend coin");
+
+			// Update wallet
+			wallet.shielded.state = updated_walet;
+
+			input
+		})
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::super::HashOutput;
@@ -216,31 +242,5 @@ mod tests {
 		let inputs = vec![make_input(30), make_input(20)];
 		let result = InputInfo::select_inputs(inputs, 100);
 		assert!(result.is_none(), "insufficient inputs should return None");
-	}
-}
-
-impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
-	fn build(
-		&mut self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Input<ProofPreimage, D> {
-		context.with_wallet_from_seed(self.origin, |wallet| {
-			let coin: Sp<QualifiedInfo, D> = self.min_match_coin(&wallet.shielded.state);
-
-			// Update the `InputInfo` value with the actual coin value that is going to be spent
-			self.value = coin.value;
-
-			let (updated_walet, input) = wallet
-				.shielded
-				.state
-				.spend(rng, wallet.shielded.secret_keys(), &coin, Segment::Guaranteed.into())
-				.expect("Failed to spend coin");
-
-			// Update wallet
-			wallet.shielded.state = updated_walet;
-
-			input
-		})
 	}
 }
