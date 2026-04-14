@@ -171,7 +171,7 @@ pub(crate) fn build_shielded_offer(
 ) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
 	let total_required = amount
 		.checked_mul(output_wallets.len() as u128)
-		.expect("shielded amount overflow");
+		.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
 
 	let (input_infos, change) =
 		InputInfo::coins_to_cover_value(context, funding_seed, total_required, token_type)?;
@@ -211,7 +211,7 @@ pub(crate) fn build_unshielded_intents(
 ) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>, UtxoSelectionError> {
 	let total_required = amount_to_send_per_output
 		.checked_mul(output_wallets.len() as u128)
-		.expect("unshielded amount overflow");
+		.ok_or(UtxoSelectionError::ArithmeticOverflow)?;
 
 	let (inputs_info, remaining_nights) =
 		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)?;
@@ -267,4 +267,60 @@ pub(crate) fn build_unshielded_intents(
 	intents.insert(Segment::Fallible.into(), boxed_intent);
 
 	Ok(intents)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::super::ledger_helpers_local::{
+		HashOutput, LedgerContext, ShieldedWallet, UnshieldedWallet,
+	};
+	use super::*;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0u8; 16])
+	}
+
+	fn test_seed_2() -> WalletSeed {
+		WalletSeed::Short([1u8; 16])
+	}
+
+	fn test_context() -> Arc<LedgerContext<DefaultDB>> {
+		Arc::new(LedgerContext::new("test"))
+	}
+
+	#[test]
+	fn build_shielded_offer_mul_overflow_returns_arithmetic_error() {
+		let context = test_context();
+		let wallet1 = ShieldedWallet::default(test_seed());
+		let wallet2 = ShieldedWallet::default(test_seed_2());
+		let token_type = ShieldedTokenType(HashOutput([0u8; 32]));
+
+		let result = build_shielded_offer(
+			context,
+			test_seed(),
+			vec![wallet1, wallet2],
+			u128::MAX,
+			token_type,
+		);
+
+		assert!(matches!(result, Err(ShieldedCoinSelectionError::ArithmeticOverflow)));
+	}
+
+	#[test]
+	fn build_unshielded_intents_mul_overflow_returns_arithmetic_error() {
+		let context = test_context();
+		let wallet1 = UnshieldedWallet::default(test_seed());
+		let wallet2 = UnshieldedWallet::default(test_seed_2());
+		let token_type = UnshieldedTokenType(HashOutput([0u8; 32]));
+
+		let result = build_unshielded_intents(
+			context,
+			test_seed(),
+			vec![wallet1, wallet2],
+			u128::MAX,
+			token_type,
+		);
+
+		assert!(matches!(result, Err(UtxoSelectionError::ArithmeticOverflow)));
+	}
 }

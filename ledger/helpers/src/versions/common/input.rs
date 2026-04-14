@@ -20,6 +20,8 @@ use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldedCoinSelectionError {
+	#[error("arithmetic overflow in shielded coin selection")]
+	ArithmeticOverflow,
 	#[error(
 		"insufficient shielded coins: need {required} of token {token_type:?} from seed {seed:?}"
 	)]
@@ -121,16 +123,99 @@ impl InputInfo<WalletSeed> {
 		while !inputs.is_empty() {
 			let idx = inputs
 				.iter()
-				.position(|qi| qi.value + total > required)
+				.position(|qi| qi.value.checked_add(total).is_some_and(|sum| sum > required))
 				.unwrap_or(inputs.len() - 1);
 			let input = inputs.swap_remove(idx);
-			total += input.value;
+			total = total.checked_add(input.value)?;
 			selected.push(input);
 			if let Some(change) = total.checked_sub(required) {
 				return Some((selected, change));
 			}
 		}
 		None
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::super::HashOutput;
+	use super::*;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0u8; 16])
+	}
+
+	fn test_token_type() -> ShieldedTokenType {
+		ShieldedTokenType(HashOutput([0u8; 32]))
+	}
+
+	fn make_input(value: u128) -> InputInfo<WalletSeed> {
+		InputInfo { origin: test_seed(), token_type: test_token_type(), value, nullifier: None }
+	}
+
+	#[test]
+	fn select_inputs_exact_match() {
+		let inputs = vec![make_input(100)];
+		let result = InputInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_multiple_sum_to_required() {
+		let inputs = vec![make_input(60), make_input(40)];
+		let result = InputInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 2);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_change_produced() {
+		let inputs = vec![make_input(150)];
+		let result = InputInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_accumulation_overflow_returns_none() {
+		let half_plus_one = u128::MAX / 2 + 1;
+		let inputs = vec![make_input(half_plus_one), make_input(half_plus_one)];
+		let result = InputInfo::select_inputs(inputs, u128::MAX);
+		assert!(result.is_none(), "accumulation overflow should return None");
+	}
+
+	#[test]
+	fn select_inputs_comparison_overflow_does_not_panic() {
+		// Verifies that the checked_add in the .position() comparison closure
+		// handles overflow gracefully instead of panicking. After the first input
+		// is selected, total becomes large enough that qi.value + total overflows
+		// for the remaining input. The map_or(false, ...) pattern treats this as
+		// "not greater than required," falling through to the default index.
+		let large = u128::MAX / 2 + 1;
+		let inputs = vec![make_input(large), make_input(large), make_input(large)];
+		let result = InputInfo::select_inputs(inputs, u128::MAX);
+		// After selecting two inputs, total overflows on checked_add -> returns None
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn select_inputs_zero_required() {
+		let inputs = vec![make_input(50)];
+		let result = InputInfo::select_inputs(inputs, 0);
+		let (selected, change) = result.expect("zero required should select first input");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_insufficient_returns_none() {
+		let inputs = vec![make_input(30), make_input(20)];
+		let result = InputInfo::select_inputs(inputs, 100);
+		assert!(result.is_none(), "insufficient inputs should return None");
 	}
 }
 

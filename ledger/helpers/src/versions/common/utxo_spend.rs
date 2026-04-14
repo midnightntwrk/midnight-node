@@ -20,6 +20,8 @@ use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoSelectionError {
+	#[error("arithmetic overflow in UTXO selection")]
+	ArithmeticOverflow,
 	#[error("insufficient UTXOs: need {required} of token {token_type:?} from seed {seed:?}")]
 	InsufficientBalance { required: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
 	#[error("no UTXO of token {token_type:?} with value >= {min_value} for seed {seed:?}")]
@@ -118,10 +120,10 @@ impl UtxoSpendInfo<WalletSeed> {
 		while !inputs.is_empty() {
 			let idx = inputs
 				.iter()
-				.position(|qi| qi.value + total > required)
+				.position(|qi| qi.value.checked_add(total).is_some_and(|sum| sum > required))
 				.unwrap_or(inputs.len() - 1);
 			let utxo = inputs.swap_remove(idx);
-			total += utxo.value;
+			total = total.checked_add(utxo.value)?;
 			selected.push(utxo);
 			if let Some(change) = total.checked_sub(required) {
 				return Some((selected, change));
@@ -165,3 +167,63 @@ impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 }
 
 // TODO: impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<VerifyingKey>
+
+#[cfg(test)]
+mod tests {
+	use super::super::HashOutput;
+	use super::*;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0u8; 16])
+	}
+
+	fn test_token_type() -> UnshieldedTokenType {
+		UnshieldedTokenType(HashOutput([0u8; 32]))
+	}
+
+	fn make_utxo(value: u128) -> UtxoSpendInfo<WalletSeed> {
+		UtxoSpendInfo {
+			value,
+			owner: test_seed(),
+			token_type: test_token_type(),
+			intent_hash: None,
+			output_number: None,
+		}
+	}
+
+	#[test]
+	fn select_inputs_exact_match() {
+		let inputs = vec![make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_change_produced() {
+		let inputs = vec![make_utxo(150)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_accumulation_overflow_returns_none() {
+		let half_plus_one = u128::MAX / 2 + 1;
+		let inputs = vec![make_utxo(half_plus_one), make_utxo(half_plus_one)];
+		let result = UtxoSpendInfo::select_inputs(inputs, u128::MAX);
+		assert!(result.is_none(), "accumulation overflow should return None");
+	}
+
+	#[test]
+	fn select_inputs_comparison_overflow_does_not_panic() {
+		// Verifies that the checked_add in the .position() comparison closure
+		// handles overflow gracefully instead of panicking.
+		let large = u128::MAX / 2 + 1;
+		let inputs = vec![make_utxo(large), make_utxo(large), make_utxo(large)];
+		let result = UtxoSpendInfo::select_inputs(inputs, u128::MAX);
+		assert!(result.is_none());
+	}
+}
