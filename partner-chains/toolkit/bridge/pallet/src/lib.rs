@@ -57,11 +57,14 @@
 //! ```rust,ignore
 //! pub struct BridgeTransferHelper;
 //!
-//! impl pallet_partner_chains_bridge::TransferHandler<AccountId32> for BridgeTransferHelper {
-//! 	fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId32>) {
+//! impl pallet_partner_chains_bridge::TransferHandler<AccountId32, ()> for BridgeTransferHelper {
+//! 	fn handle_incoming_transfer(
+//!         transfer_index: u32,
+//!         transfer: BridgeTransferV1<AccountId32>
+//!     ) -> Option<()> {
 //! 		match transfer {
 //! 			BridgeTransferV1::InvalidTransfer { token_amount, utxo_id } => {
-//! 				log::warn!("⚠️ Discarded an invalid transfer of {token_amount} (utxo {utxo_id})");
+//! 				log::warn!("⚠️ Discarded an invalid transfer [{transfer_index}] of {token_amount} (utxo {utxo_id})");
 //! 			},
 //! 			BridgeTransferV1::UserTransfer { token_amount, recipient } => {
 //! 				log::info!("💸 Registered a tranfer of {token_amount} to {recipient:?}");
@@ -71,7 +74,8 @@
 //! 				log::info!("🏦 Registered a reserve transfer of {token_amount}.");
 //! 				let _ = Balances::deposit_creating(&T::ReserveAccount::get(), token_amount.into());
 //! 			},
-//! 		}
+//! 		};
+//!         None
 //! 	}
 //! }
 //! ```rust
@@ -95,6 +99,7 @@
 //! 	type GovernanceOrigin = EnsureRoot<Runtime>;
 //! 	type Recipient = AccountId;
 //! 	type TransferHandler = BridgeTransferHelper;
+//!     type HandlerResult = ();
 //! 	type MaxTransfersPerBlock = MaxTransfersPerBlock;
 //! 	type WeightInfo = ();
 //!
@@ -204,12 +209,20 @@ use sp_partner_chains_bridge::BridgeTransferV1;
 /// should be handled gracefully inside the handler code.
 pub trait TransferHandler<Recipient, HandlerResult> {
 	/// Should handle an incoming token transfer of `token_mount` tokens to `recipient`
-	fn handle_incoming_transfer(transfer: BridgeTransferV1<Recipient>) -> HandlerResult;
+	fn handle_incoming_transfer(
+		transfer_idx: u32,
+		transfer: BridgeTransferV1<Recipient>,
+	) -> Option<HandlerResult>;
 }
 
 /// No-op implementation of `TransferHandler` for unit type.
 impl<Recipient> TransferHandler<Recipient, ()> for () {
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>) -> () {}
+	fn handle_incoming_transfer(
+		_transfer_idx: u32,
+		_transfer: BridgeTransferV1<Recipient>,
+	) -> Option<()> {
+		None
+	}
 }
 
 #[frame_support::pallet]
@@ -344,14 +357,17 @@ pub mod pallet {
 			ensure_none(origin)?;
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
-			for transfer in transfers.into_iter() {
-				let result = T::TransferHandler::handle_incoming_transfer(transfer.clone());
-				Self::deposit_event(Event::Transfer {
-					mc_tx_hash: transfer.mc_tx_hash,
-					amount: transfer.amount,
-					result,
-					recipient: transfer.recipient,
-				})
+			for (i, transfer) in transfers.into_iter().enumerate() {
+				let maybe_result =
+					T::TransferHandler::handle_incoming_transfer(i as u32, transfer.clone());
+				if let Some(result) = maybe_result {
+					Self::deposit_event(Event::Transfer {
+						mc_tx_hash: transfer.mc_tx_hash,
+						amount: transfer.amount,
+						result,
+						recipient: transfer.recipient,
+					})
+				}
 			}
 			DataCheckpoint::<T>::put(data_checkpoint);
 			Ok(())

@@ -88,11 +88,12 @@ mod handle_transfers {
 				frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
 			let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> = transfers()
 				.into_iter()
-				.map(|t| {
+				.enumerate()
+				.map(|(i, t)| {
 					mock::RuntimeEvent::Bridge(Event::Transfer {
 						mc_tx_hash: t.mc_tx_hash,
 						amount: t.amount,
-						result: t.amount / 10,
+						result: (i as u32, t.amount),
 						recipient: t.recipient,
 					})
 				})

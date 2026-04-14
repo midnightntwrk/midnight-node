@@ -199,12 +199,12 @@ impl MidnightClient {
                     }
                 }
             }
-            Err("Did not find registration event".into())
+            Err("Did not find bridge extrinsics".into())
         };
 
         timeout(Duration::from_secs(60), inner)
             .await
-            .unwrap_or_else(|_| Err("Timeout waiting for registration event".into()))
+            .unwrap_or_else(|_| Err("Timeout waiting for bridge exrinsics".into()))
     }
 
     pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> String {

@@ -34,10 +34,13 @@ pub mod mock_pallet {
 	#[pallet::unbounded]
 	pub type Transfers<T: Config> = StorageValue<_, Vec<BridgeTransferV1<RecipientAddress>>>;
 
-	impl<T> TransferHandler<RecipientAddress, u64> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<RecipientAddress>) -> u64 {
+	impl<T> TransferHandler<RecipientAddress, (u32, u64)> for Pallet<T> {
+		fn handle_incoming_transfer(
+			idx: u32,
+			transfer: BridgeTransferV1<RecipientAddress>,
+		) -> Option<(u32, u64)> {
 			Transfers::<Test>::append(transfer.clone());
-			transfer.amount / 10
+			Some((idx, transfer.amount))
 		}
 	}
 }
@@ -88,7 +91,7 @@ impl frame_system::Config for Test {
 impl crate::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type Recipient = RecipientAddress;
-	type HandlerResult = u64;
+	type HandlerResult = (u32, u64);
 	type TransferHandler = Mock;
 	type MaxTransfersPerBlock = MaxTransfersPerBlock;
 	type WeightInfo = ();

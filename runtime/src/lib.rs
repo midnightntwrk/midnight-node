@@ -842,7 +842,7 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
 	type TransferHandler = crate::c2n_bridge::MidnightTokenTransferHandler;
-	type HandlerResult = crate::c2n_bridge::MaybeMidnightTxHash;
+	type HandlerResult = crate::c2n_bridge::MidnightTxHash;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
