@@ -226,4 +226,29 @@ mod tests {
 		let result = UtxoSpendInfo::select_inputs(inputs, u128::MAX);
 		assert!(result.is_none());
 	}
+
+	#[test]
+	fn select_inputs_multiple_sum_to_required() {
+		let inputs = vec![make_utxo(60), make_utxo(40)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 2);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_zero_required() {
+		let inputs = vec![make_utxo(50)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 0);
+		let (selected, change) = result.expect("zero required should select first input");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_insufficient_returns_none() {
+		let inputs = vec![make_utxo(30), make_utxo(20)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		assert!(result.is_none(), "insufficient inputs should return None");
+	}
 }

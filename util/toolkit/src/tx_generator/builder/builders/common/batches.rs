@@ -97,7 +97,10 @@ impl BatchesBuilder {
 		funding_seed: WalletSeed,
 		output_wallets: Vec<WalletSeed>,
 	) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
-		let total_coins_required = self.coin_amount * self.num_txs_per_batch as u128;
+		let total_coins_required = self
+			.coin_amount
+			.checked_mul(self.num_txs_per_batch as u128)
+			.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
 
 		let (input_infos, change) = InputInfo::coins_to_cover_value(
 			context,

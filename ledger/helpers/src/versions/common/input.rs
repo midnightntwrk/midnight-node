@@ -193,7 +193,7 @@ mod tests {
 		// Verifies that the checked_add in the .position() comparison closure
 		// handles overflow gracefully instead of panicking. After the first input
 		// is selected, total becomes large enough that qi.value + total overflows
-		// for the remaining input. The map_or(false, ...) pattern treats this as
+		// for the remaining input. The is_some_and pattern treats this as
 		// "not greater than required," falling through to the default index.
 		let large = u128::MAX / 2 + 1;
 		let inputs = vec![make_input(large), make_input(large), make_input(large)];
