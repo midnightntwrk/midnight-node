@@ -51,7 +51,7 @@ use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{
 	GasCost, Tx, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 };
-use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
+use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
@@ -76,10 +76,7 @@ use sp_consensus_beefy::{
 	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
-use sp_partner_chains_bridge::{
-	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
-	TransferRecipient,
-};
+use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
@@ -121,6 +118,7 @@ pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod beefy;
+mod c2n_bridge;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -831,100 +829,8 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
-pub struct MidnightTokenTransferHandler;
-
 parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
-}
-
-/// Storage key for the bridge transfer nonce counter (transient, reset each block).
-const BRIDGE_TRANSFER_NONCE_COUNTER_KEY: &[u8] = b":bridge_transfer_nonce_counter:";
-
-impl MidnightTokenTransferHandler {
-	/// Generate a deterministic unique nonce for a bridge transfer.
-	///
-	/// Uses the parent hash (unique per block) combined with a monotonically
-	/// increasing counter (unique within a block) to guarantee uniqueness.
-	fn generate_nonce() -> [u8; 32] {
-		let counter: u32 =
-			frame_support::storage::unhashed::get(BRIDGE_TRANSFER_NONCE_COUNTER_KEY).unwrap_or(0);
-		frame_support::storage::unhashed::put(BRIDGE_TRANSFER_NONCE_COUNTER_KEY, &(counter + 1));
-
-		let parent_hash = frame_system::Pallet::<Runtime>::parent_hash();
-		let mut data = Vec::new();
-		data.extend(b"midnight:bridge-transfer-nonce:");
-		data.extend(parent_hash.as_ref());
-		data.extend(&counter.to_le_bytes());
-		sp_core::hashing::blake2_256(&data)
-	}
-}
-
-type MaybeMidnightTxHash = Option<[u8; 32]>;
-
-impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient, MaybeMidnightTxHash>
-	for MidnightTokenTransferHandler
-{
-	fn handle_incoming_transfer(
-		transfer: BridgeTransferV1<BridgeRecipient>,
-	) -> MaybeMidnightTxHash {
-		let amount = transfer.amount;
-		let serialized_tx = match transfer.recipient {
-			TransferRecipient::Address { recipient } => {
-				let recipient_bytes = recipient.as_bytes().to_vec();
-				let nonce = Self::generate_nonce();
-
-				match LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
-					amount.into(),
-					&recipient_bytes.clone(),
-					nonce,
-				) {
-					Ok(tx) => {
-						log::info!(
-							"Will execute distribute {amount} of Night to {recipient_bytes:?}",
-						);
-						tx
-					},
-					Err(e) => {
-						log::error!("Failed to construct bridge user transfer system tx: {e:?}");
-						return None;
-					},
-				}
-			},
-			TransferRecipient::Reserve => {
-				match LedgerApi::construct_distribute_reserve_system_tx(amount.into()) {
-					Ok(tx) => {
-						log::info!("Will execute distribute {amount} of Night to reserve");
-						tx
-					},
-					Err(e) => {
-						log::error!("Failed to construct bridge reserve transfer system tx: {e:?}");
-						return None;
-					},
-				}
-			},
-			TransferRecipient::Invalid => {
-				match LedgerApi::construct_distribute_treasury_system_tx(amount.into()) {
-					Ok(tx) => {
-						log::info!("Will execute distribute {amount} of Night to treasury");
-						tx
-					},
-					Err(e) => {
-						log::error!(
-							"Failed to construct bridge treasury transfer system tx: {e:?}"
-						);
-						return None;
-					},
-				}
-			},
-		};
-		match MidnightSystem::execute_system_transaction(serialized_tx.clone()) {
-			Ok(hash) => Some(hash),
-			Err(e) => {
-				log::error!("Failed to execute system transaction {serialized_tx:?}: {e:?}");
-				None
-			},
-		}
-	}
 }
 
 impl pallet_cnight_observation::Config for Runtime {
@@ -935,8 +841,8 @@ impl pallet_cnight_observation::Config for Runtime {
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
-	type TransferHandler = MidnightTokenTransferHandler;
-	type HandlerResult = MaybeMidnightTxHash;
+	type TransferHandler = crate::c2n_bridge::MidnightTokenTransferHandler;
+	type HandlerResult = crate::c2n_bridge::MaybeMidnightTxHash;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
