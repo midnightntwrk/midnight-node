@@ -1,4 +1,4 @@
 #chainspec
 # Remove unused and outdated network ddosnet
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1343
