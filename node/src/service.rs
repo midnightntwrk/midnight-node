@@ -21,6 +21,7 @@ use crate::{
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
+	subscription_bounds::{SubscriptionMetrics, SubscriptionTracker},
 };
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
@@ -480,6 +481,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
 	tx_filter_config: TxFilterConfig,
+	max_finality_subscriptions: u32,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
@@ -607,6 +609,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
+	let subscription_metrics =
+		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());
+	let subscription_tracker =
+		SubscriptionTracker::new(max_finality_subscriptions, subscription_metrics);
+
 	let rpc_extensions_builder = {
 		let client = client.clone();
 		let pool = transaction_pool.clone();
@@ -618,6 +625,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let epoch_config = epoch_config.clone();
 		let network_for_rpc = network.clone();
 		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
+		let subscription_tracker = subscription_tracker.clone();
 
 		move |subscription_executor: SubscriptionTaskExecutor| {
 			let grandpa = GrandpaDeps {
@@ -648,6 +656,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				backend: backend.clone(),
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
+				subscription_tracker: subscription_tracker.clone(),
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
