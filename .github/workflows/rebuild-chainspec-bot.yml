@@ -11,6 +11,9 @@ on:
       networks:
         description: 'Space-separated network names (e.g., "qanet preview")'
         required: true
+      version:
+        description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on earthly'
+        required: false
 
 jobs:
   rebuild-chainspec:
@@ -65,16 +68,29 @@ jobs:
             const comment = context.payload.comment.body;
             const match = comment.match(/\/bot rebuild-chainspec\s+(.+)/);
             if (!match) {
-              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec <network1> <network2> ...');
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
               return;
             }
-            const networks = match[1].trim().split(/\s+/);
+            const args = match[1].trim();
+
+            // Extract optional -v <version>
+            const versionMatch = args.match(/-v\s+(\S+)/);
+            const version = versionMatch ? versionMatch[1] : '';
+            // Remove -v <version> from args to get networks
+            const networksStr = args.replace(/-v\s+\S+/, '').trim();
+
+            const networks = networksStr.split(/\s+/).filter(Boolean);
+            if (networks.length === 0) {
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
+              return;
+            }
             const invalid = networks.filter(n => !ALLOWED_NETWORKS.includes(n));
             if (invalid.length > 0) {
               core.setFailed(`Unknown network(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_NETWORKS.join(', ')}`);
               return;
             }
             core.setOutput('networks', networks.join(' '));
+            core.setOutput('version', version);
 
       - name: Validate networks (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -140,15 +156,22 @@ jobs:
         env:
           EARTHLY_CONFIG: .earthly/config.yml
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
+          NODE_IMAGE_ARG=""
+          if [ -n "$VERSION" ]; then
+            NODE_IMAGE_ARG="--NODE_IMAGE=midnightntwrk/midnight-node:$VERSION"
+            echo "Using node image: midnightntwrk/midnight-node:$VERSION"
+          fi
+
           # Split networks and run earthly for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK="$network"
+            earthly -P +rebuild-chainspec --NETWORK="$network" $NODE_IMAGE_ARG
           done
 
       - name: Commit and push changes
