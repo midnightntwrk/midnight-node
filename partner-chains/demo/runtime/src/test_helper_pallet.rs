@@ -14,7 +14,7 @@ pub mod pallet {
 	use sp_block_participation::BlockProductionData;
 	use sp_core::bytes::*;
 	use sp_inherents::IsFatalError;
-	use sp_partner_chains_bridge::BridgeTransferV1;
+	use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 
 	type ParticipationData = BlockProductionData<BlockAuthor, DelegatorKey>;
 
@@ -128,19 +128,23 @@ pub mod pallet {
 		}
 	}
 
-	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<AccountId> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId>) {
-			match transfer {
-				BridgeTransferV1::InvalidTransfer { token_amount, tx_hash } => {
-					log::warn!("⚠️ Recorded an invalid transfer of {token_amount} (tx {tx_hash})");
+	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<AccountId, ()> for Pallet<T> {
+		fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId>) -> () {
+			let token_amount = transfer.amount;
+			let mc_tx_hash = transfer.mc_tx_hash;
+			match transfer.recipient {
+				TransferRecipient::Invalid => {
+					log::warn!(
+						"⚠️ Recorded an invalid transfer of {token_amount} (tx {mc_tx_hash})"
+					);
 					TotalInvalidTransfers::<T>::mutate(|v| *v + token_amount);
 				},
-				BridgeTransferV1::UserTransfer { token_amount, recipient } => {
+				TransferRecipient::Address { recipient } => {
 					log::info!("💸 Registered a transfer of {token_amount} to {recipient:?}");
 					let _ = Balances::deposit_creating(&recipient, token_amount.into());
 					UserTransferTotals::<T>::mutate(recipient, |v| *v += token_amount);
 				},
-				BridgeTransferV1::ReserveTransfer { token_amount } => {
+				TransferRecipient::Reserve => {
 					log::info!("🏦 Registered a reserve transfer of {token_amount}.");
 					let _ =
 						Balances::deposit_creating(&T::ReserveAccount::get(), token_amount.into());

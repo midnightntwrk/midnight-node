@@ -155,12 +155,8 @@ impl<BlockProducerId, DelegatorId> BlockProductionData<BlockProducerId, Delegato
 }
 
 /// Error type returned by the Block Participation pallet's inherent
-#[derive(Encode, PartialEq)]
-#[cfg_attr(not(feature = "std"), derive(Debug))]
-#[cfg_attr(
-	feature = "std",
-	derive(Decode, DecodeWithMemTracking, thiserror::Error, sp_runtime::RuntimeDebug)
-)]
+#[derive(Encode, PartialEq, Debug)]
+#[cfg_attr(feature = "std", derive(Decode, DecodeWithMemTracking, thiserror::Error))]
 pub enum InherentError {
 	/// Indicates that inherent was not produced when expected
 	#[cfg_attr(feature = "std", error("Block participation inherent not produced when expected"))]

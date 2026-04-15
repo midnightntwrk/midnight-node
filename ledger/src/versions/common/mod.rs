@@ -65,8 +65,8 @@ use {
 		dust::InitialNonce,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
-			Transaction as LedgerTransaction, VerifiedTransaction,
+			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
+			SingleUpdate, Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
 	std::{
@@ -1038,6 +1038,37 @@ where
 		let events: Result<Vec<CNightGeneratesDustEvent>, LedgerApiError> =
 			events.iter().map(|e| api.tagged_deserialize(e)).collect();
 		let system_tx = SystemTransaction::CNightGeneratesDustUpdate { events: events? };
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_night_cardano_bridge_system_tx(
+		amount: u128,
+		target_address_bytes: &[u8],
+		nonce_bytes: [u8; 32],
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let target_address = api.night_address(target_address_bytes)?;
+		let output = OutputInstructionUnshielded {
+			amount,
+			target_address,
+			nonce: Nonce(HashOutput(nonce_bytes)),
+		};
+		let system_tx = SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, vec![output]);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let system_tx = SystemTransaction::DistributeReserve(amount);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		//TODO: this is wrong transaction, ledger is missing the correct one yet. https://github.com/midnightntwrk/midnight-node/issues/1277
+		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
 		api.tagged_serialize(&system_tx)
 	}
 }

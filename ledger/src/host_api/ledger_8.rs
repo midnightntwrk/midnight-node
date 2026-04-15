@@ -237,6 +237,30 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::construct_cnight_generates_dust_system_tx(events)
 	}
 
+	fn construct_distribute_night_cardano_bridge_system_tx(
+		amount: PassFatPointerAndDecode<u128>,
+		target_address_bytes: PassFatPointerAndRead<&[u8]>,
+		nonce_bytes: PassFatPointerAndDecode<[u8; 32]>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::construct_distribute_night_cardano_bridge_system_tx(
+			amount,
+			target_address_bytes,
+			nonce_bytes,
+		)
+	}
+
+	fn construct_distribute_reserve_system_tx(
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::construct_distribute_reserve_system_tx(amount)
+	}
+
+	fn construct_distribute_treasury_system_tx(
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		Bridge::<Signature, Database>::construct_distribute_treasury_system_tx(amount)
+	}
+
 	/// Ensures the correct ledger storage is initialized for this runtime version.
 	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
 	/// drops new version's storage and initializes normal storage.
