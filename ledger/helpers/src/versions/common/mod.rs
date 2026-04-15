@@ -154,6 +154,21 @@ pub use {
 // Re-exports without can-panic feature
 pub use types::*;
 
+/// Compatibility trait: L7 `apply` returns `WalletState<D>`, L8 returns `Result<WalletState<D>, _>`.
+pub trait IntoWalletState<D: DB + Clone> {
+	fn into_wallet_state(self) -> WalletState<D>;
+}
+impl<D: DB + Clone> IntoWalletState<D> for WalletState<D> {
+	fn into_wallet_state(self) -> WalletState<D> {
+		self
+	}
+}
+impl<D: DB + Clone, E: std::fmt::Debug> IntoWalletState<D> for Result<WalletState<D>, E> {
+	fn into_wallet_state(self) -> WalletState<D> {
+		self.expect("wallet state apply failed")
+	}
+}
+
 /// Serializes a mn_ledger::serialize-able type into bytes
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);

@@ -143,23 +143,24 @@ fn tx_to_transfer<RecipientAddress>(tx: BridgeTx) -> BridgeTransferV1<RecipientA
 where
 	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
 {
-	let token_amount = tx.amount.0.try_into().expect("There can't be more than u64 of cNIGHT");
-	let tx_hash = tx.tx_id();
-	match tx.c2m_metadata {
+	let amount = tx.amount.0.try_into().expect("There can't be more than u64 of cNIGHT");
+	let mc_tx_hash = tx.tx_id();
+	let recipient = match tx.c2m_metadata {
 		Some(JsonValue::Array(values)) => match values.first() {
-			None => BridgeTransferV1::ReserveTransfer { token_amount },
+			None => TransferRecipient::Reserve,
 			Some(JsonValue::String(str)) => {
 				let str = str.trim_start_matches("0x");
 				match hex::decode(str)
 					.ok()
 					.and_then(|bytes| RecipientAddress::try_from(&bytes).ok())
 				{
-					Some(recipient) => BridgeTransferV1::UserTransfer { token_amount, recipient },
-					None => BridgeTransferV1::InvalidTransfer { token_amount, tx_hash },
+					Some(recipient) => TransferRecipient::Address { recipient },
+					None => TransferRecipient::Invalid,
 				}
 			},
-			_ => BridgeTransferV1::InvalidTransfer { token_amount, tx_hash },
+			_ => TransferRecipient::Invalid,
 		},
-		_ => BridgeTransferV1::InvalidTransfer { token_amount, tx_hash },
-	}
+		_ => TransferRecipient::Invalid,
+	};
+	BridgeTransferV1 { mc_tx_hash, amount, recipient }
 }

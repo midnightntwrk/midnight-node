@@ -12,7 +12,8 @@
 // limitations under the License.
 
 import { execSync } from "child_process";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync, existsSync } from "fs";
+import path from "path";
 import { loadNetworkConfig } from "./networkConfig";
 
 /** Pod port map e.g. { "psql-dbsync-cardano-0-db-01": 54321 } */
@@ -72,6 +73,10 @@ const SEED_ENV_KEYS = [
 // TODO: Change this to use AWS SSM
 export function getSecrets(namespace: string): Record<string, string> {
   const networkConfig = loadNetworkConfig(namespace);
+
+  if (networkConfig.secrets.mode === "local-files") {
+    return getLocalFileSecrets(namespace);
+  }
 
   if (networkConfig.secrets.mode === "preview-style") {
     return getPreviewSecrets(namespace);
@@ -303,6 +308,75 @@ const getPortFromMapping = (host: string, mapping: PortMapping) => {
   }
   return entry[1];
 };
+
+const SEED_FILE_TO_ENV_SUFFIX: Record<string, string> = {
+  "aura.seed": "AURA_SEED",
+  "grandpa.seed": "GRANDPA_SEED",
+  "cross_chain.seed": "CROSS_CHAIN_SEED",
+};
+
+function getLocalFileSecrets(namespace: string): Record<string, string> {
+  const seedsDir = path.resolve(
+    __dirname,
+    "../networks",
+    "well-known",
+    namespace,
+    "mocked-config",
+    "seeds",
+  );
+
+  if (!existsSync(seedsDir)) {
+    throw new Error(
+      `Local seed files directory not found at ${seedsDir}. ` +
+        `Run the mock-authorities tool first to generate seed files.`,
+    );
+  }
+
+  const validatorDirs = readdirSync(seedsDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && /^validator-\d+$/.test(d.name))
+    .sort((a, b) => {
+      const aIdx = parseInt(a.name.replace("validator-", ""), 10);
+      const bIdx = parseInt(b.name.replace("validator-", ""), 10);
+      return aIdx - bIdx;
+    });
+
+  if (validatorDirs.length === 0) {
+    throw new Error(`No validator-N directories found in ${seedsDir}`);
+  }
+
+  console.log(
+    `reading local seed files for ${validatorDirs.length} validator(s) from ${seedsDir}`,
+  );
+
+  const env: Record<string, string> = {};
+
+  for (const dir of validatorDirs) {
+    const validatorIndex = parseInt(dir.name.replace("validator-", ""), 10);
+    const nodeId = String(validatorIndex + 1).padStart(2, "0");
+    const prefix = `MIDNIGHT_NODE_${nodeId}_0`;
+
+    for (const [fileName, envSuffix] of Object.entries(SEED_FILE_TO_ENV_SUFFIX)) {
+      const filePath = path.join(seedsDir, dir.name, fileName);
+      if (!existsSync(filePath)) {
+        console.warn(`missing seed file ${filePath}; skipping`);
+        continue;
+      }
+
+      const seed = readFileSync(filePath, "utf-8").trim();
+      if (!seed) {
+        console.warn(`empty seed file ${filePath}; skipping`);
+        continue;
+      }
+
+      env[`${prefix}_${envSuffix}`] = seed;
+    }
+  }
+
+  console.log(
+    `loaded ${Object.keys(env).length} seed env var(s) from local files`,
+  );
+  return env;
+}
 
 const PREVIEW_ENV_FIELDS = [
   "DB_SYNC_POSTGRES_CONNECTION_STRING",

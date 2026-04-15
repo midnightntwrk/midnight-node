@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	BuildOutput, CoinInfo, DB, InputInfo, LedgerContext, OfferInfo, OutputInfo, ProofPreimage,
-	Segment, StdRng, Transient, WalletSeed,
+	BuildOutput, CoinInfo, DB, InputInfo, IntoWalletState, LedgerContext, OfferInfo, OutputInfo,
+	ProofPreimage, Segment, StdRng, Transient, WalletSeed,
 };
 use std::sync::Arc;
 
@@ -54,7 +54,7 @@ impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> 
 				let secret_keys = &destination_wallet.shielded.secret_keys();
 				let state = &destination_wallet.shielded.state;
 
-				let transient_state = state.apply(secret_keys, &offer);
+				let transient_state = state.apply(secret_keys, &offer).into_wallet_state();
 
 				//---------- Alternative #1
 				let coin_info = CoinInfo::new(rng, self.output.value, self.output.token_type);
