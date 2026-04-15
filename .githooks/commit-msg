@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# Require a DCO (Signed-off-by) in the commit message
+if ! grep -q "Signed-off-by:" "$1"; then
+	echo "Missing DCO (no \"Signed-off-by:\" in commit message)"
+    echo "By signing-off your commit, you're agreeing to the Developer's Certificate of Origin: https://developercertificate.org/"
+	echo "Use git commit -s instead"
+	exit 1
+fi

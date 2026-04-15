@@ -109,10 +109,6 @@ pub struct GenesisGenerator {
 const GLACIER_DROP_START_UNIX_EPOC: u64 = 1754395200;
 const BEGINNING: Timestamp = Timestamp::from_secs(GLACIER_DROP_START_UNIX_EPOC);
 
-// Provisional hardcoded expected values until transfers from iterim ICS to new ICS happens
-const EXPECTED_RESERVE_VALUE: u128 = 6_000_000_000_873_988; // STARS
-const EXPECTED_ICS_VALUE: u128 = 1_200_000_000_000_000; // STARS
-
 type Result<T, E = GenesisGeneratorError<DefaultDB>> = std::result::Result<T, E>;
 
 impl GenesisGenerator {
@@ -124,18 +120,17 @@ impl GenesisGenerator {
 		funding: FundingArgs,
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
-		_ics_config: Option<IcsConfig>,
-		_reserve_config: Option<ReserveConfig>,
+		ics_config: Option<IcsConfig>,
+		reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
 		genesis_timestamp: Option<u64>,
 	) -> Result<Self> {
-		// TODO: Uncomment after transfers from iterim ICS to new ICS happens
-		// let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
-		// let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		// When reserve is zero (no config or empty config), assign all remaining supply
+		// to the reserve pool so dev/test networks have funds for faucet wallet distribution.
+		let reserve_pool = if reserve_pool == 0 { MAX_SUPPLY - treasury } else { reserve_pool };
 
-		// Provisional hardcoded expected values until transfers from iterim ICS to new ICS happens
-		let reserve_pool = EXPECTED_RESERVE_VALUE;
-		let treasury = EXPECTED_ICS_VALUE;
 		let locked_pool = MAX_SUPPLY - reserve_pool - treasury;
 
 		// If custom ledger parameters are provided, apply them first
@@ -222,8 +217,6 @@ impl GenesisGenerator {
 			self.claim_rewards(&genesis_block_context, funding, &wallets, &mut rng)?;
 
 			// Restore fees now that we've finished.
-			self.set_parameters(original_parameters, &genesis_block_context)?;
-		} else {
 			self.set_parameters(original_parameters, &genesis_block_context)?;
 		}
 
@@ -671,8 +664,7 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		// ICS config is currently ignored (hardcoded values used instead),
-		// but we still pass it to exercise the code path.
+		// ICS config determines the treasury pool amount.
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
@@ -707,13 +699,13 @@ mod test {
 		.await
 		.unwrap();
 
-		// Treasury uses the hardcoded EXPECTED_ICS_VALUE (not the config value)
+		// Treasury should contain the ICS config's total_amount
 		let night_token_type = TokenType::Unshielded(NIGHT);
 		let treasury_balance = genesis.state.treasury.get(&night_token_type).copied().unwrap_or(0);
 		assert_eq!(
-			treasury_balance, EXPECTED_ICS_VALUE,
-			"Treasury should contain {} NIGHT, but has {}",
-			EXPECTED_ICS_VALUE, treasury_balance
+			treasury_balance, 1_000_000_000_000,
+			"Treasury should contain 1000000000000 NIGHT, but has {}",
+			treasury_balance
 		);
 	}
 
@@ -731,8 +723,7 @@ mod test {
 		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
 		let network_id = "undeployed";
 
-		// Reserve config is currently ignored (hardcoded values used instead),
-		// but we still pass it to exercise the code path.
+		// Reserve config determines the reserve pool amount.
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
 			asset: midnight_primitives_reserve_observation::ReserveAsset {
@@ -771,15 +762,16 @@ mod test {
 		.await
 		.unwrap();
 
-		// Pools use hardcoded values, not the reserve config
-		let expected_locked = MAX_SUPPLY - EXPECTED_RESERVE_VALUE - EXPECTED_ICS_VALUE;
+		// Pools should reflect the actual config values passed
+		let expected_reserve: u128 = 5_000_000_000_000;
+		let expected_locked = MAX_SUPPLY - expected_reserve; // no ICS config, so treasury = 0
 		assert_eq!(
 			genesis.state.locked_pool, expected_locked,
-			"locked_pool should be MAX_SUPPLY minus reserve and ICS expected values"
+			"locked_pool should be MAX_SUPPLY minus reserve"
 		);
 		assert_eq!(
-			genesis.state.reserve_pool, EXPECTED_RESERVE_VALUE,
-			"reserve_pool should equal EXPECTED_RESERVE_VALUE"
+			genesis.state.reserve_pool, expected_reserve,
+			"reserve_pool should equal reserve config total_amount"
 		);
 	}
 

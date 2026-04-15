@@ -180,9 +180,9 @@ impl FetchStorage for PostgresBackend {
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, RawBlockData)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
-		let blocks: Vec<(u64, RawBlockData)> = range.collect();
+		let blocks: Vec<RawBlockData> = range.collect();
 
 		if blocks.is_empty() {
 			return;
@@ -191,7 +191,8 @@ impl FetchStorage for PostgresBackend {
 		// Use a transaction for batch insert
 		let mut tx = self.pool.begin().await.expect("failed to begin transaction");
 
-		for (block_number, block) in blocks {
+		for block in blocks {
+			let block_number = block.number;
 			let data = Self::serialize_block_data(&block);
 
 			sqlx::query(

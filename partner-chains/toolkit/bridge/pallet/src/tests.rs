@@ -1,7 +1,7 @@
 use crate::mock::*;
 use crate::pallet::Call;
 use crate::*;
-use BridgeTransferV1::*;
+use TransferRecipient::*;
 use core::str::FromStr;
 use frame_support::{
 	assert_err, assert_ok,
@@ -14,9 +14,13 @@ use sp_runtime::{AccountId32, BoundedVec};
 
 fn transfers() -> BoundedVec<BridgeTransferV1<RecipientAddress>, MaxTransfersPerBlock> {
 	bounded_vec![
-		UserTransfer { token_amount: 100, recipient: AccountId32::new([2; 32]) },
-		ReserveTransfer { token_amount: 200 },
-		InvalidTransfer { token_amount: 300, tx_hash: McTxHash([1; 32]) }
+		BridgeTransferV1 {
+			amount: 100,
+			recipient: Address { recipient: AccountId32::new([2; 32]) },
+			mc_tx_hash: McTxHash([1; 32])
+		},
+		BridgeTransferV1 { amount: 200, mc_tx_hash: McTxHash([2; 32]), recipient: Reserve },
+		BridgeTransferV1 { amount: 300, mc_tx_hash: McTxHash([3; 32]), recipient: Invalid }
 	]
 }
 
@@ -70,6 +74,35 @@ mod handle_transfers {
 	}
 
 	#[test]
+	fn emits_events() {
+		new_test_ext().execute_with(|| {
+			// Frame system drops events from block 0.
+			frame_system::Pallet::<Test>::set_block_number(1);
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers(),
+				data_checkpoint()
+			));
+
+			let events: Vec<_> =
+				frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
+			let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> = transfers()
+				.into_iter()
+				.enumerate()
+				.map(|(i, t)| {
+					mock::RuntimeEvent::Bridge(Event::Transfer {
+						mc_tx_hash: t.mc_tx_hash,
+						amount: t.amount,
+						result: (i as u32, t.amount),
+						recipient: t.recipient,
+					})
+				})
+				.collect();
+			assert_eq!(events, expected);
+		})
+	}
+
+	#[test]
 	fn updates_the_data_checkpoint() {
 		new_test_ext().execute_with(|| {
 			assert_ok!(Bridge::handle_transfers(
@@ -99,6 +132,35 @@ mod handle_transfers {
 				sp_runtime::DispatchError::BadOrigin
 			);
 		})
+	}
+
+	#[test]
+	fn duplicate_inherent_protection_works() {
+		new_test_ext().execute_with(|| {
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				BoundedVec::new(),
+				data_checkpoint()
+			));
+			frame_support::assert_noop!(
+				Bridge::handle_transfers(
+					RuntimeOrigin::none(),
+					BoundedVec::new(),
+					data_checkpoint()
+				),
+				Error::<Test>::InherentAlreadyExecuted
+			);
+
+			Bridge::on_finalize(System::block_number());
+			System::set_block_number(System::block_number() + 1);
+			Bridge::on_initialize(System::block_number());
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				BoundedVec::new(),
+				data_checkpoint()
+			));
+		});
 	}
 }
 

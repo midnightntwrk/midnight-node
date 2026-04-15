@@ -205,3 +205,71 @@ mod bytes {
 		bytes_struct.bytes.try_into().map_err(de::Error::custom)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use midnight_node_ledger_helpers::coin_structure::coin::Nullifier;
+	use midnight_node_ledger_helpers::{
+		CoinPublicKey, DefaultDB, HashOutput, Nonce, PERSISTENT_HASH_BYTES, QualifiedInfo,
+		ShieldedTokenType, WalletState,
+	};
+
+	fn make_test_state()
+	-> (WalletState<DefaultDB>, [u8; PERSISTENT_HASH_BYTES], [u8; PERSISTENT_HASH_BYTES]) {
+		let nonce_bytes = [0xAA_u8; PERSISTENT_HASH_BYTES];
+		let nullifier_bytes = [0xBB_u8; PERSISTENT_HASH_BYTES];
+
+		let nonce = Nonce(HashOutput(nonce_bytes));
+		let nullifier = Nullifier(HashOutput(nullifier_bytes));
+		let coin = QualifiedInfo {
+			nonce,
+			type_: ShieldedTokenType(HashOutput([0xCC_u8; PERSISTENT_HASH_BYTES])),
+			value: 42,
+			mt_index: 0,
+		};
+
+		let state = WalletState::<DefaultDB>::new();
+		let coins = state.coins.insert(nullifier, coin);
+		let state = WalletState { coins, ..state };
+
+		(state, nonce_bytes, nullifier_bytes)
+	}
+
+	#[test]
+	fn from_zswap_state_uses_coin_nonce_not_nullifier() {
+		let (state, nonce_bytes, _nullifier_bytes) = make_test_state();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert_eq!(encoded.outputs.len(), 1);
+		assert_eq!(
+			encoded.outputs[0].coin_info.nonce, nonce_bytes,
+			"serialized nonce must match the coin value's Nonce, not the map key Nullifier"
+		);
+	}
+
+	#[test]
+	fn from_zswap_state_preserves_color_and_value() {
+		let (state, _nonce_bytes, _nullifier_bytes) = make_test_state();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert_eq!(encoded.outputs[0].coin_info.color, [0xCC_u8; PERSISTENT_HASH_BYTES]);
+		assert_eq!(encoded.outputs[0].coin_info.value, 42);
+	}
+
+	#[test]
+	fn from_zswap_state_handles_empty_wallet() {
+		let state = WalletState::<DefaultDB>::new();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert!(encoded.outputs.is_empty());
+		assert!(encoded.inputs.is_empty());
+		assert_eq!(encoded.current_index, 0);
+	}
+}

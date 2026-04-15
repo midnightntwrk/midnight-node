@@ -24,7 +24,6 @@ use midnight_node_ledger::types::{
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
-use sp_runtime::RuntimeDebug;
 
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 /// Trait to allow pallets to mutate the Ledger state
@@ -82,7 +81,7 @@ pub mod bridge {
 	}
 
 	/// Error type returned when bridge recipient bytes cannot be converted.
-	#[derive(Clone, Copy, PartialEq, Eq, RuntimeDebug)]
+	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 	pub enum BridgeRecipientError {
 		/// The encoded recipient exceeds the configured byte limit.
 		TooLong,
@@ -98,7 +97,7 @@ pub mod bridge {
 		DecodeWithMemTracking,
 		MaxEncodedLen,
 		TypeInfo,
-		RuntimeDebug,
+		Debug,
 		Default,
 	)]
 	#[scale_info(skip_type_params(BridgeRecipientMaxLen))]
