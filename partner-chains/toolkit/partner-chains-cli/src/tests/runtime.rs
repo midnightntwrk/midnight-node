@@ -115,6 +115,7 @@ impl pallet_partner_chains_bridge::Config for MockRuntime {
 	type GovernanceOrigin = EnsureRoot<MockRuntime>;
 	type Recipient = AccountId32;
 	type TransferHandler = ();
+	type HandlerResult = ();
 	type MaxTransfersPerBlock = ConstU32<3>;
 	type WeightInfo = ();
 	#[cfg(feature = "runtime-benchmarks")]
