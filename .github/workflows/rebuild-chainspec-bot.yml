@@ -162,16 +162,16 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          NODE_IMAGE_ARG=""
+          NODE_IMAGE="+node-image"
           if [ -n "$VERSION" ]; then
-            NODE_IMAGE_ARG="--NODE_IMAGE=midnightntwrk/midnight-node:$VERSION"
-            echo "Using node image: midnightntwrk/midnight-node:$VERSION"
+            NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"
+            echo "Using node image: $NODE_IMAGE"
           fi
 
           # Split networks and run earthly for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK="$network" $NODE_IMAGE_ARG
+            earthly -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
           done
 
       - name: Commit and push changes
