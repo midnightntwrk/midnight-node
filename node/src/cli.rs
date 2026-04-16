@@ -31,6 +31,11 @@ pub struct RunMidnight {
 	/// Rejects transactions that contain Deploy and Maintain Operations from being accepted to the transaction pool.
 	#[arg(long)]
 	pub filter_deploy_txs: bool,
+
+	/// Maximum number of concurrent finality RPC subscriptions (GRANDPA + BEEFY combined).
+	/// Connections that exceed this limit will have their subscription requests rejected.
+	#[arg(long, default_value_t = 512)]
+	pub rpc_max_finality_subscriptions: u32,
 }
 
 #[derive(Debug, clap::Parser)]
