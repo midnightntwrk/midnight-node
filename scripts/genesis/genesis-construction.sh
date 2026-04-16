@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "node-dev-01" "preview")
+AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet" "preview")
 
 # Default RNG seed (same as in Earthfile)
 DEFAULT_RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
@@ -135,7 +135,7 @@ get_cardano_tip() {
 uses_cnight_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet|preprod)
             return 0  # true
             ;;
         *)
@@ -148,7 +148,7 @@ uses_cnight_config() {
 uses_ics_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet|preprod)
             return 0  # true
             ;;
         *)
@@ -161,7 +161,7 @@ uses_ics_config() {
 uses_reserve_config() {
     local network="$1"
     case "$network" in
-        qanet|undeployed|devnet|govnet|node-dev-01)
+        qanet|undeployed|devnet|govnet|preprod)
             return 0  # true
             ;;
         *)
@@ -188,6 +188,7 @@ show_input_files() {
         "pc-chain-config.json"
         "system-parameters-config.json"
         "registered-candidates-addresses.json"
+        "message-config.json"
     )
 
     for file in "${files[@]}"; do
@@ -583,6 +584,7 @@ run_chainspec_generation() {
     print_file "$REPO_ROOT/res/$network/federated-authority-config.json"
     print_file "$REPO_ROOT/res/$network/cnight-config.json"
     print_file "$REPO_ROOT/res/$network/ics-config.json"
+    print_file "$REPO_ROOT/res/$network/message-config.json"
     print_file "$REPO_ROOT/res/genesis/genesis_block_$network.mn"
     print_file "$REPO_ROOT/res/genesis/genesis_state_$network.mn"
     echo ""

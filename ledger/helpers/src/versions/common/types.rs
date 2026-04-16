@@ -23,17 +23,34 @@ use rand::RngCore;
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
+	fmt,
 	marker::PhantomData,
 	time::{SystemTime, UNIX_EPOCH},
 };
 use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Storable, Serializable)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Storable, Serializable)]
 #[storable(base)]
 pub enum WalletSeed {
 	Short([u8; 16]),
 	Medium([u8; 32]),
 	Long([u8; 64]),
+}
+
+impl fmt::Debug for WalletSeed {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Short(_) => write!(f, "WalletSeed::Short(REDACTED)"),
+			Self::Medium(_) => write!(f, "WalletSeed::Medium(REDACTED)"),
+			Self::Long(_) => write!(f, "WalletSeed::Long(REDACTED)"),
+		}
+	}
+}
+
+impl fmt::Display for WalletSeed {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "REDACTED")
+	}
 }
 
 #[derive(Clone, Debug, thiserror::Error)]

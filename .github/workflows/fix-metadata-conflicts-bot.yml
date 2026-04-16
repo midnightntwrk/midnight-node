@@ -108,6 +108,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          submodules: true
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -192,7 +193,7 @@ jobs:
           git commit -m "chore: merge $BASE_BRANCH and resolve metadata conflicts ($strategy_desc)"
 
           # Push the merge commit
-          git push origin HEAD
+          git push origin "HEAD:refs/heads/${{ steps.pr.outputs.ref }}"
 
           echo "RESULT=resolved" >> "$GITHUB_ENV"
           # Replace newlines with comma-space for display
@@ -201,7 +202,7 @@ jobs:
 
       - name: Post success comment
         if: env.RESULT == 'resolved'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Metadata conflicts resolved successfully!
@@ -214,7 +215,7 @@ jobs:
 
       - name: Post no-conflicts comment
         if: env.RESULT == 'no-conflicts'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :information_source: No conflicts detected between this PR and the `${{ steps.pr.outputs.base }}` branch.
@@ -222,7 +223,7 @@ jobs:
 
       - name: Post non-metadata-conflicts comment
         if: env.RESULT == 'non-metadata-conflicts'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :warning: Cannot automatically resolve conflicts. Found conflicts in files outside `metadata/static/`:
@@ -236,7 +237,7 @@ jobs:
 
       - name: Post failure comment
         if: failure()
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :x: Failed to fix metadata conflicts. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.

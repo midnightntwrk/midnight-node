@@ -15,7 +15,7 @@ import fs from "fs";
 import path from "path";
 
 export type DbsyncMode = "k8s" | "public" | "rds-proxy";
-export type SecretsMode = "pods-by-labels" | "preview-style";
+export type SecretsMode = "pods-by-labels" | "preview-style" | "local-files";
 
 export interface NetworkConfig {
   dbsync?: {
@@ -27,6 +27,8 @@ export interface NetworkConfig {
   boot?: {
     /** Optional explicit boot pod names to inspect for DB sync creds */
     podNames?: string[];
+    /** Optional PVC name for the boot node data volume (used by snapshot) */
+    pvcName?: string;
   };
 }
 

@@ -7,13 +7,13 @@ use serde::Serialize;
 pub struct ContractAddressArgs {
 	/// Serialize Tagged
 	#[arg(long)]
-	tagged: bool,
+	pub tagged: bool,
 	/// Serialize Untagged
 	#[arg(long)]
-	untagged: bool,
+	pub untagged: bool,
 	/// Serialized Transaction
 	#[arg(long, short)]
-	src_file: String,
+	pub src_file: String,
 }
 
 #[derive(Debug, thiserror::Error)]

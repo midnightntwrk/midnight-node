@@ -193,19 +193,45 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool =
-		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.allow_non_ssl).await?;
+	let candidates_pool = get_connection(
+		postgres_uri,
+		CANDIDATES_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for candidates data source: {e}");
+		e
+	})?;
 
 	// All these pools are connections to the same database, so we can use any pool to create the index
 	create_index_if_not_exists(&candidates_pool).await;
 
 	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone()).await?;
+		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to initialise candidates data source: {e}");
+				e
+			})?;
 	let candidates_data_source_cached =
-		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
+		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
+			log::warn!("Failed to create candidates data source cache: {e}");
+			e
+		})?;
 
-	let sidechain_pool =
-		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.allow_non_ssl).await?;
+	let sidechain_pool = get_connection(
+		postgres_uri,
+		SIDECHAIN_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for sidechain data source: {e}");
+		e
+	})?;
 	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
@@ -216,7 +242,17 @@ pub async fn create_cached_data_sources(
 		mc_metrics_opt.clone(),
 	);
 
-	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.allow_non_ssl).await?;
+	let mc_hash_pool = get_connection(
+		postgres_uri,
+		MC_HASH_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for mc_hash data source: {e}");
+		e
+	})?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
 		mc_hash_pool,
 		db_sync_block_data_source_config.clone(),
@@ -225,24 +261,53 @@ pub async fn create_cached_data_sources(
 	let mc_hash =
 		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
 
-	let cnight_observation_pool =
-		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.allow_non_ssl).await?;
+	let cnight_observation_pool = get_connection(
+		postgres_uri,
+		CNIGHT_OBSERVATION_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for cnight_observation data source: {e}");
+		e
+	})?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
 		midnight_metrics_opt.clone(),
 		1000,
 	);
 
-	let federated_authority_observation_pool =
-		get_connection(postgres_uri, FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG, cfg.allow_non_ssl)
-			.await?;
+	let federated_authority_observation_pool = get_connection(
+		postgres_uri,
+		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!(
+			"Failed to connect to database for federated_authority_observation data source: {e}"
+		);
+		e
+	})?;
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
 		midnight_metrics_opt,
 		1000,
 	);
 
-	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.allow_non_ssl).await?;
+	let bridge_pool = get_connection(
+		postgres_uri,
+		BRIDGE_POOL_CFG,
+		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for bridge data source: {e}");
+		e
+	})?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
@@ -271,6 +336,7 @@ pub async fn create_cnight_observation_data_source(
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CNIGHT_OBSERVATION_POOL_CFG,
 		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
@@ -289,6 +355,7 @@ pub async fn create_federated_authority_observation_data_source(
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
 		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
@@ -319,6 +386,7 @@ pub async fn create_authority_selection_data_source_with_pool(
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CANDIDATES_POOL_CFG,
 		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
@@ -338,6 +406,7 @@ pub async fn create_ics_genesis_pool(
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		ICS_POOL_CFG,
 		cfg.allow_non_ssl,
+		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 	Ok(pool)
@@ -348,14 +417,21 @@ async fn get_connection(
 	connection_string: &str,
 	pool_cfg: DbPoolCfg,
 	allow_non_ssl: bool,
+	ssl_root_cert: Option<&str>,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let connect_options =
+	let mut connect_options =
 		sqlx::postgres::PgConnectOptions::from_str(connection_string)?.ssl_mode(if allow_non_ssl {
 			//Note: PgSslMode::Prefer has issues with some environments.
 			sqlx::postgres::PgSslMode::Disable
+		} else if ssl_root_cert.is_some() {
+			sqlx::postgres::PgSslMode::VerifyFull
 		} else {
+			log::warn!("No ssl_root_cert configured: using PgSslMode::Require (encrypted but no certificate validation). Set ssl_root_cert for full MITM protection.");
 			sqlx::postgres::PgSslMode::Require
 		});
+	if let Some(cert_path) = ssl_root_cert {
+		connect_options = connect_options.ssl_root_cert(cert_path);
+	}
 
 	let pool = sqlx::postgres::PgPoolOptions::new()
 		.max_connections(pool_cfg.max_connections)
@@ -363,21 +439,41 @@ async fn get_connection(
 		.connect_with(connect_options.clone())
 		.await
 		.map_err(|e| {
-			PostgresConnectionError(
-				connect_options.get_host().to_string(),
+			log::debug!(
+				"Database connection details: host={}, port={}, database={}; error: {e}",
+				connect_options.get_host(),
 				connect_options.get_port(),
-				connect_options.get_database().unwrap_or("cexplorer").to_string(),
-				e.to_string(),
-			)
-			.to_string()
+				connect_options.get_database().unwrap_or("cexplorer"),
+			);
+			PostgresConnectionError(e.to_string())
 		})?;
 	Ok(pool)
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
-#[error("Could not connect to database: postgres://***:***@{0}:{1}/{2}; error: {3}")]
-struct PostgresConnectionError(String, u16, String, String);
+#[error("Could not connect to database; error: {0}")]
+struct PostgresConnectionError(String);
 
 fn missing(field: &str) -> sc_service::Error {
 	ServiceError::Application(format!("Missing {field}. Check configuration.").into())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn connection_error_redacts_infrastructure_details() {
+		let error = PostgresConnectionError("pool timed out".to_string());
+		let message = error.to_string();
+
+		assert!(
+			message.contains("Could not connect to database"),
+			"error must indicate connection failure"
+		);
+		assert!(message.contains("pool timed out"), "error must contain underlying error");
+		assert!(!message.contains("localhost"), "error must not contain host");
+		assert!(!message.contains("5432"), "error must not contain default port");
+		assert!(!message.contains("cexplorer"), "error must not contain database name");
+	}
 }

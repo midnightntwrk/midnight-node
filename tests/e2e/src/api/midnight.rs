@@ -3,20 +3,22 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
-use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::types::utxo_owners::UtxoOwners;
+use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::bounded_collections::bounded_vec::BoundedVec;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
-	c_night_observation::{self}
-	,
+	c_night_observation::{self},
+	bridge::{self},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use subxt::backend::rpc::RpcClient;
-use subxt::blocks::ExtrinsicEvents;
-use subxt::ext::subxt_rpcs::rpc_params;
-use subxt::tx::TxProgress;
+use subxt::extrinsics::ExtrinsicEvents;
+use subxt::rpcs::{RpcClient, rpc_params};
+use subxt::tx::TransactionProgress;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
@@ -104,7 +106,7 @@ impl MidnightClient {
             "Subscribing for cNIGHT observation extrinsic with tx_id: 0x{}",
             hex::encode(tx_id)
         );
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let inner = async {
             while let Some(block_result) = blocks_sub.next().await {
@@ -113,10 +115,11 @@ impl MidnightClient {
                 let block_number = block.header().number;
                 println!("Finalized block #{}", block_number);
 
-                let extrinsic = block.extrinsics().await?;
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
 
-                for ext in extrinsic.iter() {
-                    let Ok(decoded) = ext.as_root_extrinsic::<mn_meta::Call>() else {
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
                         continue;
                     };
 
@@ -160,6 +163,50 @@ impl MidnightClient {
             .unwrap_or_else(|_| Err("Timeout waiting for registration event".into()))
     }
 
+    pub async fn subscribe_to_c2n_bridge_transfers(
+        &self,
+    ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
+        println!("Subscribing for C-to-N transfer extrinsic",);
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
+
+        let inner = async {
+            while let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+
+                let block_number = block.header().number;
+                println!("Finalized block #{}", block_number);
+
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
+
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
+                        continue;
+                    };
+
+                    let Some(transfers) = MidnightClient::extract_bridge_calls(&decoded) else {
+                        continue;
+                    };
+
+                    println!(
+                        "  BridgeHandler::handle_transfers called with {} transfers",
+                        transfers.0.len()
+                    );
+
+                    if !transfers.0.is_empty() {
+                        let events = ext.events().await?;
+                        return Ok(events);
+                    }
+                }
+            }
+            Err("Did not find bridge extrinsics".into())
+        };
+
+        timeout(Duration::from_secs(60), inner)
+            .await
+            .unwrap_or_else(|_| Err("Timeout waiting for bridge exrinsics".into()))
+    }
+
     pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> String {
         let mut hasher = Blake2bVar::new(32).expect("valid output size");
 
@@ -184,22 +231,33 @@ impl MidnightClient {
         }
     }
 
+    fn extract_bridge_calls(
+        call: &mn_meta::Call,
+    ) -> Option<&BoundedVec<BridgeTransferV1<BridgeRecipient>>> {
+        match call {
+            mn_meta::Call::Bridge(bridge::Call::handle_transfers { transfers, .. }) => {
+                Some(transfers)
+            }
+            _ => None,
+        }
+    }
+
     pub async fn query_night_utxo_owners(
         &self,
         utxo: String,
     ) -> Result<Option<UtxoOwners>, Box<dyn std::error::Error>> {
         let nonce = hex::decode(&utxo).unwrap();
-        let storage_address = mn_meta::storage()
-            .c_night_observation()
-            .utxo_owners(H256(nonce.try_into().unwrap()));
+        let storage_address = mn_meta::storage().c_night_observation().utxo_owners();
 
         let owners = self
             .online_client
-            .storage()
-            .at_latest()
+            .at_current_block()
             .await?
-            .fetch(&storage_address)
-            .await?;
+            .storage()
+            .try_fetch(storage_address, (H256(nonce.try_into().unwrap()),))
+            .await?
+            .map(|v| v.decode())
+            .transpose()?;
 
         Ok(owners)
     }
@@ -239,7 +297,7 @@ impl MidnightClient {
 
         // Helper to check events in a block
         let check_block_events = |events: subxt::events::Events<SubstrateConfig>,
-                                  block_number: u32,
+                                  block_number: u64,
                                   found_council: &mut bool,
                                   found_tech: &mut bool| {
             // Check for CouncilMembersReset event
@@ -269,17 +327,8 @@ impl MidnightClient {
 
         // First, check historical finalized blocks for the events
         // The events may have been emitted before we started listening
-        let finalized_hash = self
-            .online_client
-            .backend()
-            .latest_finalized_block_ref()
-            .await?;
-        let finalized_block = self
-            .online_client
-            .blocks()
-            .at(finalized_hash.hash())
-            .await?;
-        let current_finalized = finalized_block.header().number;
+        let finalized_at = self.online_client.at_current_block().await?;
+        let current_finalized = finalized_at.block_number();
 
         println!(
             "Checking historical blocks 1 to {} for federated authority events...",
@@ -295,8 +344,8 @@ impl MidnightClient {
                 .request("chain_getBlockHash", rpc_params![block_num])
                 .await?;
 
-            let block = self.online_client.blocks().at(block_hash).await?;
-            let events = block.events().await?;
+            let at_block = self.online_client.at_block(block_hash).await?;
+            let events = at_block.events().fetch().await?;
 
             check_block_events(
                 events,
@@ -318,7 +367,7 @@ impl MidnightClient {
 
         // If not found in history, subscribe to new finalized blocks
         println!("Subscribing to new finalized blocks for remaining events...");
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(120), async {
             while let Some(block) = blocks_sub.next().await {
@@ -326,7 +375,8 @@ impl MidnightClient {
                 let block_number = block.header().number;
                 println!("Checking block #{block_number} for federated authority events");
 
-                let events = block.events().await?;
+                let block_ref = block.at().await?;
+                let events = block_ref.events().fetch().await?;
 
                 check_block_events(
                     events,
@@ -373,8 +423,11 @@ impl MidnightClient {
 
     /// Get the current best block hash from the node.
     pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let block = self.online_client.blocks().at_latest().await?;
-        Ok(block.hash())
+        let hash: H256 = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![])
+            .await?;
+        Ok(hash)
     }
 
     /// Get block hash at a specific block height/number.
@@ -392,7 +445,7 @@ impl MidnightClient {
 
     /// Wait for a new finalized block and return its hash.
     pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(30), async {
             if let Some(block_result) = blocks_sub.next().await {
@@ -503,10 +556,16 @@ impl MidnightClient {
     pub async fn submit_midnight_tx(
         &self,
         tx_bytes: Vec<u8>,
-    ) -> Result<TxProgress<SubstrateConfig, OnlineClient<SubstrateConfig>>, subxt::Error> {
+    ) -> Result<
+        TransactionProgress<
+            SubstrateConfig,
+            subxt::client::OnlineClientAtBlockImpl<SubstrateConfig>,
+        >,
+        Box<dyn std::error::Error>,
+    > {
         let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
-        let unsigned_extrinsic = self.online_client.tx().create_unsigned(&mn_tx)?;
-        unsigned_extrinsic.submit_and_watch().await
+        let unsigned_extrinsic = self.online_client.tx().await?.create_unsigned(&mn_tx)?;
+        Ok(unsigned_extrinsic.submit_and_watch().await?)
     }
 
     /// Submit a Midnight transaction expecting it to be rejected at pre_dispatch.
@@ -517,7 +576,12 @@ impl MidnightClient {
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         println!("Submitting transaction expecting rejection...");
-        match self.submit_midnight_tx(tx_bytes).await {
+        match self
+            .submit_midnight_tx(tx_bytes)
+            .await?
+            .wait_for_finalized_success()
+            .await
+        {
             Err(e) => {
                 println!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())
@@ -541,27 +605,27 @@ impl MidnightClient {
         // Wait for inclusion in block
         while let Some(status) = progress.next().await {
             match status? {
-                subxt::tx::TxStatus::InBestBlock(block_info) => {
+                subxt::tx::TransactionStatus::InBestBlock(block_info) => {
                     println!(
                         "Transaction included in best block: {:?}",
                         block_info.block_hash()
                     );
                     return Ok(());
                 }
-                subxt::tx::TxStatus::InFinalizedBlock(block_info) => {
+                subxt::tx::TransactionStatus::InFinalizedBlock(block_info) => {
                     println!(
                         "Transaction finalized in block: {:?}",
                         block_info.block_hash()
                     );
                     return Ok(());
                 }
-                subxt::tx::TxStatus::Error { message } => {
+                subxt::tx::TransactionStatus::Error { message } => {
                     return Err(format!("Transaction error: {}", message).into());
                 }
-                subxt::tx::TxStatus::Invalid { message } => {
+                subxt::tx::TransactionStatus::Invalid { message } => {
                     return Err(format!("Transaction invalid: {}", message).into());
                 }
-                subxt::tx::TxStatus::Dropped { message } => {
+                subxt::tx::TransactionStatus::Dropped { message } => {
                     return Err(format!("Transaction dropped: {}", message).into());
                 }
                 _ => {

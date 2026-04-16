@@ -18,8 +18,8 @@ BOLD='\033[1m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Available networks (excluding dev/undeployed which are for local development)
-AVAILABLE_NETWORKS=("mainnet" "qanet" "devnet" "govnet")
+# This verification script is only available for mainnet
+NETWORK="mainnet"
 
 # Function to print colored messages
 print_header() {
@@ -140,7 +140,7 @@ get_cardano_tip() {
 uses_cnight_config() {
     local network="$1"
     case "$network" in
-        mainnet|qanet|undeployed|devnet|govnet|node-dev-01)
+        mainnet|qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)
@@ -153,7 +153,7 @@ uses_cnight_config() {
 uses_ics_config() {
     local network="$1"
     case "$network" in
-        mainnet|qanet|undeployed|devnet|govnet|node-dev-01)
+        mainnet|qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)
@@ -166,7 +166,7 @@ uses_ics_config() {
 uses_reserve_config() {
     local network="$1"
     case "$network" in
-        mainnet|qanet|undeployed|devnet|govnet|node-dev-01)
+        mainnet|qanet|undeployed|devnet|govnet)
             return 0  # true
             ;;
         *)
@@ -186,12 +186,14 @@ show_input_files() {
     local files=(
         "cnight-addresses.json"
         "ics-addresses.json"
+        "reserve-addresses.json"
         "ledger-parameters-config.json"
         "federated-authority-addresses.json"
         "permissioned-candidates-addresses.json"
         "pc-chain-config.json"
         "system-parameters-config.json"
         "registered-candidates-addresses.json"
+        "message-config.json"
         "chain-spec-raw.json"
     )
 
@@ -514,6 +516,14 @@ run_ledger_state_verification() {
         all_passed=false
     fi
 
+    # 2e. Check genesis timestamp in state root histories
+    if echo "$inspect_result" | grep -q "GENESIS_TIMESTAMP_IN_STATE_OK"; then
+        print_success "2e. Genesis timestamp verified in LedgerState root histories"
+    else
+        print_error "2e. Genesis timestamp not found in LedgerState root histories"
+        all_passed=false
+    fi
+
     echo ""
     if [[ "$all_passed" == "true" ]]; then
         print_success "Step 2: LedgerState verification passed!"
@@ -598,7 +608,7 @@ run_auth_script_verification() {
     print_step "Step 4: Verify Authorization Scripts for Upgradable Contracts"
 
     echo -e "${BOLD}This step verifies that all upgradable contracts (Federated Authority,${NC}"
-    echo -e "${BOLD}ICS, Permissioned Candidates) use the expected authorization script.${NC}"
+    echo -e "${BOLD}ICS, Permissioned Candidates, Reserve) use the expected authorization script.${NC}"
     echo ""
     echo -e "${BOLD}For each contract, it checks:${NC}"
     echo -e "  1. The compiled_code hash matches the policy_id"
@@ -625,6 +635,140 @@ run_auth_script_verification() {
     fi
 }
 
+# ===========================================================================
+# VERIFICATION STEP 5: Verify Genesis Message in Chain Spec
+# ===========================================================================
+run_message_verification() {
+    local network="$1"
+    local node_binary="$2"
+
+    print_step "Step 5: Verify Genesis Message in Chain Spec"
+
+    echo -e "${BOLD}This step verifies that the expected genesis remark message${NC}"
+    echo -e "${BOLD}from message-config.json is embedded in the chain spec.${NC}"
+    echo ""
+
+    local res_dir="$REPO_ROOT/res/$network"
+    local chain_spec="$res_dir/chain-spec-raw.json"
+    local message_config="$res_dir/message-config.json"
+
+    if [[ ! -f "$chain_spec" ]]; then
+        print_error "chain-spec-raw.json not found at $chain_spec"
+        return 1
+    fi
+
+    if [[ ! -f "$message_config" ]]; then
+        print_error "message-config.json not found at $message_config"
+        return 1
+    fi
+
+    local all_passed=true
+
+    local check_result
+    if ! check_result=$("$node_binary" verify-genesis-message \
+        --chain-spec "$chain_spec" \
+        --message-config "$message_config" \
+        2>&1); then
+        echo "$check_result"
+        print_error "Step 5: Genesis message verification failed!"
+        return 1
+    fi
+
+    echo "$check_result"
+
+    # 5a. Check message found
+    if echo "$check_result" | grep -q "GENESIS_MESSAGE_FOUND"; then
+        print_success "5a. System::remark extrinsic found in genesis_extrinsics"
+    else
+        print_error "5a. No System::remark extrinsic found in genesis_extrinsics"
+        all_passed=false
+    fi
+
+    # 5b. Check message matches
+    if echo "$check_result" | grep -q "GENESIS_MESSAGE_MATCH"; then
+        print_success "5b. Genesis remark matches message-config.json"
+    else
+        print_error "5b. Genesis remark does not match message-config.json"
+        all_passed=false
+    fi
+
+    echo ""
+    if [[ "$all_passed" == "true" ]]; then
+        print_success "Step 5: Genesis message verification passed!"
+        return 0
+    else
+        print_error "Step 5: Genesis message verification failed. See errors above."
+        return 1
+    fi
+}
+
+# ===========================================================================
+# VERIFICATION STEP 6: Verify Genesis Timestamp in Chain Spec
+# ===========================================================================
+run_timestamp_verification() {
+    local network="$1"
+    local node_binary="$2"
+
+    print_step "Step 6: Verify Genesis Timestamp in Chain Spec"
+
+    echo -e "${BOLD}This step verifies that the Timestamp::set extrinsic in the chain spec${NC}"
+    echo -e "${BOLD}matches the expected timestamp from cardano-tip.json.${NC}"
+    echo ""
+
+    local res_dir="$REPO_ROOT/res/$network"
+    local chain_spec="$res_dir/chain-spec-raw.json"
+    local cardano_tip_config="$res_dir/cardano-tip.json"
+
+    if [[ ! -f "$chain_spec" ]]; then
+        print_error "chain-spec-raw.json not found at $chain_spec"
+        return 1
+    fi
+
+    if [[ ! -f "$cardano_tip_config" ]]; then
+        print_error "cardano-tip.json not found at $cardano_tip_config"
+        return 1
+    fi
+
+    local all_passed=true
+
+    local check_result
+    if ! check_result=$("$node_binary" verify-genesis-timestamp \
+        --chain-spec "$chain_spec" \
+        --cardano-tip-config "$cardano_tip_config" \
+        2>&1); then
+        echo "$check_result"
+        print_error "Step 6: Genesis timestamp verification failed!"
+        return 1
+    fi
+
+    echo "$check_result"
+
+    # 6a. Check timestamp found
+    if echo "$check_result" | grep -q "GENESIS_TIMESTAMP_FOUND"; then
+        print_success "6a. Timestamp::set extrinsic found in genesis_extrinsics"
+    else
+        print_error "6a. No Timestamp::set extrinsic found in genesis_extrinsics"
+        all_passed=false
+    fi
+
+    # 6b. Check timestamp matches
+    if echo "$check_result" | grep -q "GENESIS_TIMESTAMP_MATCH"; then
+        print_success "6b. Genesis timestamp matches cardano-tip.json"
+    else
+        print_error "6b. Genesis timestamp does not match cardano-tip.json"
+        all_passed=false
+    fi
+
+    echo ""
+    if [[ "$all_passed" == "true" ]]; then
+        print_success "Step 6: Genesis timestamp verification passed!"
+        return 0
+    else
+        print_error "Step 6: Genesis timestamp verification failed. See errors above."
+        return 1
+    fi
+}
+
 # Main script
 main() {
     print_header "Midnight Genesis Verification Tool"
@@ -640,22 +784,14 @@ main() {
     echo -e "     c. Total NIGHT supply invariance (24B)"
     echo -e "     d. LedgerParameters match config"
     echo -e "  3. ${BOLD}Dparameter Verification${NC} - Verifies system-parameters-config.json consistency"
-    echo -e "  4. ${BOLD}Auth Script Verification${NC} - Verifies upgradable contracts share the same auth script"
+    echo -e "  4. ${BOLD}Auth Script Verification${NC} - Verifies all upgradable contracts share the same auth script"
+    echo -e "  5. ${BOLD}Genesis Message Verification${NC} - Verifies genesis remark matches message-config.json"
+    echo -e "  6. ${BOLD}Genesis Timestamp Verification${NC} - Verifies genesis timestamp matches cardano-tip.json"
     echo ""
 
-    # Select network
-    print_step "Select Network"
-
-    echo -e "${BOLD}Available networks:${NC}"
-    echo ""
-    PS3=$'\n'"Select network (1-${#AVAILABLE_NETWORKS[@]}): "
-    select network in "${AVAILABLE_NETWORKS[@]}"; do
-        if [[ -n "$network" ]]; then
-            break
-        fi
-        echo "Invalid selection. Please try again."
-    done
-    print_success "Selected network: $network"
+    # Use mainnet
+    local network="$NETWORK"
+    print_info "Network: $network"
     echo ""
 
     # Show input files
@@ -717,6 +853,8 @@ main() {
     local step2_result="fail"
     local step3_result="fail"
     local step4_result="fail"
+    local step5_result="fail"
+    local step6_result="fail"
     local overall_passed=true
 
     # =========================================================================
@@ -806,6 +944,34 @@ main() {
     fi
 
     # =========================================================================
+    # STEP 5: Genesis Message Verification
+    # =========================================================================
+    if confirm "Run Step 5 (Genesis Message Verification)?" "y"; then
+        if run_message_verification "$network" "$node_binary"; then
+            step5_result="pass"
+        else
+            overall_passed=false
+        fi
+    else
+        step5_result="skip"
+        print_info "Skipping Step 5."
+    fi
+
+    # =========================================================================
+    # STEP 6: Genesis Timestamp Verification
+    # =========================================================================
+    if confirm "Run Step 6 (Genesis Timestamp Verification)?" "y"; then
+        if run_timestamp_verification "$network" "$node_binary"; then
+            step6_result="pass"
+        else
+            overall_passed=false
+        fi
+    else
+        step6_result="skip"
+        print_info "Skipping Step 6."
+    fi
+
+    # =========================================================================
     # Final Summary
     # =========================================================================
     print_header "Verification Summary"
@@ -813,8 +979,8 @@ main() {
     echo -e "Results for ${BOLD}$network${NC}:"
     echo ""
 
-    local steps=("0:Cardano Tip Finalization" "1:Config File Regeneration" "2:LedgerState Verification" "3:Dparameter Verification" "4:Auth Script Verification")
-    local results=("$step0_result" "$step1_result" "$step2_result" "$step3_result" "$step4_result")
+    local steps=("0:Cardano Tip Finalization" "1:Config File Regeneration" "2:LedgerState Verification" "3:Dparameter Verification" "4:Auth Script Verification" "5:Genesis Message Verification" "6:Genesis Timestamp Verification")
+    local results=("$step0_result" "$step1_result" "$step2_result" "$step3_result" "$step4_result" "$step5_result" "$step6_result")
 
     for i in "${!steps[@]}"; do
         local label="${steps[$i]}"

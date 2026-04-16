@@ -13,6 +13,7 @@
 
 //! Db-Sync data source used by Partner Chain committee selection
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
+use crate::db::MultiAssetCache;
 use authority_selection_inherents::*;
 use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber};
 use itertools::Itertools;
@@ -58,6 +59,8 @@ pub struct CandidatesDataSourceImpl {
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 	/// Configuration used by Db-Sync
 	db_sync_config: db_model::DbSyncConfigurationProvider,
+	/// Cache for resolving multi_asset.id from (policy, name) pairs
+	multi_asset_cache: MultiAssetCache,
 }
 
 observed_async_trait!(
@@ -72,8 +75,14 @@ impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
 		let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
 
 		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_token_utxo_for_epoch");
-		let candidates_output_opt =
-			db_model::get_token_utxo_for_epoch(&self.pool, &permissioned_candidate_asset, epoch).await?;
+		let ident = self.multi_asset_cache.resolve_ident(
+			&permissioned_candidate_asset.policy_id.0,
+			&permissioned_candidate_asset.asset_name.0,
+		).await?;
+		let candidates_output_opt = match ident {
+			Some(id) => db_model::get_token_utxo_for_epoch(&self.pool, id, epoch).await?,
+			None => None,
+		};
 		drop(_sq_timer);
 
 		// DParameter is now read from pallet_system_parameters storage, not from mainchain.
@@ -135,10 +144,12 @@ impl CandidatesDataSourceImpl {
 		db_model::create_idx_ma_tx_out_ident(&pool).await?;
 		db_model::create_idx_tx_out_address(&pool).await?;
 		db_model::create_idx_ma_tx_out_id_ident(&pool).await?;
+		let multi_asset_cache = MultiAssetCache::new(pool.clone());
 		Ok(Self {
 			pool: pool.clone(),
 			metrics_opt,
 			db_sync_config: db_model::DbSyncConfigurationProvider::new(pool),
+			multi_asset_cache,
 		})
 	}
 

@@ -1,6 +1,6 @@
 services:
   cardano-node:
-    image: ghcr.io/intersectmbo/cardano-node:10.1.4
+    image: ghcr.io/intersectmbo/cardano-node:10.1.4@sha256:4da8b48ed1151efed027973196cc929cd8968816a76521a08e3b645e592396fe
     container_name: db-sync-cardano-node
     platform: linux/amd64
     environment:
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   cardano-db-sync:
-    image: ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4
+    image: ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4@sha256:775500896816242fc1efc9afc14be7a3e9e07d512f8173a996090903f8d61fb7
     container_name: db-sync-cardano-db-sync
     platform: linux/amd64
     depends_on:
@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:2586e2a95d1c9b31cb2967feb562948f7d364854453d703039b6efa45fe48417
     container_name: db-sync-postgres
     environment:
       POSTGRES_USER: postgres

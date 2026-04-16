@@ -87,6 +87,10 @@ pub struct MidnightCfg {
 	/// Allow non-SSL database connections (not recommended for production)
 	pub allow_non_ssl: bool,
 
+	/// Path to SSL root certificate for database connections.
+	/// Required when allow_non_ssl is false for proper certificate validation.
+	pub ssl_root_cert: Option<String>,
+
 	/// URL of the Prometheus Remote Write endpoint to push metrics to.
 	/// Example: https://thanos.example.com/api/v1/receive
 	/// Supports Thanos Receive, Cortex, Mimir, and other remote write compatible endpoints.

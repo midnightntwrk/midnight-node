@@ -34,6 +34,7 @@ frame_support::construct_runtime!(
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
 	pub const MaxBytes: u64 = 10 * 1024 * 1024; // 10 MB
+	pub const MaxTxs: u64 = 100;
 	pub const WindowSize: u32 = 100;
 }
 
@@ -67,6 +68,7 @@ impl frame_system::Config for Test {
 
 impl pallet_throttle::Config for Test {
 	type MaxBytes = MaxBytes;
+	type MaxTxs = MaxTxs;
 	type WindowSize = WindowSize;
 }
 

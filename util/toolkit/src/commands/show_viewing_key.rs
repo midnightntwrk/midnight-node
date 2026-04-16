@@ -15,7 +15,9 @@ pub struct ShowViewingKeyArgs {
 pub fn execute(args: ShowViewingKeyArgs) -> String {
 	let derivation_path = DerivationPath::default_for_role(Role::Zswap);
 
-	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path).viewing_key(&args.network)
+	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path)
+		.expect("invalid Zswap derivation path")
+		.viewing_key(&args.network)
 }
 
 #[cfg(test)]
