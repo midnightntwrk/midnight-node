@@ -11,6 +11,9 @@ on:
       networks:
         description: 'Space-separated network names (e.g., "qanet preview")'
         required: true
+      version:
+        description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on earthly'
+        required: false
 
 jobs:
   rebuild-chainspec:
@@ -55,41 +58,33 @@ jobs:
               content: 'rocket'
             })
 
-      - name: Parse networks from comment
+      - name: Parse comment args
         if: github.event_name == 'issue_comment'
         id: parse_comment
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
-            const ALLOWED_NETWORKS = ['dev', 'devnet', 'govnet', 'perfnet'];
             const comment = context.payload.comment.body;
             const match = comment.match(/\/bot rebuild-chainspec\s+(.+)/);
             if (!match) {
-              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec <network1> <network2> ...');
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
               return;
             }
-            const networks = match[1].trim().split(/\s+/);
-            const invalid = networks.filter(n => !ALLOWED_NETWORKS.includes(n));
-            if (invalid.length > 0) {
-              core.setFailed(`Unknown network(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_NETWORKS.join(', ')}`);
+            const args = match[1].trim();
+
+            // Extract optional -v <version>
+            const versionMatch = args.match(/-v\s+(\S+)/);
+            const version = versionMatch ? versionMatch[1] : '';
+            // Remove -v <version> from args to get networks
+            const networksStr = args.replace(/-v\s+\S+/, '').trim();
+
+            const networks = networksStr.split(/\s+/).filter(Boolean);
+            if (networks.length === 0) {
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
               return;
             }
             core.setOutput('networks', networks.join(' '));
-
-      - name: Validate networks (workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        id: validate_networks
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          NETWORKS_INPUT: ${{ github.event.inputs.networks }}
-        with:
-          script: |
-            const ALLOWED_NETWORKS = ['dev', 'devnet', 'govnet', 'perfnet'];
-            const networks = process.env.NETWORKS_INPUT.trim().split(/\s+/);
-            const invalid = networks.filter(n => !ALLOWED_NETWORKS.includes(n));
-            if (invalid.length > 0) {
-              core.setFailed(`Unknown network(s): ${invalid.join(', ')}. Allowed: ${ALLOWED_NETWORKS.join(', ')}`);
-            }
+            core.setOutput('version', version);
 
       - name: Get PR branch
         id: pr
@@ -122,6 +117,18 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Validate networks
+        env:
+          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+        run: |
+          ALLOWED=$(ls res/cfg/*.toml | xargs -n1 basename | sed 's/\.toml$//' | grep -v '^default$' | sort)
+          for network in $NETWORKS; do
+            if ! echo "$ALLOWED" | grep -qx "$network"; then
+              echo "::error::Unknown network: $network. Allowed: $(echo $ALLOWED | tr '\n' ' ')"
+              exit 1
+            fi
+          done
+
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -140,15 +147,22 @@ jobs:
         env:
           EARTHLY_CONFIG: .earthly/config.yml
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
+          NODE_IMAGE="+node-image"
+          if [ -n "$VERSION" ]; then
+            NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"
+            echo "Using node image: $NODE_IMAGE"
+          fi
+
           # Split networks and run earthly for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK="$network"
+            earthly -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
           done
 
       - name: Commit and push changes

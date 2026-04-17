@@ -4,6 +4,7 @@ about: Submit a bug report
 title: ""
 labels: midnight-template-repo, public
 assignees: ""
+type: Bug
 ---
 
 ### Context & versions:

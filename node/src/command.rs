@@ -280,6 +280,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			storage_config,
 			metrics_push_config,
 			tx_filter_config,
+			run_midnight.rpc_max_finality_subscriptions,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;
