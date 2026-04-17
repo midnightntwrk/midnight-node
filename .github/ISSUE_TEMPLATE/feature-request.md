@@ -4,6 +4,7 @@ about: Submit a proposal for a new feature
 title: ""
 labels: midnight-template-repo, public
 assignees: ""
+type: Feature
 ---
 
 Feature Request: Clearly describe your feature, its benefits, and most important the expected outcome. This helps us analyze the proposed solution and develop alternatives

@@ -11,6 +11,8 @@ use super::super::{
 	serialize_untagged,
 };
 
+pub type DustSpendResult<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, Sp<DustLocalState<D>, D>);
+
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
@@ -94,7 +96,7 @@ impl<D: DB> DustWallet<D> {
 		amount: u128,
 		ctime: Timestamp,
 		params: &DustParameters,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendError> {
+	) -> Result<DustSpendResult<D>, DustSpendError> {
 		let Some(original_state) = self.dust_local_state.as_ref() else {
 			return Err(DustSpendError::MissingLocalState);
 		};
@@ -126,10 +128,15 @@ impl<D: DB> DustWallet<D> {
 				break;
 			}
 		}
-		Ok(spends)
+		Ok((spends, state))
 	}
 
-	pub fn mark_spent(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) {
+	pub fn mark_spent(
+		&mut self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
+		updated_state: Sp<DustLocalState<D>, D>,
+	) {
+		self.dust_local_state = Some(updated_state);
 		for spend in spends {
 			self.spent_utxos = self.spent_utxos.insert(spend.old_nullifier);
 		}
