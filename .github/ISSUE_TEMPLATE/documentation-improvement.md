@@ -4,6 +4,7 @@ about: Report a problem with the documentation
 title: ""
 labels: midnight-template-repo, public, documentation
 assignees: ""
+type: Task
 ---
 
 Documentation Improvement: Clearly describe the improvement requested for existing content and/or raise missing areas of documentation and provide details for what should be included.

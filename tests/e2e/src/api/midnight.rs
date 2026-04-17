@@ -4,12 +4,15 @@ use blake2::Blake2bVar;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::bounded_collections::bounded_vec::BoundedVec;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
-	c_night_observation::{self}
-	,
+	c_night_observation::{self},
+	bridge::{self},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -160,6 +163,50 @@ impl MidnightClient {
             .unwrap_or_else(|_| Err("Timeout waiting for registration event".into()))
     }
 
+    pub async fn subscribe_to_c2n_bridge_transfers(
+        &self,
+    ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
+        println!("Subscribing for C-to-N transfer extrinsic",);
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
+
+        let inner = async {
+            while let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+
+                let block_number = block.header().number;
+                println!("Finalized block #{}", block_number);
+
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
+
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
+                        continue;
+                    };
+
+                    let Some(transfers) = MidnightClient::extract_bridge_calls(&decoded) else {
+                        continue;
+                    };
+
+                    println!(
+                        "  BridgeHandler::handle_transfers called with {} transfers",
+                        transfers.0.len()
+                    );
+
+                    if !transfers.0.is_empty() {
+                        let events = ext.events().await?;
+                        return Ok(events);
+                    }
+                }
+            }
+            Err("Did not find bridge extrinsics".into())
+        };
+
+        timeout(Duration::from_secs(60), inner)
+            .await
+            .unwrap_or_else(|_| Err("Timeout waiting for bridge exrinsics".into()))
+    }
+
     pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> String {
         let mut hasher = Blake2bVar::new(32).expect("valid output size");
 
@@ -180,6 +227,17 @@ impl MidnightClient {
                 utxos,
                 ..
             }) => Some(utxos),
+            _ => None,
+        }
+    }
+
+    fn extract_bridge_calls(
+        call: &mn_meta::Call,
+    ) -> Option<&BoundedVec<BridgeTransferV1<BridgeRecipient>>> {
+        match call {
+            mn_meta::Call::Bridge(bridge::Call::handle_transfers { transfers, .. }) => {
+                Some(transfers)
+            }
             _ => None,
         }
     }
