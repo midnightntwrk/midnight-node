@@ -67,29 +67,16 @@ pub async fn execute(
 	args: BridgeTransferArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let ics_config = load_ics_config(&args.ics_config)?;
-
 	let payment_key = read_payment_key(&args.signing_key)?;
-
 	let recipient = parse_recipient_args(&args)?;
-
 	let client = client_for_url(&args.ogmios_url, Duration::from_secs(30))
 		.await
 		.map_err(|e| format!("Failed to connect to Ogmios at {}: {e}", args.ogmios_url))?;
-
 	let shelley_config = client.shelley_genesis_configuration().await?;
-	let network = shelley_config.network;
 	let protocol_parameters = query_protocol(&client).await?;
 
-	let pub_key_hash = payment_key.to_public().hash();
-	let (network_kind, bech32_prefix) = if network == sidechain_domain::NetworkType::Mainnet {
-		(1, None)
-	} else {
-		(0, Some("addr_test".to_owned()))
-	};
-	let payment_address =
-		EnterpriseAddress::new(network_kind, &Credential::from_keyhash(&pub_key_hash)).to_address();
-	let payment_address_bech32 =
-		payment_address.to_bech32(bech32_prefix).map_err(|e| e.to_string())?;
+	let payment_address = get_payment_key_address(&payment_key, shelley_config);
+	let payment_address_bech32 = payment_address.to_bech32(None).map_err(|e| e.to_string())?;
 	log::info!("Querying utxos of {payment_address_bech32}");
 	let payment_key_utxos = client.query_utxos(&[payment_address_bech32]).await?;
 	let tx = build_bridge_transfer_tx(
@@ -114,26 +101,6 @@ pub async fn execute(
 	let tx_id = hex::encode(res.transaction.id);
 	log::info!("Bridge transfer transaction submitted: {tx_id}");
 	Ok(())
-}
-
-fn parse_recipient_args(
-	args: &BridgeTransferArgs,
-) -> Result<Recipient, Box<dyn std::error::Error + Send + Sync + 'static>> {
-	if args.invalid {
-		Ok(Recipient::Invalid)
-	} else if args.reserve {
-		Ok(Recipient::Reserve)
-	} else {
-		let address = args.recipient_address.as_ref().ok_or_else(|| {
-			"Either --reserve or --invalid or --recipient-address has to be set".to_string()
-		})?;
-		let bytes = hex::decode(address)
-			.map_err(|e| format!("--recipient-address is not valid hex string: {e}"))?;
-		let bytes: [u8; 32] = bytes
-			.try_into()
-			.map_err(|_| "Invalid --recipient_address length, expected 32 bytes".to_string())?;
-		Ok(Recipient::ToAddress(bytes))
-	}
 }
 
 fn load_ics_config(path: &Path) -> Result<IcsConfig, Box<dyn std::error::Error + Send + Sync>> {
@@ -176,6 +143,32 @@ fn read_payment_key(path: &Path) -> Result<PrivateKey, Box<dyn std::error::Error
 	}
 }
 
+enum Recipient {
+	ToAddress([u8; 32]),
+	Reserve,
+	Invalid,
+}
+
+fn parse_recipient_args(
+	args: &BridgeTransferArgs,
+) -> Result<Recipient, Box<dyn std::error::Error + Send + Sync + 'static>> {
+	if args.invalid {
+		Ok(Recipient::Invalid)
+	} else if args.reserve {
+		Ok(Recipient::Reserve)
+	} else {
+		let address = args.recipient_address.as_ref().ok_or_else(|| {
+			"Either --reserve or --invalid or --recipient-address has to be set".to_string()
+		})?;
+		let bytes = hex::decode(address)
+			.map_err(|e| format!("--recipient-address is not valid hex string: {e}"))?;
+		let bytes: [u8; 32] = bytes
+			.try_into()
+			.map_err(|_| "Invalid --recipient_address length, expected 32 bytes".to_string())?;
+		Ok(Recipient::ToAddress(bytes))
+	}
+}
+
 async fn query_protocol<C: QueryLedgerState>(
 	client: &C,
 ) -> Result<Protocol, Box<dyn std::error::Error + Send + Sync>> {
@@ -207,10 +200,19 @@ async fn query_protocol<C: QueryLedgerState>(
 	})
 }
 
-enum Recipient {
-	ToAddress([u8; 32]),
-	Reserve,
-	Invalid,
+fn get_payment_key_address(
+	payment_key: &PrivateKey,
+	shelley_config: ogmios_client::query_network::ShelleyGenesisConfigurationResponse,
+) -> Address {
+	let network_kind_id = match shelley_config.network {
+		sidechain_domain::NetworkType::Mainnet => 1,
+		sidechain_domain::NetworkType::Testnet => 0,
+	};
+	EnterpriseAddress::new(
+		network_kind_id,
+		&Credential::from_keyhash(&payment_key.to_public().hash()),
+	)
+	.to_address()
 }
 
 fn build_bridge_transfer_tx(
@@ -225,22 +227,8 @@ fn build_bridge_transfer_tx(
 	let mut tx_builder = build_tx_builder(Some(protocol_parameters.clone()))
 		.map_err(|e| format!("Failed to create transaction builder: {e}"))?;
 
-	let metadata_item = match recipient {
-		Recipient::ToAddress(address_bytes) => {
-			let mut metadata_list = MetadataList::new();
-			metadata_list.add(
-				&TransactionMetadatum::new_bytes(address_bytes.to_vec())
-					.map_err(|e| e.to_string())?,
-			);
-			TransactionMetadatum::new_list(&metadata_list)
-		},
-		Recipient::Reserve => TransactionMetadatum::new_list(&MetadataList::new()),
-		Recipient::Invalid => {
-			TransactionMetadatum::new_text("this is invalid bridge tx metadata".to_owned())
-				.map_err(|e| e.to_string())?
-		},
-	};
-	tx_builder.add_metadatum(&BRIDGE_TRANSFER_METADATUM_KEY.into(), &metadata_item);
+	tx_builder
+		.add_metadatum(&BRIDGE_TRANSFER_METADATUM_KEY.into(), &build_metadata_item(recipient)?);
 
 	let ics_address =
 		Address::from_bech32(&ics_config.illiquid_circulation_supply_validator_address)
@@ -252,25 +240,8 @@ fn build_bridge_transfer_tx(
 		.next()
 		.map_err(|e| e.to_string())?;
 
-	let mut ma = MultiAsset::new();
-	let mut assets = Assets::new();
-	let asset_name = AssetName::new(ics_config.asset.asset_name.as_bytes().to_vec())
-		.map_err(|e| e.to_string())?;
-	assets.insert(&asset_name, &amount.into());
-	ma.insert(&ScriptHash::from(ics_config.asset.policy_id.0), &assets);
-
-	let min_ada = {
-		let tmp_output = output_builder
-			.with_coin_and_asset(&0u64.into(), &ma)
-			.build()
-			.map_err(|e| e.to_string())?;
-		MinOutputAdaCalculator::new(
-			&tmp_output,
-			&DataCost::new_coins_per_byte(&protocol_parameters.coins_per_utxo_size.into()),
-		)
-		.calculate_ada()
-		.map_err(|e| e.to_string())?
-	};
+	let ma = build_cnight_multi_asset(&ics_config, amount)?;
+	let min_ada = calculate_min_ada(protocol_parameters, &output_builder, &ma)?;
 
 	let output = output_builder
 		.with_coin_and_asset(&min_ada, &ma)
@@ -291,14 +262,55 @@ fn build_bridge_transfer_tx(
 	tx_builder.build_tx().map_err(|e| e.to_string().into())
 }
 
-fn sign_transaction(tx: &Transaction, payment_key: &PrivateKey) -> Transaction {
-	let tx_body_hash = sp_crypto_hashing::blake2_256(&tx.body().to_bytes());
-	let signature = payment_key.sign(&tx_body_hash);
-	let mut witness_set = tx.witness_set();
-	let mut vkeywitnesses = witness_set.vkeys().unwrap_or_else(Vkeywitnesses::new);
-	vkeywitnesses.add(&Vkeywitness::new(&Vkey::new(&payment_key.to_public()), &signature));
-	witness_set.set_vkeys(&vkeywitnesses);
-	Transaction::new(&tx.body(), &witness_set, tx.auxiliary_data())
+fn build_metadata_item(
+	recipient: Recipient,
+) -> Result<TransactionMetadatum, Box<dyn std::error::Error + Send + Sync + 'static>> {
+	let metadata_item = match recipient {
+		Recipient::ToAddress(address_bytes) => {
+			let mut metadata_list = MetadataList::new();
+			metadata_list.add(
+				&TransactionMetadatum::new_bytes(address_bytes.to_vec())
+					.map_err(|e| e.to_string())?,
+			);
+			TransactionMetadatum::new_list(&metadata_list)
+		},
+		Recipient::Reserve => TransactionMetadatum::new_list(&MetadataList::new()),
+		Recipient::Invalid => {
+			TransactionMetadatum::new_text("this is invalid bridge tx metadata".to_owned())
+				.map_err(|e| e.to_string())?
+		},
+	};
+	Ok(metadata_item)
+}
+
+fn build_cnight_multi_asset(
+	ics_config: &IcsConfig,
+	amount: u64,
+) -> Result<MultiAsset, Box<dyn std::error::Error + Send + Sync + 'static>> {
+	let mut ma = MultiAsset::new();
+	let mut assets = Assets::new();
+	let asset_name = AssetName::new(ics_config.asset.asset_name.as_bytes().to_vec())
+		.map_err(|e| e.to_string())?;
+	assets.insert(&asset_name, &amount.into());
+	ma.insert(&ScriptHash::from(ics_config.asset.policy_id.0), &assets);
+	Ok(ma)
+}
+
+fn calculate_min_ada(
+	protocol_parameters: &Protocol,
+	output_builder: &whisky::csl::TransactionOutputAmountBuilder,
+	ma: &MultiAsset,
+) -> Result<whisky::csl::BigNum, Box<dyn std::error::Error + Send + Sync + 'static>> {
+	let tmp_output = output_builder
+		.with_coin_and_asset(&0u64.into(), ma)
+		.build()
+		.map_err(|e| e.to_string())?;
+	Ok(MinOutputAdaCalculator::new(
+		&tmp_output,
+		&DataCost::new_coins_per_byte(&protocol_parameters.coins_per_utxo_size.into()),
+	)
+	.calculate_ada()
+	.map_err(|e| e.to_string())?)
 }
 
 fn ogmios_utxos_to_csl(
@@ -324,7 +336,7 @@ fn ogmios_value_to_csl(
 		let mut multiasset = MultiAsset::new();
 		for (policy_id, tokens) in value.native_tokens.iter() {
 			let mut csl_assets = Assets::new();
-			for token in tokens.iter() {
+			for token in tokens {
 				let asset_name = AssetName::new(token.name.clone()).map_err(|e| e.to_string())?;
 				csl_assets.insert(&asset_name, &token.amount.into());
 			}
@@ -334,4 +346,14 @@ fn ogmios_value_to_csl(
 	} else {
 		Ok(whisky::csl::Value::new(&value.lovelace.into()))
 	}
+}
+
+fn sign_transaction(tx: &Transaction, payment_key: &PrivateKey) -> Transaction {
+	let tx_body_hash = sp_crypto_hashing::blake2_256(&tx.body().to_bytes());
+	let signature = payment_key.sign(&tx_body_hash);
+	let mut witness_set = tx.witness_set();
+	let mut vkeywitnesses = witness_set.vkeys().unwrap_or_else(Vkeywitnesses::new);
+	vkeywitnesses.add(&Vkeywitness::new(&Vkey::new(&payment_key.to_public()), &signature));
+	witness_set.set_vkeys(&vkeywitnesses);
+	Transaction::new(&tx.body(), &witness_set, tx.auxiliary_data())
 }
