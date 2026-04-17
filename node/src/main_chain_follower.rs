@@ -162,11 +162,21 @@ const BRIDGE_POOL_CFG: DbPoolCfg =
 const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
+fn warn_deprecated_allow_non_ssl(cfg: &MidnightCfg) {
+	if cfg.allow_non_ssl {
+		log::warn!(
+			"allow_non_ssl is set but ignored — all database connections use TLS. \
+			 This flag will be removed in a future release."
+		);
+	}
+}
+
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
+	warn_deprecated_allow_non_ssl(&cfg);
 	let postgres_uri = &cfg
 		.db_sync_postgres_connection_string
 		.ok_or(missing("db_sync_postgres_connection_string"))?;
@@ -193,17 +203,13 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool = get_connection(
-		postgres_uri,
-		CANDIDATES_POOL_CFG,
-		cfg.allow_non_ssl,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!("Failed to connect to database for candidates data source: {e}");
-		e
-	})?;
+	let candidates_pool =
+		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.ssl_root_cert.as_deref())
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to connect to database for candidates data source: {e}");
+				e
+			})?;
 
 	// All these pools are connections to the same database, so we can use any pool to create the index
 	create_index_if_not_exists(&candidates_pool).await;
@@ -221,17 +227,13 @@ pub async fn create_cached_data_sources(
 			e
 		})?;
 
-	let sidechain_pool = get_connection(
-		postgres_uri,
-		SIDECHAIN_POOL_CFG,
-		cfg.allow_non_ssl,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!("Failed to connect to database for sidechain data source: {e}");
-		e
-	})?;
+	let sidechain_pool =
+		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.ssl_root_cert.as_deref())
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to connect to database for sidechain data source: {e}");
+				e
+			})?;
 	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
@@ -242,17 +244,12 @@ pub async fn create_cached_data_sources(
 		mc_metrics_opt.clone(),
 	);
 
-	let mc_hash_pool = get_connection(
-		postgres_uri,
-		MC_HASH_POOL_CFG,
-		cfg.allow_non_ssl,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!("Failed to connect to database for mc_hash data source: {e}");
-		e
-	})?;
+	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.ssl_root_cert.as_deref())
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for mc_hash data source: {e}");
+			e
+		})?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
 		mc_hash_pool,
 		db_sync_block_data_source_config.clone(),
@@ -261,17 +258,13 @@ pub async fn create_cached_data_sources(
 	let mc_hash =
 		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
 
-	let cnight_observation_pool = get_connection(
-		postgres_uri,
-		CNIGHT_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!("Failed to connect to database for cnight_observation data source: {e}");
-		e
-	})?;
+	let cnight_observation_pool =
+		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.ssl_root_cert.as_deref())
+			.await
+			.map_err(|e| {
+				log::warn!("Failed to connect to database for cnight_observation data source: {e}");
+				e
+			})?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
 		midnight_metrics_opt.clone(),
@@ -281,7 +274,6 @@ pub async fn create_cached_data_sources(
 	let federated_authority_observation_pool = get_connection(
 		postgres_uri,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
@@ -297,17 +289,12 @@ pub async fn create_cached_data_sources(
 		1000,
 	);
 
-	let bridge_pool = get_connection(
-		postgres_uri,
-		BRIDGE_POOL_CFG,
-		cfg.allow_non_ssl,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!("Failed to connect to database for bridge data source: {e}");
-		e
-	})?;
+	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.ssl_root_cert.as_deref())
+		.await
+		.map_err(|e| {
+			log::warn!("Failed to connect to database for bridge data source: {e}");
+			e
+		})?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
@@ -331,11 +318,11 @@ pub async fn create_cnight_observation_data_source(
 	cfg: MidnightCfg,
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
+	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CNIGHT_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -350,11 +337,11 @@ pub async fn create_federated_authority_observation_data_source(
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<Arc<dyn FederatedAuthorityObservationDataSource>, Box<dyn Error + Send + Sync + 'static>>
 {
+	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -381,11 +368,11 @@ pub async fn create_authority_selection_data_source_with_pool(
 	(Arc<dyn AuthoritySelectionDataSource + Send + Sync>, sqlx::PgPool),
 	Box<dyn Error + Send + Sync + 'static>,
 > {
+	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CANDIDATES_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -401,11 +388,11 @@ pub async fn create_authority_selection_data_source_with_pool(
 pub async fn create_ics_genesis_pool(
 	cfg: MidnightCfg,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
+	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		ICS_POOL_CFG,
-		cfg.allow_non_ssl,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
@@ -414,18 +401,12 @@ pub async fn create_ics_genesis_pool(
 
 fn build_ssl_connect_options(
 	connection_string: &str,
-	allow_non_ssl: bool,
 	ssl_root_cert: Option<&str>,
 ) -> Result<
 	(sqlx::postgres::PgSslMode, sqlx::postgres::PgConnectOptions),
 	Box<dyn Error + Send + Sync + 'static>,
 > {
-	let ssl_mode = if allow_non_ssl {
-		log::warn!(
-			"allow_non_ssl is set: using PgSslMode::Disable (plaintext). This is deprecated and will be removed in a future release. Configure ssl_root_cert for secure connections."
-		);
-		sqlx::postgres::PgSslMode::Disable
-	} else if ssl_root_cert.is_some() {
+	let ssl_mode = if ssl_root_cert.is_some() {
 		sqlx::postgres::PgSslMode::VerifyFull
 	} else {
 		log::warn!(
@@ -444,11 +425,9 @@ fn build_ssl_connect_options(
 async fn get_connection(
 	connection_string: &str,
 	pool_cfg: DbPoolCfg,
-	allow_non_ssl: bool,
 	ssl_root_cert: Option<&str>,
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
-	let (ssl_mode, connect_options) =
-		build_ssl_connect_options(connection_string, allow_non_ssl, ssl_root_cert)?;
+	let (ssl_mode, connect_options) = build_ssl_connect_options(connection_string, ssl_root_cert)?;
 	log::info!("Database connection SSL mode: {ssl_mode:?}");
 
 	let pool = sqlx::postgres::PgPoolOptions::new()
@@ -500,33 +479,27 @@ mod tests {
 	#[test]
 	fn ssl_mode_is_verify_full_when_root_cert_provided() {
 		let (mode, _opts) =
-			build_ssl_connect_options(TEST_CONN_STR, false, Some("/path/to/ca.pem")).unwrap();
+			build_ssl_connect_options(TEST_CONN_STR, Some("/path/to/ca.pem")).unwrap();
 		assert!(matches!(mode, sqlx::postgres::PgSslMode::VerifyFull));
 	}
 
 	#[test]
 	fn ssl_mode_is_require_when_no_root_cert() {
-		let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, false, None).unwrap();
+		let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, None).unwrap();
 		assert!(matches!(mode, sqlx::postgres::PgSslMode::Require));
 	}
 
 	#[test]
-	fn ssl_mode_is_disable_when_allow_non_ssl() {
-		let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, true, None).unwrap();
-		assert!(matches!(mode, sqlx::postgres::PgSslMode::Disable));
-	}
-
-	#[test]
-	fn ssl_mode_not_disable_when_allow_non_ssl_false() {
+	fn ssl_mode_is_never_disable() {
 		for cert in [None, Some("/path/to/ca.pem")] {
-			let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, false, cert).unwrap();
+			let (mode, _opts) = build_ssl_connect_options(TEST_CONN_STR, cert).unwrap();
 			assert!(!matches!(mode, sqlx::postgres::PgSslMode::Disable));
 		}
 	}
 
 	#[test]
 	fn invalid_connection_string_returns_error() {
-		let result = build_ssl_connect_options("not-a-valid-uri", false, None);
+		let result = build_ssl_connect_options("not-a-valid-uri", None);
 		assert!(result.is_err());
 	}
 }
