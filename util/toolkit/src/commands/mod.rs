@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod bridge_transfer;
 pub mod contract_address;
 pub mod contract_state;
 pub mod dust_balance;

@@ -5,7 +5,8 @@ use ogmios_client::{
 	jsonrpsee::client_for_url,
 	query_ledger_state::{
 		EpochBoundary, EpochParameters, EraSummary, PlutusCostModels, ProtocolParametersResponse,
-		QueryLedgerState, QueryUtxoByUtxoId, ReferenceScriptsCosts, ScriptExecutionPrices,
+		QueryLedgerState, QueryUtxoByUtxoId, ReferenceScriptsCosts, ScriptExecutionPriceLimits,
+		ScriptExecutionPrices,
 	},
 	types::{Asset, OgmiosBytesSize, OgmiosTx, OgmiosUtxo, OgmiosValue, SlotLength, TimeSeconds},
 };
@@ -126,6 +127,9 @@ async fn protocol_parameters() {
 		  "maxBlockBodySize": {
 			"bytes": 90112
 		  },
+		  "maxBlockHeaderSize": {
+			"bytes": 1100
+		  },
 		  "maxTransactionSize": {
 			"bytes": 16384
 		  },
@@ -137,6 +141,11 @@ async fn protocol_parameters() {
 		  "stakePoolDeposit": {
 			"ada": {
 			  "lovelace": 500000000
+			}
+		  },
+		  "minStakePoolCost": {
+			"ada": {
+			  "lovelace": 0
 			}
 		  },
 		  "collateralPercentage": 150,
@@ -161,6 +170,14 @@ async fn protocol_parameters() {
 			"memory": "577/10000",
 			"cpu": "721/10000000"
 		  },
+		  "maxExecutionUnitsPerTransaction": {
+			"memory": 14000000,
+			"cpu": 10000000000u64
+		  },
+		  "maxExecutionUnitsPerBlock": {
+			"memory": 62000000,
+			"cpu": 40000000000u64
+		  },
 		  "minFeeReferenceScripts": {
 			"base": 10.0,
 			"range": 0,
@@ -182,8 +199,11 @@ async fn protocol_parameters() {
 			min_fee_constant: OgmiosValue::new_lovelace(155381),
 			stake_pool_deposit: OgmiosValue::new_lovelace(500000000),
 			stake_credential_deposit: OgmiosValue::new_lovelace(2000000),
+			max_block_body_size: OgmiosBytesSize { bytes: 90112 },
+			max_block_header_size: OgmiosBytesSize { bytes: 1100 },
 			max_value_size: OgmiosBytesSize { bytes: 5000 },
 			max_transaction_size: OgmiosBytesSize { bytes: 16384 },
+			min_stake_pool_cost: OgmiosValue::new_lovelace(0),
 			min_utxo_deposit_coefficient: 4310,
 			script_execution_prices: ScriptExecutionPrices {
 				memory: fraction::Ratio::new_raw(577, 10000),
@@ -193,6 +213,14 @@ async fn protocol_parameters() {
 				plutus_v1: vec![898148, 53384111, 14333],
 				plutus_v2: vec![43053543, 10],
 				plutus_v3: vec![-900, 166917843],
+			},
+			max_execution_units_per_transaction: ScriptExecutionPriceLimits {
+				memory: 14000000,
+				cpu: 10000000000
+			},
+			max_execution_units_per_block: ScriptExecutionPriceLimits {
+				memory: 62000000,
+				cpu: 40000000000
 			},
 			max_collateral_inputs: 3,
 			collateral_percentage: 150,
