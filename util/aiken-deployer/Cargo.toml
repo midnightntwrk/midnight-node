@@ -30,5 +30,5 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_json.workspace = true
 hex.workspace = true
 thiserror.workspace = true
-whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindgen-update" }
+whisky.workspace = true
 ogmios-client = { path = "../../partner-chains/toolkit/utils/ogmios-client" }
