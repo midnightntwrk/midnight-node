@@ -598,6 +598,11 @@ pub mod pallet {
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
+		pub fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_c_to_m_bridge_min_amount(&state_key)
+		}
+
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();

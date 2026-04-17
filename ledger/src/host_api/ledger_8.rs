@@ -177,6 +177,17 @@ pub trait Ledger8Bridge {
 	}
 
 	/*
+	 * Returns the minimum bridge transfer amount from ledger parameters
+	 * This is denominated in STARs (atomic night units)
+	 */
+	fn get_c_to_m_bridge_min_amount(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		Bridge::<Signature, Database>::get_c_to_m_bridge_min_amount(state_key)
+	}
+
+	/*
 	 * Returns the expected fee to pay for a submitting a transaction
 	 */
 	fn get_transaction_cost(

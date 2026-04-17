@@ -33,6 +33,15 @@ fn invalid_transfer() -> BridgeTransferV1<BridgeRecipient> {
 	}
 }
 
+// It is valid from partner-chains-bridge-pallet perspective, but amount is below threshold of 99.
+fn subminimal_transfer() -> BridgeTransferV1<BridgeRecipient> {
+	BridgeTransferV1 {
+		amount: 90,
+		mc_tx_hash: McTxHash([4; 32]),
+		recipient: TransferRecipient::Address { recipient: recipient() },
+	}
+}
+
 #[test]
 fn emits_events() {
 	new_test_ext().execute_with(|| {
@@ -80,5 +89,39 @@ fn nonce_influences_addressed_transfers() {
 			panic!("expected exactly two transfers");
 		};
 		assert_ne!(first, second);
+	})
+}
+
+#[test]
+fn subminimal_transfer_handling() {
+	new_test_ext().execute_with(|| {
+		pallet::SubminimalTransfersConfiguration::<Test>::set(SubminimalTransfersConfig {
+			subminimal_transfers_flush_threshold: 250,
+		});
+		//90
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(pallet::SubminimalTransfersSum::<Test>::get(), 90);
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		assert!(frame_system::Pallet::<Test>::events().is_empty());
+		//180
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(pallet::SubminimalTransfersSum::<Test>::get(), 180);
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		//270 > 250. Should flush everything in one transfer.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(pallet::SubminimalTransfersSum::<Test>::get(), 0);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+
+		let events: Vec<_> =
+			frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
+		let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> =
+			vec![mock::RuntimeEvent::C2MBridge(Event::Transfer {
+				mc_tx_hash: McTxHash([4; 32]),
+				amount: 270,
+				result: [0u8; 32],
+				recipient: TransferRecipient::Invalid,
+			})];
+
+		assert_eq!(events, expected);
 	})
 }

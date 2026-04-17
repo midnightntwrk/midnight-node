@@ -31,6 +31,19 @@ pub use pallet::*;
 /// Hash of a Midnight ledger transaction, returned by the system transaction executor.
 pub type MidnightTxHash = [u8; 32];
 
+/// Amount of STARS. One NIGHT is 10^6 STARS.
+pub struct Stars(pub u128);
+
+impl Stars {
+	fn to_cnight(&self) -> u64 {
+		// 'as u64' is safe because cNight supply is 24*10^9.
+		(self.0 / STARS_PER_NIGHT) as u64
+	}
+}
+
+/// Domain constant
+pub const STARS_PER_NIGHT: u128 = 1_000_000;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
@@ -53,6 +66,9 @@ pub mod pallet {
 		/// Provides access to the Midnight system transaction executor.
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
 
+		/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
+		type MinBridgeAmountProvider: MinBridgeAmountProvider;
+
 		/// Origin for governance extrinsic calls.
 		type GovernanceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 	}
@@ -60,7 +76,7 @@ pub mod pallet {
 	/// Provides access to the minimum bridge transfer amount from the Midnight ledger.
 	pub trait MinBridgeAmountProvider {
 		/// Returns the minimum bridge transfer amount from ledger parameters.
-		fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError>;
+		fn get_c_to_m_bridge_min_amount() -> Result<Stars, LedgerApiError>;
 	}
 
 	#[pallet::event]
@@ -82,6 +98,9 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type SubminimalTransfersConfiguration<T: Config> =
 		StorageValue<_, SubminimalTransfersConfig, ValueQuery>;
+
+	#[pallet::storage]
+	pub type SubminimalTransfersSum<T: Config> = StorageValue<_, u64, ValueQuery>;
 
 	/// Block-scoped counter used for deterministic nonce generation per transfer.
 	/// Because on_finalize kill call, it doesn't cost any storage operations.
@@ -144,6 +163,17 @@ pub mod pallet {
 			SubminimalTransfersConfiguration::<T>::get()
 		}
 
+		/// Returns the minimum bridge transfer amount, read from ledger parameters.
+		/// Falls back to 0 if the ledger parameter cannot be read.
+		fn minimal_transfer_amount() -> u64 {
+			T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount()
+				.map(|v| v.to_cnight())
+				.unwrap_or_else(|e| {
+					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
+					0
+				})
+		}
+
 		fn next_counter() -> u32 {
 			let counter = TransferCounter::<T>::get();
 			TransferCounter::<T>::put(counter + 1);
@@ -173,7 +203,7 @@ pub mod pallet {
 			) {
 				Ok(hash) => Some(hash),
 				Err(e) => {
-					log::error!("Failed to execute system transaction {serialized_tx:?}: {e:?}");
+					log::error!("Failed to execute system transaction for {transfer:?}: {e:?}");
 					None
 				},
 			}
@@ -228,7 +258,34 @@ pub mod pallet {
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			let counter = Self::next_counter();
-			Self::execute_transfer(counter, transfer);
+			if transfer.amount < Self::minimal_transfer_amount() {
+				let subminimal_sum = SubminimalTransfersSum::<T>::get();
+				let config = SubminimalTransfersConfiguration::<T>::get();
+
+				match subminimal_sum.checked_add(transfer.amount) {
+					Some(new_sum) => {
+						if new_sum > config.subminimal_transfers_flush_threshold {
+							SubminimalTransfersSum::<T>::put(0);
+							Self::execute_transfer(
+								counter,
+								BridgeTransferV1::new_invalid(transfer.mc_tx_hash, new_sum),
+							);
+						} else {
+							SubminimalTransfersSum::<T>::put(new_sum);
+						}
+					},
+					None => {
+						// Overflow: flush the accumulated sum and start fresh
+						Self::execute_transfer(
+							counter,
+							BridgeTransferV1::new_invalid(transfer.mc_tx_hash, subminimal_sum),
+						);
+						SubminimalTransfersSum::<T>::put(transfer.amount);
+					},
+				}
+			} else {
+				Self::execute_transfer(counter, transfer);
+			}
 		}
 	}
 }
