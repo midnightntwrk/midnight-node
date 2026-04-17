@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-cardano-offchain"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 description = "Partner Chains Smart Contracts Offchain code"
 authors.workspace = true
