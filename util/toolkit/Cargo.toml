@@ -50,6 +50,9 @@ zstd = "0.13"
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 strum.workspace = true
 rayon.workspace = true
+ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
+whisky.workspace = true
+sidechain-domain.workspace = true
 
 [dev-dependencies]
 test-case = "3.3.1"

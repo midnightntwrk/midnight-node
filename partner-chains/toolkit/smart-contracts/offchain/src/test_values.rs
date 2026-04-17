@@ -7,7 +7,8 @@ use cardano_serialization_lib::{Address, Language, PlutusData};
 use hex_literal::hex;
 use ogmios_client::{
 	query_ledger_state::{
-		PlutusCostModels, ProtocolParametersResponse, ReferenceScriptsCosts, ScriptExecutionPrices,
+		PlutusCostModels, ProtocolParametersResponse, ReferenceScriptsCosts,
+		ScriptExecutionPriceLimits, ScriptExecutionPrices,
 	},
 	types::{NativeScript, OgmiosBytesSize, OgmiosScript, OgmiosTx, OgmiosUtxo, OgmiosValue},
 };
@@ -92,6 +93,16 @@ pub(crate) fn protocol_parameters() -> ProtocolParametersResponse {
 		stake_credential_deposit: OgmiosValue::new_lovelace(2000000),
 		max_value_size: OgmiosBytesSize { bytes: 5000 },
 		max_transaction_size: OgmiosBytesSize { bytes: 16384 },
+		max_block_body_size: OgmiosBytesSize { bytes: 65500 },
+		max_block_header_size: OgmiosBytesSize { bytes: 1200 },
+		max_execution_units_per_block: ScriptExecutionPriceLimits {
+			memory: 62000000,
+			cpu: 40000000000,
+		},
+		max_execution_units_per_transaction: ScriptExecutionPriceLimits {
+			memory: 14000000,
+			cpu: 10000000000,
+		},
 		min_utxo_deposit_coefficient: 4310,
 		script_execution_prices: ScriptExecutionPrices {
 			memory: fraction::Ratio::new_raw(577, 10000),
@@ -105,6 +116,7 @@ pub(crate) fn protocol_parameters() -> ProtocolParametersResponse {
 		max_collateral_inputs: 3,
 		collateral_percentage: 150,
 		min_fee_reference_scripts: ReferenceScriptsCosts { base: 15.0 },
+		min_stake_pool_cost: OgmiosValue::new_lovelace(0),
 	}
 }
 

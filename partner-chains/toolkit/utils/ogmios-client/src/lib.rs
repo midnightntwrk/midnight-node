@@ -44,7 +44,7 @@ pub trait OgmiosClient {
 	) -> Result<T, OgmiosClientError>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Enum representing the parameters for a JSON-RPC request to the Ogmios server.
 pub enum OgmiosParams {
 	/// Represents positional parameters.
