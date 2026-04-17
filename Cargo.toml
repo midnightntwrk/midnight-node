@@ -6,6 +6,7 @@ members = [
     "metadata",
     "node",
     "pallets/midnight",
+    "pallets/c2m-bridge",
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
@@ -99,6 +100,7 @@ midnight-node-toolkit = { path = "util/toolkit", default-features = true }
 pallet-midnight = { path = "pallets/midnight", default-features = false }
 pallet-midnight-system = { path = "pallets/midnight-system", default-features = false }
 pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false }
+pallet-c2m-bridge = { path = "pallets/c2m-bridge", default-features = false }
 pallet-cnight-observation = { path = "pallets/cnight-observation", default-features = false }
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }

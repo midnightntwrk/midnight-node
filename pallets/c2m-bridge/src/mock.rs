@@ -4,8 +4,9 @@ use frame_support::{
 	traits::{ConstU16, ConstU64},
 };
 use frame_system::EnsureRoot;
+use midnight_node_ledger::types::Hash;
+use midnight_primitives::MidnightSystemTransactionExecutor;
 use sp_core::H256;
-use sp_partner_chains_bridge::BridgeTransferV1;
 use sp_runtime::{
 	AccountId32, BuildStorage,
 	traits::{BlakeTwo256, IdentityLookup},
@@ -13,16 +14,12 @@ use sp_runtime::{
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 pub type AccountId = AccountId32;
-pub type RecipientAddress = AccountId32;
-pub type MaxTransfersPerBlock = ConstU32<32>;
+pub type MaxTxLength = ConstU32<1024>;
 
 #[frame_support::pallet]
 pub mod mock_pallet {
-	use frame_support::pallet_prelude::*;
-
-	use crate::TransferHandler;
-
 	use super::*;
+	use frame_support::pallet_prelude::*;
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
@@ -32,11 +29,19 @@ pub mod mock_pallet {
 
 	#[pallet::storage]
 	#[pallet::unbounded]
-	pub type Transfers<T: Config> = StorageValue<_, Vec<BridgeTransferV1<RecipientAddress>>>;
+	pub type Transfers<T: Config> = StorageValue<_, Vec<BoundedVec<u8, MaxTxLength>>, ValueQuery>;
 
-	impl<T> TransferHandler<RecipientAddress> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<RecipientAddress>) {
-			Transfers::<Test>::append(transfer);
+	#[pallet::storage]
+	#[pallet::unbounded]
+	pub type TransfersCount<T: Config> = StorageValue<_, u8, ValueQuery>;
+
+	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
+		fn execute_system_transaction(tx: Vec<u8>) -> Result<Hash, DispatchError> {
+			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
+			Transfers::<Test>::append(bounded_vec);
+			let count = TransfersCount::<Test>::get();
+			TransfersCount::<Test>::put(count + 1);
+			Ok([count; 32])
 		}
 	}
 }
@@ -44,7 +49,7 @@ pub mod mock_pallet {
 construct_runtime! {
 	pub enum Test {
 		System: frame_system,
-		Bridge: crate::pallet,
+		C2MBridge: crate::pallet,
 		Mock: crate::mock::mock_pallet
 	}
 }
@@ -86,13 +91,7 @@ impl frame_system::Config for Test {
 
 impl crate::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
-	type Recipient = RecipientAddress;
-	type TransferHandler = Mock;
-	type MaxTransfersPerBlock = MaxTransfersPerBlock;
-	type WeightInfo = ();
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	type MidnightSystemTransactionExecutor = Mock;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

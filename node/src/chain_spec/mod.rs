@@ -18,12 +18,13 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
-	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
-	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SystemCall,
-	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
@@ -377,6 +378,12 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 					McTxHash::decode_hex(&s)
 						.expect("Failed to decode Bridge initial_data_checkpoint")
 				}),
+				_marker: Default::default(),
+			}
+		},
+		c2m_bridge: {
+			let bridge_config = genesis.c2m_bridge_config();
+			C2MBridgeConfig {
 				subminimal_transfers_config: SubminimalTransfersConfig {
 					subminimal_transfers_flush_threshold: bridge_config
 						.subminimal_transfers_flush_threshold,

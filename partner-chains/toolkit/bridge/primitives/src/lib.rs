@@ -127,9 +127,9 @@ use alloc::vec::*;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::{
-	AssetId, AssetName, MainchainAddress, McBlockHash, McBlockNumber, McTxHash, PolicyId,
-};
+#[cfg(feature = "std")]
+use sidechain_domain::McBlockHash;
+use sidechain_domain::{AssetId, AssetName, MainchainAddress, McBlockNumber, McTxHash, PolicyId};
 use sp_inherents::*;
 
 #[cfg(feature = "std")]

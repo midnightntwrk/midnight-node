@@ -262,9 +262,6 @@ fn generated_chain_spec() -> serde_json::Value {
 					"token_asset_name": "0x5043546f6b656e44656d6f",
 					"token_policy_id": "0xada83ddd029614381f00e28de0922ab0dec6983ea9dd29ae20eef9b4",
 				},
-				"subminimalTransfersConfig": {
-					"subminimal_transfers_flush_threshold": 0
-				},
 				"marker": null,
 			}
 		}
