@@ -370,21 +370,20 @@ pub(crate) async fn get_block_by_hash(
 	pool: &Pool<Postgres>,
 	hash: McBlockHash,
 ) -> Result<Option<Block>, SqlxError> {
-	sqlx::query_as!(
-		Block,
+	sqlx::query_as::<_, Block>(
 		r#"
 SELECT
-    block_no as "block_number!: _",
-    hash as "hash: _",
-    epoch_no as "epoch_number!: _",
-    slot_no as "slot_number!: _",
+    block_no AS block_number,
+    hash AS hash,
+    epoch_no AS epoch_number,
+    slot_no AS slot_number,
     time,
     tx_count
 FROM block
 WHERE hash = $1
 "#,
-		&hash.0
 	)
+	.bind(&hash.0)
 	.fetch_optional(pool)
 	.await
 }
