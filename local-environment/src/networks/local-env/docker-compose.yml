@@ -166,7 +166,13 @@ services:
     container_name: postgres
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
-    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT}
+    command: >
+      postgres
+      -c maintenance_work_mem=256MB
+      -c ssl=on
+      -c ssl_cert_file=/pgdata/ssl/server.crt
+      -c ssl_key_file=/pgdata/ssl/server.key
+      -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -181,6 +187,7 @@ services:
       - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    entrypoint: ["/bin/bash", "/usr/local/bin/custom-entrypoint.sh"]
     volumes:
       - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
       - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
