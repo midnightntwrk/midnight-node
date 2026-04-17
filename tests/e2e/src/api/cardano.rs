@@ -1,4 +1,4 @@
-use crate::config::{Constants, OgmiosClientSettings};
+use crate::config::{self, Constants, OgmiosClientSettings};
 use aiken_contracts_lib::{
     FederatedOpsCandidate, GovernanceMember, build_federated_ops_datum,
     build_federated_ops_redeemer, build_governance_redeemer, build_versioned_multisig_datum,
@@ -245,8 +245,7 @@ impl CardanoClient {
         tx_in: &OgmiosUtxo,
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
-        let policies = self.constants.policies.clone();
-        let validator_address = policies.mapping_validator_address();
+        let validator_address = config::mapping_validator_address();
         let datum = serde_json::to_string(&serde_json::json!(
             {
                 "constructor": 0,
@@ -267,12 +266,12 @@ impl CardanoClient {
         ))
         .unwrap();
         let payment_addr = self.address_as_bech32();
-        let mapping_validator_policy_id = policies.mapping_validator_policy_id();
+        let mapping_validator_policy_id = config::mapping_validator_policy_id();
         let send_assets = vec![
             Asset::new_from_str("lovelace", "2000000"),
             Asset::new_from_str(&mapping_validator_policy_id, "1"),
         ];
-        let minting_script = policies.mapping_validator_cbor_double_encoding();
+        let minting_script = config::mapping_validator_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
 
         let mut tx_builder = TxBuilder::new_core();
@@ -346,16 +345,15 @@ impl CardanoClient {
         register_tx: &OgmiosUtxo,
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
-        let policies = self.constants.policies.clone();
-        let validator_address = policies.mapping_validator_address();
+        let validator_address = config::mapping_validator_address();
         let datum =
             serde_json::to_string(&serde_json::json!({"constructor": 0,"fields": []})).unwrap();
         let payment_addr = self.address_as_bech32();
-        let mapping_validator_policy_id = policies.mapping_validator_policy_id();
+        let mapping_validator_policy_id = config::mapping_validator_policy_id();
         let send_assets = vec![Asset::new_from_str("lovelace", "2000000")];
-        let minting_script = policies.mapping_validator_cbor_double_encoding();
+        let minting_script = config::mapping_validator_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
-        let mapping_validator_cbor = policies.mapping_validator_cbor_double_encoding();
+        let mapping_validator_cbor = config::mapping_validator_cbor_double_encoding();
         let register_asset_tx_vector = Self::build_asset_vector(register_tx);
         println!("Register tx assets: {:?}", register_asset_tx_vector);
         let script_hash = whisky::get_script_hash(&mapping_validator_cbor, LanguageVersion::V2);
@@ -447,10 +445,8 @@ impl CardanoClient {
         amount: i32,
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
-        let policies = self.constants.policies.clone();
-
-        let policy_id = policies.cnight_token_policy_id();
-        let minting_script = policies.cnight_token_cbor_double_encoding();
+        let policy_id = config::cnight_token_policy_id();
+        let minting_script = config::cnight_token_cbor_double_encoding();
         let network = Network::Custom(self.constants.cost_model.clone());
 
         let payment_addr = self.address_as_bech32();
