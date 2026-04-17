@@ -955,7 +955,6 @@ class SubstrateApi(BlockchainApi):
             mc_block = self.get_mc_block_by_block_hash(mc_hash).block_no
             logger.debug(f"Main chain reference block: {mc_block}")
 
-            token_transfer_value = None
             block = self.substrate.get_block(block_number=block_no)
             for idx, extrinsic in enumerate(block["extrinsics"]):
                 logger.debug(f"# {idx}: {extrinsic.value}")
@@ -967,16 +966,17 @@ class SubstrateApi(BlockchainApi):
                     transfers = next((arg["value"] for arg in call_args if arg["name"] == "transfers"), [])
                     transfer_values = Counter()
                     for transfer in transfers:
-                        for transfer_type, fields in transfer.items():
-                            match transfer_type:
-                                case "ReserveTransfer":
-                                    transfer_values["reserve"] += fields["token_amount"]
-                                case "UserTransfer":
-                                    transfer_values[fields["recipient"]] += fields["token_amount"]
-                                case "InvalidTransfer":
-                                    transfer_values["invalid"] += fields["token_amount"]
-                                case _:
-                                    logger.error(f"Invalid transfer type in bridge inherent: {transfer_type}")
+                        amount = transfer["amount"]
+                        recipient = transfer["recipient"]
+                        match recipient:
+                            case "Reserve":
+                                transfer_values["reserve"] += amount
+                            case "Address", fields:
+                                transfer_values[fields["recipient"]] += amount
+                            case "Invalid":
+                                transfer_values["invalid"] += amount
+                            case _:
+                                logger.error(f"Invalid recipient in bridge inherent: {recipient}")
 
                         if transfer_values:
                             return transfer_values

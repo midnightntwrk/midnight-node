@@ -90,6 +90,7 @@ dist
 
 # Toolkit cache
 toolkit.db
+toolkit_cache/
 
 # toolkit artifacts
 /out/
