@@ -6,4 +6,5 @@
 - Update call sites and tests for explicit `Clone` where seeds are duplicated intentionally
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1217
+Issue: https://github.com/midnight-security/midnight-security/issues/112
 Ticket: https://shielded.atlassian.net/browse/PM-22038
