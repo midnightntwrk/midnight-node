@@ -153,6 +153,18 @@ fn test_get_contract_state_not_present() {
 }
 
 #[test]
+fn test_get_unclaimed_amount_beneficiary_not_found() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A 32-byte address that has never had any unclaimed rewards in the genesis state
+		let addr = [0u8; 32];
+		let result = mock::Midnight::get_unclaimed_amount(&addr);
+		assert_eq!(result, Err(LedgerApiError::BeneficiaryNotFound));
+	})
+}
+
+#[test]
 fn test_validation_works() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
