@@ -140,6 +140,19 @@ fn test_get_contract_state() {
 }
 
 #[test]
+fn test_get_contract_state_not_present() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A random address that hasn't been deployed
+		let addr = hex::decode(CONTRACT_ADDR).expect("Address should be a valid hex code");
+
+		let result = mock::Midnight::get_contract_state(&addr);
+		assert_eq!(result, Err(LedgerApiError::ContractNotPresent));
+	})
+}
+
+#[test]
 fn test_validation_works() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
