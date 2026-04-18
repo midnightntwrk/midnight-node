@@ -170,8 +170,8 @@ services:
       postgres
       -c maintenance_work_mem=256MB
       -c ssl=on
-      -c ssl_cert_file=/pgdata/ssl/server.crt
-      -c ssl_key_file=/pgdata/ssl/server.key
+      -c ssl_cert_file=/etc/ssl/postgres/server.crt
+      -c ssl_key_file=/etc/ssl/postgres/server.key
       -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]

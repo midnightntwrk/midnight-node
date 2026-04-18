@@ -18,7 +18,9 @@ set -e
 # Generate a self-signed TLS certificate for PostgreSQL if one does not already exist.
 # This allows the midnight-node to connect with PgSslMode::Require (encrypted, no cert validation)
 # or PgSslMode::VerifyFull (with the CA cert mounted into the node container).
-SSL_DIR="${PGDATA:-/pgdata}/ssl"
+# NOTE: SSL files must live OUTSIDE PGDATA (/pgdata) because the official PostgreSQL
+# docker-entrypoint.sh runs initdb, which requires PGDATA to be empty on first start.
+SSL_DIR="/etc/ssl/postgres"
 
 if [ ! -f "$SSL_DIR/server.key" ]; then
     mkdir -p "$SSL_DIR"
