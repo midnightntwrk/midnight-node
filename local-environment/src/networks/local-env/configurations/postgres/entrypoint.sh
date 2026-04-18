@@ -30,6 +30,9 @@ if [ ! -f "$SSL_DIR/server.key" ]; then
         -keyout "$SSL_DIR/server.key" \
         -subj "/CN=postgres" \
         -addext "subjectAltName=DNS:postgres,DNS:localhost,IP:127.0.0.1"
+    # Make key readable by the postgres user (the entrypoint runs as root,
+    # but docker-entrypoint.sh drops privileges to the postgres user).
+    chown postgres:postgres "$SSL_DIR/server.key" "$SSL_DIR/server.crt"
     chmod 600 "$SSL_DIR/server.key"
     chmod 644 "$SSL_DIR/server.crt"
     echo "Generated self-signed TLS certificate for PostgreSQL in $SSL_DIR"
