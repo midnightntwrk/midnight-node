@@ -602,6 +602,7 @@ node-ci-image-single-platform:
         patch \
         tar \
         gzip \
+        docker \
         jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
