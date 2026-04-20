@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\nSELECT\n    datum.value::jsonb AS \"full_datum!: _\",\n    block.block_no as \"block_number!: _\",\n    block.hash as \"block_hash: _\",\n    block.time as \"block_timestamp: _\",\n    tx.block_index as \"tx_index_in_block: _\",\n    tx.hash AS \"tx_hash: _\",\n    tx_tx_out.hash as \"utxo_tx_hash: _\",\n    tx_out.index as \"utxo_index: _\"\nFROM block\n    JOIN tx ON tx.block_id = block.id\n    JOIN tx_in ON tx_in.tx_in_id = tx.id\n    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id\n                AND tx_out.index = tx_in.tx_out_index\n    JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id\n    JOIN datum ON datum.hash = tx_out.data_hash\nWHERE tx.id >= $8 AND tx.id <= $9\n    AND block.block_no >= $2 AND block.block_no <= $4\n    AND tx_out.address = $1\n    AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))\n    AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))\nORDER BY block.block_no, tx.block_index\nLIMIT $6 OFFSET $7;\n        ",
+  "query": "\nSELECT\n    datum.value::jsonb AS \"full_datum!: _\",\n    block.block_no as \"block_number!: _\",\n    block.hash as \"block_hash: _\",\n    block.time as \"block_timestamp: _\",\n    tx.block_index as \"tx_index_in_block: _\",\n    tx.hash AS \"tx_hash: _\",\n    tx_tx_out.hash as \"utxo_tx_hash: _\",\n    tx_out.index as \"utxo_index: _\"\nFROM block\n    JOIN tx ON tx.block_id = block.id\n    JOIN tx_in ON tx_in.tx_in_id = tx.id\n    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id\n                AND tx_out.index = tx_in.tx_out_index\n    JOIN tx as tx_tx_out ON tx_out.tx_id = tx_tx_out.id\n    JOIN datum ON datum.hash = tx_out.data_hash\nWHERE block.block_no >= $2 AND block.block_no <= $4\n    AND tx_out.address = $1\n    AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))\n    AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))\n    AND tx.id >= $8 AND tx.id <=$9\n    AND tx_in.id >= $10 AND tx_in.id <= $11\nORDER BY block.block_no, tx.block_index\nLIMIT $6 OFFSET $7;\n        ",
   "describe": {
     "columns": [
       {
@@ -54,6 +54,8 @@
         "Int8",
         "Int8",
         "Int8",
+        "Int8",
+        "Int8",
         "Int8"
       ]
     },
@@ -68,5 +70,5 @@
       false
     ]
   },
-  "hash": "a9ec864f36c80e1c9a4c8ce27918d0bd727464403d375ce2254fc61d94b6080b"
+  "hash": "006061df59ecdaab803f4df7e50cfbf7d02d21e8e7773e7cebafcb0cf4e02c17"
 }
