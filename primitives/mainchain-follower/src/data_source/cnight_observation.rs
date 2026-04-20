@@ -163,8 +163,11 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 
 		// The "capacity" argument is capacity in terms of TRANSACTIONS,
 		// but the various sql queries below want a capacity in terms of UTXOs.
-		// Use a generous overestimate of how many UTXOs each TX _may_ have.
-		let utxo_capacity = tx_capacity * 64;
+		// Use an estimate of how many UTXOs each TX _may_ have.
+		//
+		// As long as this total utxo_capacity > the max number of utxos we can expect in a single
+		// tx, we'll guarantee we won't get stuck if we encounter a very large transaction
+		let utxo_capacity = tx_capacity * 4;
 
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
