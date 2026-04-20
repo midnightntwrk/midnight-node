@@ -18,8 +18,8 @@ use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
 	networks::{
-		CustomNetwork, MainChainScripts, MessageConfig, PermissionedCandidatesConfig,
-		RegisteredCandidatesAddresses, UndeployedNetwork,
+		C2MBridgeConfig, CustomNetwork, MainChainScripts, MessageConfig,
+		PermissionedCandidatesConfig, RegisteredCandidatesAddresses, UndeployedNetwork,
 	},
 };
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
@@ -242,6 +242,18 @@ impl SubstrateCli for Cfg {
 						None
 					};
 
+				let c2m_bridge_config_str = validated_file::safe_read_to_string(
+					self.chain_spec_cfg
+						.chainspec_c2m_bridge_config
+						.as_ref()
+						.ok_or("c2m_bridge_config not configured")?,
+					validated_file::MAX_GENESIS_FILE_SIZE,
+				)?;
+
+				let c2m_bridge_config: C2MBridgeConfig =
+					serde_json::from_str(&c2m_bridge_config_str)
+						.map_err(|e| format!("failed to parse C2MBridgeConfig: {e}"))?;
+
 				let network: CustomNetwork = CustomNetwork {
 					name: self
 						.chain_spec_cfg
@@ -272,6 +284,7 @@ impl SubstrateCli for Cfg {
 					ics_config,
 					reserve_config,
 					message_config,
+					c2m_bridge_config,
 				};
 				chain_config(network)
 			},

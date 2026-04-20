@@ -39,6 +39,10 @@ fn data_checkpoint() -> BridgeDataCheckpoint {
 	BridgeDataCheckpoint::Tx(McTxHash([1; 32]))
 }
 
+fn subminimal_transfers_config() -> SubminimalTransfersConfig {
+	SubminimalTransfersConfig { subminimal_transfers_flush_threshold: 123456789 }
+}
+
 mod set_main_chain_scripts {
 	use super::*;
 
@@ -48,11 +52,13 @@ mod set_main_chain_scripts {
 			assert_ok!(Bridge::set_main_chain_scripts(
 				RuntimeOrigin::root(),
 				main_chain_scripts(),
-				data_checkpoint()
+				data_checkpoint(),
+				subminimal_transfers_config(),
 			));
 
 			assert_eq!(Bridge::get_main_chain_scripts(), Some(main_chain_scripts()));
 			assert_eq!(Bridge::get_data_checkpoint(), Some(data_checkpoint()));
+			assert_eq!(Bridge::get_subminimal_transfers_config(), subminimal_transfers_config());
 		})
 	}
 }
@@ -234,6 +240,7 @@ mod provide_inherent {
 		let set_main_chain_scripts = Call::set_main_chain_scripts {
 			new_scripts: main_chain_scripts(),
 			data_checkpoint: data_checkpoint(),
+			subminimal_transfers_config: subminimal_transfers_config(),
 		};
 
 		assert_eq!(Bridge::is_inherent(&handle_transfers), true);
