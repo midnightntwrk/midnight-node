@@ -666,7 +666,8 @@ node-ci-image-single-platform:
 
     # SAVE IMAGE under the rust version.
     # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="${RUST_VERSION}"
+    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -677,13 +678,14 @@ node-ci-image-single-platform:
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
     FROM alpine:3.20
-    COPY rust-toolchain.toml .
+    COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
