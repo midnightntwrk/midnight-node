@@ -53,7 +53,9 @@ impl SubstrateCfg {
 		[&["midnight-node".to_string()], &self.args[..], &self.append_args[..]].concat()
 	}
 
-	pub fn into_run_cmd(self, safe_read_opts: &SafeReadOpts) -> Result<RunCmd, sc_cli::Error> {
+	// Ignore here - the large Result is inherited from Substrate
+	#[allow(clippy::result_large_err)]
+	pub fn into_run_cmd(self, safe_read_opts: &SafeReadOpts) -> sc_cli::Result<RunCmd> {
 		let default_run_cmd = RunCmd::parse_from(&["midnight-node".to_string()]);
 
 		let argv: Vec<String> =
