@@ -249,6 +249,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ariadne-simulator"
+version = "1.8.1"
+dependencies = [
+ "clap",
+ "env_logger",
+ "itertools 0.14.0",
+ "log",
+ "rand 0.10.0",
+ "rand_chacha 0.10.0",
+ "selection",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ark-bls12-377"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9695,6 +9710,106 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-block-participation"
+version = "1.8.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "pretty_assertions",
+ "scale-info",
+ "sp-block-participation",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-block-producer-fees"
+version = "1.8.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-block-producer-fees",
+ "sp-consensus-slots",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-block-producer-fees-rpc"
+version = "1.8.1"
+dependencies = [
+ "derive-new",
+ "jsonrpsee",
+ "parity-scale-codec",
+ "serde",
+ "sp-api",
+ "sp-block-producer-fees",
+ "sp-blockchain",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-block-producer-metadata"
+version = "1.8.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex-literal 1.1.0",
+ "k256",
+ "pallet-balances",
+ "parity-scale-codec",
+ "pretty_assertions",
+ "scale-info",
+ "sidechain-domain",
+ "sp-block-producer-metadata",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-block-producer-metadata-rpc"
+version = "1.8.1"
+dependencies = [
+ "derive-new",
+ "jsonrpsee",
+ "parity-scale-codec",
+ "sidechain-domain",
+ "sp-api",
+ "sp-block-producer-metadata",
+ "sp-blockchain",
+ "sp-core",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-block-production-log"
+version = "1.8.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-block-production-log",
+ "sp-consensus-slots",
+ "sp-io",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-broker"
 version = "0.25.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -10174,6 +10289,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-sudo"
+version = "46.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
+dependencies = [
+ "docify",
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-system-parameters"
 version = "0.1.0"
 dependencies = [
@@ -10254,6 +10384,34 @@ dependencies = [
  "serde",
  "sp-io",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-transaction-payment-rpc"
+version = "49.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
+dependencies = [
+ "jsonrpsee",
+ "pallet-transaction-payment-rpc-runtime-api",
+ "parity-scale-codec",
+ "sp-api",
+ "sp-blockchain",
+ "sp-core",
+ "sp-rpc",
+ "sp-runtime",
+ "sp-weights",
+]
+
+[[package]]
+name = "pallet-transaction-payment-rpc-runtime-api"
+version = "46.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
+dependencies = [
+ "pallet-transaction-payment",
+ "parity-scale-codec",
+ "sp-api",
+ "sp-runtime",
+ "sp-weights",
 ]
 
 [[package]]
@@ -10529,6 +10687,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "partner-chains-data-sources-cli"
+version = "1.8.1"
+dependencies = [
+ "authority-selection-inherents",
+ "clap",
+ "env_logger",
+ "log",
+ "partner-chains-db-sync-data-sources",
+ "serde_json",
+ "sidechain-domain",
+ "sp-timestamp",
+ "tokio",
+]
+
+[[package]]
 name = "partner-chains-db-sync-data-sources"
 version = "1.8.1"
 dependencies = [
@@ -10563,6 +10736,141 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+]
+
+[[package]]
+name = "partner-chains-demo-node"
+version = "1.8.1"
+dependencies = [
+ "authority-selection-inherents",
+ "clap",
+ "derive-new",
+ "envy",
+ "hex-literal 1.1.0",
+ "jsonrpsee",
+ "log",
+ "pallet-block-producer-fees-rpc",
+ "pallet-block-producer-metadata-rpc",
+ "pallet-session-validator-management-rpc",
+ "pallet-sidechain-rpc",
+ "pallet-transaction-payment-rpc",
+ "partner-chains-cli",
+ "partner-chains-db-sync-data-sources",
+ "partner-chains-demo-runtime",
+ "partner-chains-mock-data-sources",
+ "partner-chains-node-commands",
+ "sc-basic-authorship",
+ "sc-cli",
+ "sc-client-api",
+ "sc-consensus",
+ "sc-consensus-aura",
+ "sc-consensus-grandpa",
+ "sc-consensus-grandpa-rpc",
+ "sc-executor",
+ "sc-network",
+ "sc-partner-chains-consensus-aura",
+ "sc-rpc",
+ "sc-service",
+ "sc-telemetry",
+ "sc-transaction-pool",
+ "sc-transaction-pool-api",
+ "serde_json",
+ "sidechain-domain",
+ "sidechain-mc-hash",
+ "sidechain-slots",
+ "sp-api",
+ "sp-block-builder",
+ "sp-block-participation",
+ "sp-block-producer-fees",
+ "sp-block-producer-metadata",
+ "sp-block-production-log",
+ "sp-blockchain",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-governed-map",
+ "sp-inherents",
+ "sp-io",
+ "sp-partner-chains-bridge",
+ "sp-partner-chains-consensus-aura",
+ "sp-runtime",
+ "sp-session-validator-management",
+ "sp-session-validator-management-query",
+ "sp-sidechain",
+ "sp-timestamp",
+ "substrate-build-script-utils",
+ "substrate-frame-rpc-system",
+ "time-source",
+ "tokio",
+]
+
+[[package]]
+name = "partner-chains-demo-runtime"
+version = "1.8.1"
+dependencies = [
+ "authority-selection-inherents",
+ "frame-benchmarking",
+ "frame-executive",
+ "frame-support",
+ "frame-system",
+ "frame-system-benchmarking",
+ "frame-system-rpc-runtime-api",
+ "frame-try-runtime",
+ "hex",
+ "hex-literal 1.1.0",
+ "log",
+ "minicbor 2.2.1",
+ "pallet-address-associations",
+ "pallet-aura",
+ "pallet-balances",
+ "pallet-block-participation",
+ "pallet-block-producer-fees",
+ "pallet-block-producer-metadata",
+ "pallet-block-production-log",
+ "pallet-governed-map",
+ "pallet-grandpa",
+ "pallet-partner-chains-bridge",
+ "pallet-partner-chains-session",
+ "pallet-session",
+ "pallet-session-validator-management",
+ "pallet-sidechain",
+ "pallet-sudo",
+ "pallet-timestamp",
+ "pallet-transaction-payment",
+ "pallet-transaction-payment-rpc-runtime-api",
+ "parity-scale-codec",
+ "plutus",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "sidechain-domain",
+ "sidechain-slots",
+ "sp-api",
+ "sp-block-builder",
+ "sp-block-participation",
+ "sp-block-producer-fees",
+ "sp-block-producer-metadata",
+ "sp-block-production-log",
+ "sp-consensus-aura",
+ "sp-consensus-grandpa",
+ "sp-consensus-slots",
+ "sp-core",
+ "sp-genesis-builder",
+ "sp-governed-map",
+ "sp-inherents",
+ "sp-io",
+ "sp-keyring",
+ "sp-offchain",
+ "sp-partner-chains-bridge",
+ "sp-runtime",
+ "sp-session",
+ "sp-session-validator-management",
+ "sp-sidechain",
+ "sp-std",
+ "sp-storage",
+ "sp-transaction-pool",
+ "sp-version",
+ "sp-weights",
+ "substrate-wasm-builder",
 ]
 
 [[package]]
@@ -15643,6 +15951,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sp-block-producer-fees"
+version = "1.8.1"
+dependencies = [
+ "parity-scale-codec",
+ "sp-api",
+ "sp-std",
+]
+
+[[package]]
 name = "sp-block-producer-metadata"
 version = "1.8.1"
 dependencies = [
@@ -15651,6 +15968,19 @@ dependencies = [
  "parity-scale-codec",
  "sidechain-domain",
  "sp-api",
+]
+
+[[package]]
+name = "sp-block-production-log"
+version = "1.8.1"
+dependencies = [
+ "async-trait",
+ "parity-scale-codec",
+ "sidechain-slots",
+ "sp-api",
+ "sp-inherents",
+ "sp-runtime",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -16183,7 +16513,6 @@ dependencies = [
  "sp-api",
  "sp-core",
  "sp-inherents",
- "sp-runtime",
  "sp-std",
  "thiserror 2.0.18",
 ]

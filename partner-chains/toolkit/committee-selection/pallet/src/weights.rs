@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_session_validator_management.
@@ -86,8 +86,8 @@ impl WeightInfo for () {
 		Weight::from_parts(12_492_663, 134615)
 			// Standard Error: 40
 			.saturating_add(Weight::from_parts(75_113, 0).saturating_mul(v.into()))
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(ParityDbWeight::get().reads(2_u64))
+			.saturating_add(ParityDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `SessionCommitteeManagement::MainChainScriptsConfiguration` (r:0 w:1)
 	/// Proof: `SessionCommitteeManagement::MainChainScriptsConfiguration` (`max_values`: Some(1), `max_size`: Some(178), added: 673, mode: `MaxEncodedLen`)
@@ -97,6 +97,6 @@ impl WeightInfo for () {
 		//  Estimated: `0`
 		// Minimum execution time: 2_000_000 picoseconds.
 		Weight::from_parts(2_000_000, 0)
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(ParityDbWeight::get().writes(1_u64))
 	}
 }
