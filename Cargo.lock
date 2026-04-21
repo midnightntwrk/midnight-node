@@ -10762,7 +10762,6 @@ dependencies = [
  "sc-basic-authorship",
  "sc-cli",
  "sc-client-api",
- "sc-client-db",
  "sc-consensus",
  "sc-consensus-aura",
  "sc-consensus-grandpa",
