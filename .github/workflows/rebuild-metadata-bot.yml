@@ -84,7 +84,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Earthly
-        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        uses: EarthBuild/actions-setup@81b172c5c43843ff151a6ed0b3a3da6bef78cba6
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
