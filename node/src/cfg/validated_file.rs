@@ -170,6 +170,28 @@ mod tests {
 		assert_eq!(result.unwrap(), "hello world");
 	}
 
+	#[cfg(unix)]
+	#[test]
+	fn safe_read_rejects_symlink_to_dir() {
+		use std::os::unix::fs::symlink;
+
+		let dir = tempfile::tempdir().unwrap();
+		let dir1 = tempfile::tempdir().unwrap();
+
+		let link_path = dir.path().join("link");
+		symlink(dir1.path(), &link_path).unwrap();
+
+		let result = safe_read(
+			link_path.to_str().unwrap(),
+			&SafeReadOpts { unsafe_allow_symlinks: true, ..Default::default() },
+		);
+		let err = result.unwrap_err();
+		assert!(
+			err.contains("not a regular file"),
+			"expected 'not a regular file' in error: {err}"
+		);
+	}
+
 	#[test]
 	fn safe_read_rejects_directory() {
 		let dir = tempfile::tempdir().unwrap();
