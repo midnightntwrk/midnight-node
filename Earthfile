@@ -660,7 +660,6 @@ node-ci-image-single-platform:
         unzip /tmp/compactc.zip -d /compactc-bin && \
         chmod +x /compactc-bin/compactc && \
         rm /tmp/compactc.zip
-    ENV COMPACT_HOME=/compactc-bin
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
