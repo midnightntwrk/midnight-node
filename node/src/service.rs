@@ -627,6 +627,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
 		let subscription_tracker = subscription_tracker.clone();
 
+		#[allow(clippy::result_large_err)]
 		move |subscription_executor: SubscriptionTaskExecutor| {
 			let grandpa = GrandpaDeps {
 				shared_voter_state: shared_voter_state.clone(),

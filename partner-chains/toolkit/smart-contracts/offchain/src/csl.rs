@@ -654,7 +654,7 @@ impl TransactionBuilderExt for TransactionBuilder {
 	) -> Result<Transaction, JsError> {
 		fn max_possible_collaterals(ctx: &TransactionContext) -> Vec<OgmiosUtxo> {
 			let mut utxos = ctx.payment_key_utxos.clone();
-			utxos.sort_by(|a, b| b.value.lovelace.cmp(&a.value.lovelace));
+			utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.value.lovelace));
 			let max_inputs = ctx.protocol_parameters.max_collateral_inputs;
 			utxos
 				.into_iter()
