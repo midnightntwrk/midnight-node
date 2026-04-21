@@ -39,7 +39,7 @@ tokio-retry = { workspace = true }
 proptest = { workspace = true }
 pretty_assertions = { workspace = true }
 testcontainers = { workspace = true, features = ["blocking"] }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 
 [lib]
 doctest = false

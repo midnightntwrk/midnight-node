@@ -108,7 +108,6 @@ substrate-build-script-utils = { workspace = true }
 [dev-dependencies]
 hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
-assert_cmd = { workspace = true }
 pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
 
