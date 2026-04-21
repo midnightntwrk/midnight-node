@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Mutex};
 
 use config::{Config, ConfigError, Environment, File, FileFormat};
 use documented::FieldInfo;
@@ -30,7 +30,10 @@ use pallet_cnight_observation::config::CNightGenesis;
 use sc_cli::SubstrateCli;
 use serde_valid::Validate as _;
 
-use crate::chain_spec::{ChainSpecInitError, chain_config};
+use crate::{
+	cfg::validated_file::SafeReadOpts,
+	chain_spec::{ChainSpecInitError, chain_config},
+};
 
 use self::{
 	chain_spec_cfg::ChainSpecCfg, error::CfgError, memory_monitor_cfg::MemoryMonitorCfg,
@@ -110,14 +113,16 @@ impl SubstrateCli for Cfg {
 						.chainspec_genesis_block
 						.as_ref()
 						.ok_or("chainspec_genesis_block not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 				let genesis_state = validated_file::safe_read(
 					self.chain_spec_cfg
 						.chainspec_genesis_state
 						.as_ref()
 						.ok_or("chainspec_genesis_state not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let pc_chain_config_str = validated_file::safe_read_to_string(
@@ -125,7 +130,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_pc_chain_config
 						.as_ref()
 						.ok_or("chainspec_pc_chain_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let pc_chain_config: serde_json::Value = serde_json::from_str(&pc_chain_config_str)
@@ -137,7 +143,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_permissioned_candidates_config
 						.as_ref()
 						.ok_or("chainspec_permissioned_candidates_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let permissioned_candidates_config: PermissionedCandidatesConfig =
@@ -151,7 +158,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_registered_candidates_addresses
 						.as_ref()
 						.ok_or("chainspec_registered_candidates_addresses not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let registered_candidates_addresses: RegisteredCandidatesAddresses =
@@ -167,7 +175,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_cnight_genesis
 						.as_ref()
 						.ok_or("chainspec_cnight_genesis not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let cnight_genesis: CNightGenesis = serde_json::from_str(&cnight_genesis_str)
@@ -188,7 +197,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_federated_authority_config
 						.as_ref()
 						.ok_or("chainspec_federated_authority_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let federated_authority_config: FederatedAuthorityObservationConfig =
@@ -201,7 +211,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_system_parameters_config
 						.as_ref()
 						.ok_or("chainspec_system_parameters_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let system_parameters_config: SystemParametersConfig =
@@ -213,7 +224,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_ics_config
 						.as_ref()
 						.ok_or("chainspec_ics_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let ics_config: IcsConfig = serde_json::from_str(&ics_config_str)
@@ -224,7 +236,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_reserve_config
 						.as_ref()
 						.ok_or("chainspec_reserve_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let reserve_config: ReserveConfig = serde_json::from_str(&reserve_config_str)
@@ -300,6 +313,25 @@ impl Cfg {
 		let config = Self::get_all_config()?;
 		let cfg = Self::new_no_validation_from_config(config)?;
 		Ok(cfg)
+	}
+
+	pub fn safe_read_opts() -> Result<SafeReadOpts, ConfigError> {
+		static OPTS: Mutex<Option<SafeReadOpts>> = Mutex::new(None);
+
+		if let Some(ref opts) = *OPTS.lock().expect("failed to lock mutex") {
+			return Ok(opts.clone());
+		}
+
+		let meta_cfg: MetaCfg = Config::builder()
+			.add_source(File::from_str(&default_cfg(), FileFormat::Toml))
+			.add_source(Cfg::get_env_source()?)
+			.build()?
+			.try_deserialize()?;
+		let opts = SafeReadOpts::from(&meta_cfg);
+
+		*OPTS.lock().expect("failed to lock mutex") = Some(opts.clone());
+
+		Ok(opts)
 	}
 
 	/// Create a new instance from a custom config without running validation
@@ -378,7 +410,7 @@ impl Cfg {
 
 		let mut builder = Config::builder();
 		if let Some(ref env_preset) = meta_cfg.cfg_preset {
-			builder = builder.add_source(env_preset.load_config()?);
+			builder = builder.add_source(env_preset.load_config(&Self::safe_read_opts()?)?);
 		}
 		builder.build()
 	}
@@ -394,7 +426,7 @@ impl Cfg {
 		let mut builder =
 			Config::builder().add_source(File::from_str(&default_cfg(), FileFormat::Toml));
 		if let Some(ref env_preset) = preset_cfg.cfg_preset {
-			builder = builder.add_source(env_preset.load_config()?);
+			builder = builder.add_source(env_preset.load_config(&Self::safe_read_opts()?)?);
 		}
 		builder
 			.add_source(Self::get_env_source()?)
@@ -561,7 +593,7 @@ mod tests {
 			println!("loading {config}...");
 			let preset_cfg = Config::builder()
 				.add_source(File::from_str(&default_cfg(), FileFormat::Toml))
-				.add_source(CfgPreset(config).load_config().unwrap())
+				.add_source(CfgPreset(config).load_config(&Cfg::safe_read_opts().unwrap()).unwrap())
 				.build()
 				.unwrap();
 
@@ -575,7 +607,11 @@ mod tests {
 		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
 		let preset_cfg = Config::builder()
 			.add_source(File::from_str(&default_cfg(), FileFormat::Toml))
-			.add_source(CfgPreset("dev".to_string()).load_config().unwrap())
+			.add_source(
+				CfgPreset("dev".to_string())
+					.load_config(&Cfg::safe_read_opts().unwrap())
+					.unwrap(),
+			)
 			.add_source(Environment::default())
 			.build()
 			.unwrap();
@@ -583,7 +619,8 @@ mod tests {
 		let cfg = Cfg::new_no_validation_from_config(preset_cfg)
 			.expect("Cfg failed to deserialize using dev preset");
 
-		let _run_cmd: sc_cli::RunCmd = cfg.substrate_cfg.try_into().unwrap();
+		let _run_cmd: sc_cli::RunCmd =
+			cfg.substrate_cfg.into_run_cmd(&Cfg::safe_read_opts().unwrap()).unwrap();
 	}
 
 	fn get_unused(preset_keys: &[String]) -> Vec<String> {
@@ -624,8 +661,10 @@ mod tests {
 		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
 		for config in midnight_node_res::list_configs() {
 			let cfg = CfgPreset(config.clone());
-			let preset_cfg =
-				Config::builder().add_source(cfg.load_config().unwrap()).build().unwrap();
+			let preset_cfg = Config::builder()
+				.add_source(cfg.load_config(&Cfg::safe_read_opts().unwrap()).unwrap())
+				.build()
+				.unwrap();
 			let preset_value: serde_json::Value = preset_cfg.try_deserialize().unwrap();
 			let preset_keys = get_keys(preset_value).unwrap();
 

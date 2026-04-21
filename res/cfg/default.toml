@@ -52,3 +52,6 @@ argv = []
 args = []
 append_args = []
 bootnodes = []
+
+# Disallow symlinks when loading config files
+unsafe_allow_symlinks = false
