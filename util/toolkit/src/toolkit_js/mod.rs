@@ -48,13 +48,6 @@ impl From<PathBuf> for RelativePath {
 	}
 }
 
-#[inline]
-fn zeroize_string(s: &mut String) {
-	unsafe {
-		std::ptr::write_bytes(s.as_mut_ptr(), 0, s.len());
-	}
-}
-
 pub enum Command {
 	Deploy(DeployArgs),
 	Circuit {
@@ -260,8 +253,9 @@ impl ToolkitJs {
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
-		self.execute_js(&cmd_args)?;
-		signing_key.as_mut().map(zeroize_string);
+		let result = self.execute_js(&cmd_args);
+		signing_key.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -375,8 +369,9 @@ impl ToolkitJs {
 				cmd_args.push(&vk_path);
 			}
 		}
-		self.execute_js(&cmd_args)?;
-		new_authority.as_mut().map(zeroize_string);
+		let result = self.execute_js(&cmd_args);
+		new_authority.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
