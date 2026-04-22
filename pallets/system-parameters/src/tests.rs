@@ -265,10 +265,12 @@ fn genesis_panics_with_url_only() {
 }
 
 #[test]
-#[should_panic(expected = "Genesis terms and conditions hash must be set")]
-fn genesis_panics_with_no_terms_and_conditions() {
-	// Providing neither hash nor URL should panic during genesis build (hash checked first)
-    let hash = H256::from_low_u64_be(123);
-    let url = "https://example.com/terms".to_string();
-	new_test_ext_with_genesis(Some(hash), Some(url), None);
+fn genesis_succeeds_with_terms_and_conditions_without_d_parameter() {
+	let hash = H256::from_low_u64_be(123);
+	let url = "https://example.com/terms".to_string();
+	new_test_ext_with_genesis(Some(hash), Some(url.clone()), None).execute_with(|| {
+		let stored = SystemParameters::terms_and_conditions().expect("Should have terms");
+		assert_eq!(stored.hash, hash);
+		assert_eq!(stored.url.to_vec(), url.as_bytes().to_vec());
+	});
 }
