@@ -166,7 +166,7 @@ services:
     container_name: postgres
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
-    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT}
+    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT} -c max_connections=120
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -451,7 +451,7 @@ services:
 
   midnight-setup:
     container_name: midnight-setup
-    image: ${MIDNIGHT_NODE_IMAGE}
+    image: ghcr.io/midnightntwrk/midnight-node:1.0.0-e99482ac81b6-amd64
     platform: ${ARCHITECTURE}
     depends_on:
       ogmios:
