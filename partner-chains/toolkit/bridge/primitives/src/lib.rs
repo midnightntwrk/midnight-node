@@ -201,6 +201,26 @@ impl MainChainScripts {
 	}
 }
 
+/// Configuration of subminimal transfer stashing and flushing.
+#[derive(
+	Default,
+	Debug,
+	Clone,
+	PartialEq,
+	Eq,
+	TypeInfo,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	MaxEncodedLen,
+	Serialize,
+	Deserialize,
+)]
+pub struct SubminimalTransfersConfig {
+	/// Threshold of stashed transfers flush
+	pub subminimal_transfers_flush_threshold: u64,
+}
+
 /// Type containing all information needed to process a single transfer incoming from
 /// main chain, corresponding to a single UTXO on Cardano
 #[derive(

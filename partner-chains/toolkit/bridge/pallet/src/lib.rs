@@ -238,7 +238,7 @@ pub mod pallet {
 	use sidechain_domain::McTxHash;
 	use sp_partner_chains_bridge::{
 		BridgeDataCheckpoint, INHERENT_IDENTIFIER, InherentError, MainChainScripts,
-		TokenBridgeTransfersV1, TransferRecipient,
+		SubminimalTransfersConfig, TokenBridgeTransfersV1, TransferRecipient,
 	};
 
 	/// Current version of the pallet
@@ -305,6 +305,10 @@ pub mod pallet {
 	pub type DataCheckpoint<T: Config> = StorageValue<_, BridgeDataCheckpoint, OptionQuery>;
 
 	#[pallet::storage]
+	pub type SubminimalTransfersConfiguration<T: Config> =
+		StorageValue<_, SubminimalTransfersConfig, ValueQuery>;
+
+	#[pallet::storage]
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
 
 	/// Genesis configuration of the pallet
@@ -314,13 +318,20 @@ pub mod pallet {
 		pub main_chain_scripts: Option<MainChainScripts>,
 		/// The initial data checkpoint. Chain Genesis UTXO is a good candidate for it.
 		pub initial_checkpoint: Option<McTxHash>,
+		/// Value of subminimal transfers configuration,
+		pub subminimal_transfers_config: SubminimalTransfersConfig,
 		#[allow(missing_docs)]
 		pub _marker: PhantomData<T>,
 	}
 
 	impl<T: Config> Default for GenesisConfig<T> {
 		fn default() -> Self {
-			Self { main_chain_scripts: None, initial_checkpoint: None, _marker: Default::default() }
+			Self {
+				main_chain_scripts: None,
+				initial_checkpoint: None,
+				subminimal_transfers_config: SubminimalTransfersConfig::default(),
+				_marker: Default::default(),
+			}
 		}
 	}
 
@@ -329,6 +340,7 @@ pub mod pallet {
 		fn build(&self) {
 			MainChainScriptsConfiguration::<T>::set(self.main_chain_scripts.clone());
 			DataCheckpoint::<T>::set(self.initial_checkpoint.map(BridgeDataCheckpoint::Tx));
+			SubminimalTransfersConfiguration::<T>::set(self.subminimal_transfers_config.clone());
 		}
 	}
 
@@ -384,10 +396,12 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			new_scripts: MainChainScripts,
 			data_checkpoint: BridgeDataCheckpoint,
+			subminimal_transfers_config: SubminimalTransfersConfig,
 		) -> DispatchResult {
 			T::GovernanceOrigin::ensure_origin(origin)?;
 			MainChainScriptsConfiguration::<T>::put(new_scripts);
 			DataCheckpoint::<T>::put(data_checkpoint);
+			SubminimalTransfersConfiguration::<T>::put(subminimal_transfers_config);
 			Ok(())
 		}
 	}
@@ -458,6 +472,11 @@ pub mod pallet {
 		/// Returns the current data checkpoint
 		pub fn get_data_checkpoint() -> Option<BridgeDataCheckpoint> {
 			DataCheckpoint::<T>::get()
+		}
+
+		/// Returns the value of subminimal transfers flush threshold
+		pub fn get_subminimal_transfers_config() -> SubminimalTransfersConfig {
+			SubminimalTransfersConfiguration::<T>::get()
 		}
 	}
 }

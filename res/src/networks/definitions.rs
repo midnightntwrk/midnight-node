@@ -18,7 +18,7 @@ use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
 use super::{
-	InitialAuthorityData, MainChainScripts, MessageConfig, MidnightNetwork,
+	C2MBridgeConfig, InitialAuthorityData, MainChainScripts, MessageConfig, MidnightNetwork,
 	PermissionedCandidatesConfig, RegisteredCandidatesAddresses,
 };
 
@@ -79,6 +79,12 @@ impl MidnightNetwork for UndeployedNetwork {
 		None
 	}
 
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig {
+		let config_str =
+			String::from_utf8_lossy(include_bytes!("../../dev/c2m-bridge-config.json"));
+		serde_json::from_str(&config_str).unwrap()
+	}
+
 	fn genesis_utxo(&self) -> &str {
 		"c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
 	}
@@ -116,6 +122,7 @@ pub struct CustomNetwork {
 	pub ics_config: IcsConfig,
 	pub reserve_config: ReserveConfig,
 	pub message_config: Option<MessageConfig>,
+	pub c2m_bridge_config: C2MBridgeConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -172,5 +179,9 @@ impl MidnightNetwork for CustomNetwork {
 
 	fn genesis_utxo(&self) -> &str {
 		&self.genesis_utxo
+	}
+
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig {
+		self.c2m_bridge_config.clone()
 	}
 }
