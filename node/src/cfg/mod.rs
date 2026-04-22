@@ -260,7 +260,8 @@ impl SubstrateCli for Cfg {
 						.chainspec_c2m_bridge_config
 						.as_ref()
 						.ok_or("c2m_bridge_config not configured")?,
-					validated_file::MAX_GENESIS_FILE_SIZE,
+					&Self::safe_read_opts()
+						.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
 				)?;
 
 				let c2m_bridge_config: C2MBridgeConfig =
