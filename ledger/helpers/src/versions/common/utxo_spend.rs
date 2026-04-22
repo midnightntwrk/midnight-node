@@ -129,7 +129,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		utxo_ids: &[UtxoId],
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				let owner = wallet.unshielded.signing_key().verifying_key();
 				let mut selected: Vec<UtxoSpendInfo<WalletSeed>> =
 					Vec::with_capacity(utxo_ids.len());
@@ -150,13 +150,13 @@ impl UtxoSpendInfo<WalletSeed> {
 								intent_hash,
 								output_no: output_number,
 								token_type,
-								seed,
+								seed: seed.clone(),
 							}))
 						})?;
 					total = total.saturating_add(utxo.0.value);
 					selected.push(UtxoSpendInfo {
 						value: utxo.0.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: utxo.0.type_,
 						intent_hash: Some(utxo.0.intent_hash),
 						output_number: Some(utxo.0.output_no),
@@ -166,7 +166,7 @@ impl UtxoSpendInfo<WalletSeed> {
 					UtxoSelectionError::InsufficientBalance {
 						required: required_value,
 						token_type,
-						seed,
+						seed: seed.clone(),
 					},
 				)?;
 				Ok((selected, change))

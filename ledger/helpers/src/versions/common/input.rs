@@ -86,7 +86,7 @@ impl InputInfo<WalletSeed> {
 		required_value: u128,
 		token_type: ShieldedTokenType,
 	) -> Result<(Vec<InputInfo<WalletSeed>>, u128), ShieldedCoinSelectionError> {
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			let matching_inputs: Vec<InputInfo<WalletSeed>> = wallet
 				.shielded
 				.state
@@ -94,7 +94,7 @@ impl InputInfo<WalletSeed> {
 				.iter()
 				.filter(|(_nullifier, coin)| coin.type_ == token_type)
 				.map(|(nullifier, coin)| InputInfo {
-					origin: seed,
+					origin: seed.clone(),
 					token_type,
 					value: coin.value,
 					nullifier: Some(nullifier),
@@ -104,7 +104,7 @@ impl InputInfo<WalletSeed> {
 				ShieldedCoinSelectionError::InsufficientBalance {
 					required: required_value,
 					token_type,
-					seed,
+					seed: seed.clone(),
 				},
 			)
 		})

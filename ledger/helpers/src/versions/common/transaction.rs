@@ -361,7 +361,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			let (new_spends, updated_state) =
 				wallet.dust.speculative_spend(remaining, ctime, params)?;
 			if !new_spends.is_empty() {
-				updated_states.insert(*seed, updated_state);
+				updated_states.insert(seed.clone(), updated_state);
 			}
 			for spend in new_spends {
 				remaining -= spend.v_fee;
