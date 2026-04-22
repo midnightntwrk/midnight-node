@@ -5,10 +5,10 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use zeroize::Zeroize;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
+use zeroize::Zeroize;
 pub(crate) mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
