@@ -5,6 +5,7 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
+use zeroize::Zeroize;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
@@ -44,6 +45,13 @@ impl core::fmt::Display for RelativePath {
 impl From<PathBuf> for RelativePath {
 	fn from(value: PathBuf) -> Self {
 		Self(value)
+	}
+}
+
+#[inline]
+fn zeroize_string(s: &mut String) {
+	unsafe {
+		std::ptr::write_bytes(s.as_mut_ptr(), 0, s.len());
 	}
 }
 
@@ -237,20 +245,23 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args
+		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
-				serialize_untagged(UnshieldedWallet::default(s).signing_key())
-					.map(|bytes| bytes.encode_hex::<String>())
+				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map_err(ToolkitJsError::ExecutionError)?;
+				let hex = bytes.encode_hex::<String>();
+				bytes.zeroize();
+				Ok::<String, ToolkitJsError>(hex)
 			})
-			.transpose()
-			.map_err(ToolkitJsError::ExecutionError)?;
+			.transpose()?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
+		signing_key.as_mut().map(zeroize_string);
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -349,7 +360,7 @@ impl ToolkitJs {
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		let new_authority = match command {
+		let mut new_authority = match command {
 			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
 				Some(new_authority.as_bytes().encode_hex::<String>())
 			},
@@ -365,6 +376,7 @@ impl ToolkitJs {
 			}
 		}
 		self.execute_js(&cmd_args)?;
+		new_authority.as_mut().map(zeroize_string);
 		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
