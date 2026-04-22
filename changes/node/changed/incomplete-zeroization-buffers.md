@@ -10,3 +10,4 @@ Locations: util/toolkit/src/toolkit_js/mod.rs#L234, L345
 
 Issue: https://github.com/midnightntwrk/midnight-security/issues/53
 JIRA: https://shielded.atlassian.net/browse/PM-22034
+PR: https://github.com/midnightntwrk/midnight-node/pull/1379
