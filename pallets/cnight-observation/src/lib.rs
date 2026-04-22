@@ -151,6 +151,10 @@ pub mod pallet {
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: crate::weights::WeightInfo;
+		/// Maximum number of mapping entries allowed per Cardano reward address.
+		/// Prevents unbounded storage growth via repeated registrations from a single address.
+		#[pallet::constant]
+		type MaxMappingsPerAddress: Get<u32>;
 	}
 
 	#[pallet::event]
@@ -194,8 +198,13 @@ pub mod pallet {
 		StorageValue<_, BoundedVec<u8, ConstU32<32>>, ValueQuery>;
 
 	#[pallet::storage]
-	pub type Mappings<T: Config> =
-		StorageMap<_, Blake2_128Concat, CardanoRewardAddressBytes, Vec<MappingEntry>, ValueQuery>;
+	pub type Mappings<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		CardanoRewardAddressBytes,
+		BoundedVec<MappingEntry, T::MaxMappingsPerAddress>,
+		ValueQuery,
+	>;
 
 	// TODO: Read from ledger state directly ?
 	#[pallet::storage]
@@ -294,7 +303,11 @@ pub mod pallet {
 			);
 
 			for (k, v) in &self.config.mappings {
-				Mappings::<T>::insert(k, v.clone());
+				let bounded: BoundedVec<MappingEntry, T::MaxMappingsPerAddress> = v
+					.clone()
+					.try_into()
+					.expect("Genesis mappings entry exceeds MaxMappingsPerAddress");
+				Mappings::<T>::insert(k, bounded);
 			}
 
 			for (k, v) in &self.config.utxo_owners {
@@ -372,7 +385,7 @@ pub mod pallet {
 		fn handle_registration(
 			header: &ObservedUtxoHeader,
 			data: RegistrationData,
-		) -> Option<(CardanoRewardAddressBytes, Vec<MappingEntry>)> {
+		) -> Option<(CardanoRewardAddressBytes, BoundedVec<MappingEntry, T::MaxMappingsPerAddress>)> {
 			let RegistrationData { cardano_reward_address, dust_public_key } = data;
 
 			let new_reg = MappingEntry {
@@ -385,7 +398,14 @@ pub mod pallet {
 			let previous_registration = Self::get_registration(&cardano_reward_address);
 
 			let mut mappings = Mappings::<T>::get(cardano_reward_address);
-			mappings.push(new_reg.clone());
+			if mappings.try_push(new_reg.clone()).is_err() {
+				log::warn!(
+					"MaxMappingsPerAddress ({}) exceeded for {:?}; registration dropped",
+					T::MaxMappingsPerAddress::get(),
+					cardano_reward_address
+				);
+				return None;
+			}
 			Mappings::<T>::insert(cardano_reward_address, mappings.clone());
 
 			let is_registered = Self::is_registered(&cardano_reward_address);

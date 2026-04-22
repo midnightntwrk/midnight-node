@@ -833,9 +833,15 @@ parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
 
+/// Maximum number of mapping entries per Cardano reward address.
+/// A valid registration requires exactly 1 entry; values > 1 invalidate it.
+/// This cap prevents unbounded storage growth from repeated registrations.
+pub const MAX_MAPPINGS_PER_ADDRESS: u32 = 10;
+
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Runtime>;
+	type MaxMappingsPerAddress = ConstU32<MAX_MAPPINGS_PER_ADDRESS>;
 }
 
 impl pallet_partner_chains_bridge::Config for Runtime {
