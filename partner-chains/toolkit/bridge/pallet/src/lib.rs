@@ -340,6 +340,7 @@ pub mod pallet {
 		fn build(&self) {
 			MainChainScriptsConfiguration::<T>::set(self.main_chain_scripts.clone());
 			DataCheckpoint::<T>::set(self.initial_checkpoint.map(BridgeDataCheckpoint::Tx));
+			SubminimalTransfersConfiguration::<T>::set(self.subminimal_transfers_config.clone());
 		}
 	}
 
