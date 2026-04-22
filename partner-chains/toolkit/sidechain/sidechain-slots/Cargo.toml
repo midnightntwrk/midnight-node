@@ -1,6 +1,6 @@
 [package]
 name = "sidechain-slots"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 description = "Sidechain slots and epoch calcuations"
 authors.workspace = true

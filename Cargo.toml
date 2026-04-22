@@ -28,6 +28,9 @@ members = [
     "tests/e2e",
     "relay",
     "docs",
+    "partner-chains/demo/node",
+    "partner-chains/toolkit/committee-selection/selection-simulator",
+    "partner-chains/toolkit/data-sources/cli",
 ]
 [workspace.package]
 license-file = "LICENSE"
@@ -141,8 +144,6 @@ sidechain-domain = { default-features = false, path = "partner-chains/toolkit/si
 authority-selection-inherents = { default-features = false, path = "partner-chains/toolkit/committee-selection/authority-selection-inherents" }
 sidechain-slots = { default-features = false, path = "partner-chains/toolkit/sidechain/sidechain-slots" }
 plutus = { default-features = false, path = "partner-chains/toolkit/utils/plutus" }
-#pallet-block-rewards = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
-#sp-block-rewards = { default-features = false, git = "https://github.com/midnightntwrk/partner-chains", tag = "v1.8.1" }
 sp-session-validator-management = { default-features = false, path = "partner-chains/toolkit/committee-selection/primitives" }
 sp-session-validator-management-query = { default-features = false, path = "partner-chains/toolkit/committee-selection/query" }
 time-source = { default-features = false, path = "partner-chains/toolkit/utils/time-source" }
@@ -244,7 +245,7 @@ scale-info = { version = "2.11.1", default-features = false, features = ["derive
 scale-info-derive = { version = "2.11.1", default-features = false }
 
 env_logger = "0.11.8"
-itertools = { default-features = false, version = "0.14.0", features = ["use_alloc"] }
+itertools = { default-features = false, version = "0.14.0", features = ["use_alloc", "use_std"] }
 
 jsonrpsee = { version = "0.24.7", features = ["client-core", "server", "macros"] }
 
@@ -321,8 +322,10 @@ testcontainers = { version = "0.27" }
 time = { version = "0.3.47", default-features = false }
 tokio-retry = { version = "0.3" }
 uplc = { version = "1.1.21" }
+whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindgen-update" }
 
 # Partner-chains local crates (not directly used but needed for workspace resolution)
+partner-chains-demo-runtime = { path = "partner-chains/demo/runtime", default-features = false }
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
 partner-chains-smart-contracts-commands = { path = "partner-chains/toolkit/smart-contracts/commands", default-features = false }
 sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-block-search", default-features = false }
@@ -331,6 +334,14 @@ pallet-governed-map = { path = "partner-chains/toolkit/governed-map/pallet", def
 sp-block-participation = { path = "partner-chains/toolkit/block-participation/primitives", default-features = false }
 sp-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/primitives", default-features = false }
 sp-governed-map = { path = "partner-chains/toolkit/governed-map/primitives", default-features = false }
+pallet-block-participation = { path = "partner-chains/toolkit/block-participation/pallet", default-features = false }
+pallet-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/pallet", default-features = false }
+sp-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/primitives", default-features = false }
+pallet-block-producer-fees-rpc = { path = "partner-chains/toolkit/block-producer-fees/rpc", default-features = false }
+pallet-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/pallet", default-features = false }
+pallet-block-producer-metadata-rpc = { path = "partner-chains/toolkit/block-producer-metadata/rpc", default-features = false }
+pallet-block-production-log = { path = "partner-chains/toolkit/block-production-log/pallet", default-features = false }
+sp-block-production-log = { path = "partner-chains/toolkit/block-production-log/primitives", default-features = false }
 
 # Substrate deps needed by partner-chains
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
@@ -341,7 +352,12 @@ sp-consensus = { default-features = false, git = "https://github.com/paritytech/
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 
-whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindgen-update" }
+# Substrate deps needed by partner-chains demo node and runtime
+pallet-transaction-payment-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
+pallet-sudo = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
+pallet-transaction-payment = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
+pallet-transaction-payment-rpc-runtime-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
+sp-weights = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 
 [profile.release]
 panic = "unwind"

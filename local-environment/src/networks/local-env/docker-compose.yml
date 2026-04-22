@@ -172,6 +172,7 @@ services:
       -c ssl=on
       -c ssl_cert_file=/etc/ssl/postgres/server.crt
       -c ssl_key_file=/etc/ssl/postgres/server.key
+      -c max_connections=120
       -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -458,7 +459,7 @@ services:
 
   midnight-setup:
     container_name: midnight-setup
-    image: ${MIDNIGHT_NODE_IMAGE}
+    image: ghcr.io/midnightntwrk/midnight-node:1.0.0-e99482ac81b6-amd64
     platform: ${ARCHITECTURE}
     depends_on:
       ogmios:

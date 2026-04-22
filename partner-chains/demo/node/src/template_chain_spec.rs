@@ -5,6 +5,7 @@ use partner_chains_demo_runtime::{
 	SudoConfig, SystemConfig, TestHelperPalletConfig,
 };
 use sc_service::ChainType;
+use sp_core::serde::de::Error;
 
 /// Produces template chain spec for Partner Chains.
 /// This code should be run by `partner-chains-node wizards chain-spec`, to produce JSON chain spec file.
@@ -52,7 +53,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		},
 	};
 	let genesis_json = serde_json::to_value(runtime_genesis_config)
-		.expect("Genesis config must be serialized correctly");
+		.map_err(|_| envy::Error::custom("Could not serialize genesis config"))?;
 	Ok(ChainSpec::builder(runtime_wasm(), None)
 		.with_name("Partner Chains Template")
 		.with_id("partner_chains_template")
