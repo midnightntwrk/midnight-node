@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::cfg::validated_file::SafeReadOpts;
+
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 use clap::Parser;
 use documented::{Documented, DocumentedFields as _};
@@ -50,26 +52,18 @@ impl SubstrateCfg {
 	pub fn argv(&self) -> Vec<String> {
 		[&["midnight-node".to_string()], &self.args[..], &self.append_args[..]].concat()
 	}
-}
 
-impl CfgHelp for SubstrateCfg {
-	fn help(cur_cfg: Option<&config::Config>) -> Result<Vec<HelpField>, CfgError> {
-		cfg_help!(cur_cfg, Self)
-	}
-}
-
-impl TryFrom<SubstrateCfg> for RunCmd {
-	type Error = sc_cli::Error;
-
-	fn try_from(value: SubstrateCfg) -> Result<Self, Self::Error> {
+	// Ignore here - the large Result is inherited from Substrate
+	#[allow(clippy::result_large_err)]
+	pub fn into_run_cmd(self, safe_read_opts: &SafeReadOpts) -> sc_cli::Result<RunCmd> {
 		let default_run_cmd = RunCmd::parse_from(&["midnight-node".to_string()]);
 
 		let argv: Vec<String> =
-			value.argv().into_iter().filter(|e| e != "--filter-deploy-txs").collect();
+			self.argv().into_iter().filter(|e| e != "--filter-deploy-txs").collect();
 
 		let mut run_cmd = RunCmd::parse_from(argv);
-		if run_cmd.shared_params.base_path.is_none() && value.base_path.is_some() {
-			run_cmd.shared_params.base_path = value.base_path.map(|p| p.into());
+		if run_cmd.shared_params.base_path.is_none() && self.base_path.is_some() {
+			run_cmd.shared_params.base_path = self.base_path.map(|p| p.into());
 		}
 		if run_cmd.network_params.node_key_params.node_key.is_some() {
 			// NOTE: we can't use `log` here since it's not yet initialized in the main thread
@@ -77,31 +71,34 @@ impl TryFrom<SubstrateCfg> for RunCmd {
 				"Warning: NODE_KEY passed as a CLI arg is not recommended. Use NODE_KEY_FILE env-var instead."
 			);
 		}
-		if let Some(filepath) = value.node_key_file {
-			let node_key = super::validated_file::safe_read_to_string(
-				&filepath,
-				super::validated_file::MAX_GENESIS_FILE_SIZE,
-			)
-			.map(|s| s.trim().to_string())
-			.map_err(sc_cli::Error::Input)?;
+		if let Some(filepath) = self.node_key_file {
+			let node_key = super::validated_file::safe_read_to_string(&filepath, safe_read_opts)
+				.map(|s| s.trim().to_string())
+				.map_err(sc_cli::Error::Input)?;
 			run_cmd.network_params.node_key_params.node_key = Some(node_key);
 		}
-		if run_cmd.shared_params.chain.is_none() && value.chain.is_some() {
-			run_cmd.shared_params.chain = value.chain;
+		if run_cmd.shared_params.chain.is_none() && self.chain.is_some() {
+			run_cmd.shared_params.chain = self.chain;
 		}
 		if !run_cmd.validator {
-			run_cmd.validator = value.validator;
+			run_cmd.validator = self.validator;
 		}
-		for bootnode in value.bootnodes {
+		for bootnode in self.bootnodes {
 			run_cmd.network_params.bootnodes.push(bootnode);
 		}
 		// This mostly guarantees --trie-cache-size in argv will take precendent
 		// The exception to this is when the user sets --trie-cache-size to the default value
 		if run_cmd.import_params.trie_cache_size == default_run_cmd.import_params.trie_cache_size
-			&& let Some(trie_cache_size) = value.trie_cache_size
+			&& let Some(trie_cache_size) = self.trie_cache_size
 		{
 			run_cmd.import_params.trie_cache_size = trie_cache_size;
 		}
 		Ok(run_cmd)
+	}
+}
+
+impl CfgHelp for SubstrateCfg {
+	fn help(cur_cfg: Option<&config::Config>) -> Result<Vec<HelpField>, CfgError> {
+		cfg_help!(cur_cfg, Self)
 	}
 }

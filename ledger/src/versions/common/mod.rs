@@ -665,7 +665,9 @@ where
 		let addr = api.deserialize::<ContractAddress>(contract_address)?;
 		let ledger = Self::get_ledger(api, state_key)?;
 
-		ledger.get_contract_state(addr).map_or(Ok(Vec::new()), f)
+		ledger
+			.get_contract_state(addr)
+			.map_or(Err(LedgerApiError::ContractNotPresent), f)
 	}
 
 	pub fn get_contract_state(

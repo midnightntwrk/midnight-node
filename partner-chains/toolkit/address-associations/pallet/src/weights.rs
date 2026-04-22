@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_address_associations.
@@ -73,7 +73,7 @@ impl WeightInfo for () {
 		//  Estimated: `3593`
 		// Minimum execution time: 84_000_000 picoseconds.
 		Weight::from_parts(85_000_000, 3593)
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().reads(3_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 }

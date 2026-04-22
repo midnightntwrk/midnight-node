@@ -14,3 +14,4 @@ chainspec_federated_authority_config = "res/perfnet/federated-authority-config.j
 chainspec_system_parameters_config = "res/perfnet/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/perfnet/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/perfnet/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/perfnet/c2m-bridge-config.json"
