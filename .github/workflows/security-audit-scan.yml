@@ -24,7 +24,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@c3d7101aa2728cbf8e1930480c0b00867d495db5
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -65,7 +65,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@c3d7101aa2728cbf8e1930480c0b00867d495db5
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
