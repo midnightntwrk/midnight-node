@@ -1,16 +1,9 @@
-use frame_support::traits::ConstU32;
-use frame_support::{
-	construct_runtime,
-	traits::{ConstU16, ConstU64},
-};
+use frame_support::{construct_runtime, derive_impl, traits::ConstU32};
 use frame_system::EnsureRoot;
 use midnight_node_ledger::types::Hash;
 use midnight_primitives::MidnightSystemTransactionExecutor;
-use sp_core::H256;
-use sp_runtime::{
-	AccountId32, BuildStorage,
-	traits::{BlakeTwo256, IdentityLookup},
-};
+use sp_io::TestExternalities;
+use sp_runtime::{AccountId32, BuildStorage};
 
 pub type Block = frame_system::mocking::MockBlock<Test>;
 pub type AccountId = AccountId32;
@@ -32,7 +25,6 @@ pub mod mock_pallet {
 	pub type Transfers<T: Config> = StorageValue<_, Vec<BoundedVec<u8, MaxTxLength>>, ValueQuery>;
 
 	#[pallet::storage]
-	#[pallet::unbounded]
 	pub type TransfersCount<T: Config> = StorageValue<_, u8, ValueQuery>;
 
 	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
@@ -56,37 +48,9 @@ construct_runtime! {
 
 impl mock_pallet::Config for Test {}
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl frame_system::Config for Test {
-	type BaseCallFilter = frame_support::traits::Everything;
-	type BlockWeights = ();
-	type BlockLength = ();
-	type DbWeight = ();
-	type RuntimeOrigin = RuntimeOrigin;
-	type RuntimeCall = RuntimeCall;
-	type Hash = H256;
-	type Hashing = BlakeTwo256;
-	type AccountId = AccountId;
-	type Lookup = IdentityLookup<Self::AccountId>;
-	type RuntimeEvent = RuntimeEvent;
-	type BlockHashCount = ConstU64<250>;
-	type Version = ();
-	type PalletInfo = PalletInfo;
-	type AccountData = ();
-	type OnNewAccount = ();
-	type OnKilledAccount = ();
-	type SystemWeightInfo = ();
-	type ExtensionsWeightInfo = ();
-	type SS58Prefix = ConstU16<42>;
-	type OnSetCode = ();
-	type MaxConsumers = ConstU32<16>;
 	type Block = Block;
-	type Nonce = u64;
-	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations = ();
-	type MultiBlockMigrator = ();
-	type PreInherents = ();
-	type PostInherents = ();
-	type PostTransactions = ();
 }
 
 impl crate::Config for Test {
@@ -95,5 +59,11 @@ impl crate::Config for Test {
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut t: TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	// Frame system drops events from block 0
+	t.execute_with(|| {
+		frame_system::Pallet::<Test>::set_block_number(1);
+	});
+	t
 }

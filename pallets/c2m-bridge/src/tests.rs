@@ -76,8 +76,9 @@ fn nonce_influences_addressed_transfers() {
 		C2MBridge::handle_incoming_transfer(addressed_transfer());
 		C2MBridge::handle_incoming_transfer(addressed_transfer());
 		let transfers = mock_pallet::Transfers::<Test>::get();
-		let t1 = transfers.first().unwrap();
-		let t2 = transfers.get(1).unwrap();
-		assert_ne!(t1, t2);
+		let [first, second] = transfers.as_slice() else {
+			panic!("expected exactly two transfers");
+		};
+		assert_ne!(first, second);
 	})
 }
