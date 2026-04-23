@@ -102,7 +102,7 @@ where
 	module.merge(
 		SidechainRpc::new(
 			client.clone(),
-			MainchainEpochConfig::read_from_env().unwrap(),
+			MainchainEpochConfig::read_from_env().map_err(|e| e.to_string())?,
 			data_sources.sidechain_rpc.clone(),
 			time_source.clone(),
 		)

@@ -16,10 +16,14 @@
 mod common;
 
 use clap::Parser;
-use common::test_image;
+use common::{
+	test_image,
+	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+};
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	commands::{contract_address, show_address},
+	tx_generator::builder::FUNDING_SEED,
 };
 use std::{path::Path, time::Duration};
 use testcontainers::{
@@ -375,4 +379,113 @@ async fn contract_ops() {
 	// 11. Fetch with postgres backend
 	let pg_url = postgres_url().await;
 	run_cli(&["fetch", "--fetch-cache", pg_url, "-s", url]).await;
+}
+
+/// Verifies that a private witness (secret key) used in ZK proofs never leaks
+/// into on-chain transaction data. Deploys a bulletin board contract, posts a
+/// message using the secret key as a private witness, then asserts the key does
+/// not appear anywhere in the serialized transactions.
+#[tokio::test]
+async fn bboard_private_witness_not_leaked() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	if !helper.prerequisites_ready() {
+		return;
+	}
+
+	let secret_key = "deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011";
+
+	println!("1. Generating coin-public address");
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+	println!("   coin-public: {coin_public}");
+
+	println!("2. Compiling bboard contract");
+	let bboard_source = helper.load_contract_file("bboard/bboard.compact");
+	let compiled_dir = helper
+		.compile_contract(&bboard_source, "bboard")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"bboard/config.template.ts",
+		&[("SECRET_KEY", secret_key), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "bboard/contract.config.ts");
+	println!("   compiled to: {}", compiled_dir.display());
+
+	println!("3. Deploying bboard contract");
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let bboard_addr =
+		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+	println!("   bboard address: {bboard_addr}");
+
+	println!("4. Fetching contract state");
+	let state_file = helper.work_dir.path().join("bboard_state.mn");
+	helper
+		.contract_state(&bboard_addr, &state_file)
+		.await
+		.expect("contract state fetch failed");
+
+	println!("5. Calling post() with secret key as private witness");
+	let post = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_file,
+			&deploy.private_state,
+			&bboard_addr,
+			CircuitCall {
+				circuit_id: "post",
+				call_args: &["\"Hello from Rust e2e! Privacy verification test.\""],
+			},
+		)
+		.await
+		.expect("generate post intent failed");
+	let post_tx = helper
+		.send_intent(&post.intent, &compiled_dir, FUNDING_SEED, Some(&post.zswap_state))
+		.await
+		.expect("send post intent failed");
+	helper.submit_tx(&post_tx).await.expect("submit post tx failed");
+	println!("   post() accepted on-chain");
+
+	println!("6. Verifying post() transaction does not contain secret key");
+	helper.assert_secret_not_in_tx(&post_tx, secret_key, "post()");
+
+	println!("7. Fetching updated contract state");
+	let state_file_2 = helper.work_dir.path().join("bboard_state_2.mn");
+	helper
+		.contract_state(&bboard_addr, &state_file_2)
+		.await
+		.expect("contract state fetch failed");
+
+	println!("8. Calling takeDown() with same secret key");
+	let takedown = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_file_2,
+			&post.private_state,
+			&bboard_addr,
+			CircuitCall { circuit_id: "takeDown", call_args: &[] },
+		)
+		.await
+		.expect("generate takeDown intent failed");
+	let takedown_tx = helper
+		.send_intent(&takedown.intent, &compiled_dir, FUNDING_SEED, Some(&takedown.zswap_state))
+		.await
+		.expect("send takeDown intent failed");
+	helper.submit_tx(&takedown_tx).await.expect("submit takeDown tx failed");
+	println!("   takeDown() accepted on-chain");
+
+	println!("9. Verifying takeDown() transaction does not contain secret key");
+	helper.assert_secret_not_in_tx(&takedown_tx, secret_key, "takeDown()");
 }

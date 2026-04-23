@@ -17,7 +17,7 @@ use authority_selection_inherents::{
 };
 use frame_support::genesis_builder_helper::{build_state, get_preset};
 use frame_support::inherent::ProvideInherent;
-use frame_support::weights::constants::RocksDbWeight as RuntimeDbWeight;
+use frame_support::weights::constants::ParityDbWeight as RuntimeDbWeight;
 use frame_support::{
 	BoundedVec, construct_runtime, parameter_types,
 	traits::{ConstBool, ConstU8, ConstU16, ConstU32, ConstU64, ConstU128},
@@ -61,8 +61,10 @@ use sp_version::RuntimeVersion;
 use sp_weights::Weight;
 
 // Make the WASM binary available.
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "wasm-runtime"))]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
+#[cfg(all(feature = "std", not(feature = "wasm-runtime")))]
+pub const WASM_BINARY: Option<&[u8]> = None;
 
 pub mod genesis_config_presets;
 
@@ -688,6 +690,7 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Runtime>;
 	type Recipient = AccountId;
 	type TransferHandler = TestHelperPallet;
+	type HandlerResult = ();
 	type MaxTransfersPerBlock = MaxTransfersPerBlock;
 	type WeightInfo = ();
 
@@ -869,10 +872,13 @@ impl_runtime_apis! {
 	}
 
 	impl sp_session::SessionKeys<Block> for Runtime {
-		fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
+		fn generate_session_keys(
+			owner: Vec<u8>,
+			seed: Option<Vec<u8>>,
+		) -> sp_session::OpaqueGeneratedSessionKeys {
 			// despite being named "generate" this function also adds generated keys to local keystore
-			opaque::CrossChainKey::generate(seed.clone());
-			opaque::SessionKeys::generate(seed)
+			let _ = opaque::CrossChainKey::generate(&owner, seed.clone());
+			opaque::SessionKeys::generate(&owner, seed).into()
 		}
 
 		fn decode_session_keys(

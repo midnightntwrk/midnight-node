@@ -138,10 +138,16 @@ pub struct ProtocolParametersResponse {
 	pub stake_pool_deposit: OgmiosValue,
 	/// Amount of lovelace required to register a stake credential.
 	pub stake_credential_deposit: OgmiosValue,
+	/// Maximum block body size
+	pub max_block_body_size: OgmiosBytesSize,
+	/// Maximum block header size
+	pub max_block_header_size: OgmiosBytesSize,
 	/// Maximum size limit for the value field in transaction outputs.
 	pub max_value_size: OgmiosBytesSize,
 	/// Maximum size limit for the transaction body.
 	pub max_transaction_size: OgmiosBytesSize,
+	/// Minimal stake pool cost
+	pub min_stake_pool_cost: OgmiosValue,
 	/// Additional transaction fee per byte of output data (in lovelace). Also called coinsPerUTxOWord or coinsPerUTxOByte
 	pub min_utxo_deposit_coefficient: u64,
 	/// Pricing for Plutus script execution resources.
@@ -154,6 +160,10 @@ pub struct ProtocolParametersResponse {
 	pub collateral_percentage: u32,
 	/// Cost of reference scripts.
 	pub min_fee_reference_scripts: ReferenceScriptsCosts,
+	/// Per transaction limits
+	pub max_execution_units_per_transaction: ScriptExecutionPriceLimits,
+	/// Per block limits
+	pub max_execution_units_per_block: ScriptExecutionPriceLimits,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
@@ -165,6 +175,15 @@ pub struct ScriptExecutionPrices {
 	#[serde(deserialize_with = "crate::types::parse_fraction_ratio_u64")]
 	/// Fee per CPU unit.
 	pub cpu: fraction::Ratio<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
+/// Represents the pricing for Plutus script execution limits.
+pub struct ScriptExecutionPriceLimits {
+	/// Limit of memory unit.s
+	pub memory: u64,
+	/// Limit of CPU units.
+	pub cpu: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]

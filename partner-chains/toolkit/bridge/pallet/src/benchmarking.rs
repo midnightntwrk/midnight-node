@@ -18,6 +18,9 @@ pub trait BenchmarkHelper<T: crate::Config> {
 
 	/// Should return a [BridgeDataCheckpoint]
 	fn data_checkpoint() -> BridgeDataCheckpoint;
+
+	/// Should return a [SubminimalTransfersConfig] for benchmark/benchmark tests
+	fn subminimal_transfers_config() -> SubminimalTransfersConfig;
 }
 
 impl<T: crate::Config> BenchmarkHelper<T> for ()
@@ -25,15 +28,17 @@ where
 	T::Recipient: UncheckedFrom<H256>,
 {
 	fn transfers(t: u32) -> BoundedVec<BridgeTransferV1<T::Recipient>, T::MaxTransfersPerBlock> {
-		use BridgeTransferV1::*;
-
 		let recipient = T::Recipient::unchecked_from(Default::default());
-		let tx_hash = McTxHash::default();
+		let mc_tx_hash = McTxHash::default();
 
 		let transfers = alloc::vec![
-			UserTransfer { token_amount: 1000, recipient },
-			ReserveTransfer { token_amount: 1000 },
-			InvalidTransfer { token_amount: 1000, tx_hash },
+			BridgeTransferV1 {
+				amount: 1000,
+				mc_tx_hash,
+				recipient: TransferRecipient::Address { recipient }
+			},
+			BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient: TransferRecipient::Reserve },
+			BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient: TransferRecipient::Invalid },
 		]
 		.into_iter()
 		.cycle()
@@ -46,6 +51,10 @@ where
 	fn data_checkpoint() -> BridgeDataCheckpoint {
 		BridgeDataCheckpoint::Block(McBlockNumber(0))
 	}
+
+	fn subminimal_transfers_config() -> SubminimalTransfersConfig {
+		SubminimalTransfersConfig { subminimal_transfers_flush_threshold: 333333 }
+	}
 }
 
 #[benchmarks]
@@ -57,7 +66,8 @@ mod benchmarks {
 		assert_ok!(Pallet::<T>::set_main_chain_scripts(
 			RawOrigin::Root.into(),
 			T::BenchmarkHelper::main_chain_scripts(),
-			T::BenchmarkHelper::data_checkpoint()
+			T::BenchmarkHelper::data_checkpoint(),
+			T::BenchmarkHelper::subminimal_transfers_config(),
 		));
 
 		let transfers = T::BenchmarkHelper::transfers(t);
@@ -71,9 +81,10 @@ mod benchmarks {
 	fn set_main_chain_scripts() {
 		let new_main_chain_scripts = T::BenchmarkHelper::main_chain_scripts();
 		let data_checkpoint = T::BenchmarkHelper::data_checkpoint();
+		let subminimal_transfers_config = T::BenchmarkHelper::subminimal_transfers_config();
 
 		#[extrinsic_call]
-		_(RawOrigin::Root, new_main_chain_scripts, data_checkpoint);
+		_(RawOrigin::Root, new_main_chain_scripts, data_checkpoint, subminimal_transfers_config);
 	}
 
 	impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);

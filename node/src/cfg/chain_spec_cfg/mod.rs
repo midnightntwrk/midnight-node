@@ -97,6 +97,12 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_message_config: Option<String>,
+
+	/// Cardano-to-Midnight bridge genesis config file path e.g. mainnet/c2m-bridge-config.json
+	/// Required to set bridge configuration.
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_c2m_bridge_config: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {

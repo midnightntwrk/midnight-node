@@ -79,7 +79,7 @@ program
   .command("snapshot <network>")
   .option(
     "--bootnode <name>",
-    "Name of the bootnode statefulset to snapshot (default midnight-node-boot-01)",
+    "Name of the bootnode statefulset to snapshot (default: from network config, or midnight-node-boot-01)",
   )
   .option("--pvc <name>", "Explicit PVC name to mount when snapshotting")
   .option(

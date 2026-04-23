@@ -9,6 +9,7 @@ use sc_service::ChainType;
 use sidechain_domain::*;
 use sidechain_slots::SlotsPerEpoch;
 use sp_core::bytes::from_hex;
+use sp_core::serde::de::Error;
 use sp_core::{ed25519, sr25519};
 use std::str::FromStr;
 
@@ -50,14 +51,15 @@ pub fn development_config() -> Result<ChainSpec, envy::Error> {
 				AccountId::from_str(
 					"0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
 				)
-				.unwrap(),
+				.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 				AccountId::from_str(
 					"0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
 				)
-				.unwrap(),
+				.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 				// SDETs test accounts, keys are in e2e-tests/secrets
 				// negative-test
-				AccountId::from_str("5F1N52dZx48UpXNLtcCzSMHZEroqQDuYKfidg46Tp37SjPcE").unwrap(),
+				AccountId::from_str("5F1N52dZx48UpXNLtcCzSMHZEroqQDuYKfidg46Tp37SjPcE")
+					.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 			],
 			true,
 		)?)
@@ -217,5 +219,6 @@ pub fn testnet_genesis(
 		},
 	};
 
-	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
+	serde_json::to_value(config)
+		.map_err(|_| envy::Error::custom("Could not serialize genesis config"))
 }

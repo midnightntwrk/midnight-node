@@ -61,71 +61,71 @@ pub enum Command {
 pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
 	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
-	contract_address: ContractAddress,
+	pub contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_onchain_state: RelativePath,
+	pub input_onchain_state: RelativePath,
 	/// Input file containing the private circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_private_state: RelativePath,
+	pub input_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' is stored.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub input_zswap_state: Option<RelativePath>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
 	/// The output file of the on-chain (public) state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_onchain_state: Option<RelativePath>,
+	pub output_onchain_state: Option<RelativePath>,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_result: Option<RelativePath>,
+	pub output_result: Option<RelativePath>,
 	/// Name of the circuit to invoke
-	circuit_id: String,
+	pub circuit_id: String,
 	/// Arguments to pass to the circuit
-	call_args: Vec<String>,
+	pub call_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Contract maintenance authority seed.
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	authority_seed: Option<WalletSeed>,
+	pub authority_seed: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// Arguments to pass to the contract constructor
-	constructor_args: Vec<String>,
+	pub constructor_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
