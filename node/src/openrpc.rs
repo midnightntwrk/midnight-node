@@ -421,6 +421,7 @@ fn build_substrate_stub(name: &str) -> Value {
 			"name": "result",
 			"schema": {}
 		},
+		"examples": examples_for_method(name),
 		"description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
 	});
 
@@ -517,6 +518,410 @@ fn is_substrate_subscription(name: &str) -> bool {
 			| "grandpa_subscribeJustifications"
 			| "beefy_subscribeJustifications"
 	)
+}
+
+fn examples_for_method(name: &str) -> Value {
+	json!([{
+		"name": format!("{}_example", name),
+		"summary": "Minimal JSON-RPC example",
+		"params": example_params_for_method(name),
+		"result": example_result_for_method(name),
+	}])
+}
+
+fn example_params_for_method(name: &str) -> Value {
+	let block_hash = "0x1111111111111111111111111111111111111111111111111111111111111111";
+	let storage_key = "0x3a636f6465";
+	let extrinsic = "0x280402000b";
+	let peer_id = "12D3KooWExamplePeerId1111111111111111111111111111111111";
+	let multiaddr =
+		"/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWExamplePeerId1111111111111111111111111111111111";
+
+	match name {
+		"midnight_contractState" => json!([
+			example_param("contract_address", json!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
+			example_param("at", json!(block_hash)),
+		]),
+		"midnight_zswapStateRoot"
+		| "midnight_ledgerStateRoot"
+		| "midnight_ledgerVersion"
+		| "systemParameters_getTermsAndConditions"
+		| "systemParameters_getDParameter" => {
+			json!([example_param("at", json!(block_hash))])
+		},
+		"systemParameters_getAriadneParameters" => json!([
+			example_param("epoch_number", json!(42)),
+			example_param("d_parameter_at", json!(block_hash)),
+		]),
+		"network_peerReputation" | "network_unbanPeer" => {
+			json!([example_param("peer_id", json!(peer_id))])
+		},
+		"sidechain_getEpochCommittee" | "sidechain_getAriadneParameters" => {
+			json!([example_param("epoch_number", json!(42))])
+		},
+		"sidechain_getRegistrations" => json!([
+			example_param("mc_epoch_number", json!(42)),
+			example_param(
+				"mc_public_key",
+				json!("0x2222222222222222222222222222222222222222222222222222222222222222"),
+			),
+		]),
+		"system_addReservedPeer" | "system_removeReservedPeer" => {
+			json!([example_param("peer", json!(multiaddr))])
+		},
+		"system_accountNextIndex" => {
+			json!([example_param(
+				"accountId",
+				json!("5GrwvaEF5zXb26Fz9rcQpDWS5M7vQp93bYj6dBzU1gk9fH8Z")
+			)])
+		},
+		"system_dryRun" => json!([
+			example_param("extrinsic", json!(extrinsic)),
+			example_param("at", json!(block_hash)),
+		]),
+		"author_submitExtrinsic" | "author_submitAndWatchExtrinsic" => {
+			json!([example_param("extrinsic", json!(extrinsic))])
+		},
+		"author_removeExtrinsic" => {
+			json!([example_param("bytesOrHash", json!(extrinsic))])
+		},
+		"author_hasKey" => json!([
+			example_param(
+				"publicKey",
+				json!("0x3333333333333333333333333333333333333333333333333333333333333333"),
+			),
+			example_param("keyType", json!("aura")),
+		]),
+		"author_hasSessionKeys" => {
+			json!([example_param("sessionKeys", json!("0x44444444444444444444444444444444"))])
+		},
+		"author_insertKey" => json!([
+			example_param("keyType", json!("aura")),
+			example_param("suri", json!("//Alice")),
+			example_param(
+				"publicKey",
+				json!("0x3333333333333333333333333333333333333333333333333333333333333333"),
+			),
+		]),
+		"chain_getHeader" | "chain_getBlock" => {
+			json!([example_param("hash", json!(block_hash))])
+		},
+		"chain_getBlockHash" => {
+			json!([example_param("blockNumber", json!(1))])
+		},
+		"state_call" => json!([
+			example_param("method", json!("Core_version")),
+			example_param("data", json!("0x")),
+			example_param("at", json!(block_hash)),
+		]),
+		"state_getKeys" => {
+			json!([example_param("prefix", json!("0x")), example_param("at", json!(block_hash)),])
+		},
+		"state_getKeysPaged" => json!([
+			example_param("prefix", json!("0x")),
+			example_param("count", json!(10)),
+			example_param("startKey", Value::Null),
+			example_param("at", json!(block_hash)),
+		]),
+		"state_getStorage" | "state_getStorageHash" | "state_getStorageSize" => json!([
+			example_param("key", json!(storage_key)),
+			example_param("at", json!(block_hash)),
+		]),
+		"state_getRuntimeVersion" => {
+			json!([example_param("at", json!(block_hash))])
+		},
+		"state_queryStorage" => json!([
+			example_param("keys", json!([storage_key])),
+			example_param("fromBlock", json!(block_hash)),
+			example_param("toBlock", json!(block_hash)),
+		]),
+		"state_queryStorageAt" => json!([
+			example_param("keys", json!([storage_key])),
+			example_param("at", json!(block_hash)),
+		]),
+		"state_getReadProof" => json!([
+			example_param("keys", json!([storage_key])),
+			example_param("at", json!(block_hash)),
+		]),
+		"state_subscribeStorage" => {
+			json!([example_param("keys", json!([storage_key]))])
+		},
+		"state_traceBlock" | "grandpa_proveFinality" => {
+			json!([example_param("hash", json!(block_hash))])
+		},
+		"mmr_generateProof" => json!([
+			example_param("blockNumbers", json!([1])),
+			example_param("bestKnownBlockNumber", Value::Null),
+			example_param("at", json!(block_hash)),
+		]),
+		"midnight_apiVersions"
+		| "network_peerReputations"
+		| "sidechain_getParams"
+		| "sidechain_getStatus"
+		| "system_name"
+		| "system_version"
+		| "system_chain"
+		| "system_chainType"
+		| "system_properties"
+		| "system_health"
+		| "system_localPeerId"
+		| "system_localListenAddresses"
+		| "system_peers"
+		| "system_nodeRoles"
+		| "system_syncState"
+		| "system_reservedPeers"
+		| "author_pendingExtrinsics"
+		| "author_rotateKeys"
+		| "chain_getFinalizedHead"
+		| "chain_subscribeNewHeads"
+		| "chain_subscribeFinalizedHeads"
+		| "chain_subscribeAllHeads"
+		| "state_getMetadata"
+		| "state_subscribeRuntimeVersion"
+		| "grandpa_roundState"
+		| "grandpa_subscribeJustifications"
+		| "mmr_root"
+		| "beefy_getFinalizedHead"
+		| "beefy_subscribeJustifications" => json!([]),
+		_ => json!([]),
+	}
+}
+
+fn example_result_for_method(name: &str) -> Value {
+	let block_hash = "0x1111111111111111111111111111111111111111111111111111111111111111";
+	let extrinsic_hash = "0x2222222222222222222222222222222222222222222222222222222222222222";
+	let storage_key = "0x3a636f6465";
+	let peer_id = "12D3KooWExamplePeerId1111111111111111111111111111111111";
+	let peer_info = json!({
+		"peerId": peer_id,
+		"roles": "FULL",
+		"bestHash": block_hash,
+		"bestNumber": 1,
+		"reputation": 256,
+		"isBanned": false
+	});
+	let d_parameter = json!({
+		"numPermissionedCandidates": 1,
+		"numRegisteredCandidates": 2
+	});
+	let ariadne_parameters = json!({
+		"permissionedCandidates": [],
+		"candidateRegistrations": {},
+		"dParameter": d_parameter.clone()
+	});
+	let header = json!({
+		"parentHash": block_hash,
+		"number": "0x1",
+		"stateRoot": block_hash,
+		"extrinsicsRoot": block_hash,
+		"digest": { "logs": [] }
+	});
+
+	match name {
+		"midnight_contractState" => example_result("state", json!("0x")),
+		"midnight_zswapStateRoot" | "midnight_ledgerStateRoot" => {
+			example_result("root", json!([0, 1, 2, 3]))
+		},
+		"midnight_apiVersions" => example_result("versions", json!([2])),
+		"midnight_ledgerVersion" => example_result("version", json!("1.0.0")),
+		"systemParameters_getTermsAndConditions" => example_result(
+			"termsAndConditions",
+			json!({
+				"hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+				"url": "https://example.com/terms"
+			}),
+		),
+		"systemParameters_getDParameter" => example_result("dParameter", d_parameter),
+		"systemParameters_getAriadneParameters" | "sidechain_getAriadneParameters" => {
+			example_result("ariadneParameters", ariadne_parameters)
+		},
+		"network_peerReputations" => example_result("peers", json!([peer_info])),
+		"network_peerReputation" => example_result("peer", peer_info),
+		"network_unbanPeer" => example_result("result", Value::Null),
+		"sidechain_getParams" => example_result(
+			"params",
+			json!({
+				"genesis_utxo": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#0"
+			}),
+		),
+		"sidechain_getStatus" => example_result(
+			"status",
+			json!({
+				"sidechain": {
+					"epoch": 1,
+					"nextEpochTimestamp": 1700000000000_i64
+				},
+				"mainchain": {
+					"epoch": 42,
+					"slot": 1000,
+					"nextEpochTimestamp": 1700000600000_i64
+				}
+			}),
+		),
+		"sidechain_getEpochCommittee" => example_result(
+			"committee",
+			json!({
+				"sidechainEpoch": 42,
+				"committee": [
+					{
+						"sidechainPubKey": "0x6666666666666666666666666666666666666666666666666666666666666666"
+					}
+				]
+			}),
+		),
+		"sidechain_getRegistrations" => example_result("registrations", json!([])),
+		"system_name" => example_result("result", json!("midnight-node")),
+		"system_version" => example_result("result", json!("1.0.0")),
+		"system_chain" => example_result("result", json!("Development")),
+		"system_chainType" => example_result("result", json!("Development")),
+		"system_properties" => example_result(
+			"result",
+			json!({
+				"tokenDecimals": 12,
+				"tokenSymbol": "DUST"
+			}),
+		),
+		"system_health" => example_result(
+			"result",
+			json!({
+				"peers": 1,
+				"isSyncing": false,
+				"shouldHavePeers": true
+			}),
+		),
+		"system_localPeerId" => example_result("result", json!(peer_id)),
+		"system_localListenAddresses" => example_result(
+			"result",
+			json!([
+				"/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWExamplePeerId1111111111111111111111111111111111"
+			]),
+		),
+		"system_peers" => example_result("result", json!([])),
+		"system_nodeRoles" => example_result("result", json!(["Full"])),
+		"system_syncState" => example_result(
+			"result",
+			json!({
+				"startingBlock": 0,
+				"currentBlock": 1,
+				"highestBlock": 1
+			}),
+		),
+		"system_addReservedPeer" | "system_removeReservedPeer" => {
+			example_result("result", Value::Null)
+		},
+		"system_reservedPeers" => example_result("result", json!([])),
+		"system_accountNextIndex" => example_result("result", json!(0)),
+		"system_dryRun" => example_result(
+			"result",
+			json!({
+				"Ok": []
+			}),
+		),
+		"author_submitExtrinsic" => example_result("result", json!(extrinsic_hash)),
+		"author_pendingExtrinsics" => example_result("result", json!([])),
+		"author_removeExtrinsic" => example_result("result", json!([extrinsic_hash])),
+		"author_hasKey" | "author_hasSessionKeys" => example_result("result", json!(true)),
+		"author_insertKey" => example_result("result", Value::Null),
+		"author_rotateKeys" => {
+			example_result("result", json!("0x44444444444444444444444444444444"))
+		},
+		"author_submitAndWatchExtrinsic"
+		| "chain_subscribeNewHeads"
+		| "chain_subscribeFinalizedHeads"
+		| "chain_subscribeAllHeads"
+		| "state_subscribeRuntimeVersion"
+		| "state_subscribeStorage"
+		| "grandpa_subscribeJustifications"
+		| "beefy_subscribeJustifications" => example_result("result", json!("0x1")),
+		"chain_getHeader" => example_result("result", header),
+		"chain_getBlock" => example_result(
+			"result",
+			json!({
+				"block": {
+					"header": header,
+					"extrinsics": []
+				},
+				"justifications": null
+			}),
+		),
+		"chain_getBlockHash" | "chain_getFinalizedHead" | "beefy_getFinalizedHead" => {
+			example_result("result", json!(block_hash))
+		},
+		"state_call" | "state_getStorage" | "state_getMetadata" => {
+			example_result("result", json!("0x"))
+		},
+		"state_getKeys" | "state_getKeysPaged" => example_result("result", json!([storage_key])),
+		"state_getStorageHash" => example_result("result", json!(block_hash)),
+		"state_getStorageSize" => example_result("result", json!(0)),
+		"state_getRuntimeVersion" => example_result(
+			"result",
+			json!({
+				"specName": "midnight-node",
+				"implName": "midnight-node",
+				"authoringVersion": 1,
+				"specVersion": 1,
+				"implVersion": 1,
+				"apis": [],
+				"transactionVersion": 1,
+				"stateVersion": 1
+			}),
+		),
+		"state_queryStorage" | "state_queryStorageAt" => example_result(
+			"result",
+			json!([
+				{
+					"block": block_hash,
+					"changes": [[storage_key, "0x"]]
+				}
+			]),
+		),
+		"state_getReadProof" => example_result(
+			"result",
+			json!({
+				"at": block_hash,
+				"proof": []
+			}),
+		),
+		"state_traceBlock" => example_result("result", json!({})),
+		"grandpa_roundState" => example_result(
+			"result",
+			json!({
+				"round": 1,
+				"totalWeight": 1,
+				"thresholdWeight": 1,
+				"prevotes": { "currentWeight": 1, "missing": [] },
+				"precommits": { "currentWeight": 1, "missing": [] }
+			}),
+		),
+		"grandpa_proveFinality" => example_result("result", json!("0x")),
+		"mmr_root" => example_result("result", json!(block_hash)),
+		"mmr_generateProof" => example_result(
+			"result",
+			json!({
+				"blockHash": block_hash,
+				"proof": {
+					"leafIndices": [1],
+					"leafCount": 2,
+					"items": []
+				}
+			}),
+		),
+		_ => example_result("result", Value::Null),
+	}
+}
+
+fn example_param(name: &str, value: Value) -> Value {
+	json!({
+		"name": name,
+		"value": value
+	})
+}
+
+fn example_result(name: &str, value: Value) -> Value {
+	json!({
+		"name": name,
+		"value": value
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +1156,7 @@ fn method_entry(
 		"description": description,
 		"params": params,
 		"result": result_desc,
+		"examples": examples_for_method(name),
 	});
 
 	if !errors.is_empty() {
@@ -847,6 +1253,25 @@ mod tests {
 			assert!(method["params"].is_array(), "{} missing params array", name);
 			assert!(method["result"].is_object(), "{} missing result object", name);
 			assert!(method["result"]["schema"].is_object(), "{} missing result schema", name);
+		}
+	}
+
+	#[test]
+	fn all_methods_have_examples() {
+		let doc = build_openrpc_document(&all_custom_method_names());
+		let methods = doc["methods"].as_array().unwrap();
+
+		for method in methods {
+			let name = method["name"].as_str().unwrap();
+			let examples = method["examples"]
+				.as_array()
+				.unwrap_or_else(|| panic!("{} missing examples array", name));
+			assert!(!examples.is_empty(), "{} has no examples", name);
+
+			for example in examples {
+				assert!(example["params"].is_array(), "{} example missing params", name);
+				assert!(example["result"].is_object(), "{} example missing result", name);
+			}
 		}
 	}
 
