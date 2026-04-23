@@ -54,9 +54,6 @@ fn pc_create_chain_spec_test() {
 			"token_asset_name": "0x040404",
 			"illiquid_circulation_supply_validator_address": "addr_nativetokenisc"
 		  },
-		  "subminimalTransfersConfig": {
-			"subminimal_transfers_flush_threshold" : 0
-		  },
 		  "marker": null
 		})
 	);

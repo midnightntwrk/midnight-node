@@ -109,6 +109,34 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::super::super::{DefaultDB, DerivationPath, Role, WalletSeed};
+	use super::ShieldedWallet;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::from([0u8; 32])
+	}
+
+	#[test]
+	fn from_path_accepts_zswap_role() {
+		let path = DerivationPath::default_for_role(Role::Zswap);
+		let _wallet = ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).unwrap();
+	}
+
+	#[test]
+	fn from_path_rejects_dust_role() {
+		let path = DerivationPath::default_for_role(Role::Dust);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
+	}
+
+	#[test]
+	fn from_path_rejects_unshielded_role() {
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
+	}
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ShieldedAddressParseError {
 	DecodeError(bech32::DecodeError),
