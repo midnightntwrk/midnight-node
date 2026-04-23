@@ -635,4 +635,17 @@ impl MidnightClient {
         }
         Err("Transaction progress ended without confirmation".into())
     }
+
+    /// Get the state of a contract by its address.
+    pub async fn get_contract_state(
+        &self,
+        contract_address: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let response: String = self
+            .rpc_client
+            .request("midnight_contractState", rpc_params![contract_address])
+            .await?;
+
+        Ok(response)
+    }
 }

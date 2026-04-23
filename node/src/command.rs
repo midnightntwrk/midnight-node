@@ -148,7 +148,10 @@ fn decode_genesis_state(
 }
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
-	let run_cmd: RunCmd = cfg.substrate_cfg.clone().try_into()?;
+	let run_cmd: RunCmd = cfg
+		.substrate_cfg
+		.clone()
+		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
 	let tx_filter_config = if run_midnight.filter_deploy_txs {

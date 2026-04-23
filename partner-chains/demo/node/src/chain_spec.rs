@@ -32,7 +32,7 @@ where
 }
 
 pub fn runtime_wasm() -> &'static [u8] {
-	WASM_BINARY.expect("Runtime wasm not available")
+	WASM_BINARY.expect("Runtime wasm not available. Build project with 'wasm-runtime' feature on.")
 }
 
 /// Creates chain-spec according to the config obtained by wizards.

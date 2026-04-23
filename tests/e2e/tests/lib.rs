@@ -1515,6 +1515,33 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
 
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
 }
+
+#[tokio::test]
+async fn get_contract_state_returns_error_if_not_present() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // Use a random contract address that is highly unlikely to be deployed
+    let random_address = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+
+    let result = client.get_contract_state(random_address).await;
+
+    assert!(
+        result.is_err(),
+        "Expected error when getting state for non-existent contract, but got success"
+    );
+
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("Contract not present")
+            || err_msg.contains("Unable to get requested contract state")
+            || err_msg.contains("Unable to get contract state")
+            || err_msg.contains("UnableToGetContractState"),
+        "Error message should indicate contract is not present or unable to get state. Got: {}",
+        err_msg
+    );
+}
+
 #[tokio::test]
 async fn register_twice_with_same_cardano_address() {
     let settings = Settings::default();

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'PR number to rebuild chainspec for'
+        description: "PR number to rebuild chainspec for"
         required: true
       networks:
         description: 'Space-separated network names (e.g., "qanet preview")'
@@ -121,7 +121,7 @@ jobs:
         env:
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
         run: |
-          ALLOWED=$(ls res/cfg/*.toml | xargs -n1 basename | sed 's/\.toml$//' | grep -v '^default$' | sort)
+          ALLOWED="$(find res -iname '*.toml' -exec basename {} .toml \; | grep -v -e '^default$' -e '^Cargo$' | sort)"
           for network in $NETWORKS; do
             if ! echo "$ALLOWED" | grep -qx "$network"; then
               echo "::error::Unknown network: $network. Allowed: $(echo $ALLOWED | tr '\n' ' ')"

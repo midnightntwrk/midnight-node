@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-db-sync-data-sources"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 authors.workspace = true
 edition.workspace = true
@@ -19,7 +19,7 @@ futures = { workspace = true }
 chrono = "0.4.31"
 hex = { workspace = true }
 hex-literal = { workspace = true }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 sidechain-domain = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true }
 bigdecimal = { workspace = true }

@@ -41,7 +41,7 @@ with_migration_versions! {
 		let source = make_source(pool, tx_in_cfg);
 		let result = source.get_candidates(McEpochNumber(191), candidates_address()).await.unwrap();
 		let mut candidates = result;
-		candidates.sort_by(|c1, c2| c1.mainchain_pub_key().0.cmp(&c2.mainchain_pub_key().0));
+		candidates.sort_by_key(|c| c.mainchain_pub_key().0);
 		assert_eq!(candidates, vec![leader_candidate_spo_a(), leader_candidate_spo_b()])
 	}
 
@@ -52,7 +52,7 @@ with_migration_versions! {
 		let source = make_source(pool, tx_in_cfg);
 		let result = source.get_candidates(McEpochNumber(195), candidates_address()).await.unwrap();
 		let mut candidates = result;
-		candidates.sort_by(|c1, c2| c1.mainchain_pub_key().0.cmp(&c2.mainchain_pub_key().0));
+		candidates.sort_by_key(|c| c.mainchain_pub_key().0);
 		assert_eq!(candidates, vec![leader_candidate_spo_c(), leader_candidate_spo_b()])
 	}
 
