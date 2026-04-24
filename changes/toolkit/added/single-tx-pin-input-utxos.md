@@ -14,4 +14,4 @@ Useful for deterministic UTXO consolidation when the default
 "first-fit-that-overshoots, else tail" selector picks an unwanted
 subset of a skewed wallet.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1404
