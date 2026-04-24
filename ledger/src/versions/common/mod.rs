@@ -19,6 +19,8 @@ use super::{
 };
 
 #[cfg(feature = "std")]
+use ledger_storage::db::paritydb::OwnedDb;
+#[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
 use sha2::digest::{OutputSizeUser, generic_array::typenum::U32};
@@ -60,7 +62,7 @@ use {
 		db::{DB, ParityDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -168,13 +170,33 @@ where
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
 		let maybe_storage = externalities.extension::<LedgerStorageExt>();
 		if let Some(storage) = maybe_storage {
-			let res = set_default_storage(|| {
-				let db = ParityDb::<sha2::Sha256>::open(storage.0.db_path.as_path());
-				Storage::new(storage.0.cache_size, db)
-			});
-			if res.is_err() {
-				log::warn!("Warning: Failed to set default storage: {res:?}");
-			}
+			match &storage.db {
+				LedgerStorageDb::UnifiedDb(db) => {
+					let res = set_default_storage(|| {
+						let db =
+                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+						Storage::new(storage.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (UnifiedDb)"
+						);
+					}
+				},
+				LedgerStorageDb::SeparateDb(db_path) => {
+					let res = set_default_storage(|| {
+						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						Storage::new(storage.0.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (SeparateDb)"
+						);
+					}
+				},
+			};
 		} else {
 			log::error!(
 				target: LOG_TARGET,

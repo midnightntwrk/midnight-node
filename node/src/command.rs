@@ -178,8 +178,12 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 
 	let properties = chain_spec.properties();
 	let genesis_state = decode_genesis_state(&properties)?;
-	let storage_config =
-		StorageInit { genesis_state, cache_size: cfg.midnight_cfg.storage_cache_size };
+	let ledger_db_path = base_path.path().join("ledger_storage");
+	let storage_config = StorageInit {
+		db_path: ledger_db_path,
+		genesis_state,
+		cache_size: cfg.midnight_cfg.storage_cache_size,
+	};
 
 	let keystore: KeystorePtr = {
 		let res = run_cmd.keystore_params().unwrap().keystore_config(&config_dir)?;
@@ -340,9 +344,11 @@ fn storage_init_from_chain_spec(
 	config: &sc_service::Configuration,
 	cache_size: usize,
 ) -> sc_cli::Result<StorageInit> {
+	let db_path = config.base_path.path().join("ledger_storage");
 	Ok(StorageInit {
 		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
 		cache_size,
+		db_path,
 	})
 }
 

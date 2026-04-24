@@ -46,6 +46,13 @@ pub mod ledger_7 {
 	mod block_context;
 	pub use block_context::*;
 
+	#[allow(clippy::duplicate_mod)]
+	#[path = "storage_init/pre_ledger_8.rs"]
+	#[cfg(feature = "std")]
+	mod storage_init;
+	#[cfg(feature = "std")]
+	pub use storage_init::*;
+
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -67,6 +74,13 @@ pub mod ledger_8 {
 	#[path = "block_context/post_ledger_8.rs"]
 	mod block_context;
 	pub use block_context::*;
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "storage_init/post_ledger_8.rs"]
+	#[cfg(feature = "std")]
+	mod storage_init;
+	#[cfg(feature = "std")]
+	pub use storage_init::*;
 
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	#[allow(clippy::duplicate_mod)]

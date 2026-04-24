@@ -15,28 +15,48 @@
 //! substrate/client/db/src/lib.rs
 //! substrate/client/db/src/utils.rs
 
-use sc_service::DatabaseSource;
+use std::sync::Arc;
+
+use midnight_primitives_ledger::LedgerStorageDb;
+use midnight_storage_core::db::paritydb::OwnedDb;
+use sc_service::{DatabaseSource, config::Database};
+
+use crate::{backend::custom_parity_db::DbAdapter, service::StorageInit};
 
 pub mod custom_parity_db;
 
-pub fn create_database_source(
+pub fn open_paritydb(
 	path: &std::path::Path,
-	midnight_storage_cache_size: usize,
-) -> Result<DatabaseSource, sp_blockchain::Error> {
+	runtime_version: &sp_version::RuntimeVersion,
+	storage_config: &StorageInit,
+) -> Result<(OwnedDb, LedgerStorageDb, bool), sp_blockchain::Error> {
 	// Flag the db for initialisation if it doesn't already exist
 	let require_create_flag =
 		std::fs::read_dir(path).map(|dir| dir.into_iter().count() == 0).unwrap_or(true);
 
-	let db = match custom_parity_db::open(path, false, midnight_storage_cache_size) {
-		Ok(db) => Ok(db),
-		Err(parity_db::Error::InvalidConfiguration(_)) => {
-			log::warn!("Invalid parity db configuration, attempting database metadata update.");
-			// Try to update the database with the new config
-			custom_parity_db::open(path, true, midnight_storage_cache_size)
-		},
-		Err(e) => Err(e),
-	}
-	.map_err(|e| sp_blockchain::Error::Backend(e.to_string()))?;
+	let (db, storage) =
+		match custom_parity_db::open::<sp_core::H256>(path, false, runtime_version, storage_config)
+		{
+			Ok(db) => Ok(db),
+			Err(parity_db::Error::InvalidConfiguration(_)) => {
+				log::warn!("Invalid parity db configuration, attempting database metadata update.");
+				// Try to update the database with the new config
+				custom_parity_db::open::<sp_core::H256>(path, true, runtime_version, storage_config)
+			},
+			Err(e) => Err(e),
+		}
+		.map_err(|e| sp_blockchain::Error::Backend(e.to_string()))?;
 
-	Ok(DatabaseSource::Custom { db, require_create_flag })
+	Ok((db, storage, require_create_flag))
+}
+
+pub fn create_database_source(
+	db: OwnedDb,
+	require_create_flag: bool,
+) -> Result<DatabaseSource, sp_blockchain::Error> {
+	let db = DbAdapter(db.0);
+	Ok(DatabaseSource::Custom {
+		db: Arc::new(db) as Arc<dyn Database<sp_core::H256>>,
+		require_create_flag,
+	})
 }

@@ -11,9 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "std")]
-use std::path::Path;
-
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
 	db::ParityDb,
@@ -83,7 +80,7 @@ pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRo
 }
 
 #[cfg(feature = "std")]
-fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
+pub fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
 {
@@ -101,27 +98,4 @@ where
 	let mut bytes = vec![];
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
 	bytes
-}
-
-#[cfg(feature = "std")]
-pub fn init_storage_paritydb<P: AsRef<Path>>(
-	dir: P,
-	genesis_state: &[u8],
-	cache_size: usize,
-) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
-	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
-
-	let res = set_default_storage(|| {
-		std::fs::create_dir_all(dir.as_ref())
-			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
-
-		let db = ParityDb::<sha2::Sha256>::open(dir.as_ref());
-		Storage::new(cache_size, db)
-	});
-	if res.is_err() {
-		log::warn!("Warning: Failed to set default storage: {res:?}");
-	}
-
-	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
 }

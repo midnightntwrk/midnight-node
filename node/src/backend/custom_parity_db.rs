@@ -14,10 +14,15 @@
 //! Derived implementation from polkadot-sdk: substrate/client/db/src/parity_db.rs
 //! Adds custom column definitions for midnight-ledger
 
+use midnight_primitives_ledger::LedgerStorageDb;
+use midnight_storage_core::db::paritydb::{NUM_COLUMNS as NUM_COLUMNS_LEDGER, OwnedDb};
 use sc_client_db::Database;
 use sp_database::{Change, ColumnId, Transaction, error::DatabaseError};
+use std::sync::Arc;
 
-struct DbAdapter(parity_db::Db);
+use crate::service::StorageInit;
+
+pub struct DbAdapter(pub Arc<parity_db::Db>);
 
 fn handle_err<T>(result: parity_db::Result<T>) -> T {
 	match result {
@@ -28,7 +33,7 @@ fn handle_err<T>(result: parity_db::Result<T>) -> T {
 	}
 }
 
-const NUM_COLUMNS_POLKADOT: u32 = 13;
+const NUM_COLUMNS_POLKADOT: u8 = midnight_primitives_ledger::NUM_COLUMNS_POLKADOT;
 /// Length of a [`DbHash`].
 const DB_HASH_LEN: usize = 32;
 
@@ -50,18 +55,16 @@ pub(crate) mod columns_polkadot {
 	pub const BODY_INDEX: u32 = 12;
 }
 
-// TODO: use midnight_storage::parity_db::NUM_COLUMNS as NUM_COLUMNS_LEDGER;
-const NUM_COLUMNS_LEDGER: u32 = 3;
-
-const NUM_COLUMNS: u32 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
+const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
 	upgrade: bool,
-	_midnight_storage_cache_size: usize,
-) -> parity_db::Result<std::sync::Arc<dyn Database<H>>> {
-	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS as u8);
+	runtime_version: &sp_version::RuntimeVersion,
+	storage_config: &StorageInit,
+) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
+	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
 
 	let compressed = [
 		columns_polkadot::STATE,
@@ -87,8 +90,15 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.preimage = true;
 	tx_col.uniform = true;
 
-	// TODO: Add call to:
-	// midnight_storage::ParityDb::<sha2::Sha256, NUM_COLUMNS_POLKADOT>::set_init_options(&mut config)
+	// Set init options for ParityDb backend
+	#[allow(clippy::zero_prefixed_literal)]
+	if runtime_version.spec_version >= 000_022_000 {
+		midnight_node_ledger::ledger_8::set_init_options_paritydb(
+			&mut config,
+			NUM_COLUMNS_POLKADOT,
+			true,
+		);
+	}
 
 	if upgrade {
 		log::info!("Upgrading database metadata.");
@@ -97,15 +107,24 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
-	let db = parity_db::Db::open_or_create(&config)?;
+	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 
-	// TODO: Add call to:
-	// let res = set_default_storage(|| {
-	// 	let db = ParityDb::<sha2::Sha256, NUM_COLUMNS_POLKADOT>::from_existing_db(db.clone());
-	// 	Storage::new(midnight_storage_cache_size, db)
-	// });
-
-	Ok(std::sync::Arc::new(DbAdapter(db)))
+	#[allow(clippy::zero_prefixed_literal)]
+	if runtime_version.spec_version < 000_022_000 {
+		midnight_node_ledger::ledger_7::init_storage_paritydb(
+			&storage_config.db_path,
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+		Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
+	} else {
+		midnight_node_ledger::ledger_8::init_storage_paritydb::<_, NUM_COLUMNS_POLKADOT>(
+			OwnedDb(db.clone()),
+			&storage_config.genesis_state,
+			storage_config.cache_size,
+		);
+		Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
+	}
 }
 
 fn ref_counted_column(col: u32) -> bool {
