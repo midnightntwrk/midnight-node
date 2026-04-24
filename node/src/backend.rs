@@ -41,6 +41,15 @@ pub fn open_paritydb(
 				// Try to update the database with the new config
 				custom_parity_db::open::<sp_core::H256>(path, true, storage_config)
 			},
+			Err(e @ parity_db::Error::IncompatibleColumnConfig { .. }) => {
+				return Err(sp_blockchain::Error::Backend(format!(
+					"Failed to open parity-db: {e}. This typically means the \
+					 `storage_separation` config option was changed between runs. \
+					 Switching between `separate` and `unified` is not supported on an \
+					 existing database — to change `storage_separation`, delete the chain \
+					 data directory and resync.",
+				)));
+			},
 			Err(e) => Err(e),
 		}
 		.map_err(|e| sp_blockchain::Error::Backend(e.to_string()))?;

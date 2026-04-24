@@ -80,8 +80,8 @@ fn storage_migration_scenarios() {
 			Err(e) => e.to_string(),
 		};
 		assert!(
-			msg.contains("Column config mismatch"),
-			"expected column-mismatch error, got: {msg}",
+			msg.contains("storage_separation"),
+			"expected storage_separation hint in error, got: {msg}",
 		);
 	}
 
@@ -102,8 +102,8 @@ fn storage_migration_scenarios() {
 			Err(e) => e.to_string(),
 		};
 		assert!(
-			msg.contains("Column config mismatch"),
-			"expected column-mismatch error, got: {msg}",
+			msg.contains("storage_separation"),
+			"expected storage_separation hint in error, got: {msg}",
 		);
 	}
 }
