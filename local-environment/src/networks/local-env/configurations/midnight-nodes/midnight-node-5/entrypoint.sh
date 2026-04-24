@@ -23,6 +23,8 @@ set -euxo pipefail
   --chain=/shared/chain-spec.json \
   --validator \
   --node-key=0000000000000000000000000000000000000000000000000000000000000005 \
+  --port=30337 \
+  --public-addr=/dns/midnight-node-5/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2 \
   --bootnodes="/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   --base-path=/data \
   --keystore-path=/keystore \

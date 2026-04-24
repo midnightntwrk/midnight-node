@@ -23,6 +23,7 @@ set -euxo pipefail
   --alice \
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000001 \
+  --public-addr=/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp \
   --base-path=/data \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
