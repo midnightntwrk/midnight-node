@@ -7,7 +7,6 @@ use anyhow::anyhow;
 use authority_selection_inherents::MaybeFromCandidateKeys;
 use sidechain_domain::{AssetName, MainchainAddress, PolicyId, UtxoId};
 use sp_core::ecdsa;
-use sp_partner_chains_bridge::SubminimalTransfersConfig;
 use sp_runtime::{AccountId32, DeserializeOwned};
 use std::marker::PhantomData;
 
@@ -223,9 +222,6 @@ impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
 					.clone(),
 			}),
 			initial_checkpoint: Some(self.genesis_utxo.tx_hash),
-			subminimal_transfers_config: SubminimalTransfersConfig {
-				subminimal_transfers_flush_threshold: 0,
-			},
 			_marker: PhantomData,
 		}
 	}

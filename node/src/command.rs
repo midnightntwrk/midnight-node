@@ -35,6 +35,7 @@ use crate::{
 	service::{self, StorageInit},
 };
 use clap::Parser;
+use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -249,6 +250,14 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	let run_result = runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 		let midnight_cfg = cfg.midnight_cfg.clone();
+		let hwbench = (!run_midnight.no_hardware_benchmarks)
+			.then(|| {
+				config.database.path().map(|database_path| {
+					let _ = std::fs::create_dir_all(database_path);
+					sc_sysinfo::gather_hwbench(Some(database_path), &SUBSTRATE_REFERENCE_HARDWARE)
+				})
+			})
+			.flatten();
 
 		// Build Prometheus push config if endpoint is configured
 		log::debug!(
@@ -282,6 +291,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			cfg.memory_monitor_cfg.into(),
 			storage_config,
 			metrics_push_config,
+			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
 		)
