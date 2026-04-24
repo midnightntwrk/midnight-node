@@ -56,6 +56,12 @@ sp-state-machine.workspace = true
 sp-timestamp.workspace = true
 sp-version.workspace = true
 
+# Backend/Database dependencies
+parity-db.workspace = true
+sc-client-db.workspace = true
+sp-database.workspace = true
+midnight-storage-core.workspace = true
+
 mmr-rpc.workspace = true
 mmr-gadget.workspace = true
 sp-mmr-primitives.workspace = true

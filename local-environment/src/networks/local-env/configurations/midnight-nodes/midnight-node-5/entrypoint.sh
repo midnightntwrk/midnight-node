@@ -19,6 +19,8 @@ set -euxo pipefail
 # Source the mainchain env
 . /shared/mc.env
 
+export STORAGE_SEPARATION=unified
+
 ./midnight-node \
   --chain=/shared/chain-spec.json \
   --validator \

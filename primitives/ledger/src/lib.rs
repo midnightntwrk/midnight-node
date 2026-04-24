@@ -20,6 +20,10 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
+// Number of columns used by Polkadot in the underlying parity-db. Use this value for column offset
+// when initializing the ledger parity-db backend.
+pub const NUM_COLUMNS_POLKADOT: u8 = 13;
+
 const LOG_TARGET: &str = "ledger::primitives";
 /// Ledger metrics exposed through Prometheus
 #[derive(Clone, Debug)]
@@ -272,26 +276,36 @@ impl LedgerMetricsExt {
 	}
 }
 
+#[derive(Clone)]
+pub enum LedgerStorageDb {
+	UnifiedDb(Arc<parity_db::Db>),
+	SeparateDb(PathBuf),
+}
 /// Ledger Storage info to be sent to host functions
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LedgerStorage {
-	pub db_path: PathBuf,
+	pub db: LedgerStorageDb,
 	pub cache_size: usize,
 }
 
 impl LedgerStorage {
-	pub fn new(db_path: PathBuf, cache_size: usize) -> Self {
-		Self { db_path, cache_size }
+	pub fn new_existing(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
+		Self { db: LedgerStorageDb::UnifiedDb(db), cache_size }
+	}
+
+	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
+		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
 	}
 }
 
 sp_externalities::decl_extension! {
 	/// The `LedgerStorageExt`` extension to set default `Storage` in case of a Ledger's hard-fork.
-	#[derive(Debug)]
 	pub struct LedgerStorageExt(LedgerStorage);
 }
 
 impl LedgerStorageExt {
+	pub const COLUMN_OFFSET: u8 = NUM_COLUMNS_POLKADOT;
+
 	pub fn new(storage: LedgerStorage) -> Self {
 		LedgerStorageExt(storage)
 	}

@@ -7563,6 +7563,7 @@ dependencies = [
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-reserve-observation",
  "midnight-primitives-system-parameters",
+ "midnight-storage-core",
  "mmr-gadget",
  "mmr-rpc",
  "pallet-cnight-observation",
@@ -7574,6 +7575,7 @@ dependencies = [
  "pallet-system-parameters",
  "pallet-system-parameters-rpc",
  "pallet-throttle",
+ "parity-db 0.5.4",
  "parity-scale-codec",
  "partner-chains-cli",
  "partner-chains-db-sync-data-sources",
@@ -7585,6 +7587,7 @@ dependencies = [
  "sc-chain-spec",
  "sc-cli",
  "sc-client-api",
+ "sc-client-db",
  "sc-consensus",
  "sc-consensus-aura",
  "sc-consensus-beefy",
@@ -7622,6 +7625,7 @@ dependencies = [
  "sp-consensus-beefy",
  "sp-consensus-grandpa",
  "sp-core",
+ "sp-database",
  "sp-externalities",
  "sp-inherents",
  "sp-io",
@@ -7697,6 +7701,7 @@ dependencies = [
  "midnight-zswap 7.0.3",
  "midnight-zswap 8.1.0-rc.1",
  "moka 0.11.3",
+ "parity-db 0.5.4",
  "parity-scale-codec",
  "scale-info",
  "scale-info-derive",
@@ -8105,6 +8110,7 @@ name = "midnight-primitives-ledger"
 version = "0.1.0"
 dependencies = [
  "log",
+ "parity-db 0.5.4",
  "sp-externalities",
  "substrate-prometheus-endpoint",
 ]
