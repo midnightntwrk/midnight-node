@@ -152,8 +152,7 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	super::storage::alloc_with_initial_state::<
-		Signature,
-		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
-	>(genesis_state)
+	super::storage::alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
+		genesis_state,
+	)
 }
