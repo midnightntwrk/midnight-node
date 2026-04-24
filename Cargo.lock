@@ -7604,6 +7604,7 @@ dependencies = [
  "sc-rpc-api",
  "sc-service",
  "sc-storage-monitor",
+ "sc-sysinfo",
  "sc-telemetry",
  "sc-transaction-pool",
  "sc-transaction-pool-api",
@@ -7805,6 +7806,7 @@ dependencies = [
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
+ "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
  "pallet-federated-authority",
@@ -9813,6 +9815,25 @@ dependencies = [
  "sp-api",
  "sp-arithmetic",
  "sp-core",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-c2m-bridge"
+version = "1.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-node-ledger",
+ "midnight-primitives",
+ "pallet-partner-chains-bridge",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
+ "sp-core",
+ "sp-io",
+ "sp-partner-chains-bridge",
  "sp-runtime",
 ]
 

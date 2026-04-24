@@ -451,7 +451,7 @@ services:
 
   midnight-setup:
     container_name: midnight-setup
-    image: ghcr.io/midnightntwrk/midnight-node:1.0.0-e99482ac81b6-amd64
+    image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
       ogmios:
