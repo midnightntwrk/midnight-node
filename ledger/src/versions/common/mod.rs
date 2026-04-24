@@ -19,8 +19,6 @@ use super::{
 };
 
 #[cfg(feature = "std")]
-use ledger_storage::db::paritydb::OwnedDb;
-#[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
 use sha2::digest::{OutputSizeUser, generic_array::typenum::U32};
@@ -59,7 +57,7 @@ use {
 	ledger_storage_local::{
 		Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
-		db::{DB, ParityDb},
+		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},

@@ -80,7 +80,7 @@ pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRo
 }
 
 #[cfg(feature = "std")]
-pub fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
+fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
 {
@@ -120,7 +120,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	super::storage::alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
 }
 
 #[cfg(feature = "std")]
@@ -152,7 +152,5 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	super::storage::alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
-		genesis_state,
-	)
+	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
 }
