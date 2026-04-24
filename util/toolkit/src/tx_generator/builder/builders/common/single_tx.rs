@@ -11,7 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	convert::Infallible,
+	sync::Arc,
+};
 
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
@@ -67,7 +71,14 @@ impl SingleTxBuilder {
 				.iter()
 				.map(convert_wallet_address)
 				.collect(),
-			input_utxos: args.input_utxos.iter().map(convert_utxo_id).collect(),
+			input_utxos: {
+				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
+				args.input_utxos
+					.iter()
+					.filter(|id| seen.insert((id.intent_hash.0.0, id.output_number)))
+					.map(convert_utxo_id)
+					.collect()
+			},
 			rng_seed: args.rng_seed,
 		}
 	}

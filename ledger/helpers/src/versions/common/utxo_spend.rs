@@ -153,13 +153,7 @@ impl UtxoSpendInfo<WalletSeed> {
 								seed,
 							}))
 						})?;
-					total = total.checked_add(utxo.0.value).ok_or(
-						UtxoSelectionError::InsufficientBalance {
-							required: required_value,
-							token_type,
-							seed,
-						},
-					)?;
+					total = total.saturating_add(utxo.0.value);
 					selected.push(UtxoSpendInfo {
 						value: utxo.0.value,
 						owner: seed,
