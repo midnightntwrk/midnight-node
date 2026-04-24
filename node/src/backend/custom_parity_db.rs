@@ -33,7 +33,7 @@ fn handle_err<T>(result: parity_db::Result<T>) -> T {
 	}
 }
 
-const NUM_COLUMNS_POLKADOT: u8 = midnight_primitives_ledger::NUM_COLUMNS_POLKADOT;
+pub(crate) const NUM_COLUMNS_POLKADOT: u8 = midnight_primitives_ledger::NUM_COLUMNS_POLKADOT;
 /// Length of a [`DbHash`].
 const DB_HASH_LEN: usize = 32;
 
@@ -55,7 +55,7 @@ pub(crate) mod columns_polkadot {
 	pub const BODY_INDEX: u32 = 12;
 }
 
-const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
+pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(

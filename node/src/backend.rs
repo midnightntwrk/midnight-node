@@ -58,3 +58,82 @@ pub fn create_database_source(
 		require_create_flag,
 	})
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::cfg::midnight_cfg::StorageSeparation;
+	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+	use std::path::PathBuf;
+	use tempfile::TempDir;
+
+	fn separate_storage_init(db_path: PathBuf) -> StorageInit {
+		StorageInit {
+			separation: StorageSeparation::Separate,
+			db_path,
+			genesis_state: UndeployedNetwork.genesis_state().to_vec(),
+			cache_size: 10_000,
+		}
+	}
+
+	#[test]
+	fn create_database_source_forwards_require_create_flag() {
+		let tmp = TempDir::new().unwrap();
+		let db = parity_db::Db::open_or_create(&parity_db::Options::with_columns(tmp.path(), 1))
+			.unwrap();
+		let owned = OwnedDb(Arc::new(db));
+
+		let source = create_database_source(OwnedDb(owned.0.clone()), true).unwrap();
+		let DatabaseSource::Custom { require_create_flag, .. } = source else {
+			panic!("expected DatabaseSource::Custom");
+		};
+		assert!(require_create_flag);
+
+		let source = create_database_source(owned, false).unwrap();
+		let DatabaseSource::Custom { require_create_flag, .. } = source else {
+			panic!("expected DatabaseSource::Custom");
+		};
+		assert!(!require_create_flag);
+	}
+
+	#[test]
+	fn open_paritydb_separate_mode_flags_fresh_dir_and_clears_on_reopen() {
+		let base = TempDir::new().unwrap();
+		let db_path = base.path().join("paritydb");
+		let ledger_path = base.path().join("ledger_storage");
+		let cfg = separate_storage_init(ledger_path.clone());
+
+		// Non-existent dir is treated as fresh.
+		let (db, storage, require_create) = open_paritydb(&db_path, &cfg).unwrap();
+		assert!(require_create, "fresh path should require create");
+		let LedgerStorageDb::SeparateDb(returned_path) = &storage else {
+			panic!("expected SeparateDb in Separate mode");
+		};
+		assert_eq!(returned_path, &ledger_path);
+
+		// Release substrate parity-db file locks before reopening.
+		drop(db);
+		drop(storage);
+
+		let (_db, storage, require_create) = open_paritydb(&db_path, &cfg).unwrap();
+		assert!(!require_create, "existing populated path should not require create");
+		assert!(matches!(storage, LedgerStorageDb::SeparateDb(_)));
+	}
+
+	#[test]
+	fn column_count_constants_are_consistent() {
+		use midnight_storage_core::db::paritydb::NUM_COLUMNS as NUM_COLUMNS_LEDGER;
+
+		assert_eq!(
+			midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET,
+			midnight_primitives_ledger::NUM_COLUMNS_POLKADOT,
+			"ledger column offset must match polkadot column count"
+		);
+		assert_eq!(
+			custom_parity_db::NUM_COLUMNS_POLKADOT,
+			midnight_primitives_ledger::NUM_COLUMNS_POLKADOT,
+		);
+		let total = midnight_primitives_ledger::NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
+		assert_eq!(custom_parity_db::NUM_COLUMNS, total);
+	}
+}
