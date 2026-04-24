@@ -20,7 +20,7 @@ use sc_client_db::Database;
 use sp_database::{Change, ColumnId, Transaction, error::DatabaseError};
 use std::sync::Arc;
 
-use crate::service::StorageInit;
+use crate::{cfg::midnight_cfg::StorageSeparation, service::StorageInit};
 
 pub struct DbAdapter(pub Arc<parity_db::Db>);
 
@@ -61,7 +61,6 @@ const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
 	upgrade: bool,
-	runtime_version: &sp_version::RuntimeVersion,
 	storage_config: &StorageInit,
 ) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
 	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
@@ -91,9 +90,8 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.uniform = true;
 
 	// Set init options for ParityDb backend
-	#[allow(clippy::zero_prefixed_literal)]
-	if runtime_version.spec_version >= 000_022_000 {
-		midnight_node_ledger::ledger_8::set_init_options_paritydb(
+	if storage_config.separation == StorageSeparation::Separate {
+		midnight_node_ledger::ledger_8::storage::set_init_options_paritydb(
 			&mut config,
 			NUM_COLUMNS_POLKADOT,
 			true,
@@ -109,21 +107,22 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 
-	#[allow(clippy::zero_prefixed_literal)]
-	if runtime_version.spec_version < 000_022_000 {
-		midnight_node_ledger::ledger_7::init_storage_paritydb(
-			&storage_config.db_path,
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-		Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
-	} else {
-		midnight_node_ledger::ledger_8::init_storage_paritydb::<_, NUM_COLUMNS_POLKADOT>(
-			OwnedDb(db.clone()),
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-		Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
+	match storage_config.separation {
+		StorageSeparation::Separate => {
+			midnight_node_ledger::ledger_8::storage::init_storage_paritydb_separate(
+				&storage_config.db_path,
+				&storage_config.genesis_state,
+				storage_config.cache_size,
+			);
+			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
+		},
+		StorageSeparation::Unified => {
+			midnight_node_ledger::ledger_8::storage::init_storage_paritydb_unified::<
+				_,
+				NUM_COLUMNS_POLKADOT,
+			>(OwnedDb(db.clone()), &storage_config.genesis_state, storage_config.cache_size);
+			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
+		},
 	}
 }
 

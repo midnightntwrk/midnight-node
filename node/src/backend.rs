@@ -27,7 +27,6 @@ pub mod custom_parity_db;
 
 pub fn open_paritydb(
 	path: &std::path::Path,
-	runtime_version: &sp_version::RuntimeVersion,
 	storage_config: &StorageInit,
 ) -> Result<(OwnedDb, LedgerStorageDb, bool), sp_blockchain::Error> {
 	// Flag the db for initialisation if it doesn't already exist
@@ -35,13 +34,12 @@ pub fn open_paritydb(
 		std::fs::read_dir(path).map(|dir| dir.into_iter().count() == 0).unwrap_or(true);
 
 	let (db, storage) =
-		match custom_parity_db::open::<sp_core::H256>(path, false, runtime_version, storage_config)
-		{
+		match custom_parity_db::open::<sp_core::H256>(path, false, storage_config) {
 			Ok(db) => Ok(db),
 			Err(parity_db::Error::InvalidConfiguration(_)) => {
 				log::warn!("Invalid parity db configuration, attempting database metadata update.");
 				// Try to update the database with the new config
-				custom_parity_db::open::<sp_core::H256>(path, true, runtime_version, storage_config)
+				custom_parity_db::open::<sp_core::H256>(path, true, storage_config)
 			},
 			Err(e) => Err(e),
 		}

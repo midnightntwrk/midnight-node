@@ -99,3 +99,58 @@ where
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
 	bytes
 }
+
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> Vec<u8> {
+	use super::base_crypto_local::signatures::Signature;
+	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+
+	let res = set_default_storage(|| {
+		std::fs::create_dir_all(dir.as_ref())
+			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
+
+		let db = ParityDb::<sha2::Sha256>::open(dir.as_ref());
+		Storage::new(cache_size, db)
+	});
+	if res.is_err() {
+		log::warn!("Warning: Failed to set default storage: {res:?}");
+	}
+
+	super::storage::alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+}
+
+#[cfg(feature = "std")]
+pub fn set_init_options_paritydb(
+	options: &mut parity_db::Options,
+	column_offset: u8,
+	use_compression: bool,
+) {
+	midnight_storage_core::db::paritydb::set_init_options(options, column_offset, use_compression);
+}
+
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_unified<
+	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> Vec<u8> {
+	use super::base_crypto_local::signatures::Signature;
+	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+
+	let res = set_default_storage(|| {
+		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
+		Storage::new(cache_size, db)
+	});
+	if res.is_err() {
+		log::warn!("Warning: Failed to set default storage: {res:?}");
+	}
+
+	super::storage::alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+}
