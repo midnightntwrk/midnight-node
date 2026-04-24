@@ -14,6 +14,7 @@ chainspec_federated_authority_config = "res/preprod/federated-authority-config.j
 chainspec_system_parameters_config = "res/preprod/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/preprod/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/preprod/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/preprod/c2m-bridge-config.json"
 
 cardano_security_parameter = 2160
 cardano_active_slots_coeff = 0.05

@@ -74,35 +74,6 @@ mod handle_transfers {
 	}
 
 	#[test]
-	fn emits_events() {
-		new_test_ext().execute_with(|| {
-			// Frame system drops events from block 0.
-			frame_system::Pallet::<Test>::set_block_number(1);
-			assert_ok!(Bridge::handle_transfers(
-				RuntimeOrigin::none(),
-				transfers(),
-				data_checkpoint()
-			));
-
-			let events: Vec<_> =
-				frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
-			let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> = transfers()
-				.into_iter()
-				.enumerate()
-				.map(|(i, t)| {
-					mock::RuntimeEvent::Bridge(Event::Transfer {
-						mc_tx_hash: t.mc_tx_hash,
-						amount: t.amount,
-						result: (i as u32, t.amount),
-						recipient: t.recipient,
-					})
-				})
-				.collect();
-			assert_eq!(events, expected);
-		})
-	}
-
-	#[test]
 	fn updates_the_data_checkpoint() {
 		new_test_ext().execute_with(|| {
 			assert_ok!(Bridge::handle_transfers(

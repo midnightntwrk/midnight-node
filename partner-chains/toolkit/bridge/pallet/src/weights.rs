@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_partner_chains_bridge.
@@ -88,8 +88,8 @@ impl WeightInfo for () {
 		Weight::from_parts(15_716_271, 6154)
 			// Standard Error: 5_249
 			.saturating_add(Weight::from_parts(13_353_768, 0).saturating_mul(t.into()))
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(3_u64))
+			.saturating_add(ParityDbWeight::get().reads(2_u64))
+			.saturating_add(ParityDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Bridge::MainChainScriptsConfiguration` (r:0 w:1)
 	/// Proof: `Bridge::MainChainScriptsConfiguration` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
@@ -101,6 +101,6 @@ impl WeightInfo for () {
 		//  Estimated: `0`
 		// Minimum execution time: 2_000_000 picoseconds.
 		Weight::from_parts(3_000_000, 0)
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 }

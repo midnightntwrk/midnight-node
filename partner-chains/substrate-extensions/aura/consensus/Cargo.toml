@@ -1,6 +1,6 @@
 [package]
 name = "sc-partner-chains-consensus-aura"
-version.workspace = true
+version = "1.8.1"
 description = "Partner Chains modification to the Substrate Aura consensus engine"
 authors.workspace = true
 homepage.workspace = true

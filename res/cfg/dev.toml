@@ -15,6 +15,7 @@ chainspec_federated_authority_config = "res/dev/federated-authority-config.json"
 chainspec_system_parameters_config = "res/dev/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/dev/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/dev/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/dev/c2m-bridge-config.json"
 
 args = [
     "--dev",

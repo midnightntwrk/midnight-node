@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-cli"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 description = "Wizard style CLI for getting started as partner chains participant"
 authors.workspace = true

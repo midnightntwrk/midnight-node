@@ -4,7 +4,7 @@ authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
-version.workspace = true
+version = "1.8.1"
 
 [package.metadata.cargo-shear]
 ignored = ["scale-info"]
