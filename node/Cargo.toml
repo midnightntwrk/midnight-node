@@ -73,7 +73,7 @@ substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
-frame-benchmarking-cli = {workspace = true, optional = true, default-features = true }
+frame-benchmarking-cli = {workspace = true, default-features = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
@@ -123,6 +123,7 @@ partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
+sc-sysinfo.workspace = true
 prometheus-endpoint.workspace = true
 reqwest.workspace = true
 prost.workspace = true
