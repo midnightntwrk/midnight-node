@@ -96,6 +96,9 @@ jobs:
       image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
       image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
       git-tag-release: ${{ steps.release-config.outputs.git_tag_release }}
+      git-tag-node: ${{ steps.release-config.outputs.git_tag_node }}
+      git-tag-toolkit: ${{ steps.release-config.outputs.git_tag_toolkit }}
+      git-tag-runtime: ${{ steps.release-config.outputs.git_tag_runtime }}
       toolkit-version: ${{ steps.release-env.outputs.toolkit_version }}
       toolkit-tag-release: ${{ steps.release-env.outputs.toolkit_tag_release }}
       runtime-version: ${{ steps.release-env.outputs.runtime_version }}
@@ -173,20 +176,25 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
           SUFFIX: ${{ github.event.inputs.suffix }}
         run: |
-          # Build git tag by concatenating included components with bare versions,
-          # then appending suffix once at the end (e.g. node-1.0.0-runtime-1.0.0-rc.1)
-          GIT_TAG=""
+          # Create separate git tags for each component (e.g. node-1.0.0-rc.1, toolkit-1.0.0-rc.1)
+          # The primary release tag is the node tag for backwards compatibility with downstream consumers
           if [ "$SKIP_NODE" != "true" ]; then
-            GIT_TAG="node-${NODE_VERSION}"
+            echo "git_tag_node=node-${NODE_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
           if [ "$SKIP_TOOLKIT" != "true" ]; then
-            GIT_TAG="${GIT_TAG:+${GIT_TAG}-}toolkit-${TOOLKIT_VERSION}"
+            echo "git_tag_toolkit=toolkit-${TOOLKIT_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
           if [ "$SKIP_RUNTIME" != "true" ]; then
-            GIT_TAG="${GIT_TAG:+${GIT_TAG}-}runtime-${RUNTIME_VERSION}"
+            echo "git_tag_runtime=runtime-${RUNTIME_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
-          GIT_TAG="${GIT_TAG}${SUFFIX}"
-          echo "git_tag_release=$GIT_TAG" >> "$GITHUB_OUTPUT"
+          # Primary release tag is node tag for backwards compatibility
+          if [ "$SKIP_NODE" != "true" ]; then
+            echo "git_tag_release=node-${NODE_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          elif [ "$SKIP_TOOLKIT" != "true" ]; then
+            echo "git_tag_release=toolkit-${TOOLKIT_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          elif [ "$SKIP_RUNTIME" != "true" ]; then
+            echo "git_tag_release=runtime-${RUNTIME_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          fi
 
       # --- Node image retag (GHCR) ---
       - name: Retag and push node release images (GHCR)
@@ -507,35 +515,24 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Count included components
-          INCLUDED=0
-          if [ "$SKIP_NODE" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
+          # Create separate tags for toolkit and runtime (node tag is the primary release tag)
+          # This ensures each component has its own tag for independent versioning
+          RELEASE_SHA="$GITHUB_SHA"
 
-          # Only create individual tags for multi-component releases
-          # (single-component releases already have the individual tag as the combined tag)
-          if [ "$INCLUDED" -gt 1 ]; then
-            RELEASE_SHA="$GITHUB_SHA"
+          # Toolkit tag (only if toolkit is included and not skipped)
+          if [ "$SKIP_TOOLKIT" != "true" ]; then
+            echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
+              || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
+          fi
 
-            if [ "$SKIP_NODE" != "true" ]; then
-              echo "Creating tag node-${IMAGE_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/node-${IMAGE_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag node-${IMAGE_TAG_RELEASE} already exists, skipping"
-            fi
-            if [ "$SKIP_TOOLKIT" != "true" ]; then
-              echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
-            fi
-            if [ "$SKIP_RUNTIME" != "true" ]; then
-              echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
-            fi
+          # Runtime tag (only if runtime is included and not skipped)
+          if [ "$SKIP_RUNTIME" != "true" ]; then
+            echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
+              || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
           fi
 
   archive-changes:

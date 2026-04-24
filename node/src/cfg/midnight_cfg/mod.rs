@@ -19,6 +19,13 @@ use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use super::validation_utils::{maybe, path_exists};
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StorageSeparation {
+	#[default]
+	Separate,
+	Unified,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 /// Parameters specific to Midnight
@@ -83,6 +90,9 @@ pub struct MidnightCfg {
 
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
+
+	/// Whether substrate and midnight storage should be separate or unified
+	pub storage_separation: StorageSeparation,
 
 	/// Allow non-SSL database connections (not recommended for production)
 	pub allow_non_ssl: bool,

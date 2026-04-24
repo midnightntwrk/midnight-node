@@ -1,6 +1,6 @@
 [package]
 name = "db-sync-sqlx"
-version.workspace = true
+version = "1.8.1"
 description = "sqlx support for Cardano Db-Sync queries"
 license = "Apache-2.0"
 authors.workspace = true

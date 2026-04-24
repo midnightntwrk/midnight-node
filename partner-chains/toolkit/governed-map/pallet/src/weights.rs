@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_governed_map.
@@ -99,10 +99,10 @@ impl WeightInfo for () {
 		Weight::from_parts(15_000_000, 1635)
 			// Standard Error: 121_312
 			.saturating_add(Weight::from_parts(10_759_247, 0).saturating_mul(l.into()))
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
-			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(l.into())))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
-			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(l.into())))
+			.saturating_add(ParityDbWeight::get().reads(3_u64))
+			.saturating_add(ParityDbWeight::get().reads((1_u64).saturating_mul(l.into())))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().writes((1_u64).saturating_mul(l.into())))
 			.saturating_add(Weight::from_parts(0, 3063).saturating_mul(l.into()))
 	}
 	/// Storage: `GovernedMap::MainChainScripts` (r:0 w:1)
@@ -115,6 +115,6 @@ impl WeightInfo for () {
 		//  Estimated: `0`
 		// Minimum execution time: 7_000_000 picoseconds.
 		Weight::from_parts(8_000_000, 0)
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 }

@@ -17,6 +17,8 @@ use midnight_node_res::get_config;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 
+use crate::cfg::validated_file::SafeReadOpts;
+
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 
 #[derive(Debug, Serialize, Deserialize, Default, Validate, Documented)]
@@ -28,6 +30,10 @@ pub struct MetaCfg {
 	pub show_config: bool,
 	/// Show secrets in configuration
 	pub show_secrets: bool,
+	/// Maximum size allowed when reading config files
+	pub safe_read_max_size: Option<u64>,
+	/// Allow symlinks when loading files
+	pub unsafe_allow_symlinks: bool,
 }
 
 impl CfgHelp for MetaCfg {
@@ -36,18 +42,28 @@ impl CfgHelp for MetaCfg {
 	}
 }
 
+impl From<&MetaCfg> for SafeReadOpts {
+	fn from(value: &MetaCfg) -> Self {
+		let d = SafeReadOpts::default();
+		Self {
+			max_size: value.safe_read_max_size.unwrap_or(d.max_size),
+			unsafe_allow_symlinks: value.unsafe_allow_symlinks,
+		}
+	}
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CfgPreset(pub String);
 
 impl CfgPreset {
-	pub fn load_config(&self) -> Result<File<FileSourceString, FileFormat>, ConfigError> {
+	pub fn load_config(
+		&self,
+		safe_read_opts: &SafeReadOpts,
+	) -> Result<File<FileSourceString, FileFormat>, ConfigError> {
 		let config_str = get_config(&self.0).map_or_else(
 			|| {
-				super::validated_file::safe_read_to_string(
-					&self.0,
-					super::validated_file::MAX_GENESIS_FILE_SIZE,
-				)
-				.map_err(ConfigError::Message)
+				super::validated_file::safe_read_to_string(&self.0, safe_read_opts)
+					.map_err(ConfigError::Message)
 			},
 			Ok,
 		)?;
