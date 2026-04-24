@@ -8,9 +8,6 @@ name: fork-devnet
 on:
   workflow_dispatch:
     inputs:
-      snapshot_url:
-        description: "HTTP(S) URL to the single-node devnet snapshot tar"
-        required: true
       mock_authorities_tag:
         description: "mock-authorities image tag"
         required: true
@@ -52,12 +49,18 @@ jobs:
 
       - name: Pull images
         run: |
-          docker pull "$MOCK_AUTHORITIES_IMAGE"
-          docker pull "$NODE_IMAGE"
+          # Fall back to a local copy if pull fails — lets us test locally-built
+          # images (e.g. act) without a remote push.
+          docker pull "$MOCK_AUTHORITIES_IMAGE" || docker image inspect "$MOCK_AUTHORITIES_IMAGE" >/dev/null
+          docker pull "$NODE_IMAGE" || docker image inspect "$NODE_IMAGE" >/dev/null
 
+      # Pinned to a known-good devnet snapshot for now. The backup system also
+      # publishes a manifest at https://dg39snjayoq3t.cloudfront.net/index.json;
+      # we may want to add selection logic (e.g. max block_height, version filter)
+      # later so this doesn't go stale as snapshots rotate out of S3.
       - name: Download snapshot
         env:
-          SNAPSHOT_URL: ${{ inputs.snapshot_url }}
+          SNAPSHOT_URL: "https://dg39snjayoq3t.cloudfront.net/devnet/ip-10-0-47-151/epoch-0/devnet-epoch-0-block-250208-v0.22.0.tar.gz"
         run: |
           curl -fL --retry 3 --retry-delay 5 -o /tmp/devnet-snapshot.tar "$SNAPSHOT_URL"
           ls -lh /tmp/devnet-snapshot.tar
@@ -98,23 +101,29 @@ jobs:
       - name: Generate mock-mode compose override
         run: |
           cd "$DEVNET_DIR"
+          # Heredocs break the outer YAML block-scalar indent (body lines dedent
+          # below the step's run: | indent and terminate the scalar early), so
+          # we emit each line with echo.
           {
             echo "services:"
             for i in $(seq 1 "$NUM_VALIDATORS"); do
               vidx=$((i - 1))
-              cat <<EOF
-  node${i}:
-    environment:
-      USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
-      MOCK_REGISTRATIONS_FILE: "res/mock-bridge-data/devnet-mock.json"
-      AURA_SEED_FILE: /seeds/aura.seed
-      GRANDPA_SEED_FILE: /seeds/grandpa.seed
-      CROSS_CHAIN_SEED_FILE: /seeds/cross_chain.seed
-      SEED_PHRASE: ""
-      DB_SYNC_POSTGRES_CONNECTION_STRING: ""
-    volumes:
-      - ./mocked-config/seeds/validator-${vidx}:/seeds
-EOF
+              echo "  node${i}:"
+              echo "    environment:"
+              echo "      USE_MAIN_CHAIN_FOLLOWER_MOCK: \"true\""
+              echo "      MOCK_REGISTRATIONS_FILE: \"/res/mock-bridge-data/devnet-mock.json\""
+              echo "      AURA_SEED_FILE: /seeds/aura.seed"
+              echo "      GRANDPA_SEED_FILE: /seeds/grandpa.seed"
+              echo "      CROSS_CHAIN_SEED_FILE: /seeds/cross_chain.seed"
+              echo "      SEED_PHRASE: \"\""
+              echo "      DB_SYNC_POSTGRES_CONNECTION_STRING: \"\""
+              echo "    volumes:"
+              echo "      - ./mocked-config/seeds/validator-${vidx}:/seeds"
+              # The base compose's x-node-common anchor mount ./res:/res is
+              # overridden by each service's own volumes list. Overlay just
+              # devnet-mock.json into the image's baked-in /res so we keep
+              # chain-spec and the other res files intact.
+              echo "      - ./res/mock-bridge-data/devnet-mock.json:/res/mock-bridge-data/devnet-mock.json:ro"
             done
           } > devnet.mock.override.yaml
           cat devnet.mock.override.yaml
