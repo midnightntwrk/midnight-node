@@ -153,7 +153,9 @@ impl BuildTxs for SingleTxBuilder {
 				self.unshielded_token_type,
 				&self.input_utxos,
 			)
-			.expect("insufficient UTXOs for transfer");
+			.unwrap_or_else(|error| {
+				panic!("failed to select unshielded UTXOs for transfer: {error}")
+			});
 			tx_info.set_intents(intents);
 		}
 
