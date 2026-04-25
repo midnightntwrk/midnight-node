@@ -2243,6 +2243,29 @@ async fn deregister_first_mapping() {
         MidnightClient::calculate_nonce(prefix3, cnight_utxo3.transaction.id, cnight_utxo3.index);
     println!("Calculated nonce for cNIGHT UTXO: {}", nonce3);
 
+    //check utxo1 producing dust
+    let args = DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: 1,
+            dust_warp: true,
+            fetch_cache: FetchCacheConfig::InMemory,
+        },
+        seed: midnight_wallet_seed,
+        dry_run: false,
+    };
+
+    let result = dust_balance::execute(args)
+        .await
+        .expect("dust-balance error");
+
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        println!("Total dust balance #1: {}", total);
+    }
+
+    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+
     //check utxo3 producing dust
     let args3 = DustBalanceArgs {
         source: Source {
@@ -2256,7 +2279,7 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed2,
         dry_run: false,
     };
 
@@ -2266,11 +2289,11 @@ async fn deregister_first_mapping() {
 
     let mut balance: &u128 = &0;
     if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result3 {
-        println!("Total dust balance: {}", total);
+        println!("Total dust balance #2: {}", total);
         balance = total;
     }
 
-    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+    assert!(matches!(result3, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     let args4 = DustBalanceArgs {
         source: Source {
