@@ -367,3 +367,11 @@ python ./scripts/generate-keys.py --help
 ### Fork Testing
 
 See [fork-testing.md](docs/fork-testing.md)
+
+## 💰 Bounty Contribution
+
+- **Task:** Very slow initial sync (0.2 BPS)
+- **Reward:** $8
+- **Source:** GitHub-Paid
+- **Date:** 2026-04-27
+
