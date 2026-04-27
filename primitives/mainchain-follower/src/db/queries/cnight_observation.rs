@@ -17,27 +17,21 @@
 //! To get a better understanding of how these queries are working, see the schema documentation for db-sync:
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 use crate::db::{
-	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, QueryBounds, RegistrationRow,
+	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, PagedQuery, QueryBounds,
+	RegistrationRow,
 };
 use log::info;
-use midnight_primitives_cnight_observation::CardanoPosition;
 use sidechain_domain::*;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
-#[allow(clippy::too_many_arguments)]
 pub async fn get_registrations(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
 	auth_token_ident: i64,
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-	limit: usize,
-	offset: usize,
-	low_bound: QueryBounds,
-	high_bound: QueryBounds,
+	query: &PagedQuery<'_>,
 ) -> Result<Vec<RegistrationRow>, SqlxError> {
-	assert!(limit < i32::MAX as usize);
-	assert!(offset < i32::MAX as usize);
+	assert!(query.limit < i32::MAX as usize);
+	assert!(query.offset < i32::MAX as usize);
 	sqlx::query_as!(
 		RegistrationRow,
 		r#"
@@ -68,36 +62,30 @@ LIMIT $7 OFFSET $8;
         "#,
 		smart_contract_address,
 		auth_token_ident,
-		start.block_number as i32,
-		start.tx_index_in_block as i32,
-		end.block_number as i32,
-		end.tx_index_in_block as i32,
-		limit as i32,
-		offset as i32,
-		low_bound.tx_id,
-		high_bound.tx_id,
-		low_bound.tx_out_id,
-		high_bound.tx_out_id,
-		low_bound.ma_tx_out_id,
-		high_bound.ma_tx_out_id,
+		query.start.block_number as i32,
+		query.start.tx_index_in_block as i32,
+		query.end.block_number as i32,
+		query.end.tx_index_in_block as i32,
+		query.limit as i32,
+		query.offset as i32,
+		query.low_bound.tx_id,
+		query.high_bound.tx_id,
+		query.low_bound.tx_out_id,
+		query.high_bound.tx_out_id,
+		query.low_bound.ma_tx_out_id,
+		query.high_bound.ma_tx_out_id,
 	)
 	.fetch_all(pool)
 	.await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn get_deregistrations(
 	pool: &Pool<Postgres>,
 	smart_contract_address: &str,
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-	limit: usize,
-	offset: usize,
-	low_bound: QueryBounds,
-	high_bound: QueryBounds,
+	query: &PagedQuery<'_>,
 ) -> Result<Vec<DeregistrationRow>, SqlxError> {
-	assert!(limit < i32::MAX as usize);
-	assert!(offset < i32::MAX as usize);
+	assert!(query.limit < i32::MAX as usize);
+	assert!(query.offset < i32::MAX as usize);
 	// NOTE: Ordered by transaction index (i.e. index of transaction within block)
 	// Once one valid deregistration can occur in a single tx, so we don't have to worry about
 	// ordering within txs
@@ -131,34 +119,28 @@ ORDER BY block.block_no, tx.block_index
 LIMIT $6 OFFSET $7;
         "#,
 		smart_contract_address,
-		start.block_number as i32,
-		start.tx_index_in_block as i32,
-		end.block_number as i32,
-		end.tx_index_in_block as i32,
-		limit as i32,
-		offset as i32,
-		low_bound.tx_id,
-		high_bound.tx_id,
-		low_bound.tx_in_id,
-		high_bound.tx_in_id,
+		query.start.block_number as i32,
+		query.start.tx_index_in_block as i32,
+		query.end.block_number as i32,
+		query.end.tx_index_in_block as i32,
+		query.limit as i32,
+		query.offset as i32,
+		query.low_bound.tx_id,
+		query.high_bound.tx_id,
+		query.low_bound.tx_in_id,
+		query.high_bound.tx_in_id,
 	)
 	.fetch_all(pool)
 	.await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_asset_creates(
 	pool: &Pool<Postgres>,
 	ident: i64,
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-	limit: usize,
-	offset: usize,
-	low_bound: QueryBounds,
-	high_bound: QueryBounds,
+	query: &PagedQuery<'_>,
 ) -> Result<Vec<AssetCreateRow>, SqlxError> {
-	assert!(limit < i32::MAX as usize);
-	assert!(offset < i32::MAX as usize);
+	assert!(query.limit < i32::MAX as usize);
+	assert!(query.offset < i32::MAX as usize);
 	sqlx::query_as!(
 		AssetCreateRow,
 		r#"
@@ -186,36 +168,30 @@ ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $6 OFFSET $7;
     "#,
 		ident,
-		start.block_number as i32,
-		start.tx_index_in_block as i32,
-		end.block_number as i32,
-		end.tx_index_in_block as i32,
-		limit as i32,
-		offset as i32,
-		low_bound.tx_id,
-		high_bound.tx_id,
-		low_bound.tx_out_id,
-		high_bound.tx_out_id,
-		low_bound.ma_tx_out_id,
-		high_bound.ma_tx_out_id,
+		query.start.block_number as i32,
+		query.start.tx_index_in_block as i32,
+		query.end.block_number as i32,
+		query.end.tx_index_in_block as i32,
+		query.limit as i32,
+		query.offset as i32,
+		query.low_bound.tx_id,
+		query.high_bound.tx_id,
+		query.low_bound.tx_out_id,
+		query.high_bound.tx_out_id,
+		query.low_bound.ma_tx_out_id,
+		query.high_bound.ma_tx_out_id,
 	)
 	.fetch_all(pool)
 	.await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_asset_spends(
 	pool: &Pool<Postgres>,
 	ident: i64,
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-	limit: usize,
-	offset: usize,
-	low_bound: QueryBounds,
-	high_bound: QueryBounds,
+	query: &PagedQuery<'_>,
 ) -> Result<Vec<AssetSpendRow>, SqlxError> {
-	assert!(limit < i32::MAX as usize);
-	assert!(offset < i32::MAX as usize);
+	assert!(query.limit < i32::MAX as usize);
+	assert!(query.offset < i32::MAX as usize);
 	sqlx::query_as!(
 		AssetSpendRow,
 		r#"
@@ -246,16 +222,16 @@ ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
 LIMIT $6 OFFSET $7;
     "#,
 		ident,
-		start.block_number as i32,
-		start.tx_index_in_block as i32,
-		end.block_number as i32,
-		end.tx_index_in_block as i32,
-		limit as i32,
-		offset as i32,
-		low_bound.tx_id,
-		high_bound.tx_id,
-		low_bound.tx_in_id,
-		high_bound.tx_in_id,
+		query.start.block_number as i32,
+		query.start.tx_index_in_block as i32,
+		query.end.block_number as i32,
+		query.end.tx_index_in_block as i32,
+		query.limit as i32,
+		query.offset as i32,
+		query.low_bound.tx_id,
+		query.high_bound.tx_id,
+		query.low_bound.tx_in_id,
+		query.high_bound.tx_in_id,
 	)
 	.fetch_all(pool)
 	.await

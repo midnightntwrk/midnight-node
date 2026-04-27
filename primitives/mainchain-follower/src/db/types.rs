@@ -156,3 +156,16 @@ pub struct QueryBounds {
 	pub ma_tx_out_id: i64,
 	pub tx_in_id: i64,
 }
+
+/// A block-range + pagination window shared by the cNight observation queries.
+/// `start`/`end` scope blocks and tx index; `low_bound`/`high_bound` pre-filter
+/// the underlying id-indexed tables so the SQL planner avoids full scans.
+#[derive(Debug, Clone, Copy)]
+pub struct PagedQuery<'a> {
+	pub start: &'a CardanoPosition,
+	pub end: &'a CardanoPosition,
+	pub limit: usize,
+	pub offset: usize,
+	pub low_bound: QueryBounds,
+	pub high_bound: QueryBounds,
+}
