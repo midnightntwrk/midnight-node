@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_block_production_log.
@@ -85,8 +85,8 @@ impl WeightInfo for () {
 		//  Estimated: `1489`
 		// Minimum execution time: 3_000_000 picoseconds.
 		Weight::from_parts(4_000_000, 1489)
-			.saturating_add(RocksDbWeight::get().reads(1_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().reads(1_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `BlockProductionLog::CurrentProducer` (r:1 w:1)
 	/// Proof: `BlockProductionLog::CurrentProducer` (`max_values`: Some(1), `max_size`: Some(66), added: 561, mode: `MaxEncodedLen`)
@@ -100,7 +100,7 @@ impl WeightInfo for () {
 		//  Estimated: `4190`
 		// Minimum execution time: 12_000_000 picoseconds.
 		Weight::from_parts(13_000_000, 4190)
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().reads(3_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 }

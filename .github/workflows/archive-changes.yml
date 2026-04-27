@@ -1,0 +1,329 @@
+name: Archive Changes and Bump Version
+
+# no top level default permissions for security reasons
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The git ref to checkout"
+        required: true
+        default: "main"
+      release-tag:
+        description: "The release tag to archive under (e.g. node-1.2.3-toolkit-0.4.5)"
+        required: true
+      archive-changes:
+        type: boolean
+        description: "Archive changes for this release"
+        required: true
+        default: true
+      archive-mode:
+        type: choice
+        options:
+          - move
+          - copy
+          - delete
+        description: "How to handle change files during archiving"
+        required: true
+        default: move
+      reset-changes:
+        type: boolean
+        description: "Reset changes/ to the change template"
+        required: true
+        default: false
+      bump-version:
+        type: boolean
+        description: "Bump components patch version"
+        required: true
+        default: false
+      skip-node:
+        type: boolean
+        description: "Skip node component"
+        required: false
+        default: false
+      skip-toolkit:
+        type: boolean
+        description: "Skip toolkit component"
+        required: false
+        default: false
+      skip-runtime:
+        type: boolean
+        description: "Skip runtime component"
+        required: false
+        default: false
+
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      release-tag:
+        type: string
+        required: true
+      archive-changes:
+        type: boolean
+        default: true
+      archive-mode:
+        type: string
+        default: "move"
+      reset-changes:
+        type: boolean
+        default: false
+      bump-version:
+        type: boolean
+        default: false
+      skip-node:
+        type: boolean
+        default: false
+      skip-toolkit:
+        type: boolean
+        default: false
+      skip-runtime:
+        type: boolean
+        default: false
+
+jobs:
+  archive-and-bump:
+    name: Archive changes and bump version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+          ref: ${{ inputs.ref }}
+
+      - name: Install Season
+        uses: ./.github/actions/install-season
+        with:
+          gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          config: ./.github/season.yml
+
+      - name: Setup Env
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          NODE_VERSION="$(grep -m 1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')"
+          TOOLKIT_VERSION="$(grep -m 1 'version =' util/toolkit/Cargo.toml | awk '{print $3}' | tr -d '"')"
+
+          # Extract runtime spec_version (e.g. 001_000_000 -> 1.0.0)
+          SPEC_VERSION_RAW="$(grep -m 1 'spec_version:' runtime/src/lib.rs | awk '{print $2}' | tr -d ',')"
+          MAJOR=$((10#$(echo "$SPEC_VERSION_RAW" | sed 's/_//g' | sed 's/^\([0-9]\{3\}\).*/\1/')))
+          MINOR=$((10#$(echo "$SPEC_VERSION_RAW" | sed 's/_//g' | sed 's/^[0-9]\{3\}\([0-9]\{3\}\).*/\1/')))
+          PATCH=$((10#$(echo "$SPEC_VERSION_RAW" | sed 's/_//g' | sed 's/^[0-9]\{6\}\([0-9]\{3\}\).*/\1/')))
+          RUNTIME_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "GIT_TAG_RELEASE=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
+          echo "TOOLKIT_VERSION=$TOOLKIT_VERSION" >> "$GITHUB_ENV"
+          echo "RUNTIME_VERSION=$RUNTIME_VERSION" >> "$GITHUB_ENV"
+
+      - name: Fetch release tag
+        if: inputs.archive-changes == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git fetch origin tag "$GIT_TAG_RELEASE"
+
+      - name: Archive changes
+        if: inputs.archive-changes == true
+        env:
+          ARCHIVE_MODE: ${{ inputs.archive-mode }}
+          SKIP_NODE: ${{ inputs.skip-node }}
+          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
+          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
+        run: |
+          if [ "$SKIP_NODE" != "true" ]; then
+            season archive-changes --changes-dir changes/node --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+          fi
+          if [ "$SKIP_TOOLKIT" != "true" ]; then
+            season archive-changes --changes-dir changes/toolkit --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+          fi
+          if [ "$SKIP_RUNTIME" != "true" ]; then
+            season archive-changes --changes-dir changes/runtime --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+          fi
+
+      - name: Reset changes
+        if: inputs.reset-changes == true
+        env:
+          SKIP_NODE: ${{ inputs.skip-node }}
+          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
+          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
+        run: |
+          if [ "$SKIP_NODE" != "true" ]; then
+            season reset-changes --changes-dir changes/node --changes-template-dir .changes_template/node --dirty
+          fi
+          if [ "$SKIP_TOOLKIT" != "true" ]; then
+            season reset-changes --changes-dir changes/toolkit --changes-template-dir .changes_template/toolkit --dirty
+          fi
+          if [ "$SKIP_RUNTIME" != "true" ]; then
+            season reset-changes --changes-dir changes/runtime --changes-template-dir .changes_template/runtime --dirty
+          fi
+
+      - name: Bump components version
+        if: inputs.bump-version == true
+        env:
+          SKIP_NODE: ${{ inputs.skip-node }}
+          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
+          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
+        run: |
+          if [ "$SKIP_NODE" != "true" ]; then
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$NODE_VERSION"
+            NEW_NODE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            sed -i "0,/^version = \"$NODE_VERSION\"/s//version = \"$NEW_NODE_VERSION\"/" node/Cargo.toml
+            sed -i '/^name = "midnight-node"/{n;s/version = "'"$NODE_VERSION"'"/version = "'"$NEW_NODE_VERSION"'"/;}' Cargo.lock
+            echo "Bumped node version: $NODE_VERSION -> $NEW_NODE_VERSION"
+          fi
+          if [ "$SKIP_TOOLKIT" != "true" ]; then
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$TOOLKIT_VERSION"
+            NEW_TOOLKIT_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            sed -i "0,/^version = \"$TOOLKIT_VERSION\"/s//version = \"$NEW_TOOLKIT_VERSION\"/" util/toolkit/Cargo.toml
+            sed -i '/^name = "midnight-node-toolkit"/{n;s/version = "'"$TOOLKIT_VERSION"'"/version = "'"$NEW_TOOLKIT_VERSION"'"/;}' Cargo.lock
+            echo "Bumped toolkit version: $TOOLKIT_VERSION -> $NEW_TOOLKIT_VERSION"
+          fi
+          if [ "$SKIP_RUNTIME" != "true" ]; then
+            # spec_version format: XXX_YYY_ZZZ (e.g. 001_000_000)
+            SPEC_RAW="$(grep -m 1 'spec_version:' runtime/src/lib.rs | awk '{print $2}' | tr -d ',')"
+            # Remove underscores, extract 3-digit groups, bump patch
+            DIGITS="${SPEC_RAW//_/}"
+            RMAJOR="${DIGITS:0:3}"
+            RMINOR="${DIGITS:3:3}"
+            RPATCH="${DIGITS:6:3}"
+            NEW_RPATCH=$(printf '%03d' $(( 10#$RPATCH + 1 )))
+            NEW_SPEC="${RMAJOR}_${RMINOR}_${NEW_RPATCH}"
+            sed -i "s/spec_version: ${SPEC_RAW}/spec_version: ${NEW_SPEC}/" runtime/src/lib.rs
+            echo "Bumped runtime spec_version: $SPEC_RAW -> $NEW_SPEC"
+          fi
+
+      # Create a signed commit on a new branch and open a PR.
+      # Uses the GitHub GraphQL API (createCommitOnBranch) instead of a
+      # third-party action (e.g. peter-evans/create-pull-request)
+      # so the commit is automatically signed by GitHub.
+      - name: Create Archive-Changes PR against main
+        if: inputs.skip-node != true || inputs.skip-toolkit != true || inputs.skip-runtime != true
+        shell: bash
+        env:
+          BRANCH: archive-release-${{ inputs.release-tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY##*/}"
+
+          # Stage all working-tree changes so we can diff them
+          git add -A
+
+          # Collect added/modified files with base64-encoded contents
+          ADDITIONS_JSON=$(git diff --cached --name-only -z --diff-filter=AM | \
+            while IFS= read -r -d '' file; do
+              CONTENT_B64=$(base64 -w 0 "$file")
+              jq -n --arg path "$file" --arg contents "$CONTENT_B64" \
+                '{path: $path, contents: $contents}'
+            done | jq -s '.')
+
+          # Collect deleted files
+          DELETIONS_JSON=$(git diff --cached --name-only -z --diff-filter=D | \
+            while IFS= read -r -d '' file; do
+              jq -n --arg path "$file" '{path: $path}'
+            done | jq -s '.')
+
+          if [ "$ADDITIONS_JSON" = "[]" ] && [ "$DELETIONS_JSON" = "[]" ]; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          # Get repo ID and main branch HEAD OID
+          # shellcheck disable=SC2016
+          QUERY_RESULT=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                id
+                defaultBranchRef {
+                  target { oid }
+                }
+              }
+            }
+          ' -f owner="$OWNER" -f name="$REPO")
+
+          REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
+          MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
+
+          # Create branch at main HEAD, or force-update if it already exists
+          # shellcheck disable=SC2016
+          CREATE_RESULT=$(gh api graphql -f query='
+            mutation($repoId: ID!, $name: String!, $oid: GitObjectID!) {
+              createRef(input: {repositoryId: $repoId, name: $name, oid: $oid}) {
+                ref { name }
+              }
+            }
+          ' -f repoId="$REPO_ID" -f name="refs/heads/$BRANCH" -f oid="$MAIN_OID" 2>&1) || true
+
+          if echo "$CREATE_RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "Branch already exists, force-updating to main HEAD..."
+            # shellcheck disable=SC2016
+            REF_ID=$(gh api graphql -f query='
+              query($owner: String!, $name: String!, $ref: String!) {
+                repository(owner: $owner, name: $name) {
+                  ref(qualifiedName: $ref) { id }
+                }
+              }
+            ' -f owner="$OWNER" -f name="$REPO" -f ref="refs/heads/$BRANCH" \
+              | jq -r '.data.repository.ref.id')
+
+            # shellcheck disable=SC2016
+            gh api graphql -f query='
+              mutation($refId: ID!, $oid: GitObjectID!) {
+                updateRef(input: {refId: $refId, oid: $oid, force: true}) {
+                  ref { name }
+                }
+              }
+            ' -f refId="$REF_ID" -f oid="$MAIN_OID"
+          fi
+
+          # Create signed commit via GraphQL
+          COMMIT_RESULT=$(jq -n \
+            --arg nwo "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg oid "$MAIN_OID" \
+            --arg headline "chore: archive changes for $GIT_TAG_RELEASE" \
+            --argjson additions "$ADDITIONS_JSON" \
+            --argjson deletions "$DELETIONS_JSON" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {
+                input: {
+                  branch: {
+                    repositoryNameWithOwner: $nwo,
+                    branchName: $branch
+                  },
+                  expectedHeadOid: $oid,
+                  message: { headline: $headline },
+                  fileChanges: {
+                    additions: $additions,
+                    deletions: $deletions
+                  }
+                }
+              }
+            }' | gh api graphql --input -)
+
+          COMMIT_OID=$(echo "$COMMIT_RESULT" | jq -r '.data.createCommitOnBranch.commit.oid')
+          echo "Created signed commit: $COMMIT_OID"
+
+          # Create PR if one doesn't already exist
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+            echo "PR $EXISTING_PR already exists for branch $BRANCH"
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore: post-release $GIT_TAG_RELEASE" \
+              --body "Automated post-release PR for $GIT_TAG_RELEASE."
+          fi

@@ -37,7 +37,7 @@ use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -136,6 +136,19 @@ fn test_get_contract_state() {
 
 		let result = mock::Midnight::get_contract_state(&addr);
 		assert!(result.is_ok(), "Failed calling `get_contract_state`");
+	})
+}
+
+#[test]
+fn test_get_contract_state_not_present() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A random address that hasn't been deployed
+		let addr = hex::decode(CONTRACT_ADDR).expect("Address should be a valid hex code");
+
+		let result = mock::Midnight::get_contract_state(&addr);
+		assert_eq!(result, Err(LedgerApiError::ContractNotPresent));
 	})
 }
 

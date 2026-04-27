@@ -1,0 +1,42 @@
+[package]
+name = "pallet-c2m-bridge"
+version = "1.0.0"
+edition = "2024"
+description = "cNight Cardano-to-Midnight bridge transfer handling built on top of partner-chains bridge-pallet"
+license-file.workspace = true
+publish = false
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+log.workspace = true
+sp-core.workspace = true
+sidechain-domain.workspace = true
+sp-partner-chains-bridge.workspace = true
+pallet-partner-chains-bridge.workspace = true
+midnight-primitives.workspace = true
+midnight-node-ledger.workspace = true
+
+[dev-dependencies]
+sp-io = { workspace = true }
+sp-runtime = { workspace = true }
+
+[features]
+default = ["std"]
+std = [
+    "frame-support/std",
+    "frame-system/std",
+    "scale-info/std",
+    "sp-core/std",
+    "parity-scale-codec/std",
+    "sidechain-domain/std",
+    "sp-partner-chains-bridge/std",
+    "pallet-partner-chains-bridge/std",
+    "midnight-primitives/std",
+    "midnight-node-ledger/std",
+]
+
+[package.metadata.cargo-shear]
+ignored = ["parity-scale-codec", "scale-info"]

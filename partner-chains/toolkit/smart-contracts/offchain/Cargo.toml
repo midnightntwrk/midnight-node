@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-cardano-offchain"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 description = "Partner Chains Smart Contracts Offchain code"
 authors.workspace = true
@@ -39,7 +39,7 @@ tokio-retry = { workspace = true }
 proptest = { workspace = true }
 pretty_assertions = { workspace = true }
 testcontainers = { workspace = true, features = ["blocking"] }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 
 [lib]
 doctest = false

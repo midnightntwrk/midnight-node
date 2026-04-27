@@ -29,6 +29,20 @@ use std::{
 };
 use subxt_signer::{SecretUri, SecretUriError, sr25519};
 
+/// Wallet seed for HD key derivation (BIP-32/44). Holds 16, 32, or 64 bytes
+/// of seed material from which all wallet keys are derived.
+///
+/// # Security: no `Default` implementation
+///
+/// `WalletSeed` intentionally does not implement [`Default`]. A previous
+/// implementation returned `Medium([0; 32])` — an all-zero seed that would
+/// produce predictable wallet keys. Removed per Least Authority audit
+/// finding A2-D (Feb 2026, PR #804).
+///
+/// ```compile_fail,E0599
+/// // WalletSeed must not implement Default — this must fail to compile.
+/// let _ = midnight_node_ledger_helpers::WalletSeed::default();
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Storable, Serializable)]
 #[storable(base)]
 pub enum WalletSeed {

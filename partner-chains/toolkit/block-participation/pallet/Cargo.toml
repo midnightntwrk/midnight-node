@@ -1,6 +1,6 @@
 [package]
 name = "pallet-block-participation"
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 readme = "README.md"
 authors.workspace = true
