@@ -73,4 +73,47 @@ impl<T: Config> OnRuntimeUpgrade for MigrateV0ToV1<T> {
 
 		T::DbWeight::get().reads_writes(reads, writes)
 	}
+
+	#[cfg(feature = "try-runtime")]
+	fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
+		// Snapshot the entire legacy state. If we're already at v1 this will
+		// be empty, which makes `post_upgrade` a no-op — exactly what we want
+		// for an idempotent migration.
+		let v0_state: Vec<(CardanoRewardAddressBytes, Vec<MappingEntry>)> =
+			v0::Mappings::<T>::iter().collect();
+		Ok(v0_state.encode())
+	}
+
+	#[cfg(feature = "try-runtime")]
+	fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+		use frame_support::ensure;
+
+		ensure!(
+			Pallet::<T>::on_chain_storage_version() == 1,
+			"storage version must be 1 after migration"
+		);
+		ensure!(
+			v0::Mappings::<T>::iter().next().is_none(),
+			"legacy v0 Mappings storage must be fully drained"
+		);
+
+		let v0_state: Vec<(CardanoRewardAddressBytes, Vec<MappingEntry>)> =
+			Decode::decode(&mut state.as_slice()).expect("pre_upgrade snapshot must decode");
+
+		for (addr, entries) in v0_state {
+			ensure!(
+				Mapping::<T>::iter_prefix_values(addr).count() == entries.len(),
+				"v1 Mapping prefix count must equal v0 vec length"
+			);
+			for entry in entries {
+				ensure!(
+					Mapping::<T>::get(addr, (entry.utxo_tx_hash, entry.utxo_index))
+						== Some(entry.dust_public_key),
+					"v1 dust key must match v0 entry"
+				);
+			}
+		}
+
+		Ok(())
+	}
 }
