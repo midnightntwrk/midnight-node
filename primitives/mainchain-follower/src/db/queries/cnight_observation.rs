@@ -359,7 +359,7 @@ FROM block
 WHERE hash = $1
 "#,
 	)
-	.bind(&hash.0)
+	.bind(hash.0)
 	.fetch_optional(pool)
 	.await
 }
