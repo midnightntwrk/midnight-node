@@ -558,7 +558,7 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	}
 
 	#[cfg(feature = "erase-proof")]
-	pub async fn prove(self) -> FinalizedTransaction<D> {
+	pub async fn prove(mut self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build();
 		tx_unproven.erase_proofs()
 	}
