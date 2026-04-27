@@ -418,7 +418,11 @@ pub mod pallet {
 						dust_public_key: prev_dust_key,
 					}))
 				},
-				_ => {},
+				_ => {
+					log::error!(
+						"fatal integrity error: mapping added, previous and post mapping count == 1"
+					);
+				},
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(MappingEntry {
