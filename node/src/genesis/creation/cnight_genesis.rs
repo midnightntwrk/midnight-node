@@ -65,12 +65,11 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
 
 		let mut mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>> = BTreeMap::new();
-		for (addr, (utxo_tx_hash, utxo_index), dust_public_key) in Mapping::<mock::Test>::iter() {
+		for (addr, utxo_id, dust_public_key) in Mapping::<mock::Test>::iter() {
 			mappings.entry(addr).or_default().push(MappingEntry {
 				cardano_reward_address: addr,
 				dust_public_key,
-				utxo_tx_hash,
-				utxo_index,
+				utxo_id,
 			});
 		}
 

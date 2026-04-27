@@ -59,11 +59,7 @@ impl<T: Config> OnRuntimeUpgrade for MigrateV0ToV1<T> {
 			// `drain` removes the legacy entry — count that as a write.
 			writes = writes.saturating_add(1);
 			for entry in entries {
-				Mapping::<T>::insert(
-					addr,
-					(entry.utxo_tx_hash, entry.utxo_index),
-					entry.dust_public_key,
-				);
+				Mapping::<T>::insert(addr, entry.utxo_id, entry.dust_public_key);
 				writes = writes.saturating_add(1);
 			}
 		}
@@ -107,8 +103,7 @@ impl<T: Config> OnRuntimeUpgrade for MigrateV0ToV1<T> {
 			);
 			for entry in entries {
 				ensure!(
-					Mapping::<T>::get(addr, (entry.utxo_tx_hash, entry.utxo_index))
-						== Some(entry.dust_public_key),
+					Mapping::<T>::get(addr, entry.utxo_id) == Some(entry.dust_public_key),
 					"v1 dust key must match v0 entry"
 				);
 			}

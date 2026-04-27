@@ -88,7 +88,7 @@ pub mod pallet {
 		RegistrationData, SpendData,
 	};
 	use scale_info::prelude::vec::Vec;
-	use sidechain_domain::McTxHash;
+	use sidechain_domain::UtxoId;
 	use sp_core::H256;
 
 	use midnight_node_ledger::types::{
@@ -119,8 +119,7 @@ pub mod pallet {
 	pub struct MappingEntry {
 		pub cardano_reward_address: CardanoRewardAddressBytes,
 		pub dust_public_key: DustPublicKeyBytes,
-		pub utxo_tx_hash: McTxHash,
-		pub utxo_index: u16,
+		pub utxo_id: UtxoId,
 	}
 
 	#[derive(Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, PartialEq, new)]
@@ -196,14 +195,14 @@ pub mod pallet {
 
 	/// Individual Cardano -> DUST mappings, keyed by the reward address and the
 	/// source UTXO reference. Each UTXO produces exactly one mapping, so
-	/// `(utxo_tx_hash, utxo_index)` is globally unique.
+	/// the `UtxoId` is globally unique.
 	#[pallet::storage]
 	pub type Mapping<T: Config> = StorageDoubleMap<
 		_,
 		Blake2_128Concat,
 		CardanoRewardAddressBytes,
 		Blake2_128Concat,
-		(McTxHash, u16),
+		UtxoId,
 		DustPublicKeyBytes,
 		OptionQuery,
 	>;
@@ -306,11 +305,7 @@ pub mod pallet {
 
 			for (addr, entries) in &self.config.mappings {
 				for entry in entries {
-					Mapping::<T>::insert(
-						addr,
-						(entry.utxo_tx_hash, entry.utxo_index),
-						entry.dust_public_key.clone(),
-					);
+					Mapping::<T>::insert(addr, entry.utxo_id, entry.dust_public_key.clone());
 				}
 			}
 
@@ -395,12 +390,12 @@ pub mod pallet {
 
 		fn handle_registration(header: &ObservedUtxoHeader, data: RegistrationData) {
 			let RegistrationData { cardano_reward_address, dust_public_key } = data;
-			let key = (header.utxo_tx_hash, header.utxo_index.0);
+			let utxo_id = UtxoId::new(header.utxo_tx_hash.0, header.utxo_index.0);
 
 			// Capture the unique-key state before and after the insert; the
 			// 0 -> 1 and 1 -> 2+ transitions are exactly the diff between the two.
 			let previous_dust_key = Self::unique_dust_key(&cardano_reward_address);
-			Mapping::<T>::insert(cardano_reward_address, key, dust_public_key.clone());
+			Mapping::<T>::insert(cardano_reward_address, utxo_id, dust_public_key.clone());
 			let new_dust_key = Self::unique_dust_key(&cardano_reward_address);
 
 			match (previous_dust_key, new_dust_key) {
@@ -428,20 +423,18 @@ pub mod pallet {
 			Self::deposit_event(Event::<T>::MappingAdded(MappingEntry {
 				cardano_reward_address,
 				dust_public_key,
-				utxo_tx_hash: header.utxo_tx_hash,
-				utxo_index: header.utxo_index.0,
+				utxo_id,
 			}));
 		}
 
 		fn handle_registration_removal(header: &ObservedUtxoHeader, data: DeregistrationData) {
 			let DeregistrationData { cardano_reward_address, dust_public_key } = data;
-			let key = (header.utxo_tx_hash, header.utxo_index.0);
+			let utxo_id = UtxoId::new(header.utxo_tx_hash.0, header.utxo_index.0);
 
 			let reg_entry = MappingEntry {
 				cardano_reward_address,
 				dust_public_key: dust_public_key.clone(),
-				utxo_tx_hash: header.utxo_tx_hash,
-				utxo_index: header.utxo_index.0,
+				utxo_id,
 			};
 
 			// Same diff-the-unique-key pattern as handle_registration: the
@@ -449,7 +442,7 @@ pub mod pallet {
 			// after the take.
 			let previous_dust_key = Self::unique_dust_key(&cardano_reward_address);
 
-			match Mapping::<T>::take(cardano_reward_address, key) {
+			match Mapping::<T>::take(cardano_reward_address, utxo_id) {
 				Some(stored_dust_key) if stored_dust_key != dust_public_key => {
 					log::error!(
 						"dust key mismatch on deregistration for {cardano_reward_address:?}; removing by utxo ref anyway",

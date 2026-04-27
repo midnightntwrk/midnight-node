@@ -20,7 +20,7 @@ use frame_support::{pallet_prelude::*, storage_alias, traits::OnRuntimeUpgrade};
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
 use pallet_cnight_observation::{Config, Mapping, MappingEntry, Pallet, migration::MigrateV0ToV1};
 use pallet_cnight_observation_mock::mock_with_capture::{Test, new_test_ext};
-use sidechain_domain::McTxHash;
+use sidechain_domain::UtxoId;
 
 /// Matches the legacy pre-migration `Mappings` storage. Kept in a sub-module
 /// so the `storage_alias` item name is literally `Mappings`, matching the
@@ -50,8 +50,7 @@ fn entry(a: CardanoRewardAddressBytes, d: DustPublicKeyBytes, tx: u8, ix: u16) -
 	MappingEntry {
 		cardano_reward_address: a,
 		dust_public_key: d,
-		utxo_tx_hash: McTxHash([tx; 32]),
-		utxo_index: ix,
+		utxo_id: UtxoId::new([tx; 32], ix),
 	}
 }
 
@@ -83,9 +82,9 @@ fn migration_v0_to_v1_translates_entries_and_counts() {
 		assert_eq!(Mapping::<Test>::iter_prefix_values(alice).count(), 1);
 		assert_eq!(Mapping::<Test>::iter_prefix_values(bob).count(), 2);
 
-		assert_eq!(Mapping::<Test>::get(alice, (McTxHash([1; 32]), 0)), Some(alice_dust),);
-		assert_eq!(Mapping::<Test>::get(bob, (McTxHash([2; 32]), 0)), Some(bob_dust1),);
-		assert_eq!(Mapping::<Test>::get(bob, (McTxHash([2; 32]), 1)), Some(bob_dust2),);
+		assert_eq!(Mapping::<Test>::get(alice, UtxoId::new([1; 32], 0)), Some(alice_dust));
+		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 0)), Some(bob_dust1));
+		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 1)), Some(bob_dust2));
 	});
 }
 

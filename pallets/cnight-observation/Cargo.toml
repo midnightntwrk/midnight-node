@@ -8,7 +8,7 @@ license-file.workspace = true
 [dependencies]
 frame-support.workspace = true
 frame-system.workspace = true
-sidechain-domain.workspace = true
+sidechain-domain = { workspace = true, features = ["serde"] }
 midnight-primitives.workspace = true
 midnight-primitives-mainchain-follower.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -49,6 +49,7 @@ std = [
     "midnight-primitives-mainchain-follower/std",
     "midnight-primitives-cnight-observation/std",
     "pallet-cnight-observation-mock/std",
+    "sidechain-domain/std",
     "derive-new/std",
     "serde_valid",
     "frame-benchmarking?/std",

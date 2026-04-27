@@ -38,7 +38,7 @@ use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
 };
 use rand::prelude::*;
-use sidechain_domain::{McBlockHash, McTxHash};
+use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
 use test_log::test;
 
 fn create_inherent(
@@ -581,8 +581,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -650,8 +649,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
