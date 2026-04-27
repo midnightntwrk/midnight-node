@@ -3,5 +3,5 @@
 
 We were using an unbounded vec to store all cNight mappings for a given user. Replaced this with two new storage maps - inserting and removing mappings is now O(1) in space and time.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1423
 Issue: https://github.com/midnightntwrk/midnight-security/issues/116
