@@ -32,6 +32,7 @@ pallet-tx-pause.workspace = true
 pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
+pallet-collective-proposer-cancel.workspace = true
 pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-block-builder.workspace = true
@@ -132,6 +133,7 @@ std = [
     "pallet-migrations/std",
     "pallet-membership/std",
     "pallet-collective/std",
+    "pallet-collective-proposer-cancel/std",
     "pallet-federated-authority/std",
     "sp-api/std",
     "sp-block-builder/std",
@@ -185,6 +187,7 @@ runtime-benchmarks = [
     "pallet-migrations/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
+    "pallet-collective-proposer-cancel/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
@@ -210,6 +213,7 @@ try-runtime = [
     "pallet-migrations/try-runtime",
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",
+    "pallet-collective-proposer-cancel/try-runtime",
     "pallet-throttle/try-runtime",
 ]
 experimental = []

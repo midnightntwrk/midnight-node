@@ -7832,6 +7832,7 @@ dependencies = [
  "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
+ "pallet-collective-proposer-cancel",
  "pallet-federated-authority",
  "pallet-federated-authority-observation",
  "pallet-grandpa",
@@ -9921,6 +9922,22 @@ dependencies = [
  "frame-system",
  "log",
  "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
+name = "pallet-collective-proposer-cancel"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-collective",
+ "pallet-membership",
+ "parity-scale-codec",
+ "runtime-common",
  "scale-info",
  "sp-core",
  "sp-io",
@@ -13025,6 +13042,8 @@ dependencies = [
  "frame-system",
  "pallet-collective",
  "pallet-membership",
+ "parity-scale-codec",
+ "scale-info",
  "sp-runtime",
 ]
 

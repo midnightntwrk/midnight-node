@@ -127,7 +127,9 @@ use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
-use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
+use runtime_common::governance::{
+	AlwaysNo, MembershipHandler, MembershipObservationHandler, RecordProposer,
+};
 
 use crate::beefy::{
 	compute_current_authority_set, compute_next_authority_set, current_beefy_stakes,
@@ -703,7 +705,10 @@ impl pallet_collective::Config<CouncilCollectiveInstance> for Runtime {
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
 	type KillOrigin = EnsureRoot<Self::AccountId>;
-	type Consideration = ();
+	// `RecordProposer` is a no-deposit `MaybeConsideration` that writes the
+	// proposer's `AccountId` to `CostOf` so `pallet-collective-proposer-cancel`
+	// can verify a caller's right to cancel their own proposal early.
+	type Consideration = RecordProposer;
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
@@ -735,7 +740,7 @@ impl pallet_collective::Config<TechnicalCommitteeCollectiveInstance> for Runtime
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
 	type KillOrigin = EnsureRoot<Self::AccountId>;
-	type Consideration = ();
+	type Consideration = RecordProposer;
 	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
 }
 
@@ -795,6 +800,9 @@ impl pallet_federated_authority::Config for Runtime {
 		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
 	type WeightInfo = ();
 }
+
+impl pallet_collective_proposer_cancel::Config<CouncilCollectiveInstance> for Runtime {}
+impl pallet_collective_proposer_cancel::Config<TechnicalCommitteeCollectiveInstance> for Runtime {}
 
 impl pallet_federated_authority_observation::Config for Runtime {
 	type CouncilMaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as its `pallet_membership` instance
@@ -950,6 +958,12 @@ mod runtime {
 	#[runtime::pallet_index(45)]
 	pub type FederatedAuthorityObservation =
 		pallet_federated_authority_observation::Pallet<Runtime>;
+
+	#[runtime::pallet_index(46)]
+	pub type CouncilProposerCancel = pallet_collective_proposer_cancel::Pallet<Runtime, Instance1>;
+	#[runtime::pallet_index(47)]
+	pub type TechnicalCommitteeProposerCancel =
+		pallet_collective_proposer_cancel::Pallet<Runtime, Instance2>;
 
 	// System Parameters
 	#[runtime::pallet_index(50)]

@@ -14,10 +14,13 @@
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use frame_support::traits::{
-	ChangeMembers, InitializeMembers, SortedMembers, UnfilteredDispatchable,
+	ChangeMembers, Consideration, InitializeMembers, MaybeConsideration, SortedMembers,
+	UnfilteredDispatchable,
 };
 use pallet_collective::{DefaultVote, MemberCount};
-use sp_runtime::traits::Dispatchable;
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
+use sp_runtime::{traits::Dispatchable, DispatchError};
 
 /// Wrapper struct to handle frame_system sufficients and delegate
 /// `InitializeMembers` and `ChangeMembers` calls to `P`.
@@ -110,5 +113,50 @@ where
 
 	fn count() -> usize {
 		pallet_membership::Members::<T, I>::decode_len().unwrap_or(0)
+	}
+}
+
+/// `MaybeConsideration` that records the proposer's `AccountId` in
+/// `pallet_collective::CostOf` without taking any deposit.
+///
+/// `pallet-collective-proposer-cancel` reads `CostOf` to verify that a caller
+/// trying to cancel a proposal early is the original proposer. The default
+/// `()` impl reports `is_none() == true`, which causes pallet_collective to
+/// skip writing to `CostOf` entirely; configuring this type instead causes
+/// the entry to be written so the proposer is recoverable on-chain.
+#[derive(
+	Default,
+	Debug,
+	Clone,
+	PartialEq,
+	Eq,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	MaxEncodedLen,
+	TypeInfo,
+)]
+pub struct RecordProposer;
+
+impl<AccountId, Footprint> Consideration<AccountId, Footprint> for RecordProposer {
+	fn new(_who: &AccountId, _new: Footprint) -> Result<Self, DispatchError> {
+		Ok(RecordProposer)
+	}
+
+	fn update(self, _who: &AccountId, _new: Footprint) -> Result<Self, DispatchError> {
+		Ok(self)
+	}
+
+	fn drop(self, _who: &AccountId) -> Result<(), DispatchError> {
+		Ok(())
+	}
+
+	#[cfg(feature = "runtime-benchmarks")]
+	fn ensure_successful(_who: &AccountId, _new: Footprint) {}
+}
+
+impl<AccountId, Footprint> MaybeConsideration<AccountId, Footprint> for RecordProposer {
+	fn is_none(&self) -> bool {
+		false
 	}
 }
