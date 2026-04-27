@@ -1300,9 +1300,8 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 
 		// Verify registration succeeded — proves handle_create reached event construction,
 		// not the early "No valid dust registration" bail-out
-		assert_eq!(
-			MappingCount::<Test>::get(cardano_addr),
-			1,
+		assert!(
+			CNightObservation::is_registered(&cardano_addr),
 			"Registration must succeed so handle_create reaches event construction"
 		);
 

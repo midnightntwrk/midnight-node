@@ -208,13 +208,6 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
-	/// Per-address count of live mappings. Maintained alongside `Mapping`
-	/// so validity checks (`count == 1`) and event-transition logic are
-	/// O(1) instead of requiring a prefix scan.
-	#[pallet::storage]
-	pub type MappingCount<T: Config> =
-		StorageMap<_, Blake2_128Concat, CardanoRewardAddressBytes, u64, ValueQuery>;
-
 	// TODO: Read from ledger state directly ?
 	#[pallet::storage]
 	pub type UtxoOwners<T: Config> =
@@ -312,7 +305,6 @@ pub mod pallet {
 			);
 
 			for (addr, entries) in &self.config.mappings {
-				MappingCount::<T>::insert(addr, entries.len() as u64);
 				for entry in entries {
 					Mapping::<T>::insert(
 						addr,
@@ -382,54 +374,51 @@ pub mod pallet {
 		}
 
 		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
-			if MappingCount::<T>::get(wallet) != 1 {
-				return None;
-			}
-			// Exactly one mapping exists — fetch the sole dust key without
-			// materialising any prior state in memory.
-			Mapping::<T>::iter_prefix_values(wallet).next()
+			Self::unique_dust_key(wallet)
 		}
 
 		// Check if any form of a registration could be considered valid as of now
 		pub fn is_registered(utxo_holder: &CardanoRewardAddressBytes) -> bool {
-			MappingCount::<T>::get(utxo_holder) == 1
+			Self::unique_dust_key(utxo_holder).is_some()
+		}
+
+		/// Returns the unique dust key for `addr` if and only if exactly one
+		/// mapping is registered. Bounded at two storage reads regardless of
+		/// how many entries exist for the prefix.
+		fn unique_dust_key(addr: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {
+			let mut iter = Mapping::<T>::iter_prefix_values(addr);
+			match (iter.next(), iter.next()) {
+				(Some(only), None) => Some(only),
+				_ => None,
+			}
 		}
 
 		fn handle_registration(header: &ObservedUtxoHeader, data: RegistrationData) {
 			let RegistrationData { cardano_reward_address, dust_public_key } = data;
 			let key = (header.utxo_tx_hash, header.utxo_index.0);
 
-			let previous_count = MappingCount::<T>::get(cardano_reward_address);
-			// If there was exactly one prior mapping it was the valid registration;
-			// capture its dust key before inserting so we can emit Deregistration
-			// for the 1 -> 2+ transition.
-			let previous_dust_key = if previous_count == 1 {
-				Mapping::<T>::iter_prefix_values(cardano_reward_address).next()
-			} else {
-				None
-			};
-
+			// Capture the unique-key state before and after the insert; the
+			// 0 -> 1 and 1 -> 2+ transitions are exactly the diff between the two.
+			let previous_dust_key = Self::unique_dust_key(&cardano_reward_address);
 			Mapping::<T>::insert(cardano_reward_address, key, dust_public_key.clone());
-			let new_count = previous_count.saturating_add(1);
-			MappingCount::<T>::insert(cardano_reward_address, new_count);
+			let new_dust_key = Self::unique_dust_key(&cardano_reward_address);
 
-			// 0 -> 1: a new valid registration.
-			if previous_count == 0 && new_count == 1 {
-				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_reward_address,
-					dust_public_key: dust_public_key.clone(),
-				}))
-			}
-
-			// 1 -> 2+: the previously-valid registration is now ambiguous.
-			if previous_count == 1
-				&& new_count != 1
-				&& let Some(prev_dust_key) = previous_dust_key
-			{
-				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
-					cardano_reward_address,
-					dust_public_key: prev_dust_key,
-				}))
+			match (previous_dust_key, new_dust_key) {
+				// 0 -> 1: a new valid registration.
+				(None, Some(sole_dust_key)) => {
+					Self::deposit_event(Event::<T>::Registration(Registration {
+						cardano_reward_address,
+						dust_public_key: sole_dust_key,
+					}))
+				},
+				// 1 -> 2+: the previously-valid registration is now ambiguous.
+				(Some(prev_dust_key), None) => {
+					Self::deposit_event(Event::<T>::Deregistration(Deregistration {
+						cardano_reward_address,
+						dust_public_key: prev_dust_key,
+					}))
+				},
+				_ => {},
 			}
 
 			Self::deposit_event(Event::<T>::MappingAdded(MappingEntry {
@@ -451,51 +440,43 @@ pub mod pallet {
 				utxo_index: header.utxo_index.0,
 			};
 
-			let previous_count = MappingCount::<T>::get(cardano_reward_address);
-			let was_registered = previous_count == 1;
+			// Same diff-the-unique-key pattern as handle_registration: the
+			// 1 -> 0 and 2+ -> 1 transitions fall out of comparing before vs.
+			// after the take.
+			let previous_dust_key = Self::unique_dust_key(&cardano_reward_address);
 
-			let removed_count = match Mapping::<T>::take(cardano_reward_address, key) {
-				Some(stored_dust_key) => {
-					if stored_dust_key != dust_public_key {
-						log::error!(
-							"dust key mismatch on deregistration for {cardano_reward_address:?}; removing by utxo ref anyway",
-						);
-					}
-					1
+			match Mapping::<T>::take(cardano_reward_address, key) {
+				Some(stored_dust_key) if stored_dust_key != dust_public_key => {
+					log::error!(
+						"dust key mismatch on deregistration for {cardano_reward_address:?}; removing by utxo ref anyway",
+					);
 				},
+				Some(_) => {},
 				None => {
 					log::error!(
 						"A registration was requested for removal, but does not exist: {reg_entry:?}",
 					);
-					0
 				},
-			};
-
-			let new_count = previous_count.saturating_sub(removed_count);
-			if new_count == 0 {
-				MappingCount::<T>::remove(cardano_reward_address);
-			} else {
-				MappingCount::<T>::insert(cardano_reward_address, new_count);
 			}
 
-			// 2+ -> 1: the single remaining mapping is now a valid registration.
-			if !was_registered
-				&& new_count == 1
-				&& let Some(sole_dust_key) =
-					Mapping::<T>::iter_prefix_values(cardano_reward_address).next()
-			{
-				Self::deposit_event(Event::<T>::Registration(Registration {
-					cardano_reward_address,
-					dust_public_key: sole_dust_key,
-				}))
-			}
+			let new_dust_key = Self::unique_dust_key(&cardano_reward_address);
 
-			// 1 -> 0: the valid registration is gone.
-			if was_registered && new_count == 0 {
-				Self::deposit_event(Event::<T>::Deregistration(Deregistration {
-					cardano_reward_address,
-					dust_public_key,
-				}))
+			match (previous_dust_key, new_dust_key) {
+				// 2+ -> 1: the single remaining mapping is now a valid registration.
+				(None, Some(sole_dust_key)) => {
+					Self::deposit_event(Event::<T>::Registration(Registration {
+						cardano_reward_address,
+						dust_public_key: sole_dust_key,
+					}))
+				},
+				// 1 -> 0: the valid registration is gone.
+				(Some(_), None) => {
+					Self::deposit_event(Event::<T>::Deregistration(Deregistration {
+						cardano_reward_address,
+						dust_public_key,
+					}))
+				},
+				_ => {},
 			}
 
 			Self::deposit_event(Event::<T>::MappingRemoved(reg_entry));

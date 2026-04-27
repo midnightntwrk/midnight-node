@@ -16,16 +16,15 @@
 //! Storage migration v0 → v1.
 //!
 //! The pre-migration `Mappings` storage held `Vec<MappingEntry>` per Cardano
-//! reward address. This migration drains that map and splits each entry into
-//! the new `Mapping` double map (keyed by UTXO reference) and `MappingCount`
-//! counter.
+//! reward address. This migration drains that map and writes each entry into
+//! the new `Mapping` double map (keyed by UTXO reference).
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 use frame_support::{pallet_prelude::*, storage_alias, traits::OnRuntimeUpgrade};
 
-use crate::{Config, Mapping, MappingCount, MappingEntry, Pallet};
+use crate::{Config, Mapping, MappingEntry, Pallet};
 use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 
 mod v0 {
@@ -58,8 +57,6 @@ impl<T: Config> OnRuntimeUpgrade for MigrateV0ToV1<T> {
 		for (addr, entries) in v0::Mappings::<T>::drain() {
 			reads = reads.saturating_add(1);
 			// `drain` removes the legacy entry — count that as a write.
-			writes = writes.saturating_add(1);
-			MappingCount::<T>::insert(addr, entries.len() as u64);
 			writes = writes.saturating_add(1);
 			for entry in entries {
 				Mapping::<T>::insert(

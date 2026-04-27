@@ -18,9 +18,7 @@
 
 use frame_support::{pallet_prelude::*, storage_alias, traits::OnRuntimeUpgrade};
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
-use pallet_cnight_observation::{
-	Config, Mapping, MappingCount, MappingEntry, Pallet, migration::MigrateV0ToV1,
-};
+use pallet_cnight_observation::{Config, Mapping, MappingEntry, Pallet, migration::MigrateV0ToV1};
 use pallet_cnight_observation_mock::mock_with_capture::{Test, new_test_ext};
 use sidechain_domain::McTxHash;
 
@@ -82,8 +80,8 @@ fn migration_v0_to_v1_translates_entries_and_counts() {
 			"legacy storage should be drained",
 		);
 
-		assert_eq!(MappingCount::<Test>::get(alice), 1);
-		assert_eq!(MappingCount::<Test>::get(bob), 2);
+		assert_eq!(Mapping::<Test>::iter_prefix_values(alice).count(), 1);
+		assert_eq!(Mapping::<Test>::iter_prefix_values(bob).count(), 2);
 
 		assert_eq!(Mapping::<Test>::get(alice, (McTxHash([1; 32]), 0)), Some(alice_dust),);
 		assert_eq!(Mapping::<Test>::get(bob, (McTxHash([2; 32]), 0)), Some(bob_dust1),);
@@ -98,8 +96,7 @@ fn migration_v0_to_v1_is_idempotent_once_applied() {
 
 		// Seed legacy storage with data that would be migrated if the
 		// version guard were missing. After the no-op upgrade the legacy
-		// data must remain untouched and `Mapping`/`MappingCount` must
-		// stay empty.
+		// data must remain untouched and `Mapping` must stay empty.
 		let alice = addr(0xAA);
 		let alice_dust = dust(0x01);
 		legacy::Mappings::<Test>::insert(alice, vec![entry(alice, alice_dust, 1, 0)]);
@@ -111,7 +108,6 @@ fn migration_v0_to_v1_is_idempotent_once_applied() {
 			legacy::Mappings::<Test>::get(alice).len() == 1,
 			"legacy storage must not be drained",
 		);
-		assert_eq!(MappingCount::<Test>::get(alice), 0);
 		assert!(Mapping::<Test>::iter_prefix_values(alice).next().is_none());
 	});
 }
