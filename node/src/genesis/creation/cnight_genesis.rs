@@ -9,7 +9,7 @@ use midnight_primitives_mainchain_follower::{
 	ObservedUtxoData,
 };
 use pallet_cnight_observation::{
-	MappingEntry, Mappings, NextCardanoPosition, UtxoOwners,
+	Mapping, MappingEntry, NextCardanoPosition, UtxoOwners,
 	config::{CNightGenesis, SystemTx},
 };
 use pallet_cnight_observation_mock::mock_with_capture as mock;
@@ -64,8 +64,18 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 		let call = mock::RuntimeCall::CNightObservation(call);
 		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
 
+		let mut mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>> = BTreeMap::new();
+		for (addr, (utxo_tx_hash, utxo_index), dust_public_key) in Mapping::<mock::Test>::iter() {
+			mappings.entry(addr).or_default().push(MappingEntry {
+				cardano_reward_address: addr,
+				dust_public_key,
+				utxo_tx_hash,
+				utxo_index,
+			});
+		}
+
 		PalletExecResult {
-			mappings: Mappings::<mock::Test>::iter().collect(),
+			mappings,
 			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v)).collect(),
 			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
 			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),

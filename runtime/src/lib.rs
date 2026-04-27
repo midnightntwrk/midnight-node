@@ -999,7 +999,10 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = pallet_throttle::migration::ClearAccountUsageV1<Runtime>;
+pub type Migrations = (
+	pallet_throttle::migration::ClearAccountUsageV1<Runtime>,
+	pallet_cnight_observation::migration::MigrateV0ToV1<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where

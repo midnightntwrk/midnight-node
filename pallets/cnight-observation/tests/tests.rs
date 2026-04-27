@@ -352,10 +352,8 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_reward_address)
-			.into_iter()
-			.map(|r| r.dust_public_key)
-			.collect();
+		let stored: Vec<DustPublicKeyBytes> =
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect();
 
 		assert_eq!(stored, vec![dust_public_key]);
 
@@ -1303,7 +1301,7 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 		// Verify registration succeeded — proves handle_create reached event construction,
 		// not the early "No valid dust registration" bail-out
 		assert_eq!(
-			Mappings::<Test>::get(cardano_addr).len(),
+			MappingCount::<Test>::get(cardano_addr),
 			1,
 			"Registration must succeed so handle_create reaches event construction"
 		);
