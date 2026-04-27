@@ -11,9 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "std")]
-use std::path::Path;
-
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
 	db::ParityDb,
@@ -104,7 +101,7 @@ where
 }
 
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb<P: AsRef<Path>>(
+pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	dir: P,
 	genesis_state: &[u8],
 	cache_size: usize,
@@ -124,4 +121,36 @@ pub fn init_storage_paritydb<P: AsRef<Path>>(
 	}
 
 	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+}
+
+#[cfg(feature = "std")]
+pub fn set_init_options_paritydb(
+	options: &mut parity_db::Options,
+	column_offset: u8,
+	use_compression: bool,
+) {
+	midnight_storage_core::db::paritydb::set_init_options(options, column_offset, use_compression);
+}
+
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_unified<
+	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> Vec<u8> {
+	use super::base_crypto_local::signatures::Signature;
+	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+
+	let res = set_default_storage(|| {
+		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
+		Storage::new(cache_size, db)
+	});
+	if res.is_err() {
+		log::warn!("Warning: Failed to set default storage: {res:?}");
+	}
+
+	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
 }

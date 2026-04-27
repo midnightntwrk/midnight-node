@@ -12,11 +12,19 @@
 // limitations under the License.
 
 use super::{
-	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoSpend, Wallet,
-	WalletSeed,
+	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
+	Wallet, WalletSeed,
 };
 use itertools::Itertools;
 use std::sync::Arc;
+
+#[derive(Debug)]
+pub struct PinnedUtxoNotFound {
+	pub intent_hash: IntentHash,
+	pub output_no: u32,
+	pub token_type: UnshieldedTokenType,
+	pub seed: WalletSeed,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoSelectionError {
@@ -24,6 +32,8 @@ pub enum UtxoSelectionError {
 	InsufficientBalance { required: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
 	#[error("no UTXO of token {token_type:?} with value >= {min_value} for seed {seed:?}")]
 	NoMatchingUtxo { min_value: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
+	#[error("pinned UTXO not found: {0:?}")]
+	PinnedUtxoNotFound(Box<PinnedUtxoNotFound>),
 }
 
 pub struct UtxoSpendInfo<O> {
@@ -103,6 +113,63 @@ impl UtxoSpendInfo<WalletSeed> {
 						seed,
 					},
 				)
+			})
+		})
+	}
+
+	/// Look up a specific set of UTXOs (by intent_hash + output_no) belonging to `seed`
+	/// and `token_type`, and return them as `UtxoSpendInfo` together with the change
+	/// (sum - required). Errors if any requested UTXO is missing from the wallet or
+	/// if the pinned sum is below `required_value`.
+	pub fn utxos_by_ids<D: DB + Clone>(
+		context: Arc<LedgerContext<D>>,
+		seed: WalletSeed,
+		required_value: u128,
+		token_type: UnshieldedTokenType,
+		utxo_ids: &[UtxoId],
+	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
+		context.with_ledger_state(|ledger_state| {
+			context.with_wallet_from_seed(seed, |wallet| {
+				let owner = wallet.unshielded.signing_key().verifying_key();
+				let mut selected: Vec<UtxoSpendInfo<WalletSeed>> =
+					Vec::with_capacity(utxo_ids.len());
+				let mut total: u128 = 0;
+				for &UtxoId { intent_hash, output_number } in utxo_ids {
+					let utxo = ledger_state
+						.utxo
+						.utxos
+						.iter()
+						.find(|utxo| {
+							utxo.0.intent_hash == intent_hash
+								&& utxo.0.output_no == output_number
+								&& utxo.0.type_ == token_type
+								&& utxo.0.owner == owner.clone().into()
+						})
+						.ok_or_else(|| {
+							UtxoSelectionError::PinnedUtxoNotFound(Box::new(PinnedUtxoNotFound {
+								intent_hash,
+								output_no: output_number,
+								token_type,
+								seed,
+							}))
+						})?;
+					total = total.saturating_add(utxo.0.value);
+					selected.push(UtxoSpendInfo {
+						value: utxo.0.value,
+						owner: seed,
+						token_type: utxo.0.type_,
+						intent_hash: Some(utxo.0.intent_hash),
+						output_number: Some(utxo.0.output_no),
+					});
+				}
+				let change = total.checked_sub(required_value).ok_or(
+					UtxoSelectionError::InsufficientBalance {
+						required: required_value,
+						token_type,
+						seed,
+					},
+				)?;
+				Ok((selected, change))
 			})
 		})
 	}
