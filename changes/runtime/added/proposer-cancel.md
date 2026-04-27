@@ -18,4 +18,4 @@ collectives now use a `RecordProposer` no-deposit `MaybeConsideration` so
 that map is populated; under the previous unit `()` Consideration it was
 empty.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1428
