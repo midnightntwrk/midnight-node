@@ -177,7 +177,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
-		log::warn!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
+		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
 		// The "capacity" argument is capacity in terms of TRANSACTIONS,
 		// but the various sql queries below want a capacity in terms of UTXOs.
