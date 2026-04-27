@@ -7595,6 +7595,7 @@ dependencies = [
  "pallet-midnight-rpc",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
+ "pallet-staking",
  "pallet-system-parameters",
  "pallet-system-parameters-rpc",
  "pallet-throttle",
