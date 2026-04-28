@@ -79,11 +79,11 @@ pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, c
 }
 
 pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {
-	hex_ledger_untagged_decode(input)
+	hex_ledger_decode(input)
 }
 
 pub fn contract_address_decode(input: &str) -> Result<ContractAddress, clap::error::Error> {
-	hex_ledger_untagged_decode(input)
+	hex_ledger_decode(input)
 }
 
 pub fn hex_ledger_untagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
@@ -94,12 +94,13 @@ where
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
-			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+			clap::error::ContextValue::String(format!("invalid hex input: {}", e)),
 		);
 		err
 	})?;
 
-	let res = <T as Deserializable>::deserialize(&mut &bytes[..], 0).map_err(|e| {
+	let mut cursor = &bytes[..];
+	let res = <T as Deserializable>::deserialize(&mut cursor, 0).map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
@@ -107,6 +108,18 @@ where
 		);
 		err
 	})?;
+
+	if !cursor.is_empty() {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!(
+				"trailing data after deserialization: {} extra byte(s)",
+				cursor.len()
+			)),
+		);
+		return Err(err);
+	}
 
 	Ok(res)
 }
@@ -143,7 +156,7 @@ pub fn hex_bytes(input: &str) -> Result<Vec<u8>, clap::error::Error> {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
-			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+			clap::error::ContextValue::String(format!("invalid hex input: {}", e)),
 		);
 		err
 	})
@@ -154,7 +167,6 @@ where
 	T: TryFrom<Vec<u8>, Error = Vec<u8>>,
 {
 	let bytes = hex_bytes(input)?;
-
 	let res: T = bytes.try_into().map_err(|e: Vec<u8>| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
@@ -173,12 +185,10 @@ where
 pub fn fetch_cache_config(input: &str) -> Result<FetchCacheConfig, clap::Error> {
 	FetchCacheConfig::from_str(input).map_err(|error| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
-
 		err.insert(
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid fetch cache config: {}", error)),
 		);
-
 		err
 	})
 }
@@ -190,7 +200,6 @@ pub fn wallet_address(input: &str) -> Result<WalletAddress, clap::Error> {
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid wallet address: {}", error)),
 		);
-
 		err
 	})
 }
@@ -202,7 +211,97 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid utxo id: {}", error)),
 		);
-
 		err
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Helper: serialize a Tagged value to its tagged hex representation.
+	fn to_tagged_hex<T: Serializable + Tagged>(val: &T) -> String {
+		let bytes = serialize(val).expect("serialization should succeed");
+		hex::encode(bytes)
+	}
+
+	#[test]
+	fn coin_public_decode_accepts_tagged_input() {
+		let key = CoinPublicKey(HashOutput([0u8; 32]));
+		let tagged_hex = to_tagged_hex(&key);
+		assert!(coin_public_decode(&tagged_hex).is_ok());
+	}
+
+	#[test]
+	fn contract_address_decode_accepts_tagged_input() {
+		let tagged_hex =
+			include_str!("../../../../res/test-contract/contract_address_undeployed_tagged.mn")
+				.trim();
+		assert!(contract_address_decode(tagged_hex).is_ok());
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_untagged_input() {
+		let res = coin_public_decode(&"0".repeat(64)); // 32 bytes raw, no tag
+		assert!(res.is_err(), "untagged input should be rejected for CoinPublicKey");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_untagged_input() {
+		let res = contract_address_decode(&"0".repeat(64)); // 32 bytes raw, no tag
+		assert!(res.is_err(), "untagged input should be rejected for ContractAddress");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_wrong_tag() {
+		// Serialize a ContractAddress and try to decode as CoinPublicKey — tags differ.
+		let addr = ContractAddress(HashOutput([0u8; 32]));
+		let wrong_tag_hex = to_tagged_hex(&addr);
+		let res = coin_public_decode(&wrong_tag_hex);
+		assert!(res.is_err(), "wrong tag should be rejected");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_trailing_bytes() {
+		let tagged_hex =
+			include_str!("../../../../res/test-contract/contract_address_undeployed_tagged.mn")
+				.trim();
+		let with_trailing = format!("{}00", tagged_hex);
+		let res = contract_address_decode(&with_trailing);
+		assert!(res.is_err(), "trailing bytes should be rejected (EOF enforcement)");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_invalid_hex() {
+		let res = coin_public_decode("not-valid-hex!!");
+		assert!(res.is_err(), "invalid hex should be rejected");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_invalid_hex() {
+		let res = contract_address_decode("zzzz");
+		assert!(res.is_err(), "invalid hex should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_enforces_eof() {
+		// HashOutput is 32 bytes; 33 bytes of data should fail
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(33));
+		assert!(res.is_err(), "trailing data in untagged decode should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_accepts_exact_length() {
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"00".repeat(32));
+		assert!(res.is_ok(), "exact-length untagged input should succeed");
+	}
+
+	#[test]
+	fn tagged_decode_rejects_trailing_bytes() {
+		let key = CoinPublicKey(HashOutput([0u8; 32]));
+		let mut tagged_hex = to_tagged_hex(&key);
+		tagged_hex.push_str("ff");
+		let res = coin_public_decode(&tagged_hex);
+		assert!(res.is_err(), "tagged decode should reject trailing bytes");
+	}
 }
