@@ -15,12 +15,6 @@ on:
       node_image:
         description: "midnight-node image (must be compatible with the snapshot's runtime)"
         required: true
-  # TODO: remove before merging — temporary trigger so we can iterate on this
-  # workflow on the branch before it lands on the default branch (which is
-  # required for workflow_dispatch to be available in the UI).
-  push:
-    branches:
-      - local-env-fork-ci
 
 permissions:
   contents: read
@@ -34,8 +28,8 @@ env:
   NUM_VALIDATORS: "6"
   CHAIN_ID: "midnight_devnet"
   DEVNET_DIR: "local-environment/src/networks/well-known/devnet"
-  MOCK_AUTHORITIES_IMAGE: "ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag || '0f347c5' }}"
-  NODE_IMAGE: ${{ inputs.node_image || 'ghcr.io/midnight-ntwrk/midnight-node:1.0.0-b02cda1bbca9-amd64' }}
+  MOCK_AUTHORITIES_IMAGE: "ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag }}"
+  NODE_IMAGE: ${{ inputs.node_image }}
 
 jobs:
   fork:
