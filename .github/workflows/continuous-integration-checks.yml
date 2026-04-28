@@ -51,7 +51,7 @@ jobs:
             echo "skip_check=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@7203b7659050789bb533fb98edb5995384154306
         if: steps.check_images.outputs.skip_check != 'true'
         with:
           version: v0.8.16
@@ -102,7 +102,7 @@ jobs:
             echo "skip_check=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@7203b7659050789bb533fb98edb5995384154306
         if: steps.check_images.outputs.skip_check != 'true'
         with:
           version: v0.8.16
