@@ -102,7 +102,11 @@ jobs:
       - name: Run mock-authorities convert
         run: |
           cd "$DEVNET_DIR"
+          # Same uid-mismatch issue as the data mount: the mock-authorities
+          # container runs as a non-root appuser and writes
+          # mock-registrations.json + seeds/ here.
           mkdir -p mocked-config
+          chmod a+rwX mocked-config
           docker run --rm \
             -v "$PWD/data:/data" \
             -v "$PWD/mocked-config:/out" \
