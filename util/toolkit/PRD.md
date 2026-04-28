@@ -144,16 +144,24 @@ batches of transactions and push them at controlled rates.
 
 *Centre of gravity:* `batch-single-tx`, `send-tx --rate <RATE>`.
 
-### QA — language / Compact
+### QA
 
-Validate new CompactC features and contract behaviour end-to-end. The
-toolkit's contract-call support is what makes this loop fast: a new
-`.compact` contract file can be exercised against a real node without
-touching midnight-js or building a DApp.
+Covers two overlapping concerns:
 
-*Centre of gravity:* `generate-intent`.
+- **Compact / language** — validating new CompactC features and contract
+  behaviour end-to-end. A new `.compact` contract file can be exercised
+  against a real node without touching midnight-js or building a DApp.
+- **Ledger** — validating new ledger versions and transaction-level
+  semantics: that valid transactions apply, invalid ones reject, ZK
+  proofs verify, and state transitions match expectations across ledger
+  version transitions. This is the cohort whose sign-off gates a ledger
+  upgrade (see Section 9.1).
 
-### QA / SRE — node operations & governance
+*Centre of gravity:* `generate-intent` (Compact); `generate-txs single-tx`,
+`generate-txs batches`, `show-block`, `show-wallet`, `show-transaction`
+(Ledger).
+
+### SRE — node operations & governance
 
 Execute governance actions on networks where a single actor controls the
 relevant seeds — primarily ledger parameter updates and runtime upgrades.
