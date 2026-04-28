@@ -18,7 +18,10 @@
 //! ledger dependency — the migration only touches pallet storage.
 
 use frame_support::{
-	migrations::SteppedMigration, pallet_prelude::*, storage_alias, weights::WeightMeter,
+	migrations::{SteppedMigration, SteppedMigrationError},
+	pallet_prelude::*,
+	storage_alias,
+	weights::{RuntimeDbWeight, WeightMeter},
 };
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
 use pallet_cnight_observation::{
@@ -113,15 +116,58 @@ fn step_on_empty_storage_completes_immediately() {
 	});
 }
 
+/// Worst case writes per step: drain the legacy row plus
+/// `MAX_ENTRIES_PER_ADDR` inserts. Mirrors the migration's own internal
+/// calculation; if the const is bumped, this must be bumped too.
+const PER_STEP_WRITES: u64 = 1 + 44;
+
+fn per_step_weight() -> Weight {
+	<<Test as frame_system::Config>::DbWeight as Get<RuntimeDbWeight>>::get()
+		.reads_writes(1, PER_STEP_WRITES)
+}
+
+#[test]
+fn insufficient_meter_returns_error() {
+	new_test_ext().execute_with(|| {
+		let alice = addr(0xAA);
+		legacy::Mappings::<Test>::insert(alice, vec![entry(alice, dust(0x01), 1, 0)]);
+
+		let mut meter = WeightMeter::with_limit(Weight::zero());
+		let result = MigrateV0ToV1::<Test>::step(None, &mut meter);
+
+		assert!(
+			matches!(result, Err(SteppedMigrationError::InsufficientWeight { .. })),
+			"empty meter must surface InsufficientWeight, got {result:?}",
+		);
+	});
+}
+
+#[test]
+fn returns_cursor_to_resume_when_meter_exhausts_mid_migration() {
+	new_test_ext().execute_with(|| {
+		for i in 0..5u8 {
+			let a = addr(0x10 + i);
+			legacy::Mappings::<Test>::insert(a, vec![entry(a, dust(0x55), 1, 0)]);
+		}
+
+		// Budget exactly one row's worth of work: the inner loop migrates one
+		// row, the next `try_consume` fails, and step returns a `Some(_)`
+		// cursor for the next call.
+		let mut meter = WeightMeter::with_limit(per_step_weight());
+		let cursor = MigrateV0ToV1::<Test>::step(None, &mut meter).unwrap();
+		assert!(cursor.is_some(), "cursor must be returned when meter exhausts mid-migration");
+		assert_eq!(legacy::Mappings::<Test>::iter().count(), 4, "exactly one row migrated");
+
+		// Resume with unlimited budget: drain the remaining rows.
+		let mut meter = WeightMeter::new();
+		let cursor = MigrateV0ToV1::<Test>::step(cursor, &mut meter).unwrap();
+		assert!(cursor.is_none());
+		assert!(legacy::Mappings::<Test>::iter().next().is_none());
+	});
+}
+
 #[test]
 fn step_resumes_strictly_past_provided_cursor() {
-	// The mock sets `frame_system::Config::DbWeight = ()`, so the per-step
-	// weight inside `step` is zero and the meter never exhausts. We can't
-	// drive an externally-visible cursor handoff via weight pressure, so
-	// instead we feed the cursor in directly to verify that `iter_from` skips
-	// the previously-processed key. This is the only behaviour the
-	// migration owns — the meter-driven hand-off is exercised by the MBM
-	// framework's own test suite.
 	new_test_ext().execute_with(|| {
 		let a = addr(0x10);
 		let b = addr(0x20);
