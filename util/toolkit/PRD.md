@@ -4,8 +4,26 @@
 > a short forward-looking section on planned work.
 >
 > **Audience:** broader Midnight org — primarily product and architecture.
+>
 > **Last updated:** 2026-04-28.
+> 
 > **Author(s):** Oscar Bailey
+
+---
+
+## Contents
+
+1. [Purpose & summary](#1-purpose--summary)
+2. [Background & context](#2-background--context)
+3. [Users & personas](#3-users--personas)
+4. [Use cases / user journeys](#4-use-cases--user-journeys)
+5. [Goals & non-goals](#5-goals--non-goals)
+6. [Functional requirements](#6-functional-requirements)
+7. [Non-functional requirements](#7-non-functional-requirements)
+8. [Constraints & dependencies](#8-constraints--dependencies)
+9. [Success metrics](#9-success-metrics)
+10. [Risks & open questions](#10-risks--open-questions)
+11. [Future work](#11-future-work)
 
 ---
 
