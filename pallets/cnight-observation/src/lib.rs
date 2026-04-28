@@ -37,7 +37,7 @@ pub mod config;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-pub mod migration;
+pub mod migrations;
 
 pub mod weights;
 

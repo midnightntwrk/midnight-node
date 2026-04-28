@@ -13,12 +13,17 @@
 
 //! v0 -> v1 storage migration tests.
 //!
-//! Uses `mock_with_capture` to avoid the ledger dependency - the migration
-//! only touches pallet storage.
+//! Drives `SteppedMigration::step` directly on the mock runtime; the MBM
+//! framework is not exercised here. Uses `mock_with_capture` to avoid the
+//! ledger dependency — the migration only touches pallet storage.
 
-use frame_support::{pallet_prelude::*, storage_alias, traits::OnRuntimeUpgrade};
+use frame_support::{
+	migrations::SteppedMigration, pallet_prelude::*, storage_alias, weights::WeightMeter,
+};
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
-use pallet_cnight_observation::{Config, Mapping, MappingEntry, Pallet, migration::MigrateV0ToV1};
+use pallet_cnight_observation::{
+	Config, Mapping, MappingEntry, Pallet, migrations::v1::MigrateV0ToV1,
+};
 use pallet_cnight_observation_mock::mock_with_capture::{Test, new_test_ext};
 use sidechain_domain::UtxoId;
 
@@ -54,59 +59,86 @@ fn entry(a: CardanoRewardAddressBytes, d: DustPublicKeyBytes, tx: u8, ix: u16) -
 	}
 }
 
-#[test]
-fn migration_v0_to_v1_translates_entries_and_counts() {
-	new_test_ext().execute_with(|| {
-		StorageVersion::new(0).put::<Pallet<Test>>();
+/// Drive the migration to completion under an unbounded weight meter.
+fn run_to_completion() {
+	let mut cursor = None;
+	loop {
+		let mut meter = WeightMeter::new();
+		cursor = MigrateV0ToV1::<Test>::step(cursor, &mut meter)
+			.expect("step must not fail under unlimited weight");
+		if cursor.is_none() {
+			break;
+		}
+	}
+}
 
+#[test]
+fn drives_v0_into_v1_double_map() {
+	new_test_ext().execute_with(|| {
 		let alice = addr(0xAA);
 		let alice_dust = dust(0x01);
 		let bob = addr(0xBB);
-		let bob_dust1 = dust(0x02);
-		let bob_dust2 = dust(0x03);
+		let bob_d1 = dust(0x02);
+		let bob_d2 = dust(0x03);
 
 		legacy::Mappings::<Test>::insert(alice, vec![entry(alice, alice_dust.clone(), 1, 0)]);
 		legacy::Mappings::<Test>::insert(
 			bob,
-			vec![entry(bob, bob_dust1.clone(), 2, 0), entry(bob, bob_dust2.clone(), 2, 1)],
+			vec![entry(bob, bob_d1.clone(), 2, 0), entry(bob, bob_d2.clone(), 2, 1)],
 		);
 
-		let _ = MigrateV0ToV1::<Test>::on_runtime_upgrade();
+		StorageVersion::new(0).put::<Pallet<Test>>();
+		run_to_completion();
 
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 1);
 		assert!(
 			legacy::Mappings::<Test>::iter().next().is_none(),
 			"legacy storage should be drained",
 		);
-
 		assert_eq!(Mapping::<Test>::iter_prefix_values(alice).count(), 1);
 		assert_eq!(Mapping::<Test>::iter_prefix_values(bob).count(), 2);
-
 		assert_eq!(Mapping::<Test>::get(alice, UtxoId::new([1; 32], 0)), Some(alice_dust));
-		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 0)), Some(bob_dust1));
-		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 1)), Some(bob_dust2));
+		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 0)), Some(bob_d1));
+		assert_eq!(Mapping::<Test>::get(bob, UtxoId::new([2; 32], 1)), Some(bob_d2));
 	});
 }
 
 #[test]
-fn migration_v0_to_v1_is_idempotent_once_applied() {
+fn step_on_empty_storage_completes_immediately() {
 	new_test_ext().execute_with(|| {
-		StorageVersion::new(1).put::<Pallet<Test>>();
+		let mut meter = WeightMeter::new();
+		let cursor = MigrateV0ToV1::<Test>::step(None, &mut meter).unwrap();
+		assert!(cursor.is_none());
+		assert!(Mapping::<Test>::iter().next().is_none());
+	});
+}
 
-		// Seed legacy storage with data that would be migrated if the
-		// version guard were missing. After the no-op upgrade the legacy
-		// data must remain untouched and `Mapping` must stay empty.
-		let alice = addr(0xAA);
-		let alice_dust = dust(0x01);
-		legacy::Mappings::<Test>::insert(alice, vec![entry(alice, alice_dust, 1, 0)]);
+#[test]
+fn step_resumes_strictly_past_provided_cursor() {
+	// The mock sets `frame_system::Config::DbWeight = ()`, so the per-step
+	// weight inside `step` is zero and the meter never exhausts. We can't
+	// drive an externally-visible cursor handoff via weight pressure, so
+	// instead we feed the cursor in directly to verify that `iter_from` skips
+	// the previously-processed key. This is the only behaviour the
+	// migration owns — the meter-driven hand-off is exercised by the MBM
+	// framework's own test suite.
+	new_test_ext().execute_with(|| {
+		let a = addr(0x10);
+		let b = addr(0x20);
+		let c = addr(0x30);
+		legacy::Mappings::<Test>::insert(a, vec![entry(a, dust(0x55), 1, 0)]);
+		legacy::Mappings::<Test>::insert(b, vec![entry(b, dust(0x55), 2, 0)]);
+		legacy::Mappings::<Test>::insert(c, vec![entry(c, dust(0x55), 3, 0)]);
 
-		let _ = MigrateV0ToV1::<Test>::on_runtime_upgrade();
+		let mut meter = WeightMeter::new();
+		let cursor = MigrateV0ToV1::<Test>::step(Some(a), &mut meter).unwrap();
 
-		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 1);
-		assert!(
-			legacy::Mappings::<Test>::get(alice).len() == 1,
-			"legacy storage must not be drained",
-		);
-		assert!(Mapping::<Test>::iter_prefix_values(alice).next().is_none());
+		assert!(cursor.is_none(), "rest of the rows must drain in one call");
+		assert!(legacy::Mappings::<Test>::contains_key(a), "row at cursor must be left untouched");
+		assert!(!legacy::Mappings::<Test>::contains_key(b));
+		assert!(!legacy::Mappings::<Test>::contains_key(c));
+		assert_eq!(Mapping::<Test>::iter_prefix_values(a).count(), 0);
+		assert_eq!(Mapping::<Test>::iter_prefix_values(b).count(), 1);
+		assert_eq!(Mapping::<Test>::iter_prefix_values(c).count(), 1);
 	});
 }
