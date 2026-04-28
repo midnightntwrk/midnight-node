@@ -9,8 +9,8 @@ use midnight_primitives_mainchain_follower::{
 	ObservedUtxoData,
 };
 use pallet_cnight_observation::{
-	Mapping, MappingEntry, NextCardanoPosition, UtxoOwners,
-	config::{CNightGenesis, SystemTx},
+	Mapping, NextCardanoPosition, UtxoOwners,
+	config::{CNightGenesis, MappingEntryGenesis, SystemTx},
 };
 use pallet_cnight_observation_mock::mock_with_capture as mock;
 use sidechain_domain::McBlockHash;
@@ -50,7 +50,7 @@ fn create_inherent(
 }
 
 struct PalletExecResult {
-	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
+	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>,
 	utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
 	next_cardano_position: CardanoPosition,
 	system_tx: Option<Vec<u8>>,
@@ -64,12 +64,14 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 		let call = mock::RuntimeCall::CNightObservation(call);
 		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
 
-		let mut mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>> = BTreeMap::new();
+		let mut mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>> =
+			BTreeMap::new();
 		for (addr, utxo_id, dust_public_key) in Mapping::<mock::Test>::iter() {
-			mappings.entry(addr).or_default().push(MappingEntry {
+			mappings.entry(addr).or_default().push(MappingEntryGenesis {
 				cardano_reward_address: addr,
 				dust_public_key,
-				utxo_id,
+				utxo_tx_hash: utxo_id.tx_hash,
+				utxo_index: utxo_id.index.0,
 			});
 		}
 

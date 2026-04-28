@@ -305,7 +305,11 @@ pub mod pallet {
 
 			for (addr, entries) in &self.config.mappings {
 				for entry in entries {
-					Mapping::<T>::insert(addr, entry.utxo_id, entry.dust_public_key.clone());
+					Mapping::<T>::insert(
+						addr,
+						UtxoId::new(entry.utxo_tx_hash.0, entry.utxo_index),
+						entry.dust_public_key.clone(),
+					);
 				}
 			}
 
