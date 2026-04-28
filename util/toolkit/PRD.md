@@ -427,9 +427,9 @@ independently of the builder.
 ### 6.2 Contract calls and contract maintenance
 
 Build, send, and update contract transactions. Custom contracts go through
-[`toolkit-js`](../toolkit-js/), which wraps the compact runtime so that the
-toolkit and midnight-js share the same contract-call construction path
-([`compact.js`](https://github.com/midnightntwrk/midnight-sdk/tree/main/compact-js)).
+[`compact.js`](https://github.com/midnightntwrk/midnight-sdk/tree/main/compact-js)
+(via [`toolkit-js`](../toolkit-js/), a thin wrapper) — the same contract-call
+construction path used by midnight-js.
 
 | Capability | Commands |
 |---|---|
@@ -460,10 +460,10 @@ available locally.
 | Apply a runtime upgrade end-to-end | `runtime-upgrade` |
 | Generic Root-origin call via governance (primitive used by the above) | `root-call` |
 
-### 6.5 Wallet and chain inspection
+### 6.5 Wallet, chain, and contract inspection
 
-Read-only commands for inspecting addresses, balances, blocks, and ledger
-state.
+Read-only commands for inspecting addresses, balances, blocks, ledger
+state, and contracts.
 
 | Capability | Commands |
 |---|---|
@@ -477,15 +477,10 @@ state.
 | Viewing-key extraction | `show-viewing-key` |
 | Seed display | `show-seed` |
 | Ledger parameters (with optional overrides) | `show-ledger-parameters` |
-
-### 6.6 Contract inspection
-
-| Capability | Commands |
-|---|---|
 | Derive contract address from a deploy tx | `contract-address` |
 | Fetch on-chain contract state (serialized) | `contract-state` |
 
-### 6.7 Cardano bridge (incomplete extension)
+### 6.6 Cardano bridge (incomplete extension)
 
 Bridge-related transaction support for the cNIGHT / DUST bridge. This
 surface is in active development; do not treat it as stable.
@@ -494,7 +489,7 @@ surface is in active development; do not treat it as stable.
 |---|---|
 | Cardano → Midnight bridge transfer | `bridge-transfer` |
 
-### 6.8 Fetching chain data
+### 6.7 Fetching chain data
 
 The toolkit can pull historical and current chain data either from a node
 RPC or from local files. Fetched chain data is cached locally to avoid
@@ -508,7 +503,7 @@ redundant network round-trips; the cache is shared across commands.
 | Cache-only read (skip network) | `--fetch-only-cached` |
 | Standalone fetch | `fetch` |
 
-### 6.9 Cross-cutting
+### 6.8 Cross-cutting
 
 | Capability | Notes |
 |---|---|
@@ -623,9 +618,10 @@ be — but in practice the team behaves as if it were.
    cannot drift from the protocol it speaks to.
 4. **Node JSON-RPC reachability.** Live-chain operations require a
    reachable WebSocket endpoint (`ws://…`).
-5. **Custom-contract flows require `compactc` and `toolkit-js`** on PATH.
-   The published Docker image bundles both; from-source builds need to
-   set them up explicitly (`TOOLKIT_JS_PATH` env var, see README).
+5. **Custom-contract flows require `compactc` and `compact.js` (via
+   `toolkit-js`)** on PATH. The published Docker image bundles both;
+   from-source builds need to set them up explicitly (`TOOLKIT_JS_PATH`
+   env var, see README).
 6. **AWS access** is required for genesis rebuilds on non-dev networks
    (per `AGENTS.md`); the `dev` preset has no such dependency.
 7. **Platform.** Linux/x86_64 is the supported and tested target (Docker
@@ -638,8 +634,7 @@ be — but in practice the team behaves as if it were.
 | `midnight-ledger` | Ledger types, state transitions, ZK proofs | Source of truth for transaction shape and verification. |
 | `polkadot-sdk` (Substrate) | Runtime types, RPC plumbing, governance pallets | Inherited via the node workspace. |
 | `partner-chains` SDK | Cardano sidechain framework | Used where the toolkit interacts with partner-chain-specific transaction shapes. |
-| [`compact.js`](https://github.com/midnightntwrk/midnight-sdk/tree/main/compact-js) | Contract-call construction primitives | Shared with `midnight-js`; wraps the compact runtime. |
-| `toolkit-js` | Node.js helper for custom Compact contract flows | Required for `generate-intent` against custom contracts. Bundled in the Docker image. |
+| [`compact.js`](https://github.com/midnightntwrk/midnight-sdk/tree/main/compact-js) (via [`toolkit-js`](../toolkit-js/)) | Contract-call construction primitives | Shared with `midnight-js`; wraps the compact runtime. `toolkit-js` is a thin CLI wrapper that exposes `compact.js` to the toolkit's `generate-intent` flows. Bundled in the Docker image. |
 | Proof server (optional) | Remote proof generation | Released alongside the ledger. The toolkit's internal prover suffices for the majority of use cases; remote prover is an opt-in alternative. |
 | AWS (non-`dev` networks) | Genesis seed storage / retrieval | Only relevant when (re)building genesis for `qanet`, `preview`, `preprod`, etc. |
 
@@ -706,10 +701,11 @@ The toolkit is doing its job when:
    the node itself carries the same surface for the same reason — but
    it is real, and shows up in compile times and in the cognitive cost
    of touching shared code paths.
-4. **`toolkit-js` coupling.** Custom-contract flows depend on Node.js
-   plus a separately-built `toolkit-js`. Environment setup is a frequent
-   paper-cut for new users and an extra moving part for the Docker
-   image.
+4. **`compact.js` coupling (via the `toolkit-js` CLI wrapper).**
+   Custom-contract flows depend on Node.js plus a separately-built
+   `toolkit-js` (a thin CLI wrapper around `compact.js`). Environment
+   setup is a frequent paper-cut for new users and an extra moving part
+   for the Docker image.
 5. **CLI as a soft contract** *(low risk).* Many downstream consumers
    depend on the CLI shape (perf team, CI scripts, ops scripts), and
    there is no formal CLI versioning policy. The team avoids breaking
@@ -719,8 +715,7 @@ The toolkit is doing its job when:
 
 ### 10.2 Open questions
 
-The major design questions that might have lived here have closed
-answers:
+**Closed design questions** *(included for the record):*
 
 - **Multi-ledger-version pruning** — *not pruned.* Mainnet launched on
   Ledger v7 / node `0.22.0`, so that floor is permanent.
@@ -729,8 +724,19 @@ answers:
   it does not replace it, so the diagnostic independence of the
   toolkit is preserved.
 
-No significant product-level open questions are tracked in this PRD;
-remaining design / implementation questions live in the issue tracker.
+**Open product question:**
+
+- **Is there a gap for an external DApp-developer CLI, distinct from
+  the toolkit?** The toolkit is positioned as internal-only and is too
+  low-level for DApp authors (Section 5 non-goal #2; Section 3 explicit
+  non-users). If the org decides DApp developers need a CLI of their
+  own, the natural shape is a separate, TypeScript-based product that
+  depends on the same higher-level stack DApp authors already target —
+  wallet, indexer, midnight-js, and `compact.js` — rather than an
+  extension of the toolkit. Whether to build it, when, and who owns it
+  is unresolved.
+
+Other design and implementation questions live in the issue tracker.
 
 ---
 
