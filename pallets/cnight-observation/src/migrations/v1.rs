@@ -39,7 +39,8 @@ use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 /// `1 + MAX_ENTRIES_PER_ADDR` writes (the row removal plus one insert per
 /// migrated entry).
 /// At time of writing (2026-04-28 9:10 UTC), this value is 44 for Cardano Preview, 18 for Mainnet
-const MAX_ENTRIES_PER_ADDR: u64 = 44;
+/// + some headroom in case the worst-case increases
+const MAX_ENTRIES_PER_ADDR: u64 = 100;
 
 mod v0 {
 	use super::*;
@@ -72,7 +73,7 @@ impl<T: Config> SteppedMigration for MigrateV0ToV1<T> {
 		meter: &mut WeightMeter,
 	) -> Result<Option<Self::Cursor>, SteppedMigrationError> {
 		// Manual weight calculation - uses MAX_ENTRIES_PER_ADDR, fetched from Cardano networks at
-		// time of writing
+		// time of writing + some headroom
 		let required = T::DbWeight::get().reads_writes(1, 1 + MAX_ENTRIES_PER_ADDR);
 
 		if meter.remaining().any_lt(required) {
