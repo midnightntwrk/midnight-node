@@ -25,7 +25,8 @@ use frame_support::{
 };
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
 use pallet_cnight_observation::{
-	Config, Mapping, MappingEntry, Pallet, migrations::v1::MigrateV0ToV1,
+	Config, Mapping, MappingEntry, Pallet,
+	migrations::v1::{MAX_ENTRIES_PER_ADDR, MigrateV0ToV1},
 };
 use pallet_cnight_observation_mock::mock_with_capture::{Test, new_test_ext};
 use sidechain_domain::UtxoId;
@@ -118,8 +119,8 @@ fn step_on_empty_storage_completes_immediately() {
 
 /// Worst case writes per step: drain the legacy row plus
 /// `MAX_ENTRIES_PER_ADDR` inserts. Mirrors the migration's own internal
-/// calculation; if the const is bumped, this must be bumped too.
-const PER_STEP_WRITES: u64 = 1 + 44;
+/// calculation.
+const PER_STEP_WRITES: u64 = 1 + MAX_ENTRIES_PER_ADDR;
 
 fn per_step_weight() -> Weight {
 	<<Test as frame_system::Config>::DbWeight as Get<RuntimeDbWeight>>::get()

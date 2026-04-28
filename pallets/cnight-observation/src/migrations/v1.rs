@@ -40,7 +40,7 @@ use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 /// migrated entry).
 /// At time of writing (2026-04-28 9:10 UTC), this value is 44 for Cardano Preview, 18 for Mainnet
 /// + some headroom in case the worst-case increases
-const MAX_ENTRIES_PER_ADDR: u64 = 100;
+pub const MAX_ENTRIES_PER_ADDR: u64 = 100;
 
 mod v0 {
 	use super::*;
