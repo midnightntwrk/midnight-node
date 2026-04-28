@@ -93,6 +93,10 @@ jobs:
             # become data/node-$i/chains/$CHAIN_ID/...
             tar -xf /tmp/devnet-snapshot.tar -C "data/node-$i" --strip-components=1
           done
+          # mock-authorities runs as a non-root user in-container and opens
+          # parity-db O_RDWR; make the extracted tree writable regardless of
+          # what uid the container runs as.
+          chmod -R a+rwX data
           find "data/node-1/chains/$CHAIN_ID/paritydb/full" -maxdepth 1 -mindepth 1 | head -3
 
       - name: Run mock-authorities convert
