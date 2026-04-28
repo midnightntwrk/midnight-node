@@ -11,7 +11,7 @@ on:
       mock_authorities_tag:
         description: "mock-authorities image tag"
         required: true
-        default: "47fe424"
+        default: "0f347c5"
       node_image:
         description: "midnight-node image (must be compatible with the snapshot's runtime)"
         required: true
@@ -34,7 +34,7 @@ env:
   NUM_VALIDATORS: "6"
   CHAIN_ID: "midnight_devnet"
   DEVNET_DIR: "local-environment/src/networks/well-known/devnet"
-  MOCK_AUTHORITIES_IMAGE: "ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag || '47fe424' }}"
+  MOCK_AUTHORITIES_IMAGE: "ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag || '0f347c5' }}"
   NODE_IMAGE: ${{ inputs.node_image || 'ghcr.io/midnight-ntwrk/midnight-node:1.0.0-b02cda1bbca9-amd64' }}
 
 jobs:
