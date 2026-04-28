@@ -765,7 +765,7 @@ toolkit's intent-generation flow lets the team exercise composable
 contracts end-to-end against a real chain — without a DApp, the same
 way single-contract testing works today.
 
-### 11.3 Completion of `bridge_transfer`
+### 11.3 Support for Cardano -> Midnight bridge testing
 
 Product issue:
 [`shieldedtech/product#34`](https://github.com/shieldedtech/product/issues/34).
@@ -773,6 +773,6 @@ Product issue:
 Bring the cNIGHT / DUST bridge surface to the same maturity bar as the
 rest of the toolkit. This brings a **Cardano node** into scope as a
 real present-day dependency (see Section 8.3), and unlocks end-to-end
-testing of the Cardano → Midnight bridge.
+testing of the Cardano -> Midnight bridge.
 
 ---
