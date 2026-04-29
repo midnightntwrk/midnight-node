@@ -49,6 +49,22 @@ pub enum InvalidError {
 	GenerationInfoAlreadyPresent,
 	InvariantViolation,
 	RewardTooSmall,
+	// Granular variants flattened from nested enums in TransactionInvalid.
+	// The catch-all parent variants (Zswap, ReplayProtectionViolation) above remain
+	// as fallbacks for #[non_exhaustive] upstream additions we don't yet recognise.
+	ZswapInvalidNullifierAlreadyPresent,
+	ZswapInvalidCommitmentAlreadyPresent,
+	ZswapInvalidUnknownMerkleRoot,
+	ReplayProtectionViolationIntentTtlExpired,
+	ReplayProtectionViolationIntentTtlTooFarInFuture,
+	ReplayProtectionViolationIntentAlreadyExists,
+	// Top-level TransactionInvalid variants currently unmapped.
+	DivideByZero,
+	// Ledger-8-only top-level TransactionInvalid variant. Reaches here via the
+	// version-specific error_ext helper rather than the catch-all.
+	MerkleTreeError,
+	// Ledger-8-only zswap::TransactionInvalid variant.
+	ZswapInvalidMerkleTreeError,
 	UnknownError,
 }
 
@@ -65,6 +81,12 @@ pub enum SystemTransactionError {
 	InvariantViolation,
 	TreasuryDisabled,
 	MerkleTreeError,
+	// Granular variants flattened from TransactionApplicationError nested in
+	// ReplayProtectionFailure. The ReplayProtectionFailure catch-all above
+	// remains as a fallback for upstream additions.
+	ReplayProtectionFailureIntentTtlExpired,
+	ReplayProtectionFailureIntentTtlTooFarInFuture,
+	ReplayProtectionFailureIntentAlreadyExists,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -125,6 +147,36 @@ pub enum MalformedError {
 	OutputsNotSorted,
 	DuplicateInputs,
 	InputsSignaturesLengthMismatch,
+	// Granular variants flattened from nested enums in MalformedTransaction.
+	// The catch-all parent variants above remain as fallbacks for #[non_exhaustive]
+	// upstream additions we don't yet recognise.
+	EffectsCheckRealCallsSubsetCheckFailure,
+	EffectsCheckAllCommitmentsSubsetCheckFailure,
+	EffectsCheckRealUnshieldedSpendsSubsetCheckFailure,
+	EffectsCheckClaimedUnshieldedSpendsUniquenessFailure,
+	EffectsCheckClaimedCallsUniquenessFailure,
+	EffectsCheckNullifiersNeqClaimedNullifiers,
+	EffectsCheckCommitmentsNeqClaimedShieldedReceives,
+	SequencingCheckCallSequencingViolation,
+	SequencingCheckSequencingCorrelationViolation,
+	SequencingCheckGuaranteedInFallibleContextViolation,
+	SequencingCheckFallibleInGuaranteedContextViolation,
+	SequencingCheckCausalityConstraintViolation,
+	SequencingCheckCallHasEmptyTranscripts,
+	DisjointCheckShieldedInputsDisjointFailure,
+	DisjointCheckShieldedOutputsDisjointFailure,
+	DisjointCheckUnshieldedInputsDisjointFailure,
+	TransactionApplicationIntentTtlExpired,
+	TransactionApplicationIntentTtlTooFarInFuture,
+	TransactionApplicationIntentAlreadyExists,
+	FeeCalculationOutsideTimeToDismiss,
+	FeeCalculationBlockLimitExceeded,
+	MalformedContractDeployNonZeroBalance,
+	MalformedContractDeployIncorrectChargedState,
+	ZswapMalformedInvalidProof,
+	ZswapMalformedContractSentCiphertext,
+	ZswapMalformedNonDisjointCoinMerge,
+	ZswapMalformedNotNormalized,
 	UnknownError,
 }
 
@@ -333,6 +385,15 @@ impl From<LedgerApiError> for u8 {
 					InvalidError::GenerationInfoAlreadyPresent => 198,
 					InvalidError::InvariantViolation => 199,
 					InvalidError::RewardTooSmall => 200,
+					InvalidError::ZswapInvalidNullifierAlreadyPresent => 239,
+					InvalidError::ZswapInvalidCommitmentAlreadyPresent => 240,
+					InvalidError::ZswapInvalidUnknownMerkleRoot => 241,
+					InvalidError::ReplayProtectionViolationIntentTtlExpired => 242,
+					InvalidError::ReplayProtectionViolationIntentTtlTooFarInFuture => 243,
+					InvalidError::ReplayProtectionViolationIntentAlreadyExists => 244,
+					InvalidError::DivideByZero => 248,
+					InvalidError::MerkleTreeError => 249,
+					InvalidError::ZswapInvalidMerkleTreeError => 250,
 					InvalidError::UnknownError => 109,
 				},
 				Malformed(e) => match e {
@@ -392,6 +453,33 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::OutputsNotSorted => 190,
 					MalformedError::DuplicateInputs => 191,
 					MalformedError::InputsSignaturesLengthMismatch => 192,
+					MalformedError::EffectsCheckRealCallsSubsetCheckFailure => 212,
+					MalformedError::EffectsCheckAllCommitmentsSubsetCheckFailure => 213,
+					MalformedError::EffectsCheckRealUnshieldedSpendsSubsetCheckFailure => 214,
+					MalformedError::EffectsCheckClaimedUnshieldedSpendsUniquenessFailure => 215,
+					MalformedError::EffectsCheckClaimedCallsUniquenessFailure => 216,
+					MalformedError::EffectsCheckNullifiersNeqClaimedNullifiers => 217,
+					MalformedError::EffectsCheckCommitmentsNeqClaimedShieldedReceives => 218,
+					MalformedError::SequencingCheckCallSequencingViolation => 219,
+					MalformedError::SequencingCheckSequencingCorrelationViolation => 220,
+					MalformedError::SequencingCheckGuaranteedInFallibleContextViolation => 221,
+					MalformedError::SequencingCheckFallibleInGuaranteedContextViolation => 222,
+					MalformedError::SequencingCheckCausalityConstraintViolation => 223,
+					MalformedError::SequencingCheckCallHasEmptyTranscripts => 224,
+					MalformedError::DisjointCheckShieldedInputsDisjointFailure => 225,
+					MalformedError::DisjointCheckShieldedOutputsDisjointFailure => 226,
+					MalformedError::DisjointCheckUnshieldedInputsDisjointFailure => 227,
+					MalformedError::TransactionApplicationIntentTtlExpired => 228,
+					MalformedError::TransactionApplicationIntentTtlTooFarInFuture => 229,
+					MalformedError::TransactionApplicationIntentAlreadyExists => 230,
+					MalformedError::FeeCalculationOutsideTimeToDismiss => 231,
+					MalformedError::FeeCalculationBlockLimitExceeded => 232,
+					MalformedError::MalformedContractDeployNonZeroBalance => 233,
+					MalformedError::MalformedContractDeployIncorrectChargedState => 234,
+					MalformedError::ZswapMalformedInvalidProof => 235,
+					MalformedError::ZswapMalformedContractSentCiphertext => 236,
+					MalformedError::ZswapMalformedNonDisjointCoinMerge => 237,
+					MalformedError::ZswapMalformedNotNormalized => 238,
 					MalformedError::UnknownError => 139,
 				},
 				SystemTransaction(e) => match e {
@@ -406,6 +494,9 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::InvariantViolation => 209,
 					SystemTransactionError::TreasuryDisabled => 210,
 					SystemTransactionError::MerkleTreeError => 211,
+					SystemTransactionError::ReplayProtectionFailureIntentTtlExpired => 245,
+					SystemTransactionError::ReplayProtectionFailureIntentTtlTooFarInFuture => 246,
+					SystemTransactionError::ReplayProtectionFailureIntentAlreadyExists => 247,
 				},
 			},
 			// Reserved from [150-255) for future Errors

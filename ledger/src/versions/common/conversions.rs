@@ -14,13 +14,23 @@
 use super::{
 	ledger_storage_local, mn_ledger_local,
 	types::{InvalidError, MalformedError, SystemTransactionError},
+	zswap_local,
 };
 
 use ledger_storage_local::db::DB;
 use mn_ledger_local::error::{
-	MalformedTransaction, SystemTransactionError as LedgerSystemTransactionError,
+	DisjointCheckError, EffectsCheckError, FeeCalculationError, MalformedContractDeploy,
+	MalformedTransaction, SequencingCheckError,
+	SystemTransactionError as LedgerSystemTransactionError, TransactionApplicationError,
 	TransactionInvalid,
 };
+use zswap_local::error::{MalformedOffer, TransactionInvalid as ZswapTransactionInvalid};
+
+// Version-specific helper modules live at `ledger_X::error_ext`. Each version
+// supplies its own implementation that matches only the variants it knows
+// about, so future upstream additions fall through to the `UnknownError + log`
+// arm rather than being silently misclassified.
+use super::super::error_ext;
 
 impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 	fn from(error: TransactionInvalid<D>) -> Self {
@@ -31,13 +41,39 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::EffectsMismatch { .. } => Ie::EffectsMismatch,
 			Ti::ContractAlreadyDeployed(..) => Ie::ContractAlreadyDeployed,
 			Ti::ContractNotPresent(..) => Ie::ContractNotPresent,
-			Ti::Zswap(..) => Ie::Zswap,
+			Ti::Zswap(e) => match e {
+				ZswapTransactionInvalid::NullifierAlreadyPresent(..) => {
+					Ie::ZswapInvalidNullifierAlreadyPresent
+				},
+				ZswapTransactionInvalid::CommitmentAlreadyPresent(..) => {
+					Ie::ZswapInvalidCommitmentAlreadyPresent
+				},
+				ZswapTransactionInvalid::UnknownMerkleRoot(..) => Ie::ZswapInvalidUnknownMerkleRoot,
+				#[allow(unreachable_patterns)]
+				other => match error_ext::try_convert_extra_zswap_invalid(other) {
+					Ok(ie) => ie,
+					Err(other) => {
+						log::warn!("Unmapped zswap TransactionInvalid variant: {other:?}");
+						Ie::UnknownError
+					},
+				},
+			},
 			Ti::Transcript(..) => Ie::Transcript,
 			Ti::InsufficientClaimable { .. } => Ie::InsufficientClaimable,
 			Ti::VerifierKeyNotFound(..) => Ie::VerifierKeyNotFound,
 			Ti::VerifierKeyAlreadyPresent(..) => Ie::VerifierKeyAlreadyPresent,
 			Ti::ReplayCounterMismatch(..) => Ie::ReplayCounterMismatch,
-			Ti::ReplayProtectionViolation(..) => Ie::ReplayProtectionViolation,
+			Ti::ReplayProtectionViolation(e) => match e {
+				TransactionApplicationError::IntentTtlExpired(..) => {
+					Ie::ReplayProtectionViolationIntentTtlExpired
+				},
+				TransactionApplicationError::IntentTtlTooFarInFuture(..) => {
+					Ie::ReplayProtectionViolationIntentTtlTooFarInFuture
+				},
+				TransactionApplicationError::IntentAlreadyExists => {
+					Ie::ReplayProtectionViolationIntentAlreadyExists
+				},
+			},
 			Ti::BalanceCheckOutOfBounds { .. } => Ie::BalanceCheckOutOfBounds,
 			Ti::InputNotInUtxos(..) => Ie::InputNotInUtxos,
 			Ti::DustDoubleSpend(..) => Ie::DustDoubleSpend,
@@ -45,9 +81,13 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::GenerationInfoAlreadyPresent(..) => Ie::GenerationInfoAlreadyPresent,
 			Ti::InvariantViolation(..) => Ie::InvariantViolation,
 			Ti::RewardTooSmall { .. } => Ie::RewardTooSmall,
-			other => {
-				log::warn!("Unmapped TransactionInvalid variant: {other:?}");
-				Ie::UnknownError
+			Ti::DivideByZero => Ie::DivideByZero,
+			other => match error_ext::try_convert_extra_invalid(other) {
+				Ok(ie) => ie,
+				Err(other) => {
+					log::warn!("Unmapped TransactionInvalid variant: {other:?}");
+					Ie::UnknownError
+				},
 			},
 		}
 	}
@@ -62,15 +102,30 @@ impl From<LedgerSystemTransactionError> for SystemTransactionError {
 			Lste::IllegalPayout { .. } => Ste::IllegalPayout,
 			Lste::InsufficientTreasuryFunds { .. } => Ste::InsufficientTreasuryFunds,
 			Lste::CommitmentAlreadyPresent { .. } => Ste::CommitmentAlreadyPresent,
-			Lste::ReplayProtectionFailure(_) => Ste::ReplayProtectionFailure,
+			Lste::ReplayProtectionFailure(e) => match e {
+				TransactionApplicationError::IntentTtlExpired(..) => {
+					Ste::ReplayProtectionFailureIntentTtlExpired
+				},
+				TransactionApplicationError::IntentTtlTooFarInFuture(..) => {
+					Ste::ReplayProtectionFailureIntentTtlTooFarInFuture
+				},
+				TransactionApplicationError::IntentAlreadyExists => {
+					Ste::ReplayProtectionFailureIntentAlreadyExists
+				},
+			},
 			Lste::IllegalReserveDistribution { .. } => Ste::IllegalReserveDistribution,
 			Lste::GenerationInfoAlreadyPresent(_) => Ste::GenerationInfoAlreadyPresent,
 			Lste::InvalidBasisPoints(_) => Ste::InvalidBasisPoints,
 			Lste::InvariantViolation(_) => Ste::InvariantViolation,
 			Lste::TreasuryDisabled => Ste::TreasuryDisabled,
-			// Not in ledger 7:
 			#[allow(unreachable_patterns)]
-			_ => Ste::MerkleTreeError,
+			other => match error_ext::try_convert_extra_system_tx(other) {
+				Ok(ste) => ste,
+				Err(other) => {
+					log::warn!("Unmapped SystemTransactionError variant: {other:?}");
+					Ste::UnknownError
+				},
+			},
 		}
 	}
 }
@@ -97,7 +152,14 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::UnclaimedCoinCom(..) => Me::UnclaimedCoinCom,
 			Mt::UnclaimedNullifier(..) => Me::UnclaimedNullifier,
 			Mt::Unbalanced(..) => Me::Unbalanced,
-			Mt::Zswap(..) => Me::Zswap,
+			Mt::Zswap(e) => match e {
+				MalformedOffer::InvalidProof(..) => Me::ZswapMalformedInvalidProof,
+				MalformedOffer::ContractSentCiphertext { .. } => {
+					Me::ZswapMalformedContractSentCiphertext
+				},
+				MalformedOffer::NonDisjointCoinMerge => Me::ZswapMalformedNonDisjointCoinMerge,
+				MalformedOffer::NotNormalized => Me::ZswapMalformedNotNormalized,
+			},
 			Mt::BuiltinDecode(..) => Me::BuiltinDecode,
 			Mt::CantMergeTypes => Me::CantMergeTypes,
 			Mt::ClaimOverflow => Me::ClaimOverflow,
@@ -109,13 +171,26 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::BalanceCheckOverspend { .. } => Me::BalanceCheckOverspend,
 			Mt::InvalidNetworkId { .. } => Me::InvalidNetworkId,
 			Mt::IllegallyDeclaredGuaranteed => Me::IllegallyDeclaredGuaranteed,
-			Mt::FeeCalculation(..) => Me::FeeCalculation,
+			Mt::FeeCalculation(e) => match e {
+				FeeCalculationError::OutsideTimeToDismiss { .. } => {
+					Me::FeeCalculationOutsideTimeToDismiss
+				},
+				FeeCalculationError::BlockLimitExceeded => Me::FeeCalculationBlockLimitExceeded,
+			},
 			Mt::InvalidDustRegistrationSignature { .. } => Me::InvalidDustRegistrationSignature,
 			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
 			Mt::OutOfDustValidityWindow { .. } => Me::OutOfDustValidityWindow,
 			Mt::MultipleDustRegistrationsForKey { .. } => Me::MultipleDustRegistrationsForKey,
 			Mt::InsufficientDustForRegistrationFee { .. } => Me::InsufficientDustForRegistrationFee,
-			Mt::MalformedContractDeploy(..) => Me::MalformedContractDeploy,
+			Mt::MalformedContractDeploy(e) => match e {
+				MalformedContractDeploy::NonZeroBalance(..) => {
+					Me::MalformedContractDeployNonZeroBalance
+				},
+				MalformedContractDeploy::IncorrectChargedState => {
+					Me::MalformedContractDeployIncorrectChargedState
+				},
+				_ => Me::MalformedContractDeploy,
+			},
 			Mt::IntentSignatureVerificationFailure => Me::IntentSignatureVerificationFailure,
 			Mt::IntentSignatureKeyMismatch => Me::IntentSignatureKeyMismatch,
 			Mt::IntentSegmentIdCollision(..) => Me::IntentSegmentIdCollision,
@@ -123,13 +198,74 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::UnsupportedProofVersion { .. } => Me::UnsupportedProofVersion,
 			Mt::GuaranteedTranscriptVersion { .. } => Me::GuaranteedTranscriptVersion,
 			Mt::FallibleTranscriptVersion { .. } => Me::FallibleTranscriptVersion,
-			Mt::TransactionApplicationError(..) => Me::TransactionApplicationError,
+			Mt::TransactionApplicationError(e) => match e {
+				TransactionApplicationError::IntentTtlExpired(..) => {
+					Me::TransactionApplicationIntentTtlExpired
+				},
+				TransactionApplicationError::IntentTtlTooFarInFuture(..) => {
+					Me::TransactionApplicationIntentTtlTooFarInFuture
+				},
+				TransactionApplicationError::IntentAlreadyExists => {
+					Me::TransactionApplicationIntentAlreadyExists
+				},
+			},
 			Mt::BalanceCheckOutOfBounds { .. } => Me::BalanceCheckOutOfBounds,
 			Mt::BalanceCheckConversionFailure { .. } => Me::BalanceCheckConversionFailure,
 			Mt::PedersenCheckFailure { .. } => Me::PedersenCheckFailure,
-			Mt::EffectsCheckFailure(..) => Me::EffectsCheckFailure,
-			Mt::DisjointCheckFailure(..) => Me::DisjointCheckFailure,
-			Mt::SequencingCheckFailure(..) => Me::SequencingCheckFailure,
+			Mt::EffectsCheckFailure(e) => match e {
+				EffectsCheckError::RealCallsSubsetCheckFailure(..) => {
+					Me::EffectsCheckRealCallsSubsetCheckFailure
+				},
+				EffectsCheckError::AllCommitmentsSubsetCheckFailure(..) => {
+					Me::EffectsCheckAllCommitmentsSubsetCheckFailure
+				},
+				EffectsCheckError::RealUnshieldedSpendsSubsetCheckFailure(..) => {
+					Me::EffectsCheckRealUnshieldedSpendsSubsetCheckFailure
+				},
+				EffectsCheckError::ClaimedUnshieldedSpendsUniquenessFailure(..) => {
+					Me::EffectsCheckClaimedUnshieldedSpendsUniquenessFailure
+				},
+				EffectsCheckError::ClaimedCallsUniquenessFailure(..) => {
+					Me::EffectsCheckClaimedCallsUniquenessFailure
+				},
+				EffectsCheckError::NullifiersNEClaimedNullifiers { .. } => {
+					Me::EffectsCheckNullifiersNeqClaimedNullifiers
+				},
+				EffectsCheckError::CommitmentsNEClaimedShieldedReceives { .. } => {
+					Me::EffectsCheckCommitmentsNeqClaimedShieldedReceives
+				},
+			},
+			Mt::DisjointCheckFailure(e) => match e {
+				DisjointCheckError::ShieldedInputsDisjointFailure { .. } => {
+					Me::DisjointCheckShieldedInputsDisjointFailure
+				},
+				DisjointCheckError::ShieldedOutputsDisjointFailure { .. } => {
+					Me::DisjointCheckShieldedOutputsDisjointFailure
+				},
+				DisjointCheckError::UnshieldedInputsDisjointFailure { .. } => {
+					Me::DisjointCheckUnshieldedInputsDisjointFailure
+				},
+			},
+			Mt::SequencingCheckFailure(e) => match e {
+				SequencingCheckError::CallSequencingViolation { .. } => {
+					Me::SequencingCheckCallSequencingViolation
+				},
+				SequencingCheckError::SequencingCorrelationViolation { .. } => {
+					Me::SequencingCheckSequencingCorrelationViolation
+				},
+				SequencingCheckError::GuaranteedInFallibleContextViolation { .. } => {
+					Me::SequencingCheckGuaranteedInFallibleContextViolation
+				},
+				SequencingCheckError::FallibleInGuaranteedContextViolation { .. } => {
+					Me::SequencingCheckFallibleInGuaranteedContextViolation
+				},
+				SequencingCheckError::CausalityConstraintViolation { .. } => {
+					Me::SequencingCheckCausalityConstraintViolation
+				},
+				SequencingCheckError::CallHasEmptyTranscripts { .. } => {
+					Me::SequencingCheckCallHasEmptyTranscripts
+				},
+			},
 			Mt::InputsNotSorted(..) => Me::InputsNotSorted,
 			Mt::OutputsNotSorted(..) => Me::OutputsNotSorted,
 			Mt::DuplicateInputs(..) => Me::DuplicateInputs,
