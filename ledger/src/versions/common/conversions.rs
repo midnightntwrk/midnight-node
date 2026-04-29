@@ -189,7 +189,10 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				MalformedContractDeploy::IncorrectChargedState => {
 					Me::MalformedContractDeployIncorrectChargedState
 				},
-				_ => Me::MalformedContractDeploy,
+				other => {
+					log::warn!("Unmapped MalformedContractDeploy variant: {other:?}");
+					Me::MalformedContractDeploy
+				},
 			},
 			Mt::IntentSignatureVerificationFailure => Me::IntentSignatureVerificationFailure,
 			Mt::IntentSignatureKeyMismatch => Me::IntentSignatureKeyMismatch,
