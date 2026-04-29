@@ -851,7 +851,7 @@ impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmo
 	fn get_c_to_m_bridge_min_amount()
 	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
 	{
-		Ok(pallet_c2m_bridge::Stars(Midnight::get_c_to_m_bridge_min_amount()?))
+		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
 	}
 }
 

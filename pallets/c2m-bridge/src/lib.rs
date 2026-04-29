@@ -33,11 +33,17 @@ pub type MidnightTxHash = [u8; 32];
 
 /// Amount of STARS. One NIGHT is 10^6 STARS.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Stars(pub u128);
+pub struct Stars(u128);
 
 impl Stars {
 	fn from_cnight(c_night: u64) -> Stars {
 		Stars(STARS_PER_NIGHT * u128::from(c_night))
+	}
+}
+
+impl From<u128> for Stars {
+	fn from(value: u128) -> Self {
+		Self(value)
 	}
 }
 
