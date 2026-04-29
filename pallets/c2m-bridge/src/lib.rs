@@ -32,12 +32,12 @@ pub use pallet::*;
 pub type MidnightTxHash = [u8; 32];
 
 /// Amount of STARS. One NIGHT is 10^6 STARS.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Stars(pub u128);
 
 impl Stars {
-	fn to_cnight(&self) -> u64 {
-		// 'as u64' is safe because cNight supply is 24*10^9.
-		(self.0 / STARS_PER_NIGHT) as u64
+	fn from_cnight(c_night: u64) -> Stars {
+		Stars(STARS_PER_NIGHT * u128::from(c_night))
 	}
 }
 
@@ -165,13 +165,11 @@ pub mod pallet {
 
 		/// Returns the minimum bridge transfer amount, read from ledger parameters.
 		/// Falls back to 0 if the ledger parameter cannot be read.
-		fn minimal_transfer_amount() -> u64 {
-			T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount()
-				.map(|v| v.to_cnight())
-				.unwrap_or_else(|e| {
-					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
-					0
-				})
+		fn minimal_transfer_amount() -> Stars {
+			T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount().unwrap_or_else(|e| {
+				log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
+				Stars(0)
+			})
 		}
 
 		fn next_counter() -> u32 {
@@ -258,7 +256,7 @@ pub mod pallet {
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			let counter = Self::next_counter();
-			if transfer.amount < Self::minimal_transfer_amount() {
+			if Stars::from_cnight(transfer.amount) < Self::minimal_transfer_amount() {
 				let subminimal_sum = SubminimalTransfersSum::<T>::get();
 				let config = SubminimalTransfersConfiguration::<T>::get();
 
