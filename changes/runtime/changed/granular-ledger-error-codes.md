@@ -8,5 +8,5 @@ which of the seven EffectsCheckError variants triggered the rejection).
 Existing error codes are unchanged; new variants occupy stable u8 codes in
 the 212-250 range. Runtime metadata rebuild required.
 
-Fixes: https://github.com/midnightntwrk/midnight-node/issues/1374
+Helps with: https://github.com/midnightntwrk/midnight-node/issues/1374
 PR:

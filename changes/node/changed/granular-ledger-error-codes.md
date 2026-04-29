@@ -14,5 +14,5 @@ conversions live in versions/error_ext/ledger_{7,8}.rs so future ledger
 upgrades can extend mappings without touching shared code, and unknown
 variants now log a warning instead of being silently misclassified.
 
-Fixes: https://github.com/midnightntwrk/midnight-node/issues/1374
+Helps with: https://github.com/midnightntwrk/midnight-node/issues/1374
 PR:
