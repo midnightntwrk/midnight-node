@@ -90,8 +90,9 @@ where
 					T::MaxValidators,
 				>,
 			>,
-		) = Decode::decode(&mut state.as_slice())
-			.expect("Previously encoded state should be decodable");
+		) = Decode::decode(&mut state.as_slice()).map_err(|_| {
+			sp_runtime::TryRuntimeError::Other("Previously encoded state should be decodable")
+		})?;
 
 		let current_committee_v1 = crate::CurrentCommittee::<T>::get();
 		let next_committee_v1 = crate::NextCommittee::<T>::get();

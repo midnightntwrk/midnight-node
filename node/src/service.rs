@@ -13,6 +13,8 @@
 
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::backend::{create_database_source, open_paritydb};
+use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -36,6 +38,7 @@ use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
 use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
+use sc_service::DatabaseSource;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
 };
@@ -56,37 +59,18 @@ use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as H
 use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
-	path::Path,
+	path::PathBuf,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
+	pub separation: StorageSeparation,
+	/// Used only when separation == 'separate'
+	pub db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
-}
-
-/// Initialize Ledger Storage based on the RuntimeVersion
-fn init_ledger_storage<P: AsRef<Path>>(
-	parity_db_path: P,
-	storage_config: &StorageInit,
-	runtime_version: sp_version::RuntimeVersion,
-) {
-	#[allow(clippy::zero_prefixed_literal)]
-	if runtime_version.spec_version < 000_022_000 {
-		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
-			parity_db_path.as_ref(),
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-	} else {
-		midnight_node_ledger::ledger_8::storage::init_storage_paritydb(
-			&parity_db_path,
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-	}
 }
 
 /// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
@@ -307,7 +291,16 @@ pub fn new_partial(
 		.transpose()?;
 
 	let executor = sc_service::new_wasm_executor(&config.executor);
-	let backend = sc_service::new_db_backend(config.db_config())?;
+
+	let mut db_config = config.db_config();
+	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
+		panic!("Midnight node support only parity-db as a backend");
+	};
+
+	let (parity_db_instance, ledger_storage_db, require_create) =
+		open_paritydb(&db_path, &storage_config)?;
+	db_config.source = create_database_source(parity_db_instance, require_create)?;
+	let backend = sc_service::new_db_backend(db_config)?;
 
 	let genesis_extrinsics = parse_genesis_extrinsic_values(
 		config
@@ -324,11 +317,6 @@ pub fn new_partial(
 		.as_storage_builder()
 		.build_storage()
 		.map_err(sp_blockchain::Error::Storage)?;
-
-	let runtime_version =
-		resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
-	let parity_db_path = config.base_path.path().join("ledger_storage");
-	init_ledger_storage(parity_db_path.clone(), &storage_config, runtime_version);
 
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
@@ -371,7 +359,8 @@ pub fn new_partial(
 				},
 			});
 
-	let ledger_storage = LedgerStorage::new(parity_db_path, storage_config.cache_size);
+	let ledger_storage =
+		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
 	client
 		.execution_extensions()

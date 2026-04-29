@@ -14,23 +14,26 @@
 #![allow(clippy::result_large_err)]
 
 use crate::{
-	cfg::Cfg,
+	cfg::{Cfg, midnight_cfg::StorageSeparation},
 	cli::{self, Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
-	genesis::creation::{
-		cnight_genesis::generate_cnight_genesis,
-		federated_authority_genesis::generate_federated_authority_genesis,
-		ics_genesis::{IcsAddresses, generate_ics_genesis},
-		permissioned_candidates_genesis::{
-			PcChainConfig, PermissionedCandidatesAddresses,
-			generate_permissioned_candidates_genesis,
+	genesis::{
+		creation::{
+			cnight_genesis::generate_cnight_genesis,
+			federated_authority_genesis::generate_federated_authority_genesis,
+			ics_genesis::{IcsAddresses, generate_ics_genesis},
+			permissioned_candidates_genesis::{
+				PcChainConfig, PermissionedCandidatesAddresses,
+				generate_permissioned_candidates_genesis,
+			},
+			reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
 		},
-		reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
-	},
-	genesis::verification::{
-		verify_auth_script_common, verify_federated_authority_auth_script, verify_genesis_message,
-		verify_genesis_timestamp, verify_ics_auth_script, verify_ledger_state_genesis,
-		verify_permissioned_candidates_auth_script, verify_reserve_auth_script,
+		verification::{
+			verify_auth_script_common, verify_federated_authority_auth_script,
+			verify_genesis_message, verify_genesis_timestamp, verify_ics_auth_script,
+			verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
+			verify_reserve_auth_script,
+		},
 	},
 	service::{self, StorageInit},
 };
@@ -179,8 +182,13 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 
 	let properties = chain_spec.properties();
 	let genesis_state = decode_genesis_state(&properties)?;
-	let storage_config =
-		StorageInit { genesis_state, cache_size: cfg.midnight_cfg.storage_cache_size };
+	let ledger_db_path = base_path.path().join("ledger_storage");
+	let storage_config = StorageInit {
+		separation: cfg.midnight_cfg.storage_separation,
+		db_path: ledger_db_path,
+		genesis_state,
+		cache_size: cfg.midnight_cfg.storage_cache_size,
+	};
 
 	let keystore: KeystorePtr = {
 		let res = run_cmd.keystore_params().unwrap().keystore_config(&config_dir)?;
@@ -349,16 +357,21 @@ fn genesis_state_from_chain_spec(
 fn storage_init_from_chain_spec(
 	config: &sc_service::Configuration,
 	cache_size: usize,
+	separation: StorageSeparation,
 ) -> sc_cli::Result<StorageInit> {
+	let db_path = config.base_path.path().join("ledger_storage");
 	Ok(StorageInit {
-		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
+		separation,
 		cache_size,
+		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
+		db_path,
 	})
 }
 
 fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 	let cache_size = cfg.midnight_cfg.storage_cache_size;
+	let separation = cfg.midnight_cfg.storage_separation;
 	let tx_filter_config = TxFilterConfig::disabled();
 
 	match subcommand {
@@ -366,8 +379,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::PartnerChains(cmd) => {
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
-				let storage_config =
-					storage_init_from_chain_spec(&config, cache_size).map_err(|e| e.to_string())?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
+					.map_err(|e| e.to_string())?;
 				let PartialComponents { client, task_manager, other, .. } = service::new_partial(
 					&config,
 					epoch_config,
@@ -391,7 +404,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
 					service::new_partial(
 						&config,
@@ -406,7 +419,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, .. } = service::new_partial(
 					&config,
 					epoch_config,
@@ -420,7 +433,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ExportState(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, .. } = service::new_partial(
 					&config,
 					epoch_config,
@@ -434,7 +447,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::ImportBlocks(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
 					service::new_partial(
 						&config,
@@ -453,7 +466,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::Revert(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, backend, .. } = service::new_partial(
 					&config,
 					epoch_config,
@@ -491,7 +504,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						))
 					},
 					BenchmarkCmd::Block(cmd) => {
-						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
 
 						let partial = service::new_partial(
 							&config,
@@ -510,7 +524,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 					#[cfg(feature = "runtime-benchmarks")]
 					BenchmarkCmd::Storage(cmd) => {
-						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
 
 						let partial = service::new_partial(
 							&config,
@@ -525,7 +540,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
-						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
 
 						let partial = service::new_partial(
 							&config,
@@ -546,7 +562,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Extrinsic(cmd) => {
-						let storage_config = storage_init_from_chain_spec(&config, cache_size)?;
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
 
 						let partial = service::new_partial(
 							&config,
