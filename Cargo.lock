@@ -7931,6 +7931,7 @@ dependencies = [
  "tracing-subscriber",
  "trycmd",
  "whisky",
+ "zeroize",
  "zstd 0.13.3",
 ]
 
