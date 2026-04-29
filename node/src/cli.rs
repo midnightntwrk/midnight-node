@@ -28,6 +28,16 @@ pub struct RunMidnight {
 	#[clap(flatten)]
 	pub run: sc_cli::RunCmd,
 
+	/// Disable automatic hardware benchmarks.
+	///
+	/// By default these benchmarks are automatically run at startup and measure
+	/// the CPU speed, the memory bandwidth and the disk speed.
+	///
+	/// The results are then printed in the logs, and also sent as part of
+	/// telemetry if telemetry is enabled.
+	#[arg(long)]
+	pub no_hardware_benchmarks: bool,
+
 	/// Rejects transactions that contain Deploy and Maintain Operations from being accepted to the transaction pool.
 	#[arg(long)]
 	pub filter_deploy_txs: bool,

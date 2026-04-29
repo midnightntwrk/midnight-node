@@ -56,6 +56,12 @@ sp-state-machine.workspace = true
 sp-timestamp.workspace = true
 sp-version.workspace = true
 
+# Backend/Database dependencies
+parity-db.workspace = true
+sc-client-db.workspace = true
+sp-database.workspace = true
+midnight-storage-core.workspace = true
+
 mmr-rpc.workspace = true
 mmr-gadget.workspace = true
 sp-mmr-primitives.workspace = true
@@ -73,7 +79,8 @@ substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
-frame-benchmarking-cli = {workspace = true, optional = true, default-features = true }
+frame-benchmarking-cli = {workspace = true, default-features = true }
+pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
@@ -123,6 +130,7 @@ partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
+sc-sysinfo.workspace = true
 prometheus-endpoint.workspace = true
 reqwest.workspace = true
 prost.workspace = true
@@ -168,7 +176,10 @@ runtime-benchmarks = [
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-try-runtime = ["midnight-node-runtime/try-runtime"]
+try-runtime = [
+    "midnight-node-runtime/try-runtime",
+    "pallet-staking/try-runtime",
+]
 experimental = [
     #"sp-block-rewards",
 ]

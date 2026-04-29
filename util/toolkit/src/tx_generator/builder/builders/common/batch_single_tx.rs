@@ -108,6 +108,7 @@ impl BatchSingleTxBuilder {
 				vec![dest_wallet],
 				amount,
 				token_type,
+				&[],
 			)?;
 			tx_info.set_intents(intents);
 		}

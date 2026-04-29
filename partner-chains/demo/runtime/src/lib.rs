@@ -690,7 +690,6 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Runtime>;
 	type Recipient = AccountId;
 	type TransferHandler = TestHelperPallet;
-	type HandlerResult = ();
 	type MaxTransfersPerBlock = MaxTransfersPerBlock;
 	type WeightInfo = ();
 
