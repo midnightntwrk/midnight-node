@@ -18,21 +18,24 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
-	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
-	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SystemCall,
-	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{AssetName, MainchainAddress};
+use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
-use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
+use sp_partner_chains_bridge::{
+	MainChainScripts as BridgeMainChainScripts, SubminimalTransfersConfig,
+};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
 
@@ -354,6 +357,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
+			let bridge_config = genesis.c2m_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
 					.illiquid_circulation_supply_validator_address
@@ -370,7 +374,20 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
 					})
 				},
-				initial_checkpoint: None,
+				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
+					McTxHash::decode_hex(&s)
+						.expect("Failed to decode Bridge initial_data_checkpoint")
+				}),
+				_marker: Default::default(),
+			}
+		},
+		c2m_bridge: {
+			let bridge_config = genesis.c2m_bridge_config();
+			C2MBridgeConfig {
+				subminimal_transfers_config: SubminimalTransfersConfig {
+					subminimal_transfers_flush_threshold: bridge_config
+						.subminimal_transfers_flush_threshold,
+				},
 				_marker: Default::default(),
 			}
 		},

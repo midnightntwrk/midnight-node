@@ -11,13 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	convert::Infallible,
+	sync::Arc,
+};
 
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
 	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
 	Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
-	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet,
+	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoId,
 	UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
@@ -42,6 +46,7 @@ pub struct SingleTxBuilder {
 	source_seed: WalletSeed,
 	funding_seed: Option<WalletSeed>,
 	destination_address: Vec<WalletAddress>,
+	input_utxos: Vec<UtxoId>,
 	rng_seed: Option<[u8; 32]>,
 }
 
@@ -66,6 +71,14 @@ impl SingleTxBuilder {
 				.iter()
 				.map(convert_wallet_address)
 				.collect(),
+			input_utxos: {
+				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
+				args.input_utxos
+					.iter()
+					.filter(|id| seen.insert((id.intent_hash.0.0, id.output_number)))
+					.map(convert_utxo_id)
+					.collect()
+			},
 			rng_seed: args.rng_seed,
 		}
 	}
@@ -138,8 +151,11 @@ impl BuildTxs for SingleTxBuilder {
 				unshielded_wallets,
 				self.unshielded_amount.unwrap(),
 				self.unshielded_token_type,
+				&self.input_utxos,
 			)
-			.expect("insufficient UTXOs for transfer");
+			.unwrap_or_else(|error| {
+				panic!("failed to select unshielded UTXOs for transfer: {error}")
+			});
 			tx_info.set_intents(intents);
 		}
 
@@ -208,13 +224,17 @@ pub(crate) fn build_unshielded_intents(
 	output_wallets: Vec<UnshieldedWallet>,
 	amount_to_send_per_output: u128,
 	token_type: UnshieldedTokenType,
+	input_utxos: &[UtxoId],
 ) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>, UtxoSelectionError> {
 	let total_required = amount_to_send_per_output
 		.checked_mul(output_wallets.len() as u128)
 		.expect("unshielded amount overflow");
 
-	let (inputs_info, remaining_nights) =
-		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)?;
+	let (inputs_info, remaining_nights) = if input_utxos.is_empty() {
+		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)?
+	} else {
+		UtxoSpendInfo::utxos_by_ids(context, source_seed, total_required, token_type, input_utxos)?
+	};
 
 	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
 		.into_iter()
