@@ -128,8 +128,8 @@ pub mod pallet {
 		}
 	}
 
-	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<AccountId, ()> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId>) -> () {
+	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<AccountId> for Pallet<T> {
+		fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId>) {
 			let token_amount = transfer.amount;
 			let mc_tx_hash = transfer.mc_tx_hash;
 			match transfer.recipient {
@@ -151,6 +151,7 @@ pub mod pallet {
 					TotalReserveTransfers::<T>::mutate(|v| *v += token_amount);
 				},
 			}
+			()
 		}
 	}
 

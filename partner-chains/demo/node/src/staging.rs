@@ -9,6 +9,7 @@ use partner_chains_demo_runtime::{
 use sc_service::ChainType;
 use sidechain_domain::*;
 use sp_core::bytes::from_hex;
+use sp_core::serde::de::Error;
 use sp_core::{ed25519, sr25519};
 use std::str::FromStr;
 
@@ -162,5 +163,6 @@ pub fn staging_genesis(
 		},
 	};
 
-	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
+	serde_json::to_value(config)
+		.map_err(|_| envy::Error::custom("Could not serialize genesis config"))
 }

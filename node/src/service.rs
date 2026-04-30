@@ -13,6 +13,8 @@
 
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::backend::{create_database_source, open_paritydb};
+use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -21,6 +23,7 @@ use crate::{
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
+	subscription_bounds::{SubscriptionMetrics, SubscriptionTracker},
 };
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
@@ -35,6 +38,7 @@ use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
 use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
+use sc_service::DatabaseSource;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
 };
@@ -46,6 +50,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
+use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -54,37 +59,18 @@ use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as H
 use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
-	path::Path,
+	path::PathBuf,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
+	pub separation: StorageSeparation,
+	/// Used only when separation == 'separate'
+	pub db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
-}
-
-/// Initialize Ledger Storage based on the RuntimeVersion
-fn init_ledger_storage<P: AsRef<Path>>(
-	parity_db_path: P,
-	storage_config: &StorageInit,
-	runtime_version: sp_version::RuntimeVersion,
-) {
-	#[allow(clippy::zero_prefixed_literal)]
-	if runtime_version.spec_version < 000_022_000 {
-		midnight_node_ledger::ledger_7::storage::init_storage_paritydb(
-			parity_db_path.as_ref(),
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-	} else {
-		midnight_node_ledger::ledger_8::storage::init_storage_paritydb(
-			&parity_db_path,
-			&storage_config.genesis_state,
-			storage_config.cache_size,
-		);
-	}
 }
 
 /// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
@@ -305,7 +291,16 @@ pub fn new_partial(
 		.transpose()?;
 
 	let executor = sc_service::new_wasm_executor(&config.executor);
-	let backend = sc_service::new_db_backend(config.db_config())?;
+
+	let mut db_config = config.db_config();
+	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
+		panic!("Midnight node support only parity-db as a backend");
+	};
+
+	let (parity_db_instance, ledger_storage_db, require_create) =
+		open_paritydb(&db_path, &storage_config)?;
+	db_config.source = create_database_source(parity_db_instance, require_create)?;
+	let backend = sc_service::new_db_backend(db_config)?;
 
 	let genesis_extrinsics = parse_genesis_extrinsic_values(
 		config
@@ -322,11 +317,6 @@ pub fn new_partial(
 		.as_storage_builder()
 		.build_storage()
 		.map_err(sp_blockchain::Error::Storage)?;
-
-	let runtime_version =
-		resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
-	let parity_db_path = config.base_path.path().join("ledger_storage");
-	init_ledger_storage(parity_db_path.clone(), &storage_config, runtime_version);
 
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
@@ -369,7 +359,8 @@ pub fn new_partial(
 				},
 			});
 
-	let ledger_storage = LedgerStorage::new(parity_db_path, storage_config.cache_size);
+	let ledger_storage =
+		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
 	client
 		.execution_extensions()
@@ -479,7 +470,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
 	metrics_push_config: Option<MetricsPushConfig>,
+	hwbench: Option<sc_sysinfo::HwBench>,
 	tx_filter_config: TxFilterConfig,
+	max_finality_subscriptions: u32,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
@@ -607,6 +600,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
+	let subscription_metrics =
+		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());
+	let subscription_tracker =
+		SubscriptionTracker::new(max_finality_subscriptions, subscription_metrics);
+
 	let rpc_extensions_builder = {
 		let client = client.clone();
 		let pool = transaction_pool.clone();
@@ -618,7 +616,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let epoch_config = epoch_config.clone();
 		let network_for_rpc = network.clone();
 		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
+		let subscription_tracker = subscription_tracker.clone();
 
+		#[allow(clippy::result_large_err)]
 		move |subscription_executor: SubscriptionTaskExecutor| {
 			let grandpa = GrandpaDeps {
 				shared_voter_state: shared_voter_state.clone(),
@@ -648,6 +648,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				backend: backend.clone(),
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
+				subscription_tracker: subscription_tracker.clone(),
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
@@ -668,6 +669,28 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		telemetry: telemetry.as_mut(),
 		tracing_execute_block: None,
 	})?;
+
+	if let Some(hwbench) = hwbench {
+		sc_sysinfo::print_hwbench(&hwbench);
+		match SUBSTRATE_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
+			Err(err) if role.is_authority() => {
+				log::warn!(
+					"⚠️  The hardware does not meet the minimal requirements {} for role 'Authority'.",
+					err
+				);
+			},
+			_ => {},
+		}
+
+		if let Some(ref mut telemetry) = telemetry {
+			let telemetry_handle = telemetry.handle();
+			task_manager.spawn_handle().spawn(
+				"telemetry_hwbench",
+				None,
+				sc_sysinfo::initialize_hwbench_telemetry(telemetry_handle, hwbench),
+			);
+		}
+	}
 
 	if role.is_authority() {
 		let basic_authorship_proposer_factory = sc_basic_authorship::ProposerFactory::new(

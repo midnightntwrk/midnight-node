@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 pub mod cfg;
@@ -33,4 +34,5 @@ pub mod peer_info_rpc;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
+pub mod subscription_bounds;
 mod util;

@@ -31,7 +31,7 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
-use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
+use frame_support::{traits::Get, weights::{Weight, constants::ParityDbWeight}};
 use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_block_participation.
@@ -69,7 +69,7 @@ impl WeightInfo for () {
 		//  Estimated: `1497`
 		// Minimum execution time: 7_000_000 picoseconds.
 		Weight::from_parts(8_000_000, 1497)
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(ParityDbWeight::get().reads(2_u64))
+			.saturating_add(ParityDbWeight::get().writes(2_u64))
 	}
 }

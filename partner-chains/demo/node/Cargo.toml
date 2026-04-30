@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-demo-node"
-version.workspace = true
+version = "1.8.1"
 description = "A reference implementation of a partner chain node"
 authors.workspace = true
 edition.workspace = true
@@ -9,9 +9,6 @@ repository.workspace = true
 license = "Unlicense"
 publish = false
 build = "build.rs"
-
-[package.metadata.cargo-shear]
-ignored = ["sc-client-db"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -25,7 +22,7 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 log = { workspace = true }
-sc-cli = { workspace = true, features = ["rocksdb"] }
+sc-cli = { workspace = true }
 sp-core = { workspace = true }
 sc-executor = { workspace = true }
 sc-network = { workspace = true }
@@ -41,8 +38,6 @@ sc-consensus = { workspace = true }
 sc-consensus-grandpa = { workspace = true }
 sc-consensus-grandpa-rpc = { workspace = true }
 sc-client-api = { workspace = true }
-# This node template uses RocksDB as the storage backend by default.
-sc-client-db = { workspace = true, features = ["rocksdb"] }
 sp-runtime = { workspace = true }
 sp-io = { workspace = true }
 sp-timestamp = { workspace = true }
@@ -109,12 +104,16 @@ substrate-build-script-utils = { workspace = true }
 [dev-dependencies]
 hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
-assert_cmd = { workspace = true }
 pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
 
 [features]
-default = ["sidechain-domain/std"]
+default = [
+	"sidechain-domain/std",
+	"wasm-runtime",
+	"partner-chains-demo-runtime/std",
+]
+wasm-runtime = ["partner-chains-demo-runtime/wasm-runtime"]
 
 [lib]
 doctest = false

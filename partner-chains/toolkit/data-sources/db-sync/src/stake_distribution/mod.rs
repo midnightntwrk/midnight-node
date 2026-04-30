@@ -82,10 +82,13 @@ fn rows_to_distribution(rows: Vec<StakePoolDelegationOutputRow>) -> StakeDistrib
 fn get_delegator_key(row: &StakePoolDelegationOutputRow) -> Result<DelegatorKey, String> {
 	match &row.stake_address_hash_raw[..] {
 		[0xe0 | 0xe1, rest @ ..] => Ok(DelegatorKey::StakeKeyHash(
-			rest.try_into().expect("infallible: stake_address_hash_raw is 29 bytes"),
+			rest.try_into()
+				.map_err(|_| "programatic error: stake_address_hash_raw is not 29 bytes")?,
 		)),
 		[0xf0 | 0xf1, rest @ ..] => Ok(DelegatorKey::ScriptKeyHash {
-			hash_raw: rest.try_into().expect("infallible: stake_address_hash_raw is 29 bytes"),
+			hash_raw: rest
+				.try_into()
+				.map_err(|_| "programatic error: stake_address_hash_raw is not 29 bytes")?,
 			script_hash: row
 				.stake_address_script_hash
 				.ok_or("stake_address_script_hash must be present for script keys")?,
