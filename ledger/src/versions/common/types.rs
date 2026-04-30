@@ -58,12 +58,8 @@ pub enum InvalidError {
 	ReplayProtectionViolationIntentTtlExpired,
 	ReplayProtectionViolationIntentTtlTooFarInFuture,
 	ReplayProtectionViolationIntentAlreadyExists,
-	// Top-level TransactionInvalid variants currently unmapped.
 	DivideByZero,
-	// Ledger-8-only top-level TransactionInvalid variant. Reaches here via the
-	// version-specific error_ext helper rather than the catch-all.
 	MerkleTreeError,
-	// Ledger-8-only zswap::TransactionInvalid variant.
 	ZswapInvalidMerkleTreeError,
 	UnknownError,
 }
