@@ -8,6 +8,7 @@ use hex::ToHex;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
+use zeroize::Zeroize;
 pub(crate) mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
@@ -237,20 +238,24 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args
+		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
-				serialize_untagged(UnshieldedWallet::default(s).signing_key())
-					.map(|bytes| bytes.encode_hex::<String>())
+				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map_err(ToolkitJsError::ExecutionError)?;
+				let hex = bytes.encode_hex::<String>();
+				bytes.zeroize();
+				Ok::<String, ToolkitJsError>(hex)
 			})
-			.transpose()
-			.map_err(ToolkitJsError::ExecutionError)?;
+			.transpose()?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
-		self.execute_js(&cmd_args)?;
+		let result = self.execute_js(&cmd_args);
+		signing_key.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -349,7 +354,7 @@ impl ToolkitJs {
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		let new_authority = match command {
+		let mut new_authority = match command {
 			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
 				Some(new_authority.as_bytes().encode_hex::<String>())
 			},
@@ -364,7 +369,9 @@ impl ToolkitJs {
 				cmd_args.push(&vk_path);
 			}
 		}
-		self.execute_js(&cmd_args)?;
+		let result = self.execute_js(&cmd_args);
+		new_authority.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}

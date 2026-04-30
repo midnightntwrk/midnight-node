@@ -130,7 +130,7 @@ fn extract_events(midnight_system_tx: &[u8]) -> Vec<CNightGeneratesDustEvent> {
 fn init_ledger_state() {
 	let block_context = get_block_context(UndeployedNetwork.genesis_block());
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,

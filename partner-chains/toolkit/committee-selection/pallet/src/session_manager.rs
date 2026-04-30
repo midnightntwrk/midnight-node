@@ -75,16 +75,19 @@ impl<T: crate::Config + pallet_session::Config>
 	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, T::AuthorityKeys)>> {
 		info!("New session {new_index}");
 		pallet_session::pallet::CurrentIndex::<T>::put(new_index);
-		Some(
-			crate::Pallet::<T>::rotate_committee_to_next_epoch()
-				.expect(
-					"Session should never end without current epoch validators defined. \
-				Check ShouldEndSession implementation or if it is used before starting new session",
-				)
+
+		let committee = match crate::Pallet::<T>::rotate_committee_to_next_epoch() {
+			Some(committee) => committee
 				.into_iter()
 				.map(|member| (member.authority_id().into(), member.authority_keys()))
 				.collect(),
-		)
+			None => {
+				panic!(
+					"Session should never end without current epoch validators defined. Check ShouldEndSession implementation or if it is used before starting new session"
+				)
+			},
+		};
+		Some(committee)
 	}
 
 	fn end_session(end_index: SessionIndex) {

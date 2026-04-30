@@ -15,7 +15,9 @@ services:
       - ./configurations/busybox:/busybox
       - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
       - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
+      - ./configurations/cardano/keys/cold.skey:/keys/cold.skey
       - ./configurations/cardano/keys/cold.vkey:/keys/cold.vkey
+      - ./configurations/cardano/governance-keys:/governance-keys
       - ./configurations/cardano/keys/kes.skey:/keys/kes.skey
       - ./configurations/cardano/keys/vrf.skey:/keys/vrf.skey
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
@@ -164,7 +166,14 @@ services:
     container_name: postgres
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
-    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT}
+    command: >
+      postgres
+      -c maintenance_work_mem=256MB
+      -c ssl=on
+      -c ssl_cert_file=/etc/ssl/postgres/server.crt
+      -c ssl_key_file=/etc/ssl/postgres/server.key
+      -c max_connections=120
+      -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -179,6 +188,7 @@ services:
       - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    entrypoint: ["/bin/bash", "/usr/local/bin/custom-entrypoint.sh"]
     volumes:
       - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
       - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh

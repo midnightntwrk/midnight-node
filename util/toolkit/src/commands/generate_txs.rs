@@ -146,6 +146,7 @@ mod tests {
 			)
 			.unwrap(),
 		],
+		input_utxos: vec![],
 		rng_seed: None,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);

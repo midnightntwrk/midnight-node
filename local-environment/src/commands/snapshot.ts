@@ -20,6 +20,7 @@ import {
   ensureSnapshotCredentials,
   SnapshotCredentials,
 } from "../lib/snapshotEnv";
+import { loadNetworkConfig } from "../lib/networkConfig";
 
 const DEFAULT_SNAPSHOT_IMAGE =
   process.env.MN_SNAPSHOT_IMAGE ?? "amazon/aws-cli:2.17.16";
@@ -67,9 +68,10 @@ export async function snapshot(
   namespace: string,
   options: SnapshotOptions,
 ): Promise<void> {
-  // TODO: choose node
   const bootnodeStatefulSet =
-    options.bootnodeStatefulSet ?? "midnight-node-boot-01";
+    options.bootnodeStatefulSet ??
+    statefulSetNameFromConfig(namespace) ??
+    "midnight-node-boot-01";
   const snapshotPodName = `${bootnodeStatefulSet}-snapshot`;
   const snapshotImage = options.snapshotImage ?? DEFAULT_SNAPSHOT_IMAGE;
   const s3Uri = options.s3Uri ?? DEFAULT_S3_URI;
@@ -117,7 +119,9 @@ export async function snapshot(
     );
 
     const pvcName =
-      options.pvcName ?? resolveBootnodePvc(namespace, bootnodeStatefulSet);
+      options.pvcName ??
+      pvcNameFromConfig(namespace) ??
+      resolveBootnodePvc(namespace, bootnodeStatefulSet);
     if (!pvcName) {
       throw new Error(
         `Unable to determine PVC name for ${bootnodeStatefulSet}. ` +
@@ -476,6 +480,22 @@ function waitForStatefulSetReady(
       `Timed out waiting for statefulset ${name} to be ready: ${(error as Error).message}`,
     );
   }
+}
+
+function pvcNameFromConfig(namespace: string): string | undefined {
+  const config = loadNetworkConfig(namespace);
+  return config.boot.pvcName;
+}
+
+function statefulSetNameFromConfig(namespace: string): string | undefined {
+  const config = loadNetworkConfig(namespace);
+  const firstPod = config.boot.podNames?.[0];
+  if (!firstPod) return undefined;
+  // Kubernetes statefulset pods are named <statefulset>-<ordinal>.
+  // Strip the trailing ordinal to recover the statefulset name.
+  const lastDash = firstPod.lastIndexOf("-");
+  if (lastDash < 0) return undefined;
+  return firstPod.substring(0, lastDash);
 }
 
 function execOptions(overrides: ExecSyncOptions = {}): ExecSyncOptions {

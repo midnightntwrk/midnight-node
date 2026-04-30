@@ -25,15 +25,17 @@ where
 	T::Recipient: UncheckedFrom<H256>,
 {
 	fn transfers(t: u32) -> BoundedVec<BridgeTransferV1<T::Recipient>, T::MaxTransfersPerBlock> {
-		use BridgeTransferV1::*;
-
 		let recipient = T::Recipient::unchecked_from(Default::default());
-		let tx_hash = McTxHash::default();
+		let mc_tx_hash = McTxHash::default();
 
 		let transfers = alloc::vec![
-			UserTransfer { token_amount: 1000, recipient },
-			ReserveTransfer { token_amount: 1000 },
-			InvalidTransfer { token_amount: 1000, tx_hash },
+			BridgeTransferV1 {
+				amount: 1000,
+				mc_tx_hash,
+				recipient: TransferRecipient::Address { recipient }
+			},
+			BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient: TransferRecipient::Reserve },
+			BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient: TransferRecipient::Invalid },
 		]
 		.into_iter()
 		.cycle()

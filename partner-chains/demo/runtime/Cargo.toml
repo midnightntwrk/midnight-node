@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-demo-runtime"
-version.workspace = true
+version = "1.8.1"
 description = "A reference implementation of a partner chain runtime"
 authors.workspace = true
 edition.workspace = true
@@ -202,6 +202,7 @@ try-runtime = [
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
 ]
+wasm-runtime = []
 
 [lib]
 doctest = false

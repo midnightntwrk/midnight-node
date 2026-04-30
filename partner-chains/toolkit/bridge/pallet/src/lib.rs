@@ -294,8 +294,9 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			MainChainScriptsConfiguration::<T>::set(self.main_chain_scripts.clone());
-			DataCheckpoint::<T>::set(self.initial_checkpoint.map(BridgeDataCheckpoint::Tx));
+			let GenesisConfig { main_chain_scripts, initial_checkpoint, _marker } = self;
+			MainChainScriptsConfiguration::<T>::set(main_chain_scripts.clone());
+			DataCheckpoint::<T>::set(initial_checkpoint.map(BridgeDataCheckpoint::Tx));
 		}
 	}
 
@@ -334,8 +335,6 @@ pub mod pallet {
 		/// Changes the main chain scripts used for observing native token transfers along with a new data checkpoint.
 		///
 		/// This extrinsic must be run either using `sudo` or some other chain governance mechanism.
-		///
-		///
 		#[pallet::call_index(1)]
 		#[pallet::weight(T::WeightInfo::set_main_chain_scripts())]
 		pub fn set_main_chain_scripts(

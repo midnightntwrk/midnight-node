@@ -127,9 +127,9 @@ use alloc::vec::*;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::{
-	AssetId, AssetName, MainchainAddress, McBlockHash, McBlockNumber, McTxHash, PolicyId,
-};
+#[cfg(feature = "std")]
+use sidechain_domain::McBlockHash;
+use sidechain_domain::{AssetId, AssetName, MainchainAddress, McBlockNumber, McTxHash, PolicyId};
 use sp_inherents::*;
 
 #[cfg(feature = "std")]
@@ -201,33 +201,54 @@ impl MainChainScripts {
 	}
 }
 
+/// Configuration of subminimal transfer stashing and flushing.
+#[derive(
+	Default,
+	Debug,
+	Clone,
+	PartialEq,
+	Eq,
+	TypeInfo,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	MaxEncodedLen,
+	Serialize,
+	Deserialize,
+)]
+pub struct SubminimalTransfersConfig {
+	/// Threshold of stashed transfers flush
+	pub subminimal_transfers_flush_threshold: u64,
+}
+
 /// Type containing all information needed to process a single transfer incoming from
 /// main chain, corresponding to a single UTXO on Cardano
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
 )]
-pub enum BridgeTransferV1<RecipientAddress> {
-	/// Token transfer initiated by a user on Cardano
-	UserTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-		/// Transfer recipient on the Partner Chain
+pub struct BridgeTransferV1<RecipientAddress> {
+	/// Cardano transaction for this transfer
+	pub mc_tx_hash: McTxHash,
+	/// Amount of tokens tranfered
+	pub amount: u64,
+	/// Transfer recipient on the Partner Chain
+	pub recipient: TransferRecipient<RecipientAddress>,
+}
+
+/// Details of bridge transfer recipient
+#[derive(
+	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
+)]
+pub enum TransferRecipient<RecipientAddress> {
+	/// Transfer to the specified recipient address
+	Address {
+		/// Address of the transfer recipient
 		recipient: RecipientAddress,
 	},
-	/// Token transfer carrying reserve funds being moved from Cardano to the Partner Chain
-	ReserveTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-	},
-	/// Invalid transfer coming from a Transaction on Cardano that does not contain a metadata that can be
-	/// correctly interpreted. These transfers can either be ignored and considered lost or recovered
-	/// through some custom mechanism.
-	InvalidTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-		/// ID of the UTXO containing an invalid transfer
-		tx_hash: sidechain_domain::McTxHash,
-	},
+	/// Transfer to the reserve
+	Reserve,
+	/// Invalid transfer. Amount was deposited but kind designation / recipient was not encoded properly
+	Invalid,
 }
 
 /// Structure representing all token bridge transfers incoming from Cardano that are to be

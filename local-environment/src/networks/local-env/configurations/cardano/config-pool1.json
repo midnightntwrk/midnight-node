@@ -9,7 +9,7 @@
   "ConwayGenesisHash": "9cc5084f02e27210eacba47af0872e3dba8946ad9460b6072d793e1d2f3987ef",
   "ConsensusMode": "PraosMode",
   "EnableP2P": true,
-  "ExperimentalHardForksEnabled": true,
+  "ExperimentalHardForksEnabled": false,
   "ExperimentalProtocolsEnabled": true,
   "LastKnownBlockVersion-Alt": 0,
   "LastKnownBlockVersion-Major": 3,
@@ -21,7 +21,7 @@
     "SnapshotInterval": 216
   },
   "MaxConcurrencyDeadline": 4,
-  "MaxKnownMajorProtocolVersion": 2,
+  "MaxKnownMajorProtocolVersion": 11,
   "PBftSignatureThreshold": 1.1,
   "Protocol": "Cardano",
   "RequiresNetworkMagic": "RequiresMagic",

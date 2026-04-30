@@ -74,9 +74,7 @@ use sp_consensus_beefy::{
 	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
-use sp_partner_chains_bridge::{
-	BridgeDataCheckpoint, BridgeTransferV1, MainChainScripts as BridgeMainChainScripts,
-};
+use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
@@ -280,7 +278,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_version: 001_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 2,
+	transaction_version: 3,
 	system_version: 1,
 };
 
@@ -828,18 +826,8 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
-pub struct MidnightTokenTransferHandler;
-
 parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
-}
-
-impl pallet_partner_chains_bridge::TransferHandler<BridgeRecipient>
-	for MidnightTokenTransferHandler
-{
-	fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-		log::debug!("Bridge token transfer received {:?}", transfer);
-	}
 }
 
 impl pallet_cnight_observation::Config for Runtime {
@@ -850,11 +838,16 @@ impl pallet_cnight_observation::Config for Runtime {
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
-	type TransferHandler = MidnightTokenTransferHandler;
+	type TransferHandler = C2MBridge;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
+}
+
+impl pallet_c2m_bridge::Config for Runtime {
+	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -937,6 +930,9 @@ mod runtime {
 
 	#[runtime::pallet_index(32)]
 	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
+
+	#[runtime::pallet_index(33)]
+	pub type C2MBridge = pallet_c2m_bridge::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]
@@ -1504,7 +1500,7 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(
-			block: Block,
+			block: <Block as BlockT>::LazyBlock,
 			state_root_check: bool,
 			signature_check: bool,
 			select: frame_try_runtime::TryStateSelect

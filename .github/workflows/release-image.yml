@@ -96,6 +96,9 @@ jobs:
       image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
       image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
       git-tag-release: ${{ steps.release-config.outputs.git_tag_release }}
+      git-tag-node: ${{ steps.release-config.outputs.git_tag_node }}
+      git-tag-toolkit: ${{ steps.release-config.outputs.git_tag_toolkit }}
+      git-tag-runtime: ${{ steps.release-config.outputs.git_tag_runtime }}
       toolkit-version: ${{ steps.release-env.outputs.toolkit_version }}
       toolkit-tag-release: ${{ steps.release-env.outputs.toolkit_tag_release }}
       runtime-version: ${{ steps.release-env.outputs.runtime_version }}
@@ -104,7 +107,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
 
         with:
           registry: ghcr.io
@@ -112,7 +115,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -173,20 +176,25 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
           SUFFIX: ${{ github.event.inputs.suffix }}
         run: |
-          # Build git tag by concatenating included components with bare versions,
-          # then appending suffix once at the end (e.g. node-1.0.0-runtime-1.0.0-rc.1)
-          GIT_TAG=""
+          # Create separate git tags for each component (e.g. node-1.0.0-rc.1, toolkit-1.0.0-rc.1)
+          # The primary release tag is the node tag for backwards compatibility with downstream consumers
           if [ "$SKIP_NODE" != "true" ]; then
-            GIT_TAG="node-${NODE_VERSION}"
+            echo "git_tag_node=node-${NODE_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
           if [ "$SKIP_TOOLKIT" != "true" ]; then
-            GIT_TAG="${GIT_TAG:+${GIT_TAG}-}toolkit-${TOOLKIT_VERSION}"
+            echo "git_tag_toolkit=toolkit-${TOOLKIT_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
           if [ "$SKIP_RUNTIME" != "true" ]; then
-            GIT_TAG="${GIT_TAG:+${GIT_TAG}-}runtime-${RUNTIME_VERSION}"
+            echo "git_tag_runtime=runtime-${RUNTIME_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
           fi
-          GIT_TAG="${GIT_TAG}${SUFFIX}"
-          echo "git_tag_release=$GIT_TAG" >> "$GITHUB_OUTPUT"
+          # Primary release tag is node tag for backwards compatibility
+          if [ "$SKIP_NODE" != "true" ]; then
+            echo "git_tag_release=node-${NODE_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          elif [ "$SKIP_TOOLKIT" != "true" ]; then
+            echo "git_tag_release=toolkit-${TOOLKIT_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          elif [ "$SKIP_RUNTIME" != "true" ]; then
+            echo "git_tag_release=runtime-${RUNTIME_VERSION}${SUFFIX}" >> "$GITHUB_OUTPUT"
+          fi
 
       # --- Node image retag (GHCR) ---
       - name: Retag and push node release images (GHCR)
@@ -507,244 +515,41 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Count included components
-          INCLUDED=0
-          if [ "$SKIP_NODE" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then INCLUDED=$((INCLUDED+1)); fi
+          # Create separate tags for toolkit and runtime (node tag is the primary release tag)
+          # This ensures each component has its own tag for independent versioning
+          RELEASE_SHA="$GITHUB_SHA"
 
-          # Only create individual tags for multi-component releases
-          # (single-component releases already have the individual tag as the combined tag)
-          if [ "$INCLUDED" -gt 1 ]; then
-            RELEASE_SHA="$GITHUB_SHA"
-
-            if [ "$SKIP_NODE" != "true" ]; then
-              echo "Creating tag node-${IMAGE_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/node-${IMAGE_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag node-${IMAGE_TAG_RELEASE} already exists, skipping"
-            fi
-            if [ "$SKIP_TOOLKIT" != "true" ]; then
-              echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
-            fi
-            if [ "$SKIP_RUNTIME" != "true" ]; then
-              echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-                || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
-            fi
-          fi
-
-      - name: Fetch release tag
-        if: inputs.archive-changes == true
-        working-directory: ./.tmp-package
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin tag "$GIT_TAG_RELEASE"
-
-      - name: Archive changes
-        if: inputs.archive-changes == true
-        env:
-          ARCHIVE_MODE: ${{ inputs.archive-mode }}
-          SKIP_NODE: ${{ inputs.skip-node }}
-          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
-          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
-        working-directory: ./.tmp-package
-        run: |
-          if [ "$SKIP_NODE" != "true" ]; then
-            season archive-changes --changes-dir changes/node --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
-          fi
+          # Toolkit tag (only if toolkit is included and not skipped)
           if [ "$SKIP_TOOLKIT" != "true" ]; then
-            season archive-changes --changes-dir changes/toolkit --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+            echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
+              || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
           fi
+
+          # Runtime tag (only if runtime is included and not skipped)
           if [ "$SKIP_RUNTIME" != "true" ]; then
-            season archive-changes --changes-dir changes/runtime --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+            echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
+              || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
           fi
 
-      - name: Reset changes
-        if: inputs.reset-changes == true
-        env:
-          SKIP_NODE: ${{ inputs.skip-node }}
-          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
-          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
-        working-directory: ./.tmp-package
-        run: |
-          if [ "$SKIP_NODE" != "true" ]; then
-            season reset-changes --changes-dir changes/node --changes-template-dir .changes_template/node --dirty
-          fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then
-            season reset-changes --changes-dir changes/toolkit --changes-template-dir .changes_template/toolkit --dirty
-          fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then
-            season reset-changes --changes-dir changes/runtime --changes-template-dir .changes_template/runtime --dirty
-          fi
-
-      - name: Bump components version
-        if: inputs.bump-version == true
-        env:
-          SKIP_NODE: ${{ inputs.skip-node }}
-          SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
-          SKIP_RUNTIME: ${{ inputs.skip-runtime }}
-        working-directory: ./.tmp-package
-        run: |
-          if [ "$SKIP_NODE" != "true" ]; then
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$NODE_VERSION"
-            NEW_NODE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            sed -i "0,/^version = \"$NODE_VERSION\"/s//version = \"$NEW_NODE_VERSION\"/" node/Cargo.toml
-            sed -i '/^name = "midnight-node"/{n;s/version = "'"$NODE_VERSION"'"/version = "'"$NEW_NODE_VERSION"'"/;}' Cargo.lock
-            echo "Bumped node version: $NODE_VERSION -> $NEW_NODE_VERSION"
-          fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$TOOLKIT_VERSION"
-            NEW_TOOLKIT_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            sed -i "0,/^version = \"$TOOLKIT_VERSION\"/s//version = \"$NEW_TOOLKIT_VERSION\"/" util/toolkit/Cargo.toml
-            sed -i '/^name = "midnight-node-toolkit"/{n;s/version = "'"$TOOLKIT_VERSION"'"/version = "'"$NEW_TOOLKIT_VERSION"'"/;}' Cargo.lock
-            echo "Bumped toolkit version: $TOOLKIT_VERSION -> $NEW_TOOLKIT_VERSION"
-          fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then
-            # spec_version format: XXX_YYY_ZZZ (e.g. 001_000_000)
-            SPEC_RAW="$(grep -m 1 'spec_version:' runtime/src/lib.rs | awk '{print $2}' | tr -d ',')"
-            # Remove underscores, extract 3-digit groups, bump patch
-            DIGITS="${SPEC_RAW//_/}"
-            RMAJOR="${DIGITS:0:3}"
-            RMINOR="${DIGITS:3:3}"
-            RPATCH="${DIGITS:6:3}"
-            NEW_RPATCH=$(printf '%03d' $(( 10#$RPATCH + 1 )))
-            NEW_SPEC="${RMAJOR}_${RMINOR}_${NEW_RPATCH}"
-            sed -i "s/spec_version: ${SPEC_RAW}/spec_version: ${NEW_SPEC}/" runtime/src/lib.rs
-            echo "Bumped runtime spec_version: $SPEC_RAW -> $NEW_SPEC"
-          fi
-
-      # Create a signed commit on a new branch and open a PR.
-      # Uses the GitHub GraphQL API (createCommitOnBranch) instead of a
-      # third-party action (e.g. peter-evans/create-pull-request)
-      # so the commit is automatically signed by GitHub.
-      - name: Create Archive-Changes PR against main
-        if: inputs.skip-node != true || inputs.skip-toolkit != true || inputs.skip-runtime != true
-        working-directory: ./.tmp-package
-        shell: bash
-        env:
-          BRANCH: archive-release-${{ needs.prepare-release.outputs.git-tag-release }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          OWNER="${GITHUB_REPOSITORY%%/*}"
-          REPO="${GITHUB_REPOSITORY##*/}"
-
-          # Stage all working-tree changes so we can diff them
-          git add -A
-
-          # Collect added/modified files with base64-encoded contents
-          ADDITIONS_JSON=$(git diff --cached --name-only -z --diff-filter=AM | \
-            while IFS= read -r -d '' file; do
-              CONTENT_B64=$(base64 -w 0 "$file")
-              jq -n --arg path "$file" --arg contents "$CONTENT_B64" \
-                '{path: $path, contents: $contents}'
-            done | jq -s '.')
-
-          # Collect deleted files
-          DELETIONS_JSON=$(git diff --cached --name-only -z --diff-filter=D | \
-            while IFS= read -r -d '' file; do
-              jq -n --arg path "$file" '{path: $path}'
-            done | jq -s '.')
-
-          if [ "$ADDITIONS_JSON" = "[]" ] && [ "$DELETIONS_JSON" = "[]" ]; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          # Get repo ID and main branch HEAD OID
-          # shellcheck disable=SC2016
-          QUERY_RESULT=$(gh api graphql -f query='
-            query($owner: String!, $name: String!) {
-              repository(owner: $owner, name: $name) {
-                id
-                defaultBranchRef {
-                  target { oid }
-                }
-              }
-            }
-          ' -f owner="$OWNER" -f name="$REPO")
-
-          REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
-          MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
-
-          # Create branch at main HEAD, or force-update if it already exists
-          # shellcheck disable=SC2016
-          CREATE_RESULT=$(gh api graphql -f query='
-            mutation($repoId: ID!, $name: String!, $oid: GitObjectID!) {
-              createRef(input: {repositoryId: $repoId, name: $name, oid: $oid}) {
-                ref { name }
-              }
-            }
-          ' -f repoId="$REPO_ID" -f name="refs/heads/$BRANCH" -f oid="$MAIN_OID" 2>&1) || true
-
-          if echo "$CREATE_RESULT" | jq -e '.errors' > /dev/null 2>&1; then
-            echo "Branch already exists, force-updating to main HEAD..."
-            # shellcheck disable=SC2016
-            REF_ID=$(gh api graphql -f query='
-              query($owner: String!, $name: String!, $ref: String!) {
-                repository(owner: $owner, name: $name) {
-                  ref(qualifiedName: $ref) { id }
-                }
-              }
-            ' -f owner="$OWNER" -f name="$REPO" -f ref="refs/heads/$BRANCH" \
-              | jq -r '.data.repository.ref.id')
-
-            # shellcheck disable=SC2016
-            gh api graphql -f query='
-              mutation($refId: ID!, $oid: GitObjectID!) {
-                updateRef(input: {refId: $refId, oid: $oid, force: true}) {
-                  ref { name }
-                }
-              }
-            ' -f refId="$REF_ID" -f oid="$MAIN_OID"
-          fi
-
-          # Create signed commit via GraphQL
-          COMMIT_RESULT=$(jq -n \
-            --arg nwo "$GITHUB_REPOSITORY" \
-            --arg branch "$BRANCH" \
-            --arg oid "$MAIN_OID" \
-            --arg headline "chore: archive changes for $GIT_TAG_RELEASE" \
-            --argjson additions "$ADDITIONS_JSON" \
-            --argjson deletions "$DELETIONS_JSON" \
-            '{
-              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
-              variables: {
-                input: {
-                  branch: {
-                    repositoryNameWithOwner: $nwo,
-                    branchName: $branch
-                  },
-                  expectedHeadOid: $oid,
-                  message: { headline: $headline },
-                  fileChanges: {
-                    additions: $additions,
-                    deletions: $deletions
-                  }
-                }
-              }
-            }' | gh api graphql --input -)
-
-          COMMIT_OID=$(echo "$COMMIT_RESULT" | jq -r '.data.createCommitOnBranch.commit.oid')
-          echo "Created signed commit: $COMMIT_OID"
-
-          # Create PR if one doesn't already exist
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
-            echo "PR $EXISTING_PR already exists for branch $BRANCH"
-          else
-            gh pr create \
-              --base main \
-              --head "$BRANCH" \
-              --title "chore: post-release $GIT_TAG_RELEASE" \
-              --body "Automated post-release PR for $GIT_TAG_RELEASE."
-          fi
+  archive-changes:
+    needs: [validate-inputs, prepare-release, finalize-release]
+    if: ${{ !cancelled() && !failure() }}
+    uses: ./.github/workflows/archive-changes.yml
+    with:
+      ref: ${{ inputs.ref }}
+      release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
+      archive-changes: ${{ inputs.archive-changes }}
+      archive-mode: ${{ inputs.archive-mode }}
+      reset-changes: ${{ inputs.reset-changes }}
+      bump-version: ${{ inputs.bump-version }}
+      skip-node: ${{ inputs.skip-node }}
+      skip-toolkit: ${{ inputs.skip-toolkit }}
+      skip-runtime: ${{ inputs.skip-runtime }}
+    secrets: inherit
 
   create-release-assets:
     permissions:
@@ -762,7 +567,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI

@@ -130,6 +130,20 @@ jq '.observed_utxos.end = .observed_utxos.start
 echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
 
+echo "Creating c2m-bridge-config.json..."
+existing_tx_hash=$(curl -s -H 'Content-Type: application/json' \
+  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "id":1}' \
+  http://ogmios:1337 | jq -r .result[0].transaction.id)
+cat <<EOF > /tmp/c2m-bridge-config.json
+{
+    "subminimal_transfers_flush_threshold": 500000,
+    "initial_data_checkpoint": "$existing_tx_hash"
+}
+EOF
+
+echo "Created c2m-bridge-config.json:"
+cat /tmp/c2m-bridge-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=undeployed
 export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
@@ -144,6 +158,7 @@ export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
 export CHAINSPEC_REGISTERED_CANDIDATES_ADDRESSES=/tmp/registered-candidates-addresses.json
+export CHAINSPEC_C2M_BRIDGE_CONFIG=/tmp/c2m-bridge-config.json
 
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."

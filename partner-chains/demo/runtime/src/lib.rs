@@ -17,7 +17,7 @@ use authority_selection_inherents::{
 };
 use frame_support::genesis_builder_helper::{build_state, get_preset};
 use frame_support::inherent::ProvideInherent;
-use frame_support::weights::constants::RocksDbWeight as RuntimeDbWeight;
+use frame_support::weights::constants::ParityDbWeight as RuntimeDbWeight;
 use frame_support::{
 	BoundedVec, construct_runtime, parameter_types,
 	traits::{ConstBool, ConstU8, ConstU16, ConstU32, ConstU64, ConstU128},
@@ -61,8 +61,10 @@ use sp_version::RuntimeVersion;
 use sp_weights::Weight;
 
 // Make the WASM binary available.
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "wasm-runtime"))]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
+#[cfg(all(feature = "std", not(feature = "wasm-runtime")))]
+pub const WASM_BINARY: Option<&[u8]> = None;
 
 pub mod genesis_config_presets;
 

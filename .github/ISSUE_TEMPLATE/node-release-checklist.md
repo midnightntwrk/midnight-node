@@ -2,9 +2,9 @@
 name: Node release checklist
 about: Things to check when releasing node
 title: Node release x.y.z
-labels: ''
-assignees: ''
-
+labels: ""
+assignees: ""
+type: Task
 ---
 ---
 **Release captain**: (tag a team member)
