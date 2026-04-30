@@ -1,4 +1,4 @@
-#node
+#node #runtime
 # Replace panic with error handling in cnight-observation inherent data decoding
 
 The `get_data_from_inherent_data` function in the `cnight-observation` pallet
