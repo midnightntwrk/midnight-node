@@ -92,18 +92,27 @@ pub mod pallet {
 	#[pallet::error]
 	pub enum Error<T> {
 		/// The motion has already been approved by this authority.
+		#[codec(index = 0)]
 		MotionAlreadyApproved,
 		/// The authority trying to kill a motion was not found in the list of approvers.
+		#[codec(index = 1)]
 		MotionApprovalMissing,
 		/// The motion approval excees T::MaxAuthorityBodies
+		#[codec(index = 2)]
 		MotionApprovalExceedsBounds,
 		/// Motion not found
+		#[codec(index = 3)]
 		MotionNotFound,
 		/// Motion not finished
+		#[codec(index = 4)]
 		MotionNotEnded,
 		/// Motion has ended and therefore it doesn't accept more changes
+		#[codec(index = 5)]
 		MotionHasEnded,
+		// Indices 6, 7, 8 previously held MotionTooEarlyToClose, MotionAlreadyExists,
+		// and MotionExpired. Reserved to preserve historical block decoding.
 		/// The provided weight bound is too low for the motion's call
+		#[codec(index = 9)]
 		MotionWeightBoundTooLow,
 	}
 
