@@ -11,42 +11,74 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { waitForFinality } from "../lib/waitForFinality";
+import { existsSync } from "fs";
+import path from "path";
+import { globSync } from "glob";
 
-/**
- * Host-mapped RPC ports for every validator in the local-env compose stack.
- * Nodes 4 and 5 run with `STORAGE_SEPARATION=unified`; 1–3 run separate.
- * Probing all of them as a CI gate guards against regressions in either mode:
- * if any validator is stuck or panicking GRANDPA cannot reach 2/3 quorum and
- * finality stalls, so a per-node finality probe surfaces the failure
- * deterministically rather than letting downstream tests time out further along.
- */
-const LOCAL_ENV_NODE_RPC_ENDPOINTS = [
-  { name: "midnight-node-1", url: "http://localhost:9933" },
-  { name: "midnight-node-2", url: "http://localhost:9934" },
-  { name: "midnight-node-3", url: "http://localhost:9935" },
-  { name: "midnight-node-4 (unified)", url: "http://localhost:9936" },
-  { name: "midnight-node-5 (unified)", url: "http://localhost:9944" },
-];
+import { NodeEndpoint, waitForFinality } from "../lib/waitForFinality";
+import { discoverValidatorEndpoints } from "../lib/discoverValidators";
 
 export interface VerifyFinalityOptions {
   targetBlock: number;
   timeoutMs: number;
+  /**
+   * Optional explicit endpoint list. If non-empty, replaces compose-file
+   * discovery — useful for non-compose setups or for probing a remote node.
+   */
+  nodeOverrides?: NodeEndpoint[];
 }
 
 export async function verifyFinality(
-  network: string,
+  network: string | undefined,
   options: VerifyFinalityOptions,
 ): Promise<void> {
-  if (network !== "local-env") {
-    console.error(
-      `verify-finality currently only supports 'local-env', got '${network}'`,
-    );
-    process.exit(1);
-  }
+  const endpoints =
+    options.nodeOverrides && options.nodeOverrides.length > 0
+      ? options.nodeOverrides
+      : discoverFromNetwork(network);
 
-  await waitForFinality(LOCAL_ENV_NODE_RPC_ENDPOINTS, {
+  await waitForFinality(endpoints, {
     targetBlock: options.targetBlock,
     timeoutMs: options.timeoutMs,
   });
+}
+
+function discoverFromNetwork(network: string | undefined): NodeEndpoint[] {
+  if (!network) {
+    throw new Error(
+      "verify-finality requires either a <network> argument or one or more --node overrides",
+    );
+  }
+  return discoverValidatorEndpoints(resolveComposeFile(network));
+}
+
+function resolveComposeFile(network: string): string {
+  if (network === "local-env") {
+    const composeFile = path.resolve(
+      __dirname,
+      "../networks/local-env/docker-compose.yml",
+    );
+    if (!existsSync(composeFile)) {
+      throw new Error(`Compose file not found: ${composeFile}`);
+    }
+    return composeFile;
+  }
+
+  const searchPath = path.resolve(
+    __dirname,
+    "../networks",
+    "well-known",
+    network,
+    "*.network.yaml",
+  );
+  const candidates = globSync(searchPath);
+  if (candidates.length === 0) {
+    throw new Error(
+      `No compose file found for network '${network}' under well-known/`,
+    );
+  }
+  const preferred = candidates.find(
+    (p) => path.basename(p) === `${network}.network.yaml`,
+  );
+  return preferred ?? candidates[0];
 }
