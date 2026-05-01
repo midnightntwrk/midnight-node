@@ -35,13 +35,13 @@ pub enum InvalidError {
 	EffectsMismatch,
 	ContractAlreadyDeployed,
 	ContractNotPresent,
-	Zswap,
+	Zswap(ZswapInvalidErrorCode),
 	Transcript,
 	InsufficientClaimable,
 	VerifierKeyNotFound,
 	VerifierKeyAlreadyPresent,
 	ReplayCounterMismatch,
-	ReplayProtectionViolation,
+	ReplayProtectionViolation(TransactionApplicationErrorCode),
 	BalanceCheckOutOfBounds,
 	InputNotInUtxos,
 	DustDoubleSpend,
@@ -49,19 +49,29 @@ pub enum InvalidError {
 	GenerationInfoAlreadyPresent,
 	InvariantViolation,
 	RewardTooSmall,
-	// Granular variants flattened from nested enums in TransactionInvalid.
-	// The catch-all parent variants (Zswap, ReplayProtectionViolation) above remain
-	// as fallbacks for #[non_exhaustive] upstream additions we don't yet recognise.
-	ZswapInvalidNullifierAlreadyPresent,
-	ZswapInvalidCommitmentAlreadyPresent,
-	ZswapInvalidUnknownMerkleRoot,
-	ReplayProtectionViolationIntentTtlExpired,
-	ReplayProtectionViolationIntentTtlTooFarInFuture,
-	ReplayProtectionViolationIntentAlreadyExists,
 	DivideByZero,
 	MerkleTreeError,
-	ZswapInvalidMerkleTreeError,
+	/// Catch-all for `#[non_exhaustive]` upstream additions we don't yet recognise.
 	UnknownError,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum ZswapInvalidErrorCode {
+	NullifierAlreadyPresent,
+	CommitmentAlreadyPresent,
+	UnknownMerkleRoot,
+	MerkleTreeError,
+	Unknown,
+}
+
+/// Discriminants of upstream `TransactionApplicationError`. Reused under
+/// `InvalidError::ReplayProtectionViolation`, `MalformedError::TransactionApplication`,
+/// and `SystemTransactionError::ReplayProtectionFailure`.
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum TransactionApplicationErrorCode {
+	IntentTtlExpired,
+	IntentTtlTooFarInFuture,
+	IntentAlreadyExists,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -69,20 +79,14 @@ pub enum SystemTransactionError {
 	IllegalPayout,
 	InsufficientTreasuryFunds,
 	CommitmentAlreadyPresent,
-	UnknownError,
-	ReplayProtectionFailure,
+	ReplayProtectionFailure(TransactionApplicationErrorCode),
 	IllegalReserveDistribution,
 	GenerationInfoAlreadyPresent,
 	InvalidBasisPoints,
 	InvariantViolation,
 	TreasuryDisabled,
 	MerkleTreeError,
-	// Granular variants flattened from TransactionApplicationError nested in
-	// ReplayProtectionFailure. The ReplayProtectionFailure catch-all above
-	// remains as a fallback for upstream additions.
-	ReplayProtectionFailureIntentTtlExpired,
-	ReplayProtectionFailureIntentTtlTooFarInFuture,
-	ReplayProtectionFailureIntentAlreadyExists,
+	UnknownError,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -104,7 +108,7 @@ pub enum MalformedError {
 	UnclaimedCoinCom,
 	UnclaimedNullifier,
 	Unbalanced,
-	Zswap,
+	Zswap(MalformedZswapErrorCode),
 	BuiltinDecode,
 	GuaranteedLimit,
 	MergingContracts,
@@ -118,13 +122,13 @@ pub enum MalformedError {
 	BalanceCheckOverspend,
 	InvalidNetworkId,
 	IllegallyDeclaredGuaranteed,
-	FeeCalculation,
+	FeeCalculation(FeeCalculationErrorCode),
 	InvalidDustRegistrationSignature,
 	InvalidDustSpendProof,
 	OutOfDustValidityWindow,
 	MultipleDustRegistrationsForKey,
 	InsufficientDustForRegistrationFee,
-	MalformedContractDeploy,
+	MalformedContractDeploy(MalformedContractDeployErrorCode),
 	IntentSignatureVerificationFailure,
 	IntentSignatureKeyMismatch,
 	IntentSegmentIdCollision,
@@ -132,48 +136,69 @@ pub enum MalformedError {
 	UnsupportedProofVersion,
 	GuaranteedTranscriptVersion,
 	FallibleTranscriptVersion,
-	TransactionApplicationError,
+	TransactionApplication(TransactionApplicationErrorCode),
 	BalanceCheckOutOfBounds,
 	BalanceCheckConversionFailure,
 	PedersenCheckFailure,
-	EffectsCheckFailure,
-	DisjointCheckFailure,
-	SequencingCheckFailure,
+	EffectsCheck(EffectsCheckErrorCode),
+	DisjointCheck(DisjointCheckErrorCode),
+	SequencingCheck(SequencingCheckErrorCode),
 	InputsNotSorted,
 	OutputsNotSorted,
 	DuplicateInputs,
 	InputsSignaturesLengthMismatch,
-	// Granular variants flattened from nested enums in MalformedTransaction.
-	// The catch-all parent variants above remain as fallbacks for #[non_exhaustive]
-	// upstream additions we don't yet recognise.
-	EffectsCheckRealCallsSubsetCheckFailure,
-	EffectsCheckAllCommitmentsSubsetCheckFailure,
-	EffectsCheckRealUnshieldedSpendsSubsetCheckFailure,
-	EffectsCheckClaimedUnshieldedSpendsUniquenessFailure,
-	EffectsCheckClaimedCallsUniquenessFailure,
-	EffectsCheckNullifiersNeqClaimedNullifiers,
-	EffectsCheckCommitmentsNeqClaimedShieldedReceives,
-	SequencingCheckCallSequencingViolation,
-	SequencingCheckSequencingCorrelationViolation,
-	SequencingCheckGuaranteedInFallibleContextViolation,
-	SequencingCheckFallibleInGuaranteedContextViolation,
-	SequencingCheckCausalityConstraintViolation,
-	SequencingCheckCallHasEmptyTranscripts,
-	DisjointCheckShieldedInputsDisjointFailure,
-	DisjointCheckShieldedOutputsDisjointFailure,
-	DisjointCheckUnshieldedInputsDisjointFailure,
-	TransactionApplicationIntentTtlExpired,
-	TransactionApplicationIntentTtlTooFarInFuture,
-	TransactionApplicationIntentAlreadyExists,
-	FeeCalculationOutsideTimeToDismiss,
-	FeeCalculationBlockLimitExceeded,
-	MalformedContractDeployNonZeroBalance,
-	MalformedContractDeployIncorrectChargedState,
-	ZswapMalformedInvalidProof,
-	ZswapMalformedContractSentCiphertext,
-	ZswapMalformedNonDisjointCoinMerge,
-	ZswapMalformedNotNormalized,
+	/// Catch-all for `#[non_exhaustive]` upstream additions we don't yet recognise.
 	UnknownError,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum MalformedZswapErrorCode {
+	InvalidProof,
+	ContractSentCiphertext,
+	NonDisjointCoinMerge,
+	NotNormalized,
+	Unknown,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum FeeCalculationErrorCode {
+	OutsideTimeToDismiss,
+	BlockLimitExceeded,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum MalformedContractDeployErrorCode {
+	NonZeroBalance,
+	IncorrectChargedState,
+	Unknown,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum EffectsCheckErrorCode {
+	RealCallsSubsetCheckFailure,
+	AllCommitmentsSubsetCheckFailure,
+	RealUnshieldedSpendsSubsetCheckFailure,
+	ClaimedUnshieldedSpendsUniquenessFailure,
+	ClaimedCallsUniquenessFailure,
+	NullifiersNeqClaimedNullifiers,
+	CommitmentsNeqClaimedShieldedReceives,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum DisjointCheckErrorCode {
+	ShieldedInputsDisjointFailure,
+	ShieldedOutputsDisjointFailure,
+	UnshieldedInputsDisjointFailure,
+}
+
+#[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
+pub enum SequencingCheckErrorCode {
+	CallSequencingViolation,
+	SequencingCorrelationViolation,
+	GuaranteedInFallibleContextViolation,
+	FallibleInGuaranteedContextViolation,
+	CausalityConstraintViolation,
+	CallHasEmptyTranscripts,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -367,13 +392,23 @@ impl From<LedgerApiError> for u8 {
 					InvalidError::EffectsMismatch => 100,
 					InvalidError::ContractAlreadyDeployed => 101,
 					InvalidError::ContractNotPresent => 102,
-					InvalidError::Zswap => 103,
+					InvalidError::Zswap(zi) => match zi {
+						ZswapInvalidErrorCode::NullifierAlreadyPresent => 239,
+						ZswapInvalidErrorCode::CommitmentAlreadyPresent => 240,
+						ZswapInvalidErrorCode::UnknownMerkleRoot => 241,
+						ZswapInvalidErrorCode::MerkleTreeError => 250,
+						ZswapInvalidErrorCode::Unknown => 103,
+					},
 					InvalidError::Transcript => 104,
 					InvalidError::InsufficientClaimable => 105,
 					InvalidError::VerifierKeyNotFound => 106,
 					InvalidError::VerifierKeyAlreadyPresent => 107,
 					InvalidError::ReplayCounterMismatch => 108,
-					InvalidError::ReplayProtectionViolation => 193,
+					InvalidError::ReplayProtectionViolation(rpv) => match rpv {
+						TransactionApplicationErrorCode::IntentTtlExpired => 242,
+						TransactionApplicationErrorCode::IntentTtlTooFarInFuture => 243,
+						TransactionApplicationErrorCode::IntentAlreadyExists => 244,
+					},
 					InvalidError::BalanceCheckOutOfBounds => 194,
 					InvalidError::InputNotInUtxos => 195,
 					InvalidError::DustDoubleSpend => 196,
@@ -381,15 +416,8 @@ impl From<LedgerApiError> for u8 {
 					InvalidError::GenerationInfoAlreadyPresent => 198,
 					InvalidError::InvariantViolation => 199,
 					InvalidError::RewardTooSmall => 200,
-					InvalidError::ZswapInvalidNullifierAlreadyPresent => 239,
-					InvalidError::ZswapInvalidCommitmentAlreadyPresent => 240,
-					InvalidError::ZswapInvalidUnknownMerkleRoot => 241,
-					InvalidError::ReplayProtectionViolationIntentTtlExpired => 242,
-					InvalidError::ReplayProtectionViolationIntentTtlTooFarInFuture => 243,
-					InvalidError::ReplayProtectionViolationIntentAlreadyExists => 244,
 					InvalidError::DivideByZero => 248,
 					InvalidError::MerkleTreeError => 249,
-					InvalidError::ZswapInvalidMerkleTreeError => 250,
 					InvalidError::UnknownError => 109,
 				},
 				Malformed(e) => match e {
@@ -410,7 +438,13 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::UnclaimedCoinCom => 124,
 					MalformedError::UnclaimedNullifier => 125,
 					MalformedError::Unbalanced => 126,
-					MalformedError::Zswap => 127,
+					MalformedError::Zswap(z) => match z {
+						MalformedZswapErrorCode::InvalidProof => 235,
+						MalformedZswapErrorCode::ContractSentCiphertext => 236,
+						MalformedZswapErrorCode::NonDisjointCoinMerge => 237,
+						MalformedZswapErrorCode::NotNormalized => 238,
+						MalformedZswapErrorCode::Unknown => 127,
+					},
 					MalformedError::BuiltinDecode => 128,
 					MalformedError::GuaranteedLimit => 129,
 					MalformedError::MergingContracts => 130,
@@ -424,13 +458,20 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::BalanceCheckOverspend => 138,
 					MalformedError::InvalidNetworkId => 166,
 					MalformedError::IllegallyDeclaredGuaranteed => 167,
-					MalformedError::FeeCalculation => 168,
+					MalformedError::FeeCalculation(f) => match f {
+						FeeCalculationErrorCode::OutsideTimeToDismiss => 231,
+						FeeCalculationErrorCode::BlockLimitExceeded => 232,
+					},
 					MalformedError::InvalidDustRegistrationSignature => 169,
 					MalformedError::InvalidDustSpendProof => 170,
 					MalformedError::OutOfDustValidityWindow => 171,
 					MalformedError::MultipleDustRegistrationsForKey => 172,
 					MalformedError::InsufficientDustForRegistrationFee => 173,
-					MalformedError::MalformedContractDeploy => 174,
+					MalformedError::MalformedContractDeploy(d) => match d {
+						MalformedContractDeployErrorCode::NonZeroBalance => 233,
+						MalformedContractDeployErrorCode::IncorrectChargedState => 234,
+						MalformedContractDeployErrorCode::Unknown => 174,
+					},
 					MalformedError::IntentSignatureVerificationFailure => 175,
 					MalformedError::IntentSignatureKeyMismatch => 176,
 					MalformedError::IntentSegmentIdCollision => 177,
@@ -438,61 +479,58 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::UnsupportedProofVersion => 179,
 					MalformedError::GuaranteedTranscriptVersion => 180,
 					MalformedError::FallibleTranscriptVersion => 181,
-					MalformedError::TransactionApplicationError => 182,
+					MalformedError::TransactionApplication(t) => match t {
+						TransactionApplicationErrorCode::IntentTtlExpired => 228,
+						TransactionApplicationErrorCode::IntentTtlTooFarInFuture => 229,
+						TransactionApplicationErrorCode::IntentAlreadyExists => 230,
+					},
 					MalformedError::BalanceCheckOutOfBounds => 183,
 					MalformedError::BalanceCheckConversionFailure => 184,
 					MalformedError::PedersenCheckFailure => 185,
-					MalformedError::EffectsCheckFailure => 186,
-					MalformedError::DisjointCheckFailure => 187,
-					MalformedError::SequencingCheckFailure => 188,
+					MalformedError::EffectsCheck(ec) => match ec {
+						EffectsCheckErrorCode::RealCallsSubsetCheckFailure => 212,
+						EffectsCheckErrorCode::AllCommitmentsSubsetCheckFailure => 213,
+						EffectsCheckErrorCode::RealUnshieldedSpendsSubsetCheckFailure => 214,
+						EffectsCheckErrorCode::ClaimedUnshieldedSpendsUniquenessFailure => 215,
+						EffectsCheckErrorCode::ClaimedCallsUniquenessFailure => 216,
+						EffectsCheckErrorCode::NullifiersNeqClaimedNullifiers => 217,
+						EffectsCheckErrorCode::CommitmentsNeqClaimedShieldedReceives => 218,
+					},
+					MalformedError::DisjointCheck(dc) => match dc {
+						DisjointCheckErrorCode::ShieldedInputsDisjointFailure => 225,
+						DisjointCheckErrorCode::ShieldedOutputsDisjointFailure => 226,
+						DisjointCheckErrorCode::UnshieldedInputsDisjointFailure => 227,
+					},
+					MalformedError::SequencingCheck(sc) => match sc {
+						SequencingCheckErrorCode::CallSequencingViolation => 219,
+						SequencingCheckErrorCode::SequencingCorrelationViolation => 220,
+						SequencingCheckErrorCode::GuaranteedInFallibleContextViolation => 221,
+						SequencingCheckErrorCode::FallibleInGuaranteedContextViolation => 222,
+						SequencingCheckErrorCode::CausalityConstraintViolation => 223,
+						SequencingCheckErrorCode::CallHasEmptyTranscripts => 224,
+					},
 					MalformedError::InputsNotSorted => 189,
 					MalformedError::OutputsNotSorted => 190,
 					MalformedError::DuplicateInputs => 191,
 					MalformedError::InputsSignaturesLengthMismatch => 192,
-					MalformedError::EffectsCheckRealCallsSubsetCheckFailure => 212,
-					MalformedError::EffectsCheckAllCommitmentsSubsetCheckFailure => 213,
-					MalformedError::EffectsCheckRealUnshieldedSpendsSubsetCheckFailure => 214,
-					MalformedError::EffectsCheckClaimedUnshieldedSpendsUniquenessFailure => 215,
-					MalformedError::EffectsCheckClaimedCallsUniquenessFailure => 216,
-					MalformedError::EffectsCheckNullifiersNeqClaimedNullifiers => 217,
-					MalformedError::EffectsCheckCommitmentsNeqClaimedShieldedReceives => 218,
-					MalformedError::SequencingCheckCallSequencingViolation => 219,
-					MalformedError::SequencingCheckSequencingCorrelationViolation => 220,
-					MalformedError::SequencingCheckGuaranteedInFallibleContextViolation => 221,
-					MalformedError::SequencingCheckFallibleInGuaranteedContextViolation => 222,
-					MalformedError::SequencingCheckCausalityConstraintViolation => 223,
-					MalformedError::SequencingCheckCallHasEmptyTranscripts => 224,
-					MalformedError::DisjointCheckShieldedInputsDisjointFailure => 225,
-					MalformedError::DisjointCheckShieldedOutputsDisjointFailure => 226,
-					MalformedError::DisjointCheckUnshieldedInputsDisjointFailure => 227,
-					MalformedError::TransactionApplicationIntentTtlExpired => 228,
-					MalformedError::TransactionApplicationIntentTtlTooFarInFuture => 229,
-					MalformedError::TransactionApplicationIntentAlreadyExists => 230,
-					MalformedError::FeeCalculationOutsideTimeToDismiss => 231,
-					MalformedError::FeeCalculationBlockLimitExceeded => 232,
-					MalformedError::MalformedContractDeployNonZeroBalance => 233,
-					MalformedError::MalformedContractDeployIncorrectChargedState => 234,
-					MalformedError::ZswapMalformedInvalidProof => 235,
-					MalformedError::ZswapMalformedContractSentCiphertext => 236,
-					MalformedError::ZswapMalformedNonDisjointCoinMerge => 237,
-					MalformedError::ZswapMalformedNotNormalized => 238,
 					MalformedError::UnknownError => 139,
 				},
 				SystemTransaction(e) => match e {
 					SystemTransactionError::IllegalPayout => 201,
 					SystemTransactionError::InsufficientTreasuryFunds => 202,
 					SystemTransactionError::CommitmentAlreadyPresent => 203,
-					SystemTransactionError::UnknownError => 204,
-					SystemTransactionError::ReplayProtectionFailure => 205,
+					SystemTransactionError::ReplayProtectionFailure(rpv) => match rpv {
+						TransactionApplicationErrorCode::IntentTtlExpired => 245,
+						TransactionApplicationErrorCode::IntentTtlTooFarInFuture => 246,
+						TransactionApplicationErrorCode::IntentAlreadyExists => 247,
+					},
 					SystemTransactionError::IllegalReserveDistribution => 206,
 					SystemTransactionError::GenerationInfoAlreadyPresent => 207,
 					SystemTransactionError::InvalidBasisPoints => 208,
 					SystemTransactionError::InvariantViolation => 209,
 					SystemTransactionError::TreasuryDisabled => 210,
 					SystemTransactionError::MerkleTreeError => 211,
-					SystemTransactionError::ReplayProtectionFailureIntentTtlExpired => 245,
-					SystemTransactionError::ReplayProtectionFailureIntentTtlTooFarInFuture => 246,
-					SystemTransactionError::ReplayProtectionFailureIntentAlreadyExists => 247,
+					SystemTransactionError::UnknownError => 204,
 				},
 			},
 			// Reserved from [150-255) for future Errors
@@ -520,22 +558,47 @@ mod tests {
 	use parity_scale_codec::Decode;
 	use std::collections::HashMap;
 
-	/// Enumerate every `LedgerApiError` value by brute-force SCALE decoding all byte
-	/// sequences up to the maximum nesting depth (3 bytes: LedgerApiError → TransactionError
-	/// → inner error enum). Only exact-length decodes are kept (no leftover bytes).
+	/// Enumerate every `LedgerApiError` value via SCALE decoding up to the maximum
+	/// nesting depth (4 bytes: LedgerApiError → TransactionError → inner error enum
+	/// → sub-enum). A naive 256^4 loop would do 4.3B iterations; instead we recurse
+	/// only into prefixes that probe-decode positively when zero-padded to full length
+	/// — i.e., carrier prefixes that need more bytes. Variant index 0 is valid in
+	/// every sub-enum we use, so a single zero-padded probe is sufficient.
 	fn all_ledger_api_errors() -> Vec<LedgerApiError> {
-		let mut result = Vec::new();
-		for depth in 1..=3u32 {
-			for n in 0..256u32.pow(depth) {
-				let bytes: Vec<u8> = (0..depth).map(|i| ((n >> (8 * i)) & 0xFF) as u8).collect();
-				let mut slice: &[u8] = &bytes;
-				if let Ok(e) = LedgerApiError::decode(&mut slice)
-					&& slice.is_empty()
-				{
-					result.push(e);
-				}
+		const MAX_DEPTH: usize = 4;
+
+		fn try_decode_exact(bytes: &[u8]) -> Option<LedgerApiError> {
+			let mut slice = bytes;
+			match LedgerApiError::decode(&mut slice) {
+				Ok(e) if slice.is_empty() => Some(e),
+				_ => None,
 			}
 		}
+
+		fn is_productive_carrier(prefix: &[u8]) -> bool {
+			let mut probe = prefix.to_vec();
+			probe.resize(MAX_DEPTH, 0);
+			try_decode_exact(&probe).is_some()
+		}
+
+		fn recurse(prefix: &mut Vec<u8>, result: &mut Vec<LedgerApiError>) {
+			if prefix.len() >= MAX_DEPTH {
+				return;
+			}
+			for byte in 0..=255u8 {
+				prefix.push(byte);
+				if let Some(e) = try_decode_exact(prefix) {
+					result.push(e);
+				} else if is_productive_carrier(prefix) {
+					recurse(prefix, result);
+				}
+				prefix.pop();
+			}
+		}
+
+		let mut result = Vec::new();
+		let mut prefix = Vec::with_capacity(MAX_DEPTH);
+		recurse(&mut prefix, &mut result);
 		result
 	}
 

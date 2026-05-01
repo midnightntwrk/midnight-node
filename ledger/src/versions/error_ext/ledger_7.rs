@@ -18,7 +18,7 @@
 #![cfg(feature = "std")]
 
 use super::{
-	common::types::{InvalidError, SystemTransactionError},
+	common::types::{InvalidError, SystemTransactionError, ZswapInvalidErrorCode},
 	ledger_storage_local::db::DB,
 	mn_ledger_local::error::{
 		SystemTransactionError as LedgerSystemTransactionError, TransactionInvalid,
@@ -34,7 +34,7 @@ pub fn try_convert_extra_invalid<D: DB>(
 
 pub fn try_convert_extra_zswap_invalid(
 	err: ZswapTransactionInvalid,
-) -> Result<InvalidError, ZswapTransactionInvalid> {
+) -> Result<ZswapInvalidErrorCode, ZswapTransactionInvalid> {
 	Err(err)
 }
 
